@@ -1,0 +1,11 @@
+-- check/bad: CK-121. A definition followed by a SEPARATE annotation with a
+-- `where` clause: the annotation has no definition (it does not follow
+-- one) and repeats the name. Both are the frontend's diagnostics; the checker
+-- must add nothing and not fail. Checker v2 panicked (exit 134) in P6: the
+-- bodyless annotation has no rigid reading, so no givens, and P6 asserted
+-- it had them (`Module.elaborate`).
+less x y =
+    x < y
+
+
+less : a, a -> Bool where a.compare : a, a -> Order

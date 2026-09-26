@@ -346,7 +346,7 @@ pub const ModuleCheck = struct {
             break;
         };
         mc.plan.* = if (schema_plan_ok)
-            try SchemaPlanBuild.build(gpa, mc.module, bir, mc.graph, mc.interfaces, mc.interner, mc.types, store, &schemas)
+            try SchemaPlanBuild.build(gpa, mc.module, bir, mc.graph, mc.interfaces, mc.interner, mc.types, store, &schemas, null)
         else
             .empty;
 
@@ -2744,4 +2744,15 @@ pub fn restoreCapabilitiesOnHit(
     }
     try types.settleDispatchCapabilities(gpa, m, graph, artifacts, &store, schemes);
     types.restoreDerivedCapabilities(m, dispatch);
+}
+
+/// A cache hit of a module the OLD checker checked: its schema endpoints'
+/// settled properties, from its plan's property bytes (schema.md A.6), which
+/// its v1 dependents read. Moved here from the install path by R8b: a module
+/// the new checker checked keeps no such bits (checker-v2.md §11.5).
+pub fn restoreSchemaPropertiesOnHit(types: *Types, m: Graph.Index, plan: *const SchemaPlan) void {
+    for (plan.definitions) |definition| {
+        types.restoreSchemaPropertyBits(types.ofSchemaDecl(m, definition.decl, .type), definition.program_properties);
+        types.restoreSchemaPropertyBits(types.ofSchemaDecl(m, definition.decl, .encoded), definition.encoded_properties);
+    }
 }

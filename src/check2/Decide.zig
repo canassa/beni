@@ -212,7 +212,7 @@ fn equatable(s: *Solve, id: Id, row: Row) Error!void {
     if (s.obligations.row(row.origin).reported) return;
     const st = s.store();
     if (st.content(st.find(row.vars[0])) == .flex) return reopen(s, id);
-    try s.settleSchemas();
+    s.marker.fixpoint_rank = if (s.frame().kind == .fixpoint) s.frame().rank else 0;
     const reason: Report.EquatableReason = switch (try s.marker.equatable(row.vars[0], row.region, row.origin)) {
         .yes => return,
         .function => .function,

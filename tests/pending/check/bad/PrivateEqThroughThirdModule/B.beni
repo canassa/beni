@@ -1,0 +1,21 @@
+-- CK-22: see A.beni. The wrapper module: it declares several things, so
+-- `scenario/PERM` can permute them and the published row must not move.
+import A
+
+
+pub type Wrap
+    = Wrap A.T
+
+
+pub wrap : Int -> Wrap
+wrap n =
+    Wrap (A.T n)
+
+
+pub type Other
+    = Other Int
+
+
+pub same : Other, Other -> Bool
+same x y =
+    x == y

@@ -11,6 +11,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Render = @import("../check/Render.zig");
 const TypeStore = @import("../check/TypeStore.zig");
+const Types = @import("../check/Types.zig");
 const Report = @import("Report.zig");
 const Walk = @import("Walk.zig");
 
@@ -272,7 +273,13 @@ pub fn recursiveMethod(r: *Report, region: Bir.Inst.Index, method: Symbol, found
 /// indexed by a type parameter and depends on `culprit`, an own method
 /// without an annotation that is being checked right now. An annotation on
 /// `culprit` always lifts it, in either declaration order.
-pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Symbol) Error!void {
+///
+/// `schema`: the culprit is a schema whose group is in flight, so its `via`
+/// targets — the payloads of the endpoint being compared — are not inferred
+/// yet (§11.5 *as built by R8b*), and the type has a parameter (a closed one
+/// is deferred): an annotation on the conversion (`conversion`, when it is
+/// a top-level value) takes it out of the schema's group.
+pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, schema: bool, culprit: Symbol, conversion: ?Symbol) Error!void {
     const interner = r.env.interner;
     var out: std.Io.Writer.Allocating = .init(r.gpa);
     defer out.deinit();
@@ -283,6 +290,24 @@ pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, me
     const c = interner.slice(culprit);
     w.print("This needs the derived `{s}` of:\n\n    ", .{m}) catch return error.OutOfMemory;
     Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    if (schema) {
+        w.print(
+            \\
+            \\
+            \\and that depends on the types the `via` conversions of schema `{s}` produce.
+            \\They are still being checked here, together with this comparison, and the
+            \\type has a parameter, so I cannot tell yet.
+            \\
+            \\
+        , .{c}) catch return error.OutOfMemory;
+        if (conversion) |conv| {
+            w.print("Hint: annotate `{s}`, or compare outside the schema's group.\n", .{interner.slice(conv)}) catch return error.OutOfMemory;
+        } else {
+            w.writeAll("Hint: annotate the conversion, or compare outside the schema's group.\n") catch return error.OutOfMemory;
+        }
+        const message = try out.toOwnedSlice();
+        return r.emit(.{ .code = .method_needs_annotation, .module = r.module, .region = region, .message = message });
+    }
     w.print(
         \\
         \\
@@ -294,4 +319,48 @@ pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, me
     , .{ c, c, c }) catch return error.OutOfMemory;
     const message = try out.toOwnedSlice();
     try r.emit(.{ .code = .method_needs_annotation, .module = r.module, .region = region, .message = message });
+}
+
+/// `private_method` at a use that reaches another module's private method
+/// (checker-v2.md §11.3, D1 as amended 2026-09-24). A receiver that IS the
+/// private method's type keeps v1's text (`x.eq`, `M.T 1 == M.T 11`); one
+/// that reaches it through something derived — a wrapper, a tuple, a record,
+/// a list, or a type of a third module whose published row says so (§14.2)
+/// — says which type inside it holds the private method, and that no
+/// comparison outside the declaring module may use it (R8b).
+pub fn privateMethod(r: *Report, region: Bir.Inst.Index, shown: Var, culprit: Types.TypeId, method: Symbol) Error!void {
+    const env = r.env;
+    const entry = env.types.entry(culprit);
+    switch (env.store.resolvedContent(shown)) {
+        .structure => |flat| switch (flat) {
+            .app => |a| if (a.type == culprit) return r.privateMethod(region, entry.module, method),
+            else => {},
+        },
+        else => {},
+    }
+    const interner = env.interner;
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const module_text = interner.slice(env.graph.moduleName(entry.module));
+    const m = interner.slice(method);
+    const type_text = interner.slice(entry.name);
+    // The shown value renders its types unqualified, so the type is named
+    // as it will appear there, with its module beside it.
+    w.print("`{s}.{s}` is not `pub`.\n\nThis needs the `{s}` of `{s}`, declared in `{s}`, which is inside:\n\n    ", .{ module_text, m, m, type_text, module_text }) catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    w.print(
+        \\
+        \\
+        \\`{s}` declares `{s}` without `pub`, and it is the `{s}` of every type `{s}`
+        \\declares, so it is private to that module: it cannot be used from here,
+        \\directly or inside another value.
+        \\
+        \\Hint: add `pub` to `{s}` in `{s}`.
+        \\
+    , .{ module_text, m, m, module_text, m, module_text }) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .private_method, .module = r.module, .region = region, .message = message });
 }

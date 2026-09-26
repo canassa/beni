@@ -219,6 +219,30 @@ pub const State = struct {
         };
     }
 
+    /// Endpoint `ep`'s declaration-generic parameter `j` of schema `decl`: the
+    /// generalised variable its endpoint expansion and payloads are written
+    /// over (checker-v2.md §11.5 *as built by R8b*: the derived-context
+    /// fixpoint substitutes its markers for them).
+    pub fn param(s: *const State, decl: u32, j: u32, ep: Interface.SchemaCtor.Endpoint) Var {
+        const p = s.params[s.params_start[decl] + j];
+        return if (ep == .type) p.program else p.encoded;
+    }
+
+    /// Endpoint `ep`'s constructor payloads of tagged schema `decl`, in
+    /// variant order, each variant with a payload once (a variant without
+    /// one holds nothing): what a nominal endpoint's derived context is
+    /// computed over, as a `type`'s constructor arguments are (§11.5).
+    pub fn payloads(s: *const State, decl: u32, ep: Interface.SchemaCtor.Endpoint, out: *std.ArrayList(Var), gpa: Allocator) Allocator.Error!void {
+        const root = s.bir.decls[decl].schema_body.unwrap() orelse return;
+        const tagged = s.findTagged(root) orelse return;
+        const variants = s.bir.extraSlice(s.bir.subRange(@enumFromInt(s.bir.instData(tagged).rhs)), Bir.Inst.Index);
+        for (variants) |vi| {
+            if (vi.int() >= s.variant_built.len or !s.variant_built[vi.int()]) continue;
+            const pair = s.variant_payloads[vi.int()];
+            try out.append(gpa, if (ep == .type) pair.program else pair.encoded);
+        }
+    }
+
     pub fn member(s: *const State, decl: u32, kind: Interface.SchemaMember.Kind) ?Var {
         const at = @as(usize, decl) * 7 + @intFromEnum(kind);
         return if (at < s.members.len) s.members[at].unwrap() else null;
@@ -237,6 +261,22 @@ pub const State = struct {
             v.* = if (encoded) p.encoded else p.program;
         }
         return try s.copyEndpoint(root, old, args);
+    }
+
+    /// `lookupOpaque`, except that an endpoint of no arguments is a fresh
+    /// copy too, never the shared root (checker v2, R8b: checker-v2.md §11.5
+    /// *as built by R8b*). A derived-context pass reads a payload that names
+    /// an endpoint through this, after the schema's group is done, so every
+    /// pass gets fresh variables — the resolver keys shared answers by root,
+    /// and a pass must not share one with a pass of another approximation or
+    /// ride a wanted on the schema's own variables. Annotations keep
+    /// `lookupOpaque`: a record endpoint read before its `via` is inferred
+    /// must stay linked to it.
+    pub fn lookupFresh(ctx: *anyopaque, decl: u32, encoded: bool, args: []const Var) Allocator.Error!?Var {
+        const s: *State = @ptrCast(@alignCast(ctx));
+        if (args.len != 0 or decl >= s.endpoints.len) return lookupOpaque(ctx, decl, encoded, args);
+        const root = if (encoded) s.endpoints[decl].encoded else s.endpoints[decl].program;
+        return try s.copyEndpoint(root, &.{}, &.{});
     }
 
     pub fn constructor(s: *State, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, ordinal: u32) Allocator.Error!?Var {
@@ -461,21 +501,23 @@ pub const State = struct {
         });
     }
 
+    /// A copy of `root` with `old` replaced by `new`, memoised per copied node
+    /// (a map, not a store-sized array: R8b's `lookupFresh` copies once per
+    /// pass).
     fn copyEndpoint(s: *State, root: Var, old: []const Var, new: []const Var) Allocator.Error!Var {
-        const memo = try s.allocator.alloc(Var.Optional, s.store.count());
-        defer s.allocator.free(memo);
-        @memset(memo, .none);
-        return s.copyHelp(root, old, new, memo, 0);
+        var memo: std.AutoHashMapUnmanaged(Var, Var) = .empty;
+        defer memo.deinit(s.allocator);
+        return s.copyHelp(root, old, new, &memo, 0);
     }
 
-    fn copyHelp(s: *State, raw: Var, old: []const Var, new: []const Var, memo: []Var.Optional, depth: u32) Allocator.Error!Var {
+    fn copyHelp(s: *State, raw: Var, old: []const Var, new: []const Var, memo: *std.AutoHashMapUnmanaged(Var, Var), depth: u32) Allocator.Error!Var {
         const root = s.store.find(raw);
         for (old, new) |o, n| if (s.store.find(o) == root) return n;
-        if (root.int() >= memo.len or depth > 512) return s.store.freshErr(TypeStore.generalized);
-        if (memo[root.int()].unwrap()) |v| return v;
+        if (depth > 512) return s.store.freshErr(TypeStore.generalized);
+        if (memo.get(root)) |v| return v;
         const content = s.store.content(root);
         const out = try s.store.fresh(content, TypeStore.generalized);
-        memo[root.int()] = out.toOptional();
+        try memo.put(s.allocator, root, out);
         switch (content) {
             .err, .flex, .rigid => {},
             .structure => |shape| s.store.setContent(out, .{ .structure = switch (shape) {
@@ -495,7 +537,7 @@ pub const State = struct {
         return out;
     }
 
-    fn copyRange(s: *State, vars: []const Var, old: []const Var, new: []const Var, memo: []Var.Optional, depth: u32) Allocator.Error!TypeStore.Range {
+    fn copyRange(s: *State, vars: []const Var, old: []const Var, new: []const Var, memo: *std.AutoHashMapUnmanaged(Var, Var), depth: u32) Allocator.Error!TypeStore.Range {
         const copied = try s.allocator.alloc(Var, vars.len);
         defer s.allocator.free(copied);
         for (vars, copied) |v, *c| c.* = try s.copyHelp(v, old, new, memo, depth);

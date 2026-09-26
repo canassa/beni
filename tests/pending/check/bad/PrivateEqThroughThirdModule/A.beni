@@ -1,0 +1,25 @@
+-- CK-22: D1 across three modules (checker-v2.md §11.3, D1 as amended
+-- 2026-09-24; R8b's reviewer focus). `A`'s `eq` compares modulo 10 and is
+-- private, so it answers only inside `A`. `B` wraps an `A.T` and compares
+-- nothing: its `Wrap` has no `eq` anyone may use, and its record says so
+-- (`private_method`, naming `A.T`: §14.2 *as amended by R8b*). `C` compares
+-- two `B.Wrap`s: `private_method` at its `==`, and the message says which
+-- private method, of which type, the value holds. On 7427828 (and on v2
+-- before R8b) `C` builds: `B`'s row said "derives" (v1) or "does not
+-- support" (R8a), never why.
+pub type T
+    = T Int
+
+
+eq : T, T -> Bool
+eq left right =
+    case left of
+        T x ->
+            case right of
+                T y ->
+                    modBy x 10 == modBy y 10
+
+
+pub inside : T, T -> Bool
+inside a b =
+    a == b

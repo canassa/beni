@@ -170,9 +170,31 @@ fn fresh(u: *Unify, content: TypeStore.Content) Error!Var {
 /// onto the survivor, so a flag set on either side is on the one root that
 /// remains — never keyed by a variable that stopped being a root.
 fn merge(u: *Unify, a: Var, b: Var, content: TypeStore.Content) Error!Var {
+    if (std.debug.runtime_safety) u.assertContained(a, b);
     const keep = u.store.merge(a, b, content);
     try u.evidence.mergeRejected(u.gpa, if (keep == a) b else a, keep);
     return keep;
+}
+
+/// §11.2's frame assert, in its linear form (CK-117, R8b): while a
+/// fixpoint frame is the current frame — a derived-context pass, or P5's
+/// rows — no unification may change a VARIABLE of an older frame. A pass
+/// may bind its own variables to older structure (a done method's shared
+/// ground `T`), but an older flex joined with anything of the pass would
+/// carry the pass's wanteds or bindings out of a frame whose variables are
+/// discarded. A group checked nested above the frame is its own current
+/// frame, and legitimately merges down (§10.4). O(1) per merge, Debug only.
+fn assertContained(u: *Unify, a: Var, b: Var) void {
+    const f = u.frame();
+    if (f.kind != .fixpoint) return;
+    for ([_]Var{ a, b }) |x| {
+        const rank = u.store.rank(x);
+        if (rank == TypeStore.generalized or rank >= f.rank) continue;
+        switch (u.store.content(x)) {
+            .flex => std.debug.panic("a fixpoint frame's unification changed a variable of an older frame (checker-v2.md §11.2, CK-117)", .{}),
+            else => {},
+        }
+    }
 }
 
 /// An invariant `unify` relies on (review S2, S8). `unify` never reports

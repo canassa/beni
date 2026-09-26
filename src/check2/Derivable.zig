@@ -8,8 +8,9 @@
 //! published row for another's, §14.2), or what its method's requirements
 //! say when the module rule answers it (a custom method is a boundary: its
 //! requirements, not its payloads, say what the arguments must answer).
-//! Nothing here settles, caches a capability, or has a second opinion; a
-//! schema endpoint's head is its schema's settled properties until R8b.
+//! Nothing here settles, caches a capability, or has a second opinion — a
+//! tagged schema endpoint's head included (§11.5, R8b), whose context is
+//! computed over its schema's payloads like any `type`'s.
 //!
 //! One iterative walk over `(node, method)` pairs, coloured per pair (a pair
 //! met grey again is a cycle, whichever method the contexts alternate
@@ -19,6 +20,7 @@
 
 const std = @import("std");
 const InternPool = @import("../InternPool.zig");
+const Bir = @import("../bir/Bir.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
@@ -53,16 +55,19 @@ pub const Verdict = union(enum) {
     query: struct { type_id: Types.TypeId, kind: Kind },
     /// §11.2's parametric in-flight case: `method_needs_annotation`.
     needs_annotation: struct { type_id: Types.TypeId, decl: u32 },
+    /// A context whose computation ran out of the step budget:
+    /// `nesting_too_deep` at the use (R8b's review, B1).
+    budget,
     /// A context that reaches another module's private method (§11.2,
-    /// §11.3): `private_method` at the use.
-    private_method: struct { module: u32, method: Symbol },
+    /// §11.3): `private_method` at the use, naming the type whose module
+    /// declares it.
+    private_method: struct { type_id: Types.TypeId, method: Symbol },
 };
 
 /// `derivability` for wanted `id` on `root`, reported at the use when it is
 /// not `ok` (v1's texts).
 pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
-    const is_eq = w.method == InternPool.WellKnown.eq.symbol();
     const kind = Contexts.kindOf(w.method);
     var forced: std.ArrayList(Forced) = .empty;
     defer forced.deinit(s.cx.scratch);
@@ -100,13 +105,28 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
             try Resolve.reject(s, id, false);
             return false;
         },
+        else => try report(s, w.origin, root, w.method, verdict),
+    }
+    try Resolve.reject(s, id, true);
+    return false;
+}
+
+/// A refusal `verdict` of `method` on `root`, said at `origin` (v1's texts;
+/// §11.3's and §11.2's own). Shared with the deferred checks of a closed
+/// endpoint compared while its schema was in flight (`checkDeferred`).
+pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verdict: Verdict) Error!void {
+    const is_eq = method == InternPool.WellKnown.eq.symbol();
+    const w = .{ .origin = origin, .method = method };
+    switch (verdict) {
+        .ok, .pending, .query, .cycle => {},
         .private_method => |p| {
-            s.contexts.notePrivate(s, p.module, p.method);
-            try s.report.privateMethod(w.origin, @enumFromInt(p.module), p.method);
+            s.contexts.notePrivate(s, p.type_id, p.method);
+            try Messages.privateMethod(s.report, w.origin, root, p.type_id, p.method);
         },
+        .budget => try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget),
         .needs_annotation => |n| {
             s.contexts.noteCulprit(s, n.decl);
-            try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, s.cx.bir.symbol(s.cx.bir.decls[n.decl].name));
+            try Messages.derivedNeedsAnnotation(s.report, origin, root, method, s.cx.bir.decls[n.decl].kind == .schema, s.cx.bir.symbol(s.cx.bir.decls[n.decl].name), Contexts.schemaConversion(s.cx, n.decl));
         },
         .function => {
             s.contexts.noteFunction(s);
@@ -130,8 +150,6 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
             try s.report.noMethodsOnShape(w.origin, w.method, root, .not_orderable);
         },
     }
-    try Resolve.reject(s, id, true);
-    return false;
 }
 
 /// The unit of `root`'s head when `root` is an own derived type whose
@@ -240,7 +258,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
                 try frames.append(scratch, f);
             },
             .refusal => |refusal| return switch (refusal) {
-                .pending, .query, .needs_annotation, .private_method => refusal,
+                .pending, .query, .needs_annotation, .private_method, .budget => refusal,
                 else => map orelse refusal,
             },
         }
@@ -290,15 +308,6 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
     const entry = cx.types.entry(a.type);
     const args = try scratch.dupe(Var, Walk.positions(st, key.root));
     defer scratch.free(args);
-    // A schema endpoint: its schema's settled properties (R8b's to replace).
-    if (entry.schema_endpoint) {
-        try s.settleSchemas();
-        const bits = cx.types.schemaPropertyBits(a.type);
-        const ok = if (key.kind == .eq) bits & 1 != 0 else bits & 2 != 0;
-        if (!ok) return if (bits & 4 != 0) .contains_function else .opaque_type;
-        for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
-        return null;
-    }
     // The module rule: a method is a boundary.
     if (entry.module == cx.module) {
         if (s.ownValue(name)) |d| {
@@ -339,7 +348,8 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             .present => for (s.contexts.entriesOf(answer)) |e| try contextStep(w, scratch, args, e.param, e.method, key.kind),
             .absent_function => return .contains_function,
             .absent_other, .foreign => return .opaque_type,
-            .absent_private => return .{ .private_method = .{ .module = answer.culprit, .method = answer.method } },
+            .absent_budget => return .budget,
+            .absent_private => return .{ .private_method = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
             .own_method => {},
             .needs_annotation => return .{ .needs_annotation = .{ .type_id = a.type, .decl = answer.culprit } },
         }
@@ -365,6 +375,15 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
         },
         .function => return .contains_function,
         .unanswerable, .foreign => return .opaque_type,
+        // D1 (§11.3, §14.2 *as amended by R8b*): the row names the type whose
+        // module's private method its context reaches — its own, under the
+        // module rule, or one a payload holds.
+        .private_method => {
+            const p = iface.privateCulprit(row.context) orelse return .opaque_type;
+            const refs = cx.types.refIds(entry.module);
+            const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
+            return .{ .private_method = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
+        },
         .unchecked, .primitive, .own_method, .alias => {},
     }
     return null;
@@ -501,4 +520,39 @@ fn nextStep(s: *Solve, w: *const Walker, frame: *Frame) ?Step {
 /// `opaque_type`.
 pub fn foreignDerives(entry: Types.Entry, kind: Kind) bool {
     return kind == .eq and entry.equatable;
+}
+
+/// P9's property byte for a schema endpoint `v` (schema.md A.6: bit 0
+/// equatable, bit 1 comparable, bit 2 has-function), read off THE verdict —
+/// the derived contexts P5 settled — for a nominal endpoint and a record
+/// one's expansion alike (checker-v2.md §11.5 *as built by R8b*; the old
+/// checker's `Schema.settleProperties` is not on this path).
+pub fn propertyBits(s: *Solve, v: Var) Error!u8 {
+    var bits: u8 = 0;
+    for ([_]Kind{ .eq, .compare }, 0..) |kind, i| {
+        switch (try settledVerdict(s, v, kind)) {
+            .ok => bits |= @as(u8, 1) << @intCast(i),
+            .function, .contains_function => bits |= 4,
+            else => {},
+        }
+    }
+    return bits;
+}
+
+/// `derivability`, with every context it stops for computed first. After P5
+/// every unit is settled, so this is one walk.
+pub fn settledVerdict(s: *Solve, v: Var, kind: Kind) Error!Verdict {
+    var forced: std.ArrayList(Forced) = .empty;
+    defer forced.deinit(s.cx.scratch);
+    while (true) {
+        const verdict = try derivability(s, v, kind, forced.items);
+        switch (verdict) {
+            .query => |q| {
+                const t = s.contexts.local(q.type_id).?;
+                try Contexts.ensure(s, s.contexts.unit_of[t]);
+                try forced.append(s.cx.scratch, .{ .type_id = q.type_id, .kind = q.kind });
+            },
+            else => return verdict,
+        }
+    }
 }

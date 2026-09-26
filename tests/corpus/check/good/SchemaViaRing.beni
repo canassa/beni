@@ -1,0 +1,106 @@
+-- check/good: CK-119's guard. A ring of six schemas, each with a `via` to
+-- its own `type`, each `type` holding the next schema's endpoint: every
+-- endpoint and every `Mine` is one strongly connected component, closed
+-- only through `via` targets, and nothing holds a function, so `same`
+-- compares. R8b first built the unit graph without `via` mentions and
+-- joined them lazily, which re-ran the ring exponentially and, from five
+-- schemas on, ran out of the step budget inside a quiet run and said a
+-- false `not_equatable` (R8b's reviews, B1 and F1). Now
+-- `Contexts.complete` adds each `via` target's mentions as edges before
+-- the ring runs, once. `test-perf`'s CK-119 holds the time.
+import Schema exposing (Conversion)
+
+
+conv0 : Conversion Int Mine0
+conv0 =
+    Debug.todo "c"
+
+
+type Mine0
+    = Mine0 Int
+    | Back0 L1.Type
+
+
+schema L0 tagged "kind" of
+    S0 as "s"
+        payload : Int via conv0
+
+
+conv1 : Conversion Int Mine1
+conv1 =
+    Debug.todo "c"
+
+
+type Mine1
+    = Mine1 Int
+    | Back1 L2.Type
+
+
+schema L1 tagged "kind" of
+    S1 as "s"
+        payload : Int via conv1
+
+
+conv2 : Conversion Int Mine2
+conv2 =
+    Debug.todo "c"
+
+
+type Mine2
+    = Mine2 Int
+    | Back2 L3.Type
+
+
+schema L2 tagged "kind" of
+    S2 as "s"
+        payload : Int via conv2
+
+
+conv3 : Conversion Int Mine3
+conv3 =
+    Debug.todo "c"
+
+
+type Mine3
+    = Mine3 Int
+    | Back3 L4.Type
+
+
+schema L3 tagged "kind" of
+    S3 as "s"
+        payload : Int via conv3
+
+
+conv4 : Conversion Int Mine4
+conv4 =
+    Debug.todo "c"
+
+
+type Mine4
+    = Mine4 Int
+    | Back4 L5.Type
+
+
+schema L4 tagged "kind" of
+    S4 as "s"
+        payload : Int via conv4
+
+
+conv5 : Conversion Int Mine5
+conv5 =
+    Debug.todo "c"
+
+
+type Mine5
+    = Mine5 Int
+    | Back5 L0.Type
+
+
+schema L5 tagged "kind" of
+    S5 as "s"
+        payload : Int via conv5
+
+
+same : L0.Type, L0.Type -> Bool
+same a b =
+    a == b

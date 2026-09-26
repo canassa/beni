@@ -1,0 +1,2 @@
+# the one comparison, at its `==`, naming what the value holds
+private_method C.beni:7:14 contains "This needs the `eq` of `T`, declared in `A`, which is inside:" contains "Wrap"

@@ -1,0 +1,38 @@
+-- CK-24: a wrapper inherits a schema endpoint's exclusion when the function
+-- reaches the endpoint only through a `via` conversion's target — an own
+-- `type` that mentions the endpoint back (checker-v2.md §11.5 *as built by
+-- R8b*: the endpoint's context is computed over its payloads by the same
+-- fixpoint, and a mention only a `via` makes is joined lazily, `noteApprox`).
+-- `Loop.Type` holds a `Mine`, `Mine` holds an `Int -> Int`, so neither
+-- `Loop.Type` nor `Holds` compares: `not_equatable` at `sameHolds`'s `==`.
+-- On 7427828 it checks clean (the endpoint's properties are settled before
+-- the conversion's target is inferred), and under v2 before R8b it was an
+-- `internal` (a pass shared the endpoint's root with an earlier pass's
+-- answer).
+import Schema exposing (Conversion)
+
+
+conv : Conversion Int Mine
+conv =
+    Debug.todo "checker-only conversion"
+
+
+type Mine
+    = Mine (Int -> Int)
+    | Back Loop.Type
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv
+    Next as "next"
+        rest : Loop
+
+
+type Holds
+    = Holds Loop.Type
+
+
+sameHolds : Holds, Holds -> Bool
+sameHolds a b =
+    a == b

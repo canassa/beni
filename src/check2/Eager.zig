@@ -80,16 +80,23 @@ pub fn build(e: *Eager, s: *Solve) Error!void {
     const bir = cx.bir;
     const gpa = cx.gpa;
     try Contexts.settleAll(s);
+    try Contexts.checkDeferred(s);
     const c = &s.contexts;
     for (bir.decls, 0..) |d, i| {
-        if (d.kind != .type) continue;
-        const id = cx.types.ofDecl(cx.module, @enumFromInt(i));
-        const t = c.local(id) orelse continue;
-        if (c.unit_of[t] == Contexts.none) continue;
-        for ([_]Dispatch.Derived.Kind{ .eq, .compare }) |kind| {
-            const answer = c.final(t, kind);
-            if (answer.status != .present) continue;
-            try e.rows.append(gpa, .{ .kind = kind, .type_id = id, .entries = answer.entries });
+        // A `type`, or a tagged schema's two nominal endpoints (§11.5, R8b).
+        const ids: [2]Types.TypeId = switch (d.kind) {
+            .type => .{ cx.types.ofDecl(cx.module, @enumFromInt(i)), .none },
+            .schema => .{ cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .type), cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .encoded) },
+            else => continue,
+        };
+        for (ids) |id| {
+            const t = c.local(id) orelse continue;
+            if (c.unit_of[t] == Contexts.none) continue;
+            for ([_]Dispatch.Derived.Kind{ .eq, .compare }) |kind| {
+                const answer = c.final(t, kind);
+                if (answer.status != .present) continue;
+                try e.rows.append(gpa, .{ .kind = kind, .type_id = id, .entries = answer.entries });
+            }
         }
     }
     if (e.rows.items.len == 0) return;

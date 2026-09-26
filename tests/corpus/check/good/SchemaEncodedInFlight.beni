@@ -1,0 +1,24 @@
+-- check/good: a schema's ENCODED endpoint compared inside its own `via`
+-- conversion (checker-v2.md §11.5 *as amended by R8b's review*): the encoded
+-- side holds no conversion target, so nothing is in flight for it and it
+-- compares at once. R8b first refused it with `method_needs_annotation` (its
+-- adversarial review, F5). v1 accepts it.
+import Schema exposing (Conversion)
+
+
+mk : Int -> Conversion Int Int
+mk n =
+    Debug.todo "checker-only conversion"
+
+
+conv =
+    if Loop.Encoded.Step { payload = 1 } == Loop.Encoded.Step { payload = 2 } then
+        mk 0
+
+    else
+        mk 1
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv

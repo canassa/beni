@@ -1,0 +1,23 @@
+-- CK-23: see A.beni.
+import A
+import Node exposing (Program)
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Basics.eq (A.make 1) (A.make 1))
+        , show (Basics.eq (A.make 1) (A.make 2))
+        , show (A.make 1 == A.make 1)
+        , show (Basics.eq (A.hidden 3) (A.hidden 3))
+        , show (A.hidden 3 == A.hidden 4)
+        ]

@@ -809,6 +809,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     as `Debug.toString` renders them, on 7427828.
 - **Slice** R8.
 - **Status** R8a (2026-09-26), its cross-module half, claimed: a derived context that reaches another module's private `eq` is `absent_private`, and every comparison in `Main` of `check/bad/PrivateEqOutsideModule` — the wrapper `W`, the tuple, the record, the list — is `private_method` (checker-v2.md §11.2's absent reason). The in-module half of D1 (a private `eq` suppresses the module's other derived `eq` rows) stays R8b's.
+- **Status** R8b (2026-09-26), D1 end to end, claimed: the module rule counts a module's value of the name `pub` or not, so a private `eq` suppresses every derived `eq` row of its module (`dispatch/PrivateEqStillDerives`, now in `v2-expected.md`); the record says so — a `private_method` row naming the type whose module holds the private method (`checker-v2.md` §14.2 *as amended by R8b*) — so a THIRD module that compares a wrapper of the second's is `private_method` too, with a message naming the private method, its type and the value that holds it (`check/bad/PrivateEqThroughThirdModule`, `…Shapes`, both claimed; `scenario/PERM` permutes the declaring and the wrapping module).
 
 ### CK-23 — A phantom type argument that is a function blocks `==`
 
@@ -876,6 +877,8 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/SchemaWrapperExclusion.beni`. `.codes`: `not_equatable` at `same`.
 - **Slice** R8.
 - **Status** R8a (2026-09-26), claimed on the way: `Wrap`'s context is computed when first asked, after the endpoint's schema group is done, so it inherits the endpoint's settled exclusion. The schema endpoint through the fixpoint (§11.5) and `Schema.settleProperties` leaving v2's path stay R8b's.
+- **Status** R8b (2026-09-26), closed in v2: a tagged endpoint is a unit member of the one fixpoint, its payloads read from `Schema.State` once its schema's group is done (demanded before the run), a mention only a `via` makes joined lazily; `Schema.settleProperties` and every schema property bit are off v2's path (`rules_test.zig`'s S4 fence). Claimed on top: `check/bad/SchemaWrapperExclusionThroughOwnType` (the function reaches the endpoint through a `via` target that mentions it back; 7427828 checks it clean, and v2 before R8b was `internal`) and `check/bad/SchemaEndpointInFlight` (a comparison inside the schema's own group is `method_needs_annotation`, naming the schema).
+- **Status** R8b's review round (2026-09-26): the in-flight refusal narrowed (rule 7). A CLOSED type compared while a schema its payloads go through is in flight is deferred and checked in P5 (`tests/corpus/check/good/SchemaEndpointInFlightClosed.beni`, accepted; `check/bad/SchemaEndpointInFlightFunction.beni`, refused once the group is done, claimed); an encoded endpoint is never in flight (`tests/corpus/check/good/SchemaEncodedInFlight.beni`); `check/bad/SchemaEndpointInFlight.beni` is now the parametric case, the one still refused, with a hint naming the conversion. The lazy `via` join is replaced by an exact unit graph (CK-119).
 
 ### CK-25 — Generic derivation cannot carry a nested method's own requirement (queue row 73)
 
@@ -3223,6 +3226,10 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   ride on the answer (and on the published row) to reach an importer.
 - **Fixture** none yet.
 - **Slice** R13.
+- **Also** (R8b's adversarial review F6, 2026-09-26, same cause): `A` declares `pub type T = T Int`
+  and `pub eq : Int, Int -> Bool`; `B` has `pub type Wrap = Wrap A.T`; `Main` compares `B.Wrap`s.
+  `not_equatable` with the "function or foreign type" hint, where the direct `A.T == A.T` is the
+  precise `type_mismatch` (the module-rule clash). Both checkers.
 
 
 ### CK-117 — A fixpoint pass's variables can join a merged group below its frame
@@ -3243,7 +3250,168 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   group it demanded merges below it — then the assert, which is O(pool).
 - **Fixture** the assert itself, once decided (three claimed fixtures and `scenario/PERM` trip it).
 - **Slice** unassigned — R8b proposed (the fixpoint's owner next).
+- **Status** R8b (2026-09-26), fixed and claimed. The observation above was two things. (1) What
+  tripped the pool-rank assert on the three fixtures and `scenario/PERM` is benign: a pass that
+  instantiates a DONE method's scheme shares its ground structure (a `T` node the generaliser left
+  at rank 1; `Instantiate.copy` copies only what is generalised), so a pass variable unified with
+  it lands in a rank-1 class holding no variable. (2) The channel the entry names is real, but
+  none of those fixtures reached it: a pass that demands an unchecked group which, checked nested,
+  merges down into the asker's now meets a method IN FLIGHT, and `Instances.ownMethod` unified
+  the pass's method type with the member's variable. `run/DerivedContextPassMergesDown` reaches it
+  (`key`'s unused `u` was bound from inside the discarded frame). Fixed by routing that case through
+  §11.2's in-flight branch (closed: replay in the asker's frame; parametric:
+  `method_needs_annotation`). The assert shipped is the linear form that tells the two apart, at
+  the point of change: while a fixpoint frame is current, no unification may change a flex of an
+  older frame (`Unify.assertContained`) and no wanted may ride on one (`Resolve.attach`), O(1)
+  each, Debug only. Without the fix it panics on the new fixture; with it, every fixture,
+  `test-v2` and `scenario/PERM` pass under it (`checker-v2.md` §11.2 *as amended by R8b*).
 
+
+### CK-118 — The old checker refuses a type that wraps a record schema endpoint
+
+- **Severity** valid-program-rejected. **Area** capability × schema, v1 only. **Class** K7.
+  **Sources** R8b's probes (2026-09-26).
+- **Program** `pub schema Rec = f : Int via conv` (or `f : Int`, no `via`), `type HoldsRec =
+  HoldsRec Rec.Type`, `sameHolds a b = a == b` on `HoldsRec`.
+- **Observed** NOT EQUATABLE `HoldsRec`, exit 1. Writing the endpoint's expansion out, `type HoldsRec
+  = HoldsRec { f : Mine }`, checks.
+- **Expected** exit 0: a record endpoint is an alias, and a type that holds one compares through its
+  expansion (`schema.md` §4; `checker-v2.md` §11.5).
+- **Root cause** v1 answers the wrapper from the alias endpoint's session capability bits, which the
+  interleaved settle (CK-24's root cause) leaves refusing, instead of from its expansion.
+- **Fixture** `check/good/SchemaRecordViaWrapped.beni`; `check/good/SchemaViaMutualOwnType.beni`
+  (the `via` fixpoint accepted in every declaration order, `scenario/PERM`).
+- **Slice** R8b, claimed (2026-09-26): v2 walks the alias's expansion; v1 is frozen.
+
+### CK-119 — A ring of types closed through a `via` re-runs exponentially, then says a false `not_equatable`
+
+- **Severity** performance (and a wrong refusal at the budget). **Area** the derived-context
+  fixpoint over schema endpoints, v2 only, R8b's first build. **Class** K3. **Sources** R8b's
+  structural review B1 and adversarial review F1 (2026-09-26).
+- **Program** `M0 → M1 → … → M(n-1) → S.Type` and `S`'s `via conv : Conversion Int M0`, one `==`
+  on `M0` (structural review's generator); or a ring of n schemas, each with a `via` to its own
+  `type` holding the next schema's endpoint (adversarial review's).
+- **Observed** each ring member about 6–8× the one before (Debug: 1.3 s at n = 5, 8.4 s at 6; the
+  schema ring 16.5 s and 1.3 GB at 5); from 5–7 on the step budget ran out inside a quiet run, its
+  message was dropped, and the entry became `absent_other`: a false `not_equatable` on a valid
+  program. v1 answers in about 150 ms.
+- **Root cause** the unit graph could not see a `via` target's mentions; R8b joined them lazily
+  (a cross-run read marked the runs above `partial`, never memoised, so each level re-ran the one
+  above); and `sayInternals` dropped `nesting_too_deep`. Also found: a run nested in another run's
+  pass said its internals into the same quiet list it was reading, losing them.
+- **Fixed** in R8b's review round: `Contexts.complete` makes the unit graph exact before a unit
+  runs (`checker-v2.md` §11.5 *amended by R8b's review round*); a budget in a pass is
+  `absent_budget`, `nesting_too_deep` at the use; the worklist asserts it climbs and caps at 2²²
+  passes; nested internals are said by the outermost run.
+- **Fixture** `test-perf`'s "CK-119" (n = 4 000 / 8 000, ratio 1.86; with `complete` disabled
+  it is red, `internal` at the ring); `tests/corpus/check/good/SchemaViaRing.beni` (six schemas),
+  in `scenario/PERM`.
+- **Slice** R8b (found and fixed).
+
+### CK-120 — The `equatable` marker's gate of a `type` cannot see a `via` target
+
+- **Severity** unsound-runtime (no runtime path until schemas emit). **Area** §11.4's marker
+  walk, both checkers. **Class** K7. **Sources** R8b's structural review S1 (2026-09-26).
+- **Program** `conv : Conversion Int Mine`, `type Mine = Mine (Int -> Int)`, `Loop` with
+  `payload : Int via conv`, `type Holds = Holds Loop.Type`; `Basics.eq` on two `Holds`.
+- **Observed** `==` on `Holds` is `not_equatable` (the derived contexts), `Basics.eq` on it is
+  accepted (the table-build bit "no function in its declaration"): two answers to one question.
+  An importer's side has the same hole.
+- **Fixed** in R8b's review round: the gate of an `adt` is `Marker.functionFree`, published as
+  `no_function` (§11.4, §14.2 *amended by R8b's review round*).
+- **Fixed again** in R8b's round-2 review (its B1): the first fix did not demand the schemas it
+  walked, so an unchecked schema's unfilled `via` target read as "no function" — order-dependent,
+  and an in-flight one was accepted where `==` refused. `functionFree` now completes the graph
+  around the type (demanding every reached schema) and is UNKNOWN while one is in flight, deferred
+  to P5 (`checker-v2.md` §11.4 *amended by R8b's round-2 review*). Fixtures
+  `check/bad/EquatableMarkerUncheckedSchema.beni` (the use first) and `…InFlightSchema.beni`, and
+  the local fixture in `scenario/PERM` with both uses counted.
+- **Fixture** `check/bad/EquatableMarkerThroughWrappedEndpoint/` (importer) and
+  `…Local.beni`, claimed.
+- **Slice** R8b (found and fixed; v1 frozen).
+
+### CK-121 — Checker v2 panics on a bodyless annotation with a `where` clause
+
+- **Severity** compiler-crash-or-hang. **Area** P6 (`Module.elaborate`), v2 only. **Class** K9.
+  **Sources** R8b's adversarial review F4 (2026-09-26); pre-existing at b64342b.
+- **Program** `less x y = x < y`, then a separate `less : a, a -> Bool where a.compare : …`; or
+  the annotation given twice.
+- **Observed** exit 134, "an annotated declaration's `where` clause registered a different number
+  of givens". v1 reports `annotation_without_definition` and `duplicate_declaration`.
+- **Root cause** a declaration with no body has no rigid reading, so no givens; P6 asserted it had.
+- **Fixed** in R8b's review round: a bodyless declaration's requirement roots are its scheme's.
+- **Fixture** `tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni`,
+  `…/WhereAnnotationRepeated.beni` (v1's diagnostics; `v2-green.txt`).
+- **Slice** R8b (found and fixed).
+
+### CK-122 — Comparing through a `type alias` of a schema endpoint is `internal`
+
+- **Severity** compiler-crash-or-hang (an `internal` on a valid program) and valid-program-
+  rejected. **Area** alias expansion of schema endpoints, both checkers. **Class** K7.
+  **Sources** R8b's adversarial review F2 (2026-09-26); pre-existing.
+- **Program** `schema R tagged "k" of A as "a" v : Int`, `type alias RW = R.Type`, `z : RW, RW ->
+  Bool`, `z p q = p == q`.
+- **Observed** v2: two `internal`s at `==` ("a wanted of this site failed, but nothing was
+  reported", I7); v1 one. Tagged and record schemas, `.Type` and `.Encoded`, `==`/`<`/`List.sort`,
+  in one module or across modules. `type H = H RW` compared is a false `not_equatable` in both.
+  With other errors in the module the internal is suppressed, and in one probe the bad comparison
+  went unreported. The interface prints `alias RW` with no body row.
+- **Expected** exit 0: an alias of an endpoint answers as the endpoint (`schema.md` §4,
+  `checker-v2.md` §11.5).
+- **Slice** proposed: an R8b follow-up before R9 (the manager's call). Reasoning: it is v2's
+  derived-context territory (a type alias whose body is a schema endpoint must expand to the
+  endpoint's nominal app, in the annotation reader and in the interface's alias body), R9 makes v2
+  check everything and must not start with an `internal` on valid code, and it is small and
+  separable from R8c's performance work.
+
+### CK-123 — A polymorphic `via` target leaks a free type variable into an endpoint
+
+- **Severity** unsound-runtime (no runtime path until schemas emit). **Area** the schema checker
+  (`Schema.State`, the `via` group), both checkers. **Class** K1. **Sources** R8b's adversarial
+  review F3 (2026-09-26); pre-existing.
+- **Program** `conv : Conversion Int a`, `schema L tagged "k" of X as "x" v : Int via conv`,
+  `cast n = case L.X { v = n } of L.X r -> r.v` at `Int -> String`.
+- **Observed** exit 0 in both checkers: an `Int` becomes a `String`. The interface shows
+  `ctor type.X/1 : { v : a } -> L.Type` with `a` free in a type of no parameters (v1 attaches
+  `where a.compare …, a.eq …` too). Under v2 a wrapper of such an endpoint is a misleading
+  `not_equatable` ("a function anywhere").
+- **Expected** a `via` whose target is not closed over the schema's parameters is refused.
+- **Slice** the schema slices' owner (S3/S4): the schema checker's elaboration rule
+  (`schema.md` §4), not the derived contexts.
+
+### CK-124 — Lowering and resolution of many schemas are quadratic
+
+- **Severity** performance. **Area** frontend (`bir.Lower.couldBeSchemaQualified`,
+  `resolve.Resolve.localSchema`). **Class** K14. **Sources** R8b's review round (2026-09-26),
+  profiling CK-119's schema ring.
+- **Program** n schemas in one module, each referenced (CK-119's schema-ring generator).
+- **Observed** ReleaseFast, checker v2: 1 600 / 3 200 / 6 400 / 12 800 schemas take 0.09 / 0.26
+  / 0.95 / 3.5 s; `perf record` at 6 400 puts 28 % in `mem.eqlBytes` under
+  `couldBeSchemaQualified` and 14 % in `Resolve.localSchema`, both linear scans per reference.
+- **Also** (R8b's round-2 review, 2026-09-26): at 16 000 schemas lowering spends 4.5 s and
+  resolution 1.2 s in `Lower.couldBeSchemaQualified` / `mem.eqlBytes`, and the `check` phase grows
+  2.5–2.9× per doubling in `SchemaPlanBuild.Builder.*`, `Schemes.Writer.typeRefOf` (a scan of
+  the writer's type references per mention — made a map in R8b's round-2 review, shared code) and
+  `Types.find` from `Types.resolveRefs` (a scan of the module's types per reference, still
+  quadratic).
+- **Slice** unassigned (frontend; CK-40 and CK-41's family).
+
+### CK-125 — A derived context's step budget was its asker's
+
+- **Severity** valid-program-rejected (order-dependent). **Area** the derived-context fixpoint,
+  v2 only, R8b's first review round. **Class** K12. **Sources** R8b's round-2 review S1
+  (2026-09-26).
+- **Program** `type alias R` of 4 000 `Int` fields, `type T = T R`; `g` makes 262 comparisons of
+  `R`s and then `t == u` on `T`; `h t u = t == u`.
+- **Observed** with `g` first, `T`'s context ran out of `g`'s per-group step budget inside `g`, was
+  memoised permanently as `absent_budget`, and `h` was refused with `nesting_too_deep`; with `h`
+  first both checked. v1 and b64342b's v2 accept both orders.
+- **Fixed** in R8b's round-2 review: a run has a budget of its own (saved, zeroed, restored); a
+  result with `absent_budget` is never memoised; one surviving to P8 is `internal`
+  (`checker-v2.md` §11.5 *amended by R8b's round-2 review*).
+- **Fixture** `test-perf` "CK-125" (both orders, a Debug build takes 26 s an order): red with the
+  budget shared (exit 1), green now.
+- **Slice** R8b (found and fixed).
 
 ## Summary table
 
@@ -3274,9 +3442,9 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-19 | unsound-runtime | K7 | `run/EquatableMarkerIsNotEq.beni` | R1, R8 |
 | CK-20 | unsound-runtime | K5 | `check/bad/RigidInsideDerivedShape.beni` | R2, R6a (claimed) |
 | CK-21 | unsound-runtime | K5 | `check/bad/WhereClauseNumberReceiver.beni` | R6a (claimed; `NumberBridgeRigidLyingWhere.beni` the rigid half) |
-| CK-22 | unsound-runtime (D1) | K7 | `check/bad/PrivateEqOutsideModule/`; guard `tests/corpus/run/PrivateEqInsideModule/` | R8b (cross-module half claimed by R8a) |
+| CK-22 | unsound-runtime (D1) | K7 | `check/bad/PrivateEqOutsideModule/`, `…/PrivateEqThroughThirdModule/`, `…Shapes/`; guard `tests/corpus/run/PrivateEqInsideModule/` | R8b (claimed; cross-module half by R8a) |
 | CK-23 | valid-program-rejected (D4) | K7 | `run/PhantomParameterEq.beni` | R8a (claimed; + `run/DerivedContextAcrossModules/`) |
-| CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni` | R8b (claimed early by R8a) |
+| CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni`, `…ThroughOwnType.beni`, `check/bad/SchemaEndpointInFlight.beni` | R8b (claimed; first half early by R8a) |
 | CK-25 | valid-program-rejected (D4) | K4 | `run/GenericDerivationNestedRequirement/` | R8a (claimed) |
 | CK-26 | latent | K7 | — (structural) | R8a (closed, structural) |
 | CK-27 | unsound-runtime | K4 | `run/CustomEqHeadMatching/` | R6b (claimed) |
@@ -3369,15 +3537,23 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-114 | valid-program-rejected | K10 | — | unassigned — perf and limits slice proposed (found by R8a's review) |
 | CK-115 | diagnostic-quality | K13 | — | R13 (found by R8a's review) |
 | CK-116 | diagnostic-quality | K7 | — | R13 (found by R8a's review) |
-| CK-117 | latent | K7 | — (the frame assert, once decided) | unassigned — R8b proposed (found by R8a's review round) |
+| CK-117 | latent | K7 | `run/DerivedContextPassMergesDown` (and the Debug frame assert) | R8b (claimed; found by R8a's review round) |
+| CK-118 | valid-program-rejected | K7 | `check/good/SchemaRecordViaWrapped.beni`, `…/SchemaViaMutualOwnType.beni` | R8b (claimed; found by R8b) |
+| CK-119 | performance | K3 | `test-perf` "CK-119"; `tests/corpus/check/good/SchemaViaRing.beni` | R8b (found and fixed by its review round) |
+| CK-120 | unsound-runtime (no runtime path yet) | K7 | `check/bad/EquatableMarkerThroughWrappedEndpoint/`, `…Local.beni` | R8b (claimed; found by its review round) |
+| CK-121 | compiler-crash-or-hang | K9 | `tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni`, `…Repeated.beni` | R8b (fixed; found by its review round) |
+| CK-122 | compiler-crash-or-hang | K7 | — | R8b follow-up proposed, before R9 |
+| CK-123 | unsound-runtime (no runtime path yet) | K1 | — | schema S3/S4 owner |
+| CK-124 | performance | K14 | — | unassigned (frontend) |
+| CK-125 | valid-program-rejected | K12 | `test-perf` "CK-125" | R8b (found and fixed by its round-2 review) |
 
 Totals:
-- 117 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 25 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104 and CK-108 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 12 (CK-92, CK-101 and CK-109 among them).
-- valid-program-rejected: 20 (CK-87, CK-99 and CK-114 among them).
+- 125 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 27 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120 and CK-123 among them). Four of them (CK-13, CK-24, CK-120, CK-123) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 14 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
+- valid-program-rejected: 22 (CK-87, CK-99, CK-114, CK-118 and CK-125 among them).
 - nondeterminism: 2.
-- performance: 16 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107 and CK-111 to CK-113 among them).
+- performance: 18 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119 and CK-124 among them).
 - diagnostic-quality: 26 (CK-86, CK-94, CK-115 and CK-116 among them).
 - latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 12 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95 and CK-104 among them).
+- Outside the checker (K14): 13 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104 and CK-124 among them).

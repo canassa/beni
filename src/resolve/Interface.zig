@@ -312,6 +312,12 @@ pub const Type = struct {
     /// for an `adt` or `alias` the answer follows from its fields and is
     /// M2b's to compute.
     is_equatable: bool,
+    /// `checker-v2.md` §11.4's gate for an `adt` (R8b's review round, CK-120):
+    /// no function is reachable from its payloads, through its own module's
+    /// types, schema endpoints and `via` targets and the published gates of
+    /// everything else. Written by the new checker; the old one writes
+    /// `false`, and an importer reads its table bit instead.
+    no_function: bool = false,
     ctors_start: u32,
     ctors_end: u32,
     /// The parameters that occur in a constructor payload, as a bitset: an
@@ -349,12 +355,16 @@ pub const DerivedKind = enum { eq, compare };
 
 /// A private nominal type of this module an importer can reach (§14.2 *as
 /// amended by R8a*): the facts of a `Type` row an importer reads, and no
-/// constructors — it cannot name them.
+/// constructors — it cannot name them. A tagged schema endpoint named by a
+/// published term has one too (R8b), its name `Schema.Type` or
+/// `Schema.Encoded`, `no_function` its §11.4 gate.
 pub const HiddenType = struct {
     name: SymbolIndex,
     arity: u16,
     kind: TypeKind,
     is_equatable: bool,
+    /// As `Type.no_function`.
+    no_function: bool = false,
     payload_params: u32 = no_terms,
     eq: Derived = .{},
     compare: Derived = .{},
@@ -365,6 +375,10 @@ pub const HiddenType = struct {
 pub const TypeFacts = struct {
     arity: u16,
     kind: TypeKind,
+    /// The row's `is_equatable`: a `foreign type` declared `equatable`.
+    is_equatable: bool,
+    /// The row's §11.4 gate for an `adt` (`Type.no_function`).
+    no_function: bool,
     payload_params: u32,
     eq: Derived,
     compare: Derived,
@@ -384,11 +398,11 @@ pub const TypeFacts = struct {
 pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
     if (find(iface, interner, Type, iface.types, name)) |i| {
         const t = iface.types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
     }
     if (find(iface, interner, HiddenType, iface.hidden_types, name)) |i| {
         const t = iface.hidden_types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
     }
     return null;
 }
@@ -414,6 +428,16 @@ pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
     const words = iface.range(context);
     if (words.len == 0) return .none;
     return @enumFromInt(words[0]);
+}
+
+/// A `private_method` row's culprit (`Derived.Status.private_method`): the
+/// type whose module declares the private method, and its name. Null for a
+/// range not of that shape (`iface_bytes.verify` refuses one).
+pub fn privateCulprit(iface: *const Interface, context: u32) ?struct { type_ref: TypeRefIndex, method: SymbolIndex } {
+    if (context == no_terms) return null;
+    const words = iface.range(context);
+    if (words.len != 2) return null;
+    return .{ .type_ref = @enumFromInt(words[0]), .method = @enumFromInt(words[1]) };
 }
 
 /// Entry `i` of a context range (`Derived.context`), or null past its end.
@@ -477,6 +501,14 @@ pub const Derived = struct {
         unanswerable,
         /// A type alias, which is not nominal: its expansion answers.
         alias,
+        /// D1 (`checker-v2.md` §11.3, §14.2 *as amended by R8b*): the method
+        /// is a PRIVATE method of some module, which no other module may
+        /// use — the type's own module's, under the module rule, or one a
+        /// payload's context reaches. `context` is a range of two words,
+        /// `(type_ref, method)`: a `TypeRefIndex` whose declaring module
+        /// declares the private method, and the method's `SymbolIndex`
+        /// (`privateCulprit`), so the importer's message names it.
+        private_method,
     };
 };
 

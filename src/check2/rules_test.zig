@@ -13,7 +13,10 @@
 //!   API on `Types` (the settle and the bits it writes) is read by no file
 //!   here: §11.2's derived contexts (`Contexts.zig`) are the one answer, and
 //!   `capability_readers` is empty, so any reader fails. `Types.isEquatable`
-//!   has one listed reader, `Marker.zig`'s structural bit (§11.4).
+//!   has one listed reader, `Marker.zig`'s structural bit (§11.4). Since R8b
+//!   the fence also lists the schema endpoints' settled properties (the
+//!   settle, its bits, `settleSchemas`): an endpoint is a unit of the one
+//!   fixpoint (§11.5).
 //!
 //! The file list is checked against the directory, so a new file cannot slip
 //! past it.
@@ -153,20 +156,44 @@ test "the rules read every file of src/check2" {
 /// writes. R8a removed every use (checker-v2.md §11.1): the derived contexts
 /// (`Contexts.zig`) are the one answer, and `capability_readers` is EMPTY —
 /// any reader in `src/check2/` fails here. A cache hit of a module v1 checked
-/// rebuilds v1's bits on v1's side (`Check.restoreCapabilitiesOnHit`).
+/// rebuilds v1's bits on v1's side (`Check.restoreCapabilitiesOnHit`), and
+/// since R8b its schema endpoints' settled properties too
+/// (`Check.restoreSchemaPropertiesOnHit`): nothing in `src/check2/` settles,
+/// restores or reads them.
 const capability_api = [_][]const u8{
     "settleDispatchCapabilities(", "answersEq(",              "answersCompare(",
     "hasFunction(",                "methodParamRequirement(", "hasPublicDispatchMethod(",
-    "restoreDerivedCapabilities(", "isEquatable(",
-};
+    "restoreDerivedCapabilities(", "isEquatable(",            "isComparable(",
+} ++ schema_property_api ++ settled_fields;
+
+/// The settled bits read as fields rather than through the API (R8b's
+/// review, S4): the fence matches calls, and a field read would slip past
+/// it. `entry.equatable` is a `foreign type`'s DECLARED bit, table-built
+/// from its declaration and never settled (checker.md Appendix B), and has
+/// its own readers (`entry_equatable_readers`). `e.equatable` and
+/// `).equatable` catch the other spellings of the same read.
+const settled_fields = [_][]const u8{ ".answers_eq", ".answers_compare", ".has_function", ".public_eq", ".public_compare", ".comparable", "entry.equatable", "e.equatable", ").equatable" };
+
+/// Readers of a `foreign type`'s declared `equatable` bit: the one statement
+/// of whether it derives `eq` (`Derivable.foreignDerives`), and the record's
+/// `is_equatable` for it (`Publish`).
+const entry_equatable_readers = [_][]const u8{ "Derivable.zig", "Publish.zig" };
+
+/// R8b (checker-v2.md §11.5): the schema endpoints' settled properties,
+/// v1's second answer for a nominal endpoint. A tagged endpoint's context is
+/// `Contexts.zig`'s, its §11.4 gate `Marker.functionFree`, and the
+/// plan's bytes `Derivable.propertyBits`.
+const schema_property_api = [_][]const u8{ "settleProperties(", "schemaPropertyBits(", "restoreSchemaPropertyBits(", "schemaPropertiesWithDeps(", "settleSchemaEndpoint(", "includeSchemaEndpoint(", "settleSchemas(" };
 
 /// None since R8a (`plans/checker-rewrite.md`, R8a's brief).
 const capability_readers = [_][]const u8{};
 
 /// `Types.isEquatable`'s one reader: the structural table-build bit of
 /// §11.4 (`Marker.zig`'s walk refuses a `foreign type` declared not
-/// equatable, or a schema endpoint settled not equatable), not the dispatch
-/// settle — R8a's review, S3. A second reader fails here.
+/// equatable), not the dispatch settle — R8a's review, S3. A second reader
+/// fails here. A schema endpoint's gate is computed, not read (R8b), except
+/// for an endpoint of a record the old checker wrote, which has no hidden
+/// row: that checker's own bit, as its ABI is read for its other types.
 const equatable_readers = [_][]const u8{"Marker.zig"};
 
 test "S4: nothing in check2 reads v1's capability API" {
@@ -181,6 +208,10 @@ test "S4: nothing in check2 reads v1's capability API" {
             for (capability_api) |pattern| {
                 if (std.mem.indexOf(u8, line, pattern) == null) continue;
                 if (std.mem.eql(u8, pattern, "isEquatable(") and listed(f.path, &equatable_readers)) continue;
+                if (std.mem.eql(u8, pattern, "entry.equatable") and listed(f.path, &entry_equatable_readers)) continue;
+                // "e.equatable" is inside "entry.equatable": the listed files' one
+                // spelling is not a second read (R8b's round-2 review, nit).
+                if (std.mem.eql(u8, pattern, "e.equatable") and std.mem.indexOf(u8, line, "entry.equatable") != null and listed(f.path, &entry_equatable_readers)) continue;
                 std.debug.print("{s}:{d} reads v1's capability API: `{s}`\n", .{ f.path, n, pattern });
                 bad += 1;
             }

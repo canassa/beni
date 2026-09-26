@@ -149,3 +149,20 @@ tests/pending/run/DerivedContextInFlightEq
 scenario/CK-82
 scenario/CK-79
 tests/pending/run/DerivedContextAcrossModules
+# R8b (2026-09-26): D1 end to end (checker-v2.md §11.3; the record's `private_method` row, §14.2
+# as amended by R8b), CK-22 two modules away from the private `eq`; CK-24 and CK-118, schema
+# endpoints through the one fixpoint (§11.5 as built by R8b); CK-117, a pass that demands a group
+# which merges down into the asker (§11.2 as amended by R8b).
+tests/pending/check/bad/PrivateEqThroughThirdModule
+tests/pending/check/bad/PrivateEqThroughThirdModuleShapes
+tests/pending/check/bad/SchemaWrapperExclusionThroughOwnType.beni
+tests/pending/check/bad/SchemaEndpointInFlight.beni
+tests/pending/check/bad/SchemaEndpointInFlightFunction.beni
+tests/pending/check/good/SchemaRecordViaWrapped.beni
+tests/pending/check/good/SchemaViaMutualOwnType.beni
+tests/pending/run/DerivedContextPassMergesDown
+tests/pending/run/PhantomParameterAcrossModules
+tests/pending/check/bad/EquatableMarkerThroughWrappedEndpoint
+tests/pending/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni
+tests/pending/check/bad/EquatableMarkerUncheckedSchema.beni
+tests/pending/check/bad/EquatableMarkerInFlightSchema.beni

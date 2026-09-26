@@ -262,19 +262,9 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     d.plans[m.int()] = loaded.plan;
     loaded.plan = .empty;
 
-    for (d.plans[m.int()].definitions) |definition| {
-        d.types.restoreSchemaPropertyBits(
-            d.types.ofSchemaDecl(m, definition.decl, .type),
-            definition.program_properties,
-        );
-        d.types.restoreSchemaPropertyBits(
-            d.types.ofSchemaDecl(m, definition.decl, .encoded),
-            definition.encoded_properties,
-        );
-    }
-
-    // Translate type references before rebuilding the schema endpoint
-    // properties below; every imported term reader indexes this table.
+    // Translate type references before v1's capability bits are rebuilt
+    // below (a module the old checker checked); every imported term reader
+    // indexes this table.
     const ref_ids = &d.types.ref_ids[m.int()];
     gpa.free(ref_ids.*);
     ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);

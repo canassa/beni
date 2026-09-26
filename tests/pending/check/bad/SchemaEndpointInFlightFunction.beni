@@ -1,0 +1,27 @@
+-- CK-24: a CLOSED schema endpoint compared while its schema's group is in
+-- flight is checked once the group is done (checker-v2.md §11.5 *as
+-- amended by R8b's review*: deferred, as §11.2's closed in-flight branch
+-- defers). `conv`'s target is inferred in the same group as the comparison,
+-- as `Int -> Int`, so `Loop.Type` holds a function, and the deferred check
+-- refuses the `==` with `not_equatable` at its use. On 7427828 it checks
+-- clean: the endpoint's properties are read as the last settle left them,
+-- before `conv`'s target exists.
+import Schema exposing (Conversion)
+
+
+mk : Int -> Conversion Int (Int -> Int)
+mk n =
+    Debug.todo "checker-only conversion"
+
+
+conv =
+    if Loop.Step { payload = \x -> x } == Loop.Step { payload = \x -> x + 1 } then
+        mk 0
+
+    else
+        mk 1
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv

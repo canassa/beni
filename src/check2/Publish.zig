@@ -28,6 +28,7 @@ const Context = @import("Context.zig");
 const Report = @import("Report.zig");
 const Walk = @import("Walk.zig");
 const Contexts = @import("Contexts.zig");
+const Marker = @import("Marker.zig");
 const type_body = @import("../cache/type_body.zig");
 const Publish = @This();
 
@@ -95,7 +96,7 @@ pub fn fill(in: Input) Error!void {
     iface.schema_ctors = ctors;
 
     try ctorTerms(cx, prov, iface, &writer);
-    try typeFacts(cx, prov, iface, &writer, in.contexts);
+    try typeFacts(cx, prov, iface, &writer, in.contexts, in.report);
     try writer.attach(iface);
 
     // `--roundtrip-interfaces` goes HERE (§5): the record is complete and no
@@ -187,9 +188,9 @@ fn ctorTerms(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
 /// row for every other nominal type of this module a published term names
 /// (CK-89), found by closing over the writer's type references, which the
 /// context entries' own schemes can extend.
-fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer, contexts: *Contexts) Error!void {
+fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer, contexts: *Contexts, report: *Report) Error!void {
     const gpa = cx.gpa;
-    var facts: Facts = .{ .cx = cx, .writer = writer, .contexts = contexts };
+    var facts: Facts = .{ .cx = cx, .writer = writer, .contexts = contexts, .report = report };
     defer facts.deinit();
     if (iface.types.len != 0) {
         const out = try gpa.dupe(Interface.Type, iface.types);
@@ -204,6 +205,8 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
                 continue;
             }
             t.payload_params = try facts.payloadParams(decl, t.kind, t.arity);
+            // §11.4's gate, which an importer cannot compute (CK-120).
+            if (t.kind == .adt) t.no_function = ((try Marker.functionFree(cx, contexts, null, id)) orelse true);
             t.eq = try facts.derived(id, .eq);
             t.compare = try facts.derived(id, .compare);
         }
@@ -244,7 +247,7 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
         } else break;
         if (id == .none) continue;
         const entry = cx.types.entry(id);
-        if (entry.module != cx.module or entry.schema_endpoint) continue;
+        if (entry.module != cx.module) continue;
         if ((try seen.getOrPut(cx.scratch, id)).found_existing) continue;
         if (entry.kind == .alias) {
             const d = cx.bir.decls[entry.decl.int()];
@@ -267,6 +270,9 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
             .arity = entry.arity,
             .kind = entry.kind,
             .is_equatable = entry.equatable and entry.kind == .foreign,
+            // §11.4's gate, which an importer cannot compute (CK-120; a
+            // tagged schema endpoint's among them, §11.5).
+            .no_function = entry.kind == .adt and ((try Marker.functionFree(cx, contexts, null, id)) orelse true),
             .payload_params = try facts.payloadParams(entry.decl, entry.kind, entry.arity),
             .eq = try facts.derived(id, .eq),
             .compare = try facts.derived(id, .compare),
@@ -296,6 +302,7 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
 /// symbol slot per method name.
 const Facts = struct {
     cx: *const Context,
+    report: *Report,
     writer: *Schemes.Writer,
     contexts: *Contexts,
     words: std.ArrayList(u32) = .empty,
@@ -321,14 +328,20 @@ const Facts = struct {
     /// §3.2's table, `own_method`, `foreign`, else the context's answer —
     /// `present` with its entries, each of another method than `eq` or
     /// `compare` with its method type as a scheme over the type's
-    /// parameters, or `function` / `unanswerable`.
+    /// parameters, or `function` / `unanswerable` — or `private_method`
+    /// (D1, §14.2 *as amended by R8b*) with its culprit: this type itself
+    /// when the module's own value of the name is private, or the type a
+    /// payload's context reached.
     fn derived(f: *Facts, id: Types.TypeId, kind: Contexts.Kind) Error!Interface.Derived {
         const types = f.cx.types;
         const wk = types.well_known;
         if (id == wk.int or id == wk.float or id == wk.bool or id == wk.char or id == wk.string or (id == wk.order and kind == .eq)) {
             return .{ .status = .primitive };
         }
-        if (f.contexts.module_has[@intFromEnum(kind)]) return .{ .status = .own_method };
+        if (f.contexts.module_has[@intFromEnum(kind)]) {
+            if (f.contexts.module_pub[@intFromEnum(kind)]) return .{ .status = .own_method };
+            return f.private(id, Contexts.methodName(kind));
+        }
         if (types.entry(id).kind == .foreign) return .{ .status = .foreign };
         const t = f.contexts.local(id) orelse return .{ .status = .unanswerable };
         const answer = f.contexts.final(t, kind);
@@ -337,11 +350,18 @@ const Facts = struct {
             .own_method => return .{ .status = .own_method },
             .foreign => return .{ .status = .foreign },
             .absent_function => return .{ .status = .function },
-            // The record has no status for a private method or a needed
-            // annotation, so an importer says "does not support" where the
-            // module itself says `private_method` or the annotation hint
-            // (R8a's review, nit): D1's rows are R8b's, the texts R13's.
-            .absent_other, .absent_private, .needs_annotation => return .{ .status = .unanswerable },
+            .absent_private => return f.private(@enumFromInt(answer.culprit), answer.method),
+            // The record has no status for a needed annotation, so an
+            // importer says "does not support" where the module itself gives
+            // the annotation hint (R8a's review, nit): the texts are R13's.
+            .absent_other, .needs_annotation => return .{ .status = .unanswerable },
+            // P5 ran it with a budget of its own: one that still ran out is
+            // the compiler's failure, not a fact about the type (R8b's
+            // round-2 review, S1).
+            .absent_budget => {
+                try f.report.internal(f.cx.bir.decls[f.cx.types.entry(id).decl.int()].inst_start, "a derived context ran out of the step budget in P5 (checker-v2.md §11.2)");
+                return .{ .status = .unanswerable };
+            },
         }
         const entries = f.contexts.entriesOf(answer);
         var words: std.ArrayList(u32) = .empty;
@@ -358,6 +378,16 @@ const Facts = struct {
             words.appendAssumeCapacity(e.slot);
         }
         return .{ .status = .present, .context = try f.writer.addRange(words.items) };
+    }
+
+    /// A `private_method` row: `(type_ref, method)`, the type whose module
+    /// declares the private method named through this record's own
+    /// `type_refs` (a first mention appends a row, as any term's does).
+    fn private(f: *Facts, culprit: Types.TypeId, method: InternPool.Symbol) Error!Interface.Derived {
+        const ref = try f.writer.typeRefOf(culprit);
+        if (ref == .none) return .{ .status = .unanswerable };
+        const words = [_]u32{ @intFromEnum(ref), try f.slot(method) };
+        return .{ .status = .private_method, .context = try f.writer.addRange(&words) };
     }
 
     /// A row's method types as ONE scheme whose body is `( p₀, …, pₙ₋₁,
@@ -396,8 +426,10 @@ pub fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, kind: Interface.Ty
             for (0..count) |param| w[param / 32] |= @as(u32, 1) << @intCast(param % 32);
         }
     }.set;
-    if (kind == .foreign or arity == 0) return all(words.items, arity);
     const owner = cx.bir.decl(decl);
+    // A schema endpoint's payloads are its plan's, not constructors: every
+    // parameter counts (§11.4's safe side; R8b).
+    if (kind == .foreign or arity == 0 or owner.kind == .schema) return all(words.items, arity);
     const params = cx.bir.declTypeParams(owner);
     var b = cx.builder(.flex, TypeStore.generalized);
     defer b.deinit();

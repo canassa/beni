@@ -1,0 +1,37 @@
+-- CK-120: explicit `Basics.eq` on a closed schema endpoint compared while
+-- the schema's group is in flight (checker-v2.md §11.4 *as amended by R8b's
+-- review rounds*): `h` compares `Loop.Type`s, `conv` calls `h`, and
+-- `Loop`'s `via` is `conv`, so the gate cannot be read while `h` is checked.
+-- It is asked again in P5, when `conv`'s target is known to be
+-- `Int -> Int`: `not_equatable` at the comparison — as the `==` twin says
+-- (`SchemaEndpointInFlightFunction`). R8b's first review round read the
+-- unfilled target as "no function" and accepted it. On 7427828 it checks
+-- clean.
+import Schema exposing (Conversion)
+
+
+mk : Int -> Conversion Int (Int -> Int)
+mk n =
+    Debug.todo "checker-only conversion"
+
+
+mkLoop : Int -> Loop.Type
+mkLoop n =
+    Debug.todo "l"
+
+
+h n =
+    if Basics.eq (mkLoop n) (mkLoop 2) then
+        n
+
+    else
+        n
+
+
+conv =
+    mk (h 1)
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv

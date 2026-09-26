@@ -36,6 +36,7 @@ const Dispatch = @import("../check/Dispatch.zig");
 const Exhaustive = @import("../check/Exhaustive.zig");
 const Scc = @import("../check/Scc.zig");
 const Schema = @import("../check/Schema.zig");
+const Derivable = @import("Derivable.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaPlanBuild = @import("../check/SchemaPlanBuild.zig");
 const TypeStore = @import("../check/TypeStore.zig");
@@ -153,7 +154,6 @@ pub fn check(in: Input) Error!Check.Counters {
     const own_values = try ownIndex(scratch, bir);
 
     // P4.
-    try schemas.settleProperties(in.types, gpa);
     var solver: Solve = undefined;
     solver.init(&cx, &report);
     defer solver.deinit();
@@ -167,7 +167,7 @@ pub fn check(in: Input) Error!Check.Counters {
     solver.contexts = try Contexts.init(&cx);
     defer solver.contexts.deinit();
     const sccs = try bindingGroups(scratch, bir);
-    var groups: Groups = try .init(&cx, in.types, sccs, local_type, decl_scheme, decl_display);
+    var groups: Groups = try .init(&cx, sccs, local_type, decl_scheme, decl_display);
     defer groups.deinit();
     groups.profile = in.profile;
     solver.groups = &groups;
@@ -183,10 +183,6 @@ pub fn check(in: Input) Error!Check.Counters {
     defer reported_deep.deinit(scratch);
     try reportTooDeep(&report, too_deep.items, &reported_deep, scratch);
     const p4_notes = too_deep.items.len;
-
-    // The schema endpoints' properties as the last schema group left them
-    // (CK-40: settled once here, not after every group).
-    try solver.settleSchemas();
 
     // P5 (the derived contexts, settled, and their rows) and P6: the
     // table's trees.
@@ -244,10 +240,18 @@ pub fn check(in: Input) Error!Check.Counters {
     // Gated on NO error in the module, after the last pass that can report
     // one (CK-15).
     in.plan.deinit(gpa);
-    in.plan.* = if (!quiet and report.errors == 0)
-        try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas)
-    else
-        .empty;
+    in.plan.* = if (!quiet and report.errors == 0) blk: {
+        // The endpoints' property bytes, read off the settled contexts (§11.5
+        // *as built by R8b*): nothing settles them in the session table.
+        const properties = try scratch.alloc([2]u8, bir.decls.len);
+        for (bir.decls, properties, 0..) |d, *p, i| {
+            p.* = .{ 0, 0 };
+            if (d.kind != .schema or d.schema_body == .none) continue;
+            const pair = schemas.endpoints[i];
+            p.* = .{ try Derivable.propertyBits(&solver, pair.program), try Derivable.propertyBits(&solver, pair.encoded) };
+        }
+        break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties);
+    } else .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
 
     // A declaration with no body shows its scheme.
@@ -368,7 +372,14 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
             for (reqs.items, 0..) |r, k| {
                 try requirements.append(gpa, .{ .quantified = r.quantified, .var_name = store.flagsOf(r.root).name, .method = r.method });
                 // The body met the rigid reading's variables, not the
-                // scheme's: its givens are what a group call matches.
+                // scheme's: its givens are what a group call matches. A
+                // declaration with no body — an annotation with no definition
+                // (already reported), a `foreign` — has no rigid reading, and
+                // nothing inside it calls anything: its scheme's roots (CK-121).
+                if (d.body == .none) {
+                    try roots.append(scratch, r.root);
+                    continue;
+                }
                 const given = givens.len == reqs.items.len;
                 if (!try solver.expect(given, d.inst_start, "an annotated declaration's `where` clause registered a different number of givens (checker-v2.md §4.2, review S2)")) {
                     try roots.append(scratch, r.root);

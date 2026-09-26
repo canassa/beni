@@ -497,3 +497,128 @@ fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     try out.appendSlice(arena, "\n\nmain : Program\nmain =\n    Node.print (if v then \"T\" else \"F\")\n");
     return out.items;
 }
+
+// CK-119 under checker v2, found and fixed by R8b's review round
+// (2026-09-26). A ring of `n` types closed through one schema's `via`
+// conversion: `M0 → M1 → … → M(n-1) → S.Type`, and `S`'s `via` target is
+// `M0`, with `==` on `M0` and `<` on `S.Type`. The ring's last link is a
+// mention only the `via` target makes, which the unit graph could not see
+// until R8b's review: every `M_i` was its own unit, a run that read the
+// approximation of a run below it made the runs above it `partial`, and a
+// partial run was never memoised, so each level re-ran the one above it —
+// exponential (on the R8b tree, Debug: 1.3 s at n = 5, 8.4 s at 6, and from
+// 7 on the step budget ran out inside a quiet run, which said a FALSE
+// `not_equatable`). Now `Contexts.complete` adds the `via` target's
+// mentions as edges before the unit runs, the ring is one unit, and it is
+// one joint fixpoint (checker-v2.md §11.5 *as amended by R8b's review*).
+// Calibration (ReleaseFast, CPU): see the scenario's detail line.
+test "CK-119: a ring of types closed through a `via` is one joint fixpoint, in linear time (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("V.beni", try viaRing(s.arena(), 4_000));
+    try s.w.write("V2.beni", try viaRing(s.arena(), 8_000));
+    const verdict = try s.ratioWith("V.beni", "V2.beni", 4_000, &.{"--checker=v2"});
+    try s.finish("CK-119", verdict);
+}
+
+/// CK-119's ring (R8b's structural review's generator).
+fn viaRing(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Schema exposing (Conversion)\n\n\nconv : Conversion Int M0\nconv =\n    Debug.todo \"x\"\n\n\n");
+    for (0..n) |i| {
+        if (i + 1 < n) {
+            try out.print(arena, "type M{d}\n    = M{d} Int\n    | B{d} M{d}\n\n\n", .{ i, i, i, i + 1 });
+        } else {
+            try out.print(arena, "type M{d}\n    = M{d} Int\n    | B{d} S.Type\n\n\n", .{ i, i, i });
+        }
+    }
+    try out.appendSlice(arena, "pub schema S tagged \"kind\" of\n    A as \"a\"\n        p : Int via conv\n\n\nsame : M0, M0 -> Bool\nsame a b =\n    a == b\n\n\ncmp : S.Type, S.Type -> Bool\ncmp a b =\n    a < b\n");
+    return out.items;
+}
+
+// CK-125 under checker v2, found by R8b's round-2 review and fixed in it
+// (2026-09-26). Not a ratio: an answer that must not depend on declaration
+// order, measured here because a Debug build takes 26 s per order. `g`
+// makes 262 comparisons of a 4 000-field record — about the per-group step
+// budget (2²⁰) — and then `t == u` on `T = T R`; `h` is just `t == u`. On
+// R8b's first review round a derived-context run shared its asker's step
+// budget, so with `g` first `T`'s context ran out inside `g`, was memoised
+// permanently as `absent_budget`, and `h` — three lines — was refused with
+// `nesting_too_deep` too; with `h` first both checked. Now a run has a
+// budget of its own and a budget run out is never memoised
+// (checker-v2.md §11.5 *as amended by R8b's review rounds*).
+test "CK-125: a derived context's step budget is its own, in either declaration order (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("G.beni", try budgetOrders(s.arena(), true));
+    try s.w.write("H.beni", try budgetOrders(s.arena(), false));
+    for ([_][]const u8{ "G.beni", "H.beni" }) |file| {
+        const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
+        try Perf.expectClean(run.result);
+        try testing.expectEqualStrings("", std.mem.trim(u8, run.result.stderr, " \r\n"));
+    }
+    try s.finish("CK-125", .{ .green = true, .detail = "both declaration orders check clean" });
+}
+
+/// CK-125's program, `g` written first or `h` (R8b's round-2 review's probe).
+fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias R =\n    { f0 : Int\n");
+    for (1..4_000) |i| try out.print(arena, "    , f{d} : Int\n", .{i});
+    try out.appendSlice(arena, "    }\n\n\ntype T\n    = T R\n\n\n");
+    var g: std.ArrayList(u8) = .empty;
+    try g.appendSlice(arena, "g : ");
+    for (0..262) |_| try g.appendSlice(arena, "R, R, ");
+    try g.appendSlice(arena, "T, T -> Bool\ng");
+    for (0..262) |i| try g.print(arena, " a{d} b{d}", .{ i, i });
+    try g.appendSlice(arena, " t u =\n    ");
+    for (0..262) |i| try g.print(arena, "(a{d} == b{d}) && ", .{ i, i });
+    try g.appendSlice(arena, "(t == u)\n\n\n");
+    const h = "h : T, T -> Bool\nh t u =\n    t == u\n\n\n";
+    if (g_first) {
+        try out.appendSlice(arena, g.items);
+        try out.appendSlice(arena, h);
+    } else {
+        try out.appendSlice(arena, h);
+        try out.appendSlice(arena, g.items);
+    }
+    return out.items;
+}
+
+// CK-119's second shape, from R8b's round-2 review (S2): `n` schemas, each
+// with a `via` to its own `type`, each compared by its own function. Every
+// comparison reaches one new schema, so R8b's first review round rebuilt
+// every unit once per comparison — O(n²) time and memory (8 000 schemas:
+// 10.7 s and 11.6 GB, ReleaseFast). Now `Contexts.complete` walks only the
+// types not yet completed and merges units locally, so each type and each
+// `via` target is read once (checker-v2.md §11.5 *as amended by R8b's review
+// rounds*). The frontend's own cost at this size is CK-124's.
+test "CK-119: many schemas with `via`s, each compared, cost linear time (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const head = "import Schema exposing (Conversion)\n\n\n";
+    const measured = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type -> Bool\nf{d} a b =\n    a == b\n\n\n";
+    const control = "conv{d} : Conversion Int W{d}\nconv{d} =\n    Debug.todo \"c\"\n\n\ntype W{d}\n    = W{d} Int\n\n\npub schema S{d} tagged \"k\" of\n    A as \"a\"\n        p : Int via conv{d}\n\n\nf{d} : S{d}.Type, S{d}.Type -> Bool\nf{d} a b =\n    True\n\n\n";
+    for ([_][]const u8{ "M.beni", "M2.beni", "X.beni", "X2.beni" }, [_]usize{ 4_000, 8_000, 4_000, 8_000 }, [_]bool{ true, true, false, false }) |file, n, cmp| {
+        const body = if (cmp) try generate(s.arena(), n, measured, 11) else try generate(s.arena(), n, control, 11);
+        try s.w.write(file, try std.mem.concat(s.arena(), u8, &.{ head, body }));
+    }
+    var ms: [4]i64 = undefined;
+    for ([_][]const u8{ "M.beni", "X.beni", "M2.beni", "X2.beni" }, &ms) |file, *slot| {
+        var best: i64 = std.math.maxInt(i64);
+        for (0..3) |_| {
+            const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
+            try Perf.expectClean(run.result);
+            best = @min(best, run.ms);
+        }
+        slot.* = best;
+    }
+    // The comparisons' own cost — `complete`, the runs — over a control with
+    // the same schemas and no comparison, whose frontend cost at this size
+    // is CK-124's (super-linear, and not this scenario's). Within 5 % of the
+    // control it is noise, and green.
+    const small = @max(ms[0] - ms[1], 1);
+    const large = ms[2] - ms[3];
+    const green = large * 2 <= small * 5 or large * 20 <= ms[3];
+    try s.finish("CK-119 many", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms (5 % of the control: {d} ms), CPU time", .{ ms[0], ms[1], small, ms[2], ms[3], large, @divTrunc(ms[3], 20) }) });
+}

@@ -71,7 +71,9 @@ pub const magic = "BENIIFC\x00";
 /// a version bump and a cache discard, never a migration into spare bytes:
 /// the alignment padding below is padding and NOT a reserved field
 /// (`plans/m4-plan.md` D4).
-pub const format_version: u32 = 4;
+/// 5 (R8b): a derived row may be `private_method`, with its culprit
+/// (`checker-v2.md` §14.2 *as amended by R8b*).
+pub const format_version: u32 = 5;
 
 /// The fifteen columns, in this order and no other (`hidden_types` since
 /// format 4, `checker-v2.md` §14.2 *as amended by R8a*). `terms` is split into
@@ -258,7 +260,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[8..12], t.ctors_end, .little);
             std.mem.writeInt(u16, row[12..14], t.arity, .little);
             row[14] = @intFromEnum(t.kind);
-            row[15] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1);
+            row[15] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1) | (@as(u8, @intFromBool(t.no_function)) << 2);
             std.mem.writeInt(u32, row[16..20], t.payload_params, .little);
             std.mem.writeInt(u32, row[20..24], t.eq.context, .little);
             std.mem.writeInt(u32, row[24..28], t.compare.context, .little);
@@ -314,7 +316,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[0..4], @intFromEnum(t.name), .little);
             std.mem.writeInt(u16, row[4..6], t.arity, .little);
             row[6] = @intFromEnum(t.kind);
-            row[7] = @intFromBool(t.is_equatable);
+            row[7] = @as(u8, @intFromBool(t.is_equatable)) | (@as(u8, @intFromBool(t.no_function)) << 1);
             std.mem.writeInt(u32, row[8..12], t.payload_params, .little);
             std.mem.writeInt(u32, row[12..16], t.eq.context, .little);
             std.mem.writeInt(u32, row[16..20], t.compare.context, .little);
@@ -493,7 +495,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
             const row = in[i * 32 ..][0..32];
             // Flags past bit 1 and the padding are zero in every record a
             // writer produced (`checker.md` §7: padding is not a field).
-            if (row[15] & ~@as(u8, 3) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
+            if (row[15] & ~@as(u8, 7) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
             t.* = .{
                 .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .ctors_start = std.mem.readInt(u32, row[4..8], .little),
@@ -502,6 +504,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .kind = std.enums.fromInt(Interface.TypeKind, row[14]) orelse return error.BadRecord,
                 .is_opaque = row[15] & 1 == 1,
                 .is_equatable = (row[15] >> 1) & 1 == 1,
+                .no_function = (row[15] >> 2) & 1 == 1,
                 .payload_params = std.mem.readInt(u32, row[16..20], .little),
                 .eq = .{
                     .context = std.mem.readInt(u32, row[20..24], .little),
@@ -586,12 +589,13 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         iface.hidden_types = hidden;
         for (hidden, 0..) |*t, i| {
             const row = in[i * 24 ..][0..24];
-            if (row[7] & ~@as(u8, 1) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
+            if (row[7] & ~@as(u8, 3) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
             t.* = .{
                 .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .arity = std.mem.readInt(u16, row[4..6], .little),
                 .kind = std.enums.fromInt(Interface.TypeKind, row[6]) orelse return error.BadRecord,
                 .is_equatable = row[7] & 1 == 1,
+                .no_function = (row[7] >> 1) & 1 == 1,
                 .payload_params = std.mem.readInt(u32, row[8..12], .little),
                 .eq = .{
                     .context = std.mem.readInt(u32, row[12..16], .little),
@@ -888,6 +892,13 @@ fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arit
     }
     const n = Interface.context_words;
     for ([_]Interface.Derived{ eq, compare }) |d| {
+        // D1's row (§14.2 *as amended by R8b*): `(type_ref, method)`, a type
+        // this record names and a symbol.
+        if (d.status == .private_method) {
+            const words = rangeOf(iface, d.context) orelse return false;
+            if (words.len != 2 or words[0] >= iface.type_refs.len or words[1] >= symbols) return false;
+            continue;
+        }
         if (d.status != .present) {
             if (d.context != Interface.no_terms) return false;
             continue;

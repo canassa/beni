@@ -127,16 +127,11 @@ decl_display: []Var.Optional,
 profile: ?*Profile = null,
 /// Nanoseconds spent generating constraints, nested checks included.
 constrain_ns: u64 = 0,
-/// The session's type table, which a schema's settle writes (R8b's).
-types: *Types,
-/// The module declares a schema: only then does a finished group look at
-/// its members for a settle.
-scan_members: bool = false,
 /// D14 mismatches whose hint waits for their class to be final
 /// (`Recursion.note`, `Recursion.finish`).
 hints: std.ArrayList(Recursion.Pending) = .empty,
 
-pub fn init(cx: *const Context, types: *Types, sccs: Scc.IndexGroups, local_type: []Var.Optional, decl_scheme: []Var.Optional, decl_display: []Var.Optional) Error!Groups {
+pub fn init(cx: *const Context, sccs: Scc.IndexGroups, local_type: []Var.Optional, decl_scheme: []Var.Optional, decl_display: []Var.Optional) Error!Groups {
     const scratch = cx.scratch;
     const n = sccs.starts.len - 1;
     const group_of = try scratch.alloc(u32, cx.bir.decls.len);
@@ -150,10 +145,6 @@ pub fn init(cx: *const Context, types: *Types, sccs: Scc.IndexGroups, local_type
     @memset(frame_of, none);
     const merged_into = try scratch.alloc(u32, n);
     @memset(merged_into, none);
-    var scan = false;
-    for (cx.bir.decls) |d| {
-        if (d.kind == .schema) scan = true;
-    }
     return .{
         .order = sccs.order,
         .starts = sccs.starts,
@@ -162,11 +153,9 @@ pub fn init(cx: *const Context, types: *Types, sccs: Scc.IndexGroups, local_type
         .frame_of = frame_of,
         .merged_into = merged_into,
         .cx = cx,
-        .types = types,
         .local_type = local_type,
         .decl_scheme = decl_scheme,
         .decl_display = decl_display,
-        .scan_members = scan,
     };
 }
 
@@ -301,17 +290,6 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
     // A derived context computed while a member was in flight is stale from
     // now on (§11.2, *Memo generations*).
     s.contexts.groupDone();
-    var has_schema = false;
-    // Scanned only in a module that has a schema at all (R7's review, N7).
-    if (gs.scan_members) {
-        for (done) |d| {
-            if (cx.bir.decls[d].kind == .schema) has_schema = true;
-        }
-    }
-    // A schema's endpoint properties can depend on the conversions its group
-    // just inferred: they are settled when next read (`Solve.settleSchemas`,
-    // CK-40), not here.
-    if (has_schema) s.schemas_dirty = true;
     return .done;
 }
 

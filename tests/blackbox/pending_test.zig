@@ -381,6 +381,35 @@ const perm_programs = [_]PermProgram{
     .{ .name = "ck77", .path = "tests/pending/check/bad/DerivedContextMergesAsker", .module = "PickFirst.beni", .expect = .{ .refused = .kind_mismatch } },
     .{ .name = "s6-in-flight-eq", .path = "tests/pending/run/DerivedContextInFlightEq", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextInFlightEq/_expected.expected" } },
     .{ .name = "joint-eq-compare", .path = "tests/corpus/run/DerivedContextJointMethods", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextJointMethods/_expected.expected" } },
+    // R8b: a pass that demands a group which merges down into the asker
+    // (CK-117); D1 inside the module and two modules away from the private
+    // `eq`, permuting the declaring and the wrapping module (CK-22); schema
+    // endpoints through the one fixpoint — an exclusion reached through a
+    // `via` target that mentions the endpoint back, the same program
+    // accepted, a record endpoint, and a comparison inside the schema's own
+    // group (CK-24, CK-118).
+    .{ .name = "ck117", .path = "tests/pending/run/DerivedContextPassMergesDown", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextPassMergesDown/_expected.expected" } },
+    .{ .name = "d1-inside", .path = "tests/corpus/run/PrivateEqInsideModule", .module = "M.beni", .expect = .{ .prints = "tests/corpus/run/PrivateEqInsideModule/_expected.expected" } },
+    .{ .name = "d1-declaring", .path = "tests/pending/check/bad/PrivateEqThroughThirdModule", .module = "A.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
+    .{ .name = "d1-wrapping", .path = "tests/pending/check/bad/PrivateEqThroughThirdModule", .module = "B.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
+    .{ .name = "ck24-through-own", .path = "tests/pending/check/bad/SchemaWrapperExclusionThroughOwnType.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "ck24-in-flight", .path = "tests/pending/check/bad/SchemaEndpointInFlight.beni", .expect = .{ .refused = .method_needs_annotation } },
+    // R8b's review round: a closed endpoint compared while its schema is in
+    // flight is deferred (accepted, or refused once the group is done), an
+    // encoded one is never in flight, and a ring closed only through `via`s
+    // is one unit (CK-119).
+    .{ .name = "ck24-in-flight-closed", .path = "tests/corpus/check/good/SchemaEndpointInFlightClosed.beni", .expect = .checks },
+    .{ .name = "ck24-in-flight-function", .path = "tests/pending/check/bad/SchemaEndpointInFlightFunction.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "ck24-encoded-in-flight", .path = "tests/corpus/check/good/SchemaEncodedInFlight.beni", .expect = .checks },
+    .{ .name = "ck119-ring", .path = "tests/corpus/check/good/SchemaViaRing.beni", .expect = .checks },
+    // R8b's round-2 review: the §11.4 gate demands the schemas it reaches
+    // and defers one in flight (CK-120) — each use of the local fixture
+    // counted — and a run's own step budget (CK-125).
+    .{ .name = "ck120-local", .path = "tests/pending/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni", .count = 2, .expect = .{ .refused = .not_equatable } },
+    .{ .name = "ck120-unchecked", .path = "tests/pending/check/bad/EquatableMarkerUncheckedSchema.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "ck120-in-flight", .path = "tests/pending/check/bad/EquatableMarkerInFlightSchema.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "ck118-joint", .path = "tests/pending/check/good/SchemaViaMutualOwnType.beni", .expect = .checks },
+    .{ .name = "ck118-record", .path = "tests/pending/check/good/SchemaRecordViaWrapped.beni", .expect = .checks },
 };
 
 test "PERM: every declaration order of an own-method program does what its twin says" {
@@ -403,6 +432,13 @@ const PermProgram = struct {
     /// whose declarations are permuted.
     path: []const u8,
     module: ?[]const u8 = null,
+    /// A project refused in ANOTHER file than the one permuted (R8b: D1's
+    /// comparison two modules away from the private `eq`): the one
+    /// diagnostic is asserted there, at the same text in every order.
+    refused_in: ?[]const u8 = null,
+    /// How many diagnostics the refusal is, all of the expected code:
+    /// exactly that many in every order (R8b's round-2 review).
+    count: u32 = 1,
     expect: union(enum) {
         /// The oracle twin's stdout, as a file.
         prints: []const u8,
@@ -677,25 +713,47 @@ fn permuteRefused(s: *Scenario, p: PermProgram, code: @import("diagnostic").Code
     const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
     const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
     const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, orders[0], try s.failed(run), files.len);
-    var reference: ?struct { message: []const u8, text: []const u8 } = null;
+    var reference: ?Refusals = null;
     for (files, texts, orders) |f, t, o| {
-        var mine: ?@import("diagnostic").Diagnostic = null;
-        var n: usize = 0;
-        for (diags) |d| {
-            if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), f)) continue;
-            n += 1;
-            mine = d;
-        }
-        const d = mine orelse return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 codes=none", .detail = "no diagnostic" }, files.len);
-        if (n != 1 or d.code != code) return try redAt(s, p, o, try s.failed(run), files.len);
-        const text = spanText(t, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col);
+        const got = (try refusals(a, diags, f, t, code, p.count)) orelse return try redAt(s, p, o, try s.failed(run), files.len);
         if (reference) |r| {
-            if ((same_text and !std.mem.eql(u8, r.message, d.message)) or !std.mem.eql(u8, r.text, text)) {
-                return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×1 differs", .{code}), .detail = "the diagnostic differs from the written order's" }, files.len);
+            if ((same_text and !std.mem.eql(u8, r.message, got.message)) or !std.mem.eql(u8, r.text, got.text)) {
+                return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×{d} differs", .{ code, p.count }), .detail = "the diagnostics differ from the written order's" }, files.len);
             }
-        } else reference = .{ .message = d.message, .text = text };
+        } else reference = got;
     }
     return null;
+}
+
+/// A permuted program's refusals in one file (R8b's round-2 review): exactly
+/// `count` diagnostics, every one of `code`, as their messages and the source
+/// text under their spans, sorted — so the same refusals in any order of
+/// declarations compare equal. Null when the count or a code differs.
+const Refusals = struct { message: []const u8, text: []const u8 };
+
+fn refusals(a: std.mem.Allocator, diags: []const @import("diagnostic").Diagnostic, file: []const u8, source: []const u8, code: @import("diagnostic").Code, count: u32) !?Refusals {
+    var pairs: std.ArrayList([2][]const u8) = .empty;
+    for (diags) |d| {
+        if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), file)) continue;
+        if (d.code != code) return null;
+        try pairs.append(a, .{ spanText(source, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col), d.message });
+    }
+    if (pairs.items.len != count) return null;
+    std.mem.sort([2][]const u8, pairs.items, {}, struct {
+        fn lessThan(_: void, x: [2][]const u8, y: [2][]const u8) bool {
+            const o = std.mem.order(u8, x[0], y[0]);
+            return if (o != .eq) o == .lt else std.mem.lessThan(u8, x[1], y[1]);
+        }
+    }.lessThan);
+    var message: std.ArrayList(u8) = .empty;
+    var text: std.ArrayList(u8) = .empty;
+    for (pairs.items) |pr| {
+        try text.appendSlice(a, pr[0]);
+        try text.append(a, 0);
+        try message.appendSlice(a, pr[1]);
+        try message.append(a, 0);
+    }
+    return .{ .message = message.items, .text = text.items };
 }
 
 /// The source text from `line:col` to `end_line:end_col` (1-based, the end
@@ -752,30 +810,24 @@ fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []con
             // project may say its own), at the same source text in every
             // order, with the same message unless `refused_region`.
             const same_text = p.expect == .refused;
+            // R8b: the refusal may be in another file than the permuted one.
+            const target = p.refused_in orelse module;
+            const target_text: ?[]const u8 = if (p.refused_in) |f| try readRepo(a, try std.fs.path.join(a, &.{ p.path, f })) else null;
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
             try args.appendSlice(a, names.items);
-            var reference: ?struct { message: []const u8, text: []const u8 } = null;
+            var reference: ?Refusals = null;
             for (texts, orders) |t, o| {
                 try s.w.write(module, t);
                 const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
                 const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
                 const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, o, try s.failed(run), texts.len);
-                var mine: ?@import("diagnostic").Diagnostic = null;
-                var n: usize = 0;
-                for (diags) |d| {
-                    if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), module)) continue;
-                    n += 1;
-                    mine = d;
-                }
-                const d = mine orelse return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 codes=none", .detail = "no diagnostic" }, texts.len);
-                if (n != 1 or d.code != code) return try redAt(s, p, o, try s.failed(run), texts.len);
-                const text = spanText(t, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col);
+                const got = (try refusals(a, diags, target, target_text orelse t, code, p.count)) orelse return try redAt(s, p, o, try s.failed(run), texts.len);
                 if (reference) |ref| {
-                    if ((same_text and !std.mem.eql(u8, ref.message, d.message)) or !std.mem.eql(u8, ref.text, text)) {
-                        return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×1 differs", .{code}), .detail = "the diagnostic differs from the written order's" }, texts.len);
+                    if ((same_text and !std.mem.eql(u8, ref.message, got.message)) or !std.mem.eql(u8, ref.text, got.text)) {
+                        return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×{d} differs", .{ code, p.count }), .detail = "the diagnostics differ from the written order's" }, texts.len);
                     }
-                } else reference = .{ .message = d.message, .text = text };
+                } else reference = got;
             }
             return null;
         },

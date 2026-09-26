@@ -1,0 +1,32 @@
+-- CK-22: see A.beni.
+import A
+import B
+
+
+viaWrapper : Bool
+viaWrapper =
+    B.wrap 1 == B.wrap 11
+
+
+viaCtor : Bool
+viaCtor =
+    B.Wrap (A.T 1) == B.Wrap (A.T 11)
+
+
+viaParam : Bool
+viaParam =
+    B.Pair 1 (A.T 1) == B.Pair 1 (A.T 11)
+
+
+type Again
+    = Again B.Wrap
+
+
+viaOwn : Bool
+viaOwn =
+    Again (B.wrap 1) == Again (B.wrap 11)
+
+
+viaList : Bool
+viaList =
+    [ B.wrap 1 ] == [ B.wrap 11 ]

@@ -66,6 +66,9 @@ pub const Writer = struct {
     /// and a memset proportional to the whole program once per module, to
     /// index four entries.
     ref_ids: std.ArrayList(TypeStore.TypeId) = .empty,
+    /// `ref_ids` inverted: a type's row, so `typeRefOf` is O(1) and not a
+    /// scan per mention (CK-124: quadratic in a module's named types).
+    ref_index: std.AutoHashMapUnmanaged(TypeStore.TypeId, u32) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     /// `Var → TermIndex` for the scheme being written; dense over the
     /// store. Never a map: a `Var` is a dense id and the house rules forbid
@@ -138,6 +141,7 @@ pub const Writer = struct {
         w.extra.deinit(w.gpa);
         w.type_refs.deinit(w.gpa);
         w.ref_ids.deinit(w.gpa);
+        w.ref_index.deinit(w.gpa);
         w.symbols.deinit(w.gpa);
         w.pending_flags.deinit(w.gpa);
         w.pending_roots.deinit(w.gpa);
@@ -382,11 +386,12 @@ pub const Writer = struct {
     /// POSITION is first mention in this walk, which is a function of the
     /// module's own source — the `pub` declarations in name order, each
     /// term walked in the order `writeVar` descends.
-    fn typeRefOf(w: *Writer, id: TypeStore.TypeId) Error!Interface.TypeRefIndex {
+    /// Public for a publisher that names a type outside any term: a
+    /// `private_method` row's culprit (checker-v2.md §14.2 *as amended by
+    /// R8b*).
+    pub fn typeRefOf(w: *Writer, id: TypeStore.TypeId) Error!Interface.TypeRefIndex {
         const t = w.types.named(id) orelse return .none;
-        for (w.ref_ids.items, 0..) |seen, i| {
-            if (seen == id) return @enumFromInt(@as(u32, @intCast(i)));
-        }
+        if (w.ref_index.get(id)) |i| return @enumFromInt(i);
         const index: Interface.TypeRefIndex = @enumFromInt(@as(u32, @intCast(w.type_refs.items.len)));
         try w.type_refs.append(w.gpa, .{
             .package = t.package,
@@ -394,6 +399,7 @@ pub const Writer = struct {
             .name = @enumFromInt(try w.symbolIndex(t.name)),
         });
         try w.ref_ids.append(w.gpa, id);
+        try w.ref_index.put(w.gpa, id, @intFromEnum(index));
         return index;
     }
 

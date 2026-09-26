@@ -1,0 +1,7 @@
+-- CK-22: see A.beni. The comparison, two modules away from the private `eq`.
+import B
+
+
+viaWrapper : Bool
+viaWrapper =
+    B.wrap 1 == B.wrap 11

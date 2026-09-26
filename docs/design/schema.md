@@ -1178,6 +1178,15 @@ definition including private schemas on a cache hit. The existing named-type
 digest rows then hash those restored settled properties exactly as on a cold
 check; the sidecar does not become an additional digest input.
 
+*Amended 2026-09-26 (checker rewrite R8b, `checker-v2.md` §11.5 *as built by R8b*).* Under the
+new checker the property bytes are read off the derived contexts in P9, not off settled session
+bits, and a cache hit of a module it checked restores nothing into the session table: the
+old checker's settle (`Schema.settleProperties`) is not on its path. What a dependent observes
+about an endpoint — whether and how it derives `eq` and `compare`, and its `equatable` gate — is
+in the record's hidden rows, which the interface hash covers; the digest's named-type rows hash
+the table's bits, which are the same in a cold and a warm build. The old checker keeps the rule
+above until it is deleted (R12).
+
 S2 moves the temporary wall rather than removing it. `check` accepts a valid
 schema program and all resolution-requiring dumps see these interface members.
 `build` stops in `Emit.run`, before `findEntry` and before writing any path,

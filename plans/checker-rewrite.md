@@ -48,6 +48,20 @@ below assumes them.
   pass the corpus (R9–R11). A slice that meets a v1 defect records it as a CK for v2; it does
   not patch v1 (`checker-v2.md` §22, *Amendment of 2026-09-25*).
 
+### 1.1 v1's six root causes — the acceptance table (added 2026-09-26, R8b's review round)
+
+Every slice's reviewer fills in the row of a cause the slice touches: `closed`, `open (owner)` or
+`regressed` (a regression blocks the slice). The classes are `checker-v2.md` §1's.
+
+| # | v1 root cause | Mechanism in v2 | Status by slice |
+|---|---|---|---|
+| 1 | Evidence computed in many places | One evidence tree per site (§13.1), recorded when each requirement is created (§12.1); `Lower` stops counting (R2a); one calling convention (R2b); one elaboration pass, P6 (R6b) | R2a–R2b the backend's half; closed in v2 by R6b |
+| 2 | Constraints repaired by side tables | Obligations and wanteds ride on their variables (§4.5, I15); unify joins and readies, never resolves (§7.1) | R4b–R5 obligations; closed by R6a (wanteds) |
+| 3 | Own-method ordering | Nesting at demand, back-edge merges (§10.2–§10.4); `scenario/PERM` | closed by R7; held by R8a. R8b's first review round left two order dependences PERM did not see — the marker gate read an unchecked schema's `via` target (CK-120) and a derived context took its asker's step budget (CK-125) — both fixed in its round 2, with PERM counting every refusal |
+| 4 | Capability computed several ways | One verdict (`Derivable`, R6a), one derived-context fixpoint (`Contexts`, R8a), published rows, no settle | R6a one verdict (its review caught two ways creeping back); R8a closed nominal `type`s; R8b closed schema endpoints and D1's rows; R8b's review rounds closed the marker gate (CK-120: it demands the schemas it walks and defers one in flight to P5) and made the fixpoint's graph exact and incremental (CK-119). Residue: a record the OLD checker wrote (another package's module) is read through v1's ABI and table bits, until R9 |
+| 5 | Generalisation ignoring constraints | Ranked boundaries that decide obligations and promote requirements (§8.1, §8.5); the fixpoint frame discarded whole (§11.2, CK-117's assert since R8b) | closed for top-level groups by R4b–R6a; open for constrained `let` helpers (D5): R14 |
+| 6 | Backend answering holes | The checker answers every wanted or says `internal` (I6–I8); `Lower` reads the record, fills nothing (§13.3); `refuseV2LibraryTypes` deleted (R8a) | closed in v2 by R6b and R8a; v1's path deleted at R12 |
+
 ---
 
 ## 2. Red fixtures without red gates: `tests/pending/`
@@ -1823,6 +1837,122 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - D1 coherence across three modules: a private `eq` in `A`, a wrapper in `B`, a comparison in `C`.
   - The absent reason shown at the use.
   - `payload_params` for an imported opaque type with a phantom parameter.
+- **As built (2026-09-26).** `checker-v2.md` §11.1 *amended by R8b*, §11.2 *amended by R8b*,
+  §11.3 *as built by R8b*, §11.4 *amended by R8b*, §11.5 *as built by R8b*, §14.2 *amended by
+  R8b*, §14.3; `schema.md` A.6 amended (written first).
+  - **D1 end to end.** `Contexts.module_has` counts a value of the name `pub` or not
+    (`module_pub` says which), so a private `eq` suppresses every derived `eq` row of its module.
+    `absent_private`'s culprit is a `TypeId`; the record gains a `private_method` row status with
+    a two-word culprit `(type_ref, method)` (interface format 4 → 5), which `Derivable.head` and
+    `Instances.derivedNominal` read, so a third module is refused too. The use-site message
+    (`Messages.privateMethod`, `Instances.refusePrivate`) names the private method, its type and
+    the value that holds it; a direct receiver keeps v1's text.
+  - **Schema endpoints through the one fixpoint.** Tagged endpoints are unit members
+    (`Contexts.derives`); their payloads come from `Schema.State.payloads`, substituted with the
+    markers; mentions follow `top_schema` references; a `via` mention the unit graph cannot see is
+    joined lazily (`noteApprox`: the runs above partial, the pass below re-run); every schema a
+    unit reads is demanded by the asker before the run (`demandSchemas`); a comparison inside the
+    schema's own group is `method_needs_annotation` naming the schema; payload reads get fresh
+    endpoint copies (`Schema.State.lookupFresh`). P5 writes endpoint rows, P8 publishes endpoint
+    hidden rows with their §11.4 gate (`Marker.endpointEquatable`), P9 reads the plan's property
+    bytes off the verdict (`Derivable.propertyBits`).
+  - **Deleted from v2's path:** `Schema.settleProperties` (Module P1–P4), `Solve.settleSchemas`
+    and `schemas_dirty`, `Groups`'s schema scan and its `types` field, `Derivable`'s
+    `schemaPropertyBits` branch, `Instances`' `undetermined` endpoint answer, `Decide`'s settle
+    before the marker walk, and the install path's schema-bit restore for a module v2 checked (a
+    module v1 checked restores on v1's side, `Check.restoreSchemaPropertiesOnHit`).
+    `rules_test.zig`'s S4 fence lists the settle, the bits and `settleSchemas`.
+  - **CK-117.** A pass whose demand returns a method in flight takes §11.2's in-flight branch
+    (`Instances.ownMethod`). The frame assert ships in the linear form that separates the real
+    channel from the benign ground sharing R8a's pool assert tripped on: no unification changes,
+    and no wanted rides on, a flex of an older frame while a fixpoint frame is current
+    (`Unify.assertContained`, `Resolve.attach`; Debug).
+  - **Found:** CK-118 (v1 refuses a type wrapping a record schema endpoint; claimed). An
+    `internal` in v2 before the fix (a pass answered from an earlier pass's approximation through
+    a shared endpoint root) is fixed by `lookupFresh` and pinned by
+    `check/bad/SchemaWrapperExclusionThroughOwnType`.
+  - **Evidence.** The three gates; `test-v2` green with `v2-expected.md` gaining only
+    `dispatch/PrivateEqStillDerives` (D1) and `v2-green.txt` losing it; `test-pending` green with
+    8 new claims (CK-22 ×2, CK-23's cross-module marker twin, CK-24 ×2, CK-117, CK-118 ×2);
+    `scenario/PERM` 64 programs, 3 890 orders (R8b's eight among them); `test-pending-perf` and
+    `test-perf` green. Bench (ReleaseFast, `perf stat -r 11`, whole process, `check --no-cache
+    --jobs=1`, two rounds): v2/v1 = 1.04 on the plain corpus (161.0/154.6, 161.8/155.3 ms) and
+    1.06 on the dispatch corpus (174.2/164.1, 175.1/164.8 ms); v2 at R8b is 2.4–3.3 % faster
+    than v2 at `b64342b` on both.
+- **Review round (2026-09-26).** Two reviews (structural, adversarial: ~60 D1 probes and 2 364
+  fuzzed comparisons, no D1 hole). Spec first: `checker-v2.md` §11.4, §11.5 and §14.2 *amended by
+  R8b's review round*; §1.1 above (the six root causes) added.
+  - **Blocking, fixed.** CK-119: the lazy `via` join was exponential and at the step budget said a
+    false `not_equatable`. `Contexts.complete` now makes the unit graph exact before a unit runs
+    (the schemas it reads demanded, their `via` targets' mentions added as edges, the units rebuilt
+    with their state carried by member); `partial` and the cross-run join are deleted (a cross-run
+    read is `internal`); a budget in a pass is `absent_budget`, `nesting_too_deep` at the use; the
+    worklist asserts it climbs and caps at 2²² passes; nested runs' internals are said by the
+    outermost run (they were lost). `test-perf` "CK-119" (4 000 / 8 000: 38 / 72 ms, 1.89; red with
+    `complete` disabled). CK-121: v2 panicked on a bodyless annotation with a `where` clause
+    (`Module.elaborate`); corpus fixtures from v1's diagnostics.
+  - **Should-fix, done.** CK-120: the marker's gate of an `adt` is `Marker.functionFree` (payloads,
+    through own endpoints and `via` targets), published as `no_function` (a bit in the flag bytes;
+    format 5). The in-flight refusal narrowed (rule 7): a closed type is deferred and checked in P5
+    (`Contexts.checkDeferred`), an encoded endpoint is never in flight, only a parametric type is
+    refused, with a hint naming the conversion. S4: the fence lists `isComparable(` and the
+    settled bits read as fields, with `entry.equatable`'s readers. Nits: one copy routine in
+    `Schema.State`, the message names `T`, declared in `A` (the value renders unqualified), the
+    marker walk's flags covered by the CK-117 assert, comments.
+  - **Filed, not fixed.** CK-122 (an alias of a schema endpoint: `internal` / false refusal, both
+    checkers; an R8b follow-up proposed before R9), CK-123 (a polymorphic `via` target leaks a free
+    variable; schema S3/S4), CK-124 (frontend quadratic in the number of schemas), and the F6
+    message as CK-116's second program (R13).
+  - **Evidence.** All seven steps green: `test-v2` 939 pass, 0 fail, 29 skipped (`v2-green.txt`
+    +5: CK-121's two, the closed and encoded in-flight guards, the schema ring); `test-pending`
+    with 122 fixtures green under v2 (+3 claims: CK-120 ×2, the in-flight function case) and
+    `scenario/PERM` 68 programs, 4 146 orders; `test-pending-perf` as recorded (CK-88 red, R12);
+    `test-perf` 12 scenarios green. Bench (ReleaseFast, `perf stat -r 11`, whole process, two
+    rounds): v2/v1 = 1.04 on the plain corpus (161.3/155.5, 163.8/157.1 ms), 1.06–1.07 on the
+    dispatch corpus (176.3/164.8, 175.3/165.3 ms).
+- **Round-2 review (2026-09-26).** Spec first: `checker-v2.md` §11.4 and §11.5 *amended by R8b's
+  round-2 review*; §1.1 rows 3–4 corrected.
+  - **Blocking, fixed.** B1 (CK-120 again): `Marker.functionFree` takes the solver, completes the
+    graph around the type (demanding every schema with a `via` it can reach) and is unknown while
+    one is in flight — the walk passes for now and the type is asked again in P5
+    (`Contexts.deferred_gates`); nothing is memoised across an unfilled target. Fixtures
+    `check/bad/EquatableMarkerUncheckedSchema.beni` and `…InFlightSchema.beni` (claimed; red
+    before); `scenario/PERM`'s `.refused` now takes an exact `count` of diagnostics, all of the
+    code, and the local CK-120 fixture is in it with both uses counted.
+  - **Should-fix, done.** S1 (CK-125): a run's own step budget; `absent_budget` never memoised;
+    `internal` at P8 (`test-perf` "CK-125", both orders; red with the budget shared). S2:
+    `complete` walks only types not yet `completed` and merges units locally (ids never
+    renumbered, `ensure` walks members' edges, P5 invalidates and `ensure`s every unit), stamps
+    in `viaEdges`; `test-perf` "CK-119 many" (the comparisons' cost over a no-comparison control,
+    4 000 / 8 000 schemas: 10 / −1 ms; red at 1 031 / 4 103 ms with a whole-graph rebuild per
+    call put back). Not done: completing from every type at the first `ensure` — an order
+    dependence in merges (§11.5 *amended by R8b's round-2 review* says why). S3: the overclaims
+    corrected. Nits: `climbs`' comment, `checkDeferred` deduplicates by a set, the fence's
+    spellings (`e.equatable`, `).equatable`), CK-124's note extended (and `Schemes.Writer.typeRefOf`
+    made a map, shared code).
+  - **Evidence.** All seven steps green: `test-v2` 939 / 0 / 29; `test-pending` with 124 fixtures
+    green under v2 (`CLAIMED` 125) and `scenario/PERM` 71 programs, 4 506 orders;
+    `test-pending-perf` as recorded (CK-88 red, R12); `test-perf` 14 scenarios green. Bench
+    (ReleaseFast, `perf stat -r 11`, two rounds): v2/v1 = 1.04 plain (168.4/162.1, 169.9/163.8
+    ms), 1.04–1.06 dispatch (183.8/177.0, 184.7/174.5 ms).
+
+### R8c — Performance and limits (added by the manager, 2026-09-26)
+
+- **Goal.** Before R9 makes v2 check `core` under a strict ≤ 1.10× budget, remove v2's measured
+  per-operation overhead and its known super-linear cases. R8a's structural review profiled v2 at
+  1.15× on the generated corpora (the same work, more cycles per operation); the whole-process
+  figure at `b64342b` is 1.07×, which leaves no headroom.
+- **Scope.**
+  - The profile's causes: rank adjustment (`Generalize.enter` pushing a frame per young leaf,
+    `Walk.owned` decoding content repeatedly, the counting sort when every entry is young), `Unify`'s
+    linear `active` scan (CK-93's note) and flex-flex fast path, P6 hashing every `.call` in modules
+    without evidence, per-group instantiation of imported schemes; a self-profile span on P5–P9.
+  - CK-111 (quadratic nested-record `==` per use: `Derivable`'s colour map re-walks non-ground
+    subtrees), CK-114 (a record literal nested ≥ 2 100 deep refused by `Unify.max_depth`), CK-112
+    (O(n²) in a type's parameter count, both checkers), CK-93 (growing `let` chains).
+- **Exit criteria.** Gates, `test-pending`, `test-v2`, both perf steps green; each CK fixed is
+  promoted with a `test-perf` scenario; v2/v1 ≤ 1.05× whole-process on both generated corpora
+  (perf stat, ≥ 9 runs), and each change's gain measured separately.
 
 ### R9 — v2 checks `core`; `test-v2` strict; parity
 
@@ -1972,7 +2102,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a); the `run/` fixtures of CK-30 (`RecursionWithComparison`, `DeadMiscount`), CK-31, CK-66 and CK-67, which P6 answers ahead of R7 and R8a (their slices keep the rest of each finding); CK-102 (found and fixed by R6b); CK-103 (found by R6b's review, claimed); CK-80's `build` half (`perf_test.zig` "CK-80 build") | CK-104 (found by R6b's reviews; a backend fix, promoted: `run/DerivedRowBodyEmissionOrder`, with a claimed permuted CK-67 twin) |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76; CK-105 and CK-106 (found by R7's reviews, claimed) | — |
 | R8a | CK-87 (promoted, `run/DerivedEqDeepRecord`); CK-85 (fixed in the shared emitter, its guard re-blessed) | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24); CK-22's cross-module half and CK-24, green early (R8b's) | CK-107 found (`cache_store`, both checkers; R10 proposed); CK-108 to CK-110 found by its reviews and fixed in the slice; CK-111 to CK-114 found (CK-112 by R8a, the rest by its reviews; the perf and limits slice proposed); CK-115 and CK-116 found by its review (R13); CK-117 found by its review round (R8b proposed); CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
-| R8b | — | CK-22, 24 | — |
+| R8b | — | CK-22, 24, 117; CK-118 (found by R8b, claimed); CK-120 (found by its review round, claimed) | CK-119 and CK-121 (found and fixed by its review round), CK-125 (found and fixed by its round-2 review); CK-122 (R8b follow-up proposed, before R9), CK-123 (schema S3/S4 owner), CK-124 (frontend, unassigned) |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
@@ -1981,7 +2111,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 117 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 125 entries appears in this table (CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

@@ -2116,6 +2116,10 @@ still write a schema endpoint's properties through it (R8b, §11.5), and `Publis
 (`Dispatch.publishedContext`), whichever checker wrote it; only a record with no row (the old
 checker's, for a private type) falls back to v1's bits and arity.
 
+*Amended by R8b (2026-09-26).* Nothing writes a schema endpoint's properties through `Types` any
+more (§11.5 *as built by R8b*): `Publish`'s `ref_ids` is the one write left before `Types` can be
+`*const` in v2.
+
 ### 11.2 Derived contexts by fixpoint (D4, CK-25, CK-23)
 
 For an own nominal type `T` with parameters `p₀ … pₙ₋₁` and a well-known method `m` that `T` does
@@ -2370,6 +2374,37 @@ and where the build departs from it:
   answer through replay, is recorded as CK-117 and not decided here, and the assert is not
   shipped.
 
+*Amended by R8b (2026-09-26): CK-117 decided, the frame assert shipped.*
+
+- **What R8a's review saw was two things.** The pool-rank assert failed on three fixtures and in
+  `scenario/PERM` because a pass that instantiates a *done* method's scheme shares its ground
+  structure: `Instantiate.copy` copies only what is generalised, and the generaliser can leave a
+  ground node (a `T`) at rank 1, so a pass variable unified with it lands in a rank-1 class that
+  holds no variable. That is sound. The channel CK-117 names is real too, but none of those
+  fixtures reached it: a pass demands an *unchecked* method group, the group is checked nested,
+  links to the asker's and merges down (§10.4), and the demand then returns the member **in
+  flight** — which `Instances.ownMethod` unified with the pass's method type, binding a variable
+  of the asker's group from inside the discarded frame (`run/DerivedContextPassMergesDown`: `key`'s
+  unused `u`).
+- **The rule.** A pass never links an in-flight method, however it came to be in flight: a demand
+  from a pass that returns a member in flight takes the same closed or parametric branch as a
+  method already in flight when asked (`Contexts.inFlight`). The link, and any merge, is the
+  asker's replayed wanted, in the asker's frame.
+- **The assert, linear, at the point of change.** While a fixpoint frame is the current frame (a
+  pass, or P5's rows), no unification may change a flex of an older frame
+  (`Unify.assertContained`, per merge) and no wanted may ride on one (`Resolve.attach`). A group
+  checked nested above the frame is its own current frame and merges down legitimately. O(1) per
+  merge and per attach, Debug only. It panics on `run/DerivedContextPassMergesDown` without the
+  rule; with it, every fixture, `test-v2` and `scenario/PERM` pass.
+- **A read of another run's approximation joins the runs** (§11.5's `via` mentions, below). When a
+  run reads the approximation of a run below it (no group frame between), every run above that one
+  is `partial`, and the pass in progress in the run below records a dependency on the slot read, so
+  it runs again — re-running the partial runs — when that slot grows. The unit graph is a superset
+  of the true mentions for `type`s; for a schema endpoint a `via` target's mentions are known only
+  once its group is done, and this makes the fixpoint over them joint all the same.
+- **`own_method` is D1's now** (§11.3 *as built by R8b*): a module's value of the method's name,
+  `pub` or not.
+
 ### 11.3 Private methods (D1, CK-22)
 
 *Amended 2026-09-24 (R0's finding on CK-22). The first text claimed "`M`'s derived `Holder` eq uses
@@ -2395,6 +2430,27 @@ That is D1's coherence guarantee, and the part `7427828` gets wrong (CK-22).
 
 `static-dispatch-spike.md` §3.3 and A.63 ("a private `eq` still lets every other module derive")
 are superseded.
+
+*As built by R8b (2026-09-26).*
+
+- **The module rule counts a private value.** `Contexts.module_has` is "a value of the name, `pub`
+  or not" (`module_pub` says which): no type of `M` derives the method, and P5 writes no row for
+  it. `dispatch/PrivateEqStillDerives` loses its `derived … eq` row (`v2-expected.md`).
+- **Inside `M`** nothing changes: the private method answers every wanted of `M`'s, structural
+  shapes' positions included (`run/PrivateEqInsideModule`, permuted in `scenario/PERM`).
+- **The record says so** (§14.2 *as amended by R8b*): the row of a type of `M` is
+  `private_method` naming that type, and the row of a type whose context reached another module's
+  private method is `private_method` naming the type that module declares (`absent_private`'s
+  culprit is a `TypeId`, published as a `type_refs` row). So `C` comparing `B.Wrap`, where `B`
+  wraps an `A.T` whose `eq` is private, is `private_method` too — a verdict (`Derivable`) and a
+  derivation (`Instances.derivedNominal`) read it off `B`'s row, and a context `C` computes is
+  `absent_private` with the same culprit.
+- **The absent reason at the use.** A receiver that is the private method's own type keeps v1's
+  text (`x.eq`); any other names the private method, the type it belongs to and the value that
+  holds it (`Messages.privateMethod`): "This needs the `eq` of `A.T`, which is inside: `Wrap` …
+  it cannot be used from here, directly or inside another value." A position of a derived shape
+  (a tuple's element, a list's) reports once, at the use, for the lineage root's receiver
+  (`Instances.refusePrivate`), as `refuseDerived` does.
 
 ### 11.4 The `equatable` marker (CK-16, CK-17, CK-19)
 
@@ -2461,6 +2517,43 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
   `not_equatable_rigid`, at the unification (the direct control `Basics.eq x y`).
 - v1's `.equatable` constraint node, dead in v1 (CK-18), has no v2 counterpart.
 
+*Amended by R8b (2026-09-26).*
+
+- **A tagged schema endpoint's gate** is not a declaration's (it has none): for one of this
+  module, no function is reachable from its schema's payloads (`Schema.State`'s, a `via` payload
+  being its conversion's target as inferred so far), through every other type's own gate and every
+  other endpoint's payloads (`Marker.endpointEquatable`), memoised per generation (§11.2); for
+  another module's, its hidden row's `is_equatable` (§14.2 *as amended by R8b*), which that module
+  wrote with the same function; for an endpoint of a record the old checker wrote, which has no
+  hidden row, that checker's own bit (`Types.isEquatable`, v1's settled property — the one read
+  of it, and only for the old checker's module, as its ABI is read for its other types).
+  `Schema.settleProperties` is no longer on this path.
+- **`payload_params` of a hidden type** is read from its hidden row (`Interface.typeFacts`), not
+  set to every bit: a private type reached through a published scheme with a phantom parameter is
+  walked only where a payload can hold a value. An exported opaque type's row was read already.
+
+*Amended by R8b's review round (2026-09-26), CK-120.* The gate of an `adt` is not the table-build
+bit any more: it is "no function reachable from its payloads" (`Marker.functionFree`), walked
+through this module's `type`s and schema endpoints (their `via` targets as inferred so far) and
+the gate of every other module's type — its record's `no_function` (§14.2 *amended by R8b's
+review round*), or the old checker's table bit for a record it wrote. Memoised per local type in
+`Contexts` per generation (for good in a module without schemas); a walk that finds no function
+proves it of every type it met. The table-build bit could not see a `via` target, so `==` on a type
+wrapping such an endpoint was refused and `Basics.eq` on it accepted. The gate is the same fact the
+derived contexts read for `==` (a function reachable), asked structurally; the marker walk has no
+second opinion.
+
+*Amended by R8b's round-2 review (2026-09-26), CK-120.* "No second opinion" held only for
+schemas already done: `functionFree` did not demand the schemas it walked, so an unchecked
+schema's unfilled `via` target read as "no function" and was memoised — `Basics.eq` on a type
+holding it was accepted or refused by declaration order, and one in flight was accepted where `==`
+refused. Now `functionFree` takes the solver and first `complete`s the graph around the type, which
+demands every schema with a `via` the walk can reach; if one is still in flight the gate is
+UNKNOWN and nothing is memoised. An unknown gate lets the walk pass for now and is asked again of
+the type in P5, when every group is done (`Contexts.deferred_gates`, `checkDeferred`): a function
+then is `not_equatable` at the obligation's region, once per question. After P4 (publication)
+every group is done and the graph complete, so the gate is always known there.
+
 ### 11.5 Schema endpoints (CK-24)
 
 A schema endpoint type is a nominal type whose payloads come from the plan. Its derived context is
@@ -2468,6 +2561,103 @@ computed by the same §11.2 function, and its exclusions are that function's `ab
 around it asks the same memoised question, so it inherits the answer. `Schema.settleProperties`
 and its per-group calls are deleted. The schema **plan**, which needs the endpoints' properties,
 reads them from the memo in P9.
+
+*As built by R8b (2026-09-26).*
+
+- **A tagged endpoint is a unit member** of `Contexts` like a `type` (`derives`): the program and
+  the encoded endpoint are two nominal types. A record endpoint is an alias; its expansion answers
+  wherever it is met, as any alias's does.
+- **Its payloads** are its schema's (`Schema.State.payloads`, in variant order, a variant with
+  none holding nothing), written over the schema's generalised parameters and read in the pass's
+  frame with the markers for them (`Instantiate.substitute`). A `via` payload is its conversion's
+  target.
+- **Mentions.** A schema's references are its payloads': another tagged schema's two endpoints, a
+  record schema's own references. What a `via` target mentions is known only once its group is
+  done, so it is no edge; the lazy join of §11.2 *as amended by R8b* makes the fixpoint over it
+  joint (`check/good/SchemaViaMutualOwnType`, `check/bad/SchemaWrapperExclusionThroughOwnType`).
+- **Its schema's group is done before a pass reads it.** `Contexts.ensure` demands, from the frame
+  that asked and before the unit's frame is pushed, every schema the unit's declarations read
+  (its endpoints' own, and every schema their payloads name, through aliases and record schemas;
+  in declaration order). A schema group checked nested therefore merges only into the asker's
+  frames. A comparison made INSIDE the schema's group — its `via` conversion compares the
+  endpoint — cannot read the target being inferred: the entry is `needs_annotation` naming the
+  schema, `method_needs_annotation` at the use with its own text ("give the conversion a type
+  annotation"), which an annotation on the conversion lifts (`check/bad/SchemaEndpointInFlight`).
+- **Every pass gets fresh variables for an endpoint a payload names**
+  (`Schema.State.lookupFresh`, the builder `readPayloads` uses): the shared root of an endpoint of
+  no arguments let the resolver answer a later pass from an earlier pass's approximation, an
+  `internal` in P6. Annotations keep the shared root, so a record endpoint read before its `via` is
+  inferred stays linked to it.
+- **Derivation** of an endpoint is ordinary: `Instances.derivedNominal` reads its context (or the
+  published row), P5 writes its rows (`Eager`), P8 publishes a hidden row for every endpoint a
+  published term names (§14.2 *as amended by R8b*). `build` still refuses a schema before anything
+  is emitted.
+- **The plan's property bytes** (`schema.md` A.6) are read in P9 off the one verdict
+  (`Derivable.propertyBits` over each endpoint, after P5 settled every unit): bit 0 when `eq`
+  derives, bit 1 when `compare` does, bit 2 when either is refused for a function. Nothing writes
+  the session table's schema bits for a module the new checker checks — not the settle, not a
+  cache hit (`Incremental.install` restores them for a module the old checker checked only, on its
+  side: `Check.restoreSchemaPropertiesOnHit`). `rules_test.zig`'s S4 fence lists the settle, the
+  bits' readers and writers and `settleSchemas`; nothing in `src/check2/` names them.
+- **An endpoint of a record the old checker wrote** has no hidden row: the importer reads v1's ABI
+  for it (derives, one entry per parameter), as for any type of such a record (§14.2 *as amended by
+  R8a*). Under `--checker=v2` that is a module of another package, until R9.
+
+*Amended by R8b's review round (2026-09-26).* The two reviews found the lazy `via` join
+exponential (CK-119) and three rules to change; each change below replaces the bullet of *as
+built by R8b* it names.
+
+- **The unit graph is exact before a unit runs** (replaces *Mentions* and §11.2's lazy join).
+  A type that reads a schema with a `via` — an endpoint its own schema, a type a record schema it
+  names — records it (`via_refs`). Before `ensure` runs a unit, `Contexts.complete` walks the
+  types reachable from it; every such schema it meets is demanded (§10.2) by the frame that asked,
+  and once its group is done its `via` targets' own-type mentions become edges of every type that
+  reads it, and the walk goes on through them. If an edge was added the units are rebuilt: a unit
+  that ran, runs or is memoised keeps its members (every `via` it reaches was added before it ran)
+  and its state; members are in ascending order, so a member's slot is stable. P5 completes the
+  whole graph first. So no run ever reads another run's approximation, and `partial` and the
+  cross-run join are deleted; a cross-run read is `internal` (a Debug panic). Linear in the types,
+  edges and payloads reached.
+- **A budget that runs out inside a pass is no answer.** A pass whose resolution ran out of the
+  step budget, or had a nested check refused at demand, is `absent_budget`, and the use says
+  `nesting_too_deep` — never an absent that reads as "does not support". The worklist asserts
+  (Debug) that every pass climbs the lattice, and a run past 2²² passes is `internal`.
+- **A closed type compared while a schema its payloads go through is in flight is deferred**
+  (replaces the in-flight refusal). Only a schema with a `via` can be in flight in this sense, and
+  only for a program endpoint or a type naming a record schema: an encoded endpoint holds no
+  conversion target and is never in flight. A type with no parameters is answered `present(∅)`
+  and the pass records a deferred item, which a memo read replays like a closed in-flight
+  method's; an asker outside a pass registers a check of its method on that type at its use,
+  made in P5 against the one verdict once every group is done (`Contexts.checkDeferred`): a
+  refusal is said there and the use rejected. A type with a parameter keeps the refusal
+  (`method_needs_annotation`, whose hint names the conversion when it is a top-level value:
+  "annotate `conv`, or compare outside the schema's group"). Rule 7: the refusal is kept only
+  where the entries would depend on a type being inferred.
+- **Internals of a nested run are said once**, by the outermost run (`sayInternals` of a run
+  inside another's pass reported into the same quiet list it read, losing them).
+
+*Amended by R8b's round-2 review (2026-09-26).* Two claims above were wrong, and are corrected:
+
+- **"Linear" was not.** Each `complete` that met a new schema rebuilt every unit, so a module of
+  n schemas each compared by its own function was O(n²) in time and memory (8 000: 10.7 s, 11.6
+  GB). Now `complete` walks only types not yet `completed` (a type whose every reached schema is
+  done and added; a walk stops at one), and merges units locally: the region it walked is the only
+  place a new edge can close a cycle (a completed type reaches no type that gained an edge), so its
+  strongly connected components are computed there, and each one that spans several units becomes
+  one new unit, the old ones retired. Unit ids are never renumbered; `ensure` walks the members'
+  edges, not a precomputed dependency list; P5 invalidates every result not memoised permanently
+  and `ensure`s each unit. Each type is walked, and each `via` target read, once in the module.
+  `test-perf` "CK-119 many" holds it (the comparisons' cost over a control without them).
+- **Only what a query reaches is demanded.** The review proposed completing from every local type
+  at the first `ensure`. Not done, and recorded: demanding every schema from whichever group first
+  compares anything would nest a schema whose `via` depends on that group, merging them (§10.4),
+  where another declaration order — the schema checked first — would not; that is an order
+  dependence in acceptance (I9). A demand that follows what the comparison reaches is made in
+  every order where that comparison is checked.
+- **A run has a step budget of its own** (S1): what a type derives is the type's, not whoever
+  asked first. `run` saves the resolver's count, runs from zero, and restores it. A result with an
+  `absent_budget` entry is never memoised (P5 computes it again), and one that survives to P8 is
+  `internal`, not a published `unanswerable` (CK-125).
 
 ---
 
@@ -3048,6 +3238,27 @@ The old checker writes three-word entries with `type = none` (its contexts only 
 derived method), so the format is still shared. *(R8a's review round: a row scheme word of
 `none`, then entries with `slot = none`.)*
 
+*Amended by R8b (2026-09-26); `iface_bytes.format_version` 4 → 5.*
+
+- **A derived row may be `private_method`** (D1, §11.3): the method is a private method of some
+  module, which no other module may use. Its `context` is a range of two words `(type_ref,
+  method)`: a `type_refs` row naming the type whose declaring module declares the private method
+  (this row's own type when the module's value of the name is private; the type a payload's
+  context reached otherwise), and the method's `SymbolIndex` (`Interface.privateCulprit`).
+  `verify` refuses any other shape. A row of a module whose value of the name is `pub` keeps
+  `own_method`.
+- **Tagged schema endpoints get hidden rows** when a published term names them (§11.5 *as built
+  by R8b*): name `Schema.Type` or `Schema.Encoded`, kind `adt`, every `payload_params` bit, the
+  two derived rows, and `is_equatable` = the endpoint's §11.4 gate (`Marker.endpointEquatable`).
+  `Interface.TypeFacts` carries `is_equatable` for the marker walk.
+
+*Amended by R8b's review round (2026-09-26).* A `types` or `hidden_types` row carries
+`no_function` (bit 2 of the type row's flag byte, bit 1 of the hidden row's): §11.4's gate for an
+`adt`, which an importer cannot compute because a `via` target is in no record. The new checker
+writes it; the old one writes `false`, and an importer of its record reads its table bit.
+`is_equatable` is again a `foreign type`'s declared bit only (R8b had put an endpoint's gate
+there). The raw interface dump prints ` no_function` when it is set.
+
 ### 14.3 Cache and table versions
 
 - `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,
@@ -3079,6 +3290,10 @@ derived method), so the format is still shared. *(R8a's review round: a row sche
   warm build after an edit that moves a payload's method rebuilds exactly what a cold build
   writes (`cache_test.zig`, "checker v2: a warm build after an edit that moves a derived
   context …"), and one that moves no interface re-checks the edited module alone.
+- *R8b (2026-09-26):* `iface_bytes.format_version` 4 → 5 (a derived row may be `private_method`,
+  with its two-word culprit; tagged schema endpoints have hidden rows: §14.2 *as amended by R8b*).
+  The schema plan stays 1: its property bytes keep their layout and meaning, read off the derived
+  contexts under the new checker (§11.5 *as built by R8b*).
 
 ---
 

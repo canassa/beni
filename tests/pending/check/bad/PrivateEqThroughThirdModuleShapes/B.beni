@@ -1,0 +1,15 @@
+-- CK-22: see A.beni.
+import A
+
+
+pub type Wrap
+    = Wrap A.T
+
+
+pub type Pair a
+    = Pair a A.T
+
+
+pub wrap : Int -> Wrap
+wrap n =
+    Wrap (A.T n)

@@ -147,10 +147,6 @@ contexts: Contexts = undefined,
 /// The module's own report. A fixpoint resolves under a quiet one, and a
 /// group it nests is checked with this one (`Groups.solveGroup`).
 module_report: *Report = undefined,
-/// A group holding a schema completed since the schema endpoints'
-/// properties were last settled (CK-40): they are settled when next read
-/// (`settleSchemas`), never after every such group.
-schemas_dirty: bool = false,
 /// Per declaration: its published scheme, or for an unannotated member of
 /// the group being solved its monomorphic variable (Module's table).
 decl_scheme: []const Var.Optional = &.{},
@@ -182,7 +178,7 @@ pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
         .evidence = &s.evidence,
     };
     s.instantiate = .{ .cx = cx, .frames = &s.frames, .stacks = &s.stacks, .evidence = &s.evidence, .seq = &s.obligations.seq, .queue = &s.obligations.current_queue };
-    s.marker = .{ .cx = cx, .obligations = &s.obligations };
+    s.marker = .{ .cx = cx, .obligations = &s.obligations, .contexts = &s.contexts, .solve = s };
 }
 
 pub fn deinit(s: *Solve) void {
@@ -867,17 +863,4 @@ pub fn reportCycle(s: *Solve, region: Bir.Inst.Index, name: Tree.Symbol.Optional
     }
     try s.poison(cycle);
     while (try Walk.firstCycle(st, &s.stacks, gpa, s.cx.interner, from)) |more| try s.poison(more);
-}
-
-/// The schema endpoints' properties, settled now if a group holding a schema
-/// completed since they last were (CK-40, R8a): read by the derivability
-/// verdict and the `equatable` marker walk, each of which sees exactly the
-/// properties an eager settle after that group would have left — the same
-/// done groups — while a module of `n` schemas that nothing compares settles
-/// twice in all, not once per group. `Schema.settleProperties` itself leaves
-/// v2's path in R8b (§11.5).
-pub fn settleSchemas(s: *Solve) Error!void {
-    if (!s.schemas_dirty) return;
-    s.schemas_dirty = false;
-    try s.cx.schemas.settleProperties(s.groups.types, s.cx.gpa);
 }

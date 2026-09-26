@@ -28,6 +28,11 @@ pub fn build(
     types: *const Types,
     store: *TypeStore,
     schemas: *const Schema.State,
+    /// Per declaration, its endpoints' property bytes `(program, encoded)`
+    /// as the new checker read them off its derived contexts
+    /// (checker-v2.md §11.5 *as built by R8b*), or null: the old checker's
+    /// settled session bits.
+    properties: ?[]const [2]u8,
 ) Allocator.Error!SchemaPlan {
     var b: Builder = .{
         .gpa = gpa,
@@ -82,8 +87,8 @@ pub fn build(
             .program_term = program_term,
             .encoded_term = encoded_term,
             .token = d.token,
-            .program_properties = types.schemaPropertyBits(types.ofSchemaDecl(module, d.decl, .type)),
-            .encoded_properties = types.schemaPropertyBits(types.ofSchemaDecl(module, d.decl, .encoded)),
+            .program_properties = if (properties) |p| p[d.decl.int()][0] else types.schemaPropertyBits(types.ofSchemaDecl(module, d.decl, .type)),
+            .encoded_properties = if (properties) |p| p[d.decl.int()][1] else types.schemaPropertyBits(types.ofSchemaDecl(module, d.decl, .encoded)),
         };
     }
     const term_tables = try writer.takePlanTerms();

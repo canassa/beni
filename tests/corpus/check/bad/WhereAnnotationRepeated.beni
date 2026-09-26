@@ -1,0 +1,10 @@
+-- check/bad: CK-121. An annotation with a `where` clause given twice, the
+-- second after the definition: `duplicate_declaration` and
+-- `annotation_without_definition` from the frontend, and nothing else.
+-- Checker v2 panicked (exit 134), as in `WhereAnnotationAfterDefinition`.
+less : a, a -> Bool where a.compare : a, a -> Order
+less x y =
+    x < y
+
+
+less : a, a -> Bool where a.compare : a, a -> Order

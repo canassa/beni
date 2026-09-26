@@ -498,7 +498,6 @@ tests/corpus/dispatch/MethodCall.beni
 tests/corpus/dispatch/NestedEvidenceIndices.beni
 tests/corpus/dispatch/NestedEvidenceParam.beni
 tests/corpus/dispatch/Primitives.beni
-tests/corpus/dispatch/PrivateEqStillDerives.beni
 tests/corpus/dispatch/QuestionShapes.beni
 tests/corpus/dispatch/TwoSlotsNested.beni
 tests/corpus/dispatch/TypeDispatch.beni
@@ -645,3 +644,8 @@ tests/corpus/run/DerivedEqDeepRecord.beni
 tests/corpus/run/DerivedContextJointMethods
 tests/corpus/run/EvidenceThunkOncePerEvidence.beni
 tests/corpus/run/HiddenTypeDerivedRow
+tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni
+tests/corpus/check/bad/WhereAnnotationRepeated.beni
+tests/corpus/check/good/SchemaEndpointInFlightClosed.beni
+tests/corpus/check/good/SchemaEncodedInFlight.beni
+tests/corpus/check/good/SchemaViaRing.beni

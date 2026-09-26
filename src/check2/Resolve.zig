@@ -290,6 +290,15 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
     const st = s.store();
     const gpa = s.cx.gpa;
     const w = s.evidence.get(id);
+    // §11.2's frame assert (CK-117; `Unify.assertContained`): a wanted made
+    // while a fixpoint frame is current rides on that frame's variables,
+    // never on an older frame's, whose wanteds would then carry the pass.
+    if (std.debug.runtime_safety) {
+        const f = s.frame();
+        const rank = st.rank(root);
+        if (f.kind == .fixpoint and rank != TypeStore.generalized and rank < f.rank)
+            std.debug.panic("a fixpoint frame's wanted rides on a variable of an older frame (checker-v2.md §11.2, CK-117)", .{});
+    }
     s.evidence.ptr(id).state = .open;
     const set = Walk.constraints(flags);
     switch (s.evidence.named(st, set, w.method)) {

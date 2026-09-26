@@ -1,0 +1,5 @@
+private_method C.beni:8:14 contains "`T`, declared in `A`"
+private_method C.beni:13:20 contains "`T`, declared in `A`"
+private_method C.beni:18:22 contains "`T`, declared in `A`"
+private_method C.beni:27:22 contains "`T`, declared in `A`"
+private_method C.beni:32:18 contains "`T`, declared in `A`"

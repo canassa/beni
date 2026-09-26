@@ -1,0 +1,29 @@
+-- CK-120: see Main.beni. The declaring module: `Holds` wraps `Loop.Type`,
+-- whose `via` target holds a function; its record publishes `Holds`'s
+-- §11.4 gate (`no_function`, §14.2 *as amended by R8b*).
+import Schema exposing (Conversion)
+
+
+conv : Conversion Int Mine
+conv =
+    Debug.todo "checker-only conversion"
+
+
+type Mine
+    = Mine (Int -> Int)
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv
+
+
+pub type Holds
+    = Holds Loop.Type
+
+
+pub mk : Int -> Holds
+mk n =
+    Debug.todo "h"
+
+

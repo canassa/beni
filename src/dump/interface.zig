@@ -144,6 +144,10 @@ pub fn write(
 /// for a method that is not `eq` or `compare`, the scheme that carries its
 /// type (§14.2 *as amended by R8a*).
 fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, kind: []const u8, d: Interface.Derived) Error!void {
+    if (d.status == .private_method) {
+        const p = iface.privateCulprit(d.context) orelse return;
+        return w.print("  private {s} type_ref={d} method={s}\n", .{ kind, @intFromEnum(p.type_ref), interner.slice(iface.symbol(p.method)) });
+    }
     const scheme = iface.contextScheme(d.context);
     if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @intFromEnum(scheme) });
     var k: usize = 0;
@@ -208,15 +212,17 @@ pub fn writeRaw(
             }
             try w.writeByte('}');
         }
+        // §11.4's gate, written by the new checker only (R8b's review round).
+        if (t.no_function) try w.writeAll(" no_function");
         try w.writeByte('\n');
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
-            if (row[1].status != .present) continue;
+            if (row[1].status != .present and row[1].status != .private_method) continue;
             try writeContext(w, iface, interner, row[0], row[1]);
         }
     }
     // The hidden rows of §14.2 *as amended by R8a* (CK-89).
     for (iface.hidden_types, 0..) |t, i| {
-        try w.print("hidden {d} {s} arity={d} kind={t} equatable={} eq={t} compare={t}\n", .{
+        try w.print("hidden {d} {s} arity={d} kind={t} equatable={} eq={t} compare={t}{s}\n", .{
             i,
             interner.slice(iface.symbol(t.name)),
             t.arity,
@@ -224,9 +230,10 @@ pub fn writeRaw(
             t.is_equatable,
             t.eq.status,
             t.compare.status,
+            if (t.no_function) " no_function" else "",
         });
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
-            if (row[1].status != .present) continue;
+            if (row[1].status != .present and row[1].status != .private_method) continue;
             try writeContext(w, iface, interner, row[0], row[1]);
         }
     }

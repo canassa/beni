@@ -1,0 +1,59 @@
+-- CK-118: schema endpoints through the one fixpoint (checker-v2.md §11.5 *as
+-- built by R8b*), every comparison accepted: `Loop`'s `via` target is
+-- `Mine`, which mentions `Loop.Type` back — a mention the unit graph cannot
+-- see, joined lazily (`Contexts.noteApprox`) — and `HoldsRec` wraps a record
+-- endpoint over `Mine`. `scenario/PERM` checks it in every declaration
+-- order. On 7427828 `sameHolds` is NOT EQUATABLE (CK-118: a record endpoint
+-- is answered from its session bits, not its expansion); every other
+-- comparison checks.
+import Schema exposing (Conversion)
+
+
+toMine : Int -> Conversion Int Mine
+toMine n =
+    Debug.todo "checker-only conversion"
+
+
+conv : Conversion Int Mine
+conv =
+    toMine 0
+
+
+type Mine
+    = Mine Int
+    | Back Loop.Type
+
+
+pub schema Loop tagged "kind" of
+    Step as "step"
+        payload : Int via conv
+    Next as "next"
+        rest : Loop
+
+
+pub schema Rec =
+    f : Int via conv
+
+
+type HoldsRec
+    = HoldsRec Rec.Type
+
+
+sameLoop : Loop.Type, Loop.Type -> Bool
+sameLoop a b =
+    a == b
+
+
+sameMine : Mine, Mine -> Bool
+sameMine a b =
+    a == b
+
+
+sameHolds : HoldsRec, HoldsRec -> Bool
+sameHolds a b =
+    a == b
+
+
+cmpLoop : Loop.Type, Loop.Type -> Bool
+cmpLoop a b =
+    a < b

@@ -1,0 +1,13 @@
+-- CK-117: see Main.beni.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq left right =
+    case left of
+        Holder l ->
+            case right of
+                Holder r ->
+                    l.key () == r.key ()

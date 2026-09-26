@@ -148,11 +148,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
     } else {
         const iface = cx.iface(entry.module);
         if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, entry, value);
-        if (privateIn(s, entry.module, w.method)) {
-            s.contexts.notePrivate(s, entry.module.int(), w.method);
-            try s.report.privateMethod(w.origin, entry.module, w.method);
-            return Resolve.reject(s, id, true);
-        }
+        if (privateIn(s, entry.module, w.method)) return refusePrivate(s, id, a.type, w.method);
     }
     // 5. Derivation, for a well-known name on a shape that supports it.
     if (Resolve.derives(w)) {
@@ -211,6 +207,16 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
         .missing => return Resolve.reject(s, id, false),
         // In flight (§10.3): the member's own variable, no instantiation.
         .in_flight => |v| {
+            // A fixpoint pass that demanded an UNCHECKED group which, checked
+            // nested, merged down into an older frame (§10.4) now meets a
+            // method in flight: the same closed or parametric branch as one
+            // in flight when asked, never the link — unifying this frame's
+            // method type with the member's variable would put the pass's
+            // variables into a class below its frame (CK-117, §11.2 *as
+            // amended by R8b*).
+            if (s.contexts.active(s)) |ri| {
+                if (s.cx.bir.decls[decl].annotation == .none) return Contexts.inFlight(s, ri, id, decl);
+            }
             if (!try s.unifyQuiet(v, w.method_type, w.origin)) {
                 if (try Producers.cycle(s.groups, decl)) |cycle| {
                     try Messages.recursiveMethod(s.report, w.origin, w.method, v, w.method_type, cycle);
@@ -273,6 +279,24 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry) Erro
     return false;
 }
 
+/// A private method of the module of `culprit` answers `id`, which is
+/// asked outside that module (D1, §11.3): `private_method`, reported once
+/// at the use for the lineage root's receiver — the value the author
+/// compared, which names the wrapper, tuple, record or list the private
+/// method is inside (`Messages.privateMethod`) — and the lineage root
+/// rejected. Inside a fixpoint pass it is the entry's `absent_private`.
+fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol) Error!void {
+    s.contexts.notePrivate(s, culprit, method);
+    const top = Resolve.lineageRoot(s, id);
+    // Read BEFORE the rejection, as `refuseDerived` does (CK-102).
+    const reported = top != id and s.evidence.get(top).state == .failed;
+    try Resolve.reject(s, id, id != top);
+    if (reported) return;
+    const t = s.evidence.get(top);
+    try Messages.privateMethod(s.report, t.origin, t.receiver, culprit, method);
+    if (top != id) try Resolve.reject(s, top, true);
+}
+
 /// The derived answer for `id` on `root` cannot be given: reported once, at
 /// the use, for the lineage root's receiver (v1's rule — the message names
 /// the type the author compared), and the lineage root rejected.
@@ -324,7 +348,8 @@ fn allNullary(s: *Solve, id: Types.TypeId) bool {
 /// of its derived CONTEXT — this module's (`Contexts`, read after the
 /// verdict walk proved it present) or the one its module published (§14.2)
 /// — in the context's `(param, method text)` order. A nullary `foreign
-/// type` has no derived function, and a schema endpoint none yet (R8b).
+/// type` has no derived function. A tagged schema endpoint is derived like
+/// any `type`, over its schema's payloads (§11.5, R8b).
 fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!void {
     const cx = s.cx;
     const entry = cx.types.entry(a.type);
@@ -335,13 +360,10 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         // answers (A.53, A.55), the proven-undetermined leaf's function.
         return Resolve.answer(s, id, .undetermined);
     }
-    // A schema endpoint is compared structurally until R8b derives it
-    // (§11.5): `build` refuses a schema before anything is emitted.
-    if (entry.schema_endpoint) return Resolve.answer(s, id, .undetermined);
     const args = try s.cx.scratch.dupe(Var, Walk.positions(s.store(), root));
     defer s.cx.scratch.free(args);
     if (entry.module == cx.module) {
-        const answer = try Contexts.query(s, a.type, kind, w.origin);
+        const answer = try Contexts.query(s, a.type, kind, w.origin, id);
         // The verdict walk read the same answer and passed it; one read
         // fresh here (a result no run could memoise, recomputed) is refused
         // for what it says.
@@ -353,12 +375,12 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             },
             .needs_annotation => {
                 s.contexts.noteCulprit(s, answer.culprit);
-                try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, cx.bir.symbol(cx.bir.decls[answer.culprit].name));
+                try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, cx.bir.decls[answer.culprit].kind == .schema, cx.bir.symbol(cx.bir.decls[answer.culprit].name), Contexts.schemaConversion(cx, answer.culprit));
                 return Resolve.reject(s, id, true);
             },
-            .absent_private => {
-                s.contexts.notePrivate(s, answer.culprit, answer.method);
-                try s.report.privateMethod(w.origin, @enumFromInt(answer.culprit), answer.method);
+            .absent_private => return refusePrivate(s, id, @enumFromInt(answer.culprit), answer.method),
+            .absent_budget => {
+                try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget);
                 return Resolve.reject(s, id, true);
             },
             .absent_other, .own_method, .foreign => return refuseDerived(s, id, root, .opaque_type),
@@ -401,6 +423,13 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         // Its module was never checked (a dependency that failed): its
         // failure has a message, so this one fails in silence.
         .unchecked => return Resolve.reject(s, id, false),
+        // D1 (§11.3): the row's context reaches a private method.
+        .private_method => {
+            const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
+            const refs = cx.types.refIds(entry.module);
+            if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
+            return refusePrivate(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method));
+        },
         else => return refuseDerived(s, id, root, .opaque_type),
     }
     Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });

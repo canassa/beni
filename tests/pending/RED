@@ -3,17 +3,14 @@
 # tests/pending/README.md).
 #
 #   <repo-relative path or scenario/<id>> <checker> <signature>
-#
 # `zig build test-pending` fails when a fixture is red with no line here, or
 # for a different signature than the one recorded, under ANY checker. A slice
 # that changes WHY a fixture is red updates its line in the same commit, and
 # the reviewer checks it. One line per fixture and checker; a duplicate is
 # malformed. Recorded on 7427828 by R0; each was checked against its CK's
 # Observed line.
-#
 # CK-73: check/good/ScrutineeMethodMergeVariant was first written wrong (N-5, see README)
 # and is now split; check/bad/ScrutineeMethodMergeD14 holds the D14 half.
-#
 # R2a (2026-09-24): the I7 assert (checker-v2.md §13.1) moved six red reasons
 # from `build` to `check`, each the same miscount v1 already had:
 #   CK-72 RecursiveGroupReceiverNeedsAnnotation{,B}, CK-76
@@ -33,7 +30,6 @@
 #   CK-30 DeadMiscount (added by the review of R2a, S1): the same miscount in a
 #   declaration nothing reaches. 9a931d7 built and ran it (`x`); `check` now
 #   refuses it — kept on purpose, see checker-v2.md §13.1 as amended.
-#
 # R2c (2026-09-25): scenario/CK-83 turned green and moved into
 # tests/blackbox/abuse_wide_test.zig; CK-87 (run/DerivedEqDeepRecord.beni) and
 # CK-88 (scenario/CK-88, test-pending-perf) were found by it and added.
@@ -210,3 +206,16 @@ tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni v1 exit=1 codes
 tests/pending/run/DeferredReceiverRecursiveTwin.beni v1 dev: exit=0 stdout-differs
 tests/pending/run/DerivedContextInFlightEq v1 dev: exit=1 codes=method_needs_annotation×1
 tests/pending/run/DerivedContextAcrossModules v1 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
+tests/pending/check/good/SchemaRecordViaWrapped.beni v1 exit=1 codes=not_equatable×1
+tests/pending/check/good/SchemaViaMutualOwnType.beni v1 exit=1 codes=not_equatable×1
+tests/pending/check/bad/PrivateEqThroughThirdModule v1 exit=0 codes=none
+tests/pending/check/bad/PrivateEqThroughThirdModuleShapes v1 exit=0 codes=none
+tests/pending/check/bad/SchemaEndpointInFlight.beni v1 exit=0 codes=none
+tests/pending/check/bad/SchemaEndpointInFlightFunction.beni v1 exit=0 codes=none
+tests/pending/check/bad/SchemaWrapperExclusionThroughOwnType.beni v1 exit=0 codes=none
+tests/pending/run/DerivedContextPassMergesDown v1 dev: exit=1 codes=not_equatable×1
+tests/pending/run/PhantomParameterAcrossModules v1 dev: exit=1 codes=not_equatable×5
+tests/pending/check/bad/EquatableMarkerThroughWrappedEndpoint v1 exit=1 codes=not_equatable×1 why=count
+tests/pending/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni v1 exit=0 codes=none
+tests/pending/check/bad/EquatableMarkerUncheckedSchema.beni v1 exit=0 codes=none
+tests/pending/check/bad/EquatableMarkerInFlightSchema.beni v1 exit=0 codes=none

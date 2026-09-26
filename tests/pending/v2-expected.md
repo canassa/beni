@@ -68,3 +68,18 @@ operator. `blackbox_test.zig` "CK-108: …" holds v2 to the code and the place.
 - `tests/corpus/check/bad/DerivedContextEquatableFlag` — `not_equatable` at 21:20: "There is a function in there" for v1's "That type does not support `==`"
 - `tests/corpus/check/bad/DerivedContextEquatableFlagPublished` — the same, at 15:26, through `Mid`'s published row
 - `tests/corpus/check/bad/DerivedContextEquatableFlagCompare` — `no_methods_on_shape` at 18:20: "There is a function inside it" for v1's "Something it holds has no ordering of its own"
+
+## Expected differences R8b introduced (re-blessed at R11)
+
+D1 as amended 2026-09-24 (`checker-v2.md` §11.3): a private method answers dispatch only inside
+its own module, and the module rule makes a module's value of a method's name — `pub` or not —
+the method of every type the module declares.
+
+- `tests/corpus/dispatch/PrivateEqStillDerives.beni` — the private `eq` is `Id`'s `eq` too, so v2
+  derives no `eq` row for `Id` and the table loses `derived 1 eq` (the `compare` row stays): no
+  other module can reach it, because a dependent that compares an `Id` — directly, or through a
+  wrapper, tuple, record or list, in any module — is `private_method` at its use
+  (`tests/pending/check/bad/PrivateEqOutsideModule`, `…/PrivateEqThroughThirdModule`), and the
+  record says so (`private_method`, §14.2 *as amended by R8b*). The fixture's comment defends v1's
+  row against the dependent that D1 now refuses; at R11 it is re-blessed under v2 and its comment
+  rewritten

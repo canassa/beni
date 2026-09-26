@@ -182,9 +182,12 @@ pub const verifyReads = Incremental.verifyReads;
 pub const install = Incremental.install;
 
 /// A cache hit of a module the OLD checker checked: its session capability
-/// bits, which its v1 dependents read (`Incremental.install`). The one place
-/// v2's side of the switch reaches v1's capability settle (R8a).
+/// bits, which its v1 dependents read (`Incremental.install`), its schema
+/// endpoints' settled properties first (R8b: only the old checker keeps
+/// them). The one place v2's side of the switch reaches v1's capability
+/// settle (R8a).
 pub fn v1CapabilitiesOnHit(d: *Driver, m: Graph.Index) Error!void {
+    V1.restoreSchemaPropertiesOnHit(d.types, m, &d.plans[m.int()]);
     try V1.restoreCapabilitiesOnHit(d.gpa, d.types, d.graph, d.artifacts, &d.interfaces[m.int()], &d.provenance[m.int()], &d.dispatch[m.int()], m);
 }
 
