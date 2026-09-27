@@ -33,7 +33,9 @@
 //! `Cycles`, and no evidence. In a module that reported nothing that is the
 //! compiler's own failure: it is returned in `Output.internals`, which the
 //! module reports after the last pass that can report an error (§13.1's
-//! rule for the I7 assert).
+//! rule for the I7 assert). A `poisoned` wanted met `err`, whose message
+//! may be a DEPENDENCY's (CK-141): its site is written the same way, and
+//! returned in `Output.poisoned`, which is no fault and which I7 skips.
 //!
 //! **The table's shape.** Each site and each derived row's body is one unit
 //! (`Unit.zig`): a DAG of distinct answers, written owners first. An
@@ -109,13 +111,21 @@ pub const Output = struct {
     symbols: []const Symbol,
     /// Owned by the scratch arena.
     internals: []const Internal,
+    /// The instructions whose site was not written because a wanted met
+    /// `err` (`Evidence.State.poisoned`), ascending: I7 does not hold them
+    /// to a tree (§12.2 *Amended by R15-fix-A*, CK-141). Owned by the
+    /// scratch arena.
+    poisoned: []const Bir.Inst.Index,
 };
 
 /// Whose `param` a term is: the site's declaration, or a P5 row (by its
 /// index before the sort).
 pub const Binder = union(enum) { none, decl: u32, row: u32 };
 
-pub const Why = enum { failed, internal };
+/// Why a unit failed: a wanted `failed` (this module reported it), one
+/// `poisoned` (it met an `err` whose message may be a dependency's:
+/// CK-141), or the compiler's own fault.
+pub const Why = enum { failed, poisoned, internal };
 
 /// A derived row being built.
 pub const Row = struct {
@@ -152,6 +162,8 @@ unit: Unit = .{},
 /// The nominal rows' context entries.
 row_entries: std.ArrayList(Dispatch.ContextEntry) = .empty,
 internals: std.ArrayList(Internal) = .empty,
+/// The sites P6 wrote nothing for because a wanted was `poisoned`.
+poisoned: std.ArrayList(Bir.Inst.Index) = .empty,
 /// `Eager.markerKeys`: row `marker_row`'s open-wanted lookup.
 marker_row: u32 = std.math.maxInt(u32),
 marker_keys: std.AutoHashMapUnmanaged(MarkerKey, u32) = .empty,
@@ -232,6 +244,10 @@ fn deinit(e: *Elaborate) void {
     e.marker_keys.deinit(e.scratch);
     e.stacks.deinit(e.gpa);
     e.scopes.deinit(e.scratch);
+}
+
+fn indexLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
+    return a.int() < b.int();
 }
 
 pub fn fail(e: *Elaborate, why: Why, what: []const u8) void {
@@ -432,6 +448,9 @@ fn site(e: *Elaborate, event: Event) Error!void {
     e.symbols.shrinkRetainingCapacity(symbols_len);
     switch (e.why) {
         .failed => try e.internal(event.inst, "a wanted of this site failed, but nothing was reported (checker-v2.md §12.2)"),
+        // No site, and no fault: the build that would lower it has an
+        // error, maybe only in a dependency (§12.2 *Amended by R15-fix-A*).
+        .poisoned => try e.poisoned.append(e.scratch, event.inst),
         .internal => try e.internal(event.inst, e.what),
     }
     // The callee alone, for `Cycles` (`Edges.declEdges`' third leg).
@@ -455,9 +474,16 @@ fn calleeNodes(e: *Elaborate, callee_id: WantedId, binder: Binder, kept: *?Dispa
         else => null,
     };
     kept.* = value;
-    if (ev.get(id).state == .failed) {
-        e.fail(.failed, "");
-        return false;
+    switch (ev.get(id).state) {
+        .failed => {
+            e.fail(.failed, "");
+            return false;
+        },
+        .poisoned => {
+            e.fail(.poisoned, "");
+            return false;
+        },
+        else => {},
     }
     if (value) |t| {
         try e.unit.roots.append(e.scratch, try e.unit.leaf(e.scratch, t));
@@ -653,6 +679,7 @@ fn termOf(e: *Elaborate, id: WantedId, binder: Binder, ctx: Ctx, node: u32) Erro
     const w = ev.get(id);
     switch (w.state) {
         .failed => return e.failTerm(.failed, ""),
+        .poisoned => return e.failTerm(.poisoned, ""),
         .open, .ready => return Eager.marker(e, id, binder),
         .answered, .promoted, .defaulted => {},
     }
@@ -895,6 +922,7 @@ fn finish(e: *Elaborate) Error!Output {
     errdefer gpa.free(sites);
     const symbols = try e.symbols.toOwnedSlice(gpa);
     errdefer gpa.free(symbols);
+    std.mem.sort(Bir.Inst.Index, e.poisoned.items, {}, indexLessThan);
     return .{
         .terms = terms,
         .args = args,
@@ -903,6 +931,7 @@ fn finish(e: *Elaborate) Error!Output {
         .contexts = try contexts.toOwnedSlice(gpa),
         .symbols = symbols,
         .internals = e.internals.items,
+        .poisoned = e.poisoned.items,
     };
 }
 

@@ -1,2 +1,0 @@
-# B cannot publish `W`'s derived row; C, which only reads it, is silent.
-nesting_too_deep B.beni:*

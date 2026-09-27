@@ -1146,7 +1146,7 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     else
         .{ .status = if (r.saw_function) .absent_function else .absent_other };
     for (ids) |wid| {
-        if (s.evidence.get(wid).state == .failed) return failed;
+        if (s.evidence.get(wid).state.rejected()) return failed;
     }
     // Every marker a distinct plain flex, found in linear time: each root is
     // stamped `seen` (R8a's reviews: a type of tens of thousands of

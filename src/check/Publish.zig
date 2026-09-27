@@ -95,8 +95,8 @@ pub fn fill(in: Input) Error!void {
     gpa.free(@constCast(iface.schema_ctors));
     iface.schema_ctors = ctors;
 
-    try ctorTerms(cx, prov, iface, &writer);
-    try typeFacts(cx, prov, iface, &writer, in.contexts, in.report);
+    try ctorTerms(&p, prov, iface);
+    try typeFacts(&p, prov, iface, in.contexts, in.report);
     try writer.attach(iface);
 
     // `--roundtrip-interfaces` goes HERE (§5): the record is complete and no
@@ -121,28 +121,47 @@ const Publisher = struct {
     /// program's (`fast-compiler.md` §5: a guard that poisons reports).
     fn scheme(p: *Publisher, root: ?Var, decl: ?Bir.DeclIndex) Error!Interface.SchemeIndex {
         const v = root orelse return p.writer.addError();
+        if (!try p.clean(v, decl)) return p.writer.addError();
+        const index = try p.writer.add(v);
+        if (try p.written(decl)) return index;
+        return p.writer.addError();
+    }
+
+    /// Step 1, the error scan: whether `v` may be written. A poisoned type
+    /// has its message already; one the scan could not finish is
+    /// `nesting_too_deep` at `decl`.
+    fn clean(p: *Publisher, v: Var, decl: ?Bir.DeclIndex) Error!bool {
         switch (try Walk.hasError(p.cx.store, p.stacks, p.cx.gpa, v)) {
-            .clean => {},
-            .poisoned => return p.writer.addError(),
+            .clean => return true,
+            .poisoned => return false,
             .unknown => {
                 try p.cx.noteDeepDecl(decl);
-                return p.writer.addError();
+                return false;
             },
         }
-        const index = try p.writer.add(v);
-        if (!p.writer.too_deep) return index;
-        // A truncated scheme is an `err` term inside a concrete type: it
-        // unifies with anything, and a dependent's mistake compiles clean.
+    }
+
+    /// Step 3, after a write: whether the writer finished it. A truncated
+    /// scheme is an `err` term inside a concrete type: it unifies with
+    /// anything, and a dependent's mistake compiles clean — so it is
+    /// `nesting_too_deep` at `decl`, and the caller publishes none.
+    fn written(p: *Publisher, decl: ?Bir.DeclIndex) Error!bool {
+        if (!p.writer.too_deep) return true;
         try p.cx.noteDeepDecl(decl);
-        return p.writer.addError();
+        return false;
     }
 };
 
 /// Every visible constructor's argument terms (checker.md §7's
 /// `arg_terms`), quantified over the owning type's parameters. v1's
-/// `fillCtorTerms`, verbatim.
-fn ctorTerms(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer) Error!void {
+/// `fillCtorTerms`, through the one routine's scan and depth check (§14.1
+/// *Amended by R15-fix-A*): an argument that reads as `err` (a type that did
+/// not resolve, or a wrong arity: reported) or too deep keeps `no_terms`, so
+/// a use poisons, and no `<error>` term is published inside a constructor.
+fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface) Error!void {
     if (iface.ctors.len == 0) return;
+    const cx = p.cx;
+    const writer = p.writer;
     const gpa = cx.gpa;
     const scratch = cx.scratch;
     const bir = cx.bir;
@@ -170,11 +189,12 @@ fn ctorTerms(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
             try cx.noteDeepDecl(bc.decl);
             continue; // `arg_terms` stays `no_terms`: a use poisons
         }
+        const all_clean = for (arg_vars) |v| {
+            if (!try p.clean(v, bc.decl)) break false;
+        } else true;
+        if (!all_clean) continue;
         const written = try writer.addCtor(param_vars, arg_vars);
-        if (writer.too_deep) {
-            try cx.noteDeepDecl(bc.decl);
-            continue;
-        }
+        if (!try p.written(bc.decl)) continue;
         c.arg_terms = written.arg_terms;
         c.quantified_start = written.quantified_start;
     }
@@ -188,9 +208,11 @@ fn ctorTerms(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
 /// row for every other nominal type of this module a published term names
 /// (CK-89), found by closing over the writer's type references, which the
 /// context entries' own schemes can extend.
-fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer, contexts: *Contexts, report: *Report) Error!void {
+fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface, contexts: *Contexts, report: *Report) Error!void {
+    const cx = p.cx;
+    const writer = p.writer;
     const gpa = cx.gpa;
-    var facts: Facts = .{ .cx = cx, .writer = writer, .contexts = contexts, .report = report };
+    var facts: Facts = .{ .cx = cx, .publisher = p, .writer = writer, .contexts = contexts, .report = report };
     defer facts.deinit();
     if (iface.types.len != 0) {
         const out = try gpa.dupe(Interface.Type, iface.types);
@@ -302,6 +324,8 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
 /// symbol slot per method name.
 const Facts = struct {
     cx: *const Context,
+    /// The one routine: a row's template scheme goes through it (CK-142).
+    publisher: *Publisher,
     report: *Report,
     writer: *Schemes.Writer,
     contexts: *Contexts,
@@ -368,7 +392,7 @@ const Facts = struct {
         try words.ensureTotalCapacity(f.cx.scratch, 1 + entries.len * Interface.context_words);
         // The row's one scheme first: its method types, or `none`.
         words.appendAssumeCapacity(if (answer.template.unwrap()) |template|
-            @intFromEnum(try f.templateScheme(t, template))
+            @intFromEnum(try f.templateScheme(t, template, f.cx.types.entry(id).decl))
         else
             std.math.maxInt(u32));
         for (entries) |e| {
@@ -399,7 +423,14 @@ const Facts = struct {
     /// ( τ₀, …, τₖ ) )` (§14.2 *as amended by R8a*): the parameters first, so
     /// `Schemes.Writer` numbers them `0 … n − 1`, then the answer's template
     /// tuple, whose element `slot` an entry names.
-    fn templateScheme(f: *Facts, t: u32, template: Var) Error!Interface.SchemeIndex {
+    ///
+    /// Published by `Publisher.scheme`, the one routine (§14.1, CK-142), at
+    /// the type's declaration `decl`: a template too deep to write is
+    /// `nesting_too_deep` there, and the row's scheme `<error>` — which an
+    /// importer's use meets as `err` and leaves `poisoned`, silent. It
+    /// wrote with a bare `writer.add`: no scan, and a truncated template
+    /// published as a silent `<error>` that the importer's I7 then tripped on.
+    fn templateScheme(f: *Facts, t: u32, template: Var, decl: Bir.DeclIndex) Error!Interface.SchemeIndex {
         const store = f.cx.store;
         const params = try f.contexts.paramsOf(t);
         const elements = try f.cx.scratch.alloc(Var, params.len + 1);
@@ -408,9 +439,7 @@ const Facts = struct {
         elements[params.len] = template;
         const range = try store.addVars(elements);
         const tuple = try store.fresh(.{ .structure = .{ .tuple = range } }, TypeStore.generalized);
-        const index = try f.writer.add(tuple);
-        if (f.writer.too_deep) return f.writer.addError();
-        return index;
+        return f.publisher.scheme(tuple, decl);
     }
 };
 

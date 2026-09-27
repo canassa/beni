@@ -1,2 +1,0 @@
-# The module-rule clash at `g`'s `==`, as the declaration order `g`, `f` reports it.
-type_mismatch Main.beni:20:15 contains "B, B -> Bool" contains "module-rule clash"

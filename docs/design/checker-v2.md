@@ -912,6 +912,18 @@ instructions).
 The kind lattice is unchanged: `any ⊒ number`, `any ⊒ appendable`, `number ⊓ appendable = ⊥`.
 Numeric literals through primitive aliases keep queue row 67's rule.
 
+*Amended by R15-fix-A (2026-09-28, CK-139, CK-140): a written type that resolution refused is
+`err` in the store, never a malformed node.* `Types.Builder` is the one place a written type
+becomes store variables, and two refusals of resolution (`resolve/Resolve.zig`) used to reach it
+as structure anyway. (1) **Arity.** An application whose argument count is not its type's arity
+(`wrong_type_arity`, reported) is `err` (`Builder.apply`), so every `app` in the store has
+exactly its declaration's parameters and derivation's context entries, which index them, cannot
+read past the end — `type K = K Foo` over `type Foo a` crashed there. (2) **Recursive aliases.**
+The builder carries the aliases being expanded around a read (`Builder.expanding`); an alias met
+inside its own expansion is `err` (`recursive_alias`, reported; a cycle across modules is an
+`import_cycle`). The depth bound alone did not stop `type alias A = ( A, A )`, which doubles per
+level: 2^512 reads before the bound.
+
 ### 7.5 Speculation (I14, CK-35)
 
 `TypeStore.Snapshot` is `{ journal_len, vars, extra, want_links, obl_links, wanteds, obligations,
@@ -1468,6 +1480,10 @@ only for concrete roots, and had no bridge for rigids. `core/Basics.beni:319`'s
 `number.eq x y` would have been `missing_where_constraint`, so `core` could not check under v2. v1
 has the rigid bridge at `Solve.zig:2750-2753`. D9 is amended accordingly (§21).
 
+*Amended by R15-fix-A (2026-09-28, CK-141).* The `err` row answers **`poisoned`**, not
+`failed`: the poison's message may be a dependency's, so the state must not claim this module
+reported anything (§12.2 *amended by R15-fix-A*).
+
 ### 9.3 Instance lookup: matching a head, with the context as sub-wanteds
 
 `Instances.lookup(w)` returns `answer(term, sub-wanteds)`, `blocked(on)` or `fail(reason)`. It never
@@ -1522,6 +1538,17 @@ returns "unknown, accept" (I8).
      readied at once — as binding `qᵢ` to `tᵢ` readies it (`Instances.plainImported`). The
      resolution order and every diagnostic are the instantiation's. Plainness is read off the
      interface once per module check (`Resolve.State.plain`).
+   - *Amended by R15-fix-A (2026-09-28, CK-137, unsound): a memo is keyed by every input of
+     the verdict it remembers.* Plainness depends on the receiver's type `T` as well as the
+     value — by the module rule one value is the method of every type its module declares, and
+     `eq : A, A -> Bool` is plain on `A` and not on its sibling `B` — but the memo was keyed
+     `(module, value, method)`. The first use at `A` was reused at `B`, which was answered with
+     `A`'s `eq` (`Two$eq` called on a `B`, exit 0) where the module-rule clash is due, and
+     acceptance depended on declaration order (I9). The key is `Instances.PlainKey`: module,
+     value, type, method. The other resolver memos were checked for the same mistake and key
+     what their verdict depends on: the derived-answer memo the receiver's root (§9.5), the
+     derivability memos a root and kind, `Elaborate`'s rows a type (or a shape) and kind, and
+     the derived contexts a unit of type × method (§11.2).
 5. **Derived.** Not found, the method is well-known, and the call is marked (§1.3 of the spike):
    - **nominal `T args`**: `Instances.derivedContext(T, m)` (§11.2):
      - `present(ctx)`: answer `derived(index)` in this module or `ext_derived`, with one sub-wanted
@@ -2893,6 +2920,15 @@ constraints ride on its own quantifiers.
 The `owned` edges therefore cannot reorder the list. R6's exit criteria include a byte comparison of
 every `core` and corpus interface's `where` blocks under both checkers.  *Added 2026-09-24.*
 
+*Amended by R15-fix-A (2026-09-28, CK-135, I4).* The walk behind the list
+(`Schemes.quantifierOrder`'s `orderWalk`) recursed and stopped **in silence** at the writer's
+depth, 512: a variable 2^10 tuple levels down was left out of the order while `Instantiate`
+counted its requirement, and an instantiation's requirement was paired with no wanted. It is an
+explicit-stack preorder with no cap — a node marked when popped, its successors pushed in
+reverse, which is exactly the recursive order. The writer keeps its bound: a type too deep to
+WRITE is `nesting_too_deep` (§14.1), and the declaration fails, so the two can disagree only on a
+scheme that is never published.
+
 ### 12.2 Elaboration (P6)
 
 For every instruction with `inst_callee` or `inst_evidence`, P6 follows each wanted's answer,
@@ -2906,6 +2942,24 @@ through `alias` chains, and writes a `Dispatch.Term` tree (§13):
 **An `open` or `ready` wanted at P6 is `internal`**, and never a structural answer (I6).
 A `failed` wanted means an error was reported, so the module has errors, the backend never runs,
 and P6 writes nothing for that instruction.
+
+*Amended by R15-fix-A (2026-09-28, CK-141).* "An error was reported" did not mean "this module
+reported one". A dependency's `<error>` value (a type error or a NAMING ERROR in `A`, the
+ordinary state of a project being edited) is `err` in its importer, and a wanted on it failed in
+silence (§9.2's `err` row) in a module that reported nothing — so P6's `internal` and the I7
+assert, both gated on "no error in this module", fired: a Debug panic, INTERNAL ERRORs in
+release. A wanted rejected against `err` is therefore its own state, **`poisoned`**
+(`Evidence.State`), distinct from `failed` (rejected with this module's message, or as its
+consequence). It is set by §9.2's `err` row, by `Solve.poison` for the open wanteds riding on a
+variable it poisons, when a published derived row's scheme is `<error>` (§14.1 *amended by
+R15-fix-A*), and for a dependency's `unchecked` row; its lineage is poisoned with it, and an
+ancestor already rejected keeps its own state. Every reader that asked "rejected?" asks
+`State.rejected()` (either state). P6 writes no site for a poisoned wanted, reports nothing, and
+returns the instruction (`Elaborate.Output.poisoned`); `Module.assertEvidence` does not hold
+those instructions to I7. This is sound because the `err` has a message wherever it was made,
+so the build that would lower the module stops at that error and never reaches the backend —
+and `Lower` still refuses a missing site, the backstop if an `<error>` were ever published
+without a message (CK-142 was such a path).
 
 ### 12.3 Calls inside a binding group (CK-30, CK-31)
 
@@ -3368,6 +3422,21 @@ interface. In order it runs `hasError` (three-valued, budgeted, kept verbatim), 
 
 It serves value schemes, schema member types, schema constructor types and constructor terms
 (`fillCtorTerms`). Its callers pass a region and a name, and nothing else.
+
+*Amended by R15-fix-A (2026-09-28, CK-142).* A fifth path bypassed it: a derived row's template
+scheme (§14.2 *as amended by R8a*) was written with a bare `writer.add`, with no scan and, on
+`too_deep`, an `<error>` with no report — so a row too deep to write was published silently, and
+an importer comparing through it met an `err` no module had reported. As built, the routine is
+`Publish.Publisher`: `scheme(root, decl)` is `clean` (the `hasError` scan; `unknown` is
+`nesting_too_deep` at `decl`), `writer.add`, then `written` (`too_deep` is `nesting_too_deep` at
+`decl`), and `<error>` on either failure. **Every** write goes through it: value schemes, schema
+members and constructors, a row's template (`Facts.templateScheme`, at the type's declaration),
+and constructor terms, which write with `addCtor` between the same `clean` and `written` steps.
+*Decided:* `ctorTerms` scans. A constructor whose argument reads as `err` (a type that did not
+resolve, a wrong arity, a recursive alias: each reported) keeps `no_terms`, so an importer's use
+poisons as a whole, and no `<error>` term is ever published inside a constructor's type. An
+importer that instantiates a row whose scheme is `<error>` answers the wanted `poisoned` (§12.2
+*amended by R15-fix-A*), in silence: its publisher said why.
 
 ### 14.2 Interface v3
 

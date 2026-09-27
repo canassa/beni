@@ -82,8 +82,24 @@ pub const State = enum(u8) {
     promoted,
     /// The proven-undetermined default (§9.4).
     defaulted,
-    /// Rejected, with a message or in silence (against `err`).
+    /// Rejected, with a message (this module's), or in silence as the
+    /// consequence of one: a lineage whose root's message was said, a
+    /// requirement of a call whose result met its expectation with one.
     failed,
+    /// Rejected in silence against `err` (§7.1, §12.2 *Amended by
+    /// R15-fix-A*): its receiver, or a descendant's, was poisoned, and the
+    /// poison's message is said wherever the `err` was made — this module
+    /// or a DEPENDENCY, whose `<error>` value an importer reads (CK-141).
+    /// So a poisoned wanted, unlike a `failed` one, does not mean this
+    /// module reported anything: P6 writes no site for it and I7 skips its
+    /// instruction, because the build that would lower it has an error
+    /// somewhere and never reaches the backend.
+    poisoned,
+
+    /// Whether the wanted was rejected: no answer, for either reason.
+    pub fn rejected(s: State) bool {
+        return s == .failed or s == .poisoned;
+    }
 };
 
 /// What a wanted is bound to: the evidence TERM before elaboration (§4.2).

@@ -2692,6 +2692,43 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     (the statement position, which no lowering reaches), and the `test-perf` scenario "CK-136"
     (depth 32 / 64, build and dump).
 
+#### R15-fix-A — The unsound finding and the crashes (added by the manager, 2026-09-28)
+
+- **Goal.** Fix, each at its cause, CK-137 (unsound: a sibling type's resolution reused), CK-141
+  (an imported `<error>` compared: I7 panic), CK-139 (a bare parameterised type in a
+  constructor: out-of-bounds in derivation), CK-140 (a recursive alias used: exponential
+  expansion, OOM), CK-135 (the canonical-order walk's silent depth cap) and CK-142 (derived-row
+  templates outside the one publication routine).
+- **As built (2026-09-28).** Spec first: `checker-v2.md` §7.4, §9.2, §9.3, §12.1, §12.2 and
+  §14.1, each *amended by R15-fix-A*.
+  - **CK-137.** The plain-method memo (`Resolve.State.plain`, CK-131's fast path) was keyed
+    `(module, value, compare?)`; plainness depends on the receiver's type too. The key is now
+    `Instances.PlainKey`, every input of `readPlain`. The other resolver and elaboration memos
+    were read for the same mistake; each keys what its verdict depends on (§9.3's amendment
+    lists them).
+  - **CK-141.** A new wanted state, `poisoned` (rejected against `err`, whose message may be a
+    dependency's), beside `failed` (this module reported). Set by §9.2's `err` row,
+    `Solve.poison`, a published row whose scheme is `<error>`, and a dependency's `unchecked`
+    row, with its lineage; `State.rejected()` answers for both wherever a reader asked "failed?".
+    P6 writes no site for a poisoned wanted and returns the instruction (`Output.poisoned`), which
+    `Module.assertEvidence` does not hold to I7.
+  - **CK-139.** `Types.Builder.apply` builds `err` for an argument count other than the type's
+    arity (resolution reported `wrong_type_arity`): no `app` in the store is partial.
+  - **CK-140.** `Types.Builder.expanding`, the aliases being expanded around a read: an alias met
+    inside its own expansion is `err` (resolution reported `recursive_alias`).
+  - **CK-135.** `Schemes.orderWalk` is an explicit-stack preorder with no cap, in exactly the
+    recursive order.
+  - **CK-142.** `Publish.Publisher` is the one routine, in three steps (`clean`, the write,
+    `written`): `Facts.templateScheme` publishes through
+    `Publisher.scheme` at the type's declaration (NESTING TOO DEEP in the publisher), and
+    `ctorTerms` scans its arguments too (decided in §14.1: an `err` argument keeps `no_terms`).
+    An importer's row whose scheme is `<error>` is `poisoned` (`publishedMethodTypes`).
+  - **Evidence.** Each red fixture promoted, proved red on the tree without its fix; added
+    `check/bad/SiblingTypeCompareResolution/`, `…/ImportedErrorValueComparedEverywhere/`,
+    `…/ImportedNamingErrorCompared/`, `…/BareParameterisedTypeVariants.beni`, and
+    `scenario/CK-140` promoted into `abuse_test.zig` with both mutual forms. Gates,
+    `test-pending` (the rest still red for their recorded reasons) and `test-perf` green.
+
 ---
 
 ## 4. CK → slice index
@@ -2723,6 +2760,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R14 | CK-37 (rest) | — | — |
 | R14b | CK-134 (fixed; the bench is its instrument, `checker-v2.md` §18) | — | — |
 | R15-fix-B | CK-136 (`run/EvidenceDagBuildDepth32`; new `dispatch/SharedEvidenceDag`, `perf_test.zig` "CK-136"), CK-138 (`run/ArrowBodyStartsWithRecord`; new `run/ArrowBodyLeftmostBrace`) | — | perf study item 1 (the emitter's specifier table) |
+| R15-fix-A | CK-135, 137, 139, 141, 142 (`tests/corpus/`), CK-140 (`abuse_test.zig`) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

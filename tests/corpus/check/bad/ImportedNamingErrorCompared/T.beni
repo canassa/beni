@@ -1,0 +1,9 @@
+import A
+
+
+g =
+    A.h == 1
+
+
+k =
+    List.sort [ A.h ] == []

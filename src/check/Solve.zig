@@ -232,7 +232,7 @@ pub fn poison(s: *Solve, v: Var) Error!void {
     };
     st.setContent(root, .err);
     if (flags.obls != .none) try Decide.settle(s, flags.obls);
-    // The wanteds riding on it are answered against `err`: failed, silently
+    // The wanteds riding on it are answered against `err`: poisoned, silently
     // (§7.1).
     const set = Walk.constraints(flags);
     const n = set.count(st);
@@ -243,7 +243,7 @@ pub fn poison(s: *Solve, v: Var) Error!void {
             continue;
         };
         const w = s.evidence.ptr(id);
-        if (w.state == .open) w.state = .failed;
+        if (w.state == .open) try Resolve.poisoned(s, id);
     }
 }
 

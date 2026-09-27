@@ -9,7 +9,7 @@
 //! | `flex` of kind `number`, `eq`/`compare` | the `number` bridge (D9 as amended): unify the method type with `t, t -> Bool\|Order`, answer `primitive` |
 //! | any other `flex` | ride on it (Rule U1's join with a wanted of the same name), open |
 //! | `rigid` | a given: unify the method types, answer `param`; else the bridge on a `number` rigid; else `missing_where_constraint` (or `type_dispatch_needs_annotation`) at `w.origin` (CK-48), once per rigid, method and use |
-//! | `err` | `failed`, silently |
+//! | `err` | `poisoned`, silently (its message is where the `err` was made: CK-141) |
 //! | a structure | `Instances.lookup` (§9.3): the well-known table, the module rule, matching, derivation |
 //!
 //! **When** (§9.1): inline at the `method` node when the receiver is
@@ -102,9 +102,10 @@ pub const State = struct {
     derivable_open_voids: u64 = std.math.maxInt(u64),
     /// `missing_where_constraint`s said, per use, rigid and method (F4).
     missing: std.AutoHashMapUnmanaged(MissingKey, void) = .empty,
-    /// Per imported method and well-known name, its plain shape or null
-    /// (`Instances.plainImported`, CK-131): read off the interface once.
-    plain: std.AutoHashMapUnmanaged(u64, ?Instances.Plain) = .empty,
+    /// Per imported method, receiver type and well-known name, its plain
+    /// shape or null (`Instances.plainImported`, CK-131): read off the
+    /// interface once, keyed by every input of the verdict (CK-137).
+    plain: std.AutoHashMapUnmanaged(Instances.PlainKey, ?Instances.Plain) = .empty,
     /// Steps in the current top-level group.
     steps: u32 = 0,
     /// What promotion kept, per unannotated declaration: a range of
@@ -201,9 +202,11 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
 
     const root, const content = st.resolved(w.receiver);
     switch (content) {
-        // A poisoned receiver has its message: fail in silence (§7.1). An
-        // over-long alias chain `resolved` answers as `err` too.
-        .err => return reject(s, id, false),
+        // A poisoned receiver has its message, said where the `err` was
+        // made — maybe in a dependency (CK-141): `poisoned`, in silence
+        // (§7.1, §12.2). An over-long alias chain `resolved` answers as
+        // `err` too.
+        .err => return poisoned(s, id),
         // `resolved` never stops at an alias (nit).
         .alias => {
             _ = try s.expect(false, w.origin, "`TypeStore.resolved` returned an alias (checker-v2.md §9.2)");
@@ -267,19 +270,36 @@ fn flagOf(w: Evidence.Wanted) Evidence.Flag {
 /// CK-37); a concrete receiver is flagged for this method, so a later
 /// wanted of the same method there fails in silence.
 pub fn reject(s: *Solve, id: WantedId, poison: bool) Error!void {
-    s.evidence.ptr(id).state = .failed;
-    var at = s.evidence.get(id).parent;
-    while (at.unwrap()) |p| {
-        const pp = s.evidence.ptr(p);
-        if (pp.state == .failed) break;
-        pp.state = .failed;
-        at = pp.parent;
-    }
+    rejectLineage(s, id, .failed);
     if (!poison) return;
     const w = s.evidence.get(id);
     const root = s.store().find(w.receiver);
     if (s.store().content(root) == .structure) try s.evidence.setRejected(s.cx.gpa, root, flagOf(w));
     try s.poison(w.method_type);
+}
+
+/// `id` met `err` (its receiver, or a variable of it, was poisoned): it is
+/// `poisoned`, and so is every ancestor not already rejected, in silence
+/// (§12.2 *Amended by R15-fix-A*, CK-141). The poison's message was said
+/// where the `err` was made — this module, or a dependency whose `<error>`
+/// value this module reads — so nothing here may assume THIS module
+/// reported: P6 writes no site for a poisoned wanted, and I7 skips it.
+pub fn poisoned(s: *Solve, id: WantedId) Error!void {
+    rejectLineage(s, id, .poisoned);
+}
+
+/// `id` and its lineage rejected as `state` (a `failed` or `poisoned`
+/// wanted's parent is no answer: I6, I8); an ancestor already rejected
+/// keeps its own reason, and ends the walk.
+fn rejectLineage(s: *Solve, id: WantedId, state: Evidence.State) void {
+    s.evidence.ptr(id).state = state;
+    var at = s.evidence.get(id).parent;
+    while (at.unwrap()) |p| {
+        const pp = s.evidence.ptr(p);
+        if (pp.state.rejected()) break;
+        pp.state = state;
+        at = pp.parent;
+    }
 }
 
 pub fn isWellKnownName(name: Symbol) bool {
@@ -388,7 +408,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
             // new wanted takes its place in the set, open, and is never
             // aliased to it (§4.2: a flex's set is its open wanteds; round-2
             // review, S1).
-            if (s.evidence.get(other).state == .failed) {
+            if (s.evidence.get(other).state.rejected()) {
                 try replaceEntry(s, root, flags, other, id);
                 try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
                 return;
@@ -883,7 +903,7 @@ fn onlyDotCalls(s: *Solve, v: Var) bool {
     while (i < n) : (i += 1) {
         const id = s.evidence.slotAt(Evidence.position(st, set.set, i)).asWanted() orelse return false;
         const w = s.evidence.get(id);
-        if (w.state == .failed) continue;
+        if (w.state.rejected()) continue;
         if (!w.field_ok) return false;
         any = true;
     }

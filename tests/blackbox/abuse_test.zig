@@ -1960,3 +1960,46 @@ test "a constrained let helper used at `a` and `List a` checks, within seconds" 
         try testing.expectEqualStrings("", r.stdout);
     }
 }
+
+test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an expansion (CK-140)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `scenario/CK-140`, promoted by R15-fix-A. At 8b98464 the annotation
+    // expanded `A = ( A, A )` although resolution had refused it: the
+    // expansion doubled per level up to the builder's depth bound of 512,
+    // 16 s and 21 GB in ReleaseFast. The builder now refuses an alias met
+    // inside its own expansion (`Types.Builder.expanding`), so every form
+    // is one message at once. The 3 s limit is the assertion that nothing
+    // grew: the fixed check takes milliseconds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const sources = [_][]const u8{
+        "type alias A =\n    ( A, A )\n\n\nf : A -> Int\nf p =\n    0\n",
+        "type alias A =\n    { x : B, y : B }\n\n\ntype alias B =\n    { p : A }\n\n\nf : A -> B -> Int\nf p q =\n    0\n",
+        "type alias A =\n    ( B, B )\n\n\ntype alias B =\n    { p : A }\n\n\nf : A -> Int\nf p =\n    0\n",
+    };
+    for (sources) |source| {
+        try w.write("Main.beni", source);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const r = try w.runWith(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" }, .{ .timeout_ms = 3_000 });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try expectExited(r, 1);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqualDeep(diagnostic.Diagnostic{
+            .code = .recursive_alias,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 1, .col = 12 }, .end = .{ .line = 1, .col = 13 } },
+            .title = "RECURSIVE ALIAS",
+            .message = "The type alias `A` refers to itself.\n\nAn alias is a spelling for the type it names, so one that mentions itself —\n" ++
+                "directly, or through other aliases — has no expansion. Make it a `type` with a\n" ++
+                "constructor instead; that is what gives recursion somewhere to stop.",
+        }, r.diagnostics[0]);
+    }
+}

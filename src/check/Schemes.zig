@@ -573,7 +573,9 @@ pub fn quantifierOrder(
     gpa: Allocator,
 ) Error!void {
     const mark = store.nextMark();
-    try orderWalk(store, interner, v, out, gpa, mark, 0);
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(gpa);
+    try orderWalk(store, interner, v, out, gpa, mark, &stack);
     // A quantifier's constraints can mention a variable the body never
     // reaches only when §2.4's closure rule was not in force — an inferred
     // scheme. By index and re-reading the length, because the walk appends.
@@ -587,7 +589,7 @@ pub fn quantifierOrder(
         defer gpa.free(sorted);
         for (sorted, 0..) |*c, j| c.* = store.constraintAt(set, @intCast(j));
         std.mem.sort(TypeStore.MethodConstraint, sorted, interner, constraintLessThan);
-        for (sorted) |c| try orderWalk(store, interner, c.fn_var, out, gpa, mark, 0);
+        for (sorted) |c| try orderWalk(store, interner, c.fn_var, out, gpa, mark, &stack);
     }
 }
 
@@ -603,6 +605,21 @@ fn constraintLessThan(
     return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
 }
 
+/// The walk of `quantifierOrder`: a preorder over the solved type from `v`,
+/// appending each variable root the first time it is reached — function
+/// parameters then result, arguments in order, record fields by name TEXT
+/// then the extension, an alias's arguments then its expansion.
+///
+/// **An explicit stack, with no depth cap** (CK-135). It recursed, and
+/// stopped in silence at `Writer.max_depth`: a variable 2^10 tuple levels
+/// down (`w x = ( x, x )` applied ten times) was left out of a scheme's
+/// canonical order while `Instantiate` counted it, so an instantiation's
+/// requirement was paired with no wanted (I5, I4). A node is marked when it
+/// is POPPED and its successors are pushed in reverse, which visits them in
+/// exactly the recursive order. The writer's own bound is not this walk's:
+/// a type too deep to WRITE is reported by the writer (`too_deep`), and the
+/// declaration then fails, so the two orders can only differ for a scheme
+/// that is never published.
 fn orderWalk(
     store: *TypeStore,
     interner: *const InternPool.Global,
@@ -610,48 +627,53 @@ fn orderWalk(
     out: *std.ArrayList(Var),
     gpa: Allocator,
     mark: u32,
-    depth: u32,
+    stack: *std.ArrayList(Var),
 ) Error!void {
-    if (depth > Writer.max_depth) return;
-    const root = store.find(v);
-    if (store.mark(root) == mark) return;
-    store.setMark(root, mark);
-    switch (store.content(root)) {
-        .err => {},
-        .flex, .rigid => try out.append(gpa, root),
-        .structure => |flat| switch (flat) {
-            .unit, .empty_record => {},
-            .func => |f| {
-                const params = try gpa.dupe(Var, store.vars(f.params));
-                defer gpa.free(params);
-                for (params) |p| try orderWalk(store, interner, p, out, gpa, mark, depth + 1);
-                try orderWalk(store, interner, f.result, out, gpa, mark, depth + 1);
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, v);
+    while (stack.pop()) |next| {
+        const root = store.find(next);
+        if (store.mark(root) == mark) continue;
+        store.setMark(root, mark);
+        switch (store.content(root)) {
+            .err => {},
+            .flex, .rigid => try out.append(gpa, root),
+            .structure => |flat| switch (flat) {
+                .unit, .empty_record => {},
+                .func => |f| {
+                    try stack.append(gpa, f.result);
+                    try pushReversed(stack, gpa, store.vars(f.params));
+                },
+                .app => |a| try pushReversed(stack, gpa, store.vars(a.args)),
+                .tuple => |t| try pushReversed(stack, gpa, store.vars(t)),
+                .record => |r| {
+                    try stack.append(gpa, r.ext);
+                    const fields = try gpa.dupe(TypeStore.Field, store.fields(r.fields));
+                    defer gpa.free(fields);
+                    // By name TEXT, which is what the writer descends in.
+                    std.mem.sort(TypeStore.Field, fields, interner, fieldNameLessThan);
+                    var i = fields.len;
+                    while (i > 0) {
+                        i -= 1;
+                        try stack.append(gpa, fields[i].value);
+                    }
+                },
             },
-            .app => |a| {
-                const args = try gpa.dupe(Var, store.vars(a.args));
-                defer gpa.free(args);
-                for (args) |arg| try orderWalk(store, interner, arg, out, gpa, mark, depth + 1);
+            .alias => |a| {
+                try stack.append(gpa, a.actual);
+                try pushReversed(stack, gpa, store.vars(a.args));
             },
-            .tuple => |t| {
-                const items = try gpa.dupe(Var, store.vars(t));
-                defer gpa.free(items);
-                for (items) |el| try orderWalk(store, interner, el, out, gpa, mark, depth + 1);
-            },
-            .record => |r| {
-                const fields = try gpa.dupe(TypeStore.Field, store.fields(r.fields));
-                defer gpa.free(fields);
-                // By name TEXT, which is what the writer descends in.
-                std.mem.sort(TypeStore.Field, fields, interner, fieldNameLessThan);
-                for (fields) |f| try orderWalk(store, interner, f.value, out, gpa, mark, depth + 1);
-                try orderWalk(store, interner, r.ext, out, gpa, mark, depth + 1);
-            },
-        },
-        .alias => |a| {
-            const args = try gpa.dupe(Var, store.vars(a.args));
-            defer gpa.free(args);
-            for (args) |arg| try orderWalk(store, interner, arg, out, gpa, mark, depth + 1);
-            try orderWalk(store, interner, a.actual, out, gpa, mark, depth + 1);
-        },
+        }
+    }
+}
+
+/// Push `vars` so that they pop in order. `vars` is the store's, which the
+/// walk never grows, so it is read in place.
+fn pushReversed(stack: *std.ArrayList(Var), gpa: Allocator, vars: []const Var) Error!void {
+    var i = vars.len;
+    while (i > 0) {
+        i -= 1;
+        try stack.append(gpa, vars[i]);
     }
 }
 

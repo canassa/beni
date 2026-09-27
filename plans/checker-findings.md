@@ -3802,6 +3802,13 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `check/good/RequirementBelowDepth512.beni` (`.iface`: `module Main`), red
   `crash=ABRT`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-A (2026-09-28). `Schemes.orderWalk` is an explicit-stack preorder
+  with no depth cap (marked when popped, successors pushed reversed: the recursive order
+  exactly). A type too deep to WRITE is still the writer's `nesting_too_deep`, so the two orders
+  can differ only for a scheme that is never published. Promoted:
+  `tests/corpus/check/good/RequirementBelowDepth512.beni`. Core's `let` variant was not
+  reproduced: a `let` helper comparing a type 515 and 700 written applications deep checks clean
+  on the base too, so it is no fixture.
 
 ### CK-136 — The backend and the `dispatch` dump walk the shared evidence DAG as a tree
 
@@ -3849,6 +3856,14 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   when `f` comes after, and when the types are in the comparing module.
 - **Fixture** `check/bad/SiblingTypeEqResolution/`, red `exit=0 codes=none`.
 - **Slice** R15-fix (first: it is the one unsound finding).
+- **Status** fixed by R15-fix-A (2026-09-28). The key was `Resolve.State.plain`, the memo of the
+  plain-method fast path (CK-131): `(module, value, compare?)`, without the receiver's type, which
+  `readPlain`'s verdict depends on. It is now `Instances.PlainKey`, every input of the verdict
+  (module, value, type, method). No other memo in `src/check/` keys a type-dependent answer
+  without the type (the derived-answer memo keys the receiver's root, `Elaborate.own` the type,
+  the contexts' units a type × method). Promoted:
+  `tests/corpus/check/bad/SiblingTypeEqResolution/`; added `…/SiblingTypeCompareResolution/`
+  (`compare`, all-nullary sibling).
 
 ### CK-138 — An arrow body that starts with a record or tuple literal is parsed as a block
 
@@ -3886,6 +3901,12 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   imported `K Other.Foo`.
 - **Fixture** `check/bad/BareParameterisedTypeInConstructor.beni`, red `crash=ABRT`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-A (2026-09-28). `Types.Builder.apply` builds `err` for an argument
+  count that is not the type's arity — resolution has reported `wrong_type_arity` — so no `app`
+  in the store is a partial application, and derivation never indexes past its arguments.
+  Promoted: `tests/corpus/check/bad/BareParameterisedTypeInConstructor.beni`; added
+  `…/BareParameterisedTypeVariants.beni` (`K (Foo)`, `K Int Foo`, `{ f : Foo }`, `List Foo`,
+  `Trip a b c Trip`, a local `type Int a`, each compared).
 
 ### CK-140 — A recursive alias with two self-references is expanded once used: OOM
 
@@ -3900,6 +3921,11 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `scenario/CK-140` (fast step; a scenario only so the run can be killed at 3 s
   rather than grow for the walker's 20 s), red `timeout`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-A (2026-09-28). `Types.Builder` carries the aliases being
+  expanded around a read (`expanding`), and an alias met inside its own expansion is `err`: it is
+  recursive, which resolution reported. The depth bound alone had let `( A, A )` double per level.
+  `scenario/CK-140` promoted into `abuse_test.zig` (the tuple and both mutual forms, 3 s limit,
+  one whole `recursive_alias` each).
 
 ### CK-141 — Comparing an imported `<error>` value is an INTERNAL ERROR (a Debug panic)
 
@@ -3915,6 +3941,15 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** exactly A's error; nothing in `T` (a `poisoned` wanted state that P6 and I7 skip).
 - **Fixture** `check/bad/ImportedErrorValueCompared/`, red `crash=ABRT`.
 - **Slice** R15-fix (it blocks calling the rewrite finished, orch-r15's verdict).
+- **Status** fixed by R15-fix-A (2026-09-28), `checker-v2.md` §12.2 *amended by R15-fix-A*
+  first. A wanted that meets `err` is a new state, `poisoned` (`Evidence.State`), with its
+  lineage — `Resolve.step`'s `err` row, `Solve.poison`, a published row whose scheme is
+  `<error>`, and a dependency's `unchecked` row — distinct from `failed`, which means this module
+  reported. P6 writes no site for a poisoned wanted and returns the instruction in
+  `Output.poisoned`; `Module.assertEvidence` does not hold those instructions to I7. Promoted:
+  `tests/corpus/check/bad/ImportedErrorValueCompared/`; added
+  `…/ImportedErrorValueComparedEverywhere/` (`<`, lists, `Just`, records, tuples, a function, a
+  `let` helper, `List.sort`, `A.f.eq 1`, either side) and `…/ImportedNamingErrorCompared/`.
 
 ### CK-142 — Derived-row templates bypass the one publication routine
 
@@ -3933,6 +3968,13 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `check/bad/DerivedRowTemplateTooDeep/` (`.codes`: `nesting_too_deep B.beni:*`), red
   `crash=ABRT`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-A (2026-09-28), `checker-v2.md` §14.1 *amended by R15-fix-A*
+  first. `Facts.templateScheme` publishes through `Publisher.scheme` at the type's declaration:
+  B reports NESTING TOO DEEP (`B.beni:5:10`, the declaration's region) and the row's scheme is
+  `<error>`; an importer's use of a row whose scheme reads as `err` is `poisoned`
+  (`Instances.publishedMethodTypes`), so C is silent. `ctorTerms` scans too (decided: an argument
+  that reads as `err` or too deep keeps `no_terms`), through the same `Publisher.clean`/`written`.
+  Promoted: `tests/corpus/check/bad/DerivedRowTemplateTooDeep/`.
 
 ### CK-143 — `Types.find` is a linear scan: publication and the dependency digest are quadratic
 

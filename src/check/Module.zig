@@ -212,7 +212,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try eager.build(&solver);
     if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
-    const p6_internals = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
+    const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
     if (in.profile) |p| p.end(in.tid, p6_token.?, .elaborate, file.int(), 0);
 
     // P7.
@@ -262,7 +262,7 @@ pub fn check(in: Input) Error!Check.Counters {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
         try report.flush();
         // Last, so every error the module has gates it (v1's rule, S2).
-        if (report.errors == 0) try assertEvidence(in, bir, &report, p6_internals);
+        if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
     }
     // Gated on NO error in the module, after the last pass that can report
     // one (CK-15).
@@ -365,6 +365,17 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
     return a.int() < b.int();
 }
 
+fn orderInst(key: Bir.Inst.Index, item: Bir.Inst.Index) std.math.Order {
+    return std.math.order(key.int(), item.int());
+}
+
+/// What P6 could not write: its own faults, and the sites a `poisoned`
+/// wanted left unwritten (ascending), which are no fault (CK-141).
+const P6Faults = struct {
+    internals: []const Elaborate.Internal,
+    poisoned: []const Bir.Inst.Index,
+};
+
 /// P6 (§12.2, §13): the whole dispatch table.
 ///
 ///   - one `DeclInfo` per declaration: `value_arity` from the scheme, its
@@ -376,7 +387,7 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
 ///     givens, on the rigid reading its body was checked against, or what
 ///     promotion recorded;
 ///   - the trees, sites and derived rows (`Elaborate.run`), and the `tries`.
-fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, groups: *Groups, solver: *Solve, eager: *const Eager, report: *Report) Error![]const Elaborate.Internal {
+fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, groups: *Groups, solver: *Solve, eager: *const Eager, report: *Report) Error!P6Faults {
     const gpa = in.gpa;
     const scratch = in.scratch.allocator();
     const decls = try gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
@@ -475,7 +486,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .contexts = out.contexts,
         .symbols = out.symbols,
     };
-    return out.internals;
+    return .{ .internals = out.internals, .poisoned = out.poisoned };
 }
 
 /// Each declaration's binding group after P4: the root of its merge class
@@ -492,12 +503,26 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
 /// report (v1's `assertEvidenceShape`, the same predicate and text). P6's own
 /// failures are said here too, under the same gate (review S4): one whose
 /// message a later pass says is not the compiler's.
-fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: []const Elaborate.Internal) Error!void {
-    for (p6) |x| try report.internal(x.region, x.what);
+///
+/// "Nothing reported HERE" is not "no poison reached here" (CK-141): a
+/// dependency's `<error>` value is `err` in this module, and a wanted that
+/// meets it is `poisoned` with its message in the dependency. P6 wrote no
+/// site for such an instruction, and I7 does not hold it to one — the build
+/// that would lower it stops at the dependency's error (§12.2 *Amended by
+/// R15-fix-A*).
+fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: P6Faults) Error!void {
+    for (p6.internals) |x| try report.internal(x.region, x.what);
     const scratch = in.scratch.allocator();
     var bad: std.ArrayList(Bir.Inst.Index) = .empty;
     defer bad.deinit(scratch);
     try in.dispatch.checkI7(bir, in.interfaces, in.types, in.interner, scratch, &bad);
+    var kept: usize = 0;
+    for (bad.items) |inst| {
+        if (std.sort.binarySearch(Bir.Inst.Index, p6.poisoned, inst, orderInst) != null) continue;
+        bad.items[kept] = inst;
+        kept += 1;
+    }
+    bad.shrinkRetainingCapacity(kept);
     if (bad.items.len == 0) return;
     // From the cut-over (R11) a violation is a v2 bug with no known
     // exception, so a safe build stops at it (§13.1); a release build still

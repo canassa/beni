@@ -335,8 +335,8 @@ fn unionWants(u: *Unify, fa: TypeStore.Flags, fb: TypeStore.Flags, kind: TypeSto
                     // flex's set is its open wanteds; round-2 review, S1):
                     // the live one keeps the name, and the failed one leaves
                     // the set with nothing joined to it.
-                    const id_failed = u.evidence.get(id).state == .failed;
-                    const other_failed = u.evidence.get(other).state == .failed;
+                    const id_failed = u.evidence.get(id).state.rejected();
+                    const other_failed = u.evidence.get(other).state.rejected();
                     if (id_failed or other_failed) {
                         if (other_failed and !id_failed) {
                             entries.items[j] = c;

@@ -1,0 +1,57 @@
+import A
+
+
+g1 =
+    A.f == 1
+
+
+g2 =
+    A.f < 1
+
+
+g3 =
+    [ A.f ] == [ 1 ]
+
+
+g4 =
+    Just A.f == Just 1
+
+
+g5 =
+    { x = A.f } == { x = 1 }
+
+
+g6 =
+    ( A.f, 1 ) == ( 1, 1 )
+
+
+g7 x =
+    x == A.f
+
+
+g8 =
+    let
+        q y =
+            y == A.f
+    in
+    q 1
+
+
+g9 =
+    List.sort [ A.f ]
+
+
+g10 =
+    A.f.eq 1
+
+
+g11 =
+    A.f == 1
+
+
+g12 =
+    1 == A.f
+
+
+g13 =
+    compare A.f A.f

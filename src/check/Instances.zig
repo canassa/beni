@@ -354,11 +354,17 @@ fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entr
 /// arguments its requirements ask the method of.
 pub const Plain = struct { arity: u32, mask: u64 };
 
+/// The memo key of `plainMethod`: every input of `readPlain`, the
+/// receiver's type among them. The module rule makes one value of a module
+/// the method of each of the module's types, and whether it is plain differs
+/// per type: a key without the type reused one type's verdict for a sibling
+/// type of the same module, and called `A`'s `eq` on a `B` (CK-137).
+pub const PlainKey = struct { module: Graph.Index, value: Interface.ValueIndex, type_id: Types.TypeId, method: InternPool.Symbol };
+
 /// Whether `entry`'s module's value `value` is a plain `name` method on
-/// `entry`'s type, read off its interface scheme once per module check.
+/// `type_id`, read off its interface scheme once per module check.
 fn plainMethod(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex, name: Symbol) Error!?Plain {
-    const key = (@as(u64, entry.module.int()) << 33) | (@as(u64, @intFromEnum(value)) << 1) |
-        @intFromBool(name == InternPool.WellKnown.compare.symbol());
+    const key: PlainKey = .{ .module = entry.module, .value = value, .type_id = type_id, .method = name };
     const got = try s.resolver.plain.getOrPut(s.cx.gpa, key);
     if (!got.found_existing) got.value_ptr.* = readPlain(s, type_id, entry, value, name);
     return got.value_ptr.*;
@@ -464,7 +470,7 @@ fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol)
     s.contexts.notePrivate(s, culprit, method);
     const top = Resolve.lineageRoot(s, id);
     // Read BEFORE the rejection, as `refuseDerived` does (CK-102).
-    const reported = top != id and s.evidence.get(top).state == .failed;
+    const reported = top != id and s.evidence.get(top).state.rejected();
     try Resolve.reject(s, id, id != top);
     if (reported) return;
     const t = s.evidence.get(top);
@@ -480,7 +486,7 @@ fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol)
 fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbol, types: ?Messages.RequirementTypes) Error!void {
     s.contexts.noteRequirement(s, culprit, need);
     const top = Resolve.lineageRoot(s, id);
-    const reported = top != id and s.evidence.get(top).state == .failed;
+    const reported = top != id and s.evidence.get(top).state.rejected();
     if (!reported) {
         const t = s.evidence.get(top);
         try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types);
@@ -497,7 +503,7 @@ fn refuseDerived(s: *Solve, id: WantedId, root: Var, reason: Diagnostics.Reporte
     // Read BEFORE the rejection, which fails the whole lineage: a root that
     // failed earlier has its message; one this rejection fails does not
     // (CK-102: the check after it returned in silence every time).
-    const reported = top != id and s.evidence.get(top).state == .failed;
+    const reported = top != id and s.evidence.get(top).state.rejected();
     try Resolve.reject(s, id, id != top);
     if (reported) return;
     const t = s.evidence.get(top);
@@ -613,8 +619,8 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     switch (row.status) {
         .present => {},
         // Its module was never checked (a dependency that failed): its
-        // failure has a message, so this one fails in silence.
-        .unchecked => return Resolve.reject(s, id, false),
+        // failure has a message, so this one is `poisoned`, in silence.
+        .unchecked => return Resolve.poisoned(s, id),
         // D1 (§11.3): the row's context reaches a private method.
         .private_method => {
             const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
@@ -638,10 +644,14 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     defer s.cx.scratch.free(subs);
     // The row's method types, instantiated at the arguments once.
     const scheme = iface.contextScheme(row.context);
-    const types: []const Var = if (scheme != .none)
-        (try publishedMethodTypes(s, iface, entry.module, scheme, args, w)) orelse return Resolve.reject(s, id, true)
-    else
-        &.{};
+    const types: []const Var = if (scheme != .none) switch (try publishedMethodTypes(s, iface, entry.module, scheme, args, w)) {
+        .types => |t| t,
+        // The row's module could not write its template, and said so
+        // (`Publish.Facts.templateScheme`, CK-142): the answer is poisoned,
+        // with no message here.
+        .poisoned => return Resolve.poisoned(s, id),
+        .malformed => return Resolve.reject(s, id, true),
+    } else &.{};
     for (subs, 0..) |*sub, k| {
         const e = iface.contextEntry(row.context, k).?;
         const method = iface.symbol(e.method);
@@ -684,20 +694,26 @@ fn finishDerived(s: *Solve, id: WantedId, type_id: Types.TypeId, subs: []const W
 /// scheme's body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`; the parameters are
 /// unified with the use's arguments and each `τ` is the method type of the
 /// entries whose `slot` it is.
-fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!?[]const Var {
+fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!PublishedTypes {
     const cx = s.cx;
-    if (@intFromEnum(scheme) >= iface.schemes.len) return null;
+    if (@intFromEnum(scheme) >= iface.schemes.len) return .malformed;
     const mark = cx.store.count();
     const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa);
     try s.instantiate.adoptSince(mark);
+    if (s.store().resolvedContent(v) == .err) return .poisoned;
     const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
     defer cx.scratch.free(elements);
-    if (elements.len != args.len + 1) return null;
+    if (elements.len != args.len + 1) return .malformed;
     for (elements[0..args.len], args) |p, arg| {
-        if (!try s.unifyQuiet(p, arg, w.origin)) return null;
+        if (!try s.unifyQuiet(p, arg, w.origin)) return .malformed;
     }
-    return try cx.scratch.dupe(Var, Walk.positions(s.store(), elements[args.len]));
+    return .{ .types = try cx.scratch.dupe(Var, Walk.positions(s.store(), elements[args.len])) };
 }
+
+/// A published row's method types, or why there are none: its scheme is
+/// `<error>` (the publisher reported why), or it does not have the row's
+/// shape (the compiler's).
+const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed };
 
 /// A derived answer with one sub-wanted per position, each resolved now
 /// (a flex position rides on its variable; a rigid one needs a given, and

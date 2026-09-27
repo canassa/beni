@@ -89,8 +89,8 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // CK-42, CK-75 and CK-80 were red under v1 only, and their v2 twins were
     // already in `perf_test.zig` (R6a, R8a). CK-88, the last, went to
     // `perf_test.zig` when R12 fixed it. The table was empty until R15's
-    // audit (2026-09-27) added the findings below.
-    .{ .name = "scenario/CK-140", .step = .fast },
+    // audit (2026-09-27) added the findings below; R15-fix-A promoted
+    // CK-140 into `abuse_test.zig`.
     .{ .name = "scenario/CK-143", .step = .perf },
     .{ .name = "scenario/CK-143-publish", .step = .perf },
     .{ .name = "scenario/CK-144", .step = .fast },
@@ -121,39 +121,6 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 
 // (CK-88, the last of R0–R12's, was fixed and promoted into `perf_test.zig`
 // by R12. The ones below are R15's audit, 2026-09-27.)
-
-// CK-140: a recursive alias with two self-references is RECURSIVE ALIAS,
-// once, whether or not an annotation uses it. At 8b98464 the annotation
-// `f : A -> Int` expands `A = ( A, A )` although the error is reported, and
-// the expansion doubles per level: ReleaseFast 16 s and 21 GB, Debug past
-// 20 s at 5.5 GB. A scenario rather than a fixture only to bound that memory:
-// the walker would let it grow for its 20 s; here the run is killed at 3 s
-// (the fixed check takes milliseconds). Also the mutual form
-// `A = { x : B, y : B }`, `B = { p : A }`.
-test "CK-140: a recursive alias used in an annotation is reported, not expanded" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var s = try Scenario.init("CK-140");
-    defer s.deinit();
-    try s.w.write("Main.beni", "type alias A =\n    ( A, A )\n\n\nf : A -> Int\nf p =\n    0\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, 3_000);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    const verdict: Verdict = if (run) |r| verdict: {
-        const diags = s.diagnosticsOf(r.result) catch break :verdict try s.failed(r.result);
-        const one = r.result.exit_code == 1 and diags.len == 1 and
-            diags[0].code == .recursive_alias and diags[0].span.start.line == 1 and diags[0].span.start.col == 12;
-        break :verdict if (one) .{ .green = true, .signature = "", .detail = "one recursive_alias at 1:12" } else try s.failed(r.result);
-    } else .{ .green = false, .signature = "timeout", .detail = "killed at 3 000 ms of wall time" };
-    try s.finish(verdict);
-}
 
 // CK-143: `Types.find` is a linear scan of the declaring module's types, and
 // `Digest.collect` calls it once per exported type (then deduplicates with a

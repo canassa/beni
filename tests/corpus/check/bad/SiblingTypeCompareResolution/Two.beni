@@ -1,0 +1,21 @@
+pub type A
+    = A1
+    | A2
+
+
+pub type B
+    = B1
+    | B2
+
+
+pub compare : A, A -> Order
+compare x y =
+    case ( x, y ) of
+        ( A1, A2 ) ->
+            GT
+
+        ( A2, A1 ) ->
+            LT
+
+        _ ->
+            EQ

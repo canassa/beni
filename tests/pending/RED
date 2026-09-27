@@ -20,12 +20,7 @@
 tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules exit=0 codes=none
 # R15's audit (2026-09-27): red fixtures of every behavioural finding, written
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
-tests/pending/check/good/RequirementBelowDepth512.beni crash=ABRT
-tests/pending/check/bad/SiblingTypeEqResolution exit=0 codes=none
-tests/pending/check/bad/BareParameterisedTypeInConstructor.beni crash=ABRT
-scenario/CK-140 timeout
-tests/pending/check/bad/ImportedErrorValueCompared crash=ABRT
-tests/pending/check/bad/DerivedRowTemplateTooDeep crash=ABRT
+# R15-fix-A (2026-09-28) fixed and promoted CK-135, 137, 139, 140, 141 and 142.
 scenario/CK-143 slow
 scenario/CK-143-publish slow
 scenario/CK-144 superlinear

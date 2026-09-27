@@ -1,2 +1,0 @@
-# `A`'s own mistake; `T` is silent, because what it compares is poisoned.
-kind_mismatch A.beni:12:9

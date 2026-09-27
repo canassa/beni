@@ -961,6 +961,13 @@ pub const Builder = struct {
     /// Bounds alias expansion; `recursive_alias` has refused the cyclic
     /// ones already, so this only catches a poisoned tree.
     depth: u32 = 0,
+    /// The aliases whose bodies are being expanded around this read,
+    /// innermost first (`aliasBody`). An alias met inside its own
+    /// expansion is `err`: it is recursive, which resolution reported
+    /// (`recursive_alias`; a cycle across modules is an `import_cycle`).
+    /// The depth bound alone did not stop it — `type alias A = ( A, A )`
+    /// doubles per level, 2^512 reads before the bound (CK-140).
+    expanding: ?*const Expansion = null,
     /// Set when `max_depth` stopped the walk, so the caller can REPORT
     /// before it uses the poisoned result. "Errors never stop the build"
     /// (`fast-compiler.md` §5) means a poisoned variable after a message,
@@ -973,6 +980,9 @@ pub const Builder = struct {
     too_deep: bool = false,
 
     pub const Scoped = struct { name: Symbol, v: Var };
+
+    /// One alias being expanded, and the expansion around it.
+    pub const Expansion = struct { id: TypeId, outer: ?*const Expansion };
 
     pub const Error = Allocator.Error;
 
@@ -1157,13 +1167,25 @@ pub const Builder = struct {
 
     /// Build `id args`, expanding an alias's body ONCE under its
     /// parameters.
+    ///
+    /// A count that is not the type's arity is `err` (CK-139): resolution
+    /// reported it (`wrong_type_arity`, `resolve/Resolve.zig`), and a
+    /// partial application must never reach the store, where every reader
+    /// of an `app` — derivation's context entries first — indexes its
+    /// arguments by the declaration's parameters.
     pub fn apply(b: *Builder, id: TypeId, args: []const Var) Error!Var {
         const e = b.types.entry(id);
+        if (args.len != e.arity) return b.store.freshErr(b.varRank());
         const range = try b.store.addVars(args);
         if (e.kind != .alias) {
             return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = range } } }, b.varRank());
         }
-        const actual = try b.aliasBody(e, args);
+        // Inside its own expansion: recursive, and reported (`expanding`).
+        var at = b.expanding;
+        while (at) |x| : (at = x.outer) {
+            if (x.id == id) return b.store.freshErr(b.varRank());
+        }
+        const actual = try b.aliasBody(e, id, args);
         return b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
     }
 
@@ -1186,7 +1208,7 @@ pub const Builder = struct {
     /// declarations to number the types and settle equatability, so M4
     /// needs a story for the whole type table, not for alias bodies alone.
     /// The comment is here so nothing claims a firewall that does not exist.
-    fn aliasBody(b: *Builder, e: Entry, args: []const Var) Error!Var {
+    fn aliasBody(b: *Builder, e: Entry, id: TypeId, args: []const Var) Error!Var {
         // §3.2 row 12, and one of the two demonstrated miscompiles
         // (`plans/m4-3.md` §6.2): the expansion is in no record, so the digest
         // is what makes it visible.
@@ -1199,6 +1221,8 @@ pub const Builder = struct {
         // scope inside it and must not leak into it.
         var inner: Builder = .init(b.store, b.types, b.graph, b.artifacts, e.module, bir, b.mode, b.rank, b.scratch, b.interner);
         inner.depth = b.depth;
+        const here: Expansion = .{ .id = id, .outer = b.expanding };
+        inner.expanding = &here;
         // A schema endpoint in the body is read as the caller would read
         // it written directly (CK-122): through the caller's schema lookup
         // when the alias is the checked module's own, and through the
