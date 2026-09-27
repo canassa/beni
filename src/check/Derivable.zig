@@ -182,6 +182,10 @@ pub const Verdict = union(enum) {
     /// §11.3): `private_method` at the use, naming the type whose module
     /// declares it.
     private_method: struct { type_id: Types.TypeId, method: Symbol },
+    /// A context whose pass met a payload's method of the wrong type
+    /// (static-dispatch-spike.md §10.13, CK-116): said at the use, naming
+    /// the type whose method it is.
+    requirement: struct { type_id: Types.TypeId, method: Symbol },
 };
 
 /// `derivability` for wanted `id` on `root`, reported at the use when it is
@@ -253,6 +257,10 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
             try Messages.privateMethod(s.report, w.origin, root, p.type_id, p.method);
         },
         .budget => try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget),
+        .requirement => |q| {
+            s.contexts.noteRequirement(s, q.type_id, q.method);
+            try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null);
+        },
         .needs_annotation => |n| {
             s.contexts.noteCulprit(s, n.decl);
             try Messages.derivedNeedsAnnotation(s.report, origin, root, method, s.cx.bir.decls[n.decl].kind == .schema, s.cx.bir.symbol(s.cx.bir.decls[n.decl].name), Contexts.schemaConversion(s.cx, n.decl));
@@ -474,7 +482,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
                 try frames.append(scratch, f);
             },
             .refusal => |refusal| return switch (refusal) {
-                .pending, .query, .needs_annotation, .private_method, .budget => refusal,
+                .pending, .query, .needs_annotation, .private_method, .requirement, .budget => refusal,
                 else => map orelse refusal,
             },
         }
@@ -564,6 +572,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             .absent_other, .foreign => return .opaque_type,
             .absent_budget => return .budget,
             .absent_private => return .{ .private_method = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
+            .absent_requirement => return .{ .requirement = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
             .own_method => {},
             .needs_annotation => return .{ .needs_annotation = .{ .type_id = a.type, .decl = answer.culprit } },
         }
@@ -593,6 +602,14 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             const refs = cx.types.refIds(entry.module);
             const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
             return .{ .private_method = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
+        },
+        // CK-116: the row names the type whose method failed (§14.2 *as
+        // amended by R13*).
+        .requirement => {
+            const p = iface.privateCulprit(row.context) orelse return .opaque_type;
+            const refs = cx.types.refIds(entry.module);
+            const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
+            return .{ .requirement = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
         },
         .unchecked, .primitive, .own_method, .alias => {},
     }

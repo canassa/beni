@@ -274,6 +274,7 @@ fn want(in: *Instantiate, receiver: Var, c: TypeStore.MethodConstraint, at: u32)
         .parent = in.parent,
         .seq = in.seq.*,
         .frame = in.queue.*,
+        .receiver_name = in.cx.store.flagsOf(receiver).name,
     });
     in.seq.* += 1;
     try evidence.setSlot(gpa, at, .wanted(id));

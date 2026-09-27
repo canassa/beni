@@ -433,7 +433,8 @@ pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
 }
 
 /// A `private_method` row's culprit (`Derived.Status.private_method`): the
-/// type whose module declares the private method, and its name. Null for a
+/// type whose module declares the private method, and its name; a
+/// `requirement` row's (R13, CK-116), the type whose method failed. Null for a
 /// range not of that shape (`iface_bytes.verify` refuses one).
 pub fn privateCulprit(iface: *const Interface, context: u32) ?struct { type_ref: TypeRefIndex, method: SymbolIndex } {
     if (context == no_terms) return null;
@@ -511,6 +512,12 @@ pub const Derived = struct {
         /// declares the private method, and the method's `SymbolIndex`
         /// (`privateCulprit`), so the importer's message names it.
         private_method,
+        /// A payload's method exists and has the wrong type for a
+        /// requirement the context makes of it (static-dispatch-spike.md
+        /// §10.13, `checker-v2.md` §14.2 *as amended by R13*, CK-116):
+        /// `context` is `(type_ref, method)` as for `private_method` — the
+        /// type whose method it is — so the importer's message names it.
+        requirement,
     };
 };
 

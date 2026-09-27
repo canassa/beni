@@ -328,8 +328,11 @@ pub fn unifyWellKnown(s: *Solve, id: WantedId, root: Var) Error!bool {
     // unification could only succeed, silently (CK-131).
     if (hasWellKnownType(s, w.method, w.method_type, root)) return true;
     const wanted = try wellKnownType(s, w.method, root);
-    // A clause's declared type against the method's: `.where_clause` (CK-55).
+    // A clause's declared type against the method's: `.where_clause` (CK-55),
+    // with the clause its message names (static-dispatch-spike.md §10.13).
     const category: Tree.Category = .{ .tag = if (w.kind == .where_clause) .where_clause else .general };
+    if (w.kind == .where_clause) s.report.texts.clause = .{ .variable = w.receiver_name, .method = w.method };
+    defer s.report.texts.clause = null;
     return try s.unify(wanted, w.method_type, w.origin, category) == .ok;
 }
 
@@ -476,8 +479,23 @@ fn rigid(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void 
         try s.report.typeDispatchNeedsAnnotation(w.origin, flags.name, w.method, w.method_type);
         return reject(s, id, true);
     }
-    try s.report.missingWhereConstraint(w.origin, w.kind == .where_clause, flags.name, w.method, w.method_type);
+    try s.report.missingWhereConstraint(w.origin, w.kind == .where_clause, flags.name, w.method, w.method_type, letBindingOf(s, root));
     return reject(s, id, false);
+}
+
+/// The `let` binding whose annotation holds rigid `root`, if one does: a
+/// `let` annotation takes no `where`, so §10.4's hint must not suggest one
+/// (static-dispatch-spike.md §10.4 *amended by R13*, CK-53). An error path
+/// only: a walk of the group's annotated bindings.
+fn letBindingOf(s: *Solve, root: Var) Symbol.Optional {
+    const st = s.store();
+    for (s.tree.annotated.items) |a| {
+        if (!a.let) continue;
+        for (s.tree.vars(a.rigids_start, a.rigids_len)) |r| {
+            if (st.find(r) == root) return a.name;
+        }
+    }
+    return .none;
 }
 
 /// §6.6 as refined by R6a's review (S6): a given on a `number` rigid for
@@ -496,6 +514,8 @@ pub fn checkGivens(s: *Solve, decl: u32) Error!void {
         };
         if (flags.kind != .number) continue;
         const wanted = try wellKnownType(s, g.method, root);
+        s.report.texts.clause = .{ .variable = flags.name, .method = g.method };
+        defer s.report.texts.clause = null;
         _ = try s.unify(wanted, g.method_type, g.region, .{ .tag = .where_clause });
     }
 }
@@ -703,10 +723,12 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
     const bir = s.cx.bir;
     const d = bir.decls[decl];
     var names: [named_in_cap_message]Symbol = undefined;
+    var receivers: [named_in_cap_message]Var = undefined;
     var named: usize = 0;
     for (reqs) |r| {
         if (named < names.len) {
             names[named] = r.method;
+            receivers[named] = r.root;
             named += 1;
         }
         try promoted.put(s.cx.scratch, r.root, {});
@@ -726,5 +748,5 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
             else => {},
         }
     }
-    try s.report.tooManyInferredConstraints(d.body.unwrap().?, d.name_token, bir.symbol(d.name), @intCast(reqs.len), max_inferred_constraints, names[0..named]);
+    try s.report.tooManyInferredConstraints(d.body.unwrap().?, d.name_token, bir.symbol(d.name), @intCast(reqs.len), max_inferred_constraints, names[0..named], receivers[0..named]);
 }

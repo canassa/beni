@@ -1138,6 +1138,11 @@ hint is true of the `number` kind while the message's own opening line, *"(<) ne
 argument to be `String`"*, carries the real cause. `<` on a type with no `compare` is
 `no_methods_on_shape` (spike §10.3) and never reaches here.
 
+*Amended by R13 (2026-09-27, CK-50).* The numbers-only hint is now printed **only where an
+arithmetic operator's operand is the mismatch** (§8.7): `"a" < 1` is not arithmetic, so it gets the
+conversion hint Elm gives for `number` against `String`, and the sentence above about a comparison
+reaching the hint is history.
+
 ### 8.1 Codes
 
 ```
@@ -1415,6 +1420,139 @@ the enclosing definition returns.
 
 - `Int` is the subject's error type and `String` the enclosing result's, and the indented line is
   the subject, all three printed with one namer.
+
+### 8.7 R13's texts: context, hints, articles and names
+
+Added 2026-09-27 by R13 (`checker-v2.md` §15.3, §15.4; `plans/checker-rewrite.md` R13), **before**
+the code that prints them. The dispatch texts of the same slice are `static-dispatch-spike.md` §10's
+(§10.3, §10.4, §10.11, §10.13). Everything not named here keeps its text. Elm is the bar
+(`references/elm/compiler/src/Reporting/Error/Type.hs`, `Pattern.hs`); each item says what Elm
+prints for the same mistake.
+
+**A list's 1st element against its context (CK-49).** Elements are checked left to right against
+one element type that the context (an annotation, a parameter) may already have fixed, so the 1st
+element can only fail against the context: there are no previous elements. Category `list_entry`
+at index 1 reads:
+
+```
+The 1st element of this list is not what the list needs:
+
+The 1st element is:
+
+    number
+
+But this list needs its elements to be:
+
+    String
+```
+
+A later element keeps *"does not match all the previous elements"*, which is true of it. Elm
+constrains a list's entries before the list meets its context, so it reports the whole list
+instead: *"The body is a list of type: `List number` But the type annotation on `xs` says it
+should be: `List String`"*.
+
+**The numbers-only hint needs an arithmetic operator (CK-50).** *"`+`, `-`, `*` and `/` work on
+numbers only"* is printed only when the mismatch is an argument of `+`, `-`, `*`, `/`, `//` or `^`
+(category `call_arg`, callee the operator). Elsewhere a `number` or `Int` against a `String` gets
+the conversion in the direction the value has to go, as Elm's `badFlexSuper` and `problemToHint`
+do (*"Try using `String.fromInt` to convert it to a string?"*, *"Want to convert a String into an
+Int? Use the `String.toInt` function!"*):
+
+```
+Hint: want to turn a number into a `String`? Use `String.fromInt` or
+`String.fromFloat`.
+```
+
+```
+Hint: to read a number out of text, use `String.toInt` or `String.toFloat`.
+```
+
+The first when the `String` is what was needed, the second when the `String` is what was found. A
+`number` against anything else keeps *"One of those has to be a number — an `Int` or a `Float` —
+and it is not."* with no hint, where Elm says *"Only `Int` and `Float` values work as numbers."*
+
+**An Elm-style curried annotation (CK-56).** An annotated definition with *n* ≥ 2 parameters whose
+annotation is *n* nested 1-ary functions (`Int -> Int -> Int` over `add a b`) is one mistake. The
+mismatch keeps its layout and its place (the body) and replaces the arity hint with:
+
+```
+Hint: this annotation is in Elm's curried form. A beni function takes all
+of its arguments at once, and its type lists them before one arrow:
+
+    Int, Int -> Int
+```
+
+The indented line is the annotation's first *n* parameters, then its *n*th result, printed by
+§8.2's printer. The condition is syntactic (the parameter count) and the annotation's shape, so it
+is decided when the scheme is read (`checker-v2.md` P2, and a `let` binding's header), and **the
+scheme is poisoned there**: a caller written `add 1 2`, beni's way, is not checked against a
+promise the author did not mean, and adds no TOO MANY ARGS. Elm accepts the program — currying is
+Elm's — so there is no Elm text; its nearest is the arity note of `Type.hs`'s `toFunctionReport`.
+
+**A function where the subject goes (CK-56).** A call's argument that is a function, where the
+parameter is not one and another parameter of the callee is a function of as many arguments, is
+Elm's argument order (`List.map String.fromInt [ 1, 2 ]`); it replaces *"this is a function, so it
+may be missing an argument"*:
+
+```
+Hint: this function looks like it belongs in the 2nd argument, which takes
+one. beni's functions take their subject first — `List.map list f`, where
+Elm writes `List.map f list` — so the arguments may be the wrong way round.
+```
+
+`2nd` is the first such parameter. Elm has no subject-first convention and no such hint.
+
+**Articles (CK-59).** A backticked name after *a* takes *an* when it starts with a vowel letter:
+*"This record does not have an `extra` field"*, *"This record has an `id` field I did not
+expect"*, *"This is not a record with an `age` field"*, *"a `let` binding whose type needs an `eq`
+method"*. The rule is the letter, not the sound, so it can misjudge a name like `url`; a name is
+not a word, and the letter is what the reader sees. Elm prints *"a"* every time (`Type.hs` line
+846: *"does not have a `extra` field"*).
+
+**A cons pattern inside a constructor (CK-60).** `missing_patterns` prints a constructor with
+arguments in parentheses only in ARGUMENT position (`Just (Node a b)`), never at the head of a
+`::`: `Group (Circle _ :: _)`, not `Group ((Circle _) :: _)`. This is Elm's `patternToDoc`, whose
+`Head` context adds no parentheses to a constructor (`Pattern.hs` lines 139–165).
+
+**A constructor with its type's name (CK-86, CK-129).** The `exposing (T(..))` hint of CK-47 lists
+the type and then every constructor the imported module exposes — except one that shares the
+type's name, which naming the type already exposes (`language.md` §5.2). When that leaves none:
+
+```
+`Box(..)` is how Elm exposes every constructor of `Box`, and beni has no
+wildcard: list the constructors you use by name, beside the type.
+
+    exposing (Box)
+
+Naming `Box` exposes the type and its constructor `Box` both.
+```
+
+The last sentence is printed whenever a constructor was left out for sharing the name. Elm accepts
+`(..)`; there is no Elm text.
+
+**A kinded variable prints as its kind (CK-94).** A flex or rigid variable of kind `number` or
+`appendable` prints as the kind (`number`, `number2`, …) unless its name already starts with the
+kind's text; a name inherited through unification — `cons`'s `a` merged with a literal's unnamed
+`number` — is dropped. So `1 :: []` is `List number` in a message and in `--stage=interface`, and
+a message never says *"This argument is: `List a` … One of those has to be a number"*. The
+interface's quantifier name hint follows the same rule (`Schemes.Writer` writes no name for such a
+variable), which also makes its bytes independent of the order a recursive group's members are
+written in (CK-94's F8). Elm's variables carry their kind in their name (`number`, `comparable`),
+so it never has the case.
+
+**A record a deferred requirement refused is printed as P4 left it (R11's note).** A requirement
+an instantiated scheme made on an argument (`f`'s `where a.combine`, readied when `{ combine = \z
+-> z + 1 }` reaches `x`) is refused under eager draining (`checker-v2.md` §9.1) before the rest of
+the argument is solved, so `no_methods_on_shape` printed the record as it met the receiver, `{
+combine : a -> b }`. Its code, region and failure bit are still decided there; its TEXT is drawn
+again when P4 ends, from the store as the whole module left it: `{ combine : number -> number }`,
+what v1 printed. Elm has no methods; its messages are likewise written after solving.
+
+**An argument after a failed one asks nothing (CK-115).** R8a's review saw an UNKNOWN METHOD
+(*"I cannot tell which type `key` is being asked of"*) beside a TYPE MISMATCH at one call, and
+`3ff3ac5` no longer prints it for any shape tried; `check/bad/CallArgMismatchNoUnknownMethod` pins
+the one message. The rule it pins is `checker-v2.md` §7.1's: a call stops at its first reported
+argument, and a requirement of the callee whose receiver no argument determined fails in silence.
 
 ## 9. Measurement
 

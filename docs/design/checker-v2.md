@@ -2404,6 +2404,13 @@ and where the build departs from it:
   `not_equatable`'s "a function in there" and `compare`'s `contains_function`), another module's
   private method (`absent_private`: `private_method` at the use, the reason §11.3 wants), the
   parametric in-flight case (`needs_annotation`), or anything else (`absent_other`).
+  *Amended by R13 (2026-09-27, CK-116):* a payload's method that exists and has the wrong type
+  for what the pass asks of it — a payload's own `eq`, or a requirement its method's `where`
+  clause makes — is `absent_requirement`, with the `TypeId` whose method it is and the method's
+  name, so the use says which method failed (`static-dispatch-spike.md` §10.13) instead of
+  `absent_other`'s *"a function anywhere inside it"*. A private method met first keeps
+  `absent_private`. A use that decides the same failure itself (a present context's entry at a
+  concrete argument) names the method and both types.
 - **The frame** is a new kind, `.fixpoint`: a queue of its own, no group, never merged
   (`Groups.topFrame` skips it). Every pass reports into ONE quiet report per module; a group a pass
   nests is checked with the module's report (`Groups.solveGroup` swaps it back); an `internal` is
@@ -3411,6 +3418,14 @@ writes it; the old one writes `false`, and an importer of its record reads its t
 `is_equatable` is again a `foreign type`'s declared bit only (R8b had put an endpoint's gate
 there). The raw interface dump prints ` no_function` when it is set.
 
+*Amended by R13 (2026-09-27, CK-116); `iface_bytes.format_version` 5 → 6.* A derived row may be
+**`requirement`**: a payload's method exists and has the wrong type for what the context asks of
+it (§11.2's `absent_requirement`). Its `context` is `private_method`'s two words, `(type_ref,
+method)` — the type whose method it is, and the method (`Interface.privateCulprit` reads both) —
+so an importer's message names it (`static-dispatch-spike.md` §10.13); `verify` refuses any other
+shape, and the raw interface dump prints `requirement <kind> type_ref=… method=…`. Before, such a
+row was `unanswerable`.
+
 ### 14.3 Cache and table versions
 
 - `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,
@@ -3452,6 +3467,8 @@ there). The raw interface dump prints ` no_function` when it is set.
   with its two-word culprit; tagged schema endpoints have hidden rows: §14.2 *as amended by R8b*).
   The schema plan stays 1: its property bytes keep their layout and meaning, read off the derived
   contexts under the new checker (§11.5 *as built by R8b*).
+- *R13 (2026-09-27):* `iface_bytes.format_version` 5 → 6 (a derived row may be `requirement`,
+  §14.2 *as amended by R13*). Every older record is a miss.
 - *As built by R10 (2026-09-27).* No format moves: `iface_bytes`, `dispatch_bytes`,
   `entry_bytes`, the schema plan, the dependency digest and `key_version` are as R9 left them.
   - **Every incrementality scenario runs under v2.** `zig build test-v2` runs `cache_test.zig`,
@@ -3516,7 +3533,9 @@ to `check2/Check.zig`. v2 imports neither `Constrain.zig` nor `Solve.zig`
 (`check2/rules_test.zig` refuses it). P0's refusal, which runs before P1 builds a `Report`, goes
 through `Report.appendTo`, the one path's list half. **Owed by R13:** `Diagnostics.Reporter.env`
 narrows from a whole `Env` (whose `dispatch`, `plain_methods` and `monomorphic` v2 leaves empty)
-to the fields the texts read.
+to the fields the texts read. *Done (R12, R13):* R12 deleted `dispatch` and `plain_methods` with
+v1, and R13 `artifacts` and `schemas`, which no text reads; `monomorphic` stays, because v2
+fills it (§8.4's switch, `Solve.holdConstrained`) and A.30's hint reads it.
 
 ### 15.2 Failure is state (I12, CK-11)
 

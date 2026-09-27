@@ -672,6 +672,46 @@ pub fn paramCount(store: *TypeStore, v: Var) u32 {
     };
 }
 
+/// Whether `v` is `n` ≥ 2 nested 1-ary functions, `A -> B -> … -> R`: Elm's
+/// curried annotation of a definition of `n` parameters (checker.md §8.7,
+/// CK-56). `curriedParam` and `curriedResult` read its levels.
+pub fn isCurried(store: *TypeStore, v: Var, n: u32) bool {
+    if (n < 2) return false;
+    var at = v;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const f = store.oneParam(at) orelse return false;
+        at = f.result;
+    }
+    return true;
+}
+
+/// The parameter of level `i` of a curried chain (`isCurried`).
+pub fn curriedParam(store: *TypeStore, v: Var, i: u32) Var {
+    var at = v;
+    var k: u32 = 0;
+    while (k < i) : (k += 1) at = store.oneParam(at).?.result;
+    return store.vars(store.oneParam(at).?.params)[0];
+}
+
+/// What `n` levels of a curried chain return (`isCurried`).
+pub fn curriedResult(store: *TypeStore, v: Var, n: u32) Var {
+    var at = v;
+    var k: u32 = 0;
+    while (k < n) : (k += 1) at = store.oneParam(at).?.result;
+    return at;
+}
+
+fn oneParam(store: *TypeStore, v: Var) ?Structure.Func {
+    return switch (store.resolvedContent(v)) {
+        .structure => |flat| switch (flat) {
+            .func => |func| if (func.params.len == 1) func else null,
+            else => null,
+        },
+        else => null,
+    };
+}
+
 // ---------------------------------------------------------------------------
 // `extra`
 // ---------------------------------------------------------------------------

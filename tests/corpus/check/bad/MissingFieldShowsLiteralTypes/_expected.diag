@@ -1,0 +1,1 @@
+[{"code":"missing_field","severity":"error","span":{"file":"tests/corpus/check/bad/MissingFieldShowsLiteralTypes/N.beni","start":{"line":7,"col":16},"end":{"line":7,"col":17}},"title":"MISSING FIELD","message":"This record does not have an `extra` field:\n\n    { n : number, name : String }\n\nBut I need a record like:\n\n    { extra : Bool, n : Int, name : String }\n"}]

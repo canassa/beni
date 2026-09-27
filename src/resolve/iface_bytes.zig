@@ -73,7 +73,9 @@ pub const magic = "BENIIFC\x00";
 /// (`plans/m4-plan.md` D4).
 /// 5 (R8b): a derived row may be `private_method`, with its culprit
 /// (`checker-v2.md` §14.2 *as amended by R8b*).
-pub const format_version: u32 = 5;
+/// 6 (R13): a derived row may be `requirement`, with its culprit in the same
+/// two words (§14.2 *as amended by R13*, CK-116).
+pub const format_version: u32 = 6;
 
 /// The fifteen columns, in this order and no other (`hidden_types` since
 /// format 4, `checker-v2.md` §14.2 *as amended by R8a*). `terms` is split into
@@ -894,7 +896,7 @@ fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arit
     for ([_]Interface.Derived{ eq, compare }) |d| {
         // D1's row (§14.2 *as amended by R8b*): `(type_ref, method)`, a type
         // this record names and a symbol.
-        if (d.status == .private_method) {
+        if (d.status == .private_method or d.status == .requirement) {
             const words = rangeOf(iface, d.context) orelse return false;
             if (words.len != 2 or words[0] >= iface.type_refs.len or words[1] >= symbols) return false;
             continue;

@@ -1,4 +1,0 @@
-# Receivers named: whether as the type variables (`a.eq`, `b.eq`, …) or the
-# parameters (`a1.eq`, …) is R13's text, so the line pins only that each
-# listed constraint carries one.
-too_many_inferred_constraints 9:1 contains ".eq`" lacks "`eq`, `eq`"

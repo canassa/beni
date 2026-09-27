@@ -144,9 +144,10 @@ pub fn write(
 /// for a method that is not `eq` or `compare`, the scheme that carries its
 /// type (§14.2 *as amended by R8a*).
 fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, kind: []const u8, d: Interface.Derived) Error!void {
-    if (d.status == .private_method) {
+    if (d.status == .private_method or d.status == .requirement) {
         const p = iface.privateCulprit(d.context) orelse return;
-        return w.print("  private {s} type_ref={d} method={s}\n", .{ kind, @intFromEnum(p.type_ref), interner.slice(iface.symbol(p.method)) });
+        const what = if (d.status == .private_method) "private" else "requirement";
+        return w.print("  {s} {s} type_ref={d} method={s}\n", .{ what, kind, @intFromEnum(p.type_ref), interner.slice(iface.symbol(p.method)) });
     }
     const scheme = iface.contextScheme(d.context);
     if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @intFromEnum(scheme) });
@@ -216,7 +217,7 @@ pub fn writeRaw(
         if (t.no_function) try w.writeAll(" no_function");
         try w.writeByte('\n');
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
-            if (row[1].status != .present and row[1].status != .private_method) continue;
+            if (row[1].status != .present and row[1].status != .private_method and row[1].status != .requirement) continue;
             try writeContext(w, iface, interner, row[0], row[1]);
         }
     }
@@ -233,7 +234,7 @@ pub fn writeRaw(
             if (t.no_function) " no_function" else "",
         });
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
-            if (row[1].status != .present and row[1].status != .private_method) continue;
+            if (row[1].status != .present and row[1].status != .private_method and row[1].status != .requirement) continue;
             try writeContext(w, iface, interner, row[0], row[1]);
         }
     }

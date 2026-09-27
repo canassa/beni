@@ -55,12 +55,22 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
                 \\
                 \\    exposing ({s}
             , .{ cx.name, cx.name, cx.name });
-            if (cx.available.len == 0) {
-                try w.writeAll(")\n\n");
-                try w.print("`{s}` has no constructors this module can see.", .{cx.name});
-            } else {
-                for (cx.available) |ctor| try w.print(", {s}", .{ctor});
-                try w.writeAll(")");
+            // A constructor with the type's own name is exposed by naming
+            // the type (language.md §5.2): listing it again is refused as a
+            // duplicate (checker.md §8.7, CK-86).
+            var same_name = false;
+            for (cx.available) |ctor| {
+                if (std.mem.eql(u8, ctor, cx.name)) {
+                    same_name = true;
+                    continue;
+                }
+                try w.print(", {s}", .{ctor});
+            }
+            try w.writeAll(")");
+            if (same_name) {
+                try w.print("\n\nNaming `{s}` exposes the type and its constructor `{s}` both.", .{ cx.name, cx.name });
+            } else if (cx.available.len == 0) {
+                try w.print("\n\n`{s}` has no constructors this module can see.", .{cx.name});
             }
         },
         .unknown_module => {

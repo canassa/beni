@@ -72,6 +72,9 @@ pub const Annotated = struct {
     name: InternPool.Symbol.Optional,
     /// The declaration it is written in (§8.3's message, §15.2).
     decl: u32,
+    /// A `let` binding's annotation, which takes no `where` (§10.4's hint,
+    /// CK-53); false for a top-level declaration's.
+    let: bool = false,
 };
 
 /// A boundary (§8.1): a top-level group — checked in SCC order, or nested at

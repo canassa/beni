@@ -69,6 +69,10 @@ staged: std.ArrayList(Item) = .empty,
 env: EnvFile.Env = undefined,
 texts: Diagnostics.Reporter = undefined,
 monomorphic: std.ArrayList(EnvFile.Monomorphic) = .empty,
+/// The messages `renderLate` redraws (`noMethodsOnShapeLate`).
+late: std.ArrayList(Late) = .empty,
+
+pub const Late = struct { index: u32, length: u32, region: Bir.Inst.Index, method: Symbol, v: Var, shape: Diagnostics.Reporter.ShapeKind };
 
 /// In place: the staging reporter points into `r` itself.
 pub fn init(
@@ -87,12 +91,10 @@ pub fn init(
         .store = cx.store,
         .types = cx.types,
         .graph = cx.graph,
-        .artifacts = cx.artifacts,
         .interner = cx.interner,
         .interfaces = cx.interfaces,
         .module = cx.module,
         .bir = cx.bir,
-        .schemas = cx.schemas,
         .decl_scheme = decl_scheme,
         .local_var = &.{},
         .monomorphic = &r.monomorphic,
@@ -106,6 +108,7 @@ pub fn deinit(r: *Report) void {
     r.failed.deinit(r.gpa);
     r.failed_patterns.deinit(r.gpa);
     r.monomorphic.deinit(r.env.scratch);
+    r.late.deinit(r.gpa);
 }
 
 /// The one path to the module's list (§15.1). Takes ownership of
@@ -328,8 +331,42 @@ pub fn noMethodsOnShape(r: *Report, region: Bir.Inst.Index, method: Symbol, v: V
     try r.flush();
 }
 
-pub fn missingWhereConstraint(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, var_name: Symbol.Optional, method: Symbol, fn_var: Var) Error!void {
-    try r.texts.missingWhereConstraint(origin, from_annotation, var_name, method, fn_var);
+/// A message about a record a DEFERRED wanted met (a requirement readied
+/// when an argument reached its receiver): said now, and its record printed
+/// again once P4 is done (`renderLate`), as the declaration left it rather
+/// than as it met the receiver — `{ combine : number -> number }`, not
+/// `{ combine : a -> b }` (checker.md §8.7). The region, code and failure
+/// bits are decided now; only the text is redrawn.
+pub fn noMethodsOnShapeLate(r: *Report, region: Bir.Inst.Index, method: Symbol, v: Var, shape: ShapeKind) Error!void {
+    const before = r.items.items.len;
+    try r.noMethodsOnShape(region, method, v, shape);
+    if (r.items.items.len != before + 1) return;
+    try r.late.append(r.gpa, .{ .index = @intCast(before), .length = @intCast(r.items.items[before].message.len), .region = region, .method = method, .v = v, .shape = shape });
+}
+
+/// Redraw every `noMethodsOnShapeLate` message with the store as P4 left it.
+/// A hint appended since (D14's, `appendToItem`) is kept after the text.
+pub fn renderLate(r: *Report) Error!void {
+    defer r.late.clearRetainingCapacity();
+    for (r.late.items) |l| {
+        try r.texts.noMethodsOnShape(l.region, l.method, l.v, l.shape);
+        if (r.staged.items.len != 1) {
+            for (r.staged.items) |item| r.gpa.free(item.message);
+            r.staged.clearRetainingCapacity();
+            continue;
+        }
+        const fresh = r.staged.items[0].message;
+        r.staged.clearRetainingCapacity();
+        defer r.gpa.free(fresh);
+        const item = &r.items.items[l.index];
+        const joined = try std.mem.concat(r.gpa, u8, &.{ fresh, item.message[l.length..] });
+        r.gpa.free(item.message);
+        item.message = joined;
+    }
+}
+
+pub fn missingWhereConstraint(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, var_name: Symbol.Optional, method: Symbol, fn_var: Var, let_binding: Symbol.Optional) Error!void {
+    try r.texts.missingWhereConstraint(origin, from_annotation, var_name, method, fn_var, let_binding);
     try r.flush();
 }
 
@@ -343,8 +380,8 @@ pub fn typeDispatchNeedsAnnotation(r: *Report, region: Bir.Inst.Index, var_name:
     try r.flush();
 }
 
-pub fn tooManyInferredConstraints(r: *Report, region: Bir.Inst.Index, token: u32, decl: Symbol, count: u32, limit: u32, names: []const Symbol) Error!void {
-    try r.texts.tooManyInferredConstraints(region, token, decl, count, limit, names);
+pub fn tooManyInferredConstraints(r: *Report, region: Bir.Inst.Index, token: u32, decl: Symbol, count: u32, limit: u32, names: []const Symbol, receivers: []const Var) Error!void {
+    try r.texts.tooManyInferredConstraints(region, token, decl, count, limit, names, receivers);
     try r.flush();
 }
 

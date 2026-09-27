@@ -31,6 +31,7 @@ const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const DispatchTexts = @import("DispatchTexts.zig");
+const PatternTexts = @import("PatternTexts.zig");
 
 const Diagnostics = @This();
 
@@ -87,7 +88,13 @@ pub const Reporter = struct {
     /// so does a declaration that has already failed: one mistake, one
     /// message.
     quiet: bool = false,
+    /// The `where` clause a `.where_clause` unification is checking: set by
+    /// the resolver around that one unification, so the message can name
+    /// the clause after its receiver is bound (static-dispatch-spike.md
+    /// §10.13, CK-55).
+    clause: ?Clause = null,
     pub const Error = Allocator.Error;
+    pub const Clause = struct { variable: Symbol.Optional, method: Symbol };
 
     pub fn cx(r: *const Reporter) Render.Context {
         return .{ .store = r.env.store, .types = r.env.types, .interner = r.env.interner };
@@ -129,6 +136,9 @@ pub const Reporter = struct {
         rigid: ?Rigid,
     ) Error!void {
         if (r.quiet) return;
+        if (category.tag == .where_clause and rigid == null) {
+            if (r.clause) |c| return DispatchTexts.whereClauseMismatch(r, region, c, expected, actual);
+        }
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -189,7 +199,7 @@ pub const Reporter = struct {
             "it";
         w.print(
             \\
-            \\Hint: `{s}` is a `let` binding whose type needs a `{s}` method, and such a
+            \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method, and such a
             \\binding is used at ONE type inside the definition that holds it
             \\(`docs/design/static-dispatch-spike.md` §6.4). The first use fixed the type;
             \\this is the second.
@@ -197,7 +207,7 @@ pub const Reporter = struct {
             \\Move `{s}` out to a top-level declaration and annotate it with
             \\`where … .{s} : …` to use it at two.
             \\
-        , .{ name, r.env.interner.slice(found), name, r.env.interner.slice(found) }) catch return error.OutOfMemory;
+        , .{ name, article(r.env.interner.slice(found)), r.env.interner.slice(found), name, r.env.interner.slice(found) }) catch return error.OutOfMemory;
         return true;
     }
 
@@ -301,7 +311,15 @@ pub const Reporter = struct {
                     }) catch "But it needs it to be:",
                 };
             },
-            .list_entry => return .{
+            // The 1st element can only have failed against the list's
+            // CONTEXT: the elements are checked left to right against one
+            // element type, and it has no previous ones (checker.md §8.7,
+            // CK-49).
+            .list_entry => if (category.index == 1) return .{
+                .intro = "The 1st element of this list is not what the list needs:",
+                .found = "The 1st element is:",
+                .wanted = "But this list needs its elements to be:",
+            } else return .{
                 .intro = std.fmt.allocPrint(scratch, "The {s} element of this list does not match all the previous elements:", .{ordinal(scratch, category.index)}) catch "This list is not consistent:",
                 .found = std.fmt.allocPrint(scratch, "The {s} element is:", .{ordinal(scratch, category.index)}) catch "This element is:",
                 .wanted = "But all the previous elements in the list are:",
@@ -330,7 +348,7 @@ pub const Reporter = struct {
                 .wanted = if (category.index == Category.no_field) "But the update needs it to have:" else "But the field holds:",
             },
             .field_access => return .{
-                .intro = std.fmt.allocPrint(scratch, "This is not a record with a `{s}` field:", .{r.fieldText(category.index)}) catch "This is not a record with that field:",
+                .intro = std.fmt.allocPrint(scratch, "This is not a record with {s} `{s}` field:", .{ article(r.fieldText(category.index)), r.fieldText(category.index) }) catch "This is not a record with that field:",
                 .found = "It is:",
                 .wanted = "But I need a record like:",
             },
@@ -380,12 +398,34 @@ pub const Reporter = struct {
     /// The known hints of checker.md §8, chosen from the pair of types and
     /// from what the compiler was looking at.
     fn typeHint(r: *Reporter, w: *std.Io.Writer, namer: *Render.Namer, category: Category, expected: Var, actual: Var) Error!void {
-        _ = namer;
         // Two functions of different arity where one was wanted is the
         // missing-argument shape again, one level in: §8.3 catches it at a
         // CALL, and this is the same mistake passed as an argument.
         const wanted_arrows = r.paramCount(expected);
         const found_arrows = r.paramCount(actual);
+        // An Elm curried annotation over a definition of that many
+        // parameters (checker.md §8.7, CK-56).
+        if ((category.tag == .annotation or category.tag == .let_annotation) and
+            r.env.store.isCurried(expected, found_arrows))
+        {
+            w.writeAll(
+                \\
+                \\Hint: this annotation is in Elm's curried form. A beni function takes all
+                \\of its arguments at once, and its type lists them before one arrow:
+                \\
+                \\
+            ) catch return error.OutOfMemory;
+            w.writeAll("    ") catch return error.OutOfMemory;
+            var i: u32 = 0;
+            while (i < found_arrows) : (i += 1) {
+                if (i != 0) w.writeAll(", ") catch return error.OutOfMemory;
+                Render.writeVar(w, r.cx(), namer, r.env.store.curriedParam(expected, i), .arg) catch return error.OutOfMemory;
+            }
+            w.writeAll(" -> ") catch return error.OutOfMemory;
+            Render.writeVar(w, r.cx(), namer, r.env.store.curriedResult(expected, found_arrows), .top) catch return error.OutOfMemory;
+            w.writeByte('\n') catch return error.OutOfMemory;
+            return;
+        }
         if (wanted_arrows > 0 and found_arrows > 0 and wanted_arrows != found_arrows) {
             w.print(
                 \\
@@ -430,12 +470,7 @@ pub const Reporter = struct {
         }
         // A number where a String was wanted, or the reverse.
         if (e == wk.string and (a == wk.int or a_kind == .number)) {
-            w.writeAll(
-                \\
-                \\Hint: want to turn a number into a `String`? Use `String.fromInt` or
-                \\`String.fromFloat`.
-                \\
-            ) catch return error.OutOfMemory;
+            w.writeAll(to_string_hint) catch return error.OutOfMemory;
             return;
         }
         // Arithmetic only: `<` and the other three orderings are the
@@ -443,12 +478,18 @@ pub const Reporter = struct {
         // `"a" < "b"` compiles and neither they nor `String.compare`
         // belong in a hint about numbers.
         if (a == wk.string and (e == wk.int or e_kind == .number)) {
-            w.writeAll(
-                \\
-                \\Hint: `+`, `-`, `*` and `/` work on numbers only. To read a number out of
-                \\text use `String.toInt` or `String.toFloat`.
-                \\
-            ) catch return error.OutOfMemory;
+            // The numbers-only sentence only for an arithmetic operator's
+            // operand (checker.md §8.7, CK-50).
+            if (r.arithmeticOperand(category)) {
+                w.writeAll(
+                    \\
+                    \\Hint: `+`, `-`, `*` and `/` work on numbers only. To read a number out of
+                    \\text use `String.toInt` or `String.toFloat`.
+                    \\
+                ) catch return error.OutOfMemory;
+            } else {
+                w.writeAll(read_number_hint) catch return error.OutOfMemory;
+            }
             return;
         }
         if (e == wk.bool or a == wk.bool) {
@@ -465,6 +506,16 @@ pub const Reporter = struct {
         // A function where a value was wanted is nearly always a missing
         // argument; §8.3 catches it at a call, and this is the rest.
         if (r.isFunction(actual) and !r.isFunction(expected) and !r.isFlex(expected)) {
+            if (r.subjectFirstSlot(category, actual)) |slot| {
+                w.print(
+                    \\
+                    \\Hint: this function looks like it belongs in the {s} argument, which takes
+                    \\one. beni's functions take their subject first — `List.map list f`, where
+                    \\Elm writes `List.map f list` — so the arguments may be the wrong way round.
+                    \\
+                , .{ordinal(r.env.scratch, slot)}) catch return error.OutOfMemory;
+                return;
+            }
             w.writeAll(
                 \\
                 \\Hint: this is a function, so it may be missing an argument.
@@ -472,6 +523,87 @@ pub const Reporter = struct {
             ) catch return error.OutOfMemory;
         }
         try r.leftToRightHint(w, category);
+    }
+
+    /// Elm's `badFlexSuper`/`problemToHint` for a number that has to become
+    /// a `String`, and for a `String` that has to become a number
+    /// (checker.md §8.7, CK-50).
+    const to_string_hint =
+        \\
+        \\Hint: want to turn a number into a `String`? Use `String.fromInt` or
+        \\`String.fromFloat`.
+        \\
+    ;
+    const read_number_hint =
+        \\
+        \\Hint: to read a number out of text, use `String.toInt` or `String.toFloat`.
+        \\
+    ;
+
+    /// Whether the mismatch is an operand of an arithmetic operator — the
+    /// one place the numbers-only hint is true (checker.md §8.7, CK-50).
+    fn arithmeticOperand(r: *const Reporter, category: Category) bool {
+        if (category.tag != .call_arg) return false;
+        const call = category.owner.unwrap() orelse return false;
+        const callee = r.calleeOf(call);
+        if (callee.kind != .operator) return false;
+        for ([_][]const u8{ "+", "-", "*", "/", "//", "^" }) |op| {
+            if (std.mem.eql(u8, callee.name, op)) return true;
+        }
+        return false;
+    }
+
+    /// The 1-based position of another parameter of this call that is a
+    /// function of as many arguments as `actual`, when `actual` — a function
+    /// — was passed where a non-function is wanted: Elm's argument
+    /// order against beni's subject-first one (checker.md §8.7, CK-56).
+    ///
+    /// The parameters are read off the callee's DECLARED type — its scheme
+    /// in this module, or its interface's — because an argument is checked
+    /// after its call, when nothing else still holds them. An error path
+    /// only.
+    fn subjectFirstSlot(r: *Reporter, category: Category, actual: Var) ?u32 {
+        if (category.tag != .call_arg or category.index == 0) return null;
+        const call = category.owner.unwrap() orelse return null;
+        const at = category.index - 1;
+        const st = r.env.store;
+        const arity = st.paramCount(actual);
+        const bir = r.env.bir;
+        if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return null;
+        const callee: Bir.Inst.Index = @enumFromInt(bir.instData(call).lhs);
+        if (callee.int() >= bir.insts.len) return null;
+        const data = bir.instData(callee);
+        switch (bir.instTag(callee)) {
+            .top, .local => {
+                const v = (if (bir.instTag(callee) == .top)
+                    (if (data.lhs < r.env.decl_scheme.len) r.env.decl_scheme[data.lhs].unwrap() else null)
+                else
+                    r.env.localVar(data.lhs)) orelse return null;
+                const f = switch (st.resolvedContent(v)) {
+                    .structure => |s| switch (s) {
+                        .func => |f| f,
+                        else => return null,
+                    },
+                    else => return null,
+                };
+                for (st.vars(f.params), 0..) |p, j| {
+                    if (j != at and r.isFunction(p) and st.paramCount(p) == arity) return @intCast(j + 1);
+                }
+            },
+            .ext_value => {
+                if (data.lhs >= r.env.interfaces.len) return null;
+                const iface = r.env.iface(@enumFromInt(data.lhs));
+                if (data.rhs >= iface.values.len) return null;
+                const body = iface.term(iface.scheme(iface.values[data.rhs].scheme).body);
+                if (body.tag != .func) return null;
+                for (iface.range(body.lhs), 0..) |p, j| {
+                    const t = iface.term(@enumFromInt(p));
+                    if (j != at and t.tag == .func and iface.range(t.lhs).len == arity) return @intCast(j + 1);
+                }
+            },
+            else => {},
+        }
+        return null;
     }
 
     /// Elm's hint for an argument after the first: the types of a call's
@@ -709,14 +841,29 @@ pub const Reporter = struct {
                 \\`sub`, `mul`, `div`, `rem` or `mod` — as a method, `a.add b`, or qualified,
                 \\`Int32.add a b`. `==`, `<` and the other comparisons do work.
                 \\
-            ) catch return error.OutOfMemory else w.writeAll(
-                \\
-                \\
-                \\One of those has to be a number — an `Int` or a `Float` — and it is not.
-                \\
-                \\Hint: `+`, `-`, `*` and `/` work on numbers only. To join text use `++`.
-                \\
-            ) catch return error.OutOfMemory,
+            ) catch return error.OutOfMemory else {
+                w.writeAll(
+                    \\
+                    \\
+                    \\One of those has to be a number — an `Int` or a `Float` — and it is not.
+                    \\
+                ) catch return error.OutOfMemory;
+                // The numbers-only sentence only for an arithmetic operator's
+                // operand; elsewhere Elm's conversion, in the direction the
+                // value has to go (checker.md §8.7, CK-50).
+                const wk = r.env.types.well_known;
+                if (r.arithmeticOperand(category)) {
+                    w.writeAll(
+                        \\
+                        \\Hint: `+`, `-`, `*` and `/` work on numbers only. To join text use `++`.
+                        \\
+                    ) catch return error.OutOfMemory;
+                } else if (r.primitiveOf(expected) == wk.string) {
+                    w.writeAll(to_string_hint) catch return error.OutOfMemory;
+                } else if (r.primitiveOf(actual) == wk.string) {
+                    w.writeAll(read_number_hint) catch return error.OutOfMemory;
+                }
+            },
             .appendable => w.writeAll(
                 \\
                 \\
@@ -838,7 +985,11 @@ pub const Reporter = struct {
     }
 
     /// Which shape a receiver turned out to be, for §10.3's sentence.
-    pub const ShapeKind = enum { record, tuple, unit, function, contains_function, not_orderable, too_wide, other };
+    /// `record` is a dot-call's (its hint is the field call); `record_required`
+    /// a requirement that is not one, and `open_record` a well-known method
+    /// on an open record (static-dispatch-spike.md §10.3 *amended by R13*,
+    /// CK-54).
+    pub const ShapeKind = enum { record, record_required, open_record, tuple, unit, function, contains_function, not_orderable, too_wide, other };
 
     // The texts of static dispatch and of the obligations (§10, checker.md
     // §8.4), in `DispatchTexts.zig` since R12 (checker-v2.md §19.1).
@@ -867,174 +1018,11 @@ pub const Reporter = struct {
     /// §6.7's text, in `DispatchTexts.zig` since R12.
     pub const cyclicValue = DispatchTexts.cyclicValue;
 
-    /// A `case` with no branch for some possibility. `examples` are
-    /// counterexample patterns already rendered as source syntax by
-    /// `Render.allocPattern` — at most three of them, because a list of
-    /// twenty is a wall and the first three say the same thing.
-    ///
-    /// The patterns arrive rendered rather than as a structure because the
-    /// store they name constructors from is the module's, and this message
-    /// is the last thing that will ever read it.
-    pub fn missingPatterns(r: *Reporter, region: Bir.Inst.Index, examples: []const []const u8) Error!void {
-        if (r.quiet) return;
-        if (examples.len == 0) return;
-        var out = r.writer();
-        defer out.deinit();
-        const w = &out.writer;
-        w.writeAll(
-            \\This `case` does not have branches for all possibilities:
-            \\
-            \\Missing possibilities include:
-            \\
-            \\
-        ) catch return error.OutOfMemory;
-        for (examples) |e| w.print("    {s}\n", .{e}) catch return error.OutOfMemory;
-        w.writeAll(
-            \\
-            \\I would have to crash if I saw one of those. Add branches for them!
-            \\
-            \\Hint: if you want to write a branch's code later, `Debug.todo "…"` holds the
-            \\place and has whatever type the branch needs.
-            \\
-        ) catch return error.OutOfMemory;
-        try r.emit(.missing_patterns, region, &out);
-    }
-
-    /// A `case` the usefulness analysis could not decide inside its work
-    /// budget (checker.md §6.6). An ERROR, not a warning and not silence:
-    /// `backend.md` §7 compiles a `case` to a decision tree with no default
-    /// arm, on the strength of "the checker proved exhaustiveness", so a
-    /// `case` nobody proved anything about is the one remaining way to a
-    /// wrong answer at exit 0.
-    ///
-    /// `why` picks between two messages under the one code, because the two
-    /// ways out differ and a wrong hint is worse than none: the analysis
-    /// spends WORK, which `--pattern-budget` buys more of, and it spends
-    /// STACK, which it does not. The author sees one code — "this `case` was
-    /// not decided" — and the sentence that is true of their program.
-    ///
-    /// `limit` is whichever of the two ran out, as it was in force and not as
-    /// what is left of it, so the author can see what they met.
-    pub fn patternBudgetExhausted(
-        r: *Reporter,
-        region: Bir.Inst.Index,
-        why: enum { budget, depth },
-        limit: u32,
-    ) Error!void {
-        if (r.quiet) return;
-        var out = r.writer();
-        defer out.deinit();
-        const w = &out.writer;
-        switch (why) {
-            .budget => w.print(
-                \\This `case` is too big for me to prove anything about:
-                \\
-                \\Deciding whether a `case` covers every possibility can cost exponentially
-                \\much, so I spend at most a fixed amount of work on it — {d} steps here — and
-                \\this one ran out. I do not know whether a possibility is missing or a branch
-                \\is unreachable, and I will not compile a `case` I could not check: the
-                \\JavaScript I generate has no fallback branch to land in.
-                \\
-                \\Splitting the match makes it cheap, because the cost is in the COMBINATIONS:
-                \\a helper function per group of constructors, or one `case` per column instead
-                \\of one `case` over all of them at once.
-                \\
-                \\Hint: `--pattern-budget=<n>` raises the limit if the `case` really is meant
-                \\to be this big.
-                \\
-            , .{limit}) catch return error.OutOfMemory,
-            .depth => w.print(
-                \\This `case` matches on a pattern nested deeper than I can analyse:
-                \\
-                \\I read {d} levels of nesting and gave up, so I do not know whether a
-                \\possibility is missing or a branch is unreachable — and I will not compile a
-                \\`case` I could not check: the JavaScript I generate has no fallback branch
-                \\to land in.
-                \\
-                \\Give the inner part a function of its own and match on what that returns.
-                \\`--pattern-budget` will not help here; it buys work, and this ran out of
-                \\depth.
-                \\
-            , .{limit}) catch return error.OutOfMemory,
-        }
-        try r.emit(.pattern_budget_exhausted, region, &out);
-    }
-
-    /// A pattern in an **irrefutable** position — a parameter, a `let`
-    /// pattern, a `<-` bound pattern — that does not match every value of
-    /// its type (`language.md` §7). The parser rejects the shapes no type
-    /// can rescue; this is the other half, where the answer needed the
-    /// types: a constructor of a type that has more than one.
-    ///
-    /// `code` picks which position is being talked about, and it is one of
-    /// the parser's two codes on purpose — the rule is one rule, so the
-    /// author sees one code for it wherever it was decided. `examples` are
-    /// rendered by `Render.allocPattern` exactly as `missingPatterns`'
-    /// are; an EMPTY slice means the analysis ran out of budget, which in
-    /// this position is a refusal and not silence (checker.md §6.6).
-    pub fn refutablePattern(
-        r: *Reporter,
-        region: Bir.Inst.Index,
-        code: diagnostic.Code,
-        examples: []const []const u8,
-    ) Error!void {
-        if (r.quiet) return;
-        const what: []const u8 = if (code == .refutable_let_pattern) "A `let` pattern" else "A parameter";
-        var out = r.writer();
-        defer out.deinit();
-        const w = &out.writer;
-        if (examples.len == 0) {
-            w.print(
-                \\I cannot prove that this pattern matches every value of its type.
-                \\
-                \\{s} has to match whatever it is given, and the search that decides
-                \\that ran out of budget here (`--pattern-budget`). An answer I could not
-                \\compute is a refusal in this position, because there is no branch to fall
-                \\through to. Match on the value with `case`, which may be as big as it likes.
-                \\
-            , .{what}) catch return error.OutOfMemory;
-            return r.emit(code, region, &out);
-        }
-        w.print(
-            \\This pattern does not match every value of its type:
-            \\
-            \\Missing possibilities include:
-            \\
-            \\
-        , .{}) catch return error.OutOfMemory;
-        for (examples) |e| w.print("    {s}\n", .{e}) catch return error.OutOfMemory;
-        w.print(
-            \\
-            \\{s} has to match whatever it is given, so there is nowhere for those to
-            \\go and I would have to crash. Take the value whole and `case` on it:
-            \\
-            \\    un m =
-            \\        case m of
-            \\            Just n ->
-            \\                n
-            \\
-            \\            Nothing ->
-            \\                0
-            \\
-        , .{what}) catch return error.OutOfMemory;
-        try r.emit(code, region, &out);
-    }
-
-    /// A branch no value can reach: every shape it matches is taken by a
-    /// branch above it. `index` is 1-based, as the reader counts them.
-    pub fn redundantPattern(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {
-        if (r.quiet) return;
-        var out = r.writer();
-        defer out.deinit();
-        out.writer.print(
-            \\The {d}{s} pattern is redundant:
-            \\
-            \\Any value with this shape is matched by a branch above it, so this branch
-            \\never runs. Remove it, or make it more specific than the one that shadows it.
-            \\
-        , .{ index, ordinalSuffix(index) }) catch return error.OutOfMemory;
-        try r.emit(.redundant_pattern, region, &out);
-    }
+    // The pattern texts, in `PatternTexts.zig` since R13.
+    pub const missingPatterns = PatternTexts.missingPatterns;
+    pub const patternBudgetExhausted = PatternTexts.patternBudgetExhausted;
+    pub const refutablePattern = PatternTexts.refutablePattern;
+    pub const redundantPattern = PatternTexts.redundantPattern;
 
     // ---- Records ---------------------------------------------------------
 
@@ -1054,7 +1042,7 @@ pub const Reporter = struct {
         defer namer.deinit();
         const w = &out.writer;
         if (missing.len == 1) {
-            w.print("This record does not have a `{s}` field:\n\n    ", .{r.env.interner.slice(missing[0])}) catch return error.OutOfMemory;
+            w.print("This record does not have {s} `{s}` field:\n\n    ", .{ article(r.env.interner.slice(missing[0])), r.env.interner.slice(missing[0]) }) catch return error.OutOfMemory;
         } else {
             w.writeAll("This record is missing some fields:\n\n    ") catch return error.OutOfMemory;
         }
@@ -1087,7 +1075,7 @@ pub const Reporter = struct {
         defer namer.deinit();
         const w = &out.writer;
         if (extra.len == 1) {
-            w.print("This record has a `{s}` field I did not expect:\n\n    ", .{r.env.interner.slice(extra[0])}) catch return error.OutOfMemory;
+            w.print("This record has {s} `{s}` field I did not expect:\n\n    ", .{ article(r.env.interner.slice(extra[0])), r.env.interner.slice(extra[0]) }) catch return error.OutOfMemory;
         } else {
             w.writeAll("This record has fields I did not expect:\n\n    ") catch return error.OutOfMemory;
         }
@@ -1331,6 +1319,18 @@ fn plural(scratch: Allocator, n: u32, comptime noun: []const u8) []const u8 {
     return std.fmt.allocPrint(scratch, "{d} " ++ noun ++ "s", .{n}) catch "several " ++ noun ++ "s";
 }
 
+/// "a" or "an" before a backticked name (checker.md §8.7, CK-59): "an" when
+/// it starts with a vowel LETTER. A name is not a word, so the letter the
+/// reader sees decides, not how it might be spoken (`url` reads "an").
+/// Elm writes "a" every time.
+pub fn article(name: []const u8) []const u8 {
+    if (name.len == 0) return "a";
+    return switch (std.ascii.toLower(name[0])) {
+        'a', 'e', 'i', 'o', 'u' => "an",
+        else => "a",
+    };
+}
+
 /// "1st", "2nd", "3rd", "4th", … — Elm's `D.ordinal`.
 fn ordinal(scratch: Allocator, n: u32) []const u8 {
     const suffix: []const u8 = switch (n % 100) {
@@ -1368,7 +1368,7 @@ pub fn editDistance(scratch: Allocator, a: []const u8, b: []const u8) Allocator.
 
 /// `1st`, `2nd`, `3rd`, `4th` … — English, including the teens, which are
 /// all `th` however they end.
-fn ordinalSuffix(n: u32) []const u8 {
+pub fn ordinalSuffix(n: u32) []const u8 {
     if (n % 100 >= 11 and n % 100 <= 13) return "th";
     return switch (n % 10) {
         1 => "st",

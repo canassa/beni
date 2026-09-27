@@ -148,6 +148,11 @@ pub const Wanted = struct {
     /// R4-1): where a unification readies it, whichever frame unified.
     frame: u32,
     state: State = .open,
+    /// An instantiated requirement's quantifier name — the `a` of the
+    /// callee's `where a.compare` — kept here because its receiver is
+    /// bound to a type before a message about the clause is written
+    /// (static-dispatch-spike.md §10.13, CK-55).
+    receiver_name: Symbol.Optional = .none,
 
     pub const no_decl: u32 = std.math.maxInt(u32);
 };

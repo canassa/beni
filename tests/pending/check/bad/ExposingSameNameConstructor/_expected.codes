@@ -1,1 +1,0 @@
-expected_token Main.beni:2:23 contains "exposing (Box)" lacks "Box, Box"

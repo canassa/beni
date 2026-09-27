@@ -1,20 +1,19 @@
 //! The per-module context the shared diagnostic texts read
 //! (`Diagnostics.Reporter.env`). Moved out of v1's `Constrain.zig` by R4b's
 //! review (S2), so the texts would not depend on it; R12 deleted v1 and with
-//! it every field only v1's generator and solver read. It is built only
+//! it every field only v1's generator and solver read; R13 the two no text
+//! read (`artifacts`, `schemas`: checker-v2.md §15.1). It is built only
 //! inside `Report.zig`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
-const Artifacts = @import("../Artifacts.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const reads = @import("reads.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
-const Schema = @import("Schema.zig");
 
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
@@ -30,12 +29,10 @@ pub const Env = struct {
     store: *TypeStore,
     types: *const Types,
     graph: *const Graph,
-    artifacts: *const Artifacts,
     interner: *const InternPool.Global,
     interfaces: []const Interface,
     module: Graph.Index,
     bir: *const Bir,
-    schemas: ?*Schema.State = null,
     /// Scheme variable per top-level declaration; `.none` for a type or for
     /// a value whose scheme is not built yet.
     decl_scheme: []Var.Optional,

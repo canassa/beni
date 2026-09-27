@@ -155,6 +155,14 @@ pub fn check(in: Input) Error!Check.Counters {
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.
         try Decl.attachWhere(&cx, d, &b, @intCast(i));
+        // An Elm curried annotation over a definition of as many
+        // parameters is one mistake, reported at the body; its callers are
+        // not held to a promise the author did not mean (checker.md §8.7,
+        // CK-56).
+        const params = bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index).len;
+        if (cx.store.isCurried(decl_scheme[i].unwrap().?, @intCast(params))) {
+            decl_scheme[i] = (try cx.store.freshErr(TypeStore.generalized)).toOptional();
+        }
     }
 
     // P3: the own-name index (§5, CK-42): every value by name, once.
@@ -180,6 +188,8 @@ pub fn check(in: Input) Error!Check.Counters {
     solver.groups = &groups;
     const p4_token = if (in.profile) |p| p.begin() else null;
     try groups.checkAll(&solver);
+    // A record a deferred wanted refused, as P4 left it (checker.md §8.7).
+    try report.renderLate();
     const p4_ns: u64 = if (in.profile) |p| p.since(p4_token.?) else 0;
     const constrain_ns = groups.constrain_ns;
     const solve_ns = p4_ns -| constrain_ns;

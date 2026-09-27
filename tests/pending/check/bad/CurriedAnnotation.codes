@@ -1,4 +1,0 @@
-# On the body line (7427828 and Elm point at the body, `a + b`); the column
-# is R13's to choose. The finding is the hint and the cascade, so the line
-# also pins the count.
-type_mismatch 11:* contains "Int, Int -> Int"

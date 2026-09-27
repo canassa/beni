@@ -1,6 +1,6 @@
 module EagerDrainInnerLet
   value combine : Box a, z -> a
   value h : K, () -> Box Int
-  value inner : Box a -> ( a, List (Box a) )
+  value inner : Box number -> ( number, List (Box number) )
   value pair : Int -> ( Int, Int )
   value unbox : Box a, () -> a

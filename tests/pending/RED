@@ -15,16 +15,6 @@
 # schema alias across modules: the schema slices S3/S4) and CK-88 (timing, R12).
 # R12 (2026-09-27) deleted v1, and with it this file's checker column (every
 # line said `v2`); CK-88 was fixed and promoted into perf_test.zig.
-tests/pending/check/bad/CapNamesReceivers.beni exit=1 codes=too_many_inferred_constraints×1 why=message
-tests/pending/check/bad/CurriedAnnotation.beni exit=1 codes=too_many_args×1,type_mismatch×1 why=code
-tests/pending/check/bad/ExposingSameNameConstructor exit=1 codes=expected_token×1 why=message
-tests/pending/check/bad/ListElementFromContext.beni exit=1 codes=kind_mismatch×2 why=message
-tests/pending/check/bad/MethodSignatureNoClash.beni exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/bad/MissingFieldShowsLiteralTypes exit=1 codes=missing_field×1 why=message
-tests/pending/check/bad/MissingPatternConsRendering.beni exit=1 codes=missing_patterns×1 why=message
-tests/pending/check/bad/MissingWhereInLetAnnotation.beni exit=1 codes=missing_where_constraint×1 why=message
-tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
-tests/pending/check/bad/OpenRecordEquality.beni exit=1 codes=no_methods_on_shape×1 why=message
-tests/pending/check/bad/SubjectFirstSwap.beni exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/bad/WhereClauseMismatchNamesClause.beni exit=1 codes=type_mismatch×1 why=message
+# R13 (2026-09-27) promoted the twelve diagnostic-quality fixtures; CK-126 is
+# the one left.
 tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules exit=0 codes=none

@@ -157,6 +157,26 @@ pub fn generatedName(gpa: Allocator, i: u32) Allocator.Error![]const u8 {
     return std.fmt.allocPrint(gpa, "{c}{d}", .{ letter, round + 1 });
 }
 
+/// What a flex or rigid variable prefers to print as (checker.md §8.7,
+/// CK-94): its own name when it has one that agrees with its kind, else its
+/// kind, else nothing (a generated `a`, `b`, …). A name that does not start
+/// with the kind's text was inherited through unification — `cons`'s `a`
+/// merged with a literal's `number` — and printing it would hide the kind
+/// the message is about. `Schemes.Writer` publishes a name by the same rule
+/// (`nameAgreesWithKind`).
+pub fn preferredName(interner: *const InternPool.Global, flags: TypeStore.Flags) ?[]const u8 {
+    if (flags.name.unwrap()) |s| {
+        const text = interner.slice(s);
+        if (nameAgreesWithKind(text, flags.kind)) return text;
+    }
+    return if (flags.kind != .any) flags.kind.text() else null;
+}
+
+/// Whether a variable named `text` may keep that name at `kind`.
+pub fn nameAgreesWithKind(text: []const u8, kind: TypeStore.Kind) bool {
+    return kind == .any or std.mem.startsWith(u8, text, kind.text());
+}
+
 /// Everything the renderer needs that is not the variable itself.
 pub const Context = struct {
     store: *TypeStore,
@@ -221,12 +241,7 @@ pub fn writeWhere(w: *std.Io.Writer, cx: Context, namer: *Namer, v: Var) (std.Io
             try collectVars(cx, c.fn_var, &roots, namer.gpa, mark, 0);
             // The renderer's own name for the variable, so the suffix and
             // the body agree about which `a` this is.
-            const preferred: ?[]const u8 = if (flags.name.unwrap()) |sym|
-                cx.interner.slice(sym)
-            else if (flags.kind != .any)
-                flags.kind.text()
-            else
-                null;
+            const preferred = preferredName(cx.interner, flags);
             const name = try namer.name(root, preferred);
             try items.append(namer.gpa, .{
                 .variable = name,
@@ -345,12 +360,7 @@ fn write(
     switch (cx.store.content(root)) {
         .err => try w.writeAll("?"),
         .flex, .rigid => |flags| {
-            const preferred: ?[]const u8 = if (flags.name.unwrap()) |s|
-                cx.interner.slice(s)
-            else if (flags.kind != .any)
-                flags.kind.text()
-            else
-                null;
+            const preferred = preferredName(cx.interner, flags);
             try w.writeAll(try namer.name(root, preferred));
         },
         .alias => |a| try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), prec, depth),
@@ -524,7 +534,7 @@ pub const PatPrec = enum {
     top,
     /// An argument of a constructor: `Just (Node a b)`, `Just (x :: xs)`.
     arg,
-    /// Left of a `::`: `(a :: b) :: c`.
+    /// Left of a `::`: `(a :: b) :: c`, but `Circle _ :: _` (CK-60).
     head,
 };
 
@@ -612,9 +622,10 @@ fn writePat(
             const name = if (c.alt < pats.alts.items.len) pats.alt(c.alt).name.unwrap() else null;
             const text = if (name) |sym| interner.slice(sym) else "?";
             if (args.len == 0) return w.writeAll(text);
-            // An argument-taking constructor needs parentheses anywhere but
-            // at the top: `Just (Node a b)`.
-            const wrap = prec != .top;
+            // An argument-taking constructor needs parentheses only as an
+            // ARGUMENT: `Just (Node a b)`. At the head of a `::` it needs
+            // none, `Group (Circle _ :: _)` (Elm's `patternToDoc`, CK-60).
+            const wrap = prec == .arg;
             if (wrap) try w.writeByte('(');
             try w.writeAll(text);
             for (args) |arg| {

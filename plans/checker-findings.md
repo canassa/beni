@@ -15,6 +15,9 @@ reads *claimed* was **promoted** at R11: its fixtures moved from `tests/pending/
 58 to 60 and 86 (R13), CK-88 (R12), CK-126 (the schema slices), CK-37's rest (R14).
 **R12 (2026-09-27)** deleted v1: CK-88 and CK-95 (with its duplicate CK-127) are fixed and in
 `test-perf` and `abuse_wide_test.zig`, and CK-132 (v1 only) is closed with v1.
+**R13 (2026-09-27)** fixed the diagnostic-quality findings: CK-49, 50, 52 to 56, 58 to 60 and 86
+are promoted, CK-94, CK-116 and CK-129 (CK-86's duplicate) are fixed with new fixtures, and CK-115
+is not reproduced (a guard). Still red: CK-126 (the schema slices), CK-37's rest (R14).
 
 ## Sources
 
@@ -1692,6 +1695,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0, as written:* the code is `kind_mismatch` (`number` against `String`; its title is TYPE
     MISMATCH), at both lists.
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8.7 first: category `list_entry` at index 1 reads *"The 1st element of this list is not what the list needs"* / *"But this list needs its elements to be:"*. Promoted: `tests/corpus/check/bad/ListElementFromContext.beni` (with CK-50's conversion hint).
 
 ### CK-50 — The arithmetic hint appears on any String-vs-number mismatch
 
@@ -1708,6 +1712,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0, as written:* `type_mismatch` ×2 (the list, `add 1 "two"`) and `kind_mismatch` (a `[ 1 ]`
     passed as `List String`), each lacking "work on numbers only".
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8 *amended by R13* and §8.7: the numbers-only hint only for an operand of `+ - * / // ^`; elsewhere Elm's conversion in the value's direction. Promoted: `tests/corpus/check/bad/NoArithmeticHintWithoutArithmetic.beni`; 25 other `.diag` goldens re-blessed for the hint (`SchemaRecursivePayloadMismatch` also for CK-49's sentence).
 
 ### CK-51 — `?` says "this is neither" about a `Maybe` or a `Result`
 
@@ -1740,6 +1745,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/MethodSignatureNoClash.beni`. `.codes`: `type_mismatch` lacks "module-rule
   clash".
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.13 first: the clash paragraph and hint only when the method's first parameter is another type its module declares (`DispatchTexts.clashes`). Promoted: `tests/corpus/check/bad/MethodSignatureNoClash.beni`; `RequirementMethodWrongType/` re-blessed (its `K` declares one type).
 
 ### CK-53 — The missing-constraint hint suggests `where` on a `let` annotation, which the grammar forbids
 
@@ -1755,6 +1761,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/MissingWhereInLetAnnotation.beni`. `.codes`: `missing_where_constraint`
   lacks "add it to the annotation".
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.4 *amended by R13* first: for a variable of a `let` annotation (`Generalize.Annotated.let`), the hint says to move the binding to the top level with the `where`, or to drop the annotation. Promoted: `tests/corpus/check/bad/MissingWhereInLetAnnotation.beni`.
 
 ### CK-54 — `==` on an open record suggests a field call
 
@@ -1769,6 +1776,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/OpenRecordEquality.beni`. `.codes`: `no_methods_on_shape` lacks "(x.eq)",
   contains "open".
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.3 *amended by R13* first: `open_record` says the record is open and only a closed one derives; the field-call hint only for a dot-call's requirement (`record` against `record_required`). Promoted: `tests/corpus/check/bad/OpenRecordEquality.beni`.
 
 ### CK-55 — A `where`-clause mismatch never names the clause or the method, and its roles read backwards
 
@@ -1783,6 +1791,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   (`:1429`).
 - **Fixture** `check/bad/WhereClauseMismatchNamesClause.beni`. `.codes`: contains "where a.compare".
 - **Slice** R6 (the category), R13 (the text).
+- **Status** text fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.13 first: *"The `where a.compare` clause of `f` does not match the `compare` of `Int`"*, the clause's type against the method's, and a hint. The clause's variable rides on the wanted (`Evidence.Wanted.receiver_name`), the clause on `Reporter.clause` around the one unification. Promoted: `tests/corpus/check/bad/WhereClauseMismatchNamesClause.beni`; `WhereClauseNumberReceiver` and `NumberBridgeRigidLyingWhere` re-blessed.
 
 ### CK-56 — A curried Elm annotation gets a confusing message, and swapped arguments get no hint
 
@@ -1808,6 +1817,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0 follow-up:* the position is now `11:*`, the body line, where 7427828 and Elm both report
     it. The column is left open.
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8.7 first: the curried-annotation hint prints the n-ary form, and the scheme is poisoned when read (P2, and a `let` header: `TypeStore.isCurried`), so no TOO MANY ARGS follows; the subject-first hint reads the callee's declared parameters. Promoted: `tests/corpus/check/bad/CurriedAnnotation.beni`, `…/SubjectFirstSwap.beni`; `check/args/ArgumentOrderSwap` re-blessed.
 
 ### CK-57 — INFINITE TYPE prints `a  =  … a …`
 
@@ -1841,6 +1851,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     variable (`a.eq`) or by parameter (`a1.eq`). That choice is R13's text, so the line pins only
     that each constraint carries a receiver.
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.11 *amended by R13* first: `a.eq`, `b.eq`, … named by one namer in canonical order. Promoted: `tests/corpus/check/bad/CapNamesReceivers.beni`; `TooManyInferredConstraints` re-blessed (`a.m01` …).
 
 ### CK-59 — A missing-field message loses the literal's field types, and says "a `extra`"
 
@@ -1860,6 +1871,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     rendering already contains "name : String", so that substring alone passed on 7427828.
 - **Slice** R5 (generation order), R13 (article).
 - **Status** the generation-order half done by R5 (2026-09-25), as amended (`checker-v2.md` §6.5 *Amended by R5*): the solver constrains a literal's fields first exactly when the expectation cannot take its field names, so the message shows `{ n : number, name : String }`. The fixture stays RED under v2 for the article ("a `extra`"), R13's; its `RED` line is unchanged (`why=message`).
+- **Status** the article fixed by R13 (2026-09-27), `checker.md` §8.7 first (`Diagnostics.article`, the vowel-letter rule, in the four "a `{s}`" sentences). Promoted: `tests/corpus/check/bad/MissingFieldShowsLiteralTypes/`; `FieldErrorTextOrder` re-blessed.
 
 ### CK-60 — A cons pattern inside a constructor renders with redundant parentheses
 
@@ -1875,6 +1887,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     context, which adds no parentheses (`references/elm/compiler/src/Reporting/Error/Pattern.hs`,
     lines 139-165).
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8.7 first: a constructor pattern is parenthesised only in argument position (`Render.writePat`). Promoted: `tests/corpus/check/bad/MissingPatternConsRendering.beni`.
 
 ### CK-61 — `checker.md` §6.6 says exhaustiveness runs "over the *solved* types", and it deliberately reads none
 
@@ -2638,6 +2651,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** `tests/pending/check/bad/ExposingSameNameConstructor/` (`.codes`: `expected_token` at
   `Main.beni:2:23`, contains "exposing (Box)", lacks "Box, Box").
 - **Slice** R13.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8.7 first: a constructor with the type's name is not listed again, and the message says naming the type exposes it. Promoted: `tests/corpus/check/bad/ExposingSameNameConstructor/`. CK-129 is the same finding.
 
 ### CK-87 — `==` on a record type nested more than 32 deep is an INTERNAL ERROR at build
 
@@ -2836,6 +2850,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   -> Maybe String` in three orders, `g : a -> Maybe String` in the other three). The types are
   equal and the choice is a function of the source, not of ids, so no program checks differently;
   but the interface's name hint (and so its bytes) follows the order. R13's rule above removes it.
+- **Status** fixed by R13 (2026-09-27), `checker.md` §8.7 first: `Render.preferredName` prints a kinded variable as its kind unless its name starts with the kind's text, and `Schemes.Writer` publishes no such name (so F8's bytes no longer follow member order). New, red on `3ff3ac5`: `tests/corpus/check/good/NumberVariableNamedByKind.beni` (interface) and `tests/corpus/check/bad/NumberVariableNamedByKind.beni` (message); `EagerDrainInnerLet.iface`, `MethodInstantiatedPerUse/_expected.iface` and five `.diag`s re-blessed (`number` where `a`/`b` printed).
 
 ### CK-95 — BIR lowering is quadratic in a `let`'s binding count
 
@@ -3290,6 +3305,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Expected** the mismatch alone: a poisoned receiver asks nothing.
 - **Fixture** none yet.
 - **Slice** R13.
+- **Status** not reproduced on `3ff3ac5` by R13 (2026-09-27): every shape tried (a call argument that is a TYPE MISMATCH, a TOO MANY ARGS inside an argument, the receiver pinned or left open) gives the one message. Guard added, green before and after: `tests/corpus/check/bad/CallArgMismatchNoUnknownMethod.beni`; the rule is written down in `checker.md` §8.7.
 
 ### CK-116 — NOT EQUATABLE blames "a function anywhere inside it" when a payload method's requirement failed
 
@@ -3311,6 +3327,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   and `pub eq : Int, Int -> Bool`; `B` has `pub type Wrap = Wrap A.T`; `Main` compares `B.Wrap`s.
   `not_equatable` with the "function or foreign type" hint, where the direct `A.T == A.T` is the
   precise `type_mismatch` (the module-rule clash). Both checkers.
+- **Status** fixed by R13 (2026-09-27), `static-dispatch-spike.md` §10.13, `checker-v2.md` §11.2 and §14.2 *amended by R13* first: a failed requirement inside a derived `==`/`compare` names the method and, when the use decided it, both types; a fixpoint pass records it as `absent_requirement`, published as the row status `requirement` (`iface_bytes.format_version` 6). Both programs, and the answer and row paths, in the new `tests/corpus/check/bad/RequirementFailedInsideEq/` (red on `3ff3ac5`); five `.diag`s re-blessed.
 
 
 ### CK-117 — A fixpoint pass's variables can join a merged group below its frame
@@ -3599,6 +3616,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Expected** a hint that builds: when a constructor shares its type's name, `exposing (Key)`.
 - **Fixture** none yet.
 - **Slice** unassigned (frontend).
+- **Status** fixed by R13 (2026-09-27) as CK-86 (the same finding): `tests/corpus/check/bad/ExposingSameNameConstructor/`.
 
 ### CK-130 — Under v2 checking `core`, `Order` has no `compare` and `Never` no `eq` or `compare`
 
@@ -3846,7 +3864,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-91 | unsound-runtime | K3 | `check/bad/LetOfManyBindings.beni` | R4b (claimed) |
 | CK-92 | compiler-crash-or-hang (output blow-up) | K13 | `blackbox_test.zig` "CK-92: …" (in the gates) | R4b (fixed) |
 | CK-93 | performance | K11 | `test-perf` "CK-93" (v2, `check` event) | R8c (fixed) |
-| CK-94 | diagnostic-quality | K13 | — | R13 |
+| CK-94 | diagnostic-quality | K13 | `check/good/NumberVariableNamedByKind.beni`, `check/bad/NumberVariableNamedByKind.beni` | R13 (fixed) |
 | CK-95 | performance | K14 | `perf_test.zig` (`test-perf`, CK-95) | R12 (fixed, with CK-127) |
 | CK-96 | performance | K11 | promoted: `perf_test.zig` "CK-96" (`test-perf`) | R5 (fixed) |
 | CK-97 | performance | K11 | promoted: `perf_test.zig` "CK-97" (`test-perf`) | R5 (fixed) |
@@ -3867,8 +3885,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-112 | performance | K11 | `test-perf` "CK-112" (v2; shared code) | R8c (fixed; found by R8a) |
 | CK-113 | performance (latent) | K4 | — | unassigned — perf slice proposed (found by R8a's review) |
 | CK-114 | valid-program-rejected | K10 | `abuse_test.zig` "a record literal nested to the parser's limit …" | R8c (fixed; found by R8a's review) |
-| CK-115 | diagnostic-quality | K13 | — | R13 (found by R8a's review) |
-| CK-116 | diagnostic-quality | K7 | — | R13 (found by R8a's review) |
+| CK-115 | diagnostic-quality | K13 | `check/bad/CallArgMismatchNoUnknownMethod.beni` (a guard) | R13 (not reproduced; found by R8a's review) |
+| CK-116 | diagnostic-quality | K7 | `check/bad/RequirementFailedInsideEq/` | R13 (fixed; found by R8a's review) |
 | CK-117 | latent | K7 | `run/DerivedContextPassMergesDown` (and the Debug frame assert) | R8b (claimed; found by R8a's review round) |
 | CK-118 | valid-program-rejected | K7 | `check/good/SchemaRecordViaWrapped.beni`, `…/SchemaViaMutualOwnType.beni` | R8b (claimed; found by R8b) |
 | CK-119 | performance | K3 | `test-perf` "CK-119"; `tests/corpus/check/good/SchemaViaRing.beni` | R8b (found and fixed by its review round) |
@@ -3881,7 +3899,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-126 | unsound-runtime (no runtime path yet) | K7 | `check/bad/PrivateRecordSchemaAliasAcrossModules/` (pending, red under both) | unassigned (found by R8c) |
 | CK-127 | performance | K14 | CK-95's | R12 (fixed as CK-95's duplicate; found by R8c) |
 | CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
-| CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
+| CK-129 | diagnostic-quality | K13 | `check/bad/ExposingSameNameConstructor/` (CK-86's) | R13 (fixed as CK-86; found by R8d) |
 | CK-130 | valid-program-rejected (v2 only) | K7 | promoted: `run/NeverAndOrderDerived.beni` | R9 (fixed) |
 | CK-131 | performance (v2 only) | K11 | `perf_test.zig` (`test-perf`, CK-131) | R9b (fixed; found by R9) |
 | CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | R12 (closed with v1; found by R10) |

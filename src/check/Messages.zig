@@ -14,6 +14,8 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Report = @import("Report.zig");
 const Walk = @import("Walk.zig");
+const Diagnostics = @import("Diagnostics.zig");
+const DispatchTexts = @import("DispatchTexts.zig");
 
 const Var = TypeStore.Var;
 const Symbol = InternPool.Symbol;
@@ -363,4 +365,116 @@ pub fn privateMethod(r: *Report, region: Bir.Inst.Index, shown: Var, culprit: Ty
     , .{ module_text, m, m, module_text, m, module_text }) catch return error.OutOfMemory;
     const message = try out.toOwnedSlice();
     try r.emit(.{ .code = .private_method, .module = r.module, .region = region, .message = message });
+}
+
+/// The two types of a failed requirement, when the use decided it: what the
+/// requirement asked for and what the method is.
+pub const RequirementTypes = struct { wanted: Var, found: Var };
+
+/// `==` (or `compare`) refused because a method a derived answer needs — a
+/// payload's own `eq`, or a requirement a payload's method carries in its
+/// `where` clause — exists and has the wrong type (static-dispatch-spike.md
+/// §10.13, CK-116). `shown` is the value the author compared, `culprit` the
+/// type whose method `need` failed. `types` when the use decided it; a
+/// reason read from a context's answer or a published row has none.
+pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Types.TypeId, need: Symbol, types: ?RequirementTypes) Error!void {
+    const env = r.env;
+    const interner = env.interner;
+    const entry = env.types.entry(culprit);
+    const is_eq = method == InternPool.WellKnown.eq.symbol();
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const module_text = interner.slice(env.graph.moduleName(entry.module));
+    const type_text = interner.slice(entry.name);
+    const need_text = interner.slice(need);
+    if (is_eq) {
+        w.writeAll("I cannot compare these values with `==`:\n\n    ") catch return error.OutOfMemory;
+    } else {
+        w.print("This type has no `{s}`:\n\n    ", .{interner.slice(method)}) catch return error.OutOfMemory;
+    }
+    Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    const doing = if (is_eq) "comparing" else "ordering";
+    const article = Diagnostics.article(type_text);
+    if (types) |t| {
+        w.print("\n\nIt holds {s} `{s}`, and {s} that needs the `{s}` of `{s}` at this type:\n\n    ", .{ article, type_text, doing, need_text, type_text }) catch return error.OutOfMemory;
+        Render.writeVar(w, renderContext(r), &namer, t.wanted, .top) catch return error.OutOfMemory;
+        w.print("\n\nbut `{s}.{s}` is:\n\n    ", .{ module_text, need_text }) catch return error.OutOfMemory;
+        Render.writeVar(w, renderContext(r), &namer, t.found, .top) catch return error.OutOfMemory;
+        if (DispatchTexts.clashes(&r.texts, entry.module, entry.name, t.found)) {
+            w.writeAll("\n\n" ++ clash_hint) catch return error.OutOfMemory;
+        } else {
+            w.print("\n\nHint: give `{s}.{s}` that type, or compare the values another way.\n", .{ module_text, need_text }) catch return error.OutOfMemory;
+        }
+    } else {
+        w.print(
+            \\
+            \\
+            \\It holds {s} `{s}`, and {s} that needs the `{s}` of `{s}` at a type that
+            \\`{s}.{s}` does not have.
+            \\
+            \\
+        , .{ article, type_text, doing, need_text, type_text, module_text, need_text }) catch return error.OutOfMemory;
+        if (clashesByName(r, culprit, need)) {
+            w.writeAll(clash_hint) catch return error.OutOfMemory;
+        } else {
+            w.print(
+                \\Hint: give `{s}.{s}` the type it is asked for, or compare the values another
+                \\way.
+                \\
+            , .{ module_text, need_text }) catch return error.OutOfMemory;
+        }
+    }
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = if (is_eq) .not_equatable else .no_methods_on_shape, .module = r.module, .region = region, .message = message });
+}
+
+const clash_hint =
+    \\Hint: this is the module-rule clash of
+    \\`docs/design/static-dispatch-spike.md` §11. Move one of the types into a
+    \\module of its own, or give the two methods different names.
+    \\
+;
+
+/// `DispatchTexts.clashes` for a reason read off an answer or a row, which
+/// carries no method type: the method `need` of `culprit`'s module is read
+/// off that module's own scheme — this module's, or its interface's — and
+/// the clash is its first parameter naming ANOTHER type of the module.
+fn clashesByName(r: *Report, culprit: Types.TypeId, need: Symbol) bool {
+    const env = r.env;
+    const entry = env.types.entry(culprit);
+    const first: Types.TypeId = if (entry.module == env.module) blk: {
+        const bir = env.bir;
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue() or bir.symbol(d.name) != need) continue;
+            const v = (if (i < env.decl_scheme.len) env.decl_scheme[i].unwrap() else null) orelse return false;
+            const f = Walk.function(env.store, v) orelse return false;
+            if (f.params.len == 0) return false;
+            break :blk switch (env.store.resolvedContent(f.params[0])) {
+                .structure => |flat| switch (flat) {
+                    .app => |a| a.type,
+                    else => return false,
+                },
+                else => return false,
+            };
+        }
+        return false;
+    } else blk: {
+        if (entry.module.int() >= env.interfaces.len) return false;
+        const iface = env.iface(entry.module);
+        const value = iface.findValue(env.interner, need) orelse return false;
+        const body = iface.term(iface.scheme(iface.values[@intFromEnum(value)].scheme).body);
+        if (body.tag != .func) return false;
+        const params = iface.range(body.lhs);
+        if (params.len == 0) return false;
+        const t = iface.term(@enumFromInt(params[0]));
+        if (t.tag != .app) return false;
+        const refs = env.types.refIds(entry.module);
+        if (t.lhs >= refs.len) return false;
+        break :blk refs[t.lhs];
+    };
+    if (first == .none or first == culprit) return false;
+    return env.types.entry(first).module == entry.module;
 }

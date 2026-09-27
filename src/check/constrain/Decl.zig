@@ -180,6 +180,7 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
         .annotation = annotation,
         .name = name,
         .decl = @intFromEnum(g.decl),
+        .let = top == null,
     });
     if (top) |d| {
         if (d.where_start != d.where_end) try g.evidence.registerGivens(g.gpa, g.cx.store, g.cx.interner, g.cx.scratch, check, @intFromEnum(g.decl));
@@ -326,7 +327,13 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
                 defer scheme_builder.deinit();
                 const scheme = try g.cx.readAnnotation(&scheme_builder, a, @intFromEnum(g.decl));
                 const check = (try rigidReading(g, a, scheme, name, null)).check;
-                g.setLocal(def.local, scheme);
+                // An Elm curried annotation: its uses are not held to it
+                // (checker.md §8.7, CK-56), as at the top level.
+                if (g.cx.store.isCurried(scheme, @intCast(bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index).len))) {
+                    g.setLocal(def.local, try g.cx.store.freshErr(TypeStore.generalized));
+                } else {
+                    g.setLocal(def.local, scheme);
+                }
                 _ = try g.header(check, m, name);
                 return check;
             }

@@ -517,8 +517,11 @@ pub const Writer = struct {
             .equatable = flags.equatable,
             // Into the interface's own column, never the interner's — see
             // `Interface.Quantified.name`.
+            // A name that disagrees with the kind is not published: it was
+            // inherited through a merge, which member order decides
+            // (checker.md §8.7, CK-94 and its F8).
             .name = if (flags.name.unwrap()) |n|
-                @enumFromInt(try w.symbolIndex(n))
+                (if (Render.nameAgreesWithKind(w.interner.slice(n), flags.kind)) @enumFromInt(try w.symbolIndex(n)) else .none)
             else
                 .none,
         };

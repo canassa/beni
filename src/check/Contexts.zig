@@ -100,6 +100,10 @@ pub const Status = enum(u8) {
     /// answer, and the use says `nesting_too_deep` — never an absent that
     /// reads as "does not support".
     absent_budget,
+    /// A payload's method exists and has the wrong type for a requirement
+    /// the pass made of it (static-dispatch-spike.md §10.13, CK-116):
+    /// `culprit` is the `TypeId` whose method it is, `method` its name.
+    absent_requirement,
 };
 
 /// One context entry: `args[param]` must answer `method`, at the well-known
@@ -112,9 +116,10 @@ pub const Answer = struct {
     /// `present`: a run of `entries`, sorted by `(param, method text)`.
     entries: Range = .{},
     /// `needs_annotation`: the in-flight method's declaration;
-    /// `absent_private`: the `TypeId` whose module holds the private method.
+    /// `absent_private`: the `TypeId` whose module holds the private method;
+    /// `absent_requirement`: the `TypeId` whose method failed.
     culprit: u32 = none,
-    /// `absent_private`: the private method's name.
+    /// `absent_private`, `absent_requirement`: the method's name.
     method: Symbol = undefined,
     /// `present`: one frozen tuple of the method types of every entry whose
     /// method is not `eq` or `compare`, over the type's template parameters
@@ -160,6 +165,9 @@ const Run = struct {
     /// The pass met another module's private method: the type whose module
     /// declares it, and its name.
     private: ?struct { type_id: Types.TypeId, method: Symbol } = null,
+    /// The pass met a payload's method of the wrong type for a requirement
+    /// (CK-116): the type whose method it is, and its name.
+    requirement: ?struct { type_id: Types.TypeId, method: Symbol } = null,
     /// It read another run's approximation, which an exact unit graph
     /// rules out (`noteApprox`): not memoised, and `internal`.
     stray: bool = false,
@@ -1079,6 +1087,7 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
         r.culprit = none;
         r.saw_function = false;
         r.private = null;
+        r.requirement = null;
     }
     defer {
         const r = &c.runs.items[ri];
@@ -1132,6 +1141,8 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     if (s.resolver.steps >= Resolve.step_budget) return .{ .status = .absent_budget };
     const failed: Answer = if (r.private) |p|
         .{ .status = .absent_private, .culprit = @intFromEnum(p.type_id), .method = p.method }
+    else if (r.requirement) |q|
+        .{ .status = .absent_requirement, .culprit = @intFromEnum(q.type_id), .method = q.method }
     else
         .{ .status = if (r.saw_function) .absent_function else .absent_other };
     for (ids) |wid| {
@@ -1278,6 +1289,14 @@ pub fn groupDone(c: *Contexts) void {
 /// A run's pass met another module's private method, declared by the
 /// module of `type_id`: an `absent` entry is `private_method` at the use
 /// (§11.2, §11.3).
+/// A run's pass met a payload's method of the wrong type (CK-116): its
+/// entry is `absent_requirement`, naming it, unless a private method was
+/// met first.
+pub fn noteRequirement(c: *Contexts, s: *const Solve, type_id: Types.TypeId, method: Symbol) void {
+    const ri = c.active(s) orelse return;
+    if (c.runs.items[ri].requirement == null) c.runs.items[ri].requirement = .{ .type_id = type_id, .method = method };
+}
+
 pub fn notePrivate(c: *Contexts, s: *const Solve, type_id: Types.TypeId, method: Symbol) void {
     const ri = c.active(s) orelse return;
     if (c.runs.items[ri].private == null) c.runs.items[ri].private = .{ .type_id = type_id, .method = method };

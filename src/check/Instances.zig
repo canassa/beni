@@ -83,20 +83,37 @@ fn childrenOf(s: *Solve, root: Var) []const Var {
 }
 
 fn noMethods(s: *Solve, id: WantedId, root: Var) Error!void {
+    return noMethodsWhen(s, id, root, false);
+}
+
+/// `late`: a requirement readied after its call met the record, whose text
+/// is redrawn once P4 is done (`Report.noMethodsOnShapeLate`).
+fn noMethodsWhen(s: *Solve, id: WantedId, root: Var, late: bool) Error!void {
     const w = s.evidence.get(id);
-    // A dot-call joined with a scheme's requirement is refused where the
-    // requirement is (the use that needed a method), in every order (X1).
-    const at = w.blocked_at.unwrap() orelse w.origin;
-    try s.report.noMethodsOnShape(at, w.method, root, switch (s.store().resolvedContent(root)) {
+    return noMethodsAs(s, id, root, late, switch (s.store().resolvedContent(root)) {
         .structure => |flat| switch (flat) {
             .tuple => .tuple,
             .unit => .unit,
             .func => .function,
-            .record, .empty_record => .record,
+            // The field-call hint is a dot-call's (§10.3 *amended by R13*,
+            // CK-54).
+            .record, .empty_record => if (w.kind == .dot_call) .record else .record_required,
             else => .other,
         },
         else => .other,
     });
+}
+
+fn noMethodsAs(s: *Solve, id: WantedId, root: Var, late: bool, shape: Diagnostics.Reporter.ShapeKind) Error!void {
+    const w = s.evidence.get(id);
+    // A dot-call joined with a scheme's requirement is refused where the
+    // requirement is (the use that needed a method), in every order (X1).
+    const at = w.blocked_at.unwrap() orelse w.origin;
+    if (late) {
+        try s.report.noMethodsOnShapeLate(at, w.method, root, shape);
+    } else {
+        try s.report.noMethodsOnShape(at, w.method, root, shape);
+    }
     return Resolve.reject(s, id, true);
 }
 
@@ -405,12 +422,28 @@ fn isNullaryRef(iface: *const Interface, refs: []const Types.TypeId, t: Interfac
 fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry) Error!bool {
     const w = s.evidence.get(id);
     if (try s.unifyQuiet(copy, w.method_type, w.origin)) return true;
+    const type_id: ?Types.TypeId = switch (s.store().resolvedContent(root)) {
+        .structure => |flat| switch (flat) {
+            .app => |a| a.type,
+            else => null,
+        },
+        else => null,
+    };
     if (w.parent.unwrap()) |p| {
         if (s.evidence.answer(p) == .derived) {
-            try refuseDerived(s, id, root, .opaque_type);
+            // The shape's refusal, naming the method and both types
+            // (static-dispatch-spike.md §10.13, CK-116).
+            if (type_id) |t| {
+                try refuseRequirement(s, id, t, w.method, .{ .wanted = w.method_type, .found = copy });
+            } else {
+                try refuseDerived(s, id, root, .opaque_type);
+            }
             return false;
         }
     }
+    // Inside a fixpoint pass (a payload's position), its entry says why
+    // (`absent_requirement`, CK-116); elsewhere this does nothing.
+    if (type_id) |t| s.contexts.noteRequirement(s, t, w.method);
     try s.report.methodSignatureMismatch(w.origin, entry.module, entry.name, w.method, copy, w.method_type);
     try Resolve.reject(s, id, true);
     return false;
@@ -432,6 +465,23 @@ fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol)
     const t = s.evidence.get(top);
     try Messages.privateMethod(s.report, t.origin, t.receiver, culprit, method);
     if (top != id) try Resolve.reject(s, top, true);
+}
+
+/// A method a derived answer needs has the wrong type (CK-116): said once,
+/// at the use, for the lineage root's receiver, as `refuseDerived` does, and
+/// noted on a fixpoint pass's run so its entry says why
+/// (`absent_requirement`). The types are rendered before the rejection
+/// poisons them.
+fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbol, types: ?Messages.RequirementTypes) Error!void {
+    s.contexts.noteRequirement(s, culprit, need);
+    const top = Resolve.lineageRoot(s, id);
+    const reported = top != id and s.evidence.get(top).state == .failed;
+    if (!reported) {
+        const t = s.evidence.get(top);
+        try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types);
+    }
+    try Resolve.reject(s, id, id != top);
+    if (!reported and top != id) try Resolve.reject(s, top, true);
 }
 
 /// The derived answer for `id` on `root` cannot be given: reported once, at
@@ -516,6 +566,7 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
                 return Resolve.reject(s, id, true);
             },
             .absent_private => return refusePrivate(s, id, @enumFromInt(answer.culprit), answer.method),
+            .absent_requirement => return refuseRequirement(s, id, @enumFromInt(answer.culprit), answer.method, null),
             .absent_budget => {
                 try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget);
                 return Resolve.reject(s, id, true);
@@ -565,6 +616,13 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             const refs = cx.types.refIds(entry.module);
             if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
             return refusePrivate(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method));
+        },
+        // CK-116: the row says which method failed (§14.2 *as amended by R13*).
+        .requirement => {
+            const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
+            const refs = cx.types.refIds(entry.module);
+            if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
+            return refuseRequirement(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method), null);
         },
         else => return refuseDerived(s, id, root, .opaque_type),
     }
@@ -672,7 +730,7 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
         row.clearRetainingCapacity();
         var concatenated = false;
         const end = try Walk.recordRow(st, rec, row, s.cx.gpa, &concatenated);
-        if (end != .closed) return noMethods(s, id, root);
+        if (end != .closed) return noMethodsAs(s, id, root, false, .open_record);
         if (!try Derivable.derivable(s, id, root)) return;
         if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);
         // Positions in field-name TEXT order: the shape's key (§9.2).
@@ -694,7 +752,7 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
     // order (checker-v2.md I9). A requirement an instantiation made has no
     // field accessor to be, and neither has a dot-call joined with one
     // (`Wanted.field_ok`, R7's round-2 review, X1).
-    if (!immediate and !w.field_ok) return noMethods(s, id, root);
+    if (!immediate and !w.field_ok) return noMethodsWhen(s, id, root, true);
     return fieldCall(s, id, root);
 }
 

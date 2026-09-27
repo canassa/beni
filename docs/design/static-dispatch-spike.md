@@ -2588,6 +2588,28 @@ later f g =
     f < g
 ```
 
+*Amended by R13 (2026-09-27, CK-54), before the code.* The record hint is a **dot-call's**: it is
+printed only when the requirement came from `x.m` (origin `dot_call`), never for `==` or `<`. A
+well-known method on an **open** record — the A.28 refusal — gets a text of its own, which says
+why, since the author wrote an operator and not a method name:
+
+```
+I cannot derive `eq` for an open record:
+
+    { r | x : Int }
+
+`{ r | … }` is any record with at least these fields, so I do not know all
+of its fields, and a derived `eq` compares every one of them. Only a closed
+record derives `eq` and `compare`.
+
+Hint: compare the fields you know one at a time, or give the value a closed
+record type, one with no `r |`.
+```
+
+`eq` is the method (`compare` for `<` and the other orderings) and `r` the extension variable as
+§8.2's printer names it. Elm compares any record with `==` and has no such case; for an ordering it
+says *"I do not know how to compare records."* (`Type.hs`, `badFlexSuper`).
+
 ### 10.4 `missing_where_constraint`
 
 **Severity** error. **Primary** the obligation's `origin` — the call in the body, or in the
@@ -2623,6 +2645,23 @@ A second fixture, `tests/corpus/check/bad/MissingWhereCaller/`, puts the constra
 calls it from an annotated function with no constraint. The assertion is that the **primary** span
 is in `Main.beni`, at the call, and the secondary is in `Lib.beni`. Reversing them is the Roc bug,
 so the fixture asserts the order and not merely the set.
+
+*Amended by R13 (2026-09-27, CK-53), before the code.* A `let` annotation takes no `where`
+(`language.md` §3), so when `<v>` is a variable of a `let` binding's annotation the hint does not
+suggest writing one there — which the parser refuses as UNEXPECTED TOKEN — and says instead:
+
+```
+Hint: a `let` annotation cannot have a `where` clause. Move `g` to the top
+level and annotate it there with:
+
+    where a.eq : a, a -> Bool
+
+or remove the annotation of `g` and let its type be inferred.
+```
+
+`g` is the binding whose annotation holds `<v>`. The rest of the message is unchanged. Elm has no
+`where`; its nearest, for a rigid variable asked to be something specific, is `badRigidVar`'s
+*"Your type annotation uses type variable `a` which means ANY type of value can flow through …"*.
 
 ### 10.5 `method_constraint_mismatch`
 
@@ -2890,6 +2929,12 @@ unannotated declaration), `tests/corpus/check/good/SixtyFourConstraints.beni` (6
 `tests/corpus/check/good/AnnotatedManyConstraints.beni` (the annotated 65-constraint twin, clean),
 plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 
+*Amended by R13 (2026-09-27, CK-58), before the code.* Each of the first five is written with its
+receiver, as a `where` clause names it: *"The first 5 are `a.eq`, `b.eq`, `c.eq`, `d.eq` and
+`e.eq`."* — so seventy parameters compared once each read as seventy variables, not as one method
+repeated. The receivers are named by one namer in the canonical order of §7.2, as §8.2's printer
+names them (a variable's own name, else its kind, else `a`, `b`, …). Elm has no such cap.
+
 ### 10.12 `method_needs_annotation`
 
 > **Checker v2 (2026-09-24), owner decision D3 (amended the same day).** Retired as an ordering
@@ -2924,6 +2969,110 @@ group that uses it, or defer the use until the method is solved. Uses are only k
 are, so neither is a syntactic edge, and a method and its user can be mutually recursive.
 
 Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form), until the cut-over (R11): under D3 the program is valid, and it is `tests/corpus/run/OwnEqCheckedAfterItsUse/`, which prints both answers.
+
+### 10.13 Checker v2's dispatch texts (R13)
+
+Added 2026-09-27 by R13 (`checker-v2.md` §15.3, §15.4), **before** the code. Three messages whose
+code is not one of §10's, but whose cause is dispatch. Elm has no methods, so none has an Elm twin;
+each keeps `checker.md` §8's register — the sentence, the two types, the hint.
+
+**A method whose type does not fit, with no clash (CK-52).** `type_mismatch` at the call. The
+module-rule clash paragraph and hint are printed only when the method's first parameter is another
+type **its module declares** — the only case in which §11's clash is what happened. Otherwise:
+
+```
+`M.eq` is not the method this call needs:
+
+    Mod, Int -> Bool
+
+but the call wants:
+
+    Mod, Mod -> Bool
+
+A method of `Mod` is a `pub` value of the module that declares it, so
+`M.eq` is the `eq` of `Mod`, and it has to have the type the call wants.
+
+Hint: give `eq` that type, or rename it if it is not meant to be a method
+of `Mod`.
+```
+
+**A `where` clause against the method it resolved to (CK-55).** `type_mismatch`, category
+`.where_clause` (`checker-v2.md` §15.4), at the call that instantiated the clause (the wanted's
+`origin`). The clause is named by its variable — the instantiated quantifier keeps the annotation's
+name (§8.2) — and its method; the roles are the clause (what was asked) against the method (what
+exists):
+
+```
+The `where a.compare` clause of `f` does not match the `compare` of `Int`:
+
+With `a` as `Int`, the clause asks for:
+
+    Int, Int -> Int
+
+But the `compare` of `Int` is:
+
+    Int, Int -> Order
+
+Hint: `compare` means the same thing at every type, `a, a -> Order`, so a
+`where` clause that names it has to give it that type.
+```
+
+`f` is the callee (`Reporter.calleeOf`), `a` the clause's variable, `Int` the receiver as the
+printer names it. A clause on a `number` checked where it is written (§6.6 *as refined*, no call)
+reads *"The `where number.eq` clause does not match the `eq` of `number`:"* and *"The clause asks
+for:"*, which is also what a use says when the variable is printed as the receiver (`number` bound
+to a `number`). When the variable has no name (a quantifier nothing named), the clause is *"The `where`
+clause of `f` that asks for `compare`"*. `eq`'s hint says `a, a -> Bool`.
+
+**`==` refused because a requirement inside failed (CK-116).** `not_equatable` (for `compare`,
+`no_methods_on_shape`), at the use, for the value the author compared. A derived `==` resolves a
+method for what the value holds: a payload's own `eq`, or a requirement a payload's method carries
+in its `where` clause (`Holder.eq … where a.key`). When that method exists and has the wrong type
+the refusal says so instead of *"a function anywhere inside it"*:
+
+```
+I cannot compare these values with `==`:
+
+    Hid Key
+
+It holds a `Key`, and comparing that needs the `key` of `Key` at this type:
+
+    Key, () -> Int
+
+but `Key.key` is:
+
+    Key, () -> String
+
+Hint: give `Key.key` that type, or compare the values another way.
+```
+
+`Key` is the type whose method failed and `Key.key` its module and method; the article follows
+`checker.md` §8.7's letter rule. For `compare` the first line is `no_methods_on_shape`'s *"This
+type has no `compare`:"* and the sentence says *ordering* for *comparing*.
+
+When the method's first parameter is another type of its module, the hint is §11's clash hint, as
+for CK-52 (read off the method's declared type — this module's scheme or its interface's — when
+the reason came from an answer or a row). The reason rides on the answer: a derived context whose
+pass failed on such a requirement is `absent_requirement` (`checker-v2.md` §11.2) with the type and
+the method, and it is published as the row status **`requirement`**, `(type_ref, method)` like
+`private_method`'s (§14.2 *as amended by R13*). A use that reads the reason from an answer or a row
+knows the method and the type but not the two types, and says:
+
+```
+I cannot compare these values with `==`:
+
+    W
+
+It holds a `Key`, and comparing that needs the `key` of `Key` at a type that
+`Key.key` does not have.
+
+Hint: give `Key.key` the type it is asked for, or compare the values another
+way.
+```
+
+Fixture: `tests/corpus/check/bad/RequirementFailedInsideEq/` — the use-site form, the answer's, a
+published row's, and R8b's review F6 (a module whose `pub eq` is for `Int`, reached through
+another module's wrapper).
 
 ---
 

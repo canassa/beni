@@ -15,6 +15,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Diagnostics = @import("Diagnostics.zig");
+const Walk = @import("Walk.zig");
 
 const Reporter = Diagnostics.Reporter;
 const Error = Reporter.Error;
@@ -177,19 +178,54 @@ pub fn methodSignatureMismatch(
     Render.writeVar(w, r.cx(), &namer, found, .top) catch return error.OutOfMemory;
     w.writeAll("\n\nbut the call wants:\n\n    ") catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
-    w.print(
-        \\
-        \\
-        \\A method of `{s}` is a `pub` value of the module that declares it, which is
-        \\`{s}`, and a module's `pub` values are ONE namespace — so `{s}` is the
-        \\method of every type `{s}` declares.
-        \\
-        \\Hint: this is the module-rule clash of
-        \\`docs/design/static-dispatch-spike.md` §11. Move one of the types into a
-        \\module of its own, or give the two methods different names.
-        \\
-    , .{ r.env.interner.slice(type_name), module_text, method_text, module_text }) catch return error.OutOfMemory;
+    const type_text = r.env.interner.slice(type_name);
+    if (clashes(r, module, type_name, found)) {
+        w.print(
+            \\
+            \\
+            \\A method of `{s}` is a `pub` value of the module that declares it, which is
+            \\`{s}`, and a module's `pub` values are ONE namespace — so `{s}` is the
+            \\method of every type `{s}` declares.
+            \\
+            \\Hint: this is the module-rule clash of
+            \\`docs/design/static-dispatch-spike.md` §11. Move one of the types into a
+            \\module of its own, or give the two methods different names.
+            \\
+        , .{ type_text, module_text, method_text, module_text }) catch return error.OutOfMemory;
+    } else {
+        // No other type of the module is involved (§10.13, CK-52).
+        w.print(
+            \\
+            \\
+            \\A method of `{s}` is a `pub` value of the module that declares it, so
+            \\`{s}.{s}` is the `{s}` of `{s}`, and it has to have the type the call wants.
+            \\
+            \\Hint: give `{s}` that type, or rename it if it is not meant to be a method
+            \\of `{s}`.
+            \\
+        , .{ type_text, module_text, method_text, method_text, type_text, method_text, type_text }) catch return error.OutOfMemory;
+    }
     try r.emit(.type_mismatch, region, &out);
+}
+
+/// §11's module-rule clash is what happened exactly when the method's first
+/// parameter is ANOTHER type its module declares (§10.13, CK-52;
+/// checker-v2.md §15.4).
+pub fn clashes(r: *const Reporter, module: Graph.Index, type_name: Symbol, method_type: Var) bool {
+    const st = r.env.store;
+    const f = Walk.function(st, method_type) orelse return false;
+    const params = f.params;
+    if (params.len == 0) return false;
+    const id = switch (st.resolvedContent(params[0])) {
+        .structure => |s| switch (s) {
+            .app => |a| a.type,
+            else => return false,
+        },
+        else => return false,
+    };
+    if (id == .none) return false;
+    const e = r.env.types.entry(id);
+    return e.module == module and e.name != type_name;
 }
 
 /// §10.2. The value exists, but not as `pub`.
@@ -237,12 +273,32 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
         try r.emit(.no_methods_on_shape, region, &out);
         return;
     }
+    if (shape == .open_record) {
+        // A.28, said to an author who wrote an operator (§10.3 *amended by
+        // R13*, CK-54).
+        w.print("I cannot derive `{s}` for an open record:\n\n    ", .{method_text}) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
+        const ext = openRecordExt(r, &namer, v);
+        w.print(
+            \\
+            \\
+            \\`{{ {s} | … }}` is any record with at least these fields, so I do not know all
+            \\of its fields, and a derived `{s}` compares every one of them. Only a closed
+            \\record derives `eq` and `compare`.
+            \\
+            \\Hint: compare the fields you know one at a time, or give the value a closed
+            \\record type, one with no `{s} |`.
+            \\
+        , .{ ext, method_text, ext }) catch return error.OutOfMemory;
+        try r.emit(.no_methods_on_shape, region, &out);
+        return;
+    }
     const what = switch (shape) {
-        .record => "record",
+        .record, .record_required => "record",
         .tuple => "tuple",
         .unit => "`()`",
         .function => "function",
-        .contains_function, .not_orderable, .too_wide, .other => "type",
+        .contains_function, .not_orderable, .too_wide, .open_record, .other => "type",
     };
     if (shape == .contains_function or shape == .not_orderable) {
         w.print("This type has no `{s}`:\n\n    ", .{method_text}) catch return error.OutOfMemory;
@@ -313,6 +369,10 @@ pub fn missingWhereConstraint(
     var_name: Symbol.Optional,
     method: Symbol,
     fn_var: Var,
+    /// The `let` binding whose annotation holds the variable, if one does:
+    /// its annotation cannot take the `where` (§10.4 *amended by R13*,
+    /// CK-53).
+    let_binding: Symbol.Optional,
 ) Error!void {
     if (r.quiet) return;
     var out = r.writer();
@@ -340,9 +400,23 @@ pub fn missingWhereConstraint(
     } else {
         w.print("\n\nbut the annotation says `{s}` is any type at all.\n", .{v_text}) catch return error.OutOfMemory;
     }
-    w.print("\nHint: add it to the annotation:\n\n    where {s}.{s} : ", .{ v_text, method_text }) catch return error.OutOfMemory;
-    Render.writeVar(w, r.cx(), &namer, fn_var, .top) catch return error.OutOfMemory;
-    w.writeAll("\n") catch return error.OutOfMemory;
+    if (let_binding.unwrap()) |b| {
+        const binding = r.env.interner.slice(b);
+        w.print(
+            \\
+            \\Hint: a `let` annotation cannot have a `where` clause. Move `{s}` to the top
+            \\level and annotate it there with:
+            \\
+            \\    where {s}.{s} :
+        , .{ binding, v_text, method_text }) catch return error.OutOfMemory;
+        w.writeByte(' ') catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, fn_var, .top) catch return error.OutOfMemory;
+        w.print("\n\nor remove the annotation of `{s}` and let its type be inferred.\n", .{binding}) catch return error.OutOfMemory;
+    } else {
+        w.print("\nHint: add it to the annotation:\n\n    where {s}.{s} : ", .{ v_text, method_text }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, fn_var, .top) catch return error.OutOfMemory;
+        w.writeAll("\n") catch return error.OutOfMemory;
+    }
     try r.emit(.missing_where_constraint, origin, &out);
 }
 
@@ -421,19 +495,26 @@ pub fn tooManyInferredConstraints(
     count: u32,
     limit: u32,
     names: []const Symbol,
+    /// Each name's receiver, named as a `where` clause names it (§10.11
+    /// *amended by R13*, CK-58).
+    receivers: []const Var,
 ) Error!void {
     if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
     const w = &out.writer;
     const name = r.env.interner.slice(decl);
     w.print(
         "`{s}` has no annotation, and the type I inferred for it needs {d} methods.\nI stop at {d}.\n\nThe first {d} are ",
         .{ name, count, limit, names.len },
     ) catch return error.OutOfMemory;
-    for (names, 0..) |m, i| {
+    for (names, receivers, 0..) |m, v, i| {
         if (i != 0) w.writeAll(if (i + 1 == names.len) " and " else ", ") catch return error.OutOfMemory;
-        w.print("`{s}`", .{r.env.interner.slice(m)}) catch return error.OutOfMemory;
+        w.writeByte('`') catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .app_arg) catch return error.OutOfMemory;
+        w.print(".{s}`", .{r.env.interner.slice(m)}) catch return error.OutOfMemory;
     }
     w.print(
         \\.
@@ -790,4 +871,72 @@ pub fn cyclicValue(
         \\
     ) catch return error.OutOfMemory;
     try r.emitAt(.cyclic_value, region, token, &out);
+}
+
+/// The name `namer` gave an open record's extension variable, for §10.3's
+/// open-record text (CK-54): the same `r` the rendered record shows.
+fn openRecordExt(r: *Reporter, namer: *Render.Namer, v: Var) []const u8 {
+    const st = r.env.store;
+    var tail = v;
+    var guard: u32 = 0;
+    while (guard < 4096) : (guard += 1) {
+        const root, const c = st.resolved(tail);
+        switch (c) {
+            .structure => |s| switch (s) {
+                .record => |rec| tail = rec.ext,
+                else => return "r",
+            },
+            .flex, .rigid => return namer.name(root, "r") catch "r",
+            else => return "r",
+        }
+    }
+    return "r";
+}
+
+/// §10.13: a `where` clause's method type against the well-known method it
+/// resolved to (the `.where_clause` category, CK-55). `expected` is the
+/// method's own type, `receiver, receiver -> Bool|Order`, and `actual` the
+/// clause's, both at this use.
+pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporter.Clause, expected: Var, actual: Var) Error!void {
+    var out = r.writer();
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const scratch = r.env.scratch;
+    const method = r.env.interner.slice(clause.method);
+    const receiver: []const u8 = blk: {
+        const f = Walk.function(r.env.store, expected) orelse break :blk "it";
+        const params = f.params;
+        if (params.len == 0) break :blk "it";
+        break :blk Render.allocType(scratch, r.cx(), &namer, params[0]) catch return error.OutOfMemory;
+    };
+    const callee = r.calleeOf(region);
+    const variable: ?[]const u8 = if (clause.variable.unwrap()) |v| r.env.interner.slice(v) else null;
+    if (variable) |v| {
+        w.print("The `where {s}.{s}` clause", .{ v, method }) catch return error.OutOfMemory;
+        if (callee.kind != .anonymous) w.print(" of `{s}`", .{callee.name}) catch return error.OutOfMemory;
+    } else if (callee.kind != .anonymous) {
+        w.print("The `where` clause of `{s}` that asks for `{s}`", .{ callee.name, method }) catch return error.OutOfMemory;
+    } else {
+        w.print("The `where` clause that asks for `{s}`", .{method}) catch return error.OutOfMemory;
+    }
+    w.print(" does not match the `{s}` of `{s}`:\n\n", .{ method, receiver }) catch return error.OutOfMemory;
+    if (variable != null and callee.kind != .anonymous and !std.mem.eql(u8, variable.?, receiver)) {
+        w.print("With `{s}` as `{s}`, the clause asks for:\n\n    ", .{ variable.?, receiver }) catch return error.OutOfMemory;
+    } else {
+        w.writeAll("The clause asks for:\n\n    ") catch return error.OutOfMemory;
+    }
+    Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+    w.print("\n\nBut the `{s}` of `{s}` is:\n\n    ", .{ method, receiver }) catch return error.OutOfMemory;
+    Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+    const result = if (clause.method == InternPool.WellKnown.eq.symbol()) "Bool" else "Order";
+    w.print(
+        \\
+        \\
+        \\Hint: `{s}` means the same thing at every type, `a, a -> {s}`, so a
+        \\`where` clause that names it has to give it that type.
+        \\
+    , .{ method, result }) catch return error.OutOfMemory;
+    try r.emit(.type_mismatch, region, &out);
 }

@@ -348,6 +348,8 @@ const Facts = struct {
             .foreign => return .{ .status = .foreign },
             .absent_function => return .{ .status = .function },
             .absent_private => return f.private(@enumFromInt(answer.culprit), answer.method),
+            // CK-116: the reason rides on the row (§14.2 *as amended by R13*).
+            .absent_requirement => return f.culpritRow(.requirement, @enumFromInt(answer.culprit), answer.method),
             // The record has no status for a needed annotation, so an
             // importer says "does not support" where the module itself gives
             // the annotation hint (R8a's review, nit): the texts are R13's.
@@ -381,10 +383,16 @@ const Facts = struct {
     /// declares the private method named through this record's own
     /// `type_refs` (a first mention appends a row, as any term's does).
     fn private(f: *Facts, culprit: Types.TypeId, method: InternPool.Symbol) Error!Interface.Derived {
+        return f.culpritRow(.private_method, culprit, method);
+    }
+
+    /// `private_method`'s or `requirement`'s row (§14.2 *as amended by R8b*,
+    /// *by R13*): `(type_ref, method)`.
+    fn culpritRow(f: *Facts, status: Interface.Derived.Status, culprit: Types.TypeId, method: InternPool.Symbol) Error!Interface.Derived {
         const ref = try f.writer.typeRefOf(culprit);
         if (ref == .none) return .{ .status = .unanswerable };
         const words = [_]u32{ @intFromEnum(ref), try f.slot(method) };
-        return .{ .status = .private_method, .context = try f.writer.addRange(&words) };
+        return .{ .status = status, .context = try f.writer.addRange(&words) };
     }
 
     /// A row's method types as ONE scheme whose body is `( p₀, …, pₙ₋₁,

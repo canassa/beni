@@ -2520,6 +2520,29 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Reviewer focus.** Every changed message against Elm's for the same mistake.
   `references/talks/` has none of this; use `elm/compiler`'s reporting when it is vendored.
 
+- **As built** (2026-09-27; `checker.md` §8 *amended by R13* and §8.7, `static-dispatch-spike.md`
+  §10.3, §10.4, §10.11 *amended by R13* and §10.13, `checker-v2.md` §11.2, §14.2, §14.3 and §15.1
+  *amended by R13*, each written before its code).
+  - **Promoted** (the twelve pending fixtures, `.codes` → blessed `.diag`, every `.codes` line
+    checked against the blessed golden by script): CK-49, 50, 52, 53, 54, 55, 56 (×2), 58, 59, 60,
+    86. `tests/pending/` holds CK-126 alone.
+  - **Fixed with new fixtures, red on `3ff3ac5`:** CK-94 (`check/good/` and
+    `check/bad/NumberVariableNamedByKind.beni`), CK-116 (`check/bad/RequirementFailedInsideEq/`:
+    the use-site form, a context's answer, a published row, and R8b's F6), CK-129 (CK-86's
+    duplicate), and R11's note on `DeferredReceiverGeneralised` (a deferred refusal's record is
+    redrawn when P4 ends: `{ combine : number -> number }`, three goldens).
+  - **Not reproduced:** CK-115; guard `check/bad/CallArgMismatchNoUnknownMethod.beni`.
+  - **Mechanics.** `Evidence.Wanted.receiver_name` (a `where` clause's variable), `Reporter.clause`
+    around the one `.where_clause` unification, `Generalize.Annotated.let`, `TypeStore.isCurried`
+    (a curried annotation's scheme poisoned at P2 and at a `let` header), `Render.preferredName`
+    (also `Schemes.Writer`'s published name), `Contexts.Status.absent_requirement` and
+    `Interface.Derived.Status.requirement` (`iface_bytes.format_version` 6), `Report.renderLate`.
+    `Diagnostics.zig` passed 1 500 lines, so the pattern texts moved to `PatternTexts.zig`;
+    `Env` lost `artifacts` and `schemas` (§15.1's owed narrowing).
+  - **Re-blessed** (each with its CK in the commit): 25 `.diag`s for CK-50's hint alone (one also
+    CK-49's sentence), five for CK-94, five for CK-116, three for the deferred record, two for
+    CK-55, one each for CK-52, CK-56's swap, CK-58 and CK-59; two `.iface`s for CK-94.
+
 ### R14 — Constrained `let` helpers generalise (D5)
 
 - **Goal.**
@@ -2592,7 +2615,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R10 | CK-107 (fixed; `perf_test.zig`, `test-perf`) | — | CK-132 (found: v1 only, frozen; its v2 side in `cutoff_test.zig` and `cache_test.zig`; gone at R12) |
 | R11 | all claims above: 119 fixtures, and the scenarios `PERM`, `NEST-OVER`, `NEST-DEEP` (`ordering_test.zig`), `NEST-UNDER` (`perf_test.zig`), CK-79 and CK-82 (`abuse_wide_test.zig`) | — | CK-03, 40, 42, 75, 80: their v1-only pending scenarios deleted (v2 twins in `perf_test.zig` since R6a, R8a) |
 | R12 | CK-88 (`perf_test.zig`, `abuse_wide_test.zig`), CK-95 with its duplicate CK-127 (`perf_test.zig`) | — | CK-132 (closed with v1); CK-133 (found and fixed: the Debug proof check's budget); CK-134 (found: the dispatch bench at 1.12× `7427828`) |
-| R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
+| R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86; CK-94, 116, 129 (new fixtures) | — | CK-115 (not reproduced; a guard) |
 | R14 | CK-37 (rest) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |

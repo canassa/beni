@@ -1,0 +1,13 @@
+-- CK-116: see Main.beni. A private wrapper whose derived `==` asks `Key`'s
+-- `key` through `Holder.eq`'s clause, decided at each use.
+import Holder
+import Key
+
+
+type Hid a
+    = Hid (Holder.Holder a)
+
+
+pub mk : a -> Hid a
+mk x =
+    Hid (Holder.Holder x)

@@ -1,0 +1,6 @@
+-- CK-116: see Main.beni.
+import Odd
+
+
+pub type Wrap
+    = Wrap Odd.T

@@ -1,6 +1,6 @@
 module Main
   value h : T, String -> ( Int, String )
-  value k : T, a -> ( a2, a, List T )
+  value k : T, a -> ( number, a, List T )
   value use : T -> ( Int, String, List T )
 module T
   type T
