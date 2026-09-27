@@ -3326,6 +3326,16 @@ them, arguments are bare terms.
 `decl <name> evidence=<n> arity=<a> convention=<plain|function|thunk>`; every `tests/corpus/dispatch/`
 golden moved in its `decl` lines and nowhere else, and `dispatch/Conventions.beni` shows all three.
 
+*Amended 2026-09-28 by R15-fix-B (CK-136).* A table SHARES terms (§13.1 as amended by R6b), and a
+tree printed as a tree is exponential in a doubling DAG: `==` on a type 32 levels deep never
+finished, and depth 7 of CK-135's program wrote about 2 GB. A term that more than one owner names
+(an argument, an evidence root, a body position or a site's callee, counted as `js/Lower.zig`'s
+`readTable` counts them) AND that prints arguments under it is printed in full the first time the
+dump reaches it, as `<term> #<n>`, and every later occurrence is `<term> = #<n>` with nothing under
+it; `n` counts 1, 2, … in print order within the module, so it is as stable as the lines around it.
+A term with no arguments prints its one line either way and takes no label, which is why no golden
+written before the amendment moved. `dispatch/SharedEvidenceDag.beni` shows the form.
+
 ### 13.3 What `Lower` changes
 
 | Today (`js/Lower.zig`) | After R2 |

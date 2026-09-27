@@ -2652,6 +2652,46 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Exit.** Every finding becomes a CK entry (next free ID) with a fixture and a slice; the
   audit closes when none is structural or unsound.
 
+#### R15-fix-B — the backend's two findings, and the emitter's quadratic specifier table
+
+- **As built (2026-09-28).** Spec first: `backend.md` §4 *An arrow body or a statement that would
+  begin with `{`* (new, dated) and `checker-v2.md` §13.2 *amended by R15-fix-B*. Stays in `src/js`
+  and the dump code; nothing in `src/check` changed.
+  - **CK-138.** `Print.arrowBody` bracketed a body that WAS an object literal and nothing else.
+    `startsWithBrace` now asks for the LEFTMOST printed token, walking the left spine (callee,
+    member/index object, binary left operand, conditional test) through every child printed
+    without its own bracket, with §9 item 1's substitution resolved at each step; a loop, not
+    recursion. An arrow's concise body, an expression statement and an assignment target are
+    bracketed whole when it says yes (a leading `function` cannot arise: `JsIr` has no function
+    expression). Dev and `--release` alike.
+  - **CK-136.** The only exponential walk was the suspect: `Lower.derivedBodiesExist`, the I7
+    re-check `refuseEvidence` runs per site, recursed into every argument with no visited set.
+    `readTable` judges every term once, from the last (the pre-order rule `termOkLocal` already
+    used), into `bodies_ok`. The lowering itself was already linear (R6b's `bindShared`). The
+    dump labels a shared term that has arguments — `<term> #<n>` the first time, `<term> = #<n>`
+    after — so it is linear in the table; no existing golden moved, because none held such a
+    term.
+  - **Perf study item 1** (`plans/perf-study-2026-09-27.md`). `Emit.emitModules` built a fresh
+    specifier table, one string per module, for EVERY module: count² strings in an arena never
+    reset. `specifierTable` builds one per importer directory depth and reuses it. `build
+    --library --jobs=1` on the generated 100k-line corpora, `perf stat`, `taskset`-pinned, min of
+    5 interleaved runs, `1bec73c` → R15-fix-B: plain 1 306.3 M → 1 166.0 M instructions
+    (**−10.7 %**), 580.1 M → 522.4 M user cycles (−10.0 %), 26 476 → 12 137 page faults (−54 %);
+    dispatch 1 355.9 M → 1 214.8 M (**−10.4 %**), 628.9 M → 573.7 M (−8.8 %), 26 997 → 12 568
+    (−53 %). The study's prototype measured −10.8 % / −10.4 %.
+  - **Evidence.** Output identity against `1bec73c`'s ReleaseFast binary: every
+    `tests/corpus/run` fixture (232 files and directories), both generated corpora and
+    `bench/corpus` (less `JsonCodecs` and `NotesApp`, which import modules that do not exist and
+    do not build on `master`), each built dev and `--release` (`--library` for the corpora):
+    byte-identical output trees and streams, except the two CK-138 fixtures, which the base
+    build emits as modules that do not load. Fixture-first: on `1bec73c` both CK-138 fixtures
+    throw `SyntaxError` at load (dev and release), `EvidenceDagBuildDepth32` takes 48 s of CPU to
+    build (ReleaseFast; the corpus's timeout kills it), and `dispatch/SharedEvidenceDag` prints
+    the tree. Fixtures: promoted `run/ArrowBodyStartsWithRecord`, `run/EvidenceDagBuildDepth32`;
+    new `run/ArrowBodyLeftmostBrace`, `dispatch/SharedEvidenceDag`, two `Print.zig` unit tests
+    (the statement position, which no lowering reaches), and the `test-perf` scenario "CK-136"
+    (depth 32 / 64, build and dump).
+
 ---
 
 ## 4. CK → slice index
@@ -2682,6 +2722,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86; CK-94, 116, 129 (new fixtures) | — | CK-115 (not reproduced; a guard) |
 | R14 | CK-37 (rest) | — | — |
 | R14b | CK-134 (fixed; the bench is its instrument, `checker-v2.md` §18) | — | — |
+| R15-fix-B | CK-136 (`run/EvidenceDagBuildDepth32`; new `dispatch/SharedEvidenceDag`, `perf_test.zig` "CK-136"), CK-138 (`run/ArrowBodyStartsWithRecord`; new `run/ArrowBodyLeftmostBrace`) | — | perf study item 1 (the emitter's specifier table) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

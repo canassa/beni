@@ -3819,6 +3819,16 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   64 once fixed.
 - **Fixture** `run/EvidenceDagBuildDepth32.beni`, red `timeout`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-B (2026-09-28). The suspect was the whole cause: `derivedBodiesExist`,
+  the I7 re-check `refuseEvidence` runs per site, recursed into every argument with no visited set.
+  `readTable` now judges it for every term once, from the last (the pre-order rule
+  `termOkLocal` already used), so it is linear in the table. The dump prints a shared term with
+  arguments in full once, `<term> #<n>`, and `<term> = #<n>` after (`checker-v2.md` §13.2 *amended
+  by R15-fix-B*); no existing golden moved. Promoted to `tests/corpus/run/EvidenceDagBuildDepth32`
+  (dev and `--release`; red on `1bec73c` by timeout), plus `dispatch/SharedEvidenceDag` and the
+  `test-perf` scenario "CK-136" at depth 32 / 64, build and dump: `1bec73c` builds this
+  generator's depth 20 / 22 / 24 in 21 / 57 / 196 ms CPU (×4 per two levels); fixed, depth 32 /
+  64 build in 8 / 9 ms and dump in 22 ms.
 
 ### CK-137 — `==` on a type reuses a sibling type's resolution of its module's `eq`
 
@@ -3853,6 +3863,14 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   `3`, `ok`, `a,b`.
 - **Fixture** `run/ArrowBodyStartsWithRecord.beni`, red `dev: exit=0 program-exit=1`.
 - **Slice** R15-fix (backend).
+- **Status** fixed by R15-fix-B (2026-09-28), `backend.md` §4 *An arrow body or a statement that
+  would begin with `{`* first: the printer brackets an arrow's concise body, and an expression
+  statement or assignment target, when its LEFTMOST printed token is an object literal's `{`,
+  following the left spine (callee, member/index object, binary left operand, conditional test)
+  through every unbracketed child. Promoted to `tests/corpus/run/ArrowBodyStartsWithRecord`, plus
+  `run/ArrowBodyLeftmostBrace` (record update, field call, field of a field, `===` operand, `if`
+  test; both red on `1bec73c` with a `SyntaxError`, dev and `--release`) and two `Print.zig` unit
+  tests for the statement position, which no lowering reaches today.
 
 ### CK-139 — A parameterised type used bare in a constructor crashes the checker
 
@@ -4390,9 +4408,9 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-133 | performance (Debug only) | K11 | `abuse_test.zig` CK-128 scenario (timeout under load) | R12 (found and fixed) |
 | CK-134 | performance | K11 | — (the bench) | R14b (fixed; found by R12) |
 | CK-135 | compiler-crash-or-hang | K3 | `check/good/RequirementBelowDepth512.beni` | R15-fix (found by R15's core and dispatch audits) |
-| CK-136 | compiler-crash-or-hang | K11 | `run/EvidenceDagBuildDepth32.beni` | R15-fix (backend) |
+| CK-136 | compiler-crash-or-hang | K11 | promoted: `run/EvidenceDagBuildDepth32.beni`; new `dispatch/SharedEvidenceDag.beni`, `perf_test.zig` "CK-136" (`test-perf`) | R15-fix-B (fixed) |
 | CK-137 | unsound-runtime (critical) | K7 | `check/bad/SiblingTypeEqResolution/` | R15-fix |
-| CK-138 | unsound-runtime | K14 | `run/ArrowBodyStartsWithRecord.beni` | R15-fix (backend) |
+| CK-138 | unsound-runtime | K14 | promoted: `run/ArrowBodyStartsWithRecord.beni`; new `run/ArrowBodyLeftmostBrace.beni` | R15-fix-B (fixed) |
 | CK-139 | compiler-crash-or-hang | K10 | `check/bad/BareParameterisedTypeInConstructor.beni` | R15-fix |
 | CK-140 | compiler-crash-or-hang | K3 | `scenario/CK-140` | R15-fix |
 | CK-141 | compiler-crash-or-hang | K9 | `check/bad/ImportedErrorValueCompared/` | R15-fix |

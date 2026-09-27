@@ -1,0 +1,17 @@
+module SharedEvidenceDag
+  decl w1 evidence=0 arity=1 convention=plain
+  decl w2 evidence=0 arity=1 convention=plain
+  decl w3 evidence=0 arity=1 convention=plain
+  decl same evidence=0 arity=0 convention=plain
+  derived 0 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 23 callee derived 0
+    arg derived 0 #1
+      derived 0 #2
+        derived 0 #3
+          primitive strict_eq
+          primitive strict_eq
+        derived 0 = #3
+      derived 0 = #2
+    arg derived 0 = #1

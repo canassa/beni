@@ -186,7 +186,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // `--stage=dispatch` takes a directory for the same reason
         // (static-dispatch-spike.md §7.3): the table is per module, and a
         // project's tables in path order are what a corpus golden is.
-        if (dump.stage == .dispatch) return dumpExit(summary, dumpProjectDispatch(&session, stdout, stderr, dump.file));
+        if (dump.stage == .dispatch) return dumpExit(summary, dumpProjectDispatch(gpa, &session, stdout, stderr, dump.file));
         if (dump.stage != .interface and dump.stage != .raw) return fail(stderr, "beni: dump needs exactly one file", .{});
         return dumpExit(summary, dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw));
     };
@@ -251,6 +251,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.dispatch.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
             beni.dump.dispatch.write(
+                gpa,
                 stdout,
                 session.store.moduleName(file),
                 session.artifacts.bir(file),
@@ -345,7 +346,7 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
 
 /// Every module under the directory `arg`, in path order: the dispatch
 /// golden of a whole project (§7.3).
-fn dumpProjectDispatch(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+fn dumpProjectDispatch(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const dir = storePath(&buffer, arg);
     var printed: u32 = 0;
@@ -356,6 +357,7 @@ fn dumpProjectDispatch(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer
         const m = moduleOf(session, f) orelse continue;
         if (m.int() >= session.checked.dispatch.len) continue;
         beni.dump.dispatch.write(
+            gpa,
             stdout,
             session.store.moduleName(f),
             session.artifacts.bir(f),

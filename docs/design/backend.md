@@ -893,6 +893,24 @@ a `return`, `continue`, `break`, `throw`, assignment or expression statement dro
 `if(c)return a;`; never a declaration (no legal `if` body) and never an `if` (a dangling `else`
 would change owner). The request prints `2**30`.
 
+### An arrow body or a statement that would begin with `{`
+
+*Added 2026-09-28 by R15-fix-B (CK-138).* JavaScript reads a `{` in two positions as a block, not as
+an object literal: the first token of an arrow function's concise body, and the first token of an
+expression statement. **The printer brackets the whole expression in either position when its
+LEFTMOST printed token is an object literal's `{`** — decided by the token, not by the node's kind.
+`arrowBody` bracketed a body that WAS an object (`() => ({ a: 1 })`), and nothing else, so
+`first n = ( n, 1 ).0` printed `(n$1) => { a: n$1, b: 1 }.a`, a build that exited 0 and a module that
+did not load (`SyntaxError`), in both builds. The rule follows the left spine — a callee, a member's
+or an index's object, a binary operator's left operand, a conditional's test — through every child
+printed without its own bracket, resolving §9 item 1's substitutions at each step, so the answer is
+about the bytes written: `(n$1) => ({ a: n$1, b: 1 }.a)`, `() => ({ f: g }.f(x))`,
+`() => ({ t: b }.t ? 1 : 2)`, and `() => b * ({ a: 1 }.a + 1)` untouched, its brace already inside
+a bracket. The walk is a loop (a derived `eq`'s spine is one `&&` per field). A statement's other
+hazard, a leading `function`, cannot arise: `JsIr` has no function expression. Fixtures:
+`run/ArrowBodyStartsWithRecord` and `run/ArrowBodyLeftmostBrace` (dev and `--release`), and
+`Print.zig`'s two unit tests for the statement position, which no lowering reaches today.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

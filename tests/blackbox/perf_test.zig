@@ -286,6 +286,37 @@ test "CK-80: building == on a value whose type is a doubling DAG is linear in it
     try s.finish("CK-80 build", verdict);
 }
 
+// CK-136 (R15's audit), fixed by R15-fix-B: the same doubling DAG with both
+// halves ONE type, `( x, x )` per level, so every level of the table is one
+// shared term named twice. `Lower.derivedBodiesExist` — the I7 re-check the
+// build runs before lowering a site — walked the table as a tree, 2^depth
+// visits, and `dump --stage=dispatch` printed it as a tree. Both judge a term
+// once now (`readTable`, and labels in the dump). Calibration (ReleaseFast,
+// CPU, this generator): on 1bec73c `build` takes 21 / 57 / 196 ms at depth
+// 20 / 22 / 24, ×4 every two levels, so depth 32 is about 50 s; fixed,
+// depth 32 / 64 build in 8 / 9 ms and dump in 22 / 22 ms, the process floor.
+test "CK-136: building and dumping == on a doubling DAG of one shared term is linear in its depth" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("D32.beni", try sharedPairApp(s.arena(), 32));
+    try s.w.write("D64.beni", try sharedPairApp(s.arena(), 64));
+    const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out" };
+    try s.finish("CK-136 build", try s.ratioOf(build, "D32.beni", "D64.beni", 32, &.{}));
+    const dump: []const []const u8 = &.{ "dump", "--stage=dispatch", "--platform=node" };
+    try s.finish("CK-136 dump", try s.ratioOf(dump, "D32.beni", "D64.beni", 32, &.{}));
+}
+
+/// `d1 x = ( x, x )`, `dk x = d1 (d(k-1) x)` to `depth`, and a `main` that
+/// compares two values of the deepest: a type `depth` levels deep whose two
+/// halves are one type at every level.
+fn sharedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Node exposing (Program)\n\n\nd1 x =\n    ( x, x )\n\n\n");
+    for (2..depth + 1) |k| try out.print(arena, "d{d} x =\n    d1 (d{d} x)\n\n\n", .{ k, k - 1 });
+    try out.print(arena, "main : Program\nmain =\n    Node.print (if d{d} 1 == d{d} 2 then \"T\" else \"F\")\n", .{ depth, depth });
+    return out.items;
+}
+
 // CK-101's timing twin (R6a's review, B2): `==` on a doubling DAG whose every
 // level passes two method boundaries that alternate the method — `A`'s `eq`
 // asks its payload for `compare`, `B`'s `compare` asks for `eq`. v2's

@@ -90,6 +90,10 @@ Emit went from 71 ms to 36 ms at jobs=8. The output is byte-identical (both corp
 **Risk.** None. Determinism and output are untouched. **Effort:** minutes. The quadratic grows
 with project size: at 2 000 modules it would dominate the whole build.
 
+*Landed 2026-09-28 by R15-fix-B* (`Emit.specifierTable`, one table per importer depth): plain
+1 306.3 M → 1 166.0 M instructions (−10.7 %), dispatch 1 355.9 M → 1 214.8 M (−10.4 %), page
+faults −54 % / −53 %, output byte-identical (`plans/checker-rewrite.md`, *R15-fix-B*).
+
 ### 2. Emit is entirely serial — ESTIMATED −20–25 ms wall at jobs=8 after #1 (≈ −30 %)
 
 **Evidence.** After #1, emit is still 33–36 ms of an ~80 ms `--jobs=8` build (45 %), on one

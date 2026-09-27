@@ -1286,6 +1286,13 @@ const Emitter = struct {
         // and not a second walk.
         const paths = try e.scratch.alloc([]const u8, count);
         for (paths, 0..) |*slot, i| slot.* = try e.outputPath(@enumFromInt(@as(u32, @intCast(i))));
+        // Every module's specifier table, one per importer DEPTH: a specifier
+        // depends on the target's path and on nothing of the importer but its
+        // directory depth, so the modules at one depth share one table. One
+        // table per module was count² strings in an arena nothing frees —
+        // 8.7 % of a 100k-line build's cycles and half its page faults
+        // (plans/perf-study-2026-09-27.md, item 1).
+        var by_depth: std.ArrayList(?[]const []const u8) = .empty;
         // R8e (O3): whether any module written imports the one engine.
         var uses_runtime = false;
 
@@ -1296,8 +1303,7 @@ const Emitter = struct {
             // use is an edge.
             if (!e.live.of(m).any()) continue;
             const file = e.graph().moduleFile(m);
-            const specifiers = try e.scratch.alloc([]const u8, count);
-            for (specifiers, paths) |*slot, to| slot.* = try relativeSpecifier(e.scratch, paths[i], to);
+            const specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
 
             const source_path = e.session.store.path(file);
             const sibling = try e.siblingSpecifier(source_path);
@@ -1838,6 +1844,24 @@ fn firstTypeVar(b: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
 /// the output root, so the answer is `../` once per directory `from` sits
 /// in, then `to`. It always starts with `./` or `../`, because a bare
 /// specifier is a package name in ESM and not a relative path.
+/// The specifier of every module in `paths` as the file at `from` imports
+/// it: built once per directory depth of `from` and cached in `by_depth`,
+/// since `relativeSpecifier` reads nothing else of `from`.
+fn specifierTable(
+    arena: Allocator,
+    by_depth: *std.ArrayList(?[]const []const u8),
+    paths: []const []const u8,
+    from: []const u8,
+) Allocator.Error![]const []const u8 {
+    const depth = std.mem.count(u8, from, "/");
+    while (by_depth.items.len <= depth) try by_depth.append(arena, null);
+    if (by_depth.items[depth]) |table| return table;
+    const table = try arena.alloc([]const u8, paths.len);
+    for (table, paths) |*slot, to| slot.* = try relativeSpecifier(arena, from, to);
+    by_depth.items[depth] = table;
+    return table;
+}
+
 fn relativeSpecifier(arena: Allocator, from: []const u8, to: []const u8) Allocator.Error![]const u8 {
     const depth = std.mem.count(u8, from, "/");
     var out: std.ArrayList(u8) = .empty;

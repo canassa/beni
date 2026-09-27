@@ -541,7 +541,7 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .assign_stmt => {
-                try p.expression(@enumFromInt(d.lhs), 0, level);
+                try p.statementExpression(@enumFromInt(d.lhs), level);
                 try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
                 try p.push(";");
@@ -642,7 +642,7 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .expr_stmt => {
-                try p.expression(@enumFromInt(d.lhs), 0, level);
+                try p.statementExpression(@enumFromInt(d.lhs), level);
                 try p.push(";");
                 try p.endLine(level);
             },
@@ -659,7 +659,7 @@ const Printer = struct {
             // truncating the file, so a bug shows up as a test failure with
             // readable bytes instead of as a panic.
             else => {
-                try p.expression(node, 0, level);
+                try p.statementExpression(node, level);
                 try p.push(";");
                 try p.endLine(level);
             },
@@ -1211,6 +1211,15 @@ const Printer = struct {
                         try p.push(")");
                         return;
                     }
+                    // CK-138: not only an object itself — ANY body whose
+                    // printed text begins with `{` (`{ a: n }.a`,
+                    // `{ a: n }.f(x)`, `{ …r, x: n }.x + 1`) reads as a block.
+                    if (p.startsWithBrace(resolved, prec_arrow)) {
+                        try p.push("(");
+                        try p.expression(resolved, 0, level);
+                        try p.push(")");
+                        return;
+                    }
                     try p.expression(resolved, prec_arrow, level);
                     return;
                 }
@@ -1220,6 +1229,60 @@ const Printer = struct {
         try p.statements(f.body(), level + 1);
         try p.indent(level);
         try p.push("}");
+    }
+
+    /// Whether `node`, printed at `min_prec`, begins with the `{` of an
+    /// object literal (CK-138, `backend.md` §4's leftmost-token rule). An
+    /// arrow's concise body and an expression statement are the two places
+    /// JavaScript reads a leading `{` as a block, so they ask this and
+    /// bracket the whole expression when it says yes.
+    ///
+    /// Decided by the LEFTMOST TOKEN, not by the node's kind: the walk follows
+    /// the left spine — a callee, a member's or an index's object, a binary's
+    /// left operand, a conditional's test — through every child that is
+    /// printed WITHOUT its own bracket, because a bracketed child starts with
+    /// `(` and ends the question. Each step resolves §9 item 1's substitution
+    /// first and reads the same precedence the printer will, so the answer is
+    /// about the bytes actually written. A loop, not recursion: the spine of
+    /// a derived `eq` over a wide record is one `&&` per field.
+    fn startsWithBrace(p: *Printer, node: Index, min_prec: u8) bool {
+        var n = p.resolve(node);
+        var prec = min_prec;
+        while (true) {
+            if (p.precedence(n) < prec) return false; // printed as `(…)`
+            const d = p.ir.data(n);
+            switch (p.ir.tag(n)) {
+                .object => return true,
+                .call, .member, .index_get => {
+                    n = p.resolve(@enumFromInt(d.lhs));
+                    prec = prec_call;
+                },
+                .binary => {
+                    const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                    n = p.resolve(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
+                    prec = op.precedence();
+                },
+                .cond => {
+                    n = p.resolve(@enumFromInt(d.lhs));
+                    prec = prec_cond + 1;
+                },
+                else => return false,
+            }
+        }
+    }
+
+    /// An expression in statement position, bracketed whole when its first
+    /// token would be the `{` of an object literal, which JavaScript reads
+    /// as a block (CK-138). JsIr has no function EXPRESSION node, so the
+    /// other statement-position hazard, a leading `function`, cannot arise.
+    fn statementExpression(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        if (p.startsWithBrace(node, 0)) {
+            try p.push("(");
+            try p.expression(node, 0, level);
+            try p.push(")");
+            return;
+        }
+        try p.expression(node, 0, level);
     }
 
     /// The one statement of `range` that survives §9 item 1, or null when it
@@ -1666,6 +1729,74 @@ test "an arrow with one return prints concisely; an object body is bracketed" {
             }
         }
     }.go);
+}
+
+/// The CK-138 shapes, shared by the two tests below: arrow bodies and
+/// statements whose LEFTMOST token is an object literal's `{`, reached
+/// through a member, a call, a binary operand and a conditional's test —
+/// and one whose leftmost operand is bracketed anyway, which needs nothing.
+const LeftmostBrace = struct {
+    fn object(f: *Fixture) !Index {
+        const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+        const properties = try f.b.addRange(&.{property});
+        return f.node(.object, @intFromEnum(properties.start), @intFromEnum(properties.end));
+    }
+
+    fn member(f: *Fixture, target: Index, key: []const u8) !Index {
+        return f.node(.member, target.int(), @intFromEnum(try f.name(key)));
+    }
+
+    fn callOf(f: *Fixture, callee: Index, args: []const Index) !Index {
+        const range = try f.b.addRange(args);
+        const record = try f.b.addRecord(range);
+        return f.node(.call, callee.int(), @intFromEnum(record));
+    }
+
+    fn body(f: *Fixture, out: *std.ArrayList(Index), n: []const u8, value: Index) !void {
+        const ret = try f.node(.return_stmt, @intFromEnum(value.toOptional()), 0);
+        try f.constDecl(out, n, try f.func(&.{}, &.{ret}));
+    }
+
+    fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+        try body(f, out, "m", try member(f, try object(f), "a"));
+        try body(f, out, "c", try callOf(f, try member(f, try object(f), "f"), &.{try f.ident("b")}));
+        try body(f, out, "s", try f.binary(.add, try member(f, try object(f), "a"), try f.ident("b")));
+        {
+            const record = try f.b.addRecord(JsIr.Cond{ .consequent = try f.number("1"), .alternate = try f.number("2") });
+            try body(f, out, "q", try f.node(.cond, (try member(f, try object(f), "a")).int(), @intFromEnum(record)));
+        }
+        // `b * ({ a: 1 }.a + 1)`: the brace is inside a bracket already.
+        try body(f, out, "k", try f.binary(.mul, try f.ident("b"), try f.binary(.add, try member(f, try object(f), "a"), try f.number("1"))));
+        // Statement position: an expression statement and an assignment.
+        try out.append(f.gpa, try f.node(.expr_stmt, (try callOf(f, try member(f, try object(f), "f"), &.{})).int(), 0));
+        try out.append(f.gpa, try f.node(.assign_stmt, (try member(f, try object(f), "a")).int(), (try f.ident("b")).int()));
+    }
+};
+
+test "an arrow body or a statement whose leftmost token is `{` is bracketed whole (CK-138)" {
+    try expectPrinted(
+        \\const m = () => ({ a: 1 }.a);
+        \\const c = () => ({ a: 1 }.f(b));
+        \\const s = () => ({ a: 1 }.a + b);
+        \\const q = () => ({ a: 1 }.a ? 1 : 2);
+        \\const k = () => b * ({ a: 1 }.a + 1);
+        \\({ a: 1 }.f());
+        \\({ a: 1 }.a) = b;
+        \\
+    , LeftmostBrace.go);
+}
+
+test "the leftmost-brace bracket survives compact printing (CK-138)" {
+    try expectCompact(
+        \\const m=()=>({a:1}.a),
+        \\c=()=>({a:1}.f(b)),
+        \\s=()=>({a:1}.a+b),
+        \\q=()=>({a:1}.a?1:2),
+        \\k=()=>b*({a:1}.a+1);
+        \\({a:1}.f());
+        \\({a:1}.a)=b;
+        \\
+    , LeftmostBrace.go);
 }
 
 test "conditionals, the four literals, and the disambiguator suffix" {

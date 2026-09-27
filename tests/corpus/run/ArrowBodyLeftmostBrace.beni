@@ -1,0 +1,55 @@
+-- CK-138, the wider half: the printer brackets an arrow body by its
+-- LEFTMOST TOKEN, not by its node kind (backend.md §4, *An arrow body or a
+-- statement that would begin with `{`*). Each body below prints with an
+-- object literal as its first token and something after it — a record
+-- update read at once, a field call on a record literal, a field of a
+-- field, a tuple read as an operand, a record literal's field as an `if`
+-- test. Before the fix each was `(…) => { … }…`, a block, and loading the
+-- module was a SyntaxError. Expected: the six values print.
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    { x : Int, y : Int }
+
+
+bump : P, Int -> Int
+bump r n =
+    { r | x = n }.x
+
+
+callField : Int -> Int
+callField n =
+    { f = \k -> k * 2 }.f n
+
+
+inner : Int -> Int
+inner n =
+    { a = { b = n } }.a.b
+
+
+firstOf : Int -> Bool
+firstOf n =
+    ( n, 1 ).0 == 3
+
+
+pick : Bool -> String
+pick b =
+    if { t = b }.t then
+        "yes"
+
+    else
+        "no"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (bump { x = 1, y = 2 } 7)
+        , String.fromInt (callField 21)
+        , String.fromInt (inner 5)
+        , if firstOf 3 then "T" else "F"
+        , pick True
+        , String.join (List.map [ 1, 2 ] (\n -> String.fromInt { v = n }.v)) ","
+        ]

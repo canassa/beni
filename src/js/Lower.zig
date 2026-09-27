@@ -467,6 +467,9 @@ const Lowerer = struct {
     /// Per term, whether it and everything below it add up
     /// (`termShapeOk`), judged once, bottom-up.
     shape_ok: []const bool = &.{},
+    /// Per term, whether every derived term at or below it has a body
+    /// (`derivedBodiesExist`), judged once, bottom-up.
+    bodies_ok: []const bool = &.{},
     /// The shared terms already bound in `bound_out`, by term index.
     bound: std.AutoHashMapUnmanaged(u32, JsIr.NameIndex) = .empty,
     bound_out: ?*StmtList = null,
@@ -2653,6 +2656,37 @@ const Lowerer = struct {
             ok[i] = l.termOkLocal(ok, @intCast(i));
         }
         l.shape_ok = ok;
+        // The same one pass for `derivedBodiesExist`. A walk from each root
+        // visited a SHARED term once per path to it, and a table shares
+        // terms (CK-80): `==` on a type that doubles 32 times was 2³² visits
+        // and a build that never finished (CK-136). A term's answer depends
+        // only on the terms after it, so judging each once from the last is
+        // linear in the table.
+        const bodies = try l.scratch.alloc(bool, d.terms.len);
+        i = d.terms.len;
+        while (i > 0) {
+            i -= 1;
+            bodies[i] = l.bodiesLocal(bodies, @intCast(i));
+        }
+        l.bodies_ok = bodies;
+    }
+
+    /// `derivedBodiesExist` for one term, given the answer for every later
+    /// one. An argument that does not follow its owner is skipped, as the
+    /// walk always skipped it: that table is `termOkLocal`'s to refuse.
+    fn bodiesLocal(l: *Lowerer, bodies: []const bool, i: u32) bool {
+        const d = l.in.dispatch;
+        const t = d.terms[i];
+        switch (t) {
+            .derived, .ext_derived => if (!l.derivedBodyExists(t)) return false,
+            else => {},
+        }
+        const r = t.argsOf();
+        if (@as(u64, r.start) + r.len > d.args.len) return true;
+        for (d.argsAt(r)) |arg| {
+            if (arg.int() > i and arg.int() < bodies.len and !bodies[arg.int()]) return false;
+        }
+        return true;
     }
 
     /// How long a chain of leaves may be: a leaf nominal row may call
@@ -4376,16 +4410,10 @@ const Lowerer = struct {
         return false;
     }
 
+    /// Whether every derived term in the tree under `i` names a function
+    /// some module writes: `readTable` judged each term once (CK-136).
     fn derivedBodiesExist(l: *Lowerer, i: Dispatch.TermIndex) bool {
-        const t = l.in.dispatch.term(i);
-        switch (t) {
-            .derived, .ext_derived => if (!l.derivedBodyExists(t)) return false,
-            else => {},
-        }
-        for (l.in.dispatch.argsAt(t.argsOf())) |arg| {
-            if (arg.int() > i.int() and !l.derivedBodiesExist(arg)) return false;
-        }
-        return true;
+        return i.int() < l.bodies_ok.len and l.bodies_ok[i.int()];
     }
 
     /// Whether `roots` is the tree §8.2 describes, `expected` roots wide.
@@ -6714,6 +6742,7 @@ test "a derived function with no body is a table bug in value position, either k
     l.in.types = &types;
     l.shared = &.{};
     l.shape_ok = &.{};
+    l.bodies_ok = &.{};
     l.bound = .empty;
     l.bound_out = null;
     l.in.interfaces = &.{};

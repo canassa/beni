@@ -21,9 +21,7 @@ tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules exit=0 codes=none
 # R15's audit (2026-09-27): red fixtures of every behavioural finding, written
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
 tests/pending/check/good/RequirementBelowDepth512.beni crash=ABRT
-tests/pending/run/EvidenceDagBuildDepth32.beni timeout
 tests/pending/check/bad/SiblingTypeEqResolution exit=0 codes=none
-tests/pending/run/ArrowBodyStartsWithRecord.beni dev: exit=0 program-exit=1
 tests/pending/check/bad/BareParameterisedTypeInConstructor.beni crash=ABRT
 scenario/CK-140 timeout
 tests/pending/check/bad/ImportedErrorValueCompared crash=ABRT
