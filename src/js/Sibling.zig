@@ -187,11 +187,6 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
     for (referenced.items) |reference| {
         if (bound.contains(reference.text)) continue;
         if (isStandardGlobal(reference.text)) continue;
-        // Every non-arrow function binds `arguments` itself, so inside one it
-        // is never a host global. `core/List.js` reads its depth as
-        // `arguments[3]` (backend.md §4, *Derived comparisons do not grow the
-        // native stack*): a fourth parameter would break check 4's count.
-        if (eql(reference.text, "arguments") and insideFunctionBody(items, reference.offset)) continue;
         if (seen.contains(reference.text)) continue;
         try seen.put(arena, reference.text, {});
         try unbound.append(arena, reference);
@@ -239,38 +234,6 @@ fn isReference(items: []const Token, i: usize) bool {
     if (i != 0 and items[i - 1].kind == .punct and eql(items[i - 1].text, ".")) return false;
     if (i + 1 < items.len and items[i + 1].kind == .punct and eql(items[i + 1].text, ":")) return false;
     return true;
-}
-
-/// Whether byte `offset` is inside the body of a `function` — the one place
-/// `arguments` is a binding. At a module's top level, or in an arrow that is
-/// in no `function`, it is a ReferenceError, and check 3 reports it like any
-/// other name from nowhere.
-fn insideFunctionBody(items: []const Token, offset: u32) bool {
-    for (items, 0..) |token, i| {
-        if (token.kind != .ident or !eql(token.text, "function")) continue;
-        var at = i + 1;
-        while (at < items.len and !(items[at].kind == .punct and eql(items[at].text, "("))) at += 1;
-        if (at >= items.len) return false;
-        const close = matching(items, at) orelse return false;
-        if (close + 1 >= items.len or !eql(items[close + 1].text, "{")) continue;
-        const end = matchingBrace(items, close + 1) orelse return false;
-        if (items[close + 1].offset < offset and offset < items[end].offset) return true;
-    }
-    return false;
-}
-
-fn matchingBrace(items: []const Token, open: usize) ?usize {
-    var depth: u32 = 0;
-    var at = open;
-    while (at < items.len) : (at += 1) {
-        if (items[at].kind != .punct) continue;
-        if (eql(items[at].text, "{")) depth += 1;
-        if (eql(items[at].text, "}")) {
-            depth -= 1;
-            if (depth == 0) return at;
-        }
-    }
-    return null;
 }
 
 fn matching(items: []const Token, open: usize) ?usize {
@@ -497,9 +460,6 @@ fn collectDeclaration(arena: Allocator, items: []const Token, start: usize, boun
     while (i < items.len) : (i += 1) {
         const token = items[i];
         if (token.kind == .punct) {
-            // A function's parameters are bindings too: `function* (a, b)`,
-            // `core/List.js`'s steps, and `function f(a, b)` inside a body.
-            if (eql(items[start].text, "function") and eql(token.text, "(")) return collectParenNames(arena, items, i, bound);
             if (eql(token.text, "=") or eql(token.text, ";") or eql(token.text, "(")) return i - 1;
             if (is_function and eql(token.text, "{")) return i - 1;
             continue;
@@ -507,7 +467,7 @@ fn collectDeclaration(arena: Allocator, items: []const Token, start: usize, boun
         if (token.kind != .ident) continue;
         if (eql(token.text, "of") or eql(token.text, "in")) return i - 1;
         try bound.put(arena, token.text, {});
-        if (is_function and !eql(items[start].text, "function")) return i;
+        if (is_function) return i;
     }
     return items.len;
 }
@@ -803,35 +763,6 @@ test "check 3: a host global that was never imported is unbound" {
     );
     try testing.expectEqual(@as(usize, 1), result.unbound.len);
     try testing.expectEqualStrings("process", result.unbound[0].text);
-}
-
-test "check 3: a generator's parameters and `arguments` are bound (R8d)" {
-    // `core/List.js` since R8d (backend.md §4, *Derived comparisons do not
-    // grow the native stack*): its steps are a `function*` expression, and
-    // its two loops read the depth as `arguments[3]`. A host global beside
-    // them is still found.
-    var a: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer a.deinit();
-    const result = try scanOnce(a.allocator(),
-        \\const steps = function* (m0, a, b) { yield [m0, a, b]; };
-        \\export function eq(m0, xs, ys) { const depth = arguments[3]; return steps(m0, xs, ys, depth, window); }
-    );
-    try testing.expectEqual(@as(usize, 1), result.unbound.len);
-    try testing.expectEqualStrings("window", result.unbound[0].text);
-    try testing.expectEqual(@as(usize, 1), result.exports.len);
-    try testing.expectEqual(@as(Arity, .{ .function = 3 }), result.exports[0].arity);
-}
-
-test "check 3: `arguments` in an arrow outside any function is unbound (R8d)" {
-    // At a module's top level `arguments` is a ReferenceError, so only a
-    // `function` body binds it.
-    var a: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer a.deinit();
-    const result = try scanOnce(a.allocator(),
-        \\export const first = (x) => arguments[0];
-    );
-    try testing.expectEqual(@as(usize, 1), result.unbound.len);
-    try testing.expectEqualStrings("arguments", result.unbound[0].text);
 }
 
 test "check 3: importing it is the fix" {

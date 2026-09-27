@@ -1,6 +1,6 @@
 import{a,b}from"./_core/Basics.mjs";
 import{c}from"./_platform/Node.mjs";
-const d=(a,b)=>{const c=a.a<b.a?"LT":a.a>b.a?"GT":"EQ";if(c!=="EQ"){return c;}return a.b<b.b?"LT":a.b>b.b?"GT":"EQ";},
+const d=(a,b)=>{const c=a.a<b.a?"LT":a.a>b.a?"GT":"EQ";if(c!=="EQ")return c;return a.b<b.b?"LT":a.b>b.b?"GT":"EQ";},
 e=(a,b)=>a.a===b.a&&a.b===b.b,
 f=(b)=>a(b.a,b.b),
 g=(a)=>({$:"Pair",a:a.b,b:a.a}),

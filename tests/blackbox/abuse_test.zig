@@ -510,6 +510,138 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
     }
 }
 
+test "a chain of forwarders as deep as the parser allows compares and runs: `Just` nested 4 095 deep (R8e)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R8e (O2): `Maybe`'s derived `eq` and `compare` are FORWARDERS — their
+    // one depth-taking call is in tail position, so they have no steps and
+    // no prologue. A chain of them as deep as a TYPE still charges the depth
+    // at every level and hands the tail call to the engine past the limit
+    // (`backend.md` §4, *Derived comparisons do not grow the native stack*).
+    // `e86883a` threw `RangeError` here: two native frames a level (the
+    // function and the evidence closure).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(gpa);
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\n");
+    for ([_][]const u8{ "deep", "other" }, [_][]const u8{ "1", "2" }) |name, innermost| {
+        try source.appendSlice(gpa, name);
+        try source.appendSlice(gpa, " =\n    ");
+        for (0..4095) |_| try source.appendSlice(gpa, "Just (");
+        try source.appendSlice(gpa, innermost);
+        for (0..4095) |_| try source.append(gpa, ')');
+        try source.appendSlice(gpa, "\n\n\n");
+    }
+    try source.appendSlice(gpa,
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ if deep == deep then "True" else "False"
+        \\        , if deep == other then "True" else "False"
+        \\        , if deep < other then "True" else "False"
+        \\        ]
+        \\
+    );
+    try w.write("Main.beni", source.items);
+
+    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+        for ([_]bool{ false, true }) |release| {
+            // ┌─────────────────────────────────────┐
+            // │ EXECUTE                             │
+            // └─────────────────────────────────────┘
+            const r = if (release)
+                try w.buildAndRun(&.{ checker, "--release", "--no-cache", "Main.beni" })
+            else
+                try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+
+            // ┌─────────────────────────────────────┐
+            // │ VERIFY OUTPUT                       │
+            // └─────────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+            try testing.expectEqualStrings("", r.build.stderr);
+            try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
+            try testing.expectEqualStrings("", r.program.?.stderr);
+            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        }
+    }
+}
+
+test "a recursive type through 50 nested wrappers a level compares 20 000 levels deep (R8e)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R8e (O2)'s bound: every level of `T` passes through 50 forwarders
+    // (`W a = W a`, then `Maybe`), none of which checks the depth unless it
+    // is past the limit, and all of which charge it. So the native stack a
+    // level costs is paid for in depth, and the explicit stack takes over
+    // after a few levels of `T` rather than after 400. `e86883a` threw
+    // `RangeError`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(gpa);
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W a\n    = W a\n\n\ntype T\n    = T Int (");
+    for (0..50) |_| try source.appendSlice(gpa, "W (");
+    try source.appendSlice(gpa, "Maybe T");
+    for (0..50) |_| try source.append(gpa, ')');
+    try source.appendSlice(gpa, ")\n\n\nwrap : Maybe T -> ");
+    for (0..50) |_| try source.appendSlice(gpa, "W (");
+    try source.appendSlice(gpa, "Maybe T");
+    for (0..49) |_| try source.append(gpa, ')');
+    try source.appendSlice(gpa, ")\nwrap m =\n    ");
+    for (0..50) |_| try source.appendSlice(gpa, "W (");
+    try source.append(gpa, 'm');
+    for (0..50) |_| try source.append(gpa, ')');
+    try source.appendSlice(gpa,
+        \\
+        \\
+        \\
+        \\build : Int, Maybe T -> Maybe T
+        \\build n acc =
+        \\    if n == 0 then
+        \\        acc
+        \\
+        \\    else
+        \\        build (n - 1) (Just (T n (wrap acc)))
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ if build 20000 Nothing == build 20000 Nothing then "True" else "False"
+        \\        , if build 20000 Nothing == build 20000 (Just (T 0 (wrap Nothing))) then "True" else "False"
+        \\        , if build 20000 (Just (T 0 (wrap Nothing))) < build 20000 Nothing then "True" else "False"
+        \\        ]
+        \\
+    );
+    try w.write("Main.beni", source.items);
+
+    for ([_]bool{ false, true }) |release| {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = if (release)
+            try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
+        else
+            try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        // The pairs differ in their innermost `Maybe`: `Just` is declared
+        // first, so the value that ends in it is the lesser.
+        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
+        try testing.expectEqualStrings("", r.program.?.stderr);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+    }
+}
+
 test "100 000 nested lambdas report every shadowed parameter, then stop nesting" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

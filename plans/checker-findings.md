@@ -3529,6 +3529,11 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   recursive type of 4 096 and 4 097 parameters …", all red before (`RangeError`); `DerivedDeepOrder`'s
   ORDER claim is shown by a 5 000-deep variant printing byte-identical output on `e86883a`. The
   exclusion: `abuse_test.zig` "recursion THROUGH a hand-written parametric method …".
+  R8e (2026-09-27) reshaped the cost, not the guarantee: tail self-calls loop, forwarders (every
+  depth-taking call in tail position) have no steps, and one runtime file `_core/_derived.mjs`
+  replaces the per-module engine and `core/List.js`'s changes (`backend.md` §4). Fixtures added:
+  `abuse_test.zig` "a chain of forwarders … `Just` nested 4 095 deep" and "… 50 nested wrappers a
+  level …", both red before.
 
 ### CK-129 — The hint for `exposing (T(..))` suggests `exposing (T, T)`, which is refused
 

@@ -560,6 +560,21 @@ const Printer = struct {
                 const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
                 try p.tok("if (", "if(");
                 try p.expression(@enumFromInt(d.lhs), 0, level);
+                // Compact printing drops the braces of a lone `return`,
+                // `continue`, `break`, `throw` or expression statement with no
+                // `else` (R8e, O6): `if(c)return a;`. Never a declaration
+                // (not a legal `if` body) and never an `if` (a dangling
+                // `else` would change owner).
+                if (p.compact and branches.elseBody().len() == 0) {
+                    if (p.onlyLive(branches.thenBody())) |only| switch (p.ir.tag(only)) {
+                        .return_stmt, .continue_stmt, .break_stmt, .throw_stmt, .expr_stmt, .assign_stmt => {
+                            try p.push(")");
+                            try p.statement(only, level);
+                            return;
+                        },
+                        else => {},
+                    };
+                }
                 try p.tok(") {\n", "){");
                 try p.statements(branches.thenBody(), level + 1);
                 try p.indent(level);

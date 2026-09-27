@@ -2159,6 +2159,48 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     recursion THROUGH a hand-written method still throws — is pinned by `abuse_test.zig` too.
   - **Found**: CK-129 (frontend: the `exposing (T(..))` hint suggests a refused `exposing (T, T)`).
 
+### R8e — Derived comparisons that recurse cheaply (added by the manager, 2026-09-27)
+
+- **Goal.** R8d's review O1, O2, O3 and O6 (`9bbe71b`): R8d made deep data safe at +13–20 % on
+  shallow recursive comparisons and +2.5 % release brotli. Take that back without giving up
+  anything R8d guarantees. Spec first: `backend.md` §4, *Derived comparisons do not grow the native
+  stack*, reshaped.
+- **Exit criteria.** Every R8d black-box test green, dev and `--release`, and its red-before proofs
+  unchanged. The differential ordered-log fuzz against `e86883a`, shallow and deep, identical. Node
+  micro-benchmarks — user list, tree, `Maybe Tree`, `List Point`, one process per case, medians of
+  nine — against `e86883a` and `9bbe71b`, with the target that no case is slower than `e86883a`.
+  Release brotli over the size corpus against both. Every `emit/` golden that moves listed. All
+  seven steps green.
+- **As built (2026-09-27).**
+  - **O1, loops** (`Lower.selfLoopParts`): a position that is the last of its constructor and the
+    row itself with identity evidence continues a `while (true)` instead of calling. `leafRows`
+    skips such positions, so `L = Cons Int L | Nil` is a LEAF: no depth, twin or runtime import.
+  - **O2, forwarders**: a non-leaf whose every depth-taking call is in tail position (`Maybe`,
+    `Result`, one-field wrappers, `Rose Int (List Rose)`) has no prologue and no twin. Its tail call
+    is `$d > 400 ? _derived$deep([f, args…], $d) : f(args…, $d + w)`; the engine makes an array as
+    a request. A depth `>= 2**30` is a request, so forwarding adds weight and still asks. Bounded
+    by the two new abuse scenarios: `Just` nested 4 095 deep, and 50 wrappers a level × 20 000
+    levels (both red on `e86883a`).
+  - **O3, one runtime** (done): `_core/_derived.mjs`, the compiler's own JavaScript
+    (`src/js/derived_runtime.mjs`, a compact copy for `--release`), written iff a written module
+    imports it. It exports `deep`, `listEq` and `listCompare`; importers bind them as
+    `_derived$<name>`, so `--release` renames only the local side. Derived code calls `List.eq` and
+    `List.compare` as `listEq`/`listCompare` (a real depth parameter), so `core/List.js` and
+    `Sibling.zig` are back to `e86883a` (no `arguments[3]`, no exemption; O4 for free).
+  - **O6**: the request prints `2**30`, and compact printing drops the braces of an `if` with no
+    `else` around one `return`/`continue`/`break`/`throw`/assignment/expression statement.
+  - **Goldens**: `emit/DerivedCompareNominal`, `DerivedEqNominal`, `MatchNested` (loops, the
+    runtime import, forwarders for `Box`/`Outcome`), `emit/release/ReleaseInline` (O6's braces).
+    `blackbox_test.zig`'s 1 024-level evidence chain now counts `_derived$listEq(`.
+  - **Measured** (tables in `backend.md`): user list `==` −54 % against `e86883a`, trees −11 to
+    −15 %, `Maybe Tree` −13 %, `Maybe Int` −1 %; the rose tree through `List` +3.5 % and
+    `List Point` +2.6 % (byte-identical code; the noise floor, ±3 %). Release brotli 760 628 →
+    780 672 (R8d) → 769 250 (+1.1 % on `e86883a`); 144 of 164 programs byte-identical to
+    `e86883a`. Emit phase −0.7 %. Fuzz: 3 × 600 shallow pairs dev and release, 5 × 40 deep
+    (500–2 000 levels, one in release), 2 × 4 huge (20 000–50 000, `e86883a` on a larger stack):
+    identical results and 5.2 M ordered log lines identical; the harness catches a sabotaged tag
+    order and a changed log line.
+
 ### R9 — v2 checks `core`; `test-v2` strict; parity
 
 - **Goal.** `--checker=v2` covers every package. `test-v2` becomes **strict**: failure on anything
@@ -2310,6 +2352,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R8b | — | CK-22, 24, 117; CK-118 (found by R8b, claimed); CK-120 (found by its review round, claimed) | CK-119 and CK-121 (found and fixed by its review round), CK-125 (found and fixed by its round-2 review); CK-122 (R8b follow-up proposed, before R9), CK-123 (schema S3/S4 owner), CK-124 (frontend, unassigned) |
 | R8c | CK-122 (fixed in shared code, both checkers: `check/good/SchemaEndpointAlias*`, `check/bad/SchemaEndpointAliasKeepsItsType`); CK-114 (`abuse_test.zig`) | — | CK-93, 111, 112 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-42's v2 twin resized; CK-126 (found, pending, red under both), CK-127 (found, frontend) and CK-128 (found; R8d) |
 | R8d | CK-128 (`run/DerivedDeepData`, `…Paths`, `…Order/`, `…AcrossModules/`; three `abuse_test.zig` scenarios, one pinning the stated exclusion) | — | CK-129 (found, frontend) |
+| R8e | — (CK-128's cost: loops, forwarders, one runtime; two `abuse_test.zig` scenarios) | — | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |

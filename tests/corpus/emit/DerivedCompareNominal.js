@@ -1,3 +1,4 @@
+import { deep as _derived$deep } from "./_core/_derived.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 import { String$compare } from "./_core/String.mjs";
 const DerivedCompareNominal$Colour$$order = { Red: 0, Green: 1, Blue: 2 };
@@ -36,55 +37,27 @@ const DerivedCompareNominal$Label$$eq = ($x, $y) => {
   }
 };
 const DerivedCompareNominal$Outcome$$compare = ($m$0, $m$1, $x, $y, $d = 0) => {
-  if ($d > 400) {
-    return DerivedCompareNominal$derived$deep(DerivedCompareNominal$Outcome$$compare$$steps($m$0, $m$1, $x, $y), $d);
-  }
   if ($x.$ !== $y.$) {
     return DerivedCompareNominal$Outcome$$order[$x.$] < DerivedCompareNominal$Outcome$$order[$y.$] ? "LT" : "GT";
   }
   switch ($x.$) {
     case "Ok":
-      return $m$1($x.a, $y.a, $d + 1);
+      return $d > 400 ? _derived$deep([$m$1, $x.a, $y.a], $d) : $m$1($x.a, $y.a, $d + 1);
     default:
-      return $m$0($x.a, $y.a, $d + 1);
+      return $d > 400 ? _derived$deep([$m$0, $x.a, $y.a], $d) : $m$0($x.a, $y.a, $d + 1);
   }
 };
-function* DerivedCompareNominal$Outcome$$compare$$steps($m$0, $m$1, $x, $y) {
-  if ($x.$ !== $y.$) {
-    return DerivedCompareNominal$Outcome$$order[$x.$] < DerivedCompareNominal$Outcome$$order[$y.$] ? "LT" : "GT";
-  }
-  switch ($x.$) {
-    case "Ok":
-      return $m$1($x.a, $y.a, 1073741824);
-    default:
-      return $m$0($x.a, $y.a, 1073741824);
-  }
-}
 const DerivedCompareNominal$Outcome$$eq = ($m$0, $m$1, $x, $y, $d = 0) => {
-  if ($d > 400) {
-    return DerivedCompareNominal$derived$deep(DerivedCompareNominal$Outcome$$eq$$steps($m$0, $m$1, $x, $y), $d);
-  }
   if ($x.$ !== $y.$) {
     return false;
   }
   switch ($x.$) {
     case "Ok":
-      return $m$1($x.a, $y.a, $d + 1);
+      return $d > 400 ? _derived$deep([$m$1, $x.a, $y.a], $d) : $m$1($x.a, $y.a, $d + 1);
     default:
-      return $m$0($x.a, $y.a, $d + 1);
+      return $d > 400 ? _derived$deep([$m$0, $x.a, $y.a], $d) : $m$0($x.a, $y.a, $d + 1);
   }
 };
-function* DerivedCompareNominal$Outcome$$eq$$steps($m$0, $m$1, $x, $y) {
-  if ($x.$ !== $y.$) {
-    return false;
-  }
-  switch ($x.$) {
-    case "Ok":
-      return $m$1($x.a, $y.a, 1073741824);
-    default:
-      return $m$0($x.a, $y.a, 1073741824);
-  }
-}
 const DerivedCompareNominal$Shape$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {
     return DerivedCompareNominal$Shape$$order[$x.$] < DerivedCompareNominal$Shape$$order[$y.$] ? "LT" : "GT";
@@ -113,98 +86,94 @@ const DerivedCompareNominal$Shape$$eq = ($x, $y) => {
 };
 const DerivedCompareNominal$Tree$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
-    return DerivedCompareNominal$derived$deep(DerivedCompareNominal$Tree$$compare$$steps($x, $y), $d);
+    return _derived$deep(DerivedCompareNominal$Tree$$compare$$steps($x, $y), $d);
   }
-  if ($x.$ !== $y.$) {
-    return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
-  }
-  switch ($x.$) {
-    case "Leaf":
-      return "EQ";
-    default:
-      const $o$0 = DerivedCompareNominal$Tree$$compare($x.a, $y.a, $d + 1);
-      if ($o$0 !== "EQ") {
-        return $o$0;
-      }
-      return DerivedCompareNominal$Tree$$compare($x.b, $y.b, $d + 1);
+  while (true) {
+    if ($x.$ !== $y.$) {
+      return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
+    }
+    switch ($x.$) {
+      case "Leaf":
+        return "EQ";
+      default:
+        const $o$0 = DerivedCompareNominal$Tree$$compare($x.a, $y.a, $d + 1);
+        if ($o$0 !== "EQ") {
+          return $o$0;
+        }
+        $x = $x.b;
+        $y = $y.b;
+        continue;
+    }
   }
 };
 function* DerivedCompareNominal$Tree$$compare$$steps($x, $y) {
   let $e;
-  if ($x.$ !== $y.$) {
-    return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
-  }
-  switch ($x.$) {
-    case "Leaf":
-      return "EQ";
-    default:
-      $e = DerivedCompareNominal$Tree$$compare($x.a, $y.a, 1073741824);
-      if (typeof $e === "object") {
-        $e = yield $e;
-      }
-      if ($e !== "EQ") {
-        return $e;
-      }
-      return DerivedCompareNominal$Tree$$compare($x.b, $y.b, 1073741824);
+  while (true) {
+    if ($x.$ !== $y.$) {
+      return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
+    }
+    switch ($x.$) {
+      case "Leaf":
+        return "EQ";
+      default:
+        $e = DerivedCompareNominal$Tree$$compare($x.a, $y.a, 2**30);
+        if (typeof $e === "object") {
+          $e = yield $e;
+        }
+        if ($e !== "EQ") {
+          return $e;
+        }
+        $x = $x.b;
+        $y = $y.b;
+        continue;
+    }
   }
 }
 const DerivedCompareNominal$Tree$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
-    return DerivedCompareNominal$derived$deep(DerivedCompareNominal$Tree$$eq$$steps($x, $y), $d);
+    return _derived$deep(DerivedCompareNominal$Tree$$eq$$steps($x, $y), $d);
   }
-  if ($x.$ !== $y.$) {
-    return false;
-  }
-  switch ($x.$) {
-    case "Leaf":
-      return true;
-    default:
-      return DerivedCompareNominal$Tree$$eq($x.a, $y.a, $d + 1) && DerivedCompareNominal$Tree$$eq($x.b, $y.b, $d + 1);
+  while (true) {
+    if ($x.$ !== $y.$) {
+      return false;
+    }
+    switch ($x.$) {
+      case "Leaf":
+        return true;
+      default:
+        if (!DerivedCompareNominal$Tree$$eq($x.a, $y.a, $d + 1)) {
+          return false;
+        }
+        $x = $x.b;
+        $y = $y.b;
+        continue;
+    }
   }
 };
 function* DerivedCompareNominal$Tree$$eq$$steps($x, $y) {
   let $e;
-  if ($x.$ !== $y.$) {
-    return false;
-  }
-  switch ($x.$) {
-    case "Leaf":
-      return true;
-    default:
-      $e = DerivedCompareNominal$Tree$$eq($x.a, $y.a, 1073741824);
-      if (typeof $e === "object") {
-        $e = yield $e;
-      }
-      if (!$e) {
-        return false;
-      }
-      return DerivedCompareNominal$Tree$$eq($x.b, $y.b, 1073741824);
+  while (true) {
+    if ($x.$ !== $y.$) {
+      return false;
+    }
+    switch ($x.$) {
+      case "Leaf":
+        return true;
+      default:
+        $e = DerivedCompareNominal$Tree$$eq($x.a, $y.a, 2**30);
+        if (typeof $e === "object") {
+          $e = yield $e;
+        }
+        if (!$e) {
+          return false;
+        }
+        $x = $x.b;
+        $y = $y.b;
+        continue;
+    }
   }
 }
 const DerivedCompareNominal$Wrapper$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DerivedCompareNominal$Wrapper$$eq = ($x, $y) => $x.a === $y.a;
-const DerivedCompareNominal$derived$deep = ($g, $d) => {
-  if ($d === 1073741824) {
-    return $g;
-  }
-  const $s = [];
-  let $t = $g;
-  let $v;
-  while (true) {
-    const $n = $t.next($v);
-    $v = $n.value;
-    if (typeof $v === "object") {
-      if (!$n.done) {
-        $s.push($t);
-      }
-      $t = $v;
-      continue;
-    }
-    if ($s.length === 0) {
-      return $v;
-    }
-    $t = $s.pop();
-  }
-};
 const DerivedCompareNominal$main = Node$printLines({ $: 0, a: null, b: null });
 export { DerivedCompareNominal$Colour$$compare, DerivedCompareNominal$Colour$$eq, DerivedCompareNominal$Label$$compare, DerivedCompareNominal$Label$$eq, DerivedCompareNominal$Outcome$$compare, DerivedCompareNominal$Outcome$$eq, DerivedCompareNominal$Shape$$compare, DerivedCompareNominal$Shape$$eq, DerivedCompareNominal$Tree$$compare, DerivedCompareNominal$Tree$$eq, DerivedCompareNominal$Wrapper$$compare, DerivedCompareNominal$Wrapper$$eq, DerivedCompareNominal$main };

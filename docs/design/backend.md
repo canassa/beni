@@ -202,6 +202,10 @@ a subdirectory, which only moves the collision. The reserved names are:
 All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
 `Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.
 
+Inside `_core/`, a `_` name is the emitter's own for the same reason: `_core/_derived.mjs` (R8e) is the
+derived-comparison runtime (§4, *Derived comparisons do not grow the native stack*), which no core
+module file (an upper name) can take.
+
 **A platform MAY declare the entry file's name**, which is `boundary.md` §5.2's *"a platform
 declares its output shape … rather than hardcoding one"* finished for the one part of the shape that
 was still hardcoded: the manifest's `"entry"` key. A declared name is subject to rule 1 and is
@@ -626,131 +630,171 @@ specified fork, not implemented code or an effects-runtime decision.
 
 ### Derived comparisons do not grow the native stack
 
-*Added by R8d (CK-128), 2026-09-27; the owner's decision of 2026-09-26.* **A derived `eq` or
-`compare` never throws on deep data** — unless the recursion runs THROUGH a hand-written method
-(*What it does not cover*, below). Until R8d every derived function
-([`static-dispatch-spike.md`](static-dispatch-spike.md) §9) called the comparison of each position
-on the native stack, so a comparison was as deep as the data: under Node's default stack a user
-linked list `type L = Cons Int L | Nil` threw `RangeError` on `==` at 8 940 cells and on `<` at
-10 000, and CK-114's record literal at 3 747 of the 4 095 levels the parser accepts. `List a`'s own
-`eq` and `compare` were loops and never did. The rule is Elm's (`_Utils_eqHelp`): **recurse on the
-native stack to a depth limit, then continue from an explicit stack**, so native stack use is
-bounded whatever the data, and the only limit left is the heap.
+*Added by R8d (CK-128), 2026-09-27; the owner's decision of 2026-09-26. Reshaped by R8e the same
+day: tail self-calls loop, forwarders, one shared runtime.* **A derived `eq` or `compare` never
+throws on deep data** — unless the recursion runs THROUGH a hand-written method (*What it does not
+cover*, below). Until R8d every derived function ([`static-dispatch-spike.md`](static-dispatch-spike.md)
+§9) called the comparison of each position on the native stack, so a comparison was as deep as the
+data: under Node's default stack a user linked list `type L = Cons Int L | Nil` threw `RangeError`
+on `==` at 8 940 cells and on `<` at 10 000, and CK-114's record literal at 3 747 of the 4 095
+levels the parser accepts. The rule is Elm's (`_Utils_eqHelp`): **recurse on the native stack to a
+depth limit, then continue from an explicit stack**, so native stack use is bounded whatever the
+data, and the only limit left is the heap. Four shapes make it, from cheapest to dearest.
 
-**The depth.** A derived function that can recurse takes one more parameter after the two values,
-`$d = 0`, and hands `$d + w` to every comparison it calls that takes one: its own evidence
-(`$m$k(l, r, $d + 1)`), another derived function, and `List`'s `eq` and `compare`. `w` is 1, plus one
-per 32 of the function's evidence parameters (counted twice, since a caller pushes them too) and
-positions (one `const $o$<i>` each in a `compare`), so a frame of thousands of parameters spends
-the budget in a few levels (`derived_weight_per`). An evidence closure around such a callee
-forwards a third argument, `(a, b, c) => F(ev, a, b, c)`; a user site and every hand-written caller
-pass two, and the default makes that depth 0. `core/List.js` hands the depth it was given to every
-element unchanged — it is one frame, not a level — and reads it as `arguments[3]`, because a fourth
-parameter would break `boundary.md` §4's check 4.
-
-**The limit** is `derived_depth_limit`, **400** units. Past it the function hands the comparison to
-the module's engine:
+**1. A tail self-call is a loop** (R8e). A position that is the LAST of its constructor and
+compares the function's own type with the function's own evidence, unchanged — `Cons Int L`'s `L`,
+a tree's right child — does not call: the arm tests what came before it and continues a
+`while (true)` around the body with `$x = $x.b; $y = $y.b;`. The same comparisons in the same order,
+on no new frame (`Lower.selfLoopParts`). Polymorphic recursion, which changes the evidence, calls.
 
 ```js
-const M$L$$eq = ($x, $y, $d = 0) => {
-  if ($d > 400) {
-    return M$derived$deep(M$L$$eq$$steps($x, $y), $d);
-  }
-  … the §9 body, every depth-taking call given $d + 1 …
-};
-```
-
-A unit costs 300–450 bytes of Node's stack (a list, a record through `Maybe`, a rose tree through
-`List`), so 400 of them are 120–180 kB of Node's 984 kB default; measured as the user recursion a
-page may already be in when it asks for a 100 000-cell comparison, the comparison costs 3.5–8.3 %
-of Chrome's stack and 2.2–5.9 % of Firefox's (table below).
-
-**The steps.** Each such function has a twin, `function* <base>$$steps(…)`: the same statements,
-with every depth-taking call given the REQUEST depth, `2 ** 30`, instead of `$d + w`. A callee
-given the request that cannot recurse — a primitive comparator, a hand-written method, a leaf —
-ignores it and answers; one that can hands back its own steps, unstarted, without comparing
-anything. The twin yields steps it is handed and is resumed with their answer:
-
-```js
-function* M$L$$eq$$steps($x, $y) {
-  if ($x.$ !== $y.$) {
-    return false;
-  }
-  switch ($x.$) {
-    case "Cons":
-      if ($x.a !== $y.a) {
-        return false;
-      }
-      return M$L$$eq($x.b, $y.b, 1073741824);
-    default:
-      return true;
-  }
-}
-```
-
-A non-tail position is `$e = f(…, 1073741824); if (typeof $e === "object") { $e = yield $e; }`
-and the test of §9's shape after it (`if (!$e) return false;`, `if ($e !== "EQ") return $e;`). A
-tail position is returned as it is. The twin keeps no `const` per position — one `$e`, and
-`compare$char` (§9.1) instead of two bound code points — and takes more than 16 evidence
-parameters as one array and calls with more than 16 arguments through `apply`: a generator saves
-its whole frame at every `yield`, so a frame of 4 096 registers made every suspension, and V8's code
-for it, that big (a 4 096-parameter type, measured: 65 s and a JIT out-of-memory abort before, 2.4 s
-after).
-
-**The engine**, `M$derived$deep`, is emitted once in each module that has such a function:
-
-```js
-const M$derived$deep = ($g, $d) => {
-  if ($d === 1073741824) {
-    return $g;
-  }
-  const $s = [];
-  let $t = $g;
-  let $v;
+const M$L$$eq = ($x, $y) => {
   while (true) {
-    const $n = $t.next($v);
-    $v = $n.value;
-    if (typeof $v === "object") {
-      if (!$n.done) {
-        $s.push($t);
-      }
-      $t = $v;
-      continue;
+    if ($x.$ !== $y.$) {
+      return false;
     }
-    if ($s.length === 0) {
-      return $v;
+    switch ($x.$) {
+      case "Cons":
+        if ($x.a !== $y.a) {
+          return false;
+        }
+        $x = $x.b;
+        $y = $y.b;
+        continue;
+      default:
+        return true;
     }
-    $t = $s.pop();
   }
 };
 ```
 
-A yielded steps object is run with its caller waiting on the explicit stack `$s`; a returned one —
-a tail position — REPLACES its caller, so a list costs the explicit stack nothing and a rose tree
-one frame a level. An answer is a `Bool` or an `Order` (a bare tag string, §4), never an object,
-so `typeof` is the whole protocol. The engine holds no state between calls: an exception from a
-hand-written method leaves nothing behind.
+**2. Leaves are what they always were.** A derived row is a LEAF when nothing it calls can come
+back to a derived function (`Lower.leafRows`): a record, tuple or `()` whose every use in the module
+hands it only primitive comparators and hand-written methods as evidence, and a nominal type whose
+every position is a primitive, a hand-written method, a call of another leaf of the module (at most
+16 calls deep), or a tail self-call, which loops. A position that is the type's own parameter,
+another module's derived function or `List`'s `eq` is not, because what it runs is decided
+elsewhere. A leaf takes no depth: `{ x : Int, y : Int }`, `type Shape = Circle Point Float | …` and
+— with the loop — every list-like type are emitted with no parameter, check, twin or runtime import.
+A leaf called by another row is called plainly. **A hand-written method counts as flat** even when
+it is handed a derived function as evidence, so a type that recurses only THROUGH one is classed a
+leaf (below).
 
-**Order is exact.** The twin makes the same calls as the direct function, in the same order, and
-stops at the same position — the first `False`, the first order that is not `EQ` — so a
-`Debug.log` in a hand-written method prints the same lines, in the same order, as it does below
-the limit (`run/DerivedDeepOrder`; the same program 5 000 deep prints byte-identical output under
-the recursive build of `e86883a`). No position is deferred: Elm's `_Utils_eqHelp` defers the rest
-of an `==` and answers `True` optimistically, which is exact only for a pure structural walk, and
-an order has no optimistic answer at all.
+**3. The depth.** A derived function that can recurse takes one more parameter after the two values,
+`$d = 0`, and hands `$d + w` to every comparison it calls that takes one: its own evidence
+(`$m$k(l, r, $d + 1)`), another derived function, and `List`'s `eq` and `compare` — which derived
+code calls as the runtime's `listEq` and `listCompare`, loops that hand the depth to every element
+unchanged (one frame, not a level). `w` is 1, plus one per 32 of the function's evidence parameters
+(counted twice, since a caller pushes them too) and positions (one `const $o$<i>` each in a
+`compare`), so a frame of thousands of parameters spends the budget in a few levels
+(`derived_weight_per`). An evidence closure around such a callee forwards a third argument,
+`(a, b, c) => F(ev, a, b, c)`; a user site and every hand-written caller pass two, and the default
+makes that depth 0. `core/List.js` is untouched: a user's own `List.eq` takes no depth.
 
-**Leaves are what they always were.** A derived row is a LEAF when nothing it calls can come back
-to a derived function (`Lower.leafRows`): a record, tuple or `()` whose every use in the module hands
-it only primitive comparators and hand-written methods as evidence, and a nominal type whose every
-position is a primitive, a hand-written method or a call of another leaf of the module, at most 16
-calls deep. A type whose recursion stays among derived functions never is one; a position that is the type's own parameter, another
-module's derived function or `List`'s `eq` is not, because what it runs is decided elsewhere. A
-leaf takes no depth, has no twin and needs no engine: `{ x : Int, y : Int }`,
-`type Shape = Circle Point Float | …` and most of what a program compares are emitted byte for
-byte as before, and a module with only leaves has no `derived$deep`. A leaf called by another row
-is called plainly, and inline in its steps. **A hand-written method counts as flat** even when it is
-handed a derived function as evidence, so a type that recurses only THROUGH one is classed a leaf
-(below).
+**The limit** is `derived_depth_limit`, **400** units. A unit costs 300–450 bytes of Node's stack
+(a list, a record through `Maybe`, a rose tree through `List`), so 400 of them are 120–180 kB of
+Node's 984 kB default; measured as the user recursion a page may already be in when it asks for a
+100 000-cell comparison, the comparison costs 3.5–8.3 % of Chrome's stack and 2.2–5.9 % of
+Firefox's (R8d's table below).
+
+**A FORWARDER** is a function whose every depth-taking call is in tail position (R8e): `Maybe`,
+`Result`, a one-field wrapper, a record of one field, `type Rose = Rose Int (List Rose)`. It has no
+prologue and no steps. Its tail call checks the limit itself:
+
+```js
+const Maybe$Maybe$$eq = ($m$0, $x, $y, $d = 0) => {
+  …
+    case "Just":
+      return $d > 400 ? _derived$deep([$m$0, $x.a, $y.a], $d) : $m$0($x.a, $y.a, $d + 1);
+  …
+};
+```
+
+Past the limit — or given the REQUEST depth, which is past every limit — the call becomes a
+request, `[f, args…]`, that the engine makes on its explicit stack; so a chain of forwarders as
+deep as a TYPE (`Just (Just (…))` 4 095 deep, 50 wrappers a level) grows the native stack no more
+than any other derived function does.
+
+**4. Steps.** A function with a depth-taking call in a non-tail position (a tree's left child, a
+record's first field) has a prologue and a twin:
+
+```js
+const M$Tree$$eq = ($x, $y, $d = 0) => {
+  if ($d > 400) {
+    return _derived$deep(M$Tree$$eq$$steps($x, $y), $d);
+  }
+  while (true) {
+    … if (!M$Tree$$eq($x.a, $y.a, $d + 1)) { return false; } …
+    $x = $x.c; $y = $y.c; continue;
+  }
+};
+```
+
+The twin, `function* <base>$$steps(…)`, is the same statements with every depth-taking call given
+the REQUEST, `2**30`, instead of `$d + w`. A callee given the request that cannot recurse — a
+primitive comparator, a hand-written method, a leaf — ignores it and answers; one that can hands
+back its steps, unstarted, or a forwarder its request, without comparing anything. A non-tail
+position is `$e = f(…, 2**30); if (typeof $e === "object") { $e = yield $e; }` and the test of §9's
+shape after it (`if (!$e) return false;`, `if ($e !== "EQ") return $e;`). A tail position is
+returned as it is, and a looping arm loops inside the generator too. The twin keeps no `const` per
+position — one `$e`, and `compare$char` (§9.1) instead of two bound code points — and takes more
+than 16 evidence parameters as one array and calls with more than 16 arguments through `apply`: a
+generator saves its whole frame at every `yield`, so a frame of 4 096 registers made every
+suspension, and V8's code for it, that big (a 4 096-parameter type, measured: 65 s and a JIT
+out-of-memory abort before, 2.4 s after).
+
+**The runtime** is ONE file a build writes, `_core/_derived.mjs` (R8e; §2's rule 1: a `_` name in
+`_core/`, which no module file can take), iff a module it wrote imports from it — the use-driven
+import is what roots it. It is the compiler's own JavaScript (`src/js/derived_runtime.mjs`, a
+compact copy under `--release`), exporting `deep`, `listEq` and `listCompare` by fixed names that
+importers bind under `_derived$<name>` (`import { deep as _derived$deep } from "./_core/_derived.mjs"`),
+as they bind a sibling's, so `--release` renames only the local side:
+
+```js
+const request = 2 ** 30;
+export const deep = (g, d) => {
+  if (d >= request) return g;          // a request: hand it back
+  const waiting = [];
+  let t = g;
+  let v;
+  while (true) {
+    if (typeof t === "object") {
+      if (t.next === undefined) {      // a forwarder's [f, args…]
+        const f = t.shift();
+        t.push(request);
+        t = f.apply(null, t);
+        continue;
+      }
+      const n = t.next(v);             // steps
+      v = n.value;
+      if (typeof v === "object") {     // yielded: t waits; returned: it answers for t
+        if (!n.done) waiting.push(t);
+        t = v;
+        continue;
+      }
+    } else {
+      v = t;                           // an answer
+    }
+    if (waiting.length === 0) return v;
+    t = waiting.pop();
+  }
+};
+```
+
+What the engine is handed, and what a request answers with, is an answer — a `Bool`, or an `Order`,
+a bare tag string, never an object — steps (a generator) or a forwarder's request (an array); so
+`typeof` and `next` are the whole protocol. A depth at or past `2**30` is a request, so a forwarder
+that adds its weight to it still asks. A returned steps object or request REPLACES its caller on the
+explicit stack, so a tail position costs it nothing. The engine holds no state between calls: an
+exception from a hand-written method leaves nothing behind.
+
+**Order is exact.** Loops, forwarders and steps make the same calls as the recursive functions of
+§9, in the same order, and stop at the same position — the first `False`, the first order that is
+not `EQ` — so a `Debug.log` in a hand-written method prints the same lines, in the same order,
+below and past the limit (`run/DerivedDeepOrder`; a differential fuzz against `e86883a`, below). No
+position is deferred: Elm's `_Utils_eqHelp` defers the rest of an `==` and answers `True`
+optimistically, which is exact only for a pure structural walk, and an order has no optimistic
+answer at all.
 
 **What it does not cover: recursion through a hand-written method.** A hand-written `eq` or
 `compare` is a function like any other. It takes no depth and cannot hand back steps, so when a
@@ -770,9 +814,10 @@ at all. Lifting this needs the hand-written method's cooperation — steps of it
 that writes it — and is not attempted. `abuse_test.zig` pins today's behaviour (100 levels compare,
 100 000 throw), so the day it changes the scenario flips with the spec.
 
-**Measured** (`bench/`-style library builds of `e86883a` and R8d, one page of `==` and `<` on a
-user list, a record nested through `Maybe` and a rose tree through `List`, 2026-09-27; headless
-Chrome 153, Firefox 144, WebKit WPE 605.1.15, Node 24.19):
+**Measured, R8d** (library builds of `e86883a` and R8d, one page of `==` and `<` on a user list, a
+record nested through `Maybe` and a rose tree through `List`, 2026-09-27; headless Chrome 153,
+Firefox 144, WebKit WPE 605.1.15, Node 24.19). R8e changes none of the paths past the limit but the
+list's, which no longer reaches it:
 
 | | Chrome | Firefox | WebKit | Node |
 |---|---|---|---|---|
@@ -784,33 +829,47 @@ Chrome 153, Firefox 144, WebKit WPE 605.1.15, Node 24.19):
 | after: rose tree `<`, 10⁶ | 200 ms | 781 ms | 483 ms | 208 ms |
 | after: share of the stack a 10⁵ comparison needs (list, record, rose) | 4.2 / 3.5 / 8.3 % | 2.2 / 4.7 / 5.9 % | noise | noise |
 
-Node also compares two 10⁷-cell lists (457 ms, 1.6 GB resident) and two 2 × 10⁶-deep rose trees
-(875 ms): the limit is the heap. The last row is how much less deep a user recursion may already be
-when it asks for the comparison than when it asks for a function that returns at once; JavaScriptCore
-and Node re-tier the probe between runs, so their figure is noise around zero.
+Node also compares two 10⁷-cell lists and two 2 × 10⁶-deep rose trees: the limit is the heap. The
+last row is how much less deep a user recursion may already be when it asks for the comparison than
+when it asks for a function that returns at once; JavaScriptCore and Node re-tier the probe between
+runs, so their figure is noise around zero.
 
-**Cost, run time.** Nothing changes for a leaf. A function that passes a depth pays for the
-parameter on every call below the limit: on Node, `==` on 8-cell user lists +13 %, `==` and `<` on
-depth-4 trees +15–20 %, a 10-element `List Point` +5 % (the evidence closure's third
-parameter), records, `Maybe Int`, a two-constructor `Shape` and `List.sort` of 200 shapes
-within ±2 %. 200-element `List Point`, `List Shape` and `List Int` are within ±5 % (each case in
-its own process, medians of nine; in one shared process the figures swing by ±40 % with the JIT's
-state, and R8d's review measured −40 to −49 % for `List Point` and `List Shape` — attributed to
-`core/List.js` exporting `function`s where it exported `const` arrows; the direction depends on the
-bench). Past the limit a level costs a generator and a `next` — roughly 5–10 times a native
-call, and only where the native stack would otherwise have run out.
+**Cost, run time** (R8e; Node 24.19, library builds, each case its own process, the median of nine
+processes each reporting the median of nine samples, ns per comparison):
 
-**Cost, size** (`bench/size.mjs`, `e86883a` → R8d): over the 162 programs both
-measure, development raw +3.2 % and brotli +2.5 %, release raw +3.2 % and release brotli 753 558 →
-772 687 (+2.5 %); the floor is unchanged (`derived_bytes` 0). 88 programs are byte for byte what
-they were; most of the other 74 grow only by `core/List.js`'s steps, which ship with every program
-that uses `List` (`run/Dictionaries`: release brotli 6 479 → 6 741). What grows with the program is
-a twin per function that can recurse and one engine a module (about 280 bytes released): the
-`emit/` corpus moves in the three goldens that hold a recursive or parametric type
-(`DerivedCompareNominal`, `DerivedEqNominal`, `MatchNested`), and `bench/corpus`, a library build
-that roots every type's methods, goes from 15 643 to 16 754 release brotli (+7.1 %; derived code
-14 454 → 33 101 bytes, 3 126 of them eight engines). Emit, ReleaseFast `zig build bench --
---generate=100000`, nine interleaved pairs: median 53.79 → 54.59 ms (+1.5 %).
+| case | `e86883a` | R8d (`9bbe71b`) | R8e | R8e vs `e86883a` |
+|---|---|---|---|---|
+| user list `==`, 8 cells | 40.97 | 44.85 | 18.98 | −54 % |
+| user list `<`, 8 cells | 43.16 | 47.87 | 21.36 | −51 % |
+| user list `==`, 300 cells | 1 659 | 1 729 | 649 | −61 % |
+| tree `==`, depth 4 | 136.8 | 162.1 | 121.0 | −12 % |
+| tree `<`, depth 4 | 141.6 | 165.9 | 120.8 | −15 % |
+| tree `==`, depth 10 | 10 557 | 12 557 | 9 400 | −11 % |
+| `Maybe Tree` `==`, depth 4 | 141.1 | 165.7 | 122.2 | −13 % |
+| `Maybe Int` `==` | 3.89 | 3.84 | 3.85 | −1 % |
+| rose tree through `List` `==`, depth 6 | 914.7 | 976.0 | 947.0 | +3.5 % |
+| `List Point` `==`, 200 | 896.0 | 933.8 | 919.4 | +2.6 % |
+| `List Shape` `==`, 200 | 1 804 | 1 760 | 1 762 | −2.3 % |
+
+The loop is what turns a list and a tree's right spine faster than before R8d: no call at all. The
+two rows over `e86883a` are at the noise floor: `List Point`'s emitted code is byte for byte
+`e86883a`'s (the element is a leaf, the list `core/List.js`'s), and the same build measured in
+other rounds swung by ±3 %; the rose tree is a genuine cycle through `List` and pays the depth
+parameter and the forwarder's check, about 0.25 ns a node. Past the limit a level costs a
+generator and a `next` — roughly 5–10 times a native call, and only where the native stack would
+otherwise have run out.
+
+
+**Cost, size** (`bench/size.mjs`, 164 programs, `e86883a` → R8d → R8e): release brotli 760 628 →
+780 672 → 769 250 (+1.1 % on `e86883a`, −1.5 % on R8d); development raw +2.6 % and −0.8 %. 144 of
+the 164 programs are byte for byte `e86883a`'s (R8d: 88): list-like types are leaves again,
+`core/List.js` is `e86883a`'s, and a program's derived code reaches the one runtime file only when
+something can recurse. `run/Dictionaries` is `e86883a`'s exactly (6 479). What grows with the
+program is a twin per function with a non-tail depth-taking call and the runtime file, about
+900 bytes under `--release`; `bench/corpus`, a library build that roots every type's methods, is
+15 643 → 16 754 → 16 458 release brotli (+5.2 % on `e86883a`). Emit, ReleaseFast `zig build bench
+-- --generate=100000`, seven interleaved pairs against `e86883a`: median 53.15 → 52.79 ms (−0.7 %).
+
 
 **Fixtures.** `run/DerivedDeepData` (the exit criterion: two 100 000-cell user lists, `==` and `<`,
 equal and unequal; a record nested 10 000 deep through `Maybe`; red before, `RangeError`),
@@ -819,11 +878,19 @@ parametric type's own evidence; 100 000 deep; red before), `run/DerivedDeepOrder
 and short-circuiting past the limit, through a hand-written method with `Debug.log`; red before, and
 a 5 000-deep variant, which the recursive build survives, prints byte-identical output on both),
 `run/DerivedDeepAcrossModules/` (a cycle through another user module's parametric type, 100 000
-deep; red before), and three abuse scenarios in `abuse_test.zig`: CK-114's 4 095-deep record literal built and RUN under both checkers,
-development and `--release` (red before at 3 747), and a recursive type of 4 096 (positional) and
-4 097 (array) parameters compared 1 000 levels deep (red before), and the exclusion above (100
-levels through a hand-written `Box.eq` compare, 100 000 throw). Every `run/` fixture is also
-built and run with `--release`.
+deep; red before), and five abuse scenarios in `abuse_test.zig`: CK-114's 4 095-deep record literal
+built and RUN under both checkers, development and `--release` (red before at 3 747); a recursive
+type of 4 096 (positional) and 4 097 (array) parameters compared 1 000 levels deep (red before);
+`Just` nested 4 095 deep, a chain of forwarders, under both checkers, dev and `--release` (red
+before); a recursive type through 50 nested wrappers a level, 20 000 levels (red before); and the
+exclusion above (100 levels through a hand-written `Box.eq` compare, 100 000 throw). Every `run/`
+fixture is also built and run with `--release`. The emitted shapes are pinned by
+`emit/DerivedEqNominal`, `emit/DerivedCompareNominal` and `emit/MatchNested`.
+
+**Compact printing** (R8e, O6): under `--release` an `if` with no `else` whose one live statement is
+a `return`, `continue`, `break`, `throw`, assignment or expression statement drops its braces,
+`if(c)return a;`; never a declaration (no legal `if` body) and never an `if` (a dangling `else`
+would change owner). The request prints `2**30`.
 
 ## 5. Module output and linking
 

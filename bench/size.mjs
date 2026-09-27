@@ -261,17 +261,15 @@ const nominal_derived = /\$\$(eq|compare|order)$/;
 const structural_derived = /\$(eq|compare)\$(?:r(?:\$[A-Za-z_]\w*)*|t\d+|unit|prim)$/;
 const char_comparator = /\$compare\$char$/;
 /// `backend.md` §4, *Derived comparisons do not grow the native stack*: a
-/// derived function that passes a depth has a `function* <base>$$steps` twin,
-/// charged to its own function's kind, and its module one `derived$deep`
-/// engine, charged to `engine` — a fourth kind, so the split stays a
-/// partition of `derived_bytes`.
+/// derived function that passes a depth may have a `function* <base>$$steps`
+/// twin, charged to its own function's kind; the build's one runtime file,
+/// `_core/_derived.mjs`, is charged to `engine` — a fourth kind, so the split
+/// stays a partition of `derived_bytes`.
 const steps_twin = /\$\$steps$/;
-const deep_engine = /\$derived\$deep$/;
 
-/// `null` if the name is not a derived one; otherwise which of the four
-/// spellings it is — `eq`, `compare`, `order` or `engine`.
+/// `null` if the name is not a derived one; otherwise which of the three
+/// §8.5 spellings it is — `eq`, `compare` or `order` (`engine` is by file).
 function derivedKind(name) {
-  if (deep_engine.test(name)) return "engine";
   if (steps_twin.test(name)) return derivedKind(name.replace(steps_twin, ""));
   const nominal = name.match(nominal_derived);
   if (nominal !== null) return nominal[1];
@@ -295,6 +293,15 @@ function measureTree(outDir) {
     const bytes = readFileSync(join(outDir, rel));
     raw += bytes.length;
     chunks.push(bytes);
+    // `_core/_derived.mjs` is the derived-comparison runtime (backend.md §4,
+    // R8e): the whole file is charged to `engine`.
+    if (rel.split(sep).join("/").endsWith("_core/_derived.mjs")) {
+      derivedFunctions += 1;
+      derivedBytes += bytes.length;
+      split.engine.n += 1;
+      split.engine.bytes += bytes.length;
+      continue;
+    }
     const text = bytes.toString("utf8");
     for (const statement of topLevelStatements(text)) {
       const match = statement.match(declared);

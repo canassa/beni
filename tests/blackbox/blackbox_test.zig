@@ -3525,10 +3525,13 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
     try testing.expectEqualStrings("", built.stderr);
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     const js = try w.read("out/Deep.mjs");
-    // The chain, whole: one `List$eq` per level, `T`'s `eq` at the bottom,
-    // and no `Basics.eq` — the structural answer — anywhere.
-    try testing.expectEqual(@as(usize, 1024), std.mem.count(u8, js, "List$eq("));
-    try testing.expect(std.mem.indexOf(u8, js, "List$eq(Deep$eq,") != null);
+    // The chain, whole: one `List.eq` per level, `T`'s `eq` at the bottom,
+    // and no `Basics.eq` — the structural answer — anywhere. Since R8e a
+    // derived comparison calls `List.eq` as the runtime's `listEq`, which
+    // takes a depth (backend.md §4, *Derived comparisons do not grow the
+    // native stack*).
+    try testing.expectEqual(@as(usize, 1024), std.mem.count(u8, js, "_derived$listEq("));
+    try testing.expect(std.mem.indexOf(u8, js, "_derived$listEq(Deep$eq,") != null);
     try testing.expect(std.mem.indexOf(u8, js, "Basics$eq") == null);
 
     try w.write("src/Main.beni",

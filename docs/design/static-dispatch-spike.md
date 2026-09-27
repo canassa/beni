@@ -1947,16 +1947,20 @@ above, the row above is the contract.
 
 ## 9. Derived `eq` and `compare`, in full
 
-> **R8d (CK-128, 2026-09-27): a derived comparison never grows the native stack with the data.**
-> The listings below are the bodies, and they stay normative for what is compared and in what
-> order. A derived function that can recurse additionally takes a last parameter `$d = 0`, passes
-> `$d + w` to every evidence call, derived call and `List.eq`/`List.compare` call, forwards a third
-> argument through its evidence closures, and past 400 units continues in a `function*
-> <base>$$steps` twin run by the module's `derived$deep` engine; §9.5's two loops take the depth
-> as `arguments[3]`. A LEAF — a row that calls nothing that can come back to a derived function,
-> except through a hand-written method (the one recursion R8d does not cover) — is exactly the
-> listing. The rule, the protocol, the limit and the measurements are
-> [`backend.md`](backend.md) §4, *Derived comparisons do not grow the native stack*.
+> **R8d and R8e (CK-128, 2026-09-27): a derived comparison never grows the native stack with the
+> data.** The listings below are the bodies, and they stay normative for what is compared and in
+> what order. A position that is the last of its constructor and compares the function's own type
+> with its own evidence loops (`$x = $x.b; $y = $y.b; continue;`) instead of calling. A derived
+> function that can still recurse additionally takes a last parameter `$d = 0`, passes `$d + w` to
+> every evidence call, derived call and `List.eq`/`List.compare` call (the latter two as the
+> runtime's `listEq`/`listCompare`; §9.5's `core/List.js` is unchanged), and forwards a third
+> argument through its evidence closures. Past 400 units a FORWARDER — every such call in tail
+> position — hands its tail call to the engine as a request; any other continues in a `function*
+> <base>$$steps` twin; the engine is `_core/_derived.mjs`'s `deep`. A LEAF — a row that calls
+> nothing that can come back to a derived function, except through a hand-written method (the one
+> recursion this does not cover) — is exactly the listing. The rule, the protocol, the limit and
+> the measurements are [`backend.md`](backend.md) §4, *Derived comparisons do not grow the native
+> stack*.
 
 Written against the representation of `backend.md` §4 and its "Corrections from M3a": records are
 objects with keys sorted by **name text**; a type with any argument-taking constructor pads every

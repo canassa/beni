@@ -138,6 +138,11 @@ pub const default_entry_file = "_main.mjs";
 /// `default_entry_file`'s reason: a user module `Core.List` is legal and
 /// lands on `Core/List.mjs`.
 pub const core_dir = "_core/";
+/// The build's one derived-comparison engine (R8e, O3). A `_` name inside
+/// `_core/`, which no module file can take (§2, rule 1).
+pub const derived_runtime_path = core_dir ++ "_derived.mjs";
+const derived_runtime_source = @embedFile("derived_runtime.mjs");
+const derived_runtime_compact = @embedFile("derived_runtime.min.mjs");
 
 /// Output directory of the platform package, its siblings and its runtime.
 /// Reserved for `core_dir`'s reason: `Platform.Node` is a legal module name.
@@ -1281,6 +1286,8 @@ const Emitter = struct {
         // and not a second walk.
         const paths = try e.scratch.alloc([]const u8, count);
         for (paths, 0..) |*slot, i| slot.* = try e.outputPath(@enumFromInt(@as(u32, @intCast(i))));
+        // R8e (O3): whether any module written imports the one engine.
+        var uses_runtime = false;
 
         for (0..count) |i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
@@ -1308,6 +1315,7 @@ const Emitter = struct {
                 .sibling = sibling,
                 .entry_decl = e.entryDeclOf(m, entry),
                 .live = &e.live,
+                .derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path),
             });
             defer lowered.ir.deinit(e.gpa);
             defer e.gpa.free(lowered.diagnostics);
@@ -1319,6 +1327,7 @@ const Emitter = struct {
                 try e.diagnostics.append(e.gpa, .{ .code = d.code, .file = file, .token = token, .message = d.message });
             }
             if (lowered.diagnostics.len != 0) continue;
+            uses_runtime = uses_runtime or lowered.uses_runtime;
 
             // §9's release optimiser, between `Lower.lower` and
             // `Print.print`: item 1 plans, item 2 names, the printer spends
@@ -1338,6 +1347,18 @@ const Emitter = struct {
             defer e.gpa.free(text);
             try e.produce(paths[i], text, source_path);
         }
+        if (uses_runtime) try e.emitDerivedRuntime();
+    }
+
+    /// `_core/_derived.mjs`, written iff a module written imports it
+    /// (`backend.md` §4, *Derived comparisons do not grow the native stack*):
+    /// the compiler's own JavaScript, `src/js/derived_runtime.mjs`, or its
+    /// compact copy under `--release`. Importers name its exports by their
+    /// fixed names (`import { deep as _derived$deep }`), as they name a
+    /// sibling's, so renaming touches only the local side.
+    fn emitDerivedRuntime(e: *Emitter) !void {
+        const text = if (e.options.release) derived_runtime_compact else derived_runtime_source;
+        try e.produce(derived_runtime_path, text, derived_runtime_path);
     }
 
     /// §9 item 2's self-check, in the spirit of `Lower`'s `requireLive`: in a
