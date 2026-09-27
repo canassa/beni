@@ -1,0 +1,767 @@
+-- A tokenizer, recursive-descent parser, printer and evaluator for a small
+-- expression language: integers, booleans, arithmetic, comparisons,
+-- let, let rec, if, one-parameter lambdas and application.
+type Token
+    = TInt Int
+    | TIdent String
+    | TPlus
+    | TMinus
+    | TStar
+    | TSlash
+    | TLess
+    | TEqEq
+    | TEq
+    | TLParen
+    | TRParen
+    | TArrow
+    | TLet
+    | TRec
+    | TIn
+    | TIf
+    | TThen
+    | TElse
+    | TFn
+    | TTrue
+    | TFalse
+
+
+type Op
+    = Add
+    | Sub
+    | Mul
+    | Div
+    | Less
+    | Equal
+
+
+type Expr
+    = Num Int
+    | BoolLit Bool
+    | Var String
+    | BinOp Op Expr Expr
+    | Let String Expr Expr
+    | LetRec String String Expr Expr
+    | If Expr Expr Expr
+    | Lambda String Expr
+    | Apply Expr Expr
+
+
+type Value
+    = VInt Int
+    | VBool Bool
+    | VClosure String Expr (List ( String, Value ))
+    | VRecClosure String String Expr (List ( String, Value ))
+
+
+type alias Env =
+    List ( String, Value )
+
+
+-- TOKENIZER
+tokenize : String -> Result String (List Token)
+tokenize source =
+    tokenizeChars (String.toList source) []
+
+
+tokenizeChars : List Char, List Token -> Result String (List Token)
+tokenizeChars chars acc =
+    case chars of
+        [] ->
+            Ok (List.reverse acc)
+
+        ' ' :: rest ->
+            tokenizeChars rest acc
+
+        '\n' :: rest ->
+            tokenizeChars rest acc
+
+        '-' :: '>' :: rest ->
+            tokenizeChars rest (TArrow :: acc)
+
+        '=' :: '=' :: rest ->
+            tokenizeChars rest (TEqEq :: acc)
+
+        '+' :: rest ->
+            tokenizeChars rest (TPlus :: acc)
+
+        '-' :: rest ->
+            tokenizeChars rest (TMinus :: acc)
+
+        '*' :: rest ->
+            tokenizeChars rest (TStar :: acc)
+
+        '/' :: rest ->
+            tokenizeChars rest (TSlash :: acc)
+
+        '<' :: rest ->
+            tokenizeChars rest (TLess :: acc)
+
+        '=' :: rest ->
+            tokenizeChars rest (TEq :: acc)
+
+        '(' :: rest ->
+            tokenizeChars rest (TLParen :: acc)
+
+        ')' :: rest ->
+            tokenizeChars rest (TRParen :: acc)
+
+        c :: _ ->
+            if Char.isDigit c then
+                let
+                    ( digits, remaining ) =
+                        spanChars Char.isDigit chars []
+                in
+                tokenizeChars remaining (TInt (digitsToInt digits) :: acc)
+            else if Char.isAlpha c then
+                let
+                    ( letters, remaining ) =
+                        spanChars Char.isAlphaNum chars []
+                in
+                tokenizeChars remaining (keyword (String.fromList letters) :: acc)
+            else
+                Err ("unexpected character " ++ String.fromChar c)
+
+
+spanChars : (Char -> Bool), List Char, List Char -> ( List Char, List Char )
+spanChars predicate chars taken =
+    case chars of
+        c :: rest ->
+            if predicate c then
+                spanChars predicate rest (c :: taken)
+            else
+                ( List.reverse taken, chars )
+
+        [] ->
+            ( List.reverse taken, [] )
+
+
+digitsToInt : List Char -> Int
+digitsToInt digits =
+    List.foldl digits 0 (\d total -> total * 10 + Char.toCode d - 48)
+
+
+keyword : String -> Token
+keyword word =
+    case word of
+        "let" ->
+            TLet
+
+        "rec" ->
+            TRec
+
+        "in" ->
+            TIn
+
+        "if" ->
+            TIf
+
+        "then" ->
+            TThen
+
+        "else" ->
+            TElse
+
+        "fn" ->
+            TFn
+
+        "true" ->
+            TTrue
+
+        "false" ->
+            TFalse
+
+        _ ->
+            TIdent word
+
+
+-- PARSER
+parse : String -> Result String Expr
+parse source =
+    case tokenize source of
+        Err err ->
+            Err err
+
+        Ok tokens ->
+            case parseExpr tokens of
+                Err err ->
+                    Err err
+
+                Ok ( expr, [] ) ->
+                    Ok expr
+
+                Ok ( _, token :: _ ) ->
+                    Err ("unexpected " ++ describeToken token ++ " after expression")
+
+
+expect : Token, List Token -> Result String (List Token)
+expect wanted tokens =
+    case tokens of
+        token :: rest ->
+            if token == wanted then
+                Ok rest
+            else
+                Err ("expected " ++ describeToken wanted ++ " but found " ++ describeToken token)
+
+        [] ->
+            Err ("expected " ++ describeToken wanted ++ " but reached the end")
+
+
+parseExpr : List Token -> Result String ( Expr, List Token )
+parseExpr tokens =
+    case tokens of
+        TLet :: TRec :: TIdent name :: TEq :: TFn :: TIdent param :: TArrow :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( fnBody, afterFn ) ->
+                    case expect TIn afterFn of
+                        Err err ->
+                            Err err
+
+                        Ok afterIn ->
+                            case parseExpr afterIn of
+                                Err err ->
+                                    Err err
+
+                                Ok ( body, afterBody ) ->
+                                    Ok ( LetRec name param fnBody body, afterBody )
+
+        TLet :: TIdent name :: TEq :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( bound, afterBound ) ->
+                    case expect TIn afterBound of
+                        Err err ->
+                            Err err
+
+                        Ok afterIn ->
+                            case parseExpr afterIn of
+                                Err err ->
+                                    Err err
+
+                                Ok ( body, afterBody ) ->
+                                    Ok ( Let name bound body, afterBody )
+
+        TLet :: _ ->
+            Err "malformed let"
+
+        TIf :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( cond, afterCond ) ->
+                    case expect TThen afterCond of
+                        Err err ->
+                            Err err
+
+                        Ok afterThen ->
+                            case parseExpr afterThen of
+                                Err err ->
+                                    Err err
+
+                                Ok ( yes, afterYes ) ->
+                                    case expect TElse afterYes of
+                                        Err err ->
+                                            Err err
+
+                                        Ok afterElse ->
+                                            case parseExpr afterElse of
+                                                Err err ->
+                                                    Err err
+
+                                                Ok ( no, afterNo ) ->
+                                                    Ok ( If cond yes no, afterNo )
+
+        TFn :: TIdent param :: TArrow :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( body, afterBody ) ->
+                    Ok ( Lambda param body, afterBody )
+
+        TFn :: _ ->
+            Err "malformed fn"
+
+        _ ->
+            parseComparison tokens
+
+
+parseComparison : List Token -> Result String ( Expr, List Token )
+parseComparison tokens =
+    case parseAdditive tokens of
+        Err err ->
+            Err err
+
+        Ok ( left, rest ) ->
+            case rest of
+                TLess :: afterOp ->
+                    case parseAdditive afterOp of
+                        Err err ->
+                            Err err
+
+                        Ok ( right, afterRight ) ->
+                            Ok ( BinOp Less left right, afterRight )
+
+                TEqEq :: afterOp ->
+                    case parseAdditive afterOp of
+                        Err err ->
+                            Err err
+
+                        Ok ( right, afterRight ) ->
+                            Ok ( BinOp Equal left right, afterRight )
+
+                _ ->
+                    Ok ( left, rest )
+
+
+parseAdditive : List Token -> Result String ( Expr, List Token )
+parseAdditive tokens =
+    case parseTerm tokens of
+        Err err ->
+            Err err
+
+        Ok ( left, rest ) ->
+            additiveLoop left rest
+
+
+additiveLoop : Expr, List Token -> Result String ( Expr, List Token )
+additiveLoop left tokens =
+    case tokens of
+        TPlus :: rest ->
+            case parseTerm rest of
+                Err err ->
+                    Err err
+
+                Ok ( right, afterRight ) ->
+                    additiveLoop (BinOp Add left right) afterRight
+
+        TMinus :: rest ->
+            case parseTerm rest of
+                Err err ->
+                    Err err
+
+                Ok ( right, afterRight ) ->
+                    additiveLoop (BinOp Sub left right) afterRight
+
+        _ ->
+            Ok ( left, tokens )
+
+
+parseTerm : List Token -> Result String ( Expr, List Token )
+parseTerm tokens =
+    case parseCall tokens of
+        Err err ->
+            Err err
+
+        Ok ( left, rest ) ->
+            termLoop left rest
+
+
+termLoop : Expr, List Token -> Result String ( Expr, List Token )
+termLoop left tokens =
+    case tokens of
+        TStar :: rest ->
+            case parseCall rest of
+                Err err ->
+                    Err err
+
+                Ok ( right, afterRight ) ->
+                    termLoop (BinOp Mul left right) afterRight
+
+        TSlash :: rest ->
+            case parseCall rest of
+                Err err ->
+                    Err err
+
+                Ok ( right, afterRight ) ->
+                    termLoop (BinOp Div left right) afterRight
+
+        _ ->
+            Ok ( left, tokens )
+
+
+parseCall : List Token -> Result String ( Expr, List Token )
+parseCall tokens =
+    case parseAtom tokens of
+        Err err ->
+            Err err
+
+        Ok ( callee, rest ) ->
+            callLoop callee rest
+
+
+callLoop : Expr, List Token -> Result String ( Expr, List Token )
+callLoop callee tokens =
+    case tokens of
+        TLParen :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( argument, afterArgument ) ->
+                    case expect TRParen afterArgument of
+                        Err err ->
+                            Err err
+
+                        Ok afterParen ->
+                            callLoop (Apply callee argument) afterParen
+
+        _ ->
+            Ok ( callee, tokens )
+
+
+parseAtom : List Token -> Result String ( Expr, List Token )
+parseAtom tokens =
+    case tokens of
+        (TInt n) :: rest ->
+            Ok ( Num n, rest )
+
+        TTrue :: rest ->
+            Ok ( BoolLit True, rest )
+
+        TFalse :: rest ->
+            Ok ( BoolLit False, rest )
+
+        (TIdent name) :: rest ->
+            Ok ( Var name, rest )
+
+        TLParen :: rest ->
+            case parseExpr rest of
+                Err err ->
+                    Err err
+
+                Ok ( inner, afterInner ) ->
+                    case expect TRParen afterInner of
+                        Err err ->
+                            Err err
+
+                        Ok afterParen ->
+                            Ok ( inner, afterParen )
+
+        token :: _ ->
+            Err ("unexpected " ++ describeToken token)
+
+        [] ->
+            Err "unexpected end of input"
+
+
+describeToken : Token -> String
+describeToken token =
+    case token of
+        TInt n ->
+            "number " ++ String.fromInt n
+
+        TIdent name ->
+            "name " ++ name
+
+        TPlus ->
+            "'+'"
+
+        TMinus ->
+            "'-'"
+
+        TStar ->
+            "'*'"
+
+        TSlash ->
+            "'/'"
+
+        TLess ->
+            "'<'"
+
+        TEqEq ->
+            "'=='"
+
+        TEq ->
+            "'='"
+
+        TLParen ->
+            "'('"
+
+        TRParen ->
+            "')'"
+
+        TArrow ->
+            "'->'"
+
+        TLet ->
+            "'let'"
+
+        TRec ->
+            "'rec'"
+
+        TIn ->
+            "'in'"
+
+        TIf ->
+            "'if'"
+
+        TThen ->
+            "'then'"
+
+        TElse ->
+            "'else'"
+
+        TFn ->
+            "'fn'"
+
+        TTrue ->
+            "'true'"
+
+        TFalse ->
+            "'false'"
+
+
+-- PRINTER
+showExpr : Expr -> String
+showExpr expr =
+    case expr of
+        Num n ->
+            String.fromInt n
+
+        BoolLit True ->
+            "true"
+
+        BoolLit False ->
+            "false"
+
+        Var name ->
+            name
+
+        BinOp op left right ->
+            "(" ++ showExpr left ++ " " ++ opSymbol op ++ " " ++ showExpr right ++ ")"
+
+        Let name bound body ->
+            "let " ++ name ++ " = " ++ showExpr bound ++ " in " ++ showExpr body
+
+        LetRec name param fnBody body ->
+            "let rec "
+                ++ name
+                ++ " = fn "
+                ++ param
+                ++ " -> "
+                ++ showExpr fnBody
+                ++ " in "
+                ++ showExpr body
+
+        If cond yes no ->
+            "if " ++ showExpr cond ++ " then " ++ showExpr yes ++ " else " ++ showExpr no
+
+        Lambda param body ->
+            "(fn " ++ param ++ " -> " ++ showExpr body ++ ")"
+
+        Apply callee argument ->
+            showExpr callee ++ "(" ++ showExpr argument ++ ")"
+
+
+opSymbol : Op -> String
+opSymbol op =
+    case op of
+        Add ->
+            "+"
+
+        Sub ->
+            "-"
+
+        Mul ->
+            "*"
+
+        Div ->
+            "/"
+
+        Less ->
+            "<"
+
+        Equal ->
+            "=="
+
+
+showValue : Value -> String
+showValue value =
+    case value of
+        VInt n ->
+            String.fromInt n
+
+        VBool True ->
+            "true"
+
+        VBool False ->
+            "false"
+
+        VClosure param _ _ ->
+            "<fn " ++ param ++ ">"
+
+        VRecClosure name _ _ _ ->
+            "<rec fn " ++ name ++ ">"
+
+
+-- EVALUATOR
+lookup : String, Env -> Result String Value
+lookup name env =
+    case env of
+        [] ->
+            Err ("unbound variable " ++ name)
+
+        ( key, value ) :: rest ->
+            if key == name then
+                Ok value
+            else
+                lookup name rest
+
+
+eval : Env, Expr -> Result String Value
+eval env expr =
+    case expr of
+        Num n ->
+            Ok (VInt n)
+
+        BoolLit b ->
+            Ok (VBool b)
+
+        Var name ->
+            lookup name env
+
+        BinOp op left right ->
+            case eval env left of
+                Err err ->
+                    Err err
+
+                Ok leftValue ->
+                    case eval env right of
+                        Err err ->
+                            Err err
+
+                        Ok rightValue ->
+                            applyOp op leftValue rightValue
+
+        Let name bound body ->
+            case eval env bound of
+                Err err ->
+                    Err err
+
+                Ok value ->
+                    eval (( name, value ) :: env) body
+
+        LetRec name param fnBody body ->
+            eval (( name, VRecClosure name param fnBody env ) :: env) body
+
+        If cond yes no ->
+            case eval env cond of
+                Err err ->
+                    Err err
+
+                Ok (VBool True) ->
+                    eval env yes
+
+                Ok (VBool False) ->
+                    eval env no
+
+                Ok other ->
+                    Err ("condition is not a boolean: " ++ showValue other)
+
+        Lambda param body ->
+            Ok (VClosure param body env)
+
+        Apply callee argument ->
+            case eval env callee of
+                Err err ->
+                    Err err
+
+                Ok calleeValue ->
+                    case eval env argument of
+                        Err err ->
+                            Err err
+
+                        Ok argumentValue ->
+                            applyFunction calleeValue argumentValue
+
+
+applyFunction : Value, Value -> Result String Value
+applyFunction callee argument =
+    case callee of
+        VClosure param body closureEnv ->
+            eval (( param, argument ) :: closureEnv) body
+
+        VRecClosure name param body closureEnv ->
+            eval (( param, argument ) :: ( name, callee ) :: closureEnv) body
+
+        other ->
+            Err ("not a function: " ++ showValue other)
+
+
+applyOp : Op, Value, Value -> Result String Value
+applyOp op left right =
+    case ( op, left, right ) of
+        ( Add, VInt a, VInt b ) ->
+            Ok (VInt (a + b))
+
+        ( Sub, VInt a, VInt b ) ->
+            Ok (VInt (a - b))
+
+        ( Mul, VInt a, VInt b ) ->
+            Ok (VInt (a * b))
+
+        ( Div, VInt _, VInt 0 ) ->
+            Err "division by zero"
+
+        ( Div, VInt a, VInt b ) ->
+            Ok (VInt (a // b))
+
+        ( Less, VInt a, VInt b ) ->
+            Ok (VBool (a < b))
+
+        ( Equal, VInt a, VInt b ) ->
+            Ok (VBool (a == b))
+
+        ( Equal, VBool a, VBool b ) ->
+            Ok (VBool (a == b))
+
+        _ ->
+            Err ("type error: " ++ showValue left ++ " " ++ opSymbol op ++ " " ++ showValue right)
+
+
+-- DRIVER
+programs : List String
+programs =
+    [ "1 + 2 * 3"
+    , "(1 + 2) * 3 - 4 / 2"
+    , "let x = 5 in let y = x * 2 in if x < y then y - x else 0"
+    , "let add = fn a -> fn b -> a + b in add(3)(4)"
+    , "let twice = fn f -> fn x -> f(f(x)) in twice(fn n -> n * 3)(7)"
+    , "let rec fact = fn n -> if n < 2 then 1 else n * fact(n - 1) in fact(10)"
+    , "let rec fib = fn n -> if n < 2 then n else fib(n - 1) + fib(n - 2) in fib(15)"
+    , "let rec sum = fn n -> if n == 0 then 0 else n + sum(n - 1) in sum(100)"
+    , "if 3 == 3 then true == false else false"
+    , "10 / (5 - 5)"
+    , "unknown + 1"
+    , "1 + true"
+    , "(1 + 2"
+    , "let = 4"
+    , "3 # 4"
+    , "5(6)"
+    ]
+
+
+runProgram : String -> String
+runProgram source =
+    case parse source of
+        Err err ->
+            "parse error: " ++ err
+
+        Ok expr ->
+            case eval [] expr of
+                Err err ->
+                    showExpr expr ++ " => error: " ++ err
+
+                Ok value ->
+                    showExpr expr ++ " => " ++ showValue value
+
+
+pub run : List String
+run =
+    List.map programs runProgram

@@ -1,0 +1,7 @@
+# Tool outputs and downloaded dependencies; the runner regenerates all of it.
+elm/elm-stuff/
+elm/elm.js
+gleam/build/
+purescript/.spago/
+purescript/output/
+roc/app
