@@ -39,6 +39,22 @@ lexer, LL(k) parser with error recovery, BIR lowering and the formatter, all
 parallel per file; then packages, the module graph, interfaces, the type store,
 constrain/solve, exhaustiveness and DAG-parallel module checking.
 
+## The checker rewrite (2026-09-24 — 2026-09-27)
+
+Five reviews of the old checker found ~30 defects, half of them programs that
+checked and then misbehaved, so the owner ordered a ground-up rewrite. The new
+checker is `src/check/` (it was `src/check2/` until R12 deleted v1); its
+normative architecture is [`checker-v2.md`](docs/design/checker-v2.md), which
+supersedes the parts of `checker.md` and `static-dispatch-spike.md` its notes
+name. [`plans/checker-findings.md`](plans/checker-findings.md) catalogues every
+defect (CK-NN), [`plans/checker-rewrite.md`](plans/checker-rewrite.md) holds the
+slices (R0–R15) with an *As built* note each and §1.1's table of v1's six root
+causes. Red fixtures for open findings live in `tests/pending/`, run by
+`zig build test-pending` (never by the gates); timing scenarios by
+`test-pending-perf` and, once fixed, `test-perf`. Owner decisions D1–D14 and
+their amendments are `checker-v2.md` §21–§21.1. Declaration order never
+changes whether a program checks or what it prints (I9, `ordering_test.zig`).
+
 ## M3 — in progress
 
 **Schema S1–S2 implement the frontend and checker** (2026-09-22):
@@ -137,7 +153,7 @@ with `|>` flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 
-Report 19 §14, items 1–5. **All five are done** (2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
+*Historical (the old checker these items describe was deleted at R12, 2026-09-27; `checker-v2.md` covers the same ground).* Report 19 §14, items 1–5. **All five are done** (2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
 (A.84), the inferred-`where` suffix is capped at 64 constraints and an
 unannotated declaration over the cap is `too_many_inferred_constraints`, which
 bounds the n² with it —
@@ -226,7 +242,7 @@ change" — nothing downstream of it could be implemented at all.
 
 Read the contract for a phase before its code:
 [`frontend.md`](docs/design/frontend.md),
-[`checker.md`](docs/design/checker.md),
+[`checker.md`](docs/design/checker.md) with [`checker-v2.md`](docs/design/checker-v2.md) (normative for `src/check/` since the rewrite),
 [`backend.md`](docs/design/backend.md),
 [`boundary.md`](docs/design/boundary.md). Static dispatch cuts across all four
 and has its own:
