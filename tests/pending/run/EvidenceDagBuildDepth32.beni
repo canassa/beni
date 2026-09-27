@@ -1,0 +1,38 @@
+-- CK-136: building `==` on a doubling DAG type costs its distinct nodes.
+-- `w6 1` has a tuple type 32 levels deep whose every level shares one
+-- node; its derived `eq` evidence is a DAG of 32 distinct terms. At
+-- 8b98464 `check` takes 70 ms but `build` does not finish in 60 s (the
+-- backend walks the evidence as a tree, `Lower.derivedBodiesExist` with no
+-- visited set; `dump --stage=dispatch` prints it as a tree too). Expected:
+-- it builds and prints `F`. Oracle twin: the same program at `w5` builds in
+-- 80 ms and prints `F`.
+import Node exposing (Program)
+
+
+w1 x =
+    ( x, x )
+
+
+w2 x =
+    w1 (w1 x)
+
+
+w3 x =
+    w2 (w2 x)
+
+
+w4 x =
+    w3 (w3 x)
+
+
+w5 x =
+    w4 (w4 x)
+
+
+w6 x =
+    w5 (w5 x)
+
+
+main : Program
+main =
+    Node.printLines [ if w6 1 == w6 2 then "T" else "F" ]

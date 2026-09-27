@@ -18,3 +18,29 @@
 # R13 (2026-09-27) promoted the twelve diagnostic-quality fixtures; CK-126 is
 # the one left.
 tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules exit=0 codes=none
+# R15's audit (2026-09-27): red fixtures of every behavioural finding, written
+# on 8b98464 before any fix; each signature checked against its CK's Observed.
+tests/pending/check/good/RequirementBelowDepth512.beni crash=ABRT
+tests/pending/run/EvidenceDagBuildDepth32.beni timeout
+tests/pending/check/bad/SiblingTypeEqResolution exit=0 codes=none
+tests/pending/run/ArrowBodyStartsWithRecord.beni dev: exit=0 program-exit=1
+tests/pending/check/bad/BareParameterisedTypeInConstructor.beni crash=ABRT
+scenario/CK-140 timeout
+tests/pending/check/bad/ImportedErrorValueCompared crash=ABRT
+tests/pending/check/bad/DerivedRowTemplateTooDeep crash=ABRT
+scenario/CK-143 slow
+scenario/CK-143-publish slow
+scenario/CK-144 superlinear
+tests/pending/check/bad/RecordUnifyFieldOrderOtherFile exit=1 codes=type_mismatch×1 why=message
+tests/pending/check/bad/FailedDeclarationPublishedType exit=1 codes=no_methods_on_shape×1,type_mismatch×1 why=code
+tests/pending/check/bad/SchemaParseErrorRecovered exit=1 codes=type_mismatch×1,unexpected_token×1 why=code
+tests/pending/check/bad/InterpolationAfterRigidEscape.beni exit=1 codes=ambiguous_interpolation×1,rigid_mismatch×1 why=code
+tests/pending/run/DerivedOverSpecialisedEq dev: exit=1 codes=not_equatable×1
+tests/pending/run/DotCallCompareDerivedUnannotated.beni dev: exit=1 codes=unknown_method×1
+tests/pending/check/bad/NegativeLiteralArgumentHint.beni exit=1 codes=type_mismatch×1 why=message
+scenario/CK-163 stale-files
+scenario/CK-164 slow
+scenario/CK-165 slow
+scenario/CK-166 exit=1 codes=nesting_too_deep×907
+scenario/CK-167 exit=1 codes=pattern_budget_exhausted×1
+tests/pending/check/bad/OwnMethodSignatureReportedOnce.beni exit=1 codes=type_mismatch×2 why=count

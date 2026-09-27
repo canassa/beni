@@ -1,0 +1,1 @@
+wrong_type_arity 10:9 contains "`Foo` takes 1 type argument, but here it has 0."

@@ -1,0 +1,14 @@
+-- CK-139: a parameterised type used bare in another type's constructor is
+-- WRONG TYPE ARITY, as it is in an annotation, an alias, `K (Foo Int Int)`
+-- or an imported `K Other.Foo`. At 8b98464 the Debug binary panics "index
+-- out of bounds: index 0, len 0" in `Instances.derivedNominal` (reached from
+-- `Contexts.resolvePayloads`); ReleaseFast segfaults. Also `K (List Foo)`,
+-- `K { f : Foo }`, either declaration order, and `type Trip a b c = Trip a b
+-- c Trip`. Oracle twin: `f : Foo -> Int` reports "`Foo` takes 1 type
+-- argument, but here it has 0."
+type K
+    = K Foo
+
+
+type Foo a
+    = Box a

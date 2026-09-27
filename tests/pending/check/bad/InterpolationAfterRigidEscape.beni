@@ -1,0 +1,16 @@
+-- CK-154: one mistake, one message. `g`'s annotation promises `a -> a`,
+-- but its body returns the outer `x`: `rigid_mismatch`. Because of it, `x`
+-- is never tied to `g 1`'s number, and at 8b98464 the interpolation `"${x}"`
+-- is ALSO refused (AMBIGUOUS INTERPOLATION at `x`), a consequence of the
+-- first error, not a second mistake. Without the annotation `x` is a number
+-- and the interpolation is fine. Expected: only the `rigid_mismatch`.
+f x =
+    let
+        s =
+            "${x}"
+
+        g : a -> a
+        g y =
+            if True then y else x
+    in
+    ( s, g 1 )

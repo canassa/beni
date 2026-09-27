@@ -1,0 +1,17 @@
+-- CK-159: a derived `==` over a type whose payload's `eq` is specialised
+-- (`H.eq : Holder Int, Holder Int -> Bool`) is accepted where it is used
+-- at the specialised type. `W Int` holds a `Holder Int`, whose `eq` exists
+-- and compares mod 10, so `W (Holder 3) 1 == W (Holder 13) 1` is `equal`.
+-- At 8b98464 it is NOT EQUATABLE, with `absent_other`'s text ("a function
+-- anywhere inside it") — there is no function, and no guarantee is at stake
+-- (rule 7). Expected: it builds and prints `equal`. Oracle twin: the same
+-- comparison through a tuple, `( Holder Int, Int )`, builds and prints
+-- `equal`. (If the owner decides W Int stays refused, the fallback is a
+-- `check/bad` whose message names `H.eq`; this fixture takes rule 7's side.)
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder x) (Holder y) =
+    modBy x 10 == modBy y 10

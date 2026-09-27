@@ -1,0 +1,44 @@
+-- CK-147: a declaration that failed is published as `<error>`, not as its
+-- partially solved type. This is `check/bad/DeferredReceiverJoinedInGroup`
+-- with its top-level declarations reversed: `ma` is refused
+-- (`no_methods_on_shape` at `h x`) in either order, but `Publish.fill`
+-- publishes every scheme that is not `err`, failure bit or not. In source
+-- order `ma : K, { combine : number -> number } -> number2`; reversed, as
+-- here, `… -> number`. At 8b98464 `Main`'s use, which checks against the
+-- first, is a TYPE MISMATCH against the second (`Float` for `Int`), so a
+-- dependent's verdict follows the order of a failed module's declarations.
+-- Expected: `Lib`'s one error, and `Main` silent against a poisoned `ma`.
+-- Oracle twin: `Lib` in source order (`check/bad/…InGroup`'s) gives only
+-- `Lib`'s error.
+pub ma (K n) x =
+    let
+        _ =
+            (K n).mb 0
+
+        p =
+            x.combine 1
+
+        q =
+            h x
+    in
+    p + q
+
+
+pub mb (K n) y =
+    if n > 0 then
+        y
+
+    else
+        let
+            _ =
+                (K 1).ma { combine = \z -> z + 1 }
+        in
+        y
+
+
+h a =
+    a.combine 1
+
+
+pub type K
+    = K Int

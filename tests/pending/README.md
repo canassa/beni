@@ -19,7 +19,7 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
 
 `test-pending` runs at every commit. `test-pending-perf` (about 40 s since R8c, plus about 130 s when `src/`
 changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
-scenario covers (none is pending since R12 promoted CK-88; before it R3, R6a, R7, R8a and R12 for theirs),
+scenario covers (CK-143, CK-164 and CK-165 since R15's audit; none was pending from R12, which promoted CK-88, to R15; before it R3, R6a, R7, R8a and R12 for theirs),
 any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
 ([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1). Wherever `test-pending-perf` runs,
 `test-perf` runs beside it (the manager's decision of 2026-09-25): a fixed timing scenario that
@@ -33,7 +33,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | File | What it is |
 |---|---|
 | `RED` | one line per fixture: `<path> <signature>` — why it is red today (a `<checker>` column between the two, and a second file, `CLAIMED`, of fixtures green under `--checker=v2` before the cut-over, went with v1 at R12) |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (`test-pending-perf`), or a generated width or depth (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each. None is left since R12 promoted CK-88 into `perf_test.zig` (and its shape half into `abuse_wide_test.zig`): CK-41 was promoted into `perf_test.zig` by R3, CK-83 into `abuse_wide_test.zig` by R2c, and at R11 `NEST-UNDER` into `perf_test.zig`, CK-79 and CK-82 into `abuse_wide_test.zig`, and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` into `ordering_test.zig`; CK-03, CK-40, CK-42, CK-75 and CK-80 were red under v1 only, with v2 twins already in `perf_test.zig` |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (`test-pending-perf`), or a generated width or depth (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each. None is left since R12 promoted CK-88 into `perf_test.zig` (and its shape half into `abuse_wide_test.zig`): CK-41 was promoted into `perf_test.zig` by R3, CK-83 into `abuse_wide_test.zig` by R2c, and at R11 `NEST-UNDER` into `perf_test.zig`, CK-79 and CK-82 into `abuse_wide_test.zig`, and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` into `ordering_test.zig`; CK-03, CK-40, CK-42, CK-75 and CK-80 were red under v1 only, with v2 twins already in `perf_test.zig`. R15's audit (2026-09-27) added CK-140, CK-144, CK-163, CK-166 and CK-167 (`test-pending`) and CK-143, CK-143-publish, CK-164 and CK-165 (`test-pending-perf`) |
 
 ## A fixture
 
@@ -95,6 +95,9 @@ exit=0 stdout-differs            the emitted program printed something else
 exit=0 program-exit=<n>          the emitted program threw
 exit=0 iface-differs             a `check/good` interface differs
 slow                             a scenario's ratio was over 2.5 on every run
+superlinear                      a scenario's exact SIZE ratio (bytes, not time) was over 2.5
+                                 (CK-144)
+stale-files                      a build left files an earlier build wrote (CK-163)
 nondeterministic                 a scenario's identical runs printed different things
 ```
 

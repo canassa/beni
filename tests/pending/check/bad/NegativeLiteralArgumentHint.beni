@@ -1,0 +1,14 @@
+-- CK-162: `dec -1` is `dec - 1`, as specified (`language.md`), and the
+-- message should say so. At 8b98464 it is a TYPE MISMATCH on `(-)` whose
+-- only hint is "this is a function, so it may be missing an argument" —
+-- nothing about the negative literal, which is the mistake. Elm hints
+-- `f (-1)` here. Expected: the same TYPE MISMATCH, with a hint that writes
+-- the argument in parentheses, `(-1)`.
+dec : Int -> Int
+dec n =
+    n - 1
+
+
+v : Int
+v =
+    dec -1

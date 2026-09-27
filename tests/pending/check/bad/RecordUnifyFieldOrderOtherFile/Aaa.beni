@@ -1,0 +1,12 @@
+-- CK-145: a record mismatch's text does not depend on the OTHER files of
+-- the project. This module is imported by nothing; it only interns `zq`
+-- before `zp`. `M.h` passes `{ zp = y, zq = y }` where `f` wants
+-- `{ zp : Int, zq : String }`. `Unify.gather` merge-joins shared fields in
+-- symbol-id order, and ids follow file order, so the first field unified
+-- decides what the second fails against. At 8b98464 `check M.beni` alone
+-- says the argument is `{ zp : Int, zq : Int }`, and with this file it says
+-- `{ zp : String, zq : String }`. Expected: the single-file text, whatever
+-- else is in the project (fields walked in name-text order, or the
+-- mismatch rendered from the pre-unification types).
+pub y =
+    { zq = 1, zp = 2 }

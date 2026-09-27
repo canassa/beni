@@ -1,0 +1,11 @@
+pub type A
+    = A Int
+
+
+pub type B
+    = B String
+
+
+pub eq : A, A -> Bool
+eq (A x) (A y) =
+    modBy x 2 == modBy y 2

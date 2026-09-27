@@ -88,8 +88,17 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // `abuse_wide_test.zig`, NEST-UNDER into `perf_test.zig`; CK-03, CK-40,
     // CK-42, CK-75 and CK-80 were red under v1 only, and their v2 twins were
     // already in `perf_test.zig` (R6a, R8a). CK-88, the last, went to
-    // `perf_test.zig` when R12 fixed it. The table is empty, and the harness
-    // stays for the next finding a fixture cannot state.
+    // `perf_test.zig` when R12 fixed it. The table was empty until R15's
+    // audit (2026-09-27) added the findings below.
+    .{ .name = "scenario/CK-140", .step = .fast },
+    .{ .name = "scenario/CK-143", .step = .perf },
+    .{ .name = "scenario/CK-143-publish", .step = .perf },
+    .{ .name = "scenario/CK-144", .step = .fast },
+    .{ .name = "scenario/CK-163", .step = .fast },
+    .{ .name = "scenario/CK-164", .step = .perf },
+    .{ .name = "scenario/CK-165", .step = .perf },
+    .{ .name = "scenario/CK-166", .step = .fast },
+    .{ .name = "scenario/CK-167", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -110,8 +119,255 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// (None left: CK-88, the last, was fixed and promoted into `perf_test.zig`
-// by R12.)
+// (CK-88, the last of R0–R12's, was fixed and promoted into `perf_test.zig`
+// by R12. The ones below are R15's audit, 2026-09-27.)
+
+// CK-140: a recursive alias with two self-references is RECURSIVE ALIAS,
+// once, whether or not an annotation uses it. At 8b98464 the annotation
+// `f : A -> Int` expands `A = ( A, A )` although the error is reported, and
+// the expansion doubles per level: ReleaseFast 16 s and 21 GB, Debug past
+// 20 s at 5.5 GB. A scenario rather than a fixture only to bound that memory:
+// the walker would let it grow for its 20 s; here the run is killed at 3 s
+// (the fixed check takes milliseconds). Also the mutual form
+// `A = { x : B, y : B }`, `B = { p : A }`.
+test "CK-140: a recursive alias used in an annotation is reported, not expanded" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var s = try Scenario.init("CK-140");
+    defer s.deinit();
+    try s.w.write("Main.beni", "type alias A =\n    ( A, A )\n\n\nf : A -> Int\nf p =\n    0\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, 3_000);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const verdict: Verdict = if (run) |r| verdict: {
+        const diags = s.diagnosticsOf(r.result) catch break :verdict try s.failed(r.result);
+        const one = r.result.exit_code == 1 and diags.len == 1 and
+            diags[0].code == .recursive_alias and diags[0].span.start.line == 1 and diags[0].span.start.col == 12;
+        break :verdict if (one) .{ .green = true, .signature = "", .detail = "one recursive_alias at 1:12" } else try s.failed(r.result);
+    } else .{ .green = false, .signature = "timeout", .detail = "killed at 3 000 ms of wall time" };
+    try s.finish(verdict);
+}
+
+// CK-143: `Types.find` is a linear scan of the declaring module's types, and
+// `Digest.collect` calls it once per exported type (then deduplicates with a
+// linear `contains`), so the dependency digest — which runs with or without
+// a cache — is quadratic in a module's `pub` types. Independent
+// `pub type A{i} = A{i} Int | B{i}`, the `dep_digest` event of the file.
+// Calibration (ReleaseFast, 8b98464, R15 red pass): 8 000 / 16 000 / 32 000
+// types take 38 / 149 / 571 ms of `dep_digest` (ratio 3.9) against a `check`
+// of 29 / 57 / 115 ms. No reference fix. n = 8 000.
+test "CK-143: the dependency digest is linear in a module's pub types" {
+    var s = try Scenario.init("CK-143");
+    defer s.deinit();
+    const template = "pub type A{d}\n    = A{d} Int\n    | B{d}\n\n\n";
+    try s.w.write("I.beni", try generate(s.arena(), 8_000, template, 3));
+    try s.w.write("I2.beni", try generate(s.arena(), 16_000, template, 3));
+    try s.finish(try s.eventRatio("I.beni", "I2.beni", 8_000, "dep_digest"));
+}
+
+// CK-143's publication half: `Types.resolveRefs` calls the same linear
+// `find` once per `type_refs` row, in P8 for every miss and in `install` for
+// every hit, so publishing a CHAIN `pub type A{i} = A{i} Int A{i-1} | B{i}`
+// is quadratic. The `publish` event of the file. Calibration (ReleaseFast,
+// 8b98464): 8 000 / 16 000 / 32 000 take 32 / 53 / 183 ms (the ratio is
+// 1.7, then 3.5: the scan only dominates from about 16 000). No reference
+// fix. n = 16 000.
+test "CK-143-publish: publishing a chain of pub types is linear" {
+    var s = try Scenario.init("CK-143-publish");
+    defer s.deinit();
+    try s.w.write("C.beni", try typeChain(s.arena(), 16_000));
+    try s.w.write("C2.beni", try typeChain(s.arena(), 32_000));
+    try s.finish(try s.eventRatio("C.beni", "C2.beni", 16_000, "publish"));
+}
+
+// CK-144: an interface term expands every alias body inside every scheme,
+// so a chain of nested record aliases is quadratic in BYTES (and in
+// publication time, and in the cache entry). `pub type alias R{i} =
+// { x : Int, p : R{i-1} }` with one `pub get{i} : R{i} -> Int` each. The
+// claim is the size of `dump --stage=raw` (the interface as written), which
+// is exact, so one run of each size. At 8b98464: 60 / 120 levels write
+// 1 021 435 / 4 140 731 bytes, a ratio of 4.05 (240 levels: 17.1 MB, a
+// 4.9 MB cache entry; a `pub schema` chain of 240 writes a 22 MB entry).
+// Expected: alias references by name, each body written once — linear.
+test "CK-144: an alias chain's interface is linear in its length" {
+    var s = try Scenario.init("CK-144");
+    defer s.deinit();
+    try s.w.write("R.beni", try aliasChain(s.arena(), 60));
+    try s.w.write("R2.beni", try aliasChain(s.arena(), 120));
+    var bytes: [2]usize = undefined;
+    for ([_][]const u8{ "R.beni", "R2.beni" }, &bytes) |file, *slot| {
+        const run = try s.timed(&.{ "dump", "--stage=raw", "--diagnostics=json", file }, world.bulk_timeout_ms) orelse
+            return s.finish(.{ .green = false, .signature = "timeout", .detail = "a dump did not finish" });
+        if (run.result.exit_code != 0) return s.finish(try s.failed(run.result));
+        slot.* = run.result.stdout.len;
+    }
+    const hundredths = bytes[1] * 100 / @max(bytes[0], 1);
+    const green = hundredths <= 250;
+    try s.finish(.{
+        .green = green,
+        .signature = if (green) "" else "superlinear",
+        .detail = try std.fmt.allocPrint(s.arena(), "60 aliases: {d} bytes; 120: {d} bytes; ratio {d}.{d:0>2}", .{ bytes[0], bytes[1], hundredths / 100, hundredths % 100 }),
+    });
+}
+
+// CK-163: `build --out` leaves the files of an earlier build behind. Build a
+// program that imports `Half` and uses `Dict`, then change `Main` to use
+// neither and build into the same `out/`. At 8b98464 `out/Half.mjs` (and
+// `out/_core/Dict.mjs`) survive: stale modules beside a build that never
+// wrote them. Expected: `out/` holds exactly what a build of the second
+// program into an empty directory writes. (`backend.md` §2 does not yet
+// say; this is the claim a reader of `out/` relies on.)
+test "CK-163: a build's output directory holds only what that build wrote" {
+    var s = try Scenario.init("CK-163");
+    defer s.deinit();
+    try s.w.write("Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try s.w.write("Main.beni", "import Node exposing (Program)\nimport Dict\nimport Half\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Half.half (Dict.size (Dict.singleton 1 2))) ]\n");
+    const first = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni", "Half.beni" }, .{ .raw_diagnostics = true });
+    if (first.exit_code != 0) return s.finish(try s.failed(first));
+    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    const second = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (second.exit_code != 0) return s.finish(try s.failed(second));
+    const fresh = try s.w.runWith(&.{ "build", "--platform=node", "--out=fresh", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (fresh.exit_code != 0) return s.finish(try s.failed(fresh));
+    const got = try s.w.listFiles("out");
+    const want = try s.w.listFiles("fresh");
+    var stale: std.ArrayList(u8) = .empty;
+    for (got) |path| {
+        const expected = for (want) |w| {
+            if (std.mem.eql(u8, w, path)) break true;
+        } else false;
+        if (!expected) try stale.print(s.arena(), " {s}", .{path});
+    }
+    const same = stale.items.len == 0 and got.len == want.len;
+    try s.finish(.{
+        .green = same,
+        .signature = if (same) "" else "stale-files",
+        .detail = if (same) "out/ equals a fresh build" else try std.fmt.allocPrint(s.arena(), "left behind:{s}", .{stale.items}),
+    });
+}
+
+// CK-164: the frontend's `resolve` is quadratic in the qualified references
+// of one module. `pub s{i} : List Int -> List Int` / `s{i} xs = List.map xs
+// negate`, the file's `resolve` event. Calibration (ReleaseFast, 8b98464):
+// 4 000 / 8 000 / 16 000 take 15 / 60 / 239 ms of `resolve` (ratio 4.0)
+// against `check`'s 16 / 32 / 63. With `where` clauses and no qualified
+// reference it is 8 ms. No reference fix. n = 8 000.
+test "CK-164: resolving qualified references is linear in their number" {
+    var s = try Scenario.init("CK-164");
+    defer s.deinit();
+    const template = "pub s{d} : List Int -> List Int\ns{d} xs =\n    List.map xs negate\n\n\n";
+    try s.w.write("Q.beni", try generate(s.arena(), 8_000, template, 2));
+    try s.w.write("Q2.beni", try generate(s.arena(), 16_000, template, 2));
+    try s.finish(try s.eventRatio("Q.beni", "Q2.beni", 8_000, "resolve"));
+}
+
+// CK-165: `lower` is super-linear in a module's imports and their uses. A
+// `Main` importing n one-value modules `M{i}` and listing `M{i}.v` once
+// each; `Main`'s own `lower` event. Calibration (ReleaseFast, 8b98464, the
+// uses summed with `+`): 2 000 / 4 000 / 8 000 modules take 28 / 131 / 265
+// ms of `lower` (8 000 at 80 ms with the imports alone); `resolve` is
+// quadratic beside it (7 / 27 / 54). No reference fix. n = 2 000.
+test "CK-165: lowering a module is linear in its imports and their uses" {
+    var s = try Scenario.init("CK-165");
+    defer s.deinit();
+    for ([_]usize{ 2_000, 4_000 }) |n| {
+        for (0..n) |i| {
+            try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/M{d}.beni", .{ n, i }), try std.fmt.allocPrint(s.arena(), "pub v : Int\nv =\n    {d}\n", .{i}));
+        }
+        var main: std.ArrayList(u8) = .empty;
+        for (0..n) |i| try main.print(s.arena(), "import M{d}\n", .{i});
+        try main.appendSlice(s.arena(), "\n\nall : List Int\nall =\n    [ M0.v\n");
+        for (1..n) |i| try main.print(s.arena(), "    , M{d}.v\n", .{i});
+        try main.appendSlice(s.arena(), "    ]\n");
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Main.beni", .{n}), main.items);
+    }
+    try s.finish(try s.eventRatioOf("D2000", "D4000", 2_000, "lower", "D2000/Main.beni", "D4000/Main.beni"));
+}
+
+// CK-166: the parser's 4 096-links-per-declaration budget reports once per
+// offending expression. A `let` of 5 000 bindings `x{i} = x{i-1} + 1` —
+// flat, not nested — gets 906 NESTING TOO DEEP messages at 8b98464 (16 000
+// bindings: 11 906), each saying the expression "is nested more than 4096
+// levels deep", which it is not. (CK-91's fixture passes at 5 000 only
+// because its bodies are `negate x{i}`.) Expected: at most ONE message for
+// the declaration; accepting it (rule 7: a flat `let` endangers no stack)
+// is green too.
+test "CK-166: a long flat let is refused at most once" {
+    var s = try Scenario.init("CK-166");
+    defer s.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(s.arena(), "foo : Int -> Int\nfoo x0 =\n    let\n");
+    for (1..5_001) |i| try src.print(s.arena(), "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
+    try src.appendSlice(s.arena(), "    in\n    x5000\n");
+    try s.w.write("Main.beni", src.items);
+    const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, world.bulk_timeout_ms) orelse
+        return s.finish(.{ .green = false, .signature = "timeout", .detail = "did not finish" });
+    const diags = s.diagnosticsOf(run.result) catch return s.finish(try s.failed(run.result));
+    const green = run.result.exit_code == 0 or
+        (run.result.exit_code == 1 and diags.len == 1 and diags[0].code == .nesting_too_deep);
+    try s.finish(if (green) .{ .green = true, .signature = "", .detail = "accepted, or one message" } else try s.failed(run.result));
+}
+
+// CK-167: a flat `case` over every constructor of a 2 000-constructor type
+// is CASE TOO BIG TO CHECK at the default 5 M-step budget at 8b98464 (1 000
+// constructors check in 9 ms; 4 000 fail the same way). One column of
+// distinct constructors needs one split, O(n log n) at most. Expected: it
+// checks.
+test "CK-167: a case over a wide type's every constructor checks" {
+    var s = try Scenario.init("CK-167");
+    defer s.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(s.arena(), "type T\n    = C0 Int\n");
+    for (1..2_000) |i| try src.print(s.arena(), "    | C{d} Int\n", .{i});
+    try src.appendSlice(s.arena(), "\n\nf : T -> Int\nf t =\n    case t of\n");
+    for (0..2_000) |i| try src.print(s.arena(), "        C{d} x ->\n            x\n\n", .{i});
+    try s.w.write("Main.beni", src.items);
+    const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, world.bulk_timeout_ms) orelse
+        return s.finish(.{ .green = false, .signature = "timeout", .detail = "did not finish" });
+    try s.finish(if (run.result.exit_code == 0) .{ .green = true, .signature = "", .detail = "checks" } else try s.failed(run.result));
+}
+
+/// `count` copies of `template`, `{d}` the index, `per` holes in each
+/// (`perf_test.zig`'s `generate`, verbatim).
+fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u8, comptime per: usize) ![]const u8 {
+    comptime std.debug.assert(std.mem.count(u8, template, "{d}") == per);
+    var out: std.ArrayList(u8) = .empty;
+    for (0..count) |i| {
+        var rest: []const u8 = template;
+        while (std.mem.indexOf(u8, rest, "{d}")) |at| {
+            try out.appendSlice(arena, rest[0..at]);
+            try out.print(arena, "{d}", .{i});
+            rest = rest[at + 3 ..];
+        }
+        try out.appendSlice(arena, rest);
+    }
+    return out.items;
+}
+
+/// `pub type A0 = A0 Int | B0`, then `pub type A{i} = A{i} Int A{i-1} | B{i}`
+/// up to `count`.
+fn typeChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub type A0\n    = A0 Int\n    | B0\n\n\n");
+    for (1..count + 1) |i| try out.print(arena, "pub type A{d}\n    = A{d} Int A{d}\n    | B{d}\n\n\n", .{ i, i, i - 1, i });
+    return out.items;
+}
+
+/// `pub type alias R0 = { x : Int }`, then `R{i} = { x : Int, p : R{i-1} }`
+/// with a `pub get{i} : R{i} -> Int` each, up to `count`.
+fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n\n\n");
+    for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} -> Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
+    return out.items;
+}
 
 // The list stays honest: every `RED` entry names a pending fixture that
 // exists or a scenario of this file. A fixture promoted into the corpus takes
@@ -294,6 +550,55 @@ const Scenario = struct {
         const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
         const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
+    }
+
+    /// A run's stderr as the diagnostics array (a run passes
+    /// `--diagnostics=json` itself: `timed` leaves stderr alone).
+    fn diagnosticsOf(s: *Scenario, r: world.Result) ![]const @import("diagnostic").Diagnostic {
+        const trimmed = std.mem.trim(u8, r.stderr, " \r\n");
+        if (trimmed.len == 0) return &.{};
+        return std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{});
+    }
+
+    /// `perf_test.zig`'s `eventRatio`: time(2n) / time(n) ≤ 2.5 on one
+    /// `--self-profile` event of the file's own module, each point the best
+    /// of 3 `check --no-cache --jobs=1` runs, wall time of the event (R8c,
+    /// CK-93). For a finding in one phase whose program also carries other
+    /// phases' costs.
+    fn eventRatio(s: *Scenario, small: []const u8, large: []const u8, n: usize, event: []const u8) !Verdict {
+        return s.eventRatioOf(small, large, n, event, small, large);
+    }
+
+    /// `eventRatio` where what is checked (a file or a directory) and the
+    /// file whose event is timed differ (CK-165: a project directory, and
+    /// its `Main`).
+    fn eventRatioOf(s: *Scenario, small: []const u8, large: []const u8, n: usize, event: []const u8, small_file: []const u8, large_file: []const u8) !Verdict {
+        var ms: [2]f64 = undefined;
+        for ([_][]const u8{ small, large }, [_][]const u8{ small_file, large_file }, &ms) |target, file, *slot| {
+            var best: f64 = std.math.inf(f64);
+            for (0..3) |_| {
+                const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", target }, world.bulk_timeout_ms) orelse
+                    return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "{s} did not finish within {d} ms", .{ target, world.bulk_timeout_ms }) };
+                if (run.result.exit_code != 0) return s.failed(run.result);
+                const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0, args: struct { file: ?[]const u8 = null } = .{} };
+                const text = try s.w.read("trace.json");
+                const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, s.arena(), text, .{ .ignore_unknown_fields = true });
+                var total: ?f64 = null;
+                for (parsed.traceEvents) |e| {
+                    if (!std.mem.eql(u8, e.ph, "X") or !std.mem.eql(u8, e.name, event)) continue;
+                    if (!std.mem.eql(u8, e.args.file orelse continue, file)) continue;
+                    total = (total orelse 0) + e.dur / 1000.0;
+                }
+                best = @min(best, total orelse return error.PendingEventMissing);
+            }
+            slot.* = best;
+        }
+        const r = ms[1] / @max(ms[0], 0.001);
+        return .{
+            .green = r <= 2.5,
+            .signature = if (r <= 2.5) "" else "slow",
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `{s}` event", .{ n, ms[0], ms[1], r, event }),
+        };
     }
 
     /// Print the verdict and apply rules (b) and (d).

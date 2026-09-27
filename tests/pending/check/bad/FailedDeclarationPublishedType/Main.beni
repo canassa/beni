@@ -1,0 +1,6 @@
+import Lib exposing (K)
+
+
+v : Int
+v =
+    Lib.ma (K 1) { combine = \z -> z + 0.5 }

@@ -1,0 +1,12 @@
+-- CK-141: a dependency's type error does not become the compiler's fault in
+-- the module that compares the poisoned value. `A.f` is `<error>` in `A`'s
+-- interface; `T` compares it with `==`. At 8b98464 the Debug binary panics
+-- "I7: 1 instruction(s) whose evidence tree does not add up" in `T`
+-- (ReleaseFast: two INTERNAL ERRORs at `T.beni:5:9`): the resolver rejects
+-- a wanted on an `err` receiver in silence, and P6 and the I7 assert read
+-- "no error in THIS module" as "no poison reached it". Also `A.f < 1`,
+-- `[ A.f ] == [ 1 ]`, `List.sort [ A.f ]`, `A.f.eq 1`, and a NAMING ERROR
+-- in `A` instead of a type error. Expected: exactly `A`'s one error, and
+-- nothing in `T`.
+pub f =
+    1 + "x"

@@ -1,0 +1,18 @@
+import H
+import Node exposing (Program)
+
+
+type W a
+    = W (H.Holder a) a
+
+
+same : W Int, W Int -> Bool
+same l r =
+    l == r
+
+
+main : Program
+main =
+    Node.printLines
+        [ if same (W (H.Holder 3) 1) (W (H.Holder 13) 1) then "equal" else "different"
+        ]

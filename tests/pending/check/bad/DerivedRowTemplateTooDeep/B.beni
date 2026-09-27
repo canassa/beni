@@ -1,0 +1,5 @@
+import A
+
+
+pub type W b
+    = W (A.Box b)

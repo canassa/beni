@@ -1,0 +1,20 @@
+-- CK-137: `==` on `Two.B` must not reuse `Two.A`'s resolution of `eq`.
+-- `Two` declares `A` and `B` and one `pub eq : A, A -> Bool`, so by the
+-- module rule that `eq` is `B`'s too and `B "x" == B "x"` is the
+-- module-rule clash. At 8b98464 an EARLIER resolution of `(Two, eq)` at
+-- `A` in this module (`f`) is reused for `B`: the build exits 0 and the
+-- program calls A's arithmetic on a String (`Two$eq({ $: "B", a: "x" }, …)`,
+-- which answers `different`). The same with `compare`, and with an
+-- all-nullary sibling. Expected: the clash, TYPE MISMATCH at `==`. Oracle
+-- twin: this file with `f` declared after `g` reports exactly that.
+import Two
+
+
+f : Two.A -> Bool
+f a =
+    a == a
+
+
+g : Bool
+g =
+    Two.B "x" == Two.B "x"

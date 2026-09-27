@@ -1,0 +1,11 @@
+f : { zp : Int, zq : String } -> Int
+f r =
+    r.zp
+
+
+sameRec y =
+    { zp = y, zq = y }
+
+
+h y =
+    f (sameRec y)

@@ -1,0 +1,21 @@
+-- CK-168: a wrong own-method signature is one mistake. `pub eq : T, Int ->
+-- Bool` is not `T, T -> Bool`, and both `==` below need `eq`. At 8b98464
+-- the same TYPE MISMATCH ("`Main.eq` is not the method this call needs")
+-- is reported once per use, two identical messages here, n for n uses.
+-- Expected: one. Its position is open: the spec does not yet say whether
+-- the one message names the method or its first use.
+type T
+    = T Int
+
+
+pub eq : T, Int -> Bool
+eq (T a) b =
+    a == b
+
+
+one =
+    T 1 == T 1
+
+
+two =
+    T 2 == T 2

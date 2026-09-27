@@ -1,0 +1,6 @@
+import Sch
+
+
+p : Sch.P.Type
+p =
+    { x = 1, y = "a" }

@@ -18,6 +18,9 @@ reads *claimed* was **promoted** at R11: its fixtures moved from `tests/pending/
 **R13 (2026-09-27)** fixed the diagnostic-quality findings: CK-49, 50, 52 to 56, 58 to 60 and 86
 are promoted, CK-94, CK-116 and CK-129 (CK-86's duplicate) are fixed with new fixtures, and CK-115
 is not reproduced (a guard). Still red: CK-126 (the schema slices), CK-37's rest (R14).
+**R15 (2026-09-27)**, the audit of the finished checker at `8b98464`, added CK-135 to CK-168 (*R15's
+audit*, before the summary table): 22 behavioural findings with red fixtures or scenarios under
+`tests/pending/`, and 12 structural ones with none. All are the R15-fix slices'.
 
 ## Sources
 
@@ -3771,6 +3774,479 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   out of the worker's scratch arena. Output byte-identical over the whole
   corpus; each change measured alone (`checker-v2.md` §18 *as measured by R14b*).
 
+## R15's audit (2026-09-27)
+
+Four read-only audits of the finished checker at `8b98464`, all on 2026-09-27: the inference core
+(**core-r15**), static dispatch re-run (**disp-r15**), orchestration re-run (**orch-r15**) and an
+adversarial black-box campaign of about 32 000 generated and mutated programs (**adv-r15**).
+Duplicates are folded (core's F1 and disp's first finding are CK-135; core's emit blow-up and
+disp's second are CK-136). **Observed** is at `8b98464`; `B` is its Debug binary and `R` its
+ReleaseFast one (`zig-out/perf/bin/beni`). Every behavioural entry has a red fixture or scenario
+under `tests/pending/`, written before any fix and recorded in `tests/pending/RED`; a structural
+entry says so and has none. Every entry's slice is **R15-fix**, the slices that follow the audit.
+
+### CK-135 — `Schemes.orderWalk` stops silently at depth 512, dropping requirements
+
+- **Severity** compiler-crash-or-hang (Debug panic; `INTERNAL ERROR` in release; a spurious
+  mismatch inside a `let`). **Area** `Schemes.quantifierOrder` (Schemes.zig:606–655), read by
+  `Evidence.requirements`, `Resolve.holdLet` and `closeLet`. **Class** K3 (I4, I2). **Sources**
+  core-r15 F1, disp-r15 CK-135.
+- **Program** `w1 x = ( x, x )`, `u1 ( p, _ ) = p`, `w{k} x = w{k-1} (w{k-1} x)`,
+  `u{k} t = u{k-1} (u{k-1} t)` up to 10; `g t = t == w10 (u10 t)`; `v = g (w10 1)`. `g`'s `eq`
+  sits on a variable 2^10 levels down.
+- **Observed** `B check`: panic "an instantiation's requirement is paired with no wanted"
+  (Solve.zig:256). `R`: `INTERNAL ERROR`s. At `w9` it checks. Core's `let` variant (515 nested
+  applications) is a spurious TYPE MISMATCH at 515 and clean at 505: acceptance depends on depth.
+- **Expected** the module checks; the canonical order is an explicit-stack walk with no depth cap
+  (or `too_deep` reported for every declaration).
+- **Fixture** `check/good/RequirementBelowDepth512.beni` (`.iface`: `module Main`), red
+  `crash=ABRT`.
+- **Slice** R15-fix.
+
+### CK-136 — The backend and the `dispatch` dump walk the shared evidence DAG as a tree
+
+- **Severity** compiler-crash-or-hang (a hang). **Area** `src/js/Lower.zig`
+  (`Lowerer.derivedBodiesExist`, 4379–4389, recurses with no visited set, suspected), and
+  `dump --stage=dispatch`'s printer. **Class** K11 (K14: backend). **Sources** core-r15 (outside its
+  scope), disp-r15 CK-136.
+- **Program** CK-135's `w{k}` to 6; `main = Node.printLines [ if w6 1 == w6 2 then "T" else "F" ]`.
+- **Observed** `check` 70 ms at every depth; `build` does not finish in 60 s at `w6` (32 levels),
+  81 ms at `w5`. `dump --stage=dispatch` at `w7` wrote about 2 GB in 20 s. Core's variant (`let
+  a0 = ( x, x )`, … `a23 == a23`) builds in 1.1 s at 24 levels (`emit` 1 247 ms) and not in 60 s at
+  40, although the emitted JavaScript is linear.
+- **Expected** it builds and prints `F`; a term memo in the walk, and shared terms printed once by
+  index in the dump (the dispatch goldens come from that printer). A `test-perf` scenario at depth
+  64 once fixed.
+- **Fixture** `run/EvidenceDagBuildDepth32.beni`, red `timeout`.
+- **Slice** R15-fix.
+
+### CK-137 — `==` on a type reuses a sibling type's resolution of its module's `eq`
+
+- **Severity** **unsound-runtime, critical**: a type-confused call at run time, and acceptance
+  depends on declaration order (I9). **Area** well-known method resolution (a memo of `(module,
+  method)` keyed without the type constructor, for zero-argument types, suspected). **Class** K7.
+  **Sources** adv-r15 F2.
+- **Program** `Two`: `pub type A = A Int`, `pub type B = B String`, `pub eq : A, A -> Bool`,
+  `eq (A x) (A y) = modBy x 2 == modBy y 2`. `Main`: `f : Two.A -> Bool`, `f a = a == a`, then
+  `Two.B "x" == Two.B "x"`.
+- **Observed** exit 0 in dev, `--release` and `--jobs=1 --no-cache`; the program calls
+  `Two$eq({ $: "B", a: "x" }, …)` (A's arithmetic on a String, NaN) and prints `different`. The
+  same with `compare` (a reversed `pub compare` makes `B 1 < B 3` False), nested in lists and
+  tuples, inside a `where a.eq` function at `B`, after a dot-call `a.eq a`, and for an all-nullary
+  sibling. Not with parameterised siblings, non-well-known methods, or a first use in another
+  module.
+- **Expected** the module-rule clash, TYPE MISMATCH at the B comparison — what `8b98464` reports
+  when `f` comes after, and when the types are in the comparing module.
+- **Fixture** `check/bad/SiblingTypeEqResolution/`, red `exit=0 codes=none`.
+- **Slice** R15-fix (first: it is the one unsound finding).
+
+### CK-138 — An arrow body that starts with a record or tuple literal is parsed as a block
+
+- **Severity** unsound-runtime (a build that exits 0 emits a module that does not load). **Area**
+  `src/js` arrow printing. **Class** K14. **Sources** adv-r15 F1 (about 2 % of generated programs).
+- **Program** `first n = ( n, 1 ).0`; `name s = { name = s }.name`; `\s -> { v = s }.v` passed to
+  `List.map`; also `f n = { r | x = n }.x`.
+- **Observed** `const Main$first = (n$1) => { a: n$1, b: 1 }.a;` — `SyntaxError: Unexpected token
+  ':'` at load; `--release` the same (`(d)=>{name:d}.name`). Bodies that start with a call
+  (`( n, 1 ).0 + 0` → `Basics$add(…)`) are fine.
+- **Expected** parenthesise any arrow body whose printed text starts with `{`; the program prints
+  `3`, `ok`, `a,b`.
+- **Fixture** `run/ArrowBodyStartsWithRecord.beni`, red `dev: exit=0 program-exit=1`.
+- **Slice** R15-fix (backend).
+
+### CK-139 — A parameterised type used bare in a constructor crashes the checker
+
+- **Severity** compiler-crash-or-hang. **Area** `Instances.derivedNominal` (Instances.zig:594,
+  `args[e.param]` on an empty argument list), from `Contexts.resolvePayloads`. **Class** K10 (the
+  arity check does not guard a constructor payload before capability reads it). **Sources**
+  adv-r15 F3 (mut2, 7 hits).
+- **Program** `type K = K Foo` with `type Foo a = Box a`. Also `K (Foo)`, `K Int Foo`,
+  `K { f : Foo }`, `K (List Foo)`, either order, `type Trip a b c = Trip a b c Trip`, and a local
+  `type Int a`.
+- **Observed** `B`: panic "index out of bounds: index 0, len 0"; `R`: segmentation fault (139).
+- **Expected** WRONG TYPE ARITY at `Foo`, as in an annotation, an alias, `K (Foo Int Int)` or an
+  imported `K Other.Foo`.
+- **Fixture** `check/bad/BareParameterisedTypeInConstructor.beni`, red `crash=ABRT`.
+- **Slice** R15-fix.
+
+### CK-140 — A recursive alias with two self-references is expanded once used: OOM
+
+- **Severity** compiler-crash-or-hang (memory exhaustion). **Area** alias expansion in
+  annotations after `recursive_alias` has been reported. **Class** K3. **Sources** adv-r15 F4.
+- **Program** `type alias A = ( A, A )`, `f : A -> Int`, `f p = 0`. Also the mutual forms
+  `A = { x : B, y : B }` / `B = { p : A }` and `( B, B )` / `{ p : A }`.
+- **Observed** `R`: 16 s and 21 GB RSS (`OutOfMemory` under `ulimit -v 4000000`); `B`: past 20 s at
+  5.5 GB. Without the annotation, or with one reference per step, RECURSIVE ALIAS is reported at
+  once.
+- **Expected** one RECURSIVE ALIAS (1:12) and no expansion of a poisoned alias.
+- **Fixture** `scenario/CK-140` (fast step; a scenario only so the run can be killed at 3 s
+  rather than grow for the walker's 20 s), red `timeout`.
+- **Slice** R15-fix.
+
+### CK-141 — Comparing an imported `<error>` value is an INTERNAL ERROR (a Debug panic)
+
+- **Severity** compiler-crash-or-hang (Debug); a cascade of INTERNAL ERRORs in release. **Area**
+  P6 and the I7 assert's gate: `Resolve.zig:206` rejects a wanted on an `err` receiver silently,
+  `Elaborate.zig:434` and `Module.zig:265`/505 read "no error in this module" as "nothing
+  poisoned". **Class** K9. **Sources** orch-r15 N1.
+- **Program** `A`: `pub f = 1 + "x"`. `T`: `import A`, `g = A.f == 1`.
+- **Observed** `B`: panic "I7: 1 instruction(s) whose evidence tree does not add up"; `R`: A's
+  error plus two INTERNAL ERRORs at `T.beni:5:9`. Also `<`, lists, `Just`, records, tuples,
+  `x == A.f` in a function or `let` helper, `List.sort [ A.f ]`, `A.f.eq 1`, and a NAMING ERROR in
+  `A` — the ordinary state of a project being edited.
+- **Expected** exactly A's error; nothing in `T` (a `poisoned` wanted state that P6 and I7 skip).
+- **Fixture** `check/bad/ImportedErrorValueCompared/`, red `crash=ABRT`.
+- **Slice** R15-fix (it blocks calling the rewrite finished, orch-r15's verdict).
+
+### CK-142 — Derived-row templates bypass the one publication routine
+
+- **Severity** compiler-crash-or-hang (in a dependent; a silent `<error>` in the publisher).
+  **Area** `Publish.zig:402–414` `Facts.templateScheme` calls `writer.add` directly: no
+  `Walk.hasError`, and on `too_deep` `addError()` with no `noteDeepDecl`; `ctorTerms`
+  (`Publish.zig:144`) has no error scan either. **Class** K9 (CK-13's shape, a fifth path), K15
+  (§14.1 names `fillCtorTerms` as a client of the one routine). **Sources** orch-r15 N2.
+- **Program** `A`: `pub type Box a = Box a`, `pub eq : Box a, Box a -> Bool where a.foo : a,
+  <509-deep tuple> -> Bool`. `B`: `pub type W b = W (A.Box b)`. `C`: `type X = X Int`, `pub foo`
+  at the same type, `bad = B.W (A.Box (X 1)) == B.W (A.Box (X 2))`.
+- **Observed** `check A B` exits 0, B's `W` row silently `<error>`; with `C`, `R` reports two
+  INTERNAL ERRORs at `C.beni:15:23` and `B` panics on I7. At 508 it checks.
+- **Expected** B's row goes through `Publisher.scheme`: B reports NESTING TOO DEEP (region open),
+  C is silent. Decide whether `ctorTerms` scans for errors and amend §14.1 either way.
+- **Fixture** `check/bad/DerivedRowTemplateTooDeep/` (`.codes`: `nesting_too_deep B.beni:*`), red
+  `crash=ABRT`.
+- **Slice** R15-fix.
+
+### CK-143 — `Types.find` is a linear scan: publication and the dependency digest are quadratic
+
+- **Severity** performance. **Area** `Types.find` (Types.zig:385–398) called per `type_refs` row by
+  `Types.resolveRefs` (P8 on a miss, `install` on a hit) and per exported type by `Digest.collect`
+  (`pushId`, whose `push` also deduplicates with a linear `contains`, Digest.zig:466–473). **Class**
+  K11. **Sources** orch-r15 N3 (the original orchestration review's "an index, not a scan", still
+  owed; CK-107 fixed `cache_store` only).
+- **Program** `pub type A{i} = A{i} Int | B{i}` (independent), and `pub type A{i} = A{i} Int A{i-1}
+  | B{i}` (a chain).
+- **Observed** `R`, `--no-cache --jobs=1`, events of the file: independent 8 000 / 16 000 / 32 000,
+  `dep_digest` 38 / 149 / 571 ms (check 29 / 57 / 115); chain 16 000 / 32 000, `publish` 53 / 183
+  ms, `dep_digest` 223 / 867. At 16 000 independent types the digest is 3× the whole check.
+- **Expected** linear: a per-module `name → TypeId` index built with `Types`, and a hash set in
+  `Digest.push`.
+- **Fixture** `scenario/CK-143` (`dep_digest`, n = 8 000) and `scenario/CK-143-publish`
+  (`publish`, chain, n = 16 000), both `test-pending-perf`, red `slow` (3.8 and 3.8 on the red
+  pass).
+- **Slice** R15-fix.
+
+### CK-144 — Interface terms expand every alias body: an alias chain is quadratic in bytes
+
+- **Severity** performance (and a false hint). **Area** the interface writer (`Schemes.Writer`)
+  and the cache entry. **Class** K11 (representation; related to K10). **Sources** orch-r15 N4;
+  not a regression (`7427828` writes the same).
+- **Program** `pub type alias R{i} = { x : Int, p : R{i-1} }` with `pub get{i} : R{i} -> Int`;
+  likewise a `pub schema S{i}` chain.
+- **Observed** `dump --stage=raw` 1 021 435 / 4 140 731 bytes at 60 / 120 aliases (ratio 4.05),
+  17.1 MB at 240 with a 4.9 MB cache entry; 240 schemas write a 22 MB entry and `publish` goes 44 →
+  492 → 3 896 ms for 200 → 800 → 3 200 schemas. Past about 254 levels every later declaration is
+  its own NESTING TOO DEEP (545 for 800 aliases), and the schema chain is newly refused (CK-13's
+  guard): `7427828` accepted `schemachain-800` in 24.9 s with truncated members. The message's hint
+  "Give the inner part a `type alias` of its own" is wrong when the inner part already is one
+  (K13).
+- **Expected** alias references by name in terms, each body written once per record: linear
+  bytes. The hint follows the fix (if the chain stops being refused, the hint has nothing to say).
+- **Fixture** `scenario/CK-144` (fast step; the byte ratio of `dump --stage=raw` at 60 / 120, one
+  run each, exact), red `superlinear`. The hint has no fixture of its own: whether a 255-level
+  chain is still refused after the fix is the fix's to decide.
+- **Slice** R15-fix.
+
+### CK-145 — A record mismatch's text depends on the other files of the project
+
+- **Severity** diagnostic-quality (deterministic per file set; no verdict changes). **Area**
+  `Unify.gather` (Unify.zig:775) merge-joins shared fields in symbol-id order; ids follow file
+  order (CK-71's fix). **Class** K12 (CK-07's family). **Sources** orch-r15 N5.
+- **Program** `M`: `f : { zp : Int, zq : String } -> Int`, `sameRec y = { zp = y, zq = y }`,
+  `h y = f (sameRec y)`. `Aaa` (imported by nothing): `pub y = { zq = 1, zp = 2 }`.
+- **Observed** `check M.beni`: the argument is `{ zp : Int, zq : Int }`; `check Aaa.beni M.beni`:
+  `{ zp : String, zq : String }`.
+- **Expected** the single-file text in both: fields walked in name-text order, or the mismatch
+  rendered from the pre-unification types.
+- **Fixture** `check/bad/RecordUnifyFieldOrderOtherFile/`, red `why=message`.
+- **Slice** R15-fix.
+
+### CK-146 — Residue of the region- and code-keyed recovery
+
+- **Severity** latent. **Area** `Report`, `Contexts`, `Incremental`. **Class** K9. **Sources**
+  orch-r15 N6.
+- **What** (1) `Report.failed` is written and never read (Report.zig:54); §15.2 says the P9 gate
+  reads the bits. (2) `Report.hasErrorAt` (Report.zig:401) answers "already refused?" by scanning
+  for an equal region (linear; no quadratic measured: 16 000 refused uses, 265 ms). (3) the
+  fixpoint's quiet `Report` is read back as facts: `Contexts.zig:1123` decides `absent_budget` by
+  finding a `nesting_too_deep` in `quiet_items` — CK-14's retired pattern; it should be a flag.
+  (4) `Incremental.verifyReads` appends to `per_module` directly (Incremental.zig:224), a second
+  append path §15.1 says does not exist. (5) attribution to `Report.current` relies on every
+  save/restore (all correct today).
+- **Fixture** none: structural, none reachable as a wrong result today.
+- **Slice** R15-fix.
+
+### CK-147 — A failed declaration is published with its partially solved, order-dependent type
+
+- **Severity** valid-program-rejected (a dependent's verdict follows a failed module's
+  declaration order). **Area** `Publish.fill` (Publish.zig:65–69) publishes every `decl_scheme`
+  that is not `err`, failure bit or not. **Class** K9. **Sources** orch-r15 N7 (the only interface
+  difference over 451 corpus files × 5 permutations).
+- **Program** `check/bad/DeferredReceiverJoinedInGroup.beni` with its declarations reversed, as
+  `Lib`, and `Main`: `v : Int`, `v = Lib.ma (K 1) { combine = \z -> z + 0.5 }`.
+- **Observed** source order publishes `ma : K, { combine : number -> number } -> number2`
+  (Main checks); reversed, `… -> number`, and Main gets a TYPE MISMATCH (`Float` for `Int`).
+- **Expected** an unannotated declaration whose failure bit is set is published as `<error>`
+  (CK-146's (1) gives the bit a reader); an annotated one keeps its P2 scheme. Lib's one error, Main
+  silent.
+- **Fixture** `check/bad/FailedDeclarationPublishedType/`, red `why=code`.
+- **Slice** R15-fix.
+
+### CK-148 — A parse error in a schema body publishes the recovered schema
+
+- **Severity** diagnostic-quality (one mistake, two messages, the second about a type nobody
+  wrote). **Area** parser recovery of schema bodies, and publication of a schema whose body did not
+  parse. **Class** K14 / K9. **Sources** orch-r15 N8.
+- **Program** `Sch`: `pub schema P =` / `x : Int` / `y : Int -> Int`. `Use`: `p : Sch.P.Type`,
+  `p = { x = 1, y = "a" }`.
+- **Observed** UNEXPECTED TOKEN at `y`'s `->`, and a TYPE MISMATCH in `Use` saying `y` must be
+  `Int` (the recovery kept `y : Int`). orch-r15 said the `type alias` twin (`{ x : Int, y : String
+  ) }`) poisons the alias; on the red pass it recovers the fields as written and its user's genuine
+  mismatch is reported, which is not this defect.
+- **Expected** the UNEXPECTED TOKEN only: a schema whose body did not parse is poisoned.
+- **Fixture** `check/bad/SchemaParseErrorRecovered/`, red `why=code`.
+- **Slice** R15-fix.
+
+### CK-149 — The I15 Debug assert does not exist
+
+- **Severity** latent. **Area** `Generalize.adjustRanks`/`enter` (Generalize.zig:339, 460).
+  **Class** K2 (I15). **Sources** core-r15 F2.
+- **What** §2 I15 requires a debug assert on each boundary's generalisation walk (S-new-6), and
+  §4.1 lists "the I15 assert" as an `owned` walk; `grep I15 src/check` finds comments only. The
+  invariant holds by construction at the four lowering sites and no probe broke it (E6, E7, E14,
+  P1), but the one mechanical check K2 relies on is absent. Fix: under `runtime_safety`, for a
+  non-generalised receiver, assert each method-type successor's rank ≤ the receiver's.
+- **Fixture** none: structural (an assert has no black-box face until it fires).
+- **Slice** R15-fix.
+
+### CK-150 — A fixed 64-slot stack in `Diagnostics.monomorphicMethod`
+
+- **Severity** latent (letter of I4). **Area** Diagnostics.zig:258–296 (`var stack: [64]Var`,
+  pushes dropped past 64, a 4 096-step budget). **Class** K3. **Sources** core-r15 F3.
+- **What** it only picks the A.30 hint, so giving up means "no hint", never "yes". Replace with
+  `Walk.variables`/`reaches`, or document the exemption in §2.
+- **Fixture** none: structural.
+- **Slice** R15-fix.
+
+### CK-151 — v1's `quiet` checks survive in `Diagnostics.Reporter`
+
+- **Severity** latent (letter of I12). **Area** Diagnostics.zig:92 (`quiet`) and about 14 `if
+  (r.quiet) return;` guards. **Class** K9. **Sources** core-r15 F4.
+- **What** Report.zig:12–14 says its reporter is never quiet; the guards are dead but are a second
+  place `quiet` is enforced. Delete them, so "quiet once" is literally true.
+- **Fixture** none: structural (dead code).
+- **Slice** R15-fix.
+
+### CK-152 — The speculation journal has no caller
+
+- **Severity** latent. **Area** `TypeStore` snapshot/commit/rollback, `broken`, `rollbacks`, and
+  the `record` on every `setContent`/`setRank` (TypeStore.zig:300–360, 850–930). **Class** K15.
+  **Sources** core-r15 F5.
+- **What** nothing calls `snapshot` (§7.5's diagnostic probe was never built; `?` is an
+  obligation), so the four I14 asserts and `GroundMemo`'s rollback guard protect an impossible
+  state, and `Snapshot` lacks §7.5's per-frame `ready`/`touched` lengths — the first real use would
+  break I14. Delete it, or complete it before its first use.
+- **Fixture** none: structural (dead code).
+- **Slice** R15-fix.
+
+### CK-153 — `unify` depends on its caller's position
+
+- **Severity** latent (a re-accretion watch). **Area** Unify.zig:565: an `equatable` obligation
+  only when `u.argument and u.depth == 1`, a message-placement rule (§11.4 *As built by R5*).
+  **Class** K13. **Sources** core-r15 F6.
+- **What** documented and harmless, but `unify` is no longer a function of its two types alone —
+  the pattern the v1 review flagged. Keep it the only one; a review rule, not a fix.
+- **Fixture** none: structural.
+- **Slice** R15-fix (a review watch).
+
+### CK-154 — A rigid escape also reports an ambiguous interpolation it caused
+
+- **Severity** diagnostic-quality (a cascade). **Area** the solver's report of an undecided
+  interpolation obligation after a `rigid_mismatch` left its variable unconstrained. **Class** K13.
+  **Sources** core-r15 (F6's related observation).
+- **Program** `f x = let s = "${x}"; g : a -> a; g y = if True then y else x in ( s, g 1 )`.
+- **Observed** `rigid_mismatch` at `x` in `g`, and AMBIGUOUS INTERPOLATION at `"${x}"`; without the
+  annotation `x` is a number and the interpolation is fine.
+- **Expected** only the `rigid_mismatch`.
+- **Fixture** `check/bad/InterpolationAfterRigidEscape.beni`, red `why=code`.
+- **Slice** R15-fix.
+
+### CK-155 — `Instances.plainImported`/`readPlain` map argument i to quantifier i by position
+
+- **Severity** latent. **Area** Instances.zig:326–354, 380–410. **Class** K4. **Sources** disp-r15
+  R-a.
+- **What** a second creator of an instantiation's evidence, correct only because `Schemes.Writer`
+  numbers `T q₀…qₙ`'s arguments 0..n; `readPlain` never checks `v0.lhs == i`. Fix: refuse (`return
+  null`) or assert.
+- **Fixture** none: structural.
+- **Slice** R15-fix.
+
+### CK-156 — `Schemes.Writer.writeVar` and `quantifierOrder` must agree, by convention
+
+- **Severity** latent. **Area** Schemes.zig:555–567. **Class** K4. **Sources** disp-r15 R-b.
+- **What** the callee orders with one walk, an importer reads the other; they agree today (by
+  hand), pinned by one hand test, and the randomized round-trip does not compare orders. Fix: a
+  Debug assert at publication that the writer's `pending_roots` equal `quantifierOrder` for every
+  scheme with requirements. (CK-135's rewrite of `quantifierOrder` is the moment.)
+- **Fixture** none: structural.
+- **Slice** R15-fix.
+
+### CK-157 — `Module.elaborate` pairs requirements and givens by index across two readings
+
+- **Severity** latent. **Area** Module.zig:396–418. **Class** K4. **Sources** disp-r15 R-c.
+- **What** an annotated declaration's requirements come from the scheme reading and its givens
+  from the rigid reading; only the count is asserted. Alias argument swaps and tuple parameter
+  patterns stay correct (`Unify.alias` keeps alias nodes). Fix: assert each pair has the same method
+  and quantifier index.
+- **Fixture** none: structural.
+- **Slice** R15-fix.
+
+### CK-158 — The `rules_test.zig` capability fences are textual and incomplete
+
+- **Severity** latent. **Area** `rules_test.zig`. **Class** K7. **Sources** disp-r15 R-d.
+- **What** `entries[i].equatable`, `t.equatable` and `info.equatable` spell the same read and are
+  not caught; only `src/check` is scanned, not `src/js` or `src/cache`. Nothing violates the rule
+  today.
+- **Fixture** none: structural (the fence is itself the test to widen).
+- **Slice** R15-fix.
+
+### CK-159 — A derived type over a specialised custom `eq` is refused at the specialised type
+
+- **Severity** valid-program-rejected (rule 7: no guarantee at stake), with a false message.
+  **Area** derivability over a payload whose `eq` binds a marker (`Holder Int`). **Class** K7.
+  **Sources** disp-r15 R-e.
+- **Program** `H`: `pub type Holder a = Holder a`, `pub eq : Holder Int, Holder Int -> Bool` (mod
+  10). `Main`: `type W a = W (H.Holder a) a`, `same : W Int, W Int -> Bool`, `same l r = l == r`.
+- **Observed** NOT EQUATABLE, `absent_other`'s text ("a function anywhere inside it" — there is
+  none). The same comparison through a tuple `( H.Holder Int, Int )` builds and prints `equal`.
+  CK-116's `absent_requirement` does not cover it; the corpus golden
+  `check/bad/SpecializedEqWrongReceiver` encodes this text for a `Generic String`.
+- **Expected** (taking rule 7's side) `W Int` is accepted and prints `equal`. If the owner keeps the
+  refusal, the fallback is a message naming `H.eq`, and the fixture becomes a `check/bad`.
+- **Fixture** `run/DerivedOverSpecialisedEq/`, red `dev: exit=1 codes=not_equatable×1`.
+- **Slice** R15-fix (the owner's decision first).
+
+### CK-160 — `Unit.newWanted` uses `.undetermined`, a real answer, as its placeholder
+
+- **Severity** latent. **Area** Unit.zig:116; `Elaborate.caseThree`'s guard. **Class** K5.
+  **Sources** disp-r15 R-f.
+- **What** every node is filled before `emit` today (`fillUnit` drains `pending`), but "a hole is
+  never a structural answer" holds by that drain, not by construction. Related: `caseThree`'s guard
+  uses `Walk.reaches` (structural successors) while the lists come from `quantifierOrder` (which
+  also follows method types); a variable reachable only through another requirement's method type
+  would get the default instead of `internal` — unreachable today because both come from the same
+  walk. Fix: a dedicated placeholder, or an assert in `emit`.
+- **Fixture** none: structural.
+- **Slice** R15-fix.
+
+### CK-161 — An unannotated dot-call `x.compare y` never derives
+
+- **Severity** valid-program-rejected (rule 7), with a false message. **Area** dot-call
+  resolution on an unannotated receiver: checker-v2.md's "kind decides derivation" — an operator or
+  a `where` derives, a dot-call does not. **Class** K7. **Sources** adv-r15 O1.
+- **Program** `type Colour = Red | Blue`, `before x y = x.compare y == LT`, `before Red Blue`.
+- **Observed** "`Colour` has no method called `compare`" at the call. Adding `before : a, a -> Bool
+  where a.compare : a, a -> Order` builds and prints `T`; `Red < Blue` works directly.
+- **Expected** — **by the owner's rule 7**, a refusal with no guarantee behind it is dropped: the
+  program builds and prints `T`. This is a change to the design as written (by design at
+  `8b98464`); if the owner keeps the rule, the fallback is a warning or at least a message that
+  says derivation needs an operator or a `where` annotation, and the fixture becomes a `check/bad`.
+- **Fixture** `run/DotCallCompareDerivedUnannotated.beni` (expects ACCEPTANCE), red `dev: exit=1
+  codes=unknown_method×1`.
+- **Slice** R15-fix (the owner's decision first).
+
+### CK-162 — `f -1` has no hint that it is `f - 1`
+
+- **Severity** diagnostic-quality. **Area** the arithmetic mismatch's hint. **Class** K13.
+  **Sources** adv-r15 O3.
+- **Program** `dec : Int -> Int`, `v = dec -1`.
+- **Observed** TYPE MISMATCH on `(-)`, hint "this is a function, so it may be missing an argument".
+  (adv-r15's case was `( i -1, "m" )` in an `Int32` tuple.)
+- **Expected** the same mismatch, hinting `dec (-1)` (Elm has this hint).
+- **Fixture** `check/bad/NegativeLiteralArgumentHint.beni` (`contains "(-1)"`), red `why=message`.
+- **Slice** R15-fix.
+
+### CK-163 — `build --out` leaves an earlier build's files behind
+
+- **Severity** latent (stale modules beside a build that never wrote them; not the checker).
+  **Area** the build driver's output writing. **Class** K14. **Sources** adv-r15 O3.
+- **Program** build `Main` importing `Half` and `Dict` into `out/`, then a `Main` using neither
+  into the same `out/`.
+- **Observed** `out/Half.mjs`, `out/_core/Dict.mjs`, `_core/Basics.mjs`, `_core/String.mjs` and the
+  two foreign siblings survive.
+- **Expected** `out/` holds exactly what a build of the second program into an empty directory
+  writes. `backend.md` §2 does not say; the owner decides (removing only files the compiler itself
+  wrote is the conservative form).
+- **Fixture** `scenario/CK-163` (fast step), red `stale-files`.
+- **Slice** R15-fix (backend).
+
+### CK-164 — Frontend `resolve` is quadratic in a module's qualified references
+
+- **Severity** performance. **Area** frontend `resolve`. **Class** K14. **Sources** orch-r15 N9.
+- **Program** `pub s{i} : List Int -> List Int` / `s{i} xs = List.map xs negate`.
+- **Observed** `R`, the file's `resolve` event: 15 / 60 / 239 ms at 4 000 / 8 000 / 16 000 (the
+  audit: 492 ms at 16 000 with `check` at 80); `check` 16 / 32 / 63. With `where` clauses and no
+  qualified reference, 8 ms.
+- **Expected** linear.
+- **Fixture** `scenario/CK-164` (`test-pending-perf`, n = 8 000), red `slow` (4.0).
+- **Slice** R15-fix (frontend).
+
+### CK-165 — `lower` is super-linear in a module's imports and their uses
+
+- **Severity** performance. **Area** BIR lowering (`bir.Lower`). **Class** K14. **Sources**
+  orch-r15 N9.
+- **Program** `Main` importing n one-value modules `M{i}` and listing each `M{i}.v` once.
+- **Observed** `R`, `Main`'s `lower` event: 28 / 131 / 265 ms at 2 000 / 4 000 / 8 000 modules
+  (8 000 with the imports alone: 80 ms); `resolve` is quadratic beside it (7 / 27 / 54).
+- **Expected** linear.
+- **Fixture** `scenario/CK-165` (`test-pending-perf`, n = 2 000), red `slow` (4.5).
+- **Slice** R15-fix (frontend).
+
+### CK-166 — The parser's per-declaration budget reports once per offending expression
+
+- **Severity** diagnostic-quality (and a false text). **Area** the parser's 4 096-links budget.
+  **Class** K14. **Sources** orch-r15 N9.
+- **Program** `foo x0 = let x1 = x0 + 1 … x5000 = x4999 + 1 in x5000`.
+- **Observed** 907 NESTING TOO DEEP (`B`, the scenario; 11 906 at 16 000 bindings), each "nested
+  more than 4096 levels deep" about a flat `let`. CK-91's fixture passes at 5 000 bindings only
+  because its bodies are `negate x{i}`.
+- **Expected** at most one message for the declaration; accepting it (rule 7: a flat `let`
+  endangers no stack) is green too.
+- **Fixture** `scenario/CK-166` (fast step), red `exit=1 codes=nesting_too_deep×907`.
+- **Slice** R15-fix (frontend).
+
+### CK-167 — A flat `case` over 2 000 constructors is CASE TOO BIG TO CHECK
+
+- **Severity** valid-program-rejected. **Area** `Exhaustive` (the 5 M-step budget). **Class** K11.
+  **Sources** orch-r15 N9.
+- **Program** `type T = C0 Int | … | C1999 Int`, `f t = case t of C0 x -> x … C1999 x -> x`.
+- **Observed** `pattern_budget_exhausted`; 1 000 constructors check in 9 ms (`R`); 4 000 fail the
+  same way. The audit found it at 4 000; the red pass found it already at 2 000.
+- **Expected** it checks: one column of distinct constructors is one split, O(n log n) at most.
+- **Fixture** `scenario/CK-167` (fast step), red `exit=1 codes=pattern_budget_exhausted×1`.
+- **Slice** R15-fix.
+
+### CK-168 — A wrong own-method signature is reported once per use
+
+- **Severity** diagnostic-quality. **Area** well-known method resolution's report of a method whose
+  type is not `T, T -> Bool`. **Class** K13. **Sources** orch-r15 N9.
+- **Program** `type T = T Int`, `pub eq : T, Int -> Bool`, and two `==` on `T`.
+- **Observed** two identical TYPE MISMATCHes ("`Main.eq` is not the method this call needs"), n for
+  n uses.
+- **Expected** one (at the method or at its first use: the spec does not say, so the `.codes`
+  leaves the position open).
+- **Fixture** `check/bad/OwnMethodSignatureReportedOnce.beni`, red `why=count`.
+- **Slice** R15-fix.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3913,14 +4389,48 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | R12 (closed with v1; found by R10) |
 | CK-133 | performance (Debug only) | K11 | `abuse_test.zig` CK-128 scenario (timeout under load) | R12 (found and fixed) |
 | CK-134 | performance | K11 | — (the bench) | R14b (fixed; found by R12) |
+| CK-135 | compiler-crash-or-hang | K3 | `check/good/RequirementBelowDepth512.beni` | R15-fix (found by R15's core and dispatch audits) |
+| CK-136 | compiler-crash-or-hang | K11 | `run/EvidenceDagBuildDepth32.beni` | R15-fix (backend) |
+| CK-137 | unsound-runtime (critical) | K7 | `check/bad/SiblingTypeEqResolution/` | R15-fix |
+| CK-138 | unsound-runtime | K14 | `run/ArrowBodyStartsWithRecord.beni` | R15-fix (backend) |
+| CK-139 | compiler-crash-or-hang | K10 | `check/bad/BareParameterisedTypeInConstructor.beni` | R15-fix |
+| CK-140 | compiler-crash-or-hang | K3 | `scenario/CK-140` | R15-fix |
+| CK-141 | compiler-crash-or-hang | K9 | `check/bad/ImportedErrorValueCompared/` | R15-fix |
+| CK-142 | compiler-crash-or-hang | K9 | `check/bad/DerivedRowTemplateTooDeep/` | R15-fix |
+| CK-143 | performance | K11 | `scenario/CK-143`, `scenario/CK-143-publish` (`test-pending-perf`) | R15-fix |
+| CK-144 | performance | K11 | `scenario/CK-144` | R15-fix |
+| CK-145 | diagnostic-quality | K12 | `check/bad/RecordUnifyFieldOrderOtherFile/` | R15-fix |
+| CK-146 | latent | K9 | — (structural) | R15-fix |
+| CK-147 | valid-program-rejected | K9 | `check/bad/FailedDeclarationPublishedType/` | R15-fix |
+| CK-148 | diagnostic-quality | K14 | `check/bad/SchemaParseErrorRecovered/` | R15-fix |
+| CK-149 | latent | K2 | — (structural) | R15-fix |
+| CK-150 | latent | K3 | — (structural) | R15-fix |
+| CK-151 | latent | K9 | — (structural) | R15-fix |
+| CK-152 | latent | K15 | — (structural) | R15-fix |
+| CK-153 | latent | K13 | — (structural; a review watch) | R15-fix |
+| CK-154 | diagnostic-quality | K13 | `check/bad/InterpolationAfterRigidEscape.beni` | R15-fix |
+| CK-155 | latent | K4 | — (structural) | R15-fix |
+| CK-156 | latent | K4 | — (structural) | R15-fix |
+| CK-157 | latent | K4 | — (structural) | R15-fix |
+| CK-158 | latent | K7 | — (structural) | R15-fix |
+| CK-159 | valid-program-rejected | K7 | `run/DerivedOverSpecialisedEq/` (expects acceptance; rule 7) | R15-fix (owner's decision first) |
+| CK-160 | latent | K5 | — (structural) | R15-fix |
+| CK-161 | valid-program-rejected | K7 | `run/DotCallCompareDerivedUnannotated.beni` (expects acceptance; rule 7) | R15-fix (owner's decision first) |
+| CK-162 | diagnostic-quality | K13 | `check/bad/NegativeLiteralArgumentHint.beni` | R15-fix |
+| CK-163 | latent | K14 | `scenario/CK-163` | R15-fix (backend) |
+| CK-164 | performance | K14 | `scenario/CK-164` (`test-pending-perf`) | R15-fix (frontend) |
+| CK-165 | performance | K14 | `scenario/CK-165` (`test-pending-perf`) | R15-fix (frontend) |
+| CK-166 | diagnostic-quality | K14 | `scenario/CK-166` | R15-fix (frontend) |
+| CK-167 | valid-program-rejected | K11 | `scenario/CK-167` | R15-fix |
+| CK-168 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureReportedOnce.beni` | R15-fix |
 
 Totals:
-- 134 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 29 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 15 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
-- valid-program-rejected: 24 (CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
+- 168 entries (CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 31 (CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 21 (CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
+- valid-program-rejected: 28 (CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 3 (CK-132 among them, v1 only).
-- performance: 22 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
-- diagnostic-quality: 27 (CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
-- latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 15 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
+- performance: 26 (CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
+- diagnostic-quality: 33 (CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
+- latent: 25 (CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
+- Outside the checker (K14): 21 (CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

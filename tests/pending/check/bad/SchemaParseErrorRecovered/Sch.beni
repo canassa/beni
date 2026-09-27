@@ -1,0 +1,10 @@
+-- CK-148: a parse error inside a schema body poisons the schema; its users
+-- get no second message. `y : Int -> Int` is not a schema field type, and
+-- the parser recovers `P` with `y : Int`. At 8b98464 that recovered schema
+-- is published, so `Use` gets a TYPE MISMATCH saying `y` must be `Int` —
+-- one mistake, two messages, the second about a type nobody wrote.
+-- Expected: the UNEXPECTED TOKEN only. (The `type alias` twin, `{ x : Int,
+-- y : String ) }`, recovers the fields as written, which is not this.)
+pub schema P =
+    x : Int
+    y : Int -> Int
