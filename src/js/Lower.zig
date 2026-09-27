@@ -314,6 +314,34 @@ const max_cons_elements = 32;
 /// term per field — 65 535 at most.
 const derived_group = 1024;
 
+/// How deep a derived `eq` or `compare` recurses on the native stack before
+/// it continues from an explicit one (`backend.md` §4, *Derived comparisons
+/// do not grow the native stack*, CK-128). One unit is one hop from a
+/// derived body to the comparison it calls — a derived function, an
+/// evidence closure, `List.eq` — and costs a few hundred bytes of stack;
+/// 400 of them stay well inside the scarcest engine's default stack while
+/// leaving the program that asked for the comparison most of it.
+const derived_depth_limit = "400";
+
+/// The depth argument that means "do not compare: hand back your steps"
+/// (`derived$deep`'s request). Any value no real depth reaches; `2 ** 30`,
+/// spelled as `core/List.js` spells it, because the two must agree.
+const derived_request = "1073741824";
+
+/// A derived function whose frame is wide — positional evidence in the
+/// thousands (`Convention.derivedEvidence`) — charges its callees one unit
+/// per this many evidence parameters on top of the one every hop costs,
+/// so a type of 4 096 parameters reaches the explicit stack after a few
+/// levels and not after 400 (static-dispatch-spike.md §9.2's measurements:
+/// a 4 096-parameter frame recursed 13 deep on Node's default stack).
+const derived_weight_per = 32;
+
+/// The most evidence parameters a derived function's STEPS form takes one by
+/// one, and the most arguments one of its calls passes that way: past it
+/// they travel as one array, because a generator saves its whole frame at
+/// every `yield` (`derivedForm`, `depthCall`).
+const steps_positional = 16;
+
 /// How many `case`s — the outermost, and each nested in the LAST branch of the
 /// one before (every `if` of an `else if` chain) — an expression-position
 /// chain needs before it is written as one flat block (`Lowerer.chainedLeaf`,
@@ -386,6 +414,15 @@ const Lowerer = struct {
     /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
     /// §9.2, CK-81).
     wide_evidence: ?JsIr.NameIndex = null,
+    /// Set while the body of a derived function is lowered: which of its
+    /// two forms is being built, and whether the direct one calls anything
+    /// that takes a depth (`backend.md` §4, *Derived comparisons do not
+    /// grow the native stack*).
+    derived_body: ?*DerivedBody = null,
+    /// Per derived row of this module, whether it is a LEAF (`leafRows`):
+    /// it cannot recurse, so it is emitted exactly as before R8d and a call
+    /// of it passes no depth.
+    leaf: []const bool = &.{},
     /// Where a tall evidence closure is bound (`hoistEvidence`): the
     /// statement list of the expression being lowered, set by `expr` and
     /// `tailStmts`. Null while a derived function's body is built, whose
@@ -426,6 +463,34 @@ const Lowerer = struct {
         eq_prim: bool = false,
         compare_prim: bool = false,
         compare_char: bool = false,
+        /// `derived$deep`, the engine a derived function past
+        /// `derived_depth_limit` continues in.
+        deep: bool = false,
+    };
+
+    /// One derived function being lowered (`derivedArrow`).
+    const DerivedBody = struct {
+        /// `direct` is the function every caller calls; `steps` is its
+        /// generator twin, `function* <base>$$steps`, which yields each call
+        /// it would have made to `derived$deep` instead of making it.
+        mode: enum { direct, steps } = .direct,
+        /// `$d`, the direct form's depth parameter.
+        depth: JsIr.NameIndex,
+        /// What a call from this body adds to the depth.
+        weight: u32,
+        /// Whether the direct form made a call that takes a depth. A body
+        /// that made none — every position a primitive, or a hand-written
+        /// method — cannot recurse and is emitted exactly as before.
+        passes: bool = false,
+        /// The printed base of the function, `<base>$$steps` its twin's.
+        base: []const u8,
+        /// How many leading parameters the direct form packs into one array
+        /// when it calls its steps (`steps_positional`); 0 for none.
+        pack: u32 = 0,
+        /// `$e`, the steps form's one temporary (`awaitRequest`), once used.
+        temp: ?JsIr.NameIndex = null,
+        /// The steps form's requests (`depthCall`), by node.
+        requests: std.AutoHashMapUnmanaged(u32, void) = .empty,
     };
 
     // ---- Small helpers ----------------------------------------------------
@@ -2497,6 +2562,7 @@ const Lowerer = struct {
     /// Read the table once: which terms are shared, and which add up.
     fn readTable(l: *Lowerer) !void {
         const d = l.in.dispatch;
+        l.leaf = try l.leafRows();
         if (d.terms.len == 0) return;
         const count = try l.scratch.alloc(u8, d.terms.len);
         @memset(count, 0);
@@ -2516,6 +2582,107 @@ const Lowerer = struct {
             ok[i] = l.termOkLocal(ok, @intCast(i));
         }
         l.shape_ok = ok;
+    }
+
+    /// How long a chain of leaves may be: a leaf nominal row may call
+    /// another leaf, and 16 of those nest 16 frames, which no engine
+    /// notices. Past it the row counts depth like any other.
+    const leaf_rank_limit = 16;
+
+    /// Which derived rows of this module are LEAVES (`backend.md` §4,
+    /// *Derived comparisons do not grow the native stack*): rows whose
+    /// comparison cannot come back to a derived function, and so need no
+    /// depth, no steps and no engine. They are emitted byte for byte as
+    /// before R8d, and they are most of what a program compares: a record
+    /// of primitives, a `type Shape = Circle Point Float | …`.
+    ///
+    /// - A record, tuple or `()` row is a leaf when EVERY use of it in this
+    ///   module passes it only primitive comparators and hand-written
+    ///   methods as evidence: its positions call nothing else. A derived
+    ///   function as evidence is not flat — that is how a record literal
+    ///   nests 4 095 shapes deep, one row passed to itself.
+    /// - A nominal row is a leaf when every position is a primitive, a
+    ///   hand-written method, or a call of a leaf row of this module, and
+    ///   the chain of such calls is at most `leaf_rank_limit` long. A
+    ///   position that is its own evidence (`Maybe a`'s `a`), another
+    ///   module's derived function, or `List`'s `eq` is not: what it runs
+    ///   is decided elsewhere. A type whose recursion stays among derived
+    ///   functions never becomes a leaf, because its rank never becomes finite.
+    ///
+    /// A hand-written method is flat even though it may compare deep data
+    /// itself: it is a function like any other and starts its own depth. So a
+    /// type that recurses only THROUGH one — `type T = T (Box T) | E` with a
+    /// hand-written `Box.eq … where a.eq` — IS a leaf, and still throws on
+    /// deep data: the method cannot hand back steps. That is the exclusion
+    /// `backend.md` §4 states and `abuse_test.zig` pins.
+    fn leafRows(l: *Lowerer) ![]const bool {
+        const d = l.in.dispatch;
+        const n = d.derived.len;
+        const flat_uses = try l.scratch.alloc(bool, n);
+        @memset(flat_uses, true);
+        for (d.terms) |t| switch (t) {
+            .derived => |use| {
+                if (use.index >= n) continue;
+                for (d.argsAt(use.args)) |a| {
+                    if (!l.flatArg(d.term(a))) flat_uses[use.index] = false;
+                }
+            },
+            else => {},
+        };
+        const infinite = std.math.maxInt(u32);
+        const rank = try l.scratch.alloc(u32, n);
+        @memset(rank, infinite);
+        for (d.derived, 0..) |row, r| switch (row.shape) {
+            .record, .tuple, .unit => if (flat_uses[r]) {
+                rank[r] = 1;
+            },
+            .nominal => {},
+        };
+        // A fixpoint over the nominal rows, one rank a round: a row's rank is
+        // one more than its deepest callee's, so `leaf_rank_limit` rounds
+        // settle every chain that can be a leaf and leave every cycle
+        // infinite.
+        var round: u32 = 0;
+        while (round < leaf_rank_limit) : (round += 1) {
+            var changed = false;
+            for (d.derived, 0..) |row, r| {
+                if (row.shape != .nominal or rank[r] != infinite) continue;
+                var deepest: u32 = 0;
+                const ok = for (d.argsAt(row.body)) |part| {
+                    switch (d.term(part)) {
+                        .primitive, .undetermined => {},
+                        .top, .ext => if (l.takesDepth(d.term(part))) break false,
+                        .derived => |use| {
+                            if (use.index >= n or rank[use.index] == infinite) break false;
+                            deepest = @max(deepest, rank[use.index]);
+                        },
+                        .param, .ext_derived, .field => break false,
+                    }
+                } else true;
+                if (!ok or deepest + 1 > leaf_rank_limit) continue;
+                rank[r] = deepest + 1;
+                changed = true;
+            }
+            if (!changed) break;
+        }
+        const leaf = try l.scratch.alloc(bool, n);
+        for (leaf, rank) |*x, k| x.* = k != infinite;
+        return leaf;
+    }
+
+    /// Evidence a leaf record or tuple may be handed: something that calls
+    /// no derived function (`leafRows`).
+    fn flatArg(l: *Lowerer, t: Dispatch.Term) bool {
+        return switch (t) {
+            .primitive, .undetermined => true,
+            .top, .ext => !l.takesDepth(t),
+            else => false,
+        };
+    }
+
+    /// Whether derived row `index` of this module is a leaf.
+    fn isLeaf(l: *Lowerer, index: u32) bool {
+        return index < l.leaf.len and l.leaf[index];
     }
 
     /// An evidence closure `evidence_spill` closures deep, bound to a
@@ -2570,7 +2737,8 @@ const Lowerer = struct {
                 }
                 const value = try l.termName(t, p);
                 if (args.len == 0) return value;
-                return l.etaExpand(value, try l.termValues(args, kind, p), l.termArity(t), p);
+                const arity = l.termArity(t) + @intFromBool(l.takesDepth(t));
+                return l.etaExpand(value, try l.termValues(args, kind, p), arity, p);
             },
             .param => return l.termName(t, p),
             .field => {
@@ -2700,18 +2868,20 @@ const Lowerer = struct {
             // iteration and nowhere else.
             if (!l.liveDerived(@intCast(index))) continue;
             const base = try l.derivedBase(row.kind, row.shape);
-            const arrow = (try l.derivedArrow(row)) orelse continue;
+            const made = (try l.derivedArrow(row, base, l.isLeaf(@intCast(index)))) orelse continue;
             const bound = try l.synthesisedName(base);
             try list.append(l.scratch, .{
                 .base = base,
-                .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), arrow.int()),
+                .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), made.arrow.int()),
             });
+            if (made.steps) |steps| try list.append(l.scratch, .{ .base = try l.stepsBase(base), .node = steps });
             // The `$order` table of §9.4 goes in the OTHER run, and only
             // after its function was written: it is a plain object literal
             // and not an arrow, so unlike every function here it has to
             // precede the `compare` that indexes it (§8.5).
             if (try l.orderTable(row)) |table| try tables.append(l.scratch, table);
         }
+        if (l.needs.deep) try list.append(l.scratch, .{ .base = "derived$deep", .node = try l.deepDecl() });
         if (l.needs.compare_char) try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
         if (l.needs.compare_prim) try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
         if (l.needs.eq_prim) try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
@@ -2831,7 +3001,195 @@ const Lowerer = struct {
     /// position becomes: `eq` conjoins its positions, `compare` is
     /// LEXICOGRAPHIC and therefore a statement sequence with an early
     /// return (§9.2, §9.3).
-    fn derivedArrow(l: *Lowerer, row: Dispatch.Derived) !?Node.Index {
+    fn derivedArrow(l: *Lowerer, row: Dispatch.Derived, base: []const u8, leaf: bool) !?DerivedPair {
+        const outer = l.derived_body;
+        defer l.derived_body = outer;
+        // A leaf (`leafRows`) is lowered with no body state at all, which is
+        // exactly how every derived function was lowered before R8d.
+        if (leaf) {
+            l.derived_body = null;
+            return .{ .arrow = (try l.derivedForm(row)) orelse return null, .steps = null };
+        }
+        // A frame's size grows with its parameters, which a caller also
+        // pushes, and with its positions, one `const $o$<i>` each in a
+        // `compare` (`derived_weight_per`).
+        const evidence: u32 = switch (Convention.derivedEvidence(row.context.len)) {
+            .array => 0,
+            .positional => @intCast(row.context.len),
+        };
+        const positions: u32 = switch (row.shape) {
+            .nominal => @intCast(l.in.dispatch.argsAt(row.body).len),
+            .record => |names| @intCast(l.in.dispatch.shapeNames(names).len),
+            .tuple => |arity| arity,
+            .unit => 0,
+        };
+        var body: DerivedBody = .{
+            .depth = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$d"), .tag = JsIr.Name.no_tag }),
+            .weight = 1 + (2 * evidence + positions) / derived_weight_per,
+            .pack = if (evidence > steps_positional) evidence else 0,
+            .base = base,
+        };
+        l.derived_body = &body;
+        const arrow = (try l.derivedForm(row)) orelse return null;
+        // A body that passed no depth is a leaf: it is what it always was,
+        // byte for byte, and has no twin.
+        if (!body.passes) return .{ .arrow = arrow, .steps = null };
+        body.mode = .steps;
+        const steps = (try l.derivedForm(row)) orelse return null;
+        return .{ .arrow = arrow, .steps = steps };
+    }
+
+    const DerivedPair = struct {
+        /// The function itself, `(…, $x, $y, $d = 0) => …`.
+        arrow: Node.Index,
+        /// Its `function* <base>$$steps`, when it has one.
+        steps: ?Node.Index,
+    };
+
+    /// `<base>$$steps`: the generator twin's base. The double separator is
+    /// the one no record field, type or module name can spell (A.61).
+    fn stepsBase(l: *Lowerer, base: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(l.scratch, "{s}$$steps", .{base});
+    }
+
+    /// The function a derived body ends in. Outside a derived body, or for a
+    /// leaf, the arrow it always was. For a body that passes a depth, the
+    /// direct form gains `$d = 0` and the prologue that hands the rest of
+    /// the comparison to `derived$deep` past `derived_depth_limit`; the
+    /// steps form is the same statements as a `function*` (`gen_decl`).
+    fn derivedFunction(l: *Lowerer, params: []const JsIr.NameIndex, stmts: []const Node.Index, p: u32) !Node.Index {
+        const body = l.derived_body orelse return l.arrowOf(params, stmts, p);
+        switch (body.mode) {
+            .direct => {
+                if (!body.passes) return l.arrowOf(params, stmts, p);
+                l.needs.deep = true;
+                // if ($d > limit) return M$derived$deep(M$<base>$$steps(params…), $d);
+                // Past `steps_positional` the evidence goes to the steps as one
+                // array (`derivedForm`).
+                var args: std.ArrayList(Node.Index) = .empty;
+                var boxed: std.ArrayList(Node.Index) = .empty;
+                for (params, 0..) |n, i| {
+                    if (i < body.pack) try boxed.append(l.scratch, try l.ident(n, p)) else try args.append(l.scratch, try l.ident(n, p));
+                }
+                if (body.pack > 0) {
+                    const range = try l.b.addRange(boxed.items);
+                    try args.insert(l.scratch, 0, try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end)));
+                }
+                const steps_name = try l.synthesisedName(try l.stepsBase(body.base));
+                const steps = try l.call(try l.ident(steps_name, p), args.items, p);
+                const deep = try l.ident(try l.synthesisedName("derived$deep"), p);
+                const handoff = try l.call(deep, &.{ steps, try l.ident(body.depth, p) }, p);
+                const over = try l.binary(.gt, try l.ident(body.depth, p), try l.numberNode(derived_depth_limit, p), p);
+                var all: StmtList = .empty;
+                const then = [_]Node.Index{try l.returnStmt(handoff, p)};
+                try l.ifStatement(&all, over, &then, p);
+                try all.appendSlice(l.scratch, stmts);
+                var names: std.ArrayList(JsIr.NameIndex) = .empty;
+                try names.appendSlice(l.scratch, params);
+                try names.append(l.scratch, body.depth);
+                const record = try l.funcRecord(names.items, all.items);
+                return l.add(.arrow, p, @intFromEnum(record), Node.arrow_depth);
+            },
+            .steps => {
+                // `let $e;` ahead of everything, when a request was awaited.
+                var all: StmtList = .empty;
+                if (body.temp) |e| try all.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(e), @intFromEnum(Node.OptionalIndex.none)));
+                try all.appendSlice(l.scratch, stmts);
+                const record = try l.funcRecord(params, all.items);
+                const steps_name = try l.synthesisedName(try l.stepsBase(body.base));
+                return l.add(.gen_decl, p, @intFromEnum(steps_name), @intFromEnum(record));
+            },
+        }
+    }
+
+    /// `callee(args…)` at one position of a derived body, for a callee that
+    /// takes a depth. The direct form appends `$d + weight`. The steps form
+    /// appends the REQUEST instead: the callee answers at once if it cannot
+    /// recurse — a primitive comparator, a hand-written method, a leaf —
+    /// and otherwise hands back its own steps, unstarted, which the caller
+    /// yields to the engine (`awaitRequest`) or, in tail position, returns.
+    fn depthCall(l: *Lowerer, callee: Node.Index, args: []const Node.Index, p: u32) !Node.Index {
+        const body = l.derived_body orelse return l.call(callee, args, p);
+        const all = try l.scratch.alloc(Node.Index, args.len + 1);
+        @memcpy(all[0..args.len], args);
+        switch (body.mode) {
+            .direct => {
+                body.passes = true;
+                var buf: [12]u8 = undefined;
+                const weight = try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{body.weight}) catch unreachable, p);
+                all[args.len] = try l.binary(.add, try l.ident(body.depth, p), weight, p);
+                return l.call(callee, all, p);
+            },
+            .steps => {
+                all[args.len] = try l.numberNode(derived_request, p);
+                // Past `steps_positional` arguments the call is `f.apply(null,
+                // [args…])`: a call of n arguments takes n registers of the
+                // frame, which every `yield` would then save.
+                const request = if (all.len > steps_positional) blk: {
+                    const range = try l.b.addRange(all);
+                    const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+                    const apply = try l.member(callee, try l.interner.getOrPut(l.gpa, "apply"), p);
+                    break :blk try l.call(apply, &.{ try l.nullNode(p), array }, p);
+                } else try l.call(callee, all, p);
+                try body.requests.put(l.scratch, request.int(), {});
+                return request;
+            },
+        }
+    }
+
+    /// Whether the derived body is being lowered in its steps form.
+    fn inSteps(l: *Lowerer) bool {
+        const body = l.derived_body orelse return false;
+        return body.mode == .steps;
+    }
+
+    /// Whether `value` is a steps-form call made by `depthCall`: its answer
+    /// may be steps the engine has to run.
+    fn isRequest(l: *Lowerer, value: Node.Index) bool {
+        const body = l.derived_body orelse return false;
+        return body.mode == .steps and body.requests.contains(value.int());
+    }
+
+    /// `if (typeof n === "object") { n = yield n; }` — steps handed back by
+    /// a request go to the engine, which resumes this frame with their
+    /// answer; an answer is used as it is.
+    fn yieldIfSteps(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, p: u32) !void {
+        const resumed = try l.unary(.yield, try l.ident(n, p), p);
+        const then = [_]Node.Index{try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), resumed.int())};
+        try l.ifStatement(out, try l.isObject(n, p), &then, p);
+    }
+
+    /// A term's answer in the steps form, as an expression: the term itself,
+    /// or — for a request — a `let $e$<i>` bound to it and awaited
+    /// (`yieldIfSteps`).
+    fn awaitRequest(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) !Node.Index {
+        if (!l.isRequest(value)) return value;
+        const e = try l.stepsTemp();
+        try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(e, p)).int(), value.int()));
+        try l.yieldIfSteps(out, e, p);
+        return l.ident(e, p);
+    }
+
+    /// `$e`: the steps form's ONE temporary, declared once at the top
+    /// (`derivedFunction`). One and not one a position, because a generator
+    /// saves every register of its frame at every `yield`.
+    fn stepsTemp(l: *Lowerer) !JsIr.NameIndex {
+        const body = l.derived_body.?;
+        if (body.temp) |e| return e;
+        const e = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$e"), .tag = JsIr.Name.no_tag });
+        body.temp = e;
+        return e;
+    }
+
+    /// The value a derived body RETURNS. In the steps form a request in
+    /// tail position is returned as it is: steps handed back replace the
+    /// finished frame in the engine (`deepDecl`), so a long list costs the
+    /// explicit stack nothing.
+    fn derivedReturn(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
+        return l.returnStmt(value, p);
+    }
+
+    fn derivedForm(l: *Lowerer, row: Dispatch.Derived) !?Node.Index {
         const p = Node.no_pos;
         const x, const y = try l.operandNames();
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
@@ -2844,7 +3202,13 @@ const Lowerer = struct {
         const outer_array = l.wide_evidence;
         defer l.wide_evidence = outer_array;
         l.wide_evidence = null;
-        switch (Convention.derivedEvidence(row.context.len)) {
+        // The steps form takes more than `steps_positional` evidence as one
+        // array too, whatever `Convention` says: a generator saves its
+        // whole frame at every `yield`, so a frame of thousands of
+        // parameters would make every suspension, and V8's code for it,
+        // that big. Only the direct form packs for it (`derivedFunction`).
+        const steps_array = l.inSteps() and row.context.len > steps_positional;
+        switch (if (steps_array) .array else Convention.derivedEvidence(row.context.len)) {
             .array => {
                 const array = try l.evidenceArrayName();
                 try params.append(l.scratch, array);
@@ -2923,7 +3287,9 @@ const Lowerer = struct {
                 const right = try l.member(try l.ident(y, p), slot, p);
                 try value.add(l, try l.evidenceCall(@intCast(i), left, right, p), p);
             }
-            return try l.returnArrow(params, (try value.finish(l, p)).?, p);
+            var out: StmtList = .empty;
+            try l.returnConjunction(&out, &value, p);
+            return try l.derivedFunction(params, out.items, p);
         }
         var stmts: StmtList = .empty;
         var counter: u32 = 0;
@@ -2933,7 +3299,7 @@ const Lowerer = struct {
             const one = try l.evidenceCall(@intCast(i), left, right, p);
             try l.lexicographic(&stmts, one, i + 1 == slots.len, &counter, p);
         }
-        return try l.arrowOf(params, stmts.items, p);
+        return try l.derivedFunction(params, stmts.items, p);
     }
 
     /// One position of a LEXICOGRAPHIC comparison (§9.2): the last is
@@ -2956,12 +3322,26 @@ const Lowerer = struct {
         p: u32,
     ) !void {
         if (last) {
-            try out.append(l.scratch, try l.returnStmt(value, p));
+            try out.append(l.scratch, try l.derivedReturn(value, p));
             return;
         }
-        const bound = try l.orderName(counter.*);
-        counter.* += 1;
-        try l.constDecl(out, bound, value, p);
+        // The steps form binds every position to its one temporary `$e`,
+        // awaited when it is a request (`awaitRequest`), and keeps no
+        // `const` a position: a generator saves its whole frame at a `yield`.
+        const bound = if (l.inSteps()) blk: {
+            if (!l.isRequest(value)) {
+                const e = try l.stepsTemp();
+                try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(e, p)).int(), value.int()));
+                break :blk e;
+            }
+            _ = try l.awaitRequest(out, value, p);
+            break :blk try l.stepsTemp();
+        } else blk: {
+            const o = try l.orderName(counter.*);
+            counter.* += 1;
+            try l.constDecl(out, o, value, p);
+            break :blk o;
+        };
         const differs = try l.binary(.strict_ne, try l.ident(bound, p), try l.stringNode("EQ", p), p);
         const then = [_]Node.Index{try l.returnStmt(try l.ident(bound, p), p)};
         try l.ifStatement(out, differs, &then, p);
@@ -2976,14 +3356,14 @@ const Lowerer = struct {
     }
 
     fn returnArrow(l: *Lowerer, params: []const JsIr.NameIndex, value: Node.Index, p: u32) !Node.Index {
-        const stmts = [_]Node.Index{try l.returnStmt(value, p)};
-        return l.arrowOf(params, &stmts, p);
+        const stmts = [_]Node.Index{try l.derivedReturn(value, p)};
+        return l.derivedFunction(params, &stmts, p);
     }
 
     /// `$m$k(left, right)` — the derived function's own k-th evidence
     /// parameter applied to one position.
     fn evidenceCall(l: *Lowerer, k: u32, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
-        return l.call(try l.ownEvidence(k, p), &.{ left, right }, p);
+        return l.depthCall(try l.ownEvidence(k, p), &.{ left, right }, p);
     }
 
     /// The derived function's own k-th evidence parameter as a value:
@@ -3026,8 +3406,12 @@ const Lowerer = struct {
         whole: ?Node.Index = null,
         run: ?Node.Index = null,
         count: u32 = 0,
+        /// The steps form's terms (`returnConjunction`): a `&&` cannot
+        /// suspend in the middle, so there each term is a statement.
+        terms: std.ArrayList(Node.Index) = .empty,
 
         fn add(c: *Conjunction, l: *Lowerer, term: Node.Index, p: u32) !void {
+            if (l.inSteps()) return c.terms.append(l.scratch, term);
             c.run = try l.conjoin(c.run, term, p);
             c.count += 1;
             if (c.count < derived_group) return;
@@ -3041,6 +3425,24 @@ const Lowerer = struct {
             return try l.conjoin(c.whole, run, p);
         }
     };
+
+    /// `return a && b && …;` — or, in the steps form, one statement a term:
+    /// `if (!a) return false;`, a comparison that may be steps bound and
+    /// yielded first (`awaitRequest`), and the last term returned, so that
+    /// steps in tail position replace the frame (`deepDecl`).
+    fn returnConjunction(l: *Lowerer, out: *StmtList, c: *Conjunction, p: u32) !void {
+        if (!l.inSteps()) {
+            try out.append(l.scratch, try l.derivedReturn((try c.finish(l, p)).?, p));
+            return;
+        }
+        const terms = c.terms.items;
+        for (terms[0 .. terms.len - 1]) |term| {
+            const answer = try l.awaitRequest(out, term, p);
+            const then = [_]Node.Index{try l.returnStmt(try l.add(.false_lit, p, Node.Data.unused, Node.Data.unused), p)};
+            try l.ifStatement(out, try l.negate(answer, p), &then, p);
+        }
+        try out.append(l.scratch, try l.returnStmt(terms[terms.len - 1], p));
+    }
 
     /// `a && b`, or `b` when there is no `a` yet.
     fn conjoin(l: *Lowerer, left: ?Node.Index, right: Node.Index, p: u32) !Node.Index {
@@ -3119,7 +3521,7 @@ const Lowerer = struct {
                 p,
             );
             try stmts.append(l.scratch, try l.returnStmt(body, p));
-            return try l.arrowOf(params, stmts.items, p);
+            return try l.derivedFunction(params, stmts.items, p);
         }
 
         var cursor: usize = 0;
@@ -3184,9 +3586,9 @@ const Lowerer = struct {
             if (arity == 0) {
                 try body.append(l.scratch, try l.returnStmt(try l.emptyValue(row.kind, p), p));
             } else if (row.kind == .eq) {
-                try body.append(l.scratch, try l.returnStmt((try value.finish(l, p)).?, p));
+                try l.returnConjunction(&body, &value, p);
             }
-            if (ctors.len == 1) return try l.arrowOf(params, body.items, p);
+            if (ctors.len == 1) return try l.derivedFunction(params, body.items, p);
             const body_range = try l.b.addRange(body.items);
             const record = try l.b.addRecord(body_range);
             // The LAST constructor is the `default` arm and gets no `case`:
@@ -3202,7 +3604,7 @@ const Lowerer = struct {
         const arms_record = try l.b.addRecord(arm_range);
         const discriminant = try l.member(try l.ident(x, p), l.well.tag, p);
         try stmts.append(l.scratch, try l.add(.switch_stmt, p, discriminant.int(), @intFromEnum(arms_record)));
-        return try l.arrowOf(params, stmts.items, p);
+        return try l.derivedFunction(params, stmts.items, p);
     }
 
     /// `!test`, written `a !== b` for `a === b` and the other way round.
@@ -3312,6 +3714,9 @@ const Lowerer = struct {
                 },
                 .num_compare => return try l.orderOf(left, right, p),
                 .char_compare => {
+                    // The steps form binds no `const`s (`stepsTemp`): it
+                    // calls `compare$char` (§9.1) instead.
+                    if (l.inSteps()) return try l.call(try l.primitiveValue(.char_compare, p), &.{ left, right }, p);
                     // The CODE POINTS are bound, not the operands: an
                     // `Order` reads each of them twice.
                     const a = try l.bindSubject(out, try l.codePointCall(left, p), p);
@@ -3356,7 +3761,18 @@ const Lowerer = struct {
         const t = l.in.dispatch.term(part);
         const callee = try l.derivedName(t, p);
         const evidence = try l.termValues(l.in.dispatch.argsAt(t.argsOf()), kind, p);
-        return l.applyEvidence(callee, try l.derivedEvidenceArguments(evidence, p), left, right, p);
+        return l.applyEvidence(callee, try l.derivedEvidenceArguments(evidence, p), left, right, !l.leafTerm(t), p);
+    }
+
+    /// Whether a derived term names a leaf row of this module: it takes no
+    /// depth, so a call passes none and its eta-expansion forwards none.
+    /// Another module's derived function may take one, so it is always
+    /// handed one; a leaf ignores it.
+    fn leafTerm(l: *Lowerer, t: Dispatch.Term) bool {
+        return switch (t) {
+            .derived => |use| l.isLeaf(use.index),
+            else => false,
+        };
     }
 
     /// `M$m(<its evidence…>, l, r)` — a `top` or `ext` value at one body
@@ -3382,25 +3798,56 @@ const Lowerer = struct {
         }
         l.assertFlatCall(t);
         const evidence = try l.termValues(args, kind, p);
-        return try l.applyEvidence(try l.termName(t, p), evidence, left, right, p);
+        return try l.applyEvidence(try l.termName(t, p), evidence, left, right, l.takesDepth(t), p);
     }
 
     /// `callee(<evidence…>, left, right)`: a FLAT call (`Convention.call`).
     /// Its callers are a derived function, flat by construction, and
-    /// `namedPartCall`, which asserts it.
+    /// `namedPartCall`, which asserts it. With `depth`, the callee takes a
+    /// depth too (`depthCall`): a derived function, or `List`'s `eq` and
+    /// `compare`.
     fn applyEvidence(
         l: *Lowerer,
         callee: Node.Index,
         evidence: []const Node.Index,
         left: Node.Index,
         right: Node.Index,
+        depth: bool,
         p: u32,
     ) !Node.Index {
         const args = try l.scratch.alloc(Node.Index, evidence.len + 2);
         @memcpy(args[0..evidence.len], evidence);
         args[evidence.len] = left;
         args[evidence.len + 1] = right;
+        if (depth) return l.depthCall(callee, args, p);
         return l.call(callee, args, p);
+    }
+
+    /// Whether a `top` or `ext` comparison takes a depth: `core/List.js`'s
+    /// `eq` and `compare`, the two hand-written comparisons that sit
+    /// between derived functions — a `type T = T (List T)` recurses through
+    /// them (`backend.md` §4, *Derived comparisons do not grow the native
+    /// stack*). A hand-written beni method does not: it is a function like
+    /// any other, and its own recursion is its own.
+    fn takesDepth(l: *Lowerer, t: Dispatch.Term) bool {
+        const list = l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) orelse return false;
+        const eq = InternPool.WellKnown.eq.symbol();
+        const compare = InternPool.WellKnown.compare.symbol();
+        switch (t) {
+            .ext => |e| {
+                if (e.module != list or e.module.int() >= l.in.interfaces.len) return false;
+                const iface = &l.in.interfaces[e.module.int()];
+                const v = @intFromEnum(e.value);
+                return (if (iface.findValue(l.interner, eq)) |i| @intFromEnum(i) == v else false) or
+                    (if (iface.findValue(l.interner, compare)) |i| @intFromEnum(i) == v else false);
+            },
+            .top => |use| {
+                if (l.in.module != list or use.decl.int() >= l.bir.decls.len) return false;
+                const s = l.bir.symbol(l.bir.decls[use.decl.int()].name);
+                return s == eq or s == compare;
+            },
+            else => return false,
+        }
     }
 
     /// A derived function in VALUE position: the bare name when it takes no
@@ -3436,7 +3883,7 @@ const Lowerer = struct {
         }
         const callee = try l.derivedName(t, p);
         if (args.len == 0) return callee;
-        return l.etaExpand(callee, try l.derivedEvidenceArguments(try l.termValues(args, kind, p), p), 2, p);
+        return l.etaExpand(callee, try l.derivedEvidenceArguments(try l.termValues(args, kind, p), p), if (l.leafTerm(t)) 2 else 3, p);
     }
 
     /// Which of §9's two methods a derived term is.
@@ -3559,6 +4006,104 @@ const Lowerer = struct {
             try l.name(.{ .module = .none, .base = l.well.left, .tag = JsIr.Name.no_tag }),
             try l.name(.{ .module = .none, .base = l.well.right, .tag = JsIr.Name.no_tag }),
         };
+    }
+
+    /// A local of `deepDecl`, spelled exactly.
+    fn deepLocal(l: *Lowerer, spelled: []const u8) !JsIr.NameIndex {
+        return l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, spelled), .tag = JsIr.Name.no_tag });
+    }
+
+    /// `M$derived$deep`, the engine of `backend.md` §4, *Derived comparisons
+    /// do not grow the native stack*: one per module that has a derived
+    /// function that passes a depth.
+    ///
+    /// ```js
+    /// const M$derived$deep = ($g, $d) => {
+    ///   if ($d === 1073741824) {       // a request: hand the steps back
+    ///     return $g;
+    ///   }
+    ///   const $s = [];                 // the frames waiting for an answer
+    ///   let $t = $g;
+    ///   let $v;
+    ///   while (true) {
+    ///     const $n = $t.next($v);
+    ///     $v = $n.value;
+    ///     if (typeof $v === "object") {  // steps to run first
+    ///       if (!$n.done) {             // yielded: $t waits for their answer
+    ///         $s.push($t);
+    ///       }                           // returned: they answer for $t
+    ///       $t = $v;
+    ///       continue;
+    ///     }
+    ///     if ($s.length === 0) {        // an answer, for the frame below
+    ///       return $v;
+    ///     }
+    ///     $t = $s.pop();
+    ///   }
+    /// };
+    /// ```
+    ///
+    /// A steps frame yields only steps and returns an answer or steps, so
+    /// `typeof … === "object"` is the whole protocol: an answer is a
+    /// `Bool` or an `Order`, a bare tag string. A fresh generator ignores
+    /// the value its first `next` is given.
+    fn deepDecl(l: *Lowerer) !Node.Index {
+        const p = Node.no_pos;
+        const g = try l.deepLocal("$g");
+        const d = try l.deepLocal("$d");
+        const s = try l.deepLocal("$s");
+        const t = try l.deepLocal("$t");
+        const v = try l.deepLocal("$v");
+        const n = try l.deepLocal("$n");
+        const sym = struct {
+            fn of(lw: *Lowerer, spelled: []const u8) !Symbol {
+                return lw.interner.getOrPut(lw.gpa, spelled);
+            }
+        };
+        const none: u32 = @intFromEnum(Node.OptionalIndex.none);
+
+        var body: StmtList = .empty;
+        {
+            const then = [_]Node.Index{try l.returnStmt(try l.ident(g, p), p)};
+            try l.ifStatement(&body, try l.binary(.strict_eq, try l.ident(d, p), try l.numberNode(derived_request, p), p), &then, p);
+        }
+        try l.constDecl(&body, s, try l.add(.array, p, 0, 0), p);
+        try body.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(t), @intFromEnum((try l.ident(g, p)).toOptional())));
+        try body.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(v), none));
+
+        var loop: StmtList = .empty;
+        const next = try l.call(try l.member(try l.ident(t, p), try sym.of(l, "next"), p), &.{try l.ident(v, p)}, p);
+        try l.constDecl(&loop, n, next, p);
+        try loop.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(v, p)).int(), (try l.member(try l.ident(n, p), try sym.of(l, "value"), p)).int()));
+        {
+            var then: StmtList = .empty;
+            const done = try l.member(try l.ident(n, p), try sym.of(l, "done"), p);
+            const push = try l.call(try l.member(try l.ident(s, p), try sym.of(l, "push"), p), &.{try l.ident(t, p)}, p);
+            const pushed = [_]Node.Index{try l.add(.expr_stmt, p, push.int(), Node.Data.unused)};
+            try l.ifStatement(&then, try l.unary(.not, done, p), &pushed, p);
+            try then.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(t, p)).int(), (try l.ident(v, p)).int()));
+            try then.append(l.scratch, try l.add(.continue_stmt, p, @intFromEnum(JsIr.NameIndex.none), Node.Data.unused));
+            try l.ifStatement(&loop, try l.isObject(v, p), then.items, p);
+        }
+        {
+            const length = try l.member(try l.ident(s, p), try sym.of(l, "length"), p);
+            const then = [_]Node.Index{try l.returnStmt(try l.ident(v, p), p)};
+            try l.ifStatement(&loop, try l.binary(.strict_eq, length, try l.numberNode("0", p), p), &then, p);
+        }
+        const pop = try l.call(try l.member(try l.ident(s, p), try sym.of(l, "pop"), p), &.{}, p);
+        try loop.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(t, p)).int(), pop.int()));
+        const range = try l.b.addRange(loop.items);
+        const record = try l.b.addRecord(range);
+        try body.append(l.scratch, try l.add(.while_true, p, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(record)));
+
+        const arrow = try l.arrowOf(&.{ g, d }, body.items, p);
+        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("derived$deep")), arrow.int());
+    }
+
+    /// `typeof name === "object"`.
+    fn isObject(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {
+        const kind = try l.unary(.type_of, try l.ident(n, p), p);
+        return l.binary(.strict_eq, kind, try l.stringNode("object", p), p);
     }
 
     /// `const M$eq$prim = ($x, $y) => $x === $y;`

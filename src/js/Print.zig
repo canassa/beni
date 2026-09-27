@@ -197,6 +197,12 @@ const prec_unary: u8 = 14;
 const prec_cond: u8 = 3;
 const prec_arrow: u8 = 2;
 
+/// The precedence a prefix operator's operand must have: `yield` takes an
+/// assignment expression, every other prefix operator a unary one.
+fn unaryOperand(op: JsIr.UnaryOp) u8 {
+    return if (op == .yield) prec_arrow else prec_unary;
+}
+
 /// A character that may appear inside an identifier, a keyword or a number.
 fn identChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
@@ -522,8 +528,9 @@ const Printer = struct {
                 try p.push(";");
                 try p.endLine(level);
             },
-            .func_decl => {
-                try p.tok("function ", "function");
+            .func_decl, .gen_decl => {
+                const generator = p.ir.tag(node) == .gen_decl;
+                try p.tok(if (generator) "function* " else "function ", if (generator) "function*" else "function");
                 try p.name(@enumFromInt(d.lhs), .binding);
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
                 try p.params(f);
@@ -645,10 +652,18 @@ const Printer = struct {
     }
 
     fn params(p: *Printer, f: JsIr.Func) Allocator.Error!void {
+        return p.paramsOf(f, false);
+    }
+
+    /// The parameter list; with `depth`, the last parameter defaults to `0`
+    /// (`Node.arrow_depth`).
+    fn paramsOf(p: *Printer, f: JsIr.Func, depth: bool) Allocator.Error!void {
         try p.push("(");
-        for (p.ir.extraSlice(f.params(), JsIr.NameIndex), 0..) |n, i| {
+        const names = p.ir.extraSlice(f.params(), JsIr.NameIndex);
+        for (names, 0..) |n, i| {
             if (i != 0) try p.tok(", ", ",");
             try p.name(n, .binding);
+            if (depth and i + 1 == names.len) try p.tok(" = 0", "=0");
         }
         try p.push(")");
     }
@@ -885,7 +900,7 @@ const Printer = struct {
     fn precedence(p: *Printer, node: Index) u8 {
         return switch (p.ir.tag(node)) {
             .binary => JsIr.BinaryOp.precedence(@enumFromInt(p.ir.data(node).rhs)),
-            .unary => prec_unary,
+            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(p.ir.data(node).rhs)) == .yield) prec_arrow else prec_unary,
             .cond => prec_cond,
             .arrow => prec_arrow,
             .call, .member, .index_get => prec_call,
@@ -985,7 +1000,7 @@ const Printer = struct {
             },
             .arrow => {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.params(f);
+                try p.paramsOf(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
                 try p.arrowBody(f, level);
             },
@@ -1017,14 +1032,14 @@ const Printer = struct {
                 // `typeof ` carries its own trailing space; in compact mode
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
-                try p.tok(op.text(), if (op == .type_of) "typeof" else op.text());
-                try p.expression(@enumFromInt(d.lhs), prec_unary, level);
+                try p.tok(op.text(), op.compactText());
+                try p.expression(@enumFromInt(d.lhs), unaryOperand(op), level);
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
             // three handle it (CK-81).
-            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
+            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
         }
     }
 
@@ -1125,7 +1140,7 @@ const Printer = struct {
                 // `run` through `statements`; that is the one recursion
                 // left, one frame per function the source nests.
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
-                try p.params(f);
+                try p.paramsOf(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
                 try p.arrowBody(f, level);
             },
@@ -1151,14 +1166,14 @@ const Printer = struct {
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
                 const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
-                try p.tok(op.text(), if (op == .type_of) "typeof" else op.text());
-                return .expr(@enumFromInt(d.lhs), prec_unary);
+                try p.tok(op.text(), op.compactText());
+                return .expr(@enumFromInt(d.lhs), unaryOperand(op));
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
             // three handle it (CK-81).
-            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
+            .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
         }
         return null;
     }

@@ -6388,7 +6388,10 @@ test "a private type reached only through a pub alias body gets a hidden row: v2
     // └─────────────────────────────────────────┘
     const a = try w.read("lib/A.mjs");
     const main = try w.read("lib/Main.mjs");
-    try testing.expect(std.mem.indexOf(u8, a, "A$Hidden$$eq = ($m$0, $x, $y) =>") != null);
+    // One evidence parameter, then the two values, then R8d's depth: `b` is
+    // a position, so the function is no leaf (backend.md §4, *Derived
+    // comparisons do not grow the native stack*).
+    try testing.expect(std.mem.indexOf(u8, a, "A$Hidden$$eq = ($m$0, $x, $y, $d = 0) =>") != null);
     try testing.expect(std.mem.indexOf(u8, main, "A$Hidden$$eq(Main$eq$prim, x$1, y$2)") != null);
 }
 

@@ -1,0 +1,112 @@
+-- run: every way one derived comparison reaches the next keeps the depth,
+-- so none of them throws on deep data (CK-128, R8d; `backend.md` §4,
+-- *Derived comparisons do not grow the native stack*).
+--
+-- A depth that restarted anywhere along a cycle would never reach the limit,
+-- and the native stack would grow with the data again. Each type below
+-- recurses through a different link, 100 000 levels deep, compared equal
+-- and unequal with `==` and `<`:
+--
+--   - `Rose`: through `List`'s `eq` and `compare` — hand-written loops in
+--     `core/List.js` that hand the depth to every element and hand the
+--     engine their steps.
+--   - `Even` and `Odd`: two types, each the other's position, the second
+--     through a tuple's derived shape.
+--   - `Tree (Maybe Int)`: a parametric type whose element comparison is its
+--     own evidence — `Maybe`'s `eq`, eta-expanded around `Int`'s.
+--
+-- The differing element is the deepest one in every unequal pair, so every
+-- level is walked. `Leaf` and `EEnd` are declared after the constructor that
+-- holds the rest, so the shorter value is the greater (§9.4's order).
+import Node exposing (Program)
+
+
+type Rose
+    = Rose Int (List Rose)
+
+
+type Even
+    = E Int Odd
+    | EEnd
+
+
+type Odd
+    = O ( Int, Even )
+
+
+type Tree a
+    = Node (Tree a) a (Tree a)
+    | Leaf
+
+
+rose : Int, Rose -> Rose
+rose n acc =
+    if n == 0 then
+        acc
+
+    else
+        rose (n - 1) (Rose n [ acc ])
+
+
+evens : Int, Even -> Even
+evens n acc =
+    if n == 0 then
+        acc
+
+    else
+        evens (n - 1) (E n (O ( n, acc )))
+
+
+spine : Int, Tree (Maybe Int) -> Tree (Maybe Int)
+spine n acc =
+    if n == 0 then
+        acc
+
+    else
+        spine (n - 1) (Node acc (Just n) Leaf)
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ ": True"
+
+    else
+        label ++ ": False"
+
+
+main : Program
+main =
+    let
+        r =
+            rose 100000 (Rose 0 [])
+
+        r1 =
+            rose 100000 (Rose 1 [])
+
+        ev =
+            evens 100000 EEnd
+
+        ev1 =
+            evens 100000 (E 0 (O ( 0, EEnd )))
+
+        t =
+            spine 100000 Leaf
+
+        t1 =
+            spine 100000 (Node Leaf Nothing Leaf)
+    in
+    Node.printLines
+        [ show "rose == rose" (r == rose 100000 (Rose 0 []))
+        , show "rose == other" (r == r1)
+        , show "rose < other" (r < r1)
+        , show "other < rose" (r1 < r)
+        , show "even == even" (ev == evens 100000 EEnd)
+        , show "even == other" (ev == ev1)
+        , show "even < other" (ev < ev1)
+        , show "other < even" (ev1 < ev)
+        , show "tree == tree" (t == spine 100000 Leaf)
+        , show "tree == other" (t == t1)
+        , show "tree < other" (t < t1)
+        , show "other < tree" (t1 < t)
+        ]

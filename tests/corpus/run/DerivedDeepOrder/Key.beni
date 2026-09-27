@@ -1,0 +1,35 @@
+-- A key whose own `eq` and `compare` say which keys they compare — every
+-- multiple of 5 000 — so that `Main` can see the order a deep derived
+-- comparison calls them in, and which ones it never calls.
+import String
+
+
+pub type Key
+    = Key Int
+
+
+note : Int, String, a -> a
+note n method answer =
+    if modBy n 5000 == 0 then
+        Debug.log answer (method ++ " " ++ String.fromInt n)
+
+    else
+        answer
+
+
+pub eq : Key, Key -> Bool
+eq left right =
+    case left of
+        Key a ->
+            case right of
+                Key b ->
+                    note a "eq" (a == b)
+
+
+pub compare : Key, Key -> Order
+compare left right =
+    case left of
+        Key a ->
+            case right of
+                Key b ->
+                    note a "compare" (Basics.compare a b)

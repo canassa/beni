@@ -33,17 +33,23 @@ export const cons = (head, tail) => ({ $: 1, a: head, b: tail });
 //
 // A LOOP and not recursion: a list long enough to be interesting is longer
 // than the JavaScript stack, and nothing turns a self-call in a hand-written
-// sibling into one.
-export const eq = (m0, xs, ys) => {
+// sibling into one. `arguments[3]` is a derived comparison's depth, handed
+// to every element, or `request` for the steps (backend.md §4, *Derived
+// comparisons do not grow the native stack*; `Lower.derived_request`).
+const request = 1073741824;
+
+export function eq(m0, xs, ys) {
+  const depth = arguments[3];
+  if (depth === request) return steps(m0, xs, ys, true);
   let a = xs;
   let b = ys;
   while (a.$ === 1 && b.$ === 1) {
-    if (!m0(a.a, b.a)) return false;
+    if (!m0(a.a, b.a, depth)) return false;
     a = a.b;
     b = b.b;
   }
   return a.$ === b.$;
-};
+}
 
 // `compare`, §9.5's other loop, and the same contract as `eq` above: the
 // evidence parameter comes FIRST, check 4 counts it, and
@@ -54,15 +60,32 @@ export const eq = (m0, xs, ys) => {
 // differs decides; if the loop runs off the end of one list with everything
 // before it equal, the SHORTER list is `LT`, which is Elm's order and the
 // one `List.sort` on a `List (List Int)` has to produce.
-export const compare = (m0, xs, ys) => {
+export function compare(m0, xs, ys) {
+  const depth = arguments[3];
+  if (depth === request) return steps(m0, xs, ys, false);
   let a = xs;
   let b = ys;
   while (a.$ === 1 && b.$ === 1) {
-    const o = m0(a.a, b.a);
+    const o = m0(a.a, b.a, depth);
     if (o !== "EQ") return o;
     a = a.b;
     b = b.b;
   }
+  if (a.$ === b.$) return "EQ";
+  return a.$ === 0 ? "LT" : "GT";
+}
+
+// Both loops again, for the engine: an element comparison that hands back
+// steps yields them, and is resumed with their answer.
+const steps = function* (m0, a, b, eq) {
+  while (a.$ === 1 && b.$ === 1) {
+    let o = m0(a.a, b.a, request);
+    if (typeof o === "object") o = yield o;
+    if (eq ? !o : o !== "EQ") return o;
+    a = a.b;
+    b = b.b;
+  }
+  if (eq) return a.$ === b.$;
   if (a.$ === b.$) return "EQ";
   return a.$ === 0 ? "LT" : "GT";
 };

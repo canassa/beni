@@ -1,0 +1,97 @@
+-- run: a derived `==` and `<` never throw on deep data (CK-128, R8d;
+-- `backend.md` §4, *Derived comparisons do not grow the native stack*).
+--
+-- Before R8d a derived `eq` called itself once per level of the data, so
+-- Node's stack gave out at about 8 940 cells of a user linked list for `==`
+-- and 10 000 for `<` — `RangeError: Maximum call stack size exceeded` from a
+-- program the compiler accepted. Now a derived function recurses to
+-- `derived_depth_limit` and continues from an explicit stack, so the only
+-- limit is the heap.
+--
+-- Two shapes, each compared equal and unequal:
+--
+--   - `L`, a user linked list of 100 000 cells, built by a tail-recursive
+--     loop. `==` and `<`, and the lists differ only in their last cell, so
+--     every one of the 100 000 levels is walked before the answer.
+--     `Nil` is declared after `Cons`, so the SHORTER list is the greater one:
+--     a derived `compare` follows declaration order (§9.4), not `List`'s.
+--   - `Deep`, a record nested 10 000 deep through `Maybe`: every level is
+--     `Deep$$eq` → the record shape's `eq` → the evidence closure →
+--     `Maybe`'s `eq` (in core, another module) → `Deep$$eq`, so the chain
+--     crosses a module and runs through evidence as well as by name.
+--
+-- Every line is also built and run with `--release`.
+import Node exposing (Program)
+
+
+type L
+    = Cons Int L
+    | Nil
+
+
+type Deep
+    = Deep { next : Maybe Deep, v : Int }
+
+
+list : Int, L -> L
+list n acc =
+    if n == 0 then
+        acc
+
+    else
+        list (n - 1) (Cons n acc)
+
+
+deep : Int, Maybe Deep -> Maybe Deep
+deep n acc =
+    if n == 0 then
+        acc
+
+    else
+        deep (n - 1) (Just (Deep { next = acc, v = n }))
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ ": True"
+
+    else
+        label ++ ": False"
+
+
+main : Program
+main =
+    let
+        same =
+            list 100000 Nil
+
+        twin =
+            list 100000 Nil
+
+        longer =
+            list 100000 (Cons 0 Nil)
+
+        bigger =
+            list 100000 (Cons 1 Nil)
+
+        nested =
+            deep 10000 Nothing
+
+        nestedTwin =
+            deep 10000 Nothing
+
+        nestedOther =
+            deep 10000 (Just (Deep { next = Nothing, v = 0 }))
+    in
+    Node.printLines
+        [ show "list == list" (same == twin)
+        , show "list == longer" (same == longer)
+        , show "list < list" (same < twin)
+        , show "list < longer" (same < longer)
+        , show "longer < bigger" (longer < bigger)
+        , show "bigger < longer" (bigger < longer)
+        , show "deep == deep" (nested == nestedTwin)
+        , show "deep == other" (nested == nestedOther)
+        , show "deep /= other" (nested /= nestedOther)
+        ]

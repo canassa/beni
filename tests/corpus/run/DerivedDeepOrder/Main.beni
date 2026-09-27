@@ -1,0 +1,67 @@
+-- run: past the depth limit a derived comparison runs from an explicit stack,
+-- and it calls exactly what the recursive one would, in the same order, and
+-- stops where the recursive one would stop (CK-128, R8d; `backend.md` §4,
+-- *Derived comparisons do not grow the native stack*).
+--
+-- `Chain` is 20 000 links of hand-written `Key`s — every level past 400 is
+-- the engine's — and ends in two `Maybe Key`s. `Key`'s own methods log every
+-- key that is a multiple of 5 000, so the log is the evaluation order:
+--
+--   - equal chains: every link's key in order, then BOTH keys of the end;
+--   - chains whose end differs in its FIRST key: the links, then that key,
+--     and never the second — `&&` and the lexicographic `compare` stop at the
+--     first position that decides, on the explicit stack as in recursion;
+--   - `compare` the same, left to right.
+import Key exposing (Key)
+import Node exposing (Program)
+
+
+type Chain
+    = Link Key Chain
+    | Stop (Maybe Key) (Maybe Key)
+
+
+chain : Int, Chain -> Chain
+chain n acc =
+    if n == 0 then
+        acc
+
+    else
+        chain (n - 1) (Link (Key n) acc)
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ ": True"
+
+    else
+        label ++ ": False"
+
+
+main : Program
+main =
+    let
+        one =
+            chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+
+        same =
+            chain 20000 (Stop (Just (Key 25000)) (Just (Key 30000)))
+
+        other =
+            chain 20000 (Stop (Just (Key 25001)) (Just (Key 30000)))
+
+        equal =
+            one == same
+
+        differ =
+            one == other
+
+        before =
+            one < other
+    in
+    Node.printLines
+        [ show "equal" equal
+        , show "differ" differ
+        , show "before" before
+        ]

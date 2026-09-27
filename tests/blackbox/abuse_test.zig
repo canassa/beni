@@ -255,6 +255,261 @@ test "a record literal nested to the parser's limit checks and compares under bo
     }
 }
 
+test "a record literal nested to the parser's limit compares and RUNS, under both checkers, dev and release (CK-128)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // CK-114's literal, now built and run. Every level is its own record
+    // TYPE, so the derived `eq` of the shape `{ x, y }` is handed itself
+    // as evidence 4 095 times over: two native frames a level (the shape's
+    // function and the evidence closure), and before R8d Node's stack gave
+    // out at 3 747 levels with `RangeError`. Past `derived_depth_limit` the
+    // comparison continues from an explicit stack (`backend.md` §4,
+    // *Derived comparisons do not grow the native stack*). `other` differs
+    // only in its innermost field, so `==` and `<` walk every level.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(gpa);
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\n");
+    for ([_][]const u8{ "deep", "other" }, [_][]const u8{ "1", "2" }) |name, innermost| {
+        try source.appendSlice(gpa, name);
+        try source.appendSlice(gpa, " =\n    ");
+        for (0..4095) |_| try source.appendSlice(gpa, "{ x = ");
+        try source.appendSlice(gpa, innermost);
+        for (0..4095) |_| try source.appendSlice(gpa, ", y = 0 }");
+        try source.appendSlice(gpa, "\n\n\n");
+    }
+    try source.appendSlice(gpa,
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (deep == deep), show (deep == other), show (deep < other), show (other < deep) ]
+        \\
+    );
+    try w.write("Main.beni", source.items);
+
+    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+        for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+            // ┌─────────────────────────────────────┐
+            // │ EXECUTE                             │
+            // └─────────────────────────────────────┘
+            // `--release` builds with no cache either: a second
+            // `--no-cache` would be a repeated flag.
+            const r = if (std.mem.eql(u8, flag, "--release"))
+                try w.buildAndRun(&.{ checker, "--release", "--no-cache", "Main.beni" })
+            else
+                try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+
+            // ┌─────────────────────────────────────┐
+            // │ VERIFY OUTPUT                       │
+            // └─────────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+            try testing.expectEqualStrings("", r.build.stderr);
+            try testing.expectEqualStrings("True\nFalse\nTrue\nFalse\n", r.program.?.stdout);
+            try testing.expectEqualStrings("", r.program.?.stderr);
+            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        }
+    }
+}
+
+test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep, positional and wide (CK-128)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The two evidence forms of static-dispatch-spike.md §9.2: 4 096
+    // parameters is the widest POSITIONAL derived function, 4 097 the
+    // narrowest that takes them as one array. A positional frame of 4 096
+    // parameters is big — before R8d Node overflowed its `==` about 13 levels
+    // down — so its calls charge `derived_depth_limit` one unit per 32
+    // parameters and it reaches the explicit stack after a few levels. The
+    // wide one charges one unit, like any other. Every parameter is a
+    // position, so both checkers give the type the same context.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    for ([_]usize{ 4096, 4097 }) |n| {
+        var source: std.ArrayList(u8) = .empty;
+        defer source.deinit(gpa);
+        try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W");
+        try params(gpa, &source, n, " p{d}");
+        try source.appendSlice(gpa, "\n    = Cell");
+        try params(gpa, &source, n, " p{d}");
+        try source.appendSlice(gpa, " (W");
+        try params(gpa, &source, n, " p{d}");
+        try source.appendSlice(gpa, ")\n    | End\n\n\ncell : Int, W");
+        try params(gpa, &source, n, " Int");
+        try source.appendSlice(gpa, " -> W");
+        try params(gpa, &source, n, " Int");
+        try source.appendSlice(gpa, "\ncell k rest =\n    Cell k");
+        try params(gpa, &source, n - 1, " 0");
+        try source.appendSlice(gpa, " rest\n\n\nbuild : Int, Int, W");
+        try params(gpa, &source, n, " Int");
+        try source.appendSlice(gpa, " -> W");
+        try params(gpa, &source, n, " Int");
+        try source.appendSlice(gpa,
+            \\
+            \\build n last acc =
+            \\    if n == 0 then
+            \\        acc
+            \\
+            \\    else
+            \\        build (n - 1) last (cell (if n == 1000 then last else n) acc)
+            \\
+            \\
+            \\show : Bool -> String
+            \\show b =
+            \\    if b then
+            \\        "True"
+            \\
+            \\    else
+            \\        "False"
+            \\
+            \\
+            \\main : Program
+            \\main =
+            \\    Node.printLines
+            \\        [ show (build 1000 1 End == build 1000 1 End)
+            \\        , show (build 1000 1 End == build 1000 2 End)
+            \\        , show (build 1000 1 End < build 1000 2 End)
+            \\        ]
+            \\
+        );
+        try w.write("Main.beni", source.items);
+
+        for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+            // ┌─────────────────────────────────────┐
+            // │ EXECUTE                             │
+            // └─────────────────────────────────────┘
+            const r = try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+
+            // ┌─────────────────────────────────────┐
+            // │ VERIFY OUTPUT                       │
+            // └─────────────────────────────────────┘
+            // The cell that differs is the innermost one (`n == 1000` is
+            // built first), so every comparison walks all 1 000 levels.
+            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+            try testing.expectEqualStrings("", r.build.stderr);
+            try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
+            try testing.expectEqualStrings("", r.program.?.stderr);
+            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        }
+    }
+}
+
+/// `count` copies of `pattern`, whose one `{d}` is the copy's 1-based index.
+fn params(gpa: Allocator, out: *std.ArrayList(u8), count: usize, comptime pattern: []const u8) !void {
+    for (1..count + 1) |i| {
+        if (comptime std.mem.indexOf(u8, pattern, "{d}") != null) {
+            try out.print(gpa, pattern, .{i});
+        } else {
+            try out.appendSlice(gpa, pattern);
+        }
+    }
+}
+
+test "recursion THROUGH a hand-written parametric method still grows the native stack: R8d's stated exclusion (CK-128)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The one cycle R8d does not cover (backend.md §4, *Derived comparisons
+    // do not grow the native stack*, "What it does not cover"). `Box.eq`
+    // is written by hand and takes `a.eq` as evidence; `T` recurses through
+    // it, so every level is `T$$eq → Box$eq → T$$eq`. A hand-written method
+    // cannot hand back steps, so `T` is emitted as a leaf, with no depth,
+    // and 100 000 levels throw. This pins TODAY's behaviour so that a change
+    // to it is seen: when the exclusion is lifted, this scenario flips and
+    // the spec changes with it. 100 levels are fine.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Box.beni",
+        \\pub type Box a
+        \\    = Box a
+        \\
+        \\
+        \\pub eq : Box a, Box a -> Bool
+        \\    where a.eq : a, a -> Bool
+        \\eq left right =
+        \\    case left of
+        \\        Box x ->
+        \\            case right of
+        \\                Box y ->
+        \\                    x == y
+        \\
+    );
+    for ([_][]const u8{ "100", "100000" }) |depth| {
+        const gpa = testing.allocator;
+        const source = try std.mem.concat(gpa, u8, &.{
+            \\import Box exposing (Box)
+            \\import Node exposing (Program)
+            \\
+            \\
+            \\type T
+            \\    = T (Box T)
+            \\    | E
+            \\
+            \\
+            \\build : Int, T -> T
+            \\build n acc =
+            \\    if n == 0 then
+            \\        acc
+            \\
+            \\    else
+            \\        build (n - 1) (T (Box acc))
+            \\
+            \\
+            \\main : Program
+            \\main =
+            \\    Node.printLines
+            \\        [ if build
+            ,
+            " ",
+            depth,
+            " E == build ",
+            depth,
+            " E then\n",
+            \\            "True"
+            \\
+            \\          else
+            \\            "False"
+            \\        ]
+            \\
+        });
+        defer gpa.free(source);
+        try w.write("Main.beni", source);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.buildAndRun(&.{ "--no-cache", "Box.beni", "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+        try testing.expectEqualStrings("", r.build.stderr);
+        const program = r.program.?;
+        if (std.mem.eql(u8, depth, "100")) {
+            try testing.expectEqualStrings("True\n", program.stdout);
+            try testing.expectEqual(@as(u8, 0), program.exit_code);
+        } else {
+            // The stack trace's frames and paths vary; the error does not.
+            try testing.expectEqualStrings("", program.stdout);
+            try testing.expectEqual(@as(u8, 1), program.exit_code);
+            try testing.expect(std.mem.indexOf(u8, program.stderr, "RangeError: Maximum call stack size exceeded") != null);
+        }
+    }
+}
+
 test "100 000 nested lambdas report every shadowed parameter, then stop nesting" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -2123,6 +2123,41 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - Small programs' emitted JavaScript byte-identical where possible; every golden that moves is
     listed with the reason.
   - The gates, `test-pending`, `test-v2` and both perf steps green.
+- **As built (2026-09-27).** Spec first: `backend.md` §4 gained *Derived comparisons do not grow
+  the native stack* (the rule, the 400-unit limit, the protocol, leaves, measurements, costs);
+  `static-dispatch-spike.md` §9 a pointer note and §9.2's 4 096-parameter caveat closed.
+  - **Shape** (`js/Lower.zig`, emitter code both checkers share): a derived function that can
+    recurse takes `$d = 0` and passes `$d + w` to its evidence, derived and `List.eq`/`compare`
+    calls (`w` grows with the frame: `derived_weight_per`); past `derived_depth_limit` it calls
+    `M$derived$deep(M$<base>$$steps(…), $d)`. The twin is the same statements as a `function*`
+    whose depth-taking calls pass the REQUEST (`2 ** 30`): a callee that cannot recurse answers, one
+    that can hands back its steps, which are yielded (non-tail) or returned (tail, replacing the
+    frame). Order and short-circuiting are exactly the recursive function's. Evidence closures
+    around such callees forward a third argument. `core/List.js` reads the depth as `arguments[3]`
+    (check 4's count unchanged) and has one steps generator for both loops.
+  - **Leaves** (`leafRows`): records/tuples whose every use passes only primitives and hand-written
+    methods, and nominal types calling only those and other leaves (≤ 16 deep), are emitted byte
+    for byte as before: 88 of 162 size-corpus programs are identical; the `emit/` goldens that move
+    are `DerivedCompareNominal`, `DerivedEqNominal` and `MatchNested` (recursive or parametric types).
+  - **JsIr** gained `gen_decl`, `UnaryOp.yield` and `Node.arrow_depth` (a last parameter `= 0`);
+    `Print`, `Opt`, `Rename` and the walkers handle them. `Sibling` binds a `function`'s parameters,
+    and `arguments` inside a `function` body only. `bench/size.mjs` charges twins to their kind and engines to a fourth,
+    `engine`.
+  - **Measured** (details in `backend.md`): before, Chrome 153 overflowed a user-list `==` at 13 468
+    cells, Firefox 144 at 23 598, Node at ~10 000, and all three plus WebKit threw on a record through
+    `Maybe` and a rose tree through `List` 10⁵ deep; after, all four compare 10⁶–3 × 10⁶ levels and
+    Node 10⁷ (heap-bound). Run time below the limit: leaves unchanged; recursive user types +13–20 %
+    on Node micro-benchmarks (the depth parameter); a 10-element `List Point` +5 %, 200-element
+    lists within ±5 % (one process per case; the review measured −40 to −49 % for `List Point`
+    and `List Shape`, from `List.js`'s `export function`s — the direction depends on the bench). Size: release brotli +2.5 % over the size
+    corpus, `bench/corpus` +7.1 %. Emit phase +1.5 % (nine pairs).
+  - **Fixtures**: `run/DerivedDeepData` (the exit criterion), `run/DerivedDeepPaths`,
+    `run/DerivedDeepOrder/`, `run/DerivedDeepAcrossModules/`, `abuse_test.zig` (4 095-deep record
+    literal run, both checkers, dev and release; 4 096/4 097-parameter recursive types 1 000 deep).
+    All red on `e86883a` (`RangeError`); `DerivedDeepOrder`'s ORDER claim is shown by a 5 000-deep
+    variant, which `e86883a` survives, printing byte-identical output. The stated exclusion —
+    recursion THROUGH a hand-written method still throws — is pinned by `abuse_test.zig` too.
+  - **Found**: CK-129 (frontend: the `exposing (T(..))` hint suggests a refused `exposing (T, T)`).
 
 ### R9 — v2 checks `core`; `test-v2` strict; parity
 
@@ -2274,7 +2309,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R8a | CK-87 (promoted, `run/DerivedEqDeepRecord`); CK-85 (fixed in the shared emitter, its guard re-blessed) | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24); CK-22's cross-module half and CK-24, green early (R8b's) | CK-107 found (`cache_store`, both checkers; R10 proposed); CK-108 to CK-110 found by its reviews and fixed in the slice; CK-111 to CK-114 found (CK-112 by R8a, the rest by its reviews; the perf and limits slice proposed); CK-115 and CK-116 found by its review (R13); CK-117 found by its review round (R8b proposed); CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24, 117; CK-118 (found by R8b, claimed); CK-120 (found by its review round, claimed) | CK-119 and CK-121 (found and fixed by its review round), CK-125 (found and fixed by its round-2 review); CK-122 (R8b follow-up proposed, before R9), CK-123 (schema S3/S4 owner), CK-124 (frontend, unassigned) |
 | R8c | CK-122 (fixed in shared code, both checkers: `check/good/SchemaEndpointAlias*`, `check/bad/SchemaEndpointAliasKeepsItsType`); CK-114 (`abuse_test.zig`) | — | CK-93, 111, 112 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-42's v2 twin resized; CK-126 (found, pending, red under both), CK-127 (found, frontend) and CK-128 (found; R8d) |
-| R8d | CK-128 (a `run/` fixture and an abuse test; the owner, 2026-09-26) | — | — |
+| R8d | CK-128 (`run/DerivedDeepData`, `…Paths`, `…Order/`, `…AcrossModules/`; three `abuse_test.zig` scenarios, one pinning the stated exclusion) | — | CK-129 (found, frontend) |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
@@ -2283,7 +2318,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 128 entries appears in this table (CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 129 entries appears in this table (CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

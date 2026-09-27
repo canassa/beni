@@ -1,0 +1,57 @@
+-- run: a derived comparison that recurses ACROSS two user modules keeps its
+-- depth and does not throw on deep data (CK-128, R8d; `backend.md` §4,
+-- *Derived comparisons do not grow the native stack*).
+--
+-- Every level of `U` is `Main`'s `U$$eq` → `Wrap`'s `Wrap$$eq` (another
+-- module's derived function, handed `U$$eq` in an evidence closure) →
+-- `U$$eq`. Neither module can tell from its own rows that the other closes
+-- the cycle, so both functions take the depth and have steps. 100 000
+-- levels, compared equal and unequal with `==` and `<`; the pairs differ
+-- only in the innermost level. `Empty` is declared after `Wrap`, so the
+-- value that ends in it is the greater one (§9.4's order).
+import Node exposing (Program)
+import Wrap exposing (Wrap)
+
+
+type U
+    = U Int (Wrap U)
+    | UEnd
+
+
+chain : Int, Wrap U -> U
+chain n acc =
+    if n == 0 then
+        U 0 acc
+
+    else
+        chain (n - 1) (Wrap.Wrap n (U n acc))
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ ": True"
+
+    else
+        label ++ ": False"
+
+
+main : Program
+main =
+    let
+        one =
+            chain 100000 Wrap.Empty
+
+        same =
+            chain 100000 Wrap.Empty
+
+        other =
+            chain 100000 (Wrap.Wrap 0 UEnd)
+    in
+    Node.printLines
+        [ show "same ==" (one == same)
+        , show "other ==" (one == other)
+        , show "same <" (one < same)
+        , show "one < other" (one < other)
+        , show "other < one" (other < one)
+        ]

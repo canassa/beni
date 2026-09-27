@@ -3019,6 +3019,9 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
     try testing.expectEqual(@as(u32, 0), derives.eq_functions);
     try testing.expectEqual(@as(u32, 1), derives.compare_functions);
     try testing.expectEqual(@as(u32, 1), derives.order_tables);
+    // `Colour`'s `compare` reads a table and calls nothing, so it passes no
+    // depth and needs no `derived$deep` (backend.md §4, R8d).
+    try testing.expectEqual(@as(u32, 0), derives.engines);
     try testing.expect(derives.derived_bytes > 0);
     try testing.expect(derives.derived_bytes < derives.raw_bytes);
     // The split is a partition of the same walk, so it adds up on both
@@ -3026,11 +3029,11 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
     // (§11, A.38).
     try testing.expectEqual(
         derives.derived_functions,
-        derives.eq_functions + derives.compare_functions + derives.order_tables,
+        derives.eq_functions + derives.compare_functions + derives.order_tables + derives.engines,
     );
     try testing.expectEqual(
         derives.derived_bytes,
-        derives.eq_bytes + derives.compare_bytes + derives.order_bytes,
+        derives.eq_bytes + derives.compare_bytes + derives.order_bytes + derives.engine_bytes,
     );
     try testing.expect(derives.compare_bytes > 0);
     try testing.expect(derives.order_bytes > 0);
@@ -3315,6 +3318,9 @@ const SizeProgram = struct {
     compare_bytes: u64,
     order_tables: u32,
     order_bytes: u64,
+    // `derived$deep`, the explicit-stack engine of backend.md §4 (R8d).
+    engines: u32,
+    engine_bytes: u64,
 };
 
 const SizeSynthesised = struct {

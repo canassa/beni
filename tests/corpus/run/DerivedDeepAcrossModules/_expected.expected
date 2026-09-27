@@ -1,0 +1,5 @@
+same ==: True
+other ==: False
+same <: False
+one < other: False
+other < one: True

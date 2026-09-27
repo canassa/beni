@@ -78,6 +78,11 @@ pub const Node = struct {
     /// source map skips it.
     pub const no_pos: u32 = std.math.maxInt(u32);
 
+    /// `arrow`'s `rhs`: an ordinary arrow, or one whose last parameter
+    /// defaults to `0`.
+    pub const arrow_plain: u32 = 0;
+    pub const arrow_depth: u32 = 1;
+
     pub const Index = enum(u32) {
         _,
 
@@ -129,6 +134,11 @@ pub const Node = struct {
         /// becomes these (backend.md §4), because a `const` is not hoisted
         /// and the first body would close over a dead zone.
         func_decl,
+        /// `function* name(a, b) { … }`: the STEPS twin of a derived `eq` or
+        /// `compare` (`backend.md` §4, *Derived comparisons do not grow the
+        /// native stack*), which the engine resumes instead of recursing.
+        /// Payload as `func_decl`.
+        gen_decl,
         /// `target = value;`. `lhs` target expression, `rhs` value.
         assign_stmt,
         /// `return;` or `return value;`. `lhs` is an `OptionalIndex`.
@@ -204,7 +214,10 @@ pub const Node = struct {
         spread_property,
         /// `[a, b]`. Inline range of elements.
         array,
-        /// `(a, b) => …`. `lhs` is extra `Func`.
+        /// `(a, b) => …`. `lhs` is extra `Func`; `rhs` is `arrow_plain`, or
+        /// `arrow_depth` for a derived comparison whose LAST parameter is
+        /// its depth and prints `$d = 0` (`backend.md` §4, *Derived
+        /// comparisons do not grow the native stack*).
         arrow,
         /// `test ? a : b`. `lhs` test, `rhs` extra `Cond`.
         cond,
@@ -287,12 +300,27 @@ pub const UnaryOp = enum(u8) {
     not,
     /// `typeof x`.
     type_of,
+    /// `yield x`, inside a `gen_decl` only. It binds as loosely as an
+    /// assignment, so the printer brackets it everywhere but a `const`'s
+    /// value, a `return` and an argument (`Print.precedence`).
+    yield,
 
     pub fn text(op: UnaryOp) []const u8 {
         return switch (op) {
             .neg => "-",
             .not => "!",
             .type_of => "typeof ",
+            .yield => "yield ",
+        };
+    }
+
+    /// The compact printer's spelling: a keyword without its space, which
+    /// the adjacency guard puts back only where the next token needs it.
+    pub fn compactText(op: UnaryOp) []const u8 {
+        return switch (op) {
+            .type_of => "typeof",
+            .yield => "yield",
+            else => op.text(),
         };
     }
 };
@@ -539,7 +567,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers (CK-81).
         .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
-        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
+        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
     }
 }
 
@@ -655,7 +683,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             try ir.verifyName(@enumFromInt(d.lhs), false);
             try ir.verifyOptional(d.rhs, .expression);
         },
-        .func_decl => {
+        .func_decl, .gen_decl => {
             try ir.verifyName(@enumFromInt(d.lhs), false);
             try ir.verifyFunc(@enumFromInt(d.rhs));
         },
@@ -980,7 +1008,7 @@ pub const Builder = struct {
                 .let_decl => try Push.optional(&stack, gpa, at, d.rhs, w.statement),
                 .return_stmt => try Push.optional(&stack, gpa, at, d.lhs, w.statement),
                 .expr_stmt, .throw_stmt => try Push.one(&stack, gpa, at, d.lhs, w.statement, 0),
-                .func_decl => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, Func).body(), w.arrow, 1),
+                .func_decl, .gen_decl => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, Func).body(), w.arrow, 1),
                 .arrow => try b.pushBlock(&stack, gpa, at, b.record(d.lhs, Func).body(), w.arrow, 1),
                 .if_stmt => {
                     const branches = b.record(d.rhs, If);
@@ -1041,7 +1069,7 @@ pub const Builder = struct {
         var declares = false;
         for (items) |item| {
             if (item < tags.len) switch (tags[item]) {
-                .const_decl, .let_decl, .func_decl => declares = true,
+                .const_decl, .let_decl, .func_decl, .gen_decl => declares = true,
                 else => {},
             };
         }

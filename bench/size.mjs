@@ -233,7 +233,7 @@ function topLevelStatements(text) {
   return statements;
 }
 
-const declared = /^(?:export\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/;
+const declared = /^(?:export\s+)?(?:const|let|var|function\*?)\s+([A-Za-z_$][\w$]*)/;
 
 /// §8.5's names, matched EXACTLY rather than by family resemblance. A
 /// printed name is `<module path with `.` as `$`>$<base>`, and a derived
@@ -260,10 +260,19 @@ const declared = /^(?:export\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)
 const nominal_derived = /\$\$(eq|compare|order)$/;
 const structural_derived = /\$(eq|compare)\$(?:r(?:\$[A-Za-z_]\w*)*|t\d+|unit|prim)$/;
 const char_comparator = /\$compare\$char$/;
+/// `backend.md` §4, *Derived comparisons do not grow the native stack*: a
+/// derived function that passes a depth has a `function* <base>$$steps` twin,
+/// charged to its own function's kind, and its module one `derived$deep`
+/// engine, charged to `engine` — a fourth kind, so the split stays a
+/// partition of `derived_bytes`.
+const steps_twin = /\$\$steps$/;
+const deep_engine = /\$derived\$deep$/;
 
-/// `null` if the name is not a derived one; otherwise which of the three
-/// §8.5 spellings it is — `eq`, `compare` or `order`.
+/// `null` if the name is not a derived one; otherwise which of the four
+/// spellings it is — `eq`, `compare`, `order` or `engine`.
 function derivedKind(name) {
+  if (deep_engine.test(name)) return "engine";
+  if (steps_twin.test(name)) return derivedKind(name.replace(steps_twin, ""));
   const nominal = name.match(nominal_derived);
   if (nominal !== null) return nominal[1];
   if (char_comparator.test(name)) return "compare";
@@ -280,7 +289,7 @@ function measureTree(outDir) {
   // numbers and never as a sum: a derived `compare` is a different shape of
   // code from a derived `eq` (§9, lexicographic with early return against a
   // chain of `&&`), and an `$order` table has no `eq` counterpart at all.
-  const split = { eq: { n: 0, bytes: 0 }, compare: { n: 0, bytes: 0 }, order: { n: 0, bytes: 0 } };
+  const split = { eq: { n: 0, bytes: 0 }, compare: { n: 0, bytes: 0 }, order: { n: 0, bytes: 0 }, engine: { n: 0, bytes: 0 } };
   const chunks = [];
   for (const rel of files) {
     const bytes = readFileSync(join(outDir, rel));
@@ -315,6 +324,8 @@ function measureTree(outDir) {
     compare_bytes: split.compare.bytes,
     order_tables: split.order.n,
     order_bytes: split.order.bytes,
+    engines: split.engine.n,
+    engine_bytes: split.engine.bytes,
   };
 }
 
@@ -433,6 +444,8 @@ function main() {
       compare_bytes: floor.compare_bytes,
       order_tables: floor.order_tables,
       order_bytes: floor.order_bytes,
+      engines: floor.engines,
+      engine_bytes: floor.engine_bytes,
     }),
   );
 
@@ -456,6 +469,8 @@ function main() {
     compare_bytes: 0,
     order_tables: 0,
     order_bytes: 0,
+    engines: 0,
+    engine_bytes: 0,
   };
 
   /// One program's line, and its contribution to the totals.
@@ -485,6 +500,8 @@ function main() {
     total.compare_bytes += measured.compare_bytes;
     total.order_tables += measured.order_tables;
     total.order_bytes += measured.order_bytes;
+    total.engines += measured.engines;
+    total.engine_bytes += measured.engine_bytes;
   };
 
   for (const corpus of [...options.corpora].sort()) {
@@ -638,6 +655,8 @@ function main() {
       compare_bytes: total.compare_bytes,
       order_tables: total.order_tables,
       order_bytes: total.order_bytes,
+      engines: total.engines,
+      engine_bytes: total.engine_bytes,
     }),
   );
   process.stdout.write(lines.map((line) => `${line}\n`).join(""));

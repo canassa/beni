@@ -220,7 +220,7 @@ const Opt = struct {
                 o.declare(@enumFromInt(d.lhs));
                 if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try o.countExpr(v);
             },
-            .func_decl => {
+            .func_decl, .gen_decl => {
                 o.declare(@enumFromInt(d.lhs));
                 try o.countFunc(@enumFromInt(d.rhs));
             },
@@ -318,7 +318,7 @@ const Opt = struct {
         switch (o.ir.tag(stmt)) {
             .const_decl => try o.planExpr(@enumFromInt(d.rhs)),
             .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try o.planExpr(v),
-            .func_decl => try o.planFunc(@enumFromInt(d.rhs)),
+            .func_decl, .gen_decl => try o.planFunc(@enumFromInt(d.rhs)),
             .assign_stmt => {
                 try o.planExpr(@enumFromInt(d.lhs));
                 try o.planExpr(@enumFromInt(d.rhs));

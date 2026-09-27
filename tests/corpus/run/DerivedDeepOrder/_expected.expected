@@ -1,0 +1,19 @@
+eq 5000: true
+eq 10000: true
+eq 15000: true
+eq 20000: true
+eq 25000: true
+eq 30000: true
+eq 5000: true
+eq 10000: true
+eq 15000: true
+eq 20000: true
+eq 25000: false
+compare 5000: "EQ"
+compare 10000: "EQ"
+compare 15000: "EQ"
+compare 20000: "EQ"
+compare 25000: "LT"
+equal: True
+differ: False
+before: True

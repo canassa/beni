@@ -340,7 +340,7 @@ pub const Module = struct {
                 try m.see(@enumFromInt(d.lhs), mentioned);
                 if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try m.collectExpr(v, mentioned);
             },
-            .func_decl => {
+            .func_decl, .gen_decl => {
                 try m.see(@enumFromInt(d.lhs), mentioned);
                 try m.collectFunc(@enumFromInt(d.rhs), mentioned);
             },

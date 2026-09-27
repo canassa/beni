@@ -3513,9 +3513,35 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Expected** the comparison's answer: a derived `eq`/`compare` that does not grow the native
   stack with the data (the owner, 2026-09-26: as Elm does, an explicit stack past a depth
   threshold).
-- **Fixture** none yet: a `run/` fixture (the 8 940-cell list) when a slice takes it.
+- **Fixture** `run/DerivedDeepData`, `run/DerivedDeepPaths`, `run/DerivedDeepOrder/`,
+  `run/DerivedDeepAcrossModules/`, `abuse_test.zig` (CK-128).
 - **Slice** R8d (owner 2026-09-26: fix as Elm does — no RangeError on deep data; black-box run/ and
   abuse tests required).
+- **Status** R8d (2026-09-27), fixed, both checkers (the emitter is
+  shared), with one stated exclusion: recursion THROUGH a hand-written method (`type T = T (Box T)
+  | E` with a hand-written `Box.eq … where a.eq`) still throws on deep data, because the method
+  cannot hand back steps; `abuse_test.zig` pins it. A derived function that can recurse takes `$d = 0`, recurses to 400 units and continues
+  in a `function* <base>$$steps` twin on the module's `derived$deep` engine; leaves are emitted as
+  before (`backend.md` §4, *Derived comparisons do not grow the native stack*, which has the
+  measurements in Chrome 153, Firefox 144, WebKit and Node 24). Fixtures `run/DerivedDeepData`,
+  `run/DerivedDeepPaths`, `run/DerivedDeepOrder/`, `run/DerivedDeepAcrossModules/`, and
+  `abuse_test.zig` "a record literal nested to the parser's limit compares and RUNS …" and "a
+  recursive type of 4 096 and 4 097 parameters …", all red before (`RangeError`); `DerivedDeepOrder`'s
+  ORDER claim is shown by a 5 000-deep variant printing byte-identical output on `e86883a`. The
+  exclusion: `abuse_test.zig` "recursion THROUGH a hand-written parametric method …".
+
+### CK-129 — The hint for `exposing (T(..))` suggests `exposing (T, T)`, which is refused
+
+- **Severity** diagnostic-quality. **Area** the parser's hint for Elm's `(..)`, frontend. **Class**
+  K13. **Sources** R8d, writing `run/DerivedDeepOrder/` (2026-09-27).
+- **Program** `Key.beni` declares `pub type Key = Key Int`; `Main.beni` writes
+  `import Key exposing (Key(..))`.
+- **Observed** EXPECTED TOKEN: "list the constructors you use by name, beside the type.
+  `exposing (Key, Key)`". Following it gives DUPLICATE EXPOSED NAME ("`Key` is already exposed");
+  `exposing (Key)` is what works — it exposes the type and its same-named constructor.
+- **Expected** a hint that builds: when a constructor shares its type's name, `exposing (Key)`.
+- **Fixture** none yet.
+- **Slice** unassigned (frontend).
 
 ## Summary table
 
@@ -3652,7 +3678,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-125 | valid-program-rejected | K12 | `test-perf` "CK-125" | R8b (found and fixed by its round-2 review) |
 | CK-126 | unsound-runtime (no runtime path yet) | K7 | `check/bad/PrivateRecordSchemaAliasAcrossModules/` (pending, red under both) | unassigned (found by R8c) |
 | CK-127 | performance | K14 | — (a `lower`-event scenario when taken) | unassigned (frontend; found by R8c) |
-| CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | — (a `run/` fixture when taken) | R8d (owner 2026-09-26; found by R8c) |
+| CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
+| CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
 
 Totals:
 - 128 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c). CK-78 records a decision, not a defect, and is counted under none of the severities below.

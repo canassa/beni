@@ -1947,6 +1947,17 @@ above, the row above is the contract.
 
 ## 9. Derived `eq` and `compare`, in full
 
+> **R8d (CK-128, 2026-09-27): a derived comparison never grows the native stack with the data.**
+> The listings below are the bodies, and they stay normative for what is compared and in what
+> order. A derived function that can recurse additionally takes a last parameter `$d = 0`, passes
+> `$d + w` to every evidence call, derived call and `List.eq`/`List.compare` call, forwards a third
+> argument through its evidence closures, and past 400 units continues in a `function*
+> <base>$$steps` twin run by the module's `derived$deep` engine; §9.5's two loops take the depth
+> as `arguments[3]`. A LEAF — a row that calls nothing that can come back to a derived function,
+> except through a hand-written method (the one recursion R8d does not cover) — is exactly the
+> listing. The rule, the protocol, the limit and the measurements are
+> [`backend.md`](backend.md) §4, *Derived comparisons do not grow the native stack*.
+
 Written against the representation of `backend.md` §4 and its "Corrections from M3a": records are
 objects with keys sorted by **name text**; a type with any argument-taking constructor pads every
 constructor to `{$: "Tag", a, b, …}`; a type whose constructors are all nullary is a bare tag
@@ -2065,7 +2076,10 @@ const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$
   self-recursive arrow with *n* extra parameters): 16 recurse 2 928 deep, 256 recurse 237, 1 024
   recurse 59, 4 096 only 13 — so a recursive nominal type with a 4 096-field payload overflows `==`
   about 13 levels down, where 4 097 fields (the array form) does not. Nothing known is near it; a
-  lower threshold would cost nothing measurable, and is left for whoever meets it.
+  lower threshold would cost nothing measurable, and is left for whoever meets it. *Since R8d
+  (CK-128) neither overflows at any depth: a derived function charges its callers' depth by its
+  frame's size and continues from an explicit stack past the limit ([`backend.md`](backend.md) §4,
+  *Derived comparisons do not grow the native stack*; `abuse_test.zig`, 1 000 levels of both).*
 - **Who reaches it.** A record payload of a nominal type past 4 096 fields (a use's record `==` is
   refused by CK-79 first), and a nominal type whose own context passes 4 096 entries (a type of
   5 000 parameters, in one module).

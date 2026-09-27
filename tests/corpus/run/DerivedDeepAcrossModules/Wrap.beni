@@ -1,0 +1,6 @@
+-- A parametric type of another user module. Its derived `eq` and `compare`
+-- are emitted HERE and take the element's as evidence, so `Main.U`'s cycle
+-- leaves `Main` and comes back through this module on every level.
+pub type Wrap a
+    = Wrap Int a
+    | Empty
