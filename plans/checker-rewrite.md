@@ -344,7 +344,7 @@ The R0 author runs the twin and records it in the fixture's intent comment. Wher
 Order and dependencies:
 
 ```
-R0 → R1 → R2a → R2b → R3 → R4a → R4b → R5 → R6a → R6b → R7 → R8a → R8b → R9 → R10 → R11 → R12 → R13 → R14
+R0 → R1 → R2a → R2b → R3 → R4a → R4b → R5 → R6a → R6b → R7 → R8a → R8b → R9 → R10 → R11 → R12 → R13 → R14 → R14b
 ```
 
 The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interface, so none runs beside another (S8). R13 can start after R11. Round 3 split R2, R4, R6 and R8 into a and b halves. The IDs keep their numbers, and every older reference to "R6" (say) means the pair.
@@ -2607,6 +2607,37 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     message per receiver and use (`Report.hasErrorAt` in `Instances.noMethodsAs`;
     `check/bad/LetHelperRecordOneError`).
 
+### R14b — The check phase back under `7427828`'s (added by the manager, 2026-09-27)
+
+- **Goal.** Close CK-134: the bench's check line at 1.087× (plain) and 1.122× (`--dispatch`) the
+  `7427828` figure; target ≤ 1.05× on both, 1.10× the hard limit.
+- **Rules.** Each optimisation measured on its own and kept only if it pays; nothing whose
+  soundness rests on an argument rather than the walk itself (R8c's lesson); output
+  byte-identical to `881e23d`, proved by a differential over the whole corpus.
+- **As built (2026-09-27).** Spec: `checker-v2.md` §18 *as measured by R14b* (method, the per-change
+  table with each change's sequential and ablation figures, what was not kept and why).
+  - **Kept.** A module's owned store carved out of the worker's scratch arena (`Module.check`):
+    the store no longer maps and unmaps its own pages, the bulk of the win (page faults 18 036 →
+    9 323, system time −19 ms a run). `Schemes.TermMemo`: an imported scheme or constructor is
+    read through a stamped memo the module's check keeps (`instantiateWith`,
+    `instantiateCtorWith`), where each read allocated and cleared one as long as the whole
+    interface. `Generalize.adjustRanks` does not enter a pool root an earlier walk reached.
+    Inline empty-case tests with out-of-line bodies: `TypeStore.touchesErr`,
+    `Evidence.mergeRejected`, `Unify.release`, `TypeStore.fresh`'s capacity. I7's placement pass
+    skipped for a table with no `undetermined` term.
+  - **Not kept** (measured, paid nothing as an ablation): the journal's `record` inline,
+    `Instantiate.copy` through `eachOwned`, an array-of-structs store, `Occurs.check` in one
+    decode per node, inline pool appends, `hasError`/`lowerTo` through `eachOwned`, a two-per-
+    instruction reservation.
+  - **Result.** Bench check line, medians of 7 interleaved rounds: dispatch 100.0 / 110.1 / 76.0 ms
+    (`7427828` / `881e23d` / R14b, **0.76×**), plain 93.7 / 99.5 / 67.1 ms (**0.72×**). Whole
+    process, user cycles, minimum of 11: dispatch 1.01×, plain 0.98×.
+  - **Evidence.** Differential against `881e23d`'s binary over 1 124 files and 273 directories of
+    `tests/corpus/` and `tests/pending/` plus `bench/corpus` (check with and without a platform,
+    `dump --stage=types|interface|dispatch`, dev, `--release`, `--library` and `--library
+    --release` builds): 56 365 files, zero bytes changed. Gates, `test-pending`,
+    `test-pending-perf` and `test-perf` green. No new finding.
+
 ### R15 — Structural audit (added by the manager, 2026-09-24)
 
 - **Goal.** Black-box fixtures prove behaviour, not structure: a checker that counts evidence in
@@ -2650,6 +2681,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R12 | CK-88 (`perf_test.zig`, `abuse_wide_test.zig`), CK-95 with its duplicate CK-127 (`perf_test.zig`) | — | CK-132 (closed with v1); CK-133 (found and fixed: the Debug proof check's budget); CK-134 (found: the dispatch bench at 1.12× `7427828`) |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86; CK-94, 116, 129 (new fixtures) | — | CK-115 (not reproduced; a guard) |
 | R14 | CK-37 (rest) | — | — |
+| R14b | CK-134 (fixed; the bench is its instrument, `checker-v2.md` §18) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

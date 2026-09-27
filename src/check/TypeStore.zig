@@ -398,7 +398,11 @@ pub fn count(store: *const TypeStore) u32 {
 /// putting it in the pool of that rank (`Solve` does).
 pub fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator.Error!Var {
     const v: Var = @enumFromInt(store.descriptors.len);
-    try store.descriptors.append(store.gpa(), .{
+    // The capacity test inline and the growth out of line (R14b): every
+    // variable the checker makes comes through here, and `append` made a
+    // call for the test alone.
+    if (store.descriptors.len == store.descriptors.capacity) try store.descriptors.ensureUnusedCapacity(store.gpa(), 1);
+    store.descriptors.appendAssumeCapacity(.{
         .parent = v,
         .rank = desc_rank,
         .content = desc_content,
@@ -578,8 +582,13 @@ fn hasSuccessors(c: Content) bool {
 /// holes came from arguments that a narrower condition sufficed (the
 /// manager, 2026-09-26). It costs a content read per merge, about 0.8 % of
 /// instructions on the generated dispatch corpus.
-fn touchesErr(store: *TypeStore, before_a: Content, before_b: Content, after: Content) void {
+inline fn touchesErr(store: *TypeStore, before_a: Content, before_b: Content, after: Content) void {
+    // Inline, with the rest out of line: almost no write touches an `err` (R14b).
     if (before_a != .err and before_b != .err and after != .err) return;
+    touchesErrSlow(store, before_a, before_b, after);
+}
+
+fn touchesErrSlow(store: *TypeStore, before_a: Content, before_b: Content, after: Content) void {
     if (hasSuccessors(before_a) or hasSuccessors(before_b) or hasSuccessors(after)) store.voidProofs();
 }
 

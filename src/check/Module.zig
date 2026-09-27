@@ -96,7 +96,10 @@ pub fn check(in: Input) Error!Check.Counters {
     const quiet = in.quiet or in.graph.isPoisoned(in.module);
 
     // P1.
-    var owned_store: TypeStore = .init(std.heap.page_allocator);
+    // An owned store is carved out of the worker's scratch arena, which the
+    // driver resets (retaining its largest chunk) after every module: a
+    // module's store no longer maps and unmaps its own pages (R14b).
+    var owned_store: TypeStore = .init(in.scratch.allocator());
     const store = if (in.keep) |k| &k.store else &owned_store;
     defer if (in.keep == null) owned_store.deinit();
     // v2 makes two to three variables per instruction (R9 measured 2.1× on

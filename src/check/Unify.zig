@@ -232,7 +232,13 @@ fn bind(u: *Unify, bound: Var, flags: TypeStore.Flags, other: Var, content: Type
 /// Ready the open obligations and wanteds of a flex that is about to stop
 /// being one. Against `err` too: the resolver then answers a wanted
 /// `failed`, in silence (§7.1), and an obligation poisons its results.
-fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
+inline fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
+    // Inline, with the rest out of line: most flexes carry nothing (R14b).
+    if (flags.obls == .none and flags.constraints == .none) return;
+    return u.releaseSlow(flags);
+}
+
+fn releaseSlow(u: *Unify, flags: TypeStore.Flags) Error!void {
     if (flags.obls != .none) {
         // `Obligations.ready`, routed: each row to its own frame's queue.
         for (u.obligations.members(flags.obls)) |id| {

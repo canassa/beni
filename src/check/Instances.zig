@@ -688,7 +688,7 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
     const cx = s.cx;
     if (@intFromEnum(scheme) >= iface.schemes.len) return null;
     const mark = cx.store.count();
-    const v = try Schemes.instantiate(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, &s.instantiate.term_memo, cx.gpa);
     try s.instantiate.adoptSince(mark);
     const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
     defer cx.scratch.free(elements);

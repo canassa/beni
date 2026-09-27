@@ -729,6 +729,11 @@ const I7 = struct {
     /// instruction for each row, that breaks it.
     fn placement(cx: I7, bir: *const Bir, gpa: Allocator, out: *std.ArrayList(Bir.Inst.Index)) Allocator.Error!void {
         const d = cx.d;
+        // `placed` refuses only at an `undetermined` term, so a table with
+        // none has nothing to place: most tables (R14b).
+        for (d.terms) |t| {
+            if (t == .undetermined) break;
+        } else return;
         var seen: std.AutoHashMapUnmanaged(Visit, void) = .empty;
         defer seen.deinit(gpa);
         var stack: std.ArrayList(Visit) = .empty;

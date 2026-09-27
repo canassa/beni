@@ -3912,6 +3912,67 @@ every declaration, spread thin.
 
 The scenario (`zig build test-perf`, CK-131) is v2 against v1 on the module's own `check`
 event, best of 5, bound 1.25×: red at `919f8be` (167 %), green on R9b (107 %).
+
+*As measured by R14b (2026-09-27): CK-134 closed.* R12 found the check phase of `zig build bench
+-- --generate=100000` at 1.087× (plain) and 1.122× (`--dispatch`) the `7427828` figure. Method:
+ReleaseFast binaries of `7427828`, `881e23d` (R14) and R14b; the whole process by user cycles,
+`check --no-cache --jobs=1` of the two generated trees, pinned to one core, the **minimum** of 11 to
+21 interleaved runs (on this machine the mean of `perf stat -r` moved by up to 7 % between two
+copies of one binary; the minimum by under 1 %); the bench's check line, medians of 7 interleaved
+rounds. Each change was measured alone twice: against the build before it, and as an ablation — the
+final tree with only that change taken out. Every figure below is user cycles unless it says otherwise.
+
+What the profile said. v2 did the same work as v1 (unifications, generalisations and instantiations
+within 2 %) with 5 % more instructions and 24 % more branch misses, spread thin: unification,
+rank adjustment, P6 and I7's scans each a few per cent over v1, none of them the gap alone. And a
+cost no profile of user cycles had shown: every module's type store mapped its own pages
+(`std.heap.page_allocator`) and unmapped them at the end — v1's too, but R9's reservation of
+three variables per instruction (a capacity of 4.5 after `MultiArrayList`'s growth factor) tripled
+it — a fault and a zeroed page for most of what a store touched. Taking it away took a run's
+system time on the dispatch corpus from about 44 ms to 24 ms, which the bench's wall-clock
+check line counts and `perf`'s user cycles do not.
+
+| Change (kept) | vs the build before, user cycles, dispatch / plain | ablation from the final tree | instructions (dispatch) |
+|---|---|---|---|
+| a module's owned store carved out of the worker's scratch arena, which the driver resets retaining its largest chunk (`Module.check`) | −34.5M / −26.6M; wall −27 ms, system −19 ms, page faults 18 036 → 9 323 | +33.7M / +27.5M | ±0 |
+| an interface term memo stamped per read and kept by the module's check (`Schemes.TermMemo`), where every instantiation of an imported scheme allocated and cleared a memo as long as the WHOLE interface | −2.9M / −2.1M | +14.3M / +10.2M | −19.7M |
+| rank adjustment does not enter a pool root an earlier walk of the same pass reached (`Generalize.adjustRanks`): that walk would return its rank and write nothing | −7.1M / −5.7M | +6.1M / +5.7M | −28.2M |
+| the empty case of `TypeStore.touchesErr`, `Evidence.mergeRejected` and `Unify.release` tested inline, the rest out of line | −6.1M / −5.8M | +8.3M / +4.3M | −6.0M |
+| `TypeStore.fresh` tests capacity inline (`append` called its test out of line) | −3.8M / −3.2M | +4.9M / +3.4M | −7.7M |
+| I7's placement pass skipped for a table with no `undetermined` term: `placed` refuses only at one (`Dispatch`) | +2.5M / +3.9M (code layout) | +6.4M / +0.1M | −5.9M |
+
+Measured and **not kept**, for paying nothing the ablation could see: the journal's `record`
+inline (−9M in sequence, ±2M as an ablation over 21 runs); `Instantiate.copy`'s first pass through
+`Walk.eachOwned` (−3.7M in sequence, −2M as an ablation); an array-of-structs store (one 32-byte
+row for `parent`, `rank`, `mark` and `content`; −1 % instructions, cycles within noise: L1 misses
+did not move, a module's store fits in L2); `Occurs.check` reading a node's successors in one
+decode (+1M instructions); `pool.append` with the capacity test inline (+0.7 %); `Walk.hasError`
+and `lowerTo` through `eachOwned` (within noise); reserving two variables per instruction instead of
+three (−3 ms system, +1–2 ms user; superseded by the scratch arena, which makes the reservation's
+size cost nothing but address space). Priced and left alone: I7 as a whole is 1.5 % of
+instructions, and the acyclicity proofs (§8.2) 1.5–1.9 % of cycles; both are guarantees, and no
+change here rests on an argument about either — every change is exact by construction (the walks
+it skips would write nothing; the memos are keyed and cleared exactly).
+
+Output: a differential over all of `tests/corpus/` and `tests/pending/` (1 124 files and 273
+directories, each checked with and without `--platform=node`, each file's `dump --stage=types`,
+`interface` and `dispatch`, and dev, `--release`, `--library` and `--library --release` builds;
+plus `bench/corpus`) against `881e23d`'s binary: 56 365 output files, **zero bytes changed**; the
+two generated trees built `--library` at `--jobs=8` likewise. Peak RSS unchanged (47 MB).
+
+| Measure | `7427828` | `881e23d` | R14b | R14b / `7427828` |
+|---|---|---|---|---|
+| bench check line, dispatch, median of 7 rounds | 100.0 ms | 110.1 ms (1.10) | 76.0 ms | **0.76** |
+| bench check line, plain, the same | 93.7 ms | 99.5 ms (1.06) | 67.1 ms | **0.72** |
+| whole process, user cycles, dispatch, min of 11 | 465.3M | 522.8M | 471.9M | 1.01 |
+| whole process, user cycles, plain, the same | 438.6M | 477.9M | 428.7M | 0.98 |
+| whole process, `--jobs=8`, dispatch, wall, mean of 20, two rounds | 53–64 ms | 62–64 ms | 51 ms | — |
+
+The whole process keeps what v2 costs outside the check line (its `resolve` phase read slower
+under `perf` than `7427828`'s, with `Graph.lookup`'s hash no longer inlined; the bench's own
+`resolve` line did not show it, so no finding is filed). The ablation column was measured before
+the two changes not kept were taken out.
+
 ---
 
 ## 19. What is kept from the current code

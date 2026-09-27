@@ -3761,7 +3761,15 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Expected** `checker-rewrite.md` R12's exit: ≤ 1.0× the `7427828` figure the target, over 1.10×
   a finding. Plain is inside; dispatch is over.
 - **Fixture** none: the bench is the instrument (`checker-v2.md` §18).
-- **Slice** unassigned (the manager): a profile of the dispatch corpus against `7427828`'s.
+- **Slice** R14b (the manager, 2026-09-27).
+- **Status** **fixed by R14b** (2026-09-27). The bench's check line, medians of 7 interleaved
+  rounds: dispatch 100.0 ms at `7427828`, 110.1 at `881e23d`, **76.0** at R14b (0.76×); plain 93.7,
+  99.5, **67.1** (0.72×). The per-operation gap (an interface-sized memo cleared per imported
+  instantiation, rank adjustment re-entering walked roots, out-of-line empty-case tests on the
+  unify path) was closed first; the largest change was not v2's own: each module's store mapped
+  and unmapped its own pages (v1's did too, with a third of the reservation), and is now carved
+  out of the worker's scratch arena. Output byte-identical over the whole
+  corpus; each change measured alone (`checker-v2.md` §18 *as measured by R14b*).
 
 ## Summary table
 
@@ -3904,7 +3912,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-131 | performance (v2 only) | K11 | `perf_test.zig` (`test-perf`, CK-131) | R9b (fixed; found by R9) |
 | CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | R12 (closed with v1; found by R10) |
 | CK-133 | performance (Debug only) | K11 | `abuse_test.zig` CK-128 scenario (timeout under load) | R12 (found and fixed) |
-| CK-134 | performance | K11 | — (the bench) | unassigned — manager (found by R12) |
+| CK-134 | performance | K11 | — (the bench) | R14b (fixed; found by R12) |
 
 Totals:
 - 134 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.

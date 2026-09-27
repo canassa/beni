@@ -257,8 +257,13 @@ pub fn setRejected(e: *Evidence, gpa: Allocator, root: Var, flag: Flag) Error!vo
 }
 
 /// A merge made `kept` the root of `dropped`'s class: its flags move there.
-pub fn mergeRejected(e: *Evidence, gpa: Allocator, dropped: Var, kept: Var) Error!void {
+pub inline fn mergeRejected(e: *Evidence, gpa: Allocator, dropped: Var, kept: Var) Error!void {
+    // Inline, with the rest out of line: most modules flag nothing (R14b).
     if (dropped == kept or e.rejected.count() == 0) return;
+    return mergeRejectedSlow(e, gpa, dropped, kept);
+}
+
+fn mergeRejectedSlow(e: *Evidence, gpa: Allocator, dropped: Var, kept: Var) Error!void {
     var moved = (e.rejected.fetchRemove(dropped) orelse return).value;
     defer moved.deinit(gpa);
     for (moved.items) |f| try e.setRejected(gpa, kept, f);

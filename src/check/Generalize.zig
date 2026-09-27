@@ -369,7 +369,14 @@ pub fn adjustRanks(
     // One bucket: pool order is already the sorted order (the common case,
     // R8c's profile).
     if (all_young) {
-        for (entries) |e| _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, young, e.v);
+        for (entries) |e| {
+            // A root an earlier walk reached is done: its own walk would
+            // return its rank and write nothing (`settled`), so it is not
+            // entered (R14b). Nothing merges during the walks, so `e.v` is
+            // still a root.
+            if (store.mark(e.v) == visit_mark) continue;
+            _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, young, e.v);
+        }
         return;
     }
     // Lowest ranks first. A counting sort by bucket rather than one list per
@@ -380,7 +387,10 @@ pub fn adjustRanks(
     // the counting sort is).
     if (young + 2 > 4 * pool.len + 64) {
         std.mem.sort(Entry, entries, {}, bucketLessThan);
-        for (entries) |e| _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, e.bucket, e.v);
+        for (entries) |e| {
+            if (store.mark(e.v) == visit_mark) continue;
+            _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, e.bucket, e.v);
+        }
         return;
     }
     const counts = try scratch.alloc(u32, young + 2);
@@ -398,6 +408,7 @@ pub fn adjustRanks(
         counts[e.bucket] += 1;
     }
     for (sorted, bucket_of) |v, bucket| {
+        if (store.mark(v) == visit_mark) continue;
         _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, bucket, v);
     }
 }

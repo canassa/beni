@@ -655,6 +655,43 @@ fn orderWalk(
     }
 }
 
+/// A reader's memo of an interface's terms, by term index: one variable per
+/// term, so a term referenced twice becomes one variable (`instantiate`).
+/// Kept by a module's check and reused by every instantiation it makes
+/// (R14b): a slot holds a variable only while its stamp is the current
+/// read's, so starting a read is one increment, not a clear of a table as
+/// long as the whole interface, which an instantiation of a small scheme
+/// from `core` paid on every use.
+pub const TermMemo = struct {
+    slots: std.ArrayList(Slot) = .empty,
+    stamp: u32 = 0,
+
+    const Slot = struct { stamp: u32 = 0, v: Var = undefined };
+
+    pub fn deinit(m: *TermMemo, gpa: Allocator) void {
+        m.slots.deinit(gpa);
+    }
+
+    /// A new read over `len` terms: every slot empty.
+    fn begin(m: *TermMemo, gpa: Allocator, len: usize) Error!void {
+        if (m.slots.items.len < len) try m.slots.appendNTimes(gpa, .{}, len - m.slots.items.len);
+        m.stamp +%= 1;
+        if (m.stamp == 0) {
+            @memset(m.slots.items, .{});
+            m.stamp = 1;
+        }
+    }
+
+    fn get(m: *const TermMemo, index: u32) ?Var {
+        const slot = m.slots.items[index];
+        return if (slot.stamp == m.stamp) slot.v else null;
+    }
+
+    fn put(m: *TermMemo, index: u32, v: Var) void {
+        m.slots.items[index] = .{ .stamp = m.stamp, .v = v };
+    }
+};
+
 /// Copy an interface scheme into `store` at `rank`: one fresh variable per
 /// quantifier, then the body rebuilt on top of them.
 ///
@@ -672,6 +709,22 @@ pub fn instantiate(
     rank: u32,
     scratch: Allocator,
 ) Error!Var {
+    var memo: TermMemo = .{};
+    defer memo.deinit(scratch);
+    return instantiateWith(iface, type_ids, store, scheme_index, rank, scratch, &memo, scratch);
+}
+
+/// `instantiate` with the caller's memo, allocated with `gpa` (R14b).
+pub fn instantiateWith(
+    iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
+    store: *TypeStore,
+    scheme_index: u32,
+    rank: u32,
+    scratch: Allocator,
+    memo: *TermMemo,
+    gpa: Allocator,
+) Error!Var {
     const s = iface.schemes[scheme_index];
     const fresh = try scratch.alloc(Var, s.quantified_count);
     defer scratch.free(fresh);
@@ -685,9 +738,7 @@ pub fn instantiate(
     }
     // One store variable per TERM, so a term referenced twice becomes one
     // variable and the sharing the writer preserved survives the crossing.
-    const memo = try scratch.alloc(Var.Optional, iface.terms.len);
-    defer scratch.free(memo);
-    @memset(memo, .none);
+    try memo.begin(gpa, iface.terms.len);
     var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
     const body = try reader.read(s.body);
     // The constraint blocks LAST, so every quantifier already has its
@@ -743,6 +794,23 @@ pub fn instantiateCtor(
     rank: u32,
     scratch: Allocator,
 ) Error!?Var {
+    var memo: TermMemo = .{};
+    defer memo.deinit(scratch);
+    return instantiateCtorWith(iface, type_ids, store, ctor_index, type_id, rank, scratch, &memo, scratch);
+}
+
+/// `instantiateCtor` with the caller's memo, allocated with `gpa` (R14b).
+pub fn instantiateCtorWith(
+    iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
+    store: *TypeStore,
+    ctor_index: u32,
+    type_id: TypeStore.TypeId,
+    rank: u32,
+    scratch: Allocator,
+    memo: *TermMemo,
+    gpa: Allocator,
+) Error!?Var {
     if (ctor_index >= iface.ctors.len) return null;
     const c = iface.ctors[ctor_index];
     if (c.arg_terms == Interface.no_terms) return null;
@@ -759,9 +827,7 @@ pub fn instantiateCtor(
             .equatable = q.equatable,
         } }, rank);
     }
-    const memo = try scratch.alloc(Var.Optional, iface.terms.len);
-    defer scratch.free(memo);
-    @memset(memo, .none);
+    try memo.begin(gpa, iface.terms.len);
     var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
 
     const words = iface.range(c.arg_terms);
@@ -812,7 +878,7 @@ const Reader = struct {
     rank: u32,
     scratch: Allocator,
     fresh: []const Var,
-    memo: []Var.Optional,
+    memo: *TermMemo,
     depth: u32 = 0,
 
     fn read(r: *Reader, index: Interface.TermIndex) Error!Var {
@@ -826,7 +892,7 @@ const Reader = struct {
         // position in THIS module to point a message at — the module that
         // wrote it reported when it wrote it.
         if (r.depth > Writer.max_depth) return r.store.freshErr(r.rank);
-        if (r.memo[index.int()].unwrap()) |v| return v;
+        if (r.memo.get(index.int())) |v| return v;
 
         const t = r.iface.term(index);
         const v = switch (t.tag) {
@@ -883,7 +949,7 @@ const Reader = struct {
                 break :blk try r.store.fresh(.{ .alias = .{ .type = r.typeId(t.lhs), .args = range, .actual = actual } }, r.rank);
             },
         };
-        r.memo[index.int()] = v.toOptional();
+        r.memo.put(index.int(), v);
         return v;
     }
 

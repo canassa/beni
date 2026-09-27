@@ -73,10 +73,14 @@ entries: u32 = 0,
 /// Instantiations whose entries were not all paired with a wanted: the
 /// solver reports each as `internal` (S2).
 unpaired: u32 = 0,
+/// The interface term memo every imported scheme and constructor is read
+/// through (`Schemes.TermMemo`, R14b).
+term_memo: Schemes.TermMemo = .{},
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
     in.made.deinit(in.cx.gpa);
+    in.term_memo.deinit(in.cx.gpa);
 }
 
 fn frame(in: *Instantiate) *Generalize.Frame {
@@ -377,7 +381,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     };
     if (scheme == .none) return null;
     const mark = cx.store.count();
-    const v = try Schemes.instantiate(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch);
+    const v = try Schemes.instantiateWith(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, &in.term_memo, cx.gpa);
     try in.adoptSince(mark);
     try in.wantImported(mark, v);
     return v;
@@ -392,7 +396,7 @@ fn importedCtor(in: *Instantiate, module: Graph.Index, index: u32) Error!?Var {
     const type_id = cx.types.ofInterface(module, iface.ctors[index].type);
     if (type_id == .none) return null;
     const mark = cx.store.count();
-    const v = try Schemes.instantiateCtor(iface, cx.types.refIds(module), cx.store, index, type_id, in.frame().rank, cx.scratch) orelse return null;
+    const v = try Schemes.instantiateCtorWith(iface, cx.types.refIds(module), cx.store, index, type_id, in.frame().rank, cx.scratch, &in.term_memo, cx.gpa) orelse return null;
     try in.adoptSince(mark);
     return v;
 }
