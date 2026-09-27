@@ -29,9 +29,17 @@
 //!
 //! **Determinism** (CLAUDE.md rule 5) is structural throughout: the
 //! constructor set at a column is enumerated in the declaring type's
-//! declaration order, literals in the order the rows spell them, the column
-//! tie-break is the lowest index, and nothing consults a hash map or a
-//! counter.
+//! declaration order, literals in the order the rows spell them, and the
+//! column tie-break is the lowest index. The one hash table (`HeadTable`)
+//! only GROUPS rows by their head: every order is still the rows' own, and
+//! nothing iterates the table.
+//!
+//! **Linear in the rows at each node** (CK-88, R12). A column's rows are
+//! grouped by head once, in one pass (`group`), and each specialisation reads
+//! only its own group and the wildcard rows — never the whole matrix again.
+//! Before, the key set, the column choice's distinct count and the
+//! specialisation each compared every row with every other, and a `case` of
+//! 20 000 literal branches took 8.6 s to build.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -249,6 +257,54 @@ const Head = union(enum) {
     literal: struct { pat: Inst.Index, kind: Kind },
 };
 
+/// A column's rows grouped by head (`Builder.group`): the distinct heads in
+/// the order the rows first spell them, each head's rows as a range of
+/// `rows` in row order, and the wildcard rows in row order.
+const Grouping = struct {
+    keys: []const Head,
+    /// `rows[starts[k]..starts[k + 1]]` are key `k`'s rows.
+    starts: []const u32,
+    rows: []const u32,
+    wild: []const u32,
+
+    fn of(g: Grouping, k: usize) []const u32 {
+        return g.rows[g.starts[k]..g.starts[k + 1]];
+    }
+};
+
+/// Heads by `sameHead`, for grouping a column. Keyed by what a head IS — a
+/// constructor's order, a literal's spelling — never by a dense id.
+const HeadTable = std.HashMapUnmanaged(Head, u32, HeadContext, std.hash_map.default_max_load_percentage);
+
+const HeadContext = struct {
+    bir: *const Bir,
+
+    pub fn hash(ctx: HeadContext, h: Head) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        // `tuple` and `unit` are one head (`sameHead`), so they hash alike.
+        const tag: std.meta.Tag(Head) = if (h == .unit) .tuple else std.meta.activeTag(h);
+        hasher.update(&.{@intFromEnum(tag)});
+        switch (h) {
+            .wild, .tuple, .unit => {},
+            .ctor => |c| hasher.update(std.mem.asBytes(&c.order)),
+            .list => |cons| hasher.update(&.{@intFromBool(cons)}),
+            .literal => |lit| {
+                hasher.update(&.{@intFromEnum(lit.kind)});
+                switch (ctx.bir.instTag(lit.pat)) {
+                    .pat_char => hasher.update(std.mem.asBytes(&ctx.bir.instData(lit.pat).lhs)),
+                    .pat_int, .pat_string => hasher.update(ctx.bir.bytes(lit.pat)),
+                    else => {},
+                }
+            },
+        }
+        return hasher.final();
+    }
+
+    pub fn eql(ctx: HeadContext, x: Head, y: Head) bool {
+        return sameHead(ctx.bir, x, y);
+    }
+};
+
 const Builder = struct {
     arena: Allocator,
     cx: Context,
@@ -257,6 +313,9 @@ const Builder = struct {
     fans: std.ArrayList(Fan) = .empty,
     edges: std.ArrayList(Edge) = .empty,
     uses: []u32,
+    /// Reused by every grouping: cleared per column, read only inside
+    /// `group` and `chooseColumn`, never across a recursive `compile`.
+    table: HeadTable = .empty,
 
     fn rootOcc(b: *Builder, root: u32) !u32 {
         for (b.occs.items, 0..) |o, i| {
@@ -360,32 +419,6 @@ const Builder = struct {
         }
     }
 
-    fn sameHead(b: *Builder, x: Head, y: Head) bool {
-        return switch (x) {
-            .wild => false,
-            .ctor => |a| y == .ctor and y.ctor.order == a.order,
-            // One constructor, so two heads of one column are always it.
-            .tuple, .unit => y == .tuple or y == .unit,
-            .list => |cons| y == .list and y.list == cons,
-            .literal => |a| y == .literal and a.kind == y.literal.kind and
-                b.sameLiteral(a.pat, y.literal.pat),
-        };
-    }
-
-    /// Two literal patterns spell the same value. By the SPELLING for an
-    /// `Int`, where `Exhaustive.zig` compares by value: two spellings of one
-    /// number are then two edges of the fan, the first of which wins at run
-    /// time — which is the row the source put first, so the answer is the
-    /// same and the cost is one dead `case` label on input nobody writes.
-    fn sameLiteral(b: *Builder, x: Inst.Index, y: Inst.Index) bool {
-        const bir = b.cx.bir;
-        return switch (bir.instTag(x)) {
-            .pat_char => bir.instData(x).lhs == bir.instData(y).lhs,
-            .pat_int, .pat_string => std.mem.eql(u8, bir.bytes(x), bir.bytes(y)),
-            else => false,
-        };
-    }
-
     // ---- The algorithm ----------------------------------------------------
 
     fn compile(b: *Builder, m: Matrix) Allocator.Error!u32 {
@@ -395,49 +428,42 @@ const Builder = struct {
         if (m.rows.len == 0) return no_node;
         if (b.allWild(m.rows[0])) return b.leafNode(m.rows[0].branch);
 
-        const col = b.chooseColumn(m);
+        const col = try b.chooseColumn(m);
 
-        var keys: std.ArrayList(Head) = .empty;
-        var has_default = false;
-        for (m.rows) |row| {
-            const h = b.headOf(row.cells[col]);
-            if (h == .wild) {
-                has_default = true;
-                continue;
-            }
-            var seen = false;
-            for (keys.items) |k| seen = seen or b.sameHead(k, h);
-            if (!seen) try keys.append(b.arena, h);
-        }
+        const g = try b.group(m, col);
+        const has_default = g.wild.len != 0;
         // Unreachable: the row above is not all wildcards, so the column
         // chosen for it holds something. A leaf rather than an index out of
         // bounds, because a poisoned `Bir` must not panic the compiler.
-        if (keys.items.len == 0) return b.leafNode(m.rows[0].branch);
+        if (g.keys.len == 0) return b.leafNode(m.rows[0].branch);
 
         // A tuple and `()` always match: the column becomes its elements and
         // no test is emitted, which is what keeps a tuple scrutinee from
         // costing a comparison it cannot fail (§7's table).
-        switch (keys.items[0]) {
-            .tuple, .unit => return b.expand(m, col, keys.items[0]),
+        switch (g.keys[0]) {
+            .tuple, .unit => return b.expand(m, col, g.keys[0]),
             else => {},
         }
 
-        sortKeys(keys.items);
+        const order = try b.arena.alloc(u32, g.keys.len);
+        for (order, 0..) |*o, i| o.* = @intCast(i);
+        sortKeys(g.keys, order);
 
         const fan_index: u32 = @intCast(b.fans.items.len);
         const node_index: u32 = @intCast(b.nodes.items.len);
         try b.nodes.append(b.arena, .{ .fan = fan_index });
         try b.fans.append(b.arena, .{
             .occ = m.cols[col],
-            .kind = kindOf(keys.items[0]),
+            .kind = kindOf(g.keys[0]),
             .edges_start = 0,
             .edges_end = 0,
             .default = no_node,
         });
 
         var built: std.ArrayList(Edge) = .empty;
-        for (keys.items) |key| {
-            const child = try b.compile(try b.specialise(m, col, key));
+        for (order) |k| {
+            const key = g.keys[k];
+            const child = try b.compile(try b.specialiseGroup(m, col, key, g.of(k), g.wild));
             if (child == no_node) continue;
             try built.append(b.arena, .{
                 .ref = switch (key) {
@@ -454,13 +480,13 @@ const Builder = struct {
         // so once the set is complete the default arm is the impossible one
         // §7 refuses to emit. A literal column is never complete, which is
         // why a literal node always keeps its default.
-        const complete = switch (keys.items[0]) {
+        const complete = switch (g.keys[0]) {
             .ctor => |c| built.items.len >= c.count,
             .list => built.items.len >= 2,
             else => false,
         };
         const default = if (has_default and !complete)
-            try b.compile(try b.defaultMatrix(m, col))
+            try b.compile(try b.defaultMatrix(m, col, g.wild))
         else
             no_node;
 
@@ -484,26 +510,30 @@ const Builder = struct {
     /// constructors) and **leftmost**. The third is not a formality — it is
     /// what makes the choice input-derived (CLAUDE.md rule 5) — and it falls
     /// out of scanning left to right and improving only on a strict win.
-    fn chooseColumn(b: *Builder, m: Matrix) u32 {
+    ///
+    /// The distinct count is the size of the column's head table (CK-88):
+    /// one hashed insert per row, where comparing each row with every row
+    /// above it was quadratic.
+    fn chooseColumn(b: *Builder, m: Matrix) Allocator.Error!u32 {
         var best: u32 = 0;
         var best_wild: usize = 0;
         var best_distinct: usize = 0;
         var found = false;
+        const ctx: HeadContext = .{ .bir = b.cx.bir };
         for (0..m.cols.len) |i| {
             var wild: usize = 0;
-            var distinct: usize = 0;
             var relevant = false;
-            for (m.rows, 0..) |row, r| {
+            b.table.clearRetainingCapacity();
+            for (m.rows) |row| {
                 const h = b.headOf(row.cells[i]);
                 if (h == .wild) {
                     wild += 1;
                     continue;
                 }
                 relevant = true;
-                var seen = false;
-                for (m.rows[0..r]) |above| seen = seen or b.sameHead(b.headOf(above.cells[i]), h);
-                if (!seen) distinct += 1;
+                _ = try b.table.getOrPutContext(b.arena, h, ctx);
             }
+            const distinct: usize = b.table.count();
             if (!relevant) continue;
             if (found and wild > best_wild) continue;
             if (found and wild == best_wild and distinct >= best_distinct) continue;
@@ -521,10 +551,61 @@ const Builder = struct {
     /// fan-out wrapped around it, which is exactly what "always matches, so
     /// it never becomes a test" means.
     fn expand(b: *Builder, m: Matrix, col: u32, key: Head) Allocator.Error!u32 {
-        return b.compile(try b.specialise(m, col, key));
+        const all = try b.arena.alloc(u32, m.rows.len);
+        for (all, 0..) |*r, i| r.* = @intCast(i);
+        return b.compile(try b.specialiseGroup(m, col, key, all, &.{}));
     }
 
-    fn specialise(b: *Builder, m: Matrix, col: u32, key: Head) Allocator.Error!Matrix {
+    /// Column `col`'s rows grouped by head, in one pass: each row's head is
+    /// looked up once in the head table, and the groups are laid out by a
+    /// counting sort that keeps every group in row order (CK-88).
+    fn group(b: *Builder, m: Matrix, col: u32) Allocator.Error!Grouping {
+        const ctx: HeadContext = .{ .bir = b.cx.bir };
+        b.table.clearRetainingCapacity();
+        const wild_mark = std.math.maxInt(u32);
+        const key_of = try b.arena.alloc(u32, m.rows.len);
+        var keys: std.ArrayList(Head) = .empty;
+        var wild_count: usize = 0;
+        for (m.rows, key_of) |row, *k| {
+            const h = b.headOf(row.cells[col]);
+            if (h == .wild) {
+                k.* = wild_mark;
+                wild_count += 1;
+                continue;
+            }
+            const gop = try b.table.getOrPutContext(b.arena, h, ctx);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = @intCast(keys.items.len);
+                try keys.append(b.arena, h);
+            }
+            k.* = gop.value_ptr.*;
+        }
+        const starts = try b.arena.alloc(u32, keys.items.len + 1);
+        @memset(starts, 0);
+        for (key_of) |k| if (k != wild_mark) {
+            starts[k + 1] += 1;
+        };
+        for (1..starts.len) |i| starts[i] += starts[i - 1];
+        const cursor = try b.arena.dupe(u32, starts[0..keys.items.len]);
+        const rows = try b.arena.alloc(u32, m.rows.len - wild_count);
+        const wild = try b.arena.alloc(u32, wild_count);
+        var w: usize = 0;
+        for (key_of, 0..) |k, r| {
+            if (k == wild_mark) {
+                wild[w] = @intCast(r);
+                w += 1;
+            } else {
+                rows[cursor[k]] = @intCast(r);
+                cursor[k] += 1;
+            }
+        }
+        return .{ .keys = keys.items, .starts = starts, .rows = rows, .wild = wild };
+    }
+
+    /// The specialisation of `m` by `key` at `col`: `group`'s rows for the
+    /// key and the wildcard rows, merged back into row order. No other row
+    /// can match `key`, so none is read (CK-88).
+    fn specialiseGroup(b: *Builder, m: Matrix, col: u32, key: Head, keyed: []const u32, wild: []const u32) Allocator.Error!Matrix {
         const arity = arityOf(key);
         const cols = try b.arena.alloc(u32, m.cols.len - 1 + arity);
         @memcpy(cols[0..col], m.cols[0..col]);
@@ -535,34 +616,42 @@ const Builder = struct {
         for (0..arity) |i| cols[col + i] = try b.subOcc(m.cols[col], @intCast(i), via);
         @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
 
-        var rows: std.ArrayList(MRow) = .empty;
-        for (m.rows) |row| {
+        const rows = try b.arena.alloc(MRow, keyed.len + wild.len);
+        var len: usize = 0;
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < keyed.len or j < wild.len) {
+            const take_keyed = j == wild.len or (i < keyed.len and keyed[i] < wild[j]);
+            const r = if (take_keyed) keyed[i] else wild[j];
+            if (take_keyed) i += 1 else j += 1;
+            const row = m.rows[r];
             const cells = try b.arena.alloc(Cell, cols.len);
             @memcpy(cells[0..col], row.cells[0..col]);
             @memcpy(cells[col + arity ..], row.cells[col + 1 ..]);
             if (!b.subCells(row.cells[col], key, cells[col..][0..arity])) continue;
-            try rows.append(b.arena, .{ .branch = row.branch, .cells = cells });
+            rows[len] = .{ .branch = row.branch, .cells = cells };
+            len += 1;
         }
-        return .{ .cols = cols, .rows = rows.items };
+        return .{ .cols = cols, .rows = rows[0..len] };
     }
 
     /// Maranget's `D(P)`: the rows that were a wildcard at `col`, with the
     /// column dropped. A row that tested something there cannot reach the
     /// default edge.
-    fn defaultMatrix(b: *Builder, m: Matrix, col: u32) Allocator.Error!Matrix {
+    fn defaultMatrix(b: *Builder, m: Matrix, col: u32, wild: []const u32) Allocator.Error!Matrix {
         const cols = try b.arena.alloc(u32, m.cols.len - 1);
         @memcpy(cols[0..col], m.cols[0..col]);
         @memcpy(cols[col..], m.cols[col + 1 ..]);
 
-        var rows: std.ArrayList(MRow) = .empty;
-        for (m.rows) |row| {
-            if (b.headOf(row.cells[col]) != .wild) continue;
+        const rows = try b.arena.alloc(MRow, wild.len);
+        for (wild, rows) |r, *out| {
+            const row = m.rows[r];
             const cells = try b.arena.alloc(Cell, cols.len);
             @memcpy(cells[0..col], row.cells[0..col]);
             @memcpy(cells[col..], row.cells[col + 1 ..]);
-            try rows.append(b.arena, .{ .branch = row.branch, .cells = cells });
+            out.* = .{ .branch = row.branch, .cells = cells };
         }
-        return .{ .cols = cols, .rows = rows.items };
+        return .{ .cols = cols, .rows = rows };
     }
 
     /// The sub-patterns `cell` contributes when the row is kept under `key`,
@@ -573,7 +662,7 @@ const Builder = struct {
             @memset(out, .{});
             return true;
         }
-        if (!b.sameHead(head, key)) return false;
+        if (!sameHead(b.cx.bir, head, key)) return false;
         @memset(out, .{});
         const pat = unwrapAs(b.cx.bir, cell.pat.unwrap().?);
         const bir = b.cx.bir;
@@ -612,6 +701,31 @@ const Builder = struct {
     }
 };
 
+fn sameHead(bir: *const Bir, x: Head, y: Head) bool {
+    return switch (x) {
+        .wild => false,
+        .ctor => |a| y == .ctor and y.ctor.order == a.order,
+        // One constructor, so two heads of one column are always it.
+        .tuple, .unit => y == .tuple or y == .unit,
+        .list => |cons| y == .list and y.list == cons,
+        .literal => |a| y == .literal and a.kind == y.literal.kind and
+            sameLiteral(bir, a.pat, y.literal.pat),
+    };
+}
+
+/// Two literal patterns spell the same value. By the SPELLING for an
+/// `Int`, where `Exhaustive.zig` compares by value: two spellings of one
+/// number are then two edges of the fan, the first of which wins at run
+/// time — which is the row the source put first, so the answer is the
+/// same and the cost is one dead `case` label on input nobody writes.
+fn sameLiteral(bir: *const Bir, x: Inst.Index, y: Inst.Index) bool {
+    return switch (bir.instTag(x)) {
+        .pat_char => bir.instData(x).lhs == bir.instData(y).lhs,
+        .pat_int, .pat_string => std.mem.eql(u8, bir.bytes(x), bir.bytes(y)),
+        else => false,
+    };
+}
+
 fn unwrapAs(bir: *const Bir, pat: Inst.Index) Inst.Index {
     var at = pat;
     while (at.int() < bir.insts.len and bir.instTag(at) == .pat_as) {
@@ -648,20 +762,19 @@ fn kindOf(key: Head) Kind {
     };
 }
 
-/// Constructors in the declaring type's declaration order, `[]` before `::`.
-/// A literal keeps the order the rows spell it in, which is the only
-/// input-derived order there is — a literal column has no declaration.
+/// Constructors in the declaring type's declaration order, `[]` before `::`:
+/// `order` is a permutation of `keys`' indices, sorted by it. A literal
+/// keeps the order the rows spell it in, which is the only input-derived
+/// order there is — a literal column has no declaration.
 ///
-/// Insertion sort because a fan has as many alternatives as the type has
-/// constructors, and a stable sort is what keeps equal keys (two spellings
-/// of one literal) in row order.
-fn sortKeys(keys: []Head) void {
+/// A stable sort (`std.mem.sort` is block sort) keeps equal keys in row
+/// order; a fan has as many alternatives as the type has constructors, and
+/// the insertion sort this was before is quadratic in them.
+fn sortKeys(keys: []const Head, order: []u32) void {
     if (keys.len == 0 or keys[0] == .literal) return;
-    var i: usize = 1;
-    while (i < keys.len) : (i += 1) {
-        var j = i;
-        while (j > 0 and orderOf(keys[j - 1]) > orderOf(keys[j])) : (j -= 1) {
-            std.mem.swap(Head, &keys[j - 1], &keys[j]);
+    std.mem.sort(u32, order, keys, struct {
+        fn lessThan(k: []const Head, a: u32, b: u32) bool {
+            return orderOf(k[a]) < orderOf(k[b]);
         }
-    }
+    }.lessThan);
 }

@@ -1253,7 +1253,7 @@ test "a top term naming a declaration past the module's is BadSidecar" {
     // Review of R2a, N5: `Lower.termName` indexes `bir.decls` by a `top`
     // term's declaration with only a debug assert, so an index past the
     // module's declarations must not survive the load. `decls` has one row
-    // per `Bir.Decl` (`Dispatch.Builder.finish`), which bounds it without
+    // per `Bir.Decl` (`Module.zig`'s P6 writes one each), which bounds it without
     // the Bir.
     const gpa = testing.allocator;
     var global = try InternPool.Global.init(gpa);

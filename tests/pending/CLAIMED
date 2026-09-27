@@ -1,9 +1,0 @@
-# Fixtures of tests/pending/ that turned GREEN under `--checker=v2` before the
-# cut-over (plans/checker-rewrite.md §2.6): one repo-relative path per line,
-# for example `tests/pending/check/bad/LetAnnotationRigidEscape.beni`, or
-# `scenario/CK-40` for a scenario of tests/blackbox/pending_test.zig. Rule (c)
-# failed `zig build test-pending` if a listed fixture was RED under v2.
-# Emptied at R11 (2026-09-27), when v2 became the default checker: every
-# claim of R4b–R8b was promoted into tests/corpus/ (the scenarios into
-# ordering_test.zig, abuse_wide_test.zig and perf_test.zig), and a fixture a
-# slice turns green is now promoted at once under rule (b).

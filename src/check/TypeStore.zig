@@ -167,14 +167,14 @@ pub const Flags = struct {
     /// largest `Content` payload is already `Alias` at 16.
     constraints: ConstraintSet.Optional = .none,
     /// The open obligations riding on this variable (checker-v2.md §4.1,
-    /// §4.5): a set in checker v2's own table (`check2/Obligations.zig`),
-    /// opaque here. Checker v1 never writes it, so for v1 it is always
-    /// `.none` (§4.1, *Decided by R5*).
+    /// §4.5): a set in the checker's own table (`check/Obligations.zig`),
+    /// opaque here (§4.1, *Decided by R5*). A store no check builds — an
+    /// interface dump's — leaves it `.none`.
     obls: ObligationSet = .none,
 };
 
-/// A set of checker v2's obligations (`check2/Obligations.zig`). The store
-/// only carries it on a variable's `Flags`; what it names is v2's.
+/// A set of the checker's obligations (`check/Obligations.zig`). The store
+/// only carries it on a variable's `Flags`; what it names is the checker's.
 pub const ObligationSet = enum(u32) {
     none = std.math.maxInt(u32),
     _,
@@ -199,27 +199,8 @@ pub const MethodConstraint = struct {
     /// created — that is `Solve.Obligation.origin` (§6.2).
     region: Bir.Inst.Index,
     origin: Origin,
-    /// The dispatch sites this constraint answers, as a range of
-    /// `constraint_sites` (§7.2). A constraint carries more than one when
-    /// Rule U1 merged two sets that both named the method.
-    sites: Range = .empty,
 
     pub const Origin = enum(u8) { dot_call, well_known, where_clause, type_dispatch };
-};
-
-/// `(instruction, evidence index)` — which argument slot of which
-/// instruction a constraint's answer belongs in (static-dispatch-spike.md
-/// §7.2).
-pub const ConstraintSite = struct {
-    inst: Bir.Inst.Index,
-    evidence_index: u16,
-    /// The slot of the SAME instruction whose own resolution asked for this
-    /// one, or `Dispatch.FlatSite.no_parent` for a slot the instruction owns
-    /// outright. See `Dispatch.FlatSite.parent`: the cursor of §7.2 numbers
-    /// slots in ALLOCATION order, which is breadth-first, and this is what
-    /// lets `Dispatch.finish` put the flat list back into the pre-order the
-    /// emitter reads it as (A.68).
-    parent: u16 = std.math.maxInt(u16),
 };
 
 /// A run of `constraints`, named by its index in `constraint_sets`.
@@ -322,8 +303,6 @@ journal: std.ArrayList(Entry) = .empty,
 constraints: std.ArrayList(MethodConstraint) = .empty,
 /// One `Range` per set, indexed by `ConstraintSet`.
 constraint_sets: std.ArrayList(Range) = .empty,
-/// The `(inst, evidence_index)` pairs `MethodConstraint.sites` ranges over.
-constraint_sites: std.ArrayList(ConstraintSite) = .empty,
 /// How many `mark`s are outstanding. Journaling is off at zero, which is
 /// the whole of a normal solve.
 depth: u32 = 0,
@@ -341,24 +320,28 @@ next_mark: u32 = no_mark + 1,
 /// `err` with successors on either side — goes through `setContent` or
 /// `merge`, which void them (`gains`, `touchesErr`). The
 /// epoch wraps after 2³² voids and restarts at 1 with the table cleared;
-/// what must not see a stale epoch keys on `proof_voids`. Checker v1 never
-/// proves (`tracks_proofs`), and pays one branch per content write.
+/// what must not see a stale epoch keys on `proof_voids`. A store that
+/// does not prove (`tracks_proofs`) pays one branch per content write.
 acyclic: std.ArrayList(u32) = .empty,
 acyclic_epoch: u32 = 1,
 /// How many times the proofs were voided: never wraps, so a memo keyed on it
-/// (`check2/Resolve.zig`'s `derivable_open`) cannot match a stale epoch after
+/// (`check/Resolve.zig`'s `derivable_open`) cannot match a stale epoch after
 /// `acyclic_epoch` wraps and restarts.
 proof_voids: u64 = 0,
-/// Whether this store keeps the proofs at all: set by checker
-/// v2 (`check2/Module.zig`); checker v1 never proves, and pays one branch per
-/// content write.
+/// Whether this store keeps the proofs at all: set by a module's check
+/// (`check/Module.zig`); a store nothing checks in (an interface dump's,
+/// a test's) does not prove, and pays one branch per content write.
 tracks_proofs: bool = false,
-/// How many times `rollback` ran: never decreases. Checker v2 never
-/// speculates (§7.5), so under v2 it stays 0; v2's memos keyed by a variable
-/// id (`check2/Derivable.zig`'s `GroundMemo` and `Shapes.last`) record it
+/// How many times `rollback` ran: never decreases. The checker never
+/// speculates (§7.5), so under it it stays 0; its memos keyed by a variable
+/// id (`check/Derivable.zig`'s `GroundMemo` and `Shapes.last`) record it
 /// and refuse to be read across a rollback, which could reuse an id for
 /// another type (CK-131, R9b).
 rollbacks: u32 = 0,
+/// Debug only: the nodes `Walk.assertProved` has visited in this store, so
+/// its re-walks of proved graphs stay within a budget linear in the store
+/// (CK-133). Never read outside that assert.
+proof_assert_work: u64 = 0,
 
 const Entry = struct { v: Var, desc: Descriptor };
 
@@ -380,7 +363,6 @@ pub const Snapshot = struct {
     /// would be the only one in the file.
     constraints: u32,
     constraint_sets: u32,
-    constraint_sites: u32,
 };
 
 pub fn init(backing: Allocator) TypeStore {
@@ -782,13 +764,6 @@ pub fn extendConstraints(
     return (@as(ConstraintSet, @enumFromInt(index))).toOptional();
 }
 
-/// A new site range holding `items`, appended.
-pub fn addConstraintSites(store: *TypeStore, items: []const ConstraintSite) Allocator.Error!Range {
-    const start: u32 = @intCast(store.constraint_sites.items.len);
-    try store.constraint_sites.appendSlice(store.gpa(), items);
-    return .{ .start = start, .len = @intCast(items.len) };
-}
-
 /// How many constraints `set` holds. Prefer this and `constraintAt` to
 /// holding the slice: unifying a pair can grow `constraints` from under a
 /// view, which is a use-after-realloc (§6.1 invariant 2).
@@ -804,13 +779,6 @@ pub fn constraintAt(store: *const TypeStore, set: ConstraintSet.Optional, i: u32
     const s = set.unwrap().?;
     const range = store.constraint_sets.items[s.int()];
     return store.constraints.items[range.start + i];
-}
-
-/// The sites `c` answers, by value into a caller-owned buffer would be the
-/// safe form; this view is valid only until the next `addConstraintSites`.
-pub fn constraintSites(store: *const TypeStore, c: MethodConstraint) []const ConstraintSite {
-    if (c.sites.len == 0) return &.{};
-    return store.constraint_sites.items[c.sites.start..][0..c.sites.len];
 }
 
 /// The constraint named `name` in `set`, or null.
@@ -860,7 +828,6 @@ pub fn beginSpeculation(store: *TypeStore) Snapshot {
         .extra = @intCast(store.extra.items.len),
         .constraints = @intCast(store.constraints.items.len),
         .constraint_sets = @intCast(store.constraint_sets.items.len),
-        .constraint_sites = @intCast(store.constraint_sites.items.len),
     };
 }
 
@@ -913,7 +880,6 @@ pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
         store.extra.shrinkRetainingCapacity(snapshot.extra);
         store.constraints.shrinkRetainingCapacity(snapshot.constraints);
         store.constraint_sets.shrinkRetainingCapacity(snapshot.constraint_sets);
-        store.constraint_sites.shrinkRetainingCapacity(snapshot.constraint_sites);
     }
     return exact;
 }

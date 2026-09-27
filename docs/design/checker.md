@@ -114,6 +114,38 @@ tests/corpus/
   check/depth/<Name>Deep.beni + .diag         one level OVER it, and says so
 ```
 
+*Amended by R12 (2026-09-27, `../../plans/checker-rewrite.md` R12).* The `check/` rows above are M2's.
+`Constrain.zig` and `Solve.zig` were checker v1's generator and solver and were deleted with it,
+together with v1's `Check.zig`; the rewrite's `src/check2/` took the directory's name, and the
+files kept from before the rewrite stayed where they were. `src/check/` is now, by role:
+
+```
+src/check/
+  Check.zig  Driver.zig  Incremental.zig    public API (run, Module, Options, Cutoff), the DAG
+                                            scheduler and core gate, the cutoff protocol (§4.4)
+  Module.zig  Context.zig                   one module's phases P0–P9 (checker-v2.md §5)
+  constrain/Tree.zig Expr.zig Pattern.zig Decl.zig   Bir → constraint tree (checker-v2.md §6)
+  Solve.zig  Walk.zig  Unify.zig  Generalize.zig  Instantiate.zig  Groups.zig
+  Recursion.zig  Producers.zig  Obligations.zig  Decide.zig
+                                            the solver (checker-v2.md §7–§10)
+  Resolve.zig  Evidence.zig  Instances.zig  Marker.zig  Derivable.zig  Contexts.zig
+  ContextUnits.zig  Eager.zig  Elaborate.zig  Unit.zig
+                                            dispatch, derived contexts, elaboration (§9–§13)
+  Publish.zig  Report.zig  Messages.zig     publication, the one emit path, v2's own texts
+  TypeStore.zig  Types.zig  Schemes.zig  Render.zig  Diagnostics.zig  DispatchTexts.zig
+  Dispatch.zig  Convention.zig  Cycles.zig  Edges.zig  Exhaustive.zig  PatternStore.zig
+  Schema.zig  SchemaPlan.zig  SchemaPlanBuild.zig  Env.zig  Scc.zig  Category.zig
+  reads.zig  Command.zig  InterfaceTerms.zig
+                                            kept from before the rewrite (checker-v2.md §19)
+  checker_test.zig                          the pipeline tests v1's `Check.zig` held, which ran
+                                            under v2 from R11
+  rules_test.zig                            the structural fences (I2, the table's bits, size)
+```
+
+`checker-v2.md` §19.1 is the file-by-file record. No file is over 1 500 lines, which
+`rules_test.zig` enforces: R12 split `Diagnostics.zig` (`DispatchTexts.zig`), `Exhaustive.zig`
+(`PatternStore.zig`) and `Contexts.zig` (`ContextUnits.zig`), each re-exporting what it moved.
+
 The depth sweep is a kind of its own because its assertion is a PAIR rather than a file. Every
 guard that can stop the checker reading a type gets a fixture one level under it, which must
 check clean, and one level over it, which must produce a diagnostic; the walker enforces the
@@ -171,7 +203,7 @@ until M4 caches it. `--core-root` reads the directory instead.
    parallelism last, but the data must be laid out for it from the start: a module's check
    reads only its own Bir, the interfaces of its imports, and the `TypeStore` it owns.
 
-   M2c's scheduler (`check/Check.zig`'s `Driver`, moved to `check2/Driver.zig` by R4a) is a ready queue over that order: a module
+   M2c's scheduler (`check/Check.zig`'s `Driver`, moved to `check2/Driver.zig` by R4a, `check/Driver.zig` since R12) is a ready queue over that order: a module
    is ready when every dependency of it that comes EARLIER in the order has finished, results
    land in the slot of a module index assigned before any thread started, diagnostics are
    collected per module and concatenated in the graph's order afterwards, and the counters are
@@ -197,7 +229,7 @@ plan data, not a TypeStore. Open questions there precede dependent implementatio
 
 ## 5. The type store
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
 
 Elm's `Type.Variable` + Roc's `types/store.zig`, in the design's data rules:
 
@@ -319,7 +351,7 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 
 ### 6.2 Solving
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
 
 Elm's `Type/Solve.hs` on the store above: walk the tree; `equal` calls `unify`; `let`
 introduces a new rank, solves the headers, **generalises** by scanning only the pool of
@@ -388,7 +420,7 @@ M3 decides how a literal of type `number` is emitted.
 
 ### 6.4 Obligations, discharged post-solve
 
-> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
+> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
 
 Each obligation is `(kind, var, region)` in a per-rank list. At generalisation time, for each
 obligation whose variable's root is:
@@ -411,7 +443,7 @@ guard that poisons must report first", applied here. → `static-dispatch-spike.
 
 ### 6.5 `?`
 
-> **Checker v2 (2026-09-24), owner decision D2 — effective since R11 (2026-09-27).** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11): D2 replaced it, and this section describes checker v1 only, until R12 deletes it.
+> **Checker v2 (2026-09-24), owner decision D2 — effective since R11 (2026-09-27).** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11): D2 replaced it, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
 
 `try(e, target)` where the enclosing function's declared or inferred result type is `r`:
 speculatively unify `e` with `Result x a` and `r` with `Result x b` (journal mark); if that

@@ -670,9 +670,7 @@ const Verdict = struct {
     detail: []const u8,
 };
 
-/// `pending_test.zig`'s `Scenario`, cut to what these scenarios use. A run
-/// gets no `--checker` of its own: the world adds `BENI_CHECKER`'s, which
-/// `build.zig` pins empty, so every run is the default checker's.
+/// `pending_test.zig`'s `Scenario`, cut to what these scenarios use.
 const Scenario = struct {
     id: []const u8,
     w: World,
@@ -696,7 +694,7 @@ const Scenario = struct {
     }
 
     /// `args` as they are (the pending harness added `BENI_CHECKER`'s flag
-    /// here; the world does that now).
+    /// here until R12 deleted it).
     fn argv(_: *Scenario, args: []const []const u8) ![]const []const u8 {
         return args;
     }

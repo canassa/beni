@@ -1,2758 +1,396 @@
-//! Checker v1, one module at a time (docs/design/checker.md §6): one
-//! `TypeStore` per module, the module's top-level values SCC-decomposed into
-//! binding groups, and for each group constrain → solve → generalise,
-//! followed by the schemes going into the interface (§7).
+//! The checker's public API and its inter-module driver (checker-v2.md §5,
+//! §19.1; checker.md §4.4): `run`, `Module`, `Options`, `Cutoff`. Moved here
+//! from v1's `Check.zig` by R4a, unchanged in behaviour, so that ONE
+//! scheduler, one core gate and one cutoff protocol served both checkers
+//! (`plans/checker-rewrite.md` R4a). `Driver.zig` walks the DAG,
+//! `Incremental.zig` finishes keys, loads, installs and publishes, and each
+//! module is checked by `Module.zig`. v1 was deleted by R12 and this
+//! directory, `src/check2/` until then, took its name (checker-v2.md §19.1).
 //!
-//! **Order.** The inter-module driver — the DAG scheduler, the core gate and
-//! the cutoff protocol — moved to `src/check2/` in R4a (checker-v2.md §5,
-//! §19): `check2/Check.zig` is the checker's public API (`run`, `Module`,
-//! `Options`, `Cutoff`) for both checkers, and its `Driver` calls
-//! `ModuleCheck.run` below for every module v1 checks. There is one
-//! scheduler.
-//!
-//! **Binding groups.** Top-level values are SCC-decomposed over the
-//! module's `refs`, and an edge exists only to an UNANNOTATED value: a
-//! declaration with an annotation is checked against that annotation and
-//! its annotation is what dependents see, which breaks recursion through it
-//! (§6.1) and keeps groups minimal (design §7 #5). An annotated declaration
-//! therefore can never be inside a cycle, which is also what lets every
-//! annotated scheme be built in one pass before any body is checked.
-//!
-//! **An annotated declaration is read twice**, and deliberately: once as a
-//! generalised scheme (what callers instantiate) and once as rigid variables
-//! at the group's rank (what the body is held to). They are two readings of
-//! the same tree, so they have the same shape by construction, and keeping
-//! them apart is what makes `f : a -> a` reject a body that only works for
-//! `Int` while still letting a caller use it at `Int`.
-//!
-//! **The store dies with the module** unless `keep_stores` is set, which
-//! `dump --stage=types` does: the dump prints every local binding's type,
-//! and a `Var` means nothing once its store is gone.
-//!
-//! **Then exhaustiveness** (§6.6), over the declarations that solved clean:
-//! `Exhaustive.zig` has the algorithm and `exhaustive` is what it costs in a
-//! trace.
-//!
-//! **Then top-level value cycles** (§6.7), last of all, because the graph
-//! that pass walks is half `Bir.refs` and half the module's dispatch table
-//! and the table is not finished until step 6. `Cycles.zig` has it.
+//! **Order.** Modules are checked over the graph's topological order, so
+//! every import's interface is complete — and immutable — before anything
+//! reads it. `Driver` walks that order as a DAG (§4.4): a module whose
+//! dependencies have all finished may start, on any worker, and the bound
+//! that makes it safe is the interface firewall — a module's check reads
+//! only its own Bir, the interfaces of its imports, and the store it owns,
+//! and the one thing it shares with another module's check is the
+//! session-wide `Types` table, which is built before any thread starts.
+//! Each worker writes only its own module's slot of the table (`ref_ids`)
+//! before releasing dependents. Nothing is keyed by completion order; see
+//! `Driver`'s header for what makes the output identical at every
+//! `--jobs`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
-const diagnostic = @import("diagnostic");
 const Arena = @import("../Arena.zig");
 const Artifacts = @import("../Artifacts.zig");
 const Profile = @import("../Profile.zig");
-const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
-const Constrain = @import("Constrain.zig");
-const Cycles = @import("Cycles.zig");
 const Diagnostics = @import("Diagnostics.zig");
-const Render = @import("Render.zig");
-const Schemes = @import("Schemes.zig");
-const Solve = @import("Solve.zig");
 const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
-const Schema = @import("Schema.zig");
-const SchemaPlanBuild = @import("SchemaPlanBuild.zig");
-const iface_bytes = @import("../resolve/iface_bytes.zig");
-const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
-const schema_plan_bytes = @import("../cache/schema_plan_bytes.zig");
 const reads = @import("reads.zig");
-const Api = @import("../check2/Check.zig");
+const CacheEntry = @import("../cache/Entry.zig");
+const CacheDir = @import("../cache/Dir.zig");
+const Key = @import("../cache/Key.zig");
+const Digest = @import("../cache/Digest.zig");
+const Driver = @import("Driver.zig");
 
+const Check = @This();
+
+/// Re-exported so `Session` can name the pattern-usefulness budget without
+/// reaching past the checker's driver into its internals.
 pub const Exhaustive = @import("Exhaustive.zig");
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
-/// `dump --stage=types`' per-module tables, defined with the public API.
-const Module = Api.Module;
 
-/// One module's v1 check, run by `check2/Driver.zig`'s `checkInner`.
-pub const ModuleCheck = struct {
+/// What `--self-profile` reports, and what M4's incrementality tests will
+/// assert did NOT move when only a body changed (checker.md §9). Moved here
+/// from v1's `Solve.zig` by R4b's review (S2). R12 deleted the six counters
+/// only v1 wrote (`obligations` and `constraints_*`).
+pub const Counters = struct {
+    unifications: u64 = 0,
+    generalisations: u64 = 0,
+    instantiations: u64 = 0,
+    /// The derived-context fixpoints v2 ran (`Contexts.run`, checker-v2.md
+    /// §11.2), summed over the modules it CHECKED. A module installed from
+    /// the cache runs none: its rows are read off its record (I10, §14.3 *as
+    /// built by R10*), which is what a warm run's 0 here says.
+    derived_context_runs: u64 = 0,
+
+    /// Field-by-field sum. Reflective on purpose: a counter added above and
+    /// forgotten here would silently report a per-module figure as if it
+    /// were the whole project's.
+    pub fn add(a: Counters, b: Counters) Counters {
+        var out: Counters = .{};
+        inline for (@typeInfo(Counters).@"struct".fields) |f| {
+            @field(out, f.name) = @field(a, f.name) + @field(b, f.name);
+        }
+        return out;
+    }
+};
+
+/// What one checked module leaves behind for `dump --stage=types`. Present
+/// only when the run asked for it.
+pub const Module = struct {
+    store: TypeStore,
+    /// Scheme per top-level declaration; `.none` for a type. This is what
+    /// the interface carries and what dependents instantiate.
+    decl_scheme: []Var.Optional,
+    /// What `dump --stage=types` prints for a declaration. It differs from
+    /// `decl_scheme` for an ANNOTATED one: the scheme is a generalised
+    /// reading of the annotation and the body was checked against a RIGID
+    /// reading, two structurally identical trees over different variables.
+    /// Printing the scheme next to locals that belong to the other tree
+    /// would name the same `a` twice over, so the dump uses the tree the
+    /// locals are in.
+    decl_display: []Var.Optional,
+    /// Type per local, indexed exactly like `Bir.locals`.
+    local_type: []Var.Optional,
+};
+
+/// Owned. The session-wide type table.
+types: Types,
+/// Owned. Diagnostics in module-check order; the session sorts.
+diagnostics: []const Diagnostics.Item,
+/// Owned when `modules.len != 0`: one per graph module, in module index
+/// order. Empty unless the run asked to keep them.
+modules: []Module,
+/// Owned. One per graph module, in module index order: what the checker
+/// decided about every method call (static-dispatch-spike.md §7).
+///
+/// Kept whatever `keep_stores` says, unlike `modules`: the backend needs it
+/// on every build, and it holds no `Var` — everything in it is an index or a
+/// name that outlives the store.
+dispatch: []Dispatch,
+/// Resolved immutable schema plan per module.
+plans: []SchemaPlan,
+counters: Counters,
+
+pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .plans = &.{}, .counters = .{} };
+
+pub fn deinit(check: *Check, gpa: Allocator) void {
+    check.types.deinit(gpa);
+    for (check.diagnostics) |d| gpa.free(d.message);
+    gpa.free(check.diagnostics);
+    for (check.modules) |*m| {
+        m.store.deinit();
+        gpa.free(m.decl_scheme);
+        gpa.free(m.decl_display);
+        gpa.free(m.local_type);
+    }
+    gpa.free(check.modules);
+    for (check.dispatch) |*d| d.deinit(gpa);
+    gpa.free(check.dispatch);
+    for (check.plans) |*plan| plan.deinit(gpa);
+    gpa.free(check.plans);
+    check.* = empty;
+}
+
+pub const Options = struct {
+    /// Where the per-module `constrain` and `solve` events go (checker.md
+    /// §9). The two halves are timed separately because the
+    /// constraint/solve split is the architecture (research/02 §1), and a
+    /// trace that could not tell them apart would hide which half a
+    /// regression is in.
+    profile: ?*Profile = null,
+    /// Keep each module's store and variable tables alive after the check,
+    /// for `dump --stage=types`.
+    keep_stores: bool = false,
+    /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
+    /// today only `ambiguous_method_receiver` (§10.9), and then only for a
+    /// module of the ROOT package. Set by `check` and `build` (A.83); a
+    /// warning never changes the exit code.
+    informational: bool = false,
+    /// One per graph module: true when an EARLIER phase already reported on
+    /// it. Such a module is still checked — its dependents need schemes —
+    /// but silently.
+    ///
+    /// This is Elm's rule (`compile` chains parse → canonicalize → typecheck
+    /// and stops at the first failure) and it is what keeps one mistake to
+    /// one message: a file with a syntax error has a tree the parser
+    /// GUESSED, and a file with an unbound name has a declaration whose type
+    /// is unknowable, so every type error found in either is a consequence
+    /// of the message the author already has.
+    quiet: []const bool = &.{},
+    /// How many workers may check modules at once (checker.md §4.4). One
+    /// runs everything on the calling thread and spawns nothing, which is
+    /// what every hermetic test and every small project wants.
+    jobs: u32 = 1,
+    /// Work one `case` may spend on pattern usefulness before it is
+    /// abandoned and reports nothing (`Exhaustive.default_budget`).
+    /// Settable so a test can prove the bound is what makes it fall silent,
+    /// rather than asserting the absence of a hang.
+    pattern_budget: u32 = Exhaustive.default_budget,
+    /// `--roundtrip-interfaces` (`fast-compiler.md` §8): replace every
+    /// module's record with serialize → bytes → deserialize of itself, in
+    /// place, the moment its check finishes — so every dependent, every
+    /// dump, every dispatch table and every emitted file downstream is
+    /// built from bytes that have been through the format.
+    roundtrip_interfaces: bool = false,
+    /// `--roundtrip-dispatch` (`fast-compiler.md` §8), the twin of the flag
+    /// above for the cache entry's sidecar: write every module's dispatch
+    /// table to bytes, read it back and re-resolve it IN PLACE the moment
+    /// its check finishes, so every emitted file downstream is built from a
+    /// table that has been through the format.
+    ///
+    /// It matters more than its twin does. The record has `dump --stage=raw`
+    /// and a golden; the dispatch table's loss shows up as different
+    /// JavaScript or a `requireLive` failure, which is a wrong PROGRAM, and
+    /// `plans/m4-plan.md` §8 risk 2 names the sidecar as where a silent
+    /// miscompile can hide.
+    roundtrip_dispatch: bool = false,
+    /// One slot per graph module: the cache entry a serial pre-pass loaded
+    /// for it, or null (`fast-compiler.md` §8). A non-null slot is a HIT —
+    /// the whole of `Module.check` is skipped and the entry is installed
+    /// instead.
+    ///
+    /// The slots are borrowed. The hit path MOVES the record and the table
+    /// out and leaves `.empty` behind; the caller still owns the entry's
+    /// bytes and frees them afterwards.
+    cached: []?CacheEntry.Loaded = &.{},
+    /// The firewall cutoff's per-module work (`fast-compiler.md` §8). Null on
+    /// a run that computes no keys at all — every checking run has one.
+    cutoff: ?*Cutoff = null,
+};
+
+/// The key, the entry load and the two published values, done ON THE WORKER
+/// that claimed the module (`fast-compiler.md` §8, `plans/m4-3.md` §8).
+///
+/// **Why it cannot stay a serial pre-pass.** M4-1 computed every key in one
+/// serial pass and loaded every entry in a second, which worked because an
+/// import contributed its own KEY and a key is a function of sources alone.
+/// From M4-3 an import contributes its `(interface hash, dependency digest)`
+/// pair, and that pair exists only once the import has been CHECKED or LOADED
+/// — so the serial pass could only finish the keys of modules all of whose
+/// imports hit, and the case the cutoff exists for is precisely the one where
+/// an import MISSED and was re-checked to the same interface.
+///
+/// **What makes it deterministic** is that a key is a function of `own_terms`
+/// and of values published by modules the schedule guarantees are complete
+/// before this one is released (`buildSchedule`, `finish`), so no key's value
+/// depends on which worker got there first. **One writer per slot**, the
+/// discipline `interfaces[m]`, `dispatch[m]` and `types.ref_ids[m]` already
+/// keep. And at `--jobs=1` the serial walk is `graph.order`, so keys are
+/// finished in exactly the order M4-1's serial pass used — one code path and
+/// one scheduling rule.
+pub const Cutoff = struct {
+    /// The serial pass's `own_terms` blobs, and the slots this fills.
+    keys: *Key.Keys,
+    /// The cache directory, or null. A run with none still finishes every
+    /// key: one code path, and "was a key computed?" is exactly the kind of
+    /// condition a cache bug hides behind.
+    dir: ?*const CacheDir = null,
+    /// Read-only, and read-only is the point: a worker re-interns through
+    /// `InternPool.Global.find` (`CacheEntry.loadFinding`).
+    interner: *const InternPool.Global,
+    /// One slot per module, written by that module's own worker: the interface
+    /// hash and the dependency digest its dependents fold into their keys.
+    iface_hash: [][16]u8,
+    digest: []Digest.Digest,
+    /// One slot per module: whether it was a HIT. Summed after the run into
+    /// the three counters `fast-compiler.md` §8's acceptance test asserts.
+    hit: []bool,
+    /// `--cutoff-compare` (hidden): also compute the CUTOFF key beside the one
+    /// in use, so a fixture can assert the one direction that must hold —
+    /// **old key equal ⇒ new key equal**. The new key is coarser and never
+    /// finer; a violation would mean the new key depends on something the old
+    /// transitive key did not, which is impossible unless a term is wrong.
+    ///
+    /// The other direction IS the cutoff, and what validates it is output
+    /// identity (`plans/m4-3.md` §10.2), not an assertion.
+    compare: []Key.Key = &.{},
+    /// `core_surface`: one hash over the core package's sorted
+    /// `(module name, interface hash, digest)` list, computed once by the
+    /// driver after the last core module publishes and before any non-core
+    /// module's key is finished.
+    core_surface: Digest.Digest = Digest.none,
+    /// `--cutoff-compare`'s own core term: `core_epoch` over core's TRANSITIVE
+    /// keys, computed at the same barrier as `core_surface` so the two recipes
+    /// see the same moment.
+    core_epoch: Key.Key = Key.none,
+};
+
+/// Type-check every module of `graph`, filling `interfaces` with schemes.
+///
+/// `scratch` is the caller's arena, used for the serial path and by worker
+/// zero; every other worker gets one of its own, reset after each module so
+/// the peak is one module's constraints per worker and not the project's.
+pub fn run(
     gpa: Allocator,
+    io: Io,
     scratch: *Arena,
-    /// The pattern-usefulness scratch (checker.md §6.6), owned by the worker
-    /// and reset per `case` rather than per module.
-    patterns: *Arena,
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []Interface,
     provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
-    types: *Types,
-    module: Graph.Index,
-    diagnostics: *std.ArrayList(Diagnostics.Item),
-    quiet: bool,
-    profile: ?*Profile,
-    /// Which profile thread buffer this module's events go in: the worker
-    /// checking it. Only that worker writes it, which is what makes the
-    /// buffers lock-free.
-    tid: u32 = 0,
-    pattern_budget: u32 = Exhaustive.default_budget,
-    /// `Options.informational`, for this module.
-    informational: bool = false,
-    /// `Options.roundtrip_interfaces`, for this module.
-    roundtrip_interfaces: bool = false,
-    /// `Options.roundtrip_dispatch`, for this module.
-    roundtrip_dispatch: bool = false,
-    /// This module's slot of the run's dispatch tables (§7.1), filled at
-    /// the end of `run`.
-    dispatch: *Dispatch = undefined,
-    plan: *SchemaPlan = undefined,
-    /// `(rigid variable, method) → evidence index` for this module's
-    /// annotated declarations; owned by `run`.
-    rigid_evidence: *std.ArrayList(Dispatch.RigidEvidence) = undefined,
-    /// Nanoseconds this module spent in each half, summed over its binding
-    /// groups and emitted as one event each when the module is done.
-    constrain_ns: u64 = 0,
-    solve_ns: u64 = 0,
+    options: Options,
+) Error!Check {
+    var check: Check = .empty;
+    errdefer check.deinit(gpa);
+    // Inside a profile event: on a project of long alias chains this step
+    // was 1.3 s of a 1.35 s compile and did not appear in the trace at all,
+    // and `fast-compiler.md` §12 makes the trace the instrument of record.
+    const types_token = if (options.profile) |p| p.begin() else null;
+    check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
+    if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
-    pub fn run(mc: *ModuleCheck, keep: ?*Module) Error!Solve.Counters {
-        const gpa = mc.gpa;
-        const file = mc.graph.moduleFile(mc.module);
-        const bir = mc.artifacts.bir(file);
-        // One `check` event per module (checker.md §9), with `constrain`,
-        // `solve` and `exhaustive` nested inside it. Per module and not per
-        // run, because "this module was not re-checked" is the thing M4's
-        // incrementality tests have to be able to see.
-        const check_token = if (mc.profile) |p| p.begin() else null;
+    const modules = graph.count();
+    // One diagnostics list per module rather than one shared list: a shared
+    // one would need a lock on the hot path AND would order messages by
+    // completion, which `fast-compiler.md` §10 forbids. Concatenating them
+    // in the graph's order afterwards is what makes the output identical at
+    // every `--jobs`.
+    const per_module = try gpa.alloc(std.ArrayList(Diagnostics.Item), modules);
+    defer gpa.free(per_module);
+    @memset(per_module, .empty);
+    errdefer for (per_module) |*list| {
+        for (list.items) |d| gpa.free(d.message);
+        list.deinit(gpa);
+    };
+    const counters = try gpa.alloc(Counters, modules);
+    defer gpa.free(counters);
+    @memset(counters, .{});
 
-        var owned_store: TypeStore = .init(std.heap.page_allocator);
-        const store = if (keep) |k| &k.store else &owned_store;
-        defer if (keep == null) owned_store.deinit();
-        // One descriptor per instruction is a good first guess: most
-        // instructions get a variable and most types are one node.
-        try store.reserve(bir.insts.len + 64, bir.insts.len * 2 + 64);
+    // One per module, filled at the end of that module's own check while
+    // its store is still alive (§7.1). Allocated here so the driver can
+    // write into it from any worker without a lock: a module writes only
+    // its own slot.
+    const dispatch = try gpa.alloc(Dispatch, modules);
+    @memset(dispatch, .empty);
+    check.dispatch = dispatch;
+    const plans = try gpa.alloc(SchemaPlan, modules);
+    @memset(plans, .empty);
+    check.plans = plans;
 
-        const decl_scheme = try gpa.alloc(Var.Optional, bir.decls.len);
-        errdefer gpa.free(decl_scheme);
-        @memset(decl_scheme, .none);
-        const decl_display = try gpa.alloc(Var.Optional, bir.decls.len);
-        errdefer gpa.free(decl_display);
-        @memset(decl_display, .none);
-        const local_type = try gpa.alloc(Var.Optional, bir.locals.len);
-        errdefer gpa.free(local_type);
-        @memset(local_type, .none);
-        const inst_result = try gpa.alloc(Var.Optional, bir.insts.len);
-        defer gpa.free(inst_result);
-        @memset(inst_result, .none);
-
-        var schemas = try Schema.State.init(mc.scratch.allocator(), store, mc.types, mc.graph, mc.artifacts, mc.interfaces, mc.interner, mc.module, bir);
-        defer schemas.deinit();
-        try schemas.buildAll();
-
-        // Empty on every input a person writes; see `Env.too_deep`.
-        var too_deep: std.ArrayList(Bir.Inst.Index) = .empty;
-        defer too_deep.deinit(mc.scratch.allocator());
-        // The module's dispatch table as it is built (§7.1). It outlives
-        // the store — everything in it is an index or a name — and is kept
-        // whatever `keep_stores` says.
-        var dispatch: Dispatch.Builder = .{ .gpa = gpa };
-        defer dispatch.deinit();
-        // `(rigid variable, method) → evidence index` for every annotated
-        // declaration of this module, in the canonical order of §7.2.
-        var rigid_evidence: std.ArrayList(Dispatch.RigidEvidence) = .empty;
-        defer rigid_evidence.deinit(mc.scratch.allocator());
-        var monomorphic: std.ArrayList(Constrain.Monomorphic) = .empty;
-        defer monomorphic.deinit(mc.scratch.allocator());
-        mc.rigid_evidence = &rigid_evidence;
-
-        var env: Constrain.Env = .{
-            .scratch = mc.scratch.allocator(),
-            .too_deep = &too_deep,
-            .dispatch = &dispatch,
-            .monomorphic = &monomorphic,
-            .informational = mc.informational,
-            .store = store,
-            .types = mc.types,
-            .graph = mc.graph,
-            .artifacts = mc.artifacts,
-            .interner = mc.interner,
-            .interfaces = mc.interfaces,
-            .module = mc.module,
-            .bir = bir,
-            .decl_scheme = decl_scheme,
-            .local_var = &.{},
-            .inst_result = &.{},
-            .inst_base = 0,
-            .schemas = &schemas,
-        };
-        var reporter: Diagnostics.Reporter = .{
-            .gpa = gpa,
-            .env = &env,
-            .items = mc.diagnostics,
-            // A module in an import cycle has error types and reports
-            // nothing further (checker.md §4.3); so does one an earlier
-            // phase already reported on (see `Options.quiet`).
-            .quiet = mc.quiet or mc.graph.isPoisoned(mc.module),
-        };
-        if (!reporter.quiet) for (schemas.recursive_aliases.items) |region| {
-            const message = try gpa.dupe(u8, "This schema endpoint is a structural alias that refers to itself.\n\nUse a tagged schema for recursive data so the endpoint has a nominal constructor.\n");
-            errdefer gpa.free(message);
-            try mc.diagnostics.append(gpa, .{ .code = .recursive_alias, .module = mc.module, .region = region, .message = message });
-        };
-        if (!reporter.quiet) for (schemas.errors.items) |schema_error| {
-            const message = try gpa.dupe(u8, schema_error.message);
-            errdefer gpa.free(message);
-            try mc.diagnostics.append(gpa, .{ .code = schema_error.code, .module = mc.module, .region = schema_error.region, .message = message });
-        };
-
-        // 1. Every annotated value's scheme, before any body is checked.
-        //    The `where` clause is read with the SAME builder, so a variable
-        //    a constraint mentions is the one the annotation introduced
-        //    (§2.4); the constraints then ride on the scheme's flags and
-        //    `Schemes.Writer` carries them into the interface (§6.5).
-        for (bir.decls, 0..) |d, i| {
-            if (!d.kind.isValue()) continue;
-            const annotation = d.annotation.unwrap() orelse continue;
-            var b = env.builder(.flex, TypeStore.generalized);
-            defer b.deinit();
-            const v = try env.readAnnotation(&b, annotation);
-            try ModuleCheck.attachWhere(&env, bir, d, &b);
-            decl_scheme[i] = v.toOptional();
-            // A declaration with no BODY never reaches `checkGroup`, so its
-            // evidence list has to be recorded here — a `pub foreign … where`
-            // (§5.2, A.7) is exactly that, and without this it got no `decl`
-            // line and no evidence at all. The scheme's own variables carry
-            // the clause, and they are never met by a body, so nothing is
-            // added to `rigid_evidence`.
-            if (d.body == .none and d.where_start != d.where_end) {
-                try mc.recordEvidence(&env, bir, @intCast(i), v, false);
-            }
+    var kept: std.ArrayList(Module) = .empty;
+    // Each kept `Module` owns an arena and three tables. On the OOM path
+    // the list itself is not enough: the modules that DID finish have to
+    // give theirs back, or the failure leaks one arena per checked module.
+    errdefer {
+        for (kept.items) |*m| {
+            m.store.deinit();
+            gpa.free(m.decl_scheme);
+            gpa.free(m.decl_display);
+            gpa.free(m.local_type);
         }
-
-        // 2. Binding groups over the values that still need inferring.
-        // Imported public methods are final before this DAG node runs. Fold
-        // them into this module's derivation capabilities before any value
-        // group can ask whether one of its nominal types supports `==` or
-        // ordering (static-dispatch-spike.md §6.3.1, queue row 72).
-        try mc.types.settleDispatchCapabilities(gpa, mc.module, mc.graph, mc.artifacts, store, decl_scheme);
-        const groups = try ModuleCheck.bindingGroups(bir, &env);
-        var counters: Solve.Counters = .{};
-        try schemas.settleProperties(mc.types, gpa);
-
-        // An inferred public `eq` or `compare` is a dispatch boundary for
-        // every later group in this module. Check its existing explicit
-        // dependency closure first, preserving the SCC dependency order,
-        // then publish the completed method scheme into the capability
-        // table. This is deliberately a priority over already-independent
-        // groups, not a new implicit edge: helpers retain their ordinary
-        // generalisation and only the two module-rule names move earlier.
-        const group_count = groups.starts.len - 1;
-        const priority = try env.scratch.alloc(bool, group_count);
-        @memset(priority, false);
-        const group_of = try env.scratch.alloc(u32, bir.decls.len);
-        for (0..group_count) |g| {
-            for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |member| group_of[member] = @intCast(g);
-        }
-        var pending: std.ArrayList(u32) = .empty;
-        defer pending.deinit(env.scratch);
-        for (bir.decls, 0..) |d, i| {
-            if (!d.kind.isValue() or !d.is_pub or d.annotation != .none) continue;
-            const name = bir.symbol(d.name);
-            if (name != InternPool.WellKnown.eq.symbol() and name != InternPool.WellKnown.compare.symbol()) continue;
-            const g = group_of[i];
-            if (!priority[g]) {
-                priority[g] = true;
-                try pending.append(env.scratch, g);
-            }
-        }
-        while (pending.pop()) |g| {
-            for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |member| {
-                for (bir.declRefs(bir.decls[member])) |ref| {
-                    if (ref.kind != .top_value and ref.kind != .top_schema) continue;
-                    if (ref.a >= bir.decls.len) continue;
-                    const target = bir.decls[ref.a];
-                    if ((!target.kind.isValue() and target.kind != .schema) or (target.kind.isValue() and target.annotation != .none)) continue;
-                    const dependency = group_of[ref.a];
-                    if (priority[dependency]) continue;
-                    priority[dependency] = true;
-                    try pending.append(env.scratch, dependency);
-                }
-            }
-        }
-        // The priority groups read capabilities too, so they get the
-        // scheme-checked answer and never `settleDispatchCapabilities`'
-        // syntactic first cut: a payload method with an arbitrary `where`
-        // requirement, or one specialised to another receiver, is only
-        // decided by the selected scheme (row 72).
-        if (pending.capacity != 0) try mc.settleOrdinaryCapabilities(&env, &reporter);
-        for (0..group_count) |g| {
-            if (!priority[g]) continue;
-            const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
-            counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
-            for (members) |member| if (bir.decls[member].kind == .schema) {
-                try schemas.settleProperties(mc.types, gpa);
-                break;
-            };
-        }
-        // Settle ordinary nominal bodies before later groups ask for
-        // derivation: again once the priority groups have published their
-        // method schemes, or for the first time when there were none.
-        if (pending.capacity != 0) try mc.types.settleDispatchCapabilities(gpa, mc.module, mc.graph, mc.artifacts, store, decl_scheme);
-        try mc.settleOrdinaryCapabilities(&env, &reporter);
-        for (0..groups.starts.len - 1) |g| {
-            if (priority[g]) continue;
-            const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
-            counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
-            for (members) |member| if (bir.decls[member].kind == .schema) {
-                try schemas.settleProperties(mc.types, gpa);
-                break;
-            };
-        }
-
-        // Every nominal type this module declares gets `eq` and `compare`
-        // derived, used or not (A.23). Schema endpoint payloads can depend
-        // on inferred conversions, so their property fixed point must be
-        // settled before the eager rows are finalized.
-        {
-            var empty_tree: Constrain.Tree = .{};
-            var deriver: Solve.Solver = .init(gpa, &env, &empty_tree, &reporter);
-            defer deriver.deinit();
-            deriver.rank = TypeStore.generalized;
-            try deriver.settleOrdinaryCapabilities();
-            try deriver.deriveOrdinaryDeclaredTypes();
-            try deriver.deriveSchemaDeclaredTypes();
-        }
-
-        // 3. Pattern usefulness, over the declarations that solved clean
-        //    (checker.md §6.6). It runs here rather than inside the group
-        //    loop because "did THIS declaration produce a diagnostic?" is
-        //    only settled once every group is done.
-        const exhaustive_token = if (mc.profile) |p| p.begin() else null;
-        try mc.exhaustive(bir, &reporter);
-        if (mc.profile) |profile| {
-            profile.record(mc.tid, .constrain, file.int(), 0, mc.constrain_ns);
-            profile.record(mc.tid, .solve, file.int(), 0, mc.solve_ns);
-            profile.end(mc.tid, exhaustive_token.?, .exhaustive, file.int(), 0);
-        }
-
-        // 5. The interface gains its schemes (checker.md §7).
-        try mc.fillInterface(&env, &reporter, bir, store, decl_scheme);
-        // 7. Whatever was too deeply nested to read. Last, so a declaration
-        //    that tripped the guard in more than one place is one message.
-        try ModuleCheck.reportTooDeep(&env, &reporter);
-
-        mc.plan.deinit(gpa);
-        var schema_plan_ok = !reporter.quiet;
-        for (mc.diagnostics.items) |item| if (item.severity == .@"error") {
-            schema_plan_ok = false;
-            break;
-        };
-        mc.plan.* = if (schema_plan_ok)
-            try SchemaPlanBuild.build(gpa, mc.module, bir, mc.graph, mc.interfaces, mc.interner, mc.types, store, &schemas, null)
-        else
-            .empty;
-
-        // 6. The dispatch table, sorted once (§7.1, §7.3). Built while the
-        //    store was alive; nothing in it needs the store afterwards.
-        //    `finish` also converts v1's flat sites into checker-v2.md
-        //    §13.1's evidence trees, which is the table the backend reads.
-        var namer: DerivedNamer = .{ .mc = mc, .types = mc.types, .builder = &dispatch };
-        const value_arity = try mc.scratch.allocator().alloc(u16, bir.decls.len);
-        for (value_arity, decl_scheme) |*arity, scheme| {
-            const v = scheme.unwrap() orelse {
-                arity.* = 0;
-                continue;
-            };
-            arity.* = std.math.cast(u16, store.paramCount(v)) orelse std.math.maxInt(u16);
-        }
-        var dropped: std.ArrayList(Bir.Inst.Index) = .empty;
-        mc.dispatch.* = try dispatch.finish(gpa, mc.scratch.allocator(), .{
-            .decl_count = bir.decls.len,
-            .bir = bir,
-            .interfaces = mc.interfaces,
-            .value_arity = value_arity,
-            .types = mc.types,
-            .name_of = DerivedNamer.write,
-            .name_ctx = @ptrCast(&namer),
-        }, &dropped);
-        // `--roundtrip-dispatch` goes HERE and nowhere else: the table is
-        // finished and nobody has read it yet. BEFORE `Cycles.run` on
-        // purpose — the cycle pass walks this table, so putting the round
-        // trip first makes even the value-cycle diagnostics a product of
-        // bytes that have been through the format.
-        if (mc.roundtrip_dispatch) try mc.roundtripDispatch(&reporter);
-
-        // 8. Top-level value cycles (checker.md §6.7). After the dispatch
-        //    table is FINISHED, because a `method_call` adds no `refs` edge
-        //    and the table is where that edge lives — the same reason
-        //    `backend.md` §5's emission order reads it.
-        try Cycles.run(mc.scratch.allocator(), bir, mc.dispatch, mc.interner, &reporter);
-
-        // 9. I7 (checker-v2.md §2, §13.1): every term's argument count is
-        //    its callee's requirement count. `internal` and never a panic
-        //    during R2–R10 (S10), and only on a module that reported no
-        //    error — so it runs LAST, after every pass that can report one
-        //    (`fillInterface`, `reportTooDeep`, `Cycles`): a module whose
-        //    one error is a value cycle never reaches the backend and must
-        //    not gain a second, spurious message. After the round trip, so
-        //    the table asserted is the one the backend will read.
-        try mc.assertEvidenceShape(&reporter, bir, dropped.items);
-
-        // A declaration with no body — a `foreign` value, an annotation the
-        // parser found no definition for — has no check variable, so its
-        // scheme is the only thing to show.
-        for (decl_display, decl_scheme) |*display, scheme| {
-            if (display.* == .none) display.* = scheme;
-        }
-        if (keep) |k| {
-            k.decl_scheme = decl_scheme;
-            k.decl_display = decl_display;
-            k.local_type = local_type;
-        } else {
-            gpa.free(decl_scheme);
-            gpa.free(decl_display);
-            gpa.free(local_type);
-        }
-        if (mc.profile) |profile| profile.end(mc.tid, check_token.?, .check, file.int(), 0);
-        return counters;
+        kept.deinit(gpa);
+    }
+    if (options.keep_stores) {
+        try kept.ensureTotalCapacity(gpa, modules);
+        for (0..modules) |_| kept.appendAssumeCapacity(.{
+            .store = .init(std.heap.page_allocator),
+            .decl_scheme = &.{},
+            .decl_display = &.{},
+            .local_type = &.{},
+        });
     }
 
-    fn add(a: Solve.Counters, b: Solve.Counters) Solve.Counters {
-        return a.add(b);
+    // What each module's key can see move, for the covered-read self-check
+    // (`reads.zig`). Built once, before any worker: it is a function of the
+    // graph, which is fixed before the DAG starts.
+    var coverage: reads.Coverage = try .build(gpa, graph);
+    defer coverage.deinit(gpa);
+
+    var driver: Driver = .{
+        .gpa = gpa,
+        .io = io,
+        .graph = graph,
+        .artifacts = artifacts,
+        .interfaces = interfaces,
+        .provenance = provenance,
+        .interner = interner,
+        .types = &check.types,
+        .options = options,
+        .per_module = per_module,
+        .counters = counters,
+        .kept = if (options.keep_stores) kept.items else &.{},
+        .dispatch = dispatch,
+        .plans = plans,
+        .coverage = coverage,
+    };
+    try driver.go(scratch);
+    if (driver.failure) |err| return err;
+
+    // Merge in the graph's order — the order the serial path produced them
+    // in, and a function of the input alone.
+    var diagnostics: std.ArrayList(Diagnostics.Item) = .empty;
+    errdefer diagnostics.deinit(gpa);
+    // Capacity first, then move: a partial `appendSlice` would leave some
+    // messages owned by `diagnostics` and the rest by `per_module`, and the
+    // two errdefers would free the moved ones twice. Reserving up front
+    // makes the loop below infallible, so ownership transfers whole.
+    var total: usize = 0;
+    for (per_module) |list| total += list.items.len;
+    try diagnostics.ensureTotalCapacity(gpa, total);
+    for (graph.order) |m| diagnostics.appendSliceAssumeCapacity(per_module[m.int()].items);
+    // A module missing from `graph.order` cannot happen — the order is a
+    // permutation of every module — but if one ever were, its messages
+    // would be leaked rather than freed, so they are released explicitly.
+    if (diagnostics.items.len != total) {
+        for (graph.order) |m| per_module[m.int()].clearRetainingCapacity();
+        for (per_module) |list| for (list.items) |d| gpa.free(d.message);
     }
+    for (per_module) |*list| list.deinit(gpa);
+    for (counters) |c| check.counters = check.counters.add(c);
 
-    /// Attach an annotation's `where` clause to the variables the
-    /// annotation introduced (static-dispatch-spike.md §2.4, §6.1).
-    ///
-    /// Read with the SAME `Types.Builder` as the annotation, which is what
-    /// makes `where k.compare : k, k -> Order` talk about the `k` of
-    /// `Dict k v` and not a fresh variable. §2.4's closure rule guarantees
-    /// every variable a constraint mentions is already in that scope, so no
-    /// quantifier can appear here that the body does not also introduce —
-    /// which is what makes §7.2's canonical order total.
-    fn attachWhere(env: *Constrain.Env, bir: *const Bir, d: Bir.Decl, b: *Types.Builder) Error!void {
-        const clause = bir.declWhere(d);
-        if (clause.len == 0) return;
-        const scratch = env.scratch;
-        const store = env.store;
-        // Every type first: reading one can grow `b.scope`, and the lookup
-        // below wants the finished scope.
-        const fn_vars = try scratch.alloc(Var, clause.len);
-        defer scratch.free(fn_vars);
-        for (clause, fn_vars) |wc, *v| v.* = try env.readAnnotation(b, wc.type_inst);
-        const taken = try scratch.alloc(bool, clause.len);
-        defer scratch.free(taken);
-        @memset(taken, false);
-        var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
-        defer built.deinit(scratch);
-        for (clause, 0..) |wc, i| {
-            if (taken[i]) continue;
-            const variable = bir.symbol(wc.variable);
-            built.clearRetainingCapacity();
-            for (clause[i..], fn_vars[i..], i..) |other, fn_var, j| {
-                if (bir.symbol(other.variable) != variable) continue;
-                taken[j] = true;
-                try built.append(scratch, .{
-                    .name = bir.symbol(other.method),
-                    .fn_var = fn_var,
-                    .region = other.type_inst,
-                    .origin = .where_clause,
-                    .sites = .empty,
-                });
-            }
-            const target = blk: {
-                for (b.scope.items) |scoped| {
-                    if (scoped.name == variable) break :blk scoped.v;
-                }
-                // `where_variable_unbound` already refused this in lowering
-                // (§2.4); a poisoned clause simply attaches nothing.
-                continue;
-            };
-            const set = try store.addConstraints(built.items);
-            const root = store.find(target);
-            const flags = store.flagsOf(root);
-            const with: TypeStore.Flags = .{
-                .name = flags.name,
-                .kind = flags.kind,
-                .equatable = flags.equatable,
-                .constraints = set.toOptional(),
-            };
-            store.setContent(root, switch (store.content(root)) {
-                .rigid => .{ .rigid = with },
-                else => .{ .flex = with },
-            });
-        }
-    }
-
-    /// The evidence list of one ANNOTATED declaration, in §7.2's canonical
-    /// order: the scheme's quantifiers in the order `Schemes.Writer`
-    /// records them, and within each for its constraints in name-text
-    /// order.
-    ///
-    /// Computed over the RIGID reading, which is the tree the body's
-    /// constraints live in; it is structurally identical to the flex
-    /// reading a caller instantiates, so both sides number the same slots.
-    fn recordEvidence(mc: *ModuleCheck, env: *Constrain.Env, bir: *const Bir, decl: u32, rigid: Var, keyed: bool) Error!void {
-        const scratch = env.scratch;
-        var order: std.ArrayList(Var) = .empty;
-        defer order.deinit(scratch);
-        try Schemes.quantifierOrder(env.store, env.interner, rigid, &order, scratch);
-        var entries: std.ArrayList(Dispatch.Requirement) = .empty;
-        defer entries.deinit(scratch);
-        var index: u16 = 0;
-        for (order.items, 0..) |root, q| {
-            const flags = env.store.flagsOf(root);
-            const n = env.store.constraintCount(flags.constraints);
-            if (n == 0) continue;
-            const sorted = try scratch.alloc(TypeStore.MethodConstraint, n);
-            defer scratch.free(sorted);
-            for (sorted, 0..) |*c, j| c.* = env.store.constraintAt(flags.constraints, @intCast(j));
-            std.mem.sort(TypeStore.MethodConstraint, sorted, env.interner, constraintNameLessThan);
-            for (sorted) |c| {
-                try entries.append(scratch, .{
-                    .quantified = @intCast(q),
-                    .var_name = flags.name,
-                    .method = c.name,
-                });
-                if (keyed) try mc.rigid_evidence.append(scratch, .{ .v = root, .method = c.name, .index = index });
-                index += 1;
-            }
-        }
-        if (entries.items.len == 0) return;
-        const range = try env.dispatch.addEvidence(entries.items);
-        try env.dispatch.setDeclEvidence(bir.decls.len, decl, range);
-    }
-
-    /// SCC over the module's top-level values. An edge `d → e` exists when
-    /// `d` mentions `e` and `e` is an unannotated value of this module —
-    /// the only case where `d`'s check has to wait for `e`'s.
-    fn bindingGroups(bir: *const Bir, env: *Constrain.Env) Error!Constrain.IndexGroups {
-        const scratch = env.scratch;
-        const n = bir.decls.len;
-        var edges: std.ArrayList(u32) = .empty;
-        defer edges.deinit(scratch);
-        const edge_start = try scratch.alloc(u32, n + 1);
-        for (bir.decls, 0..) |d, i| {
-            edge_start[i] = @intCast(edges.items.len);
-            if (!d.kind.isValue() and d.kind != .schema) continue;
-            for (bir.declRefs(d)) |ref| {
-                if (ref.kind != .top_value and ref.kind != .top_schema) continue;
-                const target = ref.a;
-                if (target >= n or target == i) continue;
-                const t = bir.decls[target];
-                if ((!t.kind.isValue() and t.kind != .schema) or (t.kind.isValue() and t.annotation != .none)) continue;
-                if (std.mem.indexOfScalar(u32, edges.items[edge_start[i]..], target) != null) continue;
-                try edges.append(scratch, target);
-            }
-        }
-        edge_start[n] = @intCast(edges.items.len);
-        return Constrain.sccGroups(scratch, n, edges.items, edge_start);
-    }
-
-    /// Settle this module's ordinary nominal capabilities against the
-    /// method schemes known so far (Solve's `settleOrdinaryCapabilities`).
-    /// Non-committing: final rows are emitted once every group is done.
-    fn settleOrdinaryCapabilities(mc: *ModuleCheck, env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
-        var empty_tree: Constrain.Tree = .{};
-        var deriver: Solve.Solver = .init(mc.gpa, env, &empty_tree, reporter);
-        defer deriver.deinit();
-        deriver.rank = TypeStore.generalized;
-        try deriver.settleOrdinaryCapabilities();
-    }
-
-    /// One binding group: constrain every member, then solve the whole
-    /// group at rank `outermost`, generalise, and occurs-check.
-    fn checkGroup(
-        mc: *ModuleCheck,
-        bir: *const Bir,
-        env: *Constrain.Env,
-        reporter: *Diagnostics.Reporter,
-        members: []const u32,
-        decl_display: []Var.Optional,
-        local_type: []Var.Optional,
-        inst_result: []Var.Optional,
-    ) Error!Solve.Counters {
-        const gpa = mc.gpa;
-        var tree: Constrain.Tree = .{};
-        defer {
-            tree.nodes.deinit(gpa);
-            tree.extra.deinit(gpa);
-        }
-        var generator: Constrain.Generator = .init(env, &tree, gpa, TypeStore.outermost);
-        defer generator.deinit();
-        const constrain_token = if (mc.profile) |p| p.begin() else null;
-
-        var parts: std.ArrayList(Constrain.Constraint) = .empty;
-        defer parts.deinit(env.scratch);
-        var headers: std.ArrayList(Constrain.Header) = .empty;
-        defer headers.deinit(env.scratch);
-
-        // Declare first, define second: a mutually recursive group has to
-        // see itself before any body is generated.
-        // `.none` for a member with no body — a type, a `foreign` value, an
-        // annotation whose definition the parser never found. Giving one a
-        // variable would put it in the pool and generalise it, which shows
-        // up as a counter that does not mean anything.
-        const check_vars = try env.scratch.alloc(Var.Optional, members.len);
-        defer env.scratch.free(check_vars);
-        // The annotation's rigid variables per member, so a `type_dispatch`
-        // in the body can name one (§4.2) and so the `where` clause can be
-        // read into them.
-        const member_rigids = try env.scratch.alloc([]const Types.Builder.Scoped, members.len);
-        defer env.scratch.free(member_rigids);
-        @memset(member_rigids, &.{});
-        for (members, check_vars, member_rigids) |index, *cv, *rigids| {
-            const d = bir.decls[index];
-            cv.* = .none;
-            if (d.kind == .schema) {
-                const factory = env.schemas.?.member(@intCast(index), .schema) orelse continue;
-                cv.* = factory.toOptional();
-                env.decl_scheme[index] = factory.toOptional();
-                continue;
-            }
-            if (!d.kind.isValue() or d.body == .none) continue;
-            if (d.annotation != .none) {
-                const mark = generator.storeMark();
-                var b = env.builder(.rigid, TypeStore.outermost);
-                defer b.deinit();
-                cv.* = (try env.readAnnotation(&b, d.annotation.unwrap().?)).toOptional();
-                try ModuleCheck.attachWhere(env, bir, d, &b);
-                rigids.* = try env.scratch.dupe(Types.Builder.Scoped, b.scope.items);
-                try generator.adoptSince(mark);
-                try mc.recordEvidence(env, bir, @intCast(index), cv.*.unwrap().?, true);
-            } else {
-                const v = try generator.freshForDecl();
-                cv.* = v.toOptional();
-                env.decl_scheme[index] = v.toOptional();
-            }
-            try headers.append(env.scratch, .{
-                .v = cv.*.unwrap().?,
-                .region = d.body.unwrap().?,
-                .name = bir.symbol(d.name).toOptional(),
-                .decl = @intCast(index),
-            });
-        }
-        for (members, check_vars, member_rigids) |index, cv_opt, rigids| {
-            decl_display[index] = cv_opt;
-            const cv = cv_opt.unwrap() orelse continue;
-            const d = bir.decls[index];
-            env.local_var = local_type[d.locals_start..d.locals_end];
-            env.locals_base = d.locals_start;
-            env.inst_base = d.inst_start.int();
-            env.inst_result = inst_result[d.inst_start.int()..d.inst_end.int()];
-            env.decl_result = .none;
-            env.decl = @intCast(index);
-            env.decl_rigids = rigids;
-            try parts.append(env.scratch, if (d.kind == .schema)
-                try generator.schemaDecl(@enumFromInt(index))
-            else
-                try generator.decl(@enumFromInt(index), cv));
-        }
-        env.decl_rigids = &.{};
-        // After the declare loop, so the list has stopped growing: an
-        // earlier slice would dangle the moment another annotation added a
-        // constraint.
-        env.rigid_evidence = mc.rigid_evidence.items;
-        tree.root = try generator.finishGroup(parts.items);
-        if (mc.profile) |p| {
-            mc.constrain_ns += p.since(constrain_token.?);
-        }
-
-        const solve_token = if (mc.profile) |p| p.begin() else null;
-        var solver: Solve.Solver = .init(gpa, env, &tree, reporter);
-        defer solver.deinit();
-        solver.rank = TypeStore.outermost;
-        try solver.enterTopLevel(generator.poolItems());
-        try solver.solve(tree.root);
-        try solver.finishTopLevel(headers.items);
-        if (mc.profile) |p| {
-            mc.solve_ns += p.since(solve_token.?);
-        }
-        return solver.counters;
-    }
-
-    /// Check every `case` of every declaration that has no type error of
-    /// its own (checker.md §6.6).
-    ///
-    /// The gate is per DECLARATION and not per module: a module with one bad
-    /// function still has good ones, and their `case`s are worth checking.
-    /// What it buys is the algorithm's precondition — a column of a matrix
-    /// holds one type's constructors — which only holds where unification
-    /// succeeded. A declaration that failed has patterns the checker already
-    /// complained about, and a second message about them would be noise.
-    fn exhaustive(mc: *ModuleCheck, bir: *const Bir, reporter: *Diagnostics.Reporter) Error!void {
-        if (reporter.quiet) return;
-        const gpa = mc.gpa;
-        const skip = try gpa.alloc(bool, bir.decls.len);
-        defer gpa.free(skip);
-        @memset(skip, false);
-        for (mc.diagnostics.items) |item| {
-            // Only an ERROR voids the precondition (§6.6: "no type errors
-            // in that declaration"). A warning — `ambiguous_method_receiver`
-            // on a `pub` declaration that type-checked — says nothing about
-            // unification, and skipping on one let `case c of Red -> …;
-            // Green -> …` run `Blue` into `Green`'s branch (CK-11).
-            if (item.severity != .@"error") continue;
-            const at = item.region.int();
-            for (bir.decls, 0..) |d, i| {
-                if (at >= d.inst_start.int() and at < d.inst_end.int()) {
-                    skip[i] = true;
-                    break;
-                }
-            }
-        }
-        try Exhaustive.run(gpa, mc.patterns, .{
-            .graph = mc.graph,
-            .artifacts = mc.artifacts,
-            .interfaces = mc.interfaces,
-            .types = mc.types,
-            .interner = mc.interner,
-            .module = mc.module,
-            .bir = bir,
-        }, reporter, skip, mc.pattern_budget);
-    }
-
-    /// Write every `pub` value's scheme and every visible constructor's
-    /// argument terms into the interface (checker.md §7).
-    ///
-    /// A declaration whose type contains an error gets the `err` term,
-    /// which the dump prints as `<error>`: dependents check against the
-    /// rest.
-    ///
-    /// Both halves go through `Interface.Provenance` rather than looking a
-    /// name up in `bir.decls`. The scan this replaced was O(pub values ×
-    /// declarations) and was the single largest measured cost in the M2
-    /// review: 32 000 mutually recursive `pub` declarations spent 12.8 s
-    /// here, against 73 ms for the same declarations without `pub`, and
-    /// none of it showed in `--self-profile` because it sits between the
-    /// profiled events.
-    fn fillInterface(
-        mc: *ModuleCheck,
-        env: *Constrain.Env,
-        reporter: *Diagnostics.Reporter,
-        bir: *const Bir,
-        store: *TypeStore,
-        decl_scheme: []const Var.Optional,
-    ) Error!void {
-        const gpa = mc.gpa;
-        const iface = &mc.interfaces[mc.module.int()];
-        const prov = if (mc.module.int() < mc.provenance.len)
-            &mc.provenance[mc.module.int()]
-        else
-            &Interface.Provenance.empty;
-        var writer: Schemes.Writer = .init(gpa, store, mc.interner, mc.types, @intCast(iface.symbols.len));
-        defer writer.deinit();
-        try writer.seedExtra(iface.extra);
-        // One frontier for the whole module; `hasError` clears it per call.
-        var scan: std.ArrayList(Var) = .empty;
-        defer scan.deinit(gpa);
-
-        const values = try gpa.alloc(Interface.Value, iface.values.len);
-        errdefer gpa.free(values);
-        @memcpy(values, iface.values);
-        for (values, 0..) |*v, i| {
-            const target = blk: {
-                const decl = prov.valueDecl(i) orelse break :blk null;
-                if (decl.int() >= decl_scheme.len) break :blk null;
-                break :blk decl_scheme[decl.int()].unwrap();
-            };
-            const scheme = target orelse {
-                v.scheme = try writer.addError();
-                continue;
-            };
-            switch (try hasError(gpa, &scan, store, scheme)) {
-                .clean => {},
-                .poisoned => {
-                    v.scheme = try writer.addError();
-                    continue;
-                },
-                // The declaration solved CLEAN and the scan ran out of
-                // budget on it, so `<error>` here is the scanner's answer
-                // and not the program's. Publishing it in silence is the
-                // one failure mode §5 forbids — `beni check` exits 0 and
-                // every importer sees a hole — so it is reported like any
-                // other guard that poisons.
-                .unknown => {
-                    try noteDeepDecl(env, bir, prov.valueDecl(i));
-                    v.scheme = try writer.addError();
-                    continue;
-                },
-            }
-            v.scheme = try writer.add(scheme);
-            if (writer.too_deep) {
-                // A truncated scheme is worse than no scheme: the `err`
-                // term sits INSIDE an otherwise concrete type, so it
-                // unifies with anything and a dependent's mistake against
-                // this declaration compiles clean. Report, then publish
-                // `<error>` (checker.md §7).
-                try noteDeepDecl(env, bir, prov.valueDecl(i));
-                v.scheme = try writer.addError();
-            }
-        }
-        gpa.free(@constCast(iface.values));
-        iface.values = values;
-
-        const schema_members = try gpa.dupe(Interface.SchemaMember, iface.schema_members);
-        errdefer gpa.free(schema_members);
-        for (schema_members) |*member| {
-            const si = @intFromEnum(member.schema);
-            const decl = prov.schemaDecl(si) orelse {
-                member.scheme = try writer.addError();
-                continue;
-            };
-            const root = env.schemas.?.member(decl.int(), member.kind) orelse {
-                member.scheme = try writer.addError();
-                continue;
-            };
-            member.scheme = try writer.add(root);
-        }
-        gpa.free(@constCast(iface.schema_members));
-        iface.schema_members = schema_members;
-
-        const schema_ctors = try gpa.dupe(Interface.SchemaCtor, iface.schema_ctors);
-        errdefer gpa.free(schema_ctors);
-        for (schema_ctors, 0..) |*ctor, ci| {
-            const si = @intFromEnum(ctor.schema);
-            const decl = prov.schemaDecl(si) orelse {
-                ctor.scheme = try writer.addError();
-                continue;
-            };
-            const schema = iface.schemas[si];
-            const start = if (ctor.endpoint == .type) schema.program_ctors_start else schema.encoded_ctors_start;
-            const ordinal: u32 = @intCast(ci - start);
-            const root = try env.schemas.?.constructor(decl, ctor.endpoint, ordinal) orelse {
-                ctor.scheme = try writer.addError();
-                continue;
-            };
-            ctor.scheme = try writer.add(root);
-        }
-        gpa.free(@constCast(iface.schema_ctors));
-        iface.schema_ctors = schema_ctors;
-
-        try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
-        try mc.fillTypeFacts(env, bir, store, prov, iface, &writer);
-        try writer.attach(iface);
-        // `--roundtrip-interfaces` goes HERE and nowhere else
-        // (`fast-compiler.md` §8): the record is complete and no importer
-        // has read it yet, because a dependent cannot start before this
-        // module's check has finished (checker.md §4.4). Replacing it
-        // wholesale is also why `Schemes.Writer.attach`'s non-idempotence
-        // does not bite — nothing re-attaches to the loaded record — and
-        // why the `ref_ids` fill below must come after: it resolves the
-        // `type_refs` of whichever record ends up in the slot.
-        if (mc.roundtrip_interfaces) try mc.roundtripInterface(iface, reporter);
-        // The record now says which types it names, as
-        // `(package, module name, type name)` — bytes that do not move when
-        // an unrelated module gains a declaration (`Interface.TypeRef`).
-        // Translating them into this session's `TypeId`s is done ONCE, here,
-        // by the thread that checked this module, so that every dependent's
-        // instantiation is an array index. A dependent cannot start before
-        // this module's check has finished (checker.md §4.4), so the slot is
-        // written before anyone reads it.
-        const ref_ids = &mc.types.ref_ids[mc.module.int()];
-        gpa.free(ref_ids.*);
-        ref_ids.* = try mc.types.resolveRefs(gpa, iface, mc.graph);
-    }
-
-    /// Replace this module's record with serialize → bytes → deserialize of
-    /// itself (`fast-compiler.md` §8's `--roundtrip-interfaces`).
-    ///
-    /// The point is that NOTHING downstream can tell: every dependent,
-    /// every dump, every dispatch table and every emitted file is then
-    /// built from a record that has been through the format, and the
-    /// acceptance matrix asserts the whole corpus comes out byte-identical.
-    ///
-    /// A failure here is `internal` and not a cache miss. Under this flag a
-    /// record is written and read back inside ONE session, so `BadRecord`
-    /// can only mean the writer and the reader disagree and `UnknownSymbol`
-    /// can only mean a name the session itself interned is missing from its
-    /// own pool — both compiler bugs, neither a stale file.
-    fn roundtripInterface(mc: *ModuleCheck, iface: *Interface, reporter: *Diagnostics.Reporter) Error!void {
-        const gpa = mc.gpa;
-        const bytes = try iface_bytes.write(gpa, iface, mc.interner);
-        defer gpa.free(bytes);
-        const loaded = iface_bytes.read(gpa, bytes, mc.interner) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.BadRecord => return reporter.internalAlways(
-                @enumFromInt(0),
-                "this module's interface record did not load back from its own bytes",
-            ),
-            error.UnknownSymbol => return reporter.internalAlways(
-                @enumFromInt(0),
-                "this module's interface record names a string the session's interner does not hold",
-            ),
-        };
-        iface.deinit(gpa);
-        iface.* = loaded;
-    }
-
-    /// Replace this module's dispatch table with serialize → bytes →
-    /// deserialize → re-resolve of itself (`fast-compiler.md` §8's
-    /// `--roundtrip-dispatch`).
-    ///
-    /// The point is that NOTHING downstream can tell: `Cycles`, `Reach`,
-    /// `js/Lower` and the emitter all read this table, so the strongest
-    /// single assertion available is that the whole output tree comes out
-    /// the same over the whole corpus.
-    ///
-    /// A failure here is `internal` and not a cache miss, for the reason
-    /// `roundtripInterface` gives: under this flag a table is written and
-    /// read back inside ONE session, so `BadSidecar` can only mean the
-    /// writer and the reader disagree and `UnknownSymbol` can only mean a
-    /// name the session itself interned is missing from its own pool.
-    /// I7's assert in `Dispatch.finish`'s caller (checker-v2.md §13.1): one
-    /// `internal` per instruction whose evidence tree does not add up, and
-    /// per legacy `err` site the converter dropped. A diagnostic and never a
-    /// panic during R2–R10 (S10) — v1 has known miscounts `check` used to
-    /// accept (CK-30), and a panic would turn their red reasons into exit
-    /// 134.
-    ///
-    /// **Only on a module that reported no error.** Such a module never
-    /// reaches the backend, and v1 leaves `err` sites in it whose reason was
-    /// already reported; asserting there would add a second, wrong, message
-    /// to every error that touched a method call.
-    fn assertEvidenceShape(
-        mc: *ModuleCheck,
-        reporter: *Diagnostics.Reporter,
-        bir: *const Bir,
-        dropped: []const Bir.Inst.Index,
-    ) Error!void {
-        if (reporter.quiet) return;
-        for (mc.diagnostics.items) |item| {
-            if (item.module == mc.module and item.severity == .@"error") return;
-        }
-        const scratch = mc.scratch.allocator();
-        var bad: std.ArrayList(Bir.Inst.Index) = .empty;
-        try bad.appendSlice(scratch, dropped);
-        try mc.dispatch.checkI7(bir, mc.interfaces, mc.types, mc.interner, scratch, &bad);
-        if (bad.items.len == 0) return;
-        std.mem.sort(Bir.Inst.Index, bad.items, {}, instLessThan);
-        var previous: ?Bir.Inst.Index = null;
-        for (bad.items) |inst| {
-            if (previous == inst) continue;
-            previous = inst;
-            try reporter.internal(
-                inst,
-                "the hidden arguments here do not add up — the evidence tree the checker " ++
-                    "recorded here gives a function a different number of arguments than it has " ++
-                    "requirements (`docs/design/checker-v2.md` §13.1, invariant I7)",
-            );
-        }
-    }
-
-    fn instLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
-        return a.int() < b.int();
-    }
-
-    fn roundtripDispatch(mc: *ModuleCheck, reporter: *Diagnostics.Reporter) Error!void {
-        const gpa = mc.gpa;
-        const bytes = try dispatch_bytes.write(gpa, mc.dispatch, mc.graph, mc.types, mc.interner);
-        defer gpa.free(bytes);
-        var loaded = dispatch_bytes.read(gpa, bytes, mc.interner) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.BadSidecar => return reporter.internalAlways(
-                @enumFromInt(0),
-                "this module's dispatch table did not load back from its own bytes",
-            ),
-            error.UnknownSymbol => return reporter.internalAlways(
-                @enumFromInt(0),
-                "this module's dispatch table names a string the session's interner does not hold",
-            ),
-        };
-        dispatch_bytes.resolve(&loaded, mc.graph, mc.types);
-        mc.dispatch.deinit(gpa);
-        mc.dispatch.* = loaded.table;
-        loaded.table = .empty;
-        loaded.deinit(gpa);
-
-        const plan_bytes = try schema_plan_bytes.write(gpa, mc.plan, mc.interner);
-        defer gpa.free(plan_bytes);
-        var loaded_plan = schema_plan_bytes.read(gpa, plan_bytes, mc.interner) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => return reporter.internalAlways(@enumFromInt(0), "this module's schema plan did not load back from its own bytes"),
-        };
-        errdefer loaded_plan.deinit(gpa);
-        const canonical = try schema_plan_bytes.write(gpa, &loaded_plan, mc.interner);
-        defer gpa.free(canonical);
-        if (!std.mem.eql(u8, plan_bytes, canonical)) {
-            loaded_plan.deinit(gpa);
-            return reporter.internalAlways(@enumFromInt(0), "this module's schema plan changed across its canonical round trip");
-        }
-        mc.plan.deinit(gpa);
-        mc.plan.* = loaded_plan;
-    }
-
-    /// Every visible constructor's argument types, as terms (checker.md §7's
-    /// `arg_terms`).
-    ///
-    /// This is the interface firewall of `fast-compiler.md` §8.1 made real
-    /// for constructors: with the terms here, a dependent instantiates an
-    /// imported constructor from this record alone. Without them the solver
-    /// opened the declaring module's `Bir` and found the constructor BY
-    /// NAME, which §4.5 forbids and which M4 cannot do at all — a
-    /// dependency's Bir may not be in memory.
-    ///
-    /// The quantifiers are the owning TYPE's parameters, in declaration
-    /// order, so `var(i)` in an argument term is parameter `i` and the
-    /// result half — `T p0 … pk` — needs no storage.
-    fn fillCtorTerms(
-        mc: *ModuleCheck,
-        env: *Constrain.Env,
-        bir: *const Bir,
-        store: *TypeStore,
-        prov: *const Interface.Provenance,
-        iface: *Interface,
-        writer: *Schemes.Writer,
-    ) Error!void {
-        if (iface.ctors.len == 0) return;
-        const gpa = mc.gpa;
-        const scratch = mc.scratch.allocator();
-        const ctors = try gpa.alloc(Interface.Ctor, iface.ctors.len);
-        errdefer gpa.free(ctors);
-        @memcpy(ctors, iface.ctors);
-
-        for (ctors, 0..) |*c, i| {
-            const bir_index = prov.ctorIndex(i) orelse continue;
-            if (bir_index >= bir.ctors.len) continue;
-            const bc = bir.ctors[bir_index];
-            const owner = bir.decl(bc.decl);
-            const params = bir.declTypeParams(owner);
-
-            var b: Types.Builder = .init(
-                store,
-                mc.types,
-                mc.graph,
-                mc.artifacts,
-                mc.module,
-                bir,
-                .flex,
-                TypeStore.generalized,
-                scratch,
-                mc.interner,
-            );
-            defer b.deinit();
-            const param_vars = try scratch.alloc(Var, params.len);
-            defer scratch.free(param_vars);
-            for (params, param_vars) |p, *v| {
-                v.* = try store.fresh(.{ .flex = .{ .name = p.toOptional() } }, TypeStore.generalized);
-                try b.bind(p, v.*);
-            }
-            const args = bir.extraSlice(.{ .start = bc.args_start, .end = bc.args_end }, Bir.Inst.Index);
-            const arg_vars = try scratch.alloc(Var, args.len);
-            defer scratch.free(arg_vars);
-            for (args, arg_vars) |arg, *v| v.* = try b.read(arg);
-            if (b.too_deep) {
-                try noteDeepDecl(env, bir, bc.decl);
-                continue; // leaves `arg_terms` at `no_terms`: a use poisons
-            }
-            const written = try writer.addCtor(param_vars, arg_vars);
-            if (writer.too_deep) {
-                try noteDeepDecl(env, bir, bc.decl);
-                continue;
-            }
-            c.arg_terms = written.arg_terms;
-            c.quantified_start = written.quantified_start;
-        }
-        gpa.free(@constCast(iface.ctors));
-        iface.ctors = ctors;
-    }
-
-    /// Interface v3's two per-type facts (`checker-v2.md` §14.2), for every
-    /// exported type: which parameters a constructor payload holds (D10),
-    /// and what the derived `eq` and `compare` are (D4).
-    ///
-    /// **The derived rows are what this checker's own dispatch table says**,
-    /// read after the eager pass of A.23 has run: `present` exactly when the
-    /// module emits the function, with this checker's ABI as the context —
-    /// one entry per type parameter, each naming the method being derived
-    /// (§14.2's last paragraph). Absent otherwise, with the reason the same
-    /// facts give. So the record states the ABI a dependent's `ext_derived`
-    /// is already written against; R8a's inferred contexts replace the
-    /// entries, not the format.
-    ///
-    /// `payload_params` reads EVERY constructor of the declaration from its
-    /// Bir, an opaque type's hidden ones included — the bitset is the one
-    /// thing about them an importer may learn (S15).
-    fn fillTypeFacts(
-        mc: *ModuleCheck,
-        env: *Constrain.Env,
-        bir: *const Bir,
-        store: *TypeStore,
-        prov: *const Interface.Provenance,
-        iface: *Interface,
-        writer: *Schemes.Writer,
-    ) Error!void {
-        if (iface.types.len == 0) return;
-        const gpa = mc.gpa;
-        const out = try gpa.dupe(Interface.Type, iface.types);
-        errdefer gpa.free(out);
-        // One symbol slot per method name for the whole record, however many
-        // context entries name it.
-        var method_slot: [2]?u32 = .{ null, null };
-        // Whether this module declares a `pub` value named `eq` / `compare`:
-        // the module rule's step 1 (static-dispatch-spike.md §3.3), which is
-        // what stops v1's eager pass deriving one for ANY type of the module
-        // (`Solve.ownPubDeclNamed`).
-        var declares: [2]bool = .{ false, false };
-        for (bir.decls) |d| {
-            if (!d.kind.isValue() or !d.is_pub) continue;
-            if (bir.symbol(d.name) == InternPool.WellKnown.eq.symbol()) declares[0] = true;
-            if (bir.symbol(d.name) == InternPool.WellKnown.compare.symbol()) declares[1] = true;
-        }
-        var words: std.ArrayList(u32) = .empty;
-        defer words.deinit(gpa);
-
-        for (out, 0..) |*t, i| {
-            const decl = prov.typeDecl(i) orelse continue;
-            const id = mc.types.ofDecl(mc.module, decl);
-            if (id == .none) continue;
-            if (t.kind == .alias) {
-                t.eq = .{ .status = .alias };
-                t.compare = .{ .status = .alias };
-                continue;
-            }
-
-            try mc.payloadParams(env, bir, store, decl, t.*, &words);
-            t.payload_params = try writer.addRange(words.items);
-
-            inline for (.{ Interface.DerivedKind.eq, Interface.DerivedKind.compare }, 0..) |kind, k| {
-                const dispatch_kind: Dispatch.Derived.Kind = if (kind == .eq) .eq else .compare;
-                const method_kind: Types.MethodKind = if (kind == .eq) .eq else .compare;
-                const derived: Interface.Derived = if (env.dispatch.findDerived(dispatch_kind, .{ .nominal = id })) |row| blk: {
-                    const slot = method_slot[k] orelse slot: {
-                        const well: InternPool.WellKnown = if (kind == .eq) .eq else .compare;
-                        const s = try writer.symbolIndex(well.symbol());
-                        method_slot[k] = s;
-                        break :slot s;
-                    };
-                    const count = env.dispatch.derived.items[row].evidence_count;
-                    words.clearRetainingCapacity();
-                    try words.ensureTotalCapacity(gpa, 1 + @as(usize, count) * Interface.context_words);
-                    // Format 4 (§14.2 *as amended by R8a*): the row's scheme
-                    // word, then three words per entry. v1's entries name
-                    // only the derived method, whose type is the well-known
-                    // one: no scheme, no slot.
-                    words.appendAssumeCapacity(std.math.maxInt(u32));
-                    for (0..count) |param| {
-                        words.appendAssumeCapacity(@intCast(param));
-                        words.appendAssumeCapacity(slot);
-                        words.appendAssumeCapacity(std.math.maxInt(u32));
-                    }
-                    break :blk .{ .status = .present, .context = try writer.addRange(words.items) };
-                } else .{ .status = absentStatus(mc.types, id, t.kind, kind, declares[k] or mc.types.hasPublicDispatchMethod(id, method_kind)) };
-                switch (kind) {
-                    .eq => t.eq = derived,
-                    .compare => t.compare = derived,
-                }
-            }
-        }
-        gpa.free(@constCast(iface.types));
-        iface.types = out;
-    }
-
-    /// Why an exported nominal type has no derived `kind`, in the order v1's
-    /// eager pass decides (`Solve.deriveOneParts`): §3.2's table answers it
-    /// with a JavaScript operator (`primitive`); the module declares the
-    /// method (`own_method`); a `foreign type` has no body to derive over
-    /// (`foreign`); else a payload cannot answer it — through a function
-    /// (`function`) or otherwise (`unanswerable`). The vocabulary is
-    /// `checker-v2.md` §14.2's *As built*, and `Interface.Derived.Status`.
-    fn absentStatus(types: *const Types, id: Types.TypeId, kind: Interface.TypeKind, method: Interface.DerivedKind, own: bool) Interface.Derived.Status {
-        const wk = types.well_known;
-        const primitive = id == wk.int or id == wk.float or id == wk.bool or id == wk.char or
-            id == wk.string or (id == wk.order and method == .eq);
-        if (primitive) return .primitive;
-        if (own) return .own_method;
-        if (kind == .foreign) return .foreign;
-        return if (types.hasFunction(id)) .function else .unanswerable;
-    }
-
-    /// `words` becomes the `payload_params` bitset of `t`, declared by
-    /// `decl` (`Interface.Type.payload_params`): bit `i` set when parameter
-    /// `i` occurs in some constructor's argument type — through an alias
-    /// only where its EXPANSION keeps it, since an alias's argument that
-    /// the expansion drops holds no value. Every bit for a `foreign type`,
-    /// and for a declaration too deep to read (already reported) or with a
-    /// payload that reads as `err`, because "may hold a value" is the safe
-    /// side of the marker walk.
-    ///
-    /// The reader is `env.builder`, the one with the schema lookup: a bare
-    /// `Types.Builder` reads `Page.Type a` (a schema's endpoint, local or
-    /// imported) as `err`, and the parameter inside it went missing — the
-    /// unsafe direction for D10 (R3's review, S1). Its schema expansion
-    /// substitutes the arguments and never unifies them, so parameter `i`
-    /// stays its own root.
-    fn payloadParams(
-        mc: *ModuleCheck,
-        env: *Constrain.Env,
-        bir: *const Bir,
-        store: *TypeStore,
-        decl: Bir.DeclIndex,
-        t: Interface.Type,
-        words: *std.ArrayList(u32),
-    ) Error!void {
-        const gpa = mc.gpa;
-        const scratch = mc.scratch.allocator();
-        words.clearRetainingCapacity();
-        try words.appendNTimes(gpa, 0, (@as(usize, t.arity) + 31) / 32);
-        const all = struct {
-            fn set(w: []u32, arity: usize) void {
-                for (0..arity) |p| w[p / 32] |= @as(u32, 1) << @intCast(p % 32);
-            }
-        }.set;
-        if (t.kind == .foreign or t.arity == 0) {
-            all(words.items, t.arity);
-            return;
-        }
-        const owner = bir.decl(decl);
-        const params = bir.declTypeParams(owner);
-
-        std.debug.assert(env.store == store and env.bir == bir);
-        var b = env.builder(.flex, TypeStore.generalized);
-        defer b.deinit();
-        // Fresh in one run, so parameter `i` is variable `first + i` and a
-        // root found by the walk names its parameter by subtraction — no
-        // map, and no array over the whole store per type.
-        const first: u32 = @intCast(store.count());
-        for (params, 0..) |p, i| {
-            const v = try store.fresh(.{ .flex = .{ .name = p.toOptional() } }, TypeStore.generalized);
-            if (v.int() != first + i) {
-                all(words.items, t.arity);
-                return;
-            }
-            try b.bind(p, v);
-        }
-        var stack: std.ArrayList(Var) = .empty;
-        defer stack.deinit(scratch);
-        for (bir.declCtors(owner)) |c| {
-            for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index)) |arg| {
-                try stack.append(scratch, try b.read(arg));
-            }
-        }
-        if (b.too_deep) {
-            all(words.items, t.arity);
-            return;
-        }
-        const seen = store.nextMark();
-        while (stack.pop()) |raw| {
-            const root = store.find(raw);
-            if (store.mark(root) == seen) continue;
-            store.setMark(root, seen);
-            switch (store.content(root)) {
-                // A payload that could not be read may hold anything.
-                .err => {
-                    all(words.items, t.arity);
-                    return;
-                },
-                .flex, .rigid => if (root.int() >= first and root.int() - first < params.len) {
-                    const p = root.int() - first;
-                    words.items[p / 32] |= @as(u32, 1) << @intCast(p % 32);
-                },
-                .structure => |shape| switch (shape) {
-                    .unit, .empty_record => {},
-                    .func => |f| {
-                        try stack.appendSlice(scratch, store.vars(f.params));
-                        try stack.append(scratch, f.result);
-                    },
-                    .app => |a| try stack.appendSlice(scratch, store.vars(a.args)),
-                    .tuple => |r| try stack.appendSlice(scratch, store.vars(r)),
-                    .record => |r| {
-                        for (store.fields(r.fields)) |f| try stack.append(scratch, f.value);
-                        try stack.append(scratch, r.ext);
-                    },
-                },
-                .alias => |a| try stack.append(scratch, a.actual),
-            }
-        }
-    }
-
-    /// One `nesting_too_deep` per over-deep type, in source order.
-    ///
-    /// Sorted and deduplicated here rather than at each note: the same
-    /// annotation is read more than once — once generalised for callers,
-    /// once rigid for the body — and one mistake gets one message. Sorting
-    /// also makes the order a function of the source and not of the order
-    /// the readers happened to run in, which `fast-compiler.md` §10
-    /// requires of everything a build prints.
-    fn reportTooDeep(env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
-        const regions = env.too_deep.items;
-        if (regions.len == 0) return;
-        std.mem.sort(Bir.Inst.Index, regions, {}, regionLessThan);
-        var previous: Bir.Inst.OptionalIndex = .none;
-        for (regions) |region| {
-            if (previous == region.toOptional()) continue;
-            previous = region.toOptional();
-            try reporter.nestingTooDeep(region, Types.Builder.max_depth);
-        }
-    }
-
-    fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
-        return a.int() < b.int();
-    }
-};
-
-fn constraintNameLessThan(
-    interner: *const InternPool.Global,
-    a: TypeStore.MethodConstraint,
-    b: TypeStore.MethodConstraint,
-) bool {
-    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+    check.diagnostics = try diagnostics.toOwnedSlice(gpa);
+    check.modules = try kept.toOwnedSlice(gpa);
+    return check;
 }
 
-/// Spells a derived function the way §8.5 prints it, so
-/// `Dispatch.Builder.finish` can sort by EMITTED NAME TEXT and not by the
-/// order discharge happened to reach them in (A.15).
-const DerivedNamer = struct {
-    mc: *ModuleCheck,
-    types: *const Types,
-    builder: *const Dispatch.Builder,
-
-    fn write(ctx: *anyopaque, d: Dispatch.FlatDerived, out: *std.ArrayList(u8), a: Allocator) Allocator.Error!void {
-        const self: *DerivedNamer = @ptrCast(@alignCast(ctx));
-        const interner = self.mc.interner;
-        const kind = switch (d.kind) {
-            .eq => "eq",
-            .compare => "compare",
-        };
-        switch (d.shape) {
-            // `<Module>$<Type>$eq`: the DECLARING module, which is where it
-            // is emitted (§8.5).
-            .nominal => |id| {
-                const entry = self.types.entry(id);
-                try out.appendSlice(a, interner.slice(self.mc.graph.moduleName(entry.module)));
-                try out.append(a, '$');
-                try out.appendSlice(a, interner.slice(entry.name));
-                try out.append(a, '$');
-                try out.appendSlice(a, kind);
-            },
-            // `<Module>$<kind>$<shape>`: the CONSUMING module, this one.
-            else => {
-                try out.appendSlice(a, interner.slice(self.mc.graph.moduleName(self.mc.module)));
-                try out.append(a, '$');
-                try out.appendSlice(a, kind);
-                try out.append(a, '$');
-                switch (d.shape) {
-                    .record => |r| {
-                        try out.append(a, 'r');
-                        for (self.builder.symbols.items[r.start..][0..r.len]) |name| {
-                            try out.append(a, '$');
-                            try out.appendSlice(a, interner.slice(name));
-                        }
-                    },
-                    .tuple => |n| {
-                        var buf: [8]u8 = undefined;
-                        try out.appendSlice(a, std.fmt.bufPrint(&buf, "t{d}", .{n}) catch "t?");
-                    },
-                    .unit => try out.appendSlice(a, "unit"),
-                    .nominal => unreachable,
-                }
-            },
-        }
-    }
-};
-
-/// The instruction a `nesting_too_deep` about `decl` points at: its
-/// annotation, or its body, or its first instruction. The guard that
-/// stopped the walk may have stopped it inside ANOTHER module's alias body,
-/// so the deepest instruction is not necessarily one of this module's.
-fn noteDeepDecl(env: *Constrain.Env, bir: *const Bir, decl: ?Bir.DeclIndex) Error!void {
-    const index = decl orelse return;
-    if (index.int() >= bir.decls.len) return;
-    const d = bir.decl(index);
-    try env.noteTooDeep(d.annotation.unwrap() orelse d.body.unwrap() orelse d.inst_start);
-}
-
-/// Whether a solved type contains a poisoned variable anywhere. A
-/// declaration that failed to check is `<error>` in the interface rather
-/// than a type built out of `?` (checker.md §7).
-///
-/// Three-valued on purpose. A type the walk could not finish is `unknown` —
-/// which the caller must treat exactly like `poisoned`, because the
-/// alternative is what this used to do: drop the frontier, answer "clean",
-/// and publish a scheme with a raw `err` term inside it. A dependent
-/// instantiating that scheme gets a component that unifies with anything,
-/// which is cascade suppression leaking across the module firewall — the
-/// one place checker.md §7 says it must not.
-///
-/// `unknown` is also not free: the caller publishes `<error>` for a
-/// declaration that solved clean, so it REPORTS as well. The worklist is
-/// grown rather than fixed for exactly that reason — a fixed 256 entries
-/// made `unknown` reachable from ordinary source (255 record extension
-/// links clean, 256 `<error>` and exit 0), which turned a formatting bound
-/// into a silent wrong answer.
-const ErrorScan = enum {
-    clean,
-    poisoned,
-    /// The budget ran out; the caller treats it as `poisoned` AND reports.
-    unknown,
-};
-
-/// `scratch` is the caller's, reused across declarations: this runs once per
-/// public value of the module and a fresh list per call would allocate the
-/// whole frontier again every time.
-fn hasError(gpa: Allocator, scratch: *std.ArrayList(Var), store: *TypeStore, root_var: Var) Allocator.Error!ErrorScan {
-    const mark = store.nextMark();
-    const stack = scratch;
-    stack.clearRetainingCapacity();
-    try stack.append(gpa, root_var);
-    // Every variable is VISITED at most once, so the budget is the store's
-    // own variable count; it only bounds a store that is itself malformed,
-    // and it is stated in terms of the input so it cannot become the real
-    // limit. It is charged per visit and not per pop, because a shared
-    // component is pushed once per parent that references it — charging
-    // those would make the budget a function of the edges and reachable on
-    // a type nothing is wrong with.
-    var budget: usize = @as(usize, store.count()) + 16;
-    while (stack.pop()) |v| {
-        const root = store.find(v);
-        if (store.mark(root) == mark) continue;
-        if (budget == 0) return .unknown;
-        budget -= 1;
-        store.setMark(root, mark);
-        switch (store.content(root)) {
-            .err => return .poisoned,
-            .flex, .rigid => {},
-            .alias => |a| try stack.append(gpa, a.actual),
-            .structure => |flat| switch (flat) {
-                .unit, .empty_record => {},
-                .func => |f| {
-                    try stack.appendSlice(gpa, store.vars(f.params));
-                    try stack.append(gpa, f.result);
-                },
-                .app => |a| try stack.appendSlice(gpa, store.vars(a.args)),
-                .tuple => |t| try stack.appendSlice(gpa, store.vars(t)),
-                .record => |r| {
-                    for (store.fields(r.fields)) |f| try stack.append(gpa, f.value);
-                    try stack.append(gpa, r.ext);
-                },
-            },
-        }
-    }
-    return .clean;
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-//
-// The checker is exercised through the real pipeline over sources in memory
-// and asserted on the text of `dump --stage=types`. That is deliberate: a
-// scheme is the only thing a person can read, `Render` is what every
-// diagnostic prints types with, and asserting the store's internals instead
-// would test an implementation that is meant to change. `TypeStore.zig`,
-// `Schemes.zig` and `Solve.zig` keep the pieces that have no visible output
-// — the journal, the term round trip, the occurs check, `adjustRank`.
-// ---------------------------------------------------------------------------
-
-const testing = std.testing;
-const TestProject = @import("../resolve/TestProject.zig");
-const dump_types = @import("../dump/types.zig");
-const Session = @import("../Session.zig");
-
-/// A core package small enough to read and big enough for the scenarios:
-/// the prelude's types, the ad-hoc annotations of `fast-compiler.md` §3.1,
-/// and the handful of `List`/`Maybe`/`Result`/`String` functions the tests
-/// call. The embedded core would work too and costs ~2,800 lines of parsing
-/// per test; this way a test that turns on `number` says so in the fixture.
-const test_core = [_]TestProject.Module{
-    .{ .path = "Basics.beni", .package = .core, .source =
-    \\pub equatable foreign type Int
-    \\
-    \\
-    \\pub equatable foreign type Float
-    \\
-    \\
-    \\pub type Bool
-    \\    = True
-    \\    | False
-    \\
-    \\
-    \\pub type Order
-    \\    = LT
-    \\    | EQ
-    \\    | GT
-    \\
-    \\
-    \\pub foreign add : number, number -> number
-    \\
-    \\
-    \\pub foreign sub : number, number -> number
-    \\
-    \\
-    \\pub foreign mul : number, number -> number
-    \\
-    \\
-    \\pub foreign lt : number, number -> Bool
-    \\
-    \\
-    \\pub foreign eq : equatable a, a -> Bool
-    \\
-    \\
-    \\pub foreign append : appendable, appendable -> appendable
-    \\
-    \\
-    \\pub foreign toFloat : Int -> Float
-    \\
-    \\
-    \\pub identity : a -> a
-    \\identity a =
-    \\    a
-    \\
-    \\
-    \\pub max : number, number -> number
-    \\max x y =
-    \\    x
-    \\
-    },
-    .{ .path = "List.beni", .package = .core, .source =
-    \\pub equatable foreign type List a
-    \\
-    \\
-    \\pub foreign cons : a, List a -> List a
-    \\
-    \\
-    \\pub foreign map : (a -> b), List a -> List b
-    \\
-    \\
-    \\pub foreign foldl : (a, b -> b), b, List a -> b
-    \\
-    \\
-    \\pub foreign length : List a -> Int
-    \\
-    },
-    .{ .path = "Maybe.beni", .package = .core, .source =
-    \\pub type Maybe a
-    \\    = Just a
-    \\    | Nothing
-    \\
-    },
-    .{ .path = "Result.beni", .package = .core, .source =
-    \\pub type Result x a
-    \\    = Ok a
-    \\    | Err x
-    \\
-    },
-    .{ .path = "String.beni", .package = .core, .source =
-    \\pub equatable foreign type String
-    \\
-    \\
-    \\pub foreign length : String -> Int
-    \\
-    \\
-    \\pub foreign fromInt : Int -> String
-    \\
-    },
-    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign isDigit : Char -> Bool\n" },
-    .{ .path = "Debug.beni", .package = .core, .source = "pub foreign todo : String -> a\n" },
-};
-
-/// Run the checker over `source` as the module `M`, and compare
-/// `dump --stage=types`.
-fn expectTypes(expected: []const u8, source: [:0]const u8) !void {
-    const gpa = testing.allocator;
-    var modules: std.ArrayList(TestProject.Module) = .empty;
-    defer modules.deinit(gpa);
-    try modules.appendSlice(gpa, &test_core);
-    try modules.append(gpa, .{ .path = "M.beni", .source = source });
-
-    var p = try TestProject.initWith(gpa, modules.items, .{
-        .phases = Session.check_phases,
-        .keep_type_stores = true,
-    });
-    defer p.deinit();
-    const m = p.module("M").?;
-    var out: std.Io.Writer.Allocating = .init(gpa);
-    defer out.deinit();
-    try dump_types.write(
-        &out.writer,
-        gpa,
-        "M",
-        p.session.artifacts.bir(p.session.graph.moduleFile(m)),
-        &p.session.checked.modules[m.int()],
-        &p.session.checked.types,
-        &p.session.interner,
-    );
-    try testing.expectEqualStrings(expected, out.written());
-}
-
-/// Every diagnostic code the checker produced for `source`, in emission
-/// order.
-fn checkCodes(gpa: Allocator, source: [:0]const u8, out: *std.ArrayList(diagnostic.Code)) !void {
-    var modules: std.ArrayList(TestProject.Module) = .empty;
-    defer modules.deinit(gpa);
-    try modules.appendSlice(gpa, &test_core);
-    try modules.append(gpa, .{ .path = "M.beni", .source = source });
-    var p = try TestProject.initWith(gpa, modules.items, .{ .phases = Session.check_phases });
-    defer p.deinit();
-    for (p.session.diagnostics.items) |d| try out.append(gpa, d.code);
-}
-
-fn expectCodes(expected: []const diagnostic.Code, source: [:0]const u8) !void {
-    const gpa = testing.allocator;
-    var codes: std.ArrayList(diagnostic.Code) = .empty;
-    defer codes.deinit(gpa);
-    try checkCodes(gpa, source, &codes);
-    try testing.expectEqualSlices(diagnostic.Code, expected, codes.items);
-}
-
-/// Every diagnostic code of a WHOLE project — `modules` on top of the test
-/// core — for the scenarios that are about crossing a module boundary.
-fn expectProjectCodes(expected: []const diagnostic.Code, extra: []const TestProject.Module) !void {
-    const gpa = testing.allocator;
-    var modules: std.ArrayList(TestProject.Module) = .empty;
-    defer modules.deinit(gpa);
-    try modules.appendSlice(gpa, &test_core);
-    try modules.appendSlice(gpa, extra);
-    var p = try TestProject.initWith(gpa, modules.items, .{ .phases = Session.check_phases });
-    defer p.deinit();
-    const got = try p.codes(gpa);
-    defer gpa.free(got);
-    try testing.expectEqualSlices(diagnostic.Code, expected, got);
-}
-
-/// One module checked with a chosen pattern-usefulness budget
-/// (checker.md §6.6).
-fn budgetedCodes(gpa: Allocator, source: [:0]const u8, budget: u32) ![]diagnostic.Code {
-    var modules: std.ArrayList(TestProject.Module) = .empty;
-    defer modules.deinit(gpa);
-    try modules.appendSlice(gpa, &test_core);
-    try modules.append(gpa, .{ .path = "M.beni", .source = source });
-    var p = try TestProject.initWith(gpa, modules.items, .{
-        .phases = Session.check_phases,
-        .pattern_budget = budget,
-    });
-    defer p.deinit();
-    return p.codes(gpa);
-}
-
-fn expectBudgetedCodes(expected: []const diagnostic.Code, source: [:0]const u8, budget: u32) !void {
-    const gpa = testing.allocator;
-    const got = try budgetedCodes(gpa, source, budget);
-    defer gpa.free(got);
-    try testing.expectEqualSlices(diagnostic.Code, expected, got);
-}
-
-test "inference: the principal type of an unannotated definition" {
-    try expectTypes(
-        \\module M
-        \\  identity : a -> a
-        \\    x : a
-        \\  apply : (a -> b), a -> b
-        \\    f : a -> b
-        \\    x : a
-        \\  count : List a -> Int
-        \\    xs : List a
-        \\
-    ,
-        \\identity x =
-        \\    x
-        \\
-        \\
-        \\apply f x =
-        \\    f x
-        \\
-        \\
-        \\count xs =
-        \\    List.length xs
-        \\
-    );
-}
-
-test "generalisation: a let-bound name is used at two types in one body" {
-    // The classic let-polymorphism check. `dup` is generalised when its
-    // group closes, so the two uses instantiate it independently.
-    try expectTypes(
-        \\module M
-        \\  both : ( ( number, number ), ( String, String ) )
-        \\    dup : a -> ( a, a )
-        \\    y : a
-        \\
-    ,
-        \\both =
-        \\    let
-        \\        dup y =
-        \\            ( y, y )
-        \\    in
-        \\    ( dup 1, dup "s" )
-        \\
-    );
-}
-
-test "generalisation: a lambda parameter is NOT generalised" {
-    // A parameter belongs to the enclosing scope, so it may not be used at
-    // two types. Without the rank discipline this would generalise `f` and
-    // silently accept the program. (The code is `kind_mismatch` rather than
-    // `type_mismatch` because the first use pinned `f`'s argument to
-    // `number` and `String` is not one.)
-    try expectCodes(&.{.kind_mismatch},
-        \\useTwice f =
-        \\    ( f 1, f "s" )
-        \\
-    );
-}
-
-test "sharing: instantiating a scheme with an internal repeat keeps it one variable" {
-    // `let x = (y, y)` — the classic doubling case (design §7 #4). If the
-    // copy memo were missing, the two components would come back as two
-    // independent variables and `pair 1` would not force both to `number`.
-    try expectTypes(
-        \\module M
-        \\  first : ( number, number )
-        \\    pair : a -> ( a, a )
-        \\    y : a
-        \\
-    ,
-        \\first =
-        \\    let
-        \\        pair y =
-        \\            ( y, y )
-        \\    in
-        \\    pair 1
-        \\
-    );
-}
-
-test "annotations: rigid variables hold the body to the promise" {
-    try expectCodes(&.{.rigid_mismatch},
-        \\pub wrong : a -> Int
-        \\wrong value =
-        \\    value
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub right : a -> a
-        \\right value =
-        \\    value
-        \\
-    );
-}
-
-test "the kind lattice: number, appendable, and the pair that has no meet" {
-    try expectTypes(
-        \\module M
-        \\  twice : number -> number
-        \\    n : number
-        \\  join : appendable -> appendable
-        \\    a : appendable
-        \\
-    ,
-        \\twice n =
-        \\    n + n
-        \\
-        \\
-        \\join a =
-        \\    a ++ a
-        \\
-    );
-    // `number ⊓ appendable = ⊥` (checker.md §6.2).
-    try expectCodes(&.{.kind_mismatch},
-        \\both x =
-        \\    x + x ++ x
-        \\
-    );
-    // A kind that meets a type outside its set.
-    try expectCodes(&.{.kind_mismatch},
-        \\bad c =
-        \\    c ++ 'a'
-        \\
-    );
-}
-
-test "records: access is open, a literal is closed, an update keeps the base's type" {
-    try expectTypes(
-        \\module M
-        \\  name : { r | name : a } -> a
-        \\    r : { r | name : a }
-        \\  bump : { r | count : number } -> { r | count : number }
-        \\    r : { r | count : number }
-        \\  literal : { a : number, b : String }
-        \\
-    ,
-        \\name r =
-        \\    r.name
-        \\
-        \\
-        \\bump r =
-        \\    { r | count = r.count + 1 }
-        \\
-        \\
-        \\literal =
-        \\    { a = 1, b = "x" }
-        \\
-    );
-}
-
-test "records: the four-way field partition" {
-    // Two closed records that differ in both directions, one that is
-    // missing a field the other requires, and one that has an extra.
-    try expectCodes(&.{.unknown_field},
-        \\pub type alias P =
-        \\    { x : Int }
-        \\
-        \\
-        \\pub p : P
-        \\p =
-        \\    { x = 1, y = 2 }
-        \\
-    );
-    try expectCodes(&.{.missing_field},
-        \\pub type alias P =
-        \\    { x : Int, y : Int }
-        \\
-        \\
-        \\pub p : P
-        \\p =
-        \\    { x = 1 }
-        \\
-    );
-    // Two OPEN records merge: each side grows the fields the other has, so
-    // one parameter ends up carrying both.
-    try expectTypes(
-        \\module M
-        \\  merge : { r | a : a, c : b } -> a
-        \\    r : { r | a : a, c : b }
-        \\    left : a
-        \\    right : b
-        \\
-    ,
-        \\merge r =
-        \\    let
-        \\        left =
-        \\            r.a
-        \\
-        \\        right =
-        \\            r.c
-        \\    in
-        \\    left
-        \\
-    );
-}
-
-test "aliases are printed by name and never expanded away" {
-    try expectTypes(
-        \\module M
-        \\  origin : Point
-        \\  shift : Point -> Point
-        \\    p : Point
-        \\
-    ,
-        \\pub type alias Point =
-        \\    { x : Int, y : Int }
-        \\
-        \\
-        \\pub origin : Point
-        \\origin =
-        \\    { x = 0, y = 0 }
-        \\
-        \\
-        \\pub shift : Point -> Point
-        \\shift p =
-        \\    { p | x = p.x + 1 }
-        \\
-    );
-}
-
-test "poisoning: one mistake yields one message" {
-    // Three uses of a value whose type could not be worked out. Without the
-    // `err` content merging silently, each use would report again
-    // (research/02 §6).
-    try expectCodes(&.{.type_mismatch},
-        \\pub broken : Int
-        \\broken =
-        \\    "not an int"
-        \\
-        \\
-        \\pub a : Int
-        \\a =
-        \\    broken + 1
-        \\
-        \\
-        \\pub b : Int
-        \\b =
-        \\    broken * 2
-        \\
-    );
-}
-
-test "the occurs check fires once, at the binding" {
-    try expectCodes(&.{.infinite_type},
-        \\selfApply f =
-        \\    f f
-        \\
-    );
-}
-
-test "obligations: equatable, interpolatable and tuple_index" {
-    try expectCodes(&.{.not_equatable},
-        \\pub same : (Int -> Int), (Int -> Int) -> Bool
-        \\same f g =
-        \\    f == g
-        \\
-    );
-    try expectCodes(&.{.not_interpolatable},
-        \\pub show : List Int -> String
-        \\show xs =
-        \\    "xs: ${xs}"
-        \\
-    );
-    try expectCodes(&.{.ambiguous_interpolation},
-        \\show value =
-        \\    "value: ${value}"
-        \\
-    );
-    try expectCodes(&.{.ambiguous_tuple},
-        \\firstOf t =
-        \\    t.0
-        \\
-    );
-    try expectCodes(&.{.tuple_index_out_of_range},
-        \\pub third : ( Int, Int ) -> Int
-        \\third t =
-        \\    t.2
-        \\
-    );
-    // An `equatable` obligation that is SATISFIED leaves no trace, and a
-    // `number` interpolation needs no annotation: `Int` and `Float` are
-    // both on the list.
-    try expectCodes(&.{},
-        \\pub same : Int, Int -> Bool
-        \\same a b =
-        \\    a == b
-        \\
-        \\
-        \\pub show : Int -> String
-        \\show n =
-        \\    "n: ${n}"
-        \\
-    );
-}
-
-test "binding groups: mutual recursion shares one generalisation" {
-    try expectTypes(
-        \\module M
-        \\  isEven : number -> Bool
-        \\    n : number
-        \\  isOdd : number -> Bool
-        \\    n : number
-        \\
-    ,
-        \\isEven n =
-        \\    if n < 1 then
-        \\        True
-        \\    else
-        \\        isOdd (n - 1)
-        \\
-        \\
-        \\isOdd n =
-        \\    if n < 1 then
-        \\        False
-        \\    else
-        \\        isEven (n - 1)
-        \\
-    );
-}
-
-test "`?` picks Result or Maybe by shape, and refuses when it is neither" {
-    try expectTypes(
-        \\module M
-        \\  step : Result String Int -> Result String Int
-        \\    r : Result String Int
-        \\    v : Int
-        \\
-    ,
-        \\pub step : Result String Int -> Result String Int
-        \\step r =
-        \\    let
-        \\        v =
-        \\            r?
-        \\    in
-        \\    Ok (v + 1)
-        \\
-    );
-    try expectTypes(
-        \\module M
-        \\  step : Maybe Int -> Maybe Int
-        \\    m : Maybe Int
-        \\    v : Int
-        \\
-    ,
-        \\pub step : Maybe Int -> Maybe Int
-        \\step m =
-        \\    let
-        \\        v =
-        \\            m?
-        \\    in
-        \\    Just (v + 1)
-        \\
-    );
-    try expectCodes(&.{.try_shape},
-        \\pub step : Int -> Result String Int
-        \\step n =
-        \\    Ok (n? + 1)
-        \\
-    );
-}
-
-test "the arity rule of §8.3 fires before the generic mismatch" {
-    try expectCodes(&.{.too_few_args},
-        \\pub best : Int
-        \\best =
-        \\    max 1
-        \\
-    );
-    try expectCodes(&.{.too_many_args},
-        \\pub best : Int
-        \\best =
-        \\    max 1 2 3
-        \\
-    );
-    try expectCodes(&.{.not_a_function},
-        \\pub limit : Int
-        \\limit =
-        \\    1
-        \\
-        \\
-        \\pub best : Int
-        \\best =
-        \\    limit 2
-        \\
-    );
-    // The case currying could not localise (§8.3): a lambda of the wrong
-    // arity in higher-order position is wrong WHERE IT IS WRITTEN, and the
-    // message is about the lambda rather than about the list two arguments
-    // later.
-    try expectCodes(&.{.type_mismatch},
-        \\pub total : List Int -> Int
-        \\total xs =
-        \\    List.foldl (\x -> x) 0 xs
-        \\
-    );
-    // `_` is how a call leaves one argument open, and it is not an arity
-    // mistake.
-    try expectCodes(&.{},
-        \\pub bump : List Int -> List Int
-        \\bump xs =
-        \\    List.map (max 1 _) xs
-        \\
-    );
-}
-
-test "a module with a type error still produces an interface" {
-    const gpa = testing.allocator;
-    var modules: std.ArrayList(TestProject.Module) = .empty;
-    defer modules.deinit(gpa);
-    try modules.appendSlice(gpa, &test_core);
-    // `bad` is UNANNOTATED: an annotated declaration keeps its annotation
-    // even when the body disagrees, because the annotation is what
-    // dependents were promised (checker.md §6.1). `<error>` is for the case
-    // where there is nothing else to say.
-    try modules.append(gpa, .{ .path = "M.beni", .source =
-        \\pub good : Int -> Int
-        \\good n =
-        \\    n
-        \\
-        \\
-        \\pub bad =
-        \\    "no" + 1
-        \\
-    });
-    var p = try TestProject.initWith(gpa, modules.items, .{ .phases = Session.check_phases });
-    defer p.deinit();
-
-    const m = p.module("M").?;
-    var out: std.Io.Writer.Allocating = .init(gpa);
-    defer out.deinit();
-    try @import("../dump/interface.zig").write(
-        &out.writer,
-        gpa,
-        "M",
-        &p.session.resolution.interfaces[m.int()],
-        p.session.checked.types.refIds(m),
-        &p.session.checked.types,
-        &p.session.interner,
-    );
-    // The declaration that failed is `<error>`; the one that did not is
-    // still there for dependents to check against (checker.md §7).
-    try testing.expectEqualStrings(
-        \\module M
-        \\  value bad : <error>
-        \\  value good : Int -> Int
-        \\
-    , out.written());
-}
-
-test "binding groups are solved dependencies first, so a call to an inferred helper is checked" {
-    // The regression: `sccGroups` emitted Tarjan's components highest id
-    // first, and with edges pointing dependent -> dependency that is
-    // DEPENDENTS first. The caller was then checked while the callee's
-    // scheme was still unset, `instantiate` poisoned the callee, and the
-    // call was silently accepted. Both source orders, because the bug did
-    // not depend on one.
-    try expectCodes(&.{.type_mismatch},
-        \\helper n =
-        \\    n + 1
-        \\
-        \\
-        \\pub bad : Int
-        \\bad =
-        \\    helper "s"
-        \\
-    );
-    try expectCodes(&.{.type_mismatch},
-        \\pub bad : Int
-        \\bad =
-        \\    helper "s"
-        \\
-        \\
-        \\helper n =
-        \\    n + 1
-        \\
-    );
-    // And the same for `let`: a sibling binding defined after its user is
-    // still generalised before the user is solved.
-    // Locals print in BINDING order, which is the source order of the
-    // `let`, not the dependency order the groups were solved in.
-    try expectTypes(
-        \\module M
-        \\  useAfter : ( number, String )
-        \\    both : ( number2, String )
-        \\    idf : a -> a
-        \\    x : a
-        \\
-    ,
-        \\useAfter =
-        \\    let
-        \\        both =
-        \\            ( idf 1, idf "s" )
-        \\
-        \\        idf x =
-        \\            x
-        \\    in
-        \\    both
-        \\
-    );
-}
-
-test "unifying two cyclic types merges a pair that is already one root" {
-    // The regression: `unifyFlat` unifies children BEFORE merging the two
-    // roots (so a message can print two different types), and a recursive
-    // type makes an inner unification merge the pair first. `merge` then
-    // got two equal roots and tripped its own assertion — a compiler crash
-    // on ordinary source.
-    try expectCodes(&.{.infinite_type},
-        \\pub two x y =
-        \\    let
-        \\        r =
-        \\            [ x, y ]
-        \\
-        \\        p =
-        \\            x x
-        \\
-        \\        q =
-        \\            y y
-        \\    in
-        \\    p
-        \\
-    );
-}
-
-test "a local index is relative to its declaration, in every consumer" {
-    // The regression: two places indexed the module-wide `bir.locals` with
-    // a declaration-relative index, so everything after the first
-    // declaration saw another declaration's names. In a record pattern
-    // that is not cosmetic — the name IS the field being matched.
-    try expectCodes(&.{},
-        \\pub first : Int -> Int
-        \\first zzz =
-        \\    zzz
-        \\
-        \\
-        \\pub second : { name : Int, other : Int } -> Int
-        \\second rec =
-        \\    let
-        \\        { name } =
-        \\            rec
-        \\    in
-        \\    name
-        \\
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Pattern usefulness (checker.md §6.6)
-// ---------------------------------------------------------------------------
-
-test "exhaustiveness: a constructor with no branch is reported, one with a branch is not" {
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-        \\        Nothing ->
-        \\            0
-        \\
-    );
-    // A variable covers the rest, exactly as a wildcard does.
-    try expectCodes(&.{},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-        \\        other ->
-        \\            0
-        \\
-    );
-}
-
-test "exhaustiveness: `if` lowers to a `case` on Bool and must not be reported" {
-    // `if` becomes `case c of True -> …; False -> …` (Bir's `case` tag), and
-    // those two ARE every constructor of `Bool`. A spurious `missing_patterns`
-    // on every `if` in the language is the failure mode this test exists for.
-    try expectCodes(&.{},
-        \\pub sign : Int -> Int
-        \\sign n =
-        \\    if n < 0 then
-        \\        0 - 1
-        \\    else
-        \\        1
-        \\
-    );
-    // And a written `case` on `Bool` behaves the same way.
-    try expectCodes(&.{.missing_patterns},
-        \\pub yes : Bool -> Int
-        \\yes b =
-        \\    case b of
-        \\        True ->
-        \\            1
-        \\
-    );
-}
-
-test "exhaustiveness: literals are infinite, so a wildcard is the only way to cover them" {
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : Int -> Int
-        \\f n =
-        \\    case n of
-        \\        1 ->
-        \\            1
-        \\
-        \\        2 ->
-        \\            2
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub f : Int -> Int
-        \\f n =
-        \\    case n of
-        \\        1 ->
-        \\            1
-        \\
-        \\        _ ->
-        \\            0
-        \\
-    );
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : String -> Int
-        \\f s =
-        \\    case s of
-        \\        "a" ->
-        \\            1
-        \\
-    );
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : Char -> Int
-        \\f c =
-        \\    case c of
-        \\        'a' ->
-        \\            1
-        \\
-    );
-    // The same VALUE spelled two ways is one pattern, so the second branch
-    // is dead: `0x10` and `16` are the same integer.
-    try expectCodes(&.{.redundant_pattern},
-        \\pub f : Int -> Int
-        \\f n =
-        \\    case n of
-        \\        0x10 ->
-        \\            1
-        \\
-        \\        16 ->
-        \\            2
-        \\
-        \\        _ ->
-        \\            0
-        \\
-    );
-}
-
-test "exhaustiveness: a list is `[]` and `::`, in both spellings" {
-    try expectCodes(&.{}, listCase("[]", "x :: rest"));
-    try expectCodes(&.{.missing_patterns}, listCase("[]", "[ x ]"));
-    try expectCodes(&.{.missing_patterns}, listCase("[ x ]", "[ x2, y ]"));
-    // `[]`, `[ x ]` and `x :: y :: rest` between them are every list.
-    try expectCodes(&.{},
-        \\pub f : List Int -> Int
-        \\f xs =
-        \\    case xs of
-        \\        [] ->
-        \\            0
-        \\
-        \\        [ x ] ->
-        \\            x
-        \\
-        \\        x2 :: y :: rest ->
-        \\            y
-        \\
-    );
-    // …and a fourth branch for a non-empty list is therefore dead.
-    try expectCodes(&.{.redundant_pattern},
-        \\pub f : List Int -> Int
-        \\f xs =
-        \\    case xs of
-        \\        [] ->
-        \\            0
-        \\
-        \\        [ x ] ->
-        \\            x
-        \\
-        \\        x2 :: y :: rest ->
-        \\            y
-        \\
-        \\        z :: more ->
-        \\            z
-        \\
-    );
-}
-
-/// A `case` over `List Int` with two branch patterns, for the list cases
-/// above. The bodies are constants so nothing but the patterns is in play.
-fn listCase(comptime a: []const u8, comptime b: []const u8) [:0]const u8 {
-    return "pub f : List Int -> Int\nf xs =\n    case xs of\n        " ++ a ++
-        " ->\n            0\n\n        " ++ b ++ " ->\n            1\n";
-}
-
-test "exhaustiveness: tuples, unit and records are products with one shape" {
-    // A tuple has one constructor, so what is missing is a COMBINATION —
-    // and the example names it in source syntax.
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : ( Bool, Bool ) -> Int
-        \\f p =
-        \\    case p of
-        \\        ( True, True ) ->
-        \\            1
-        \\
-        \\        ( False, False ) ->
-        \\            2
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub f : ( Bool, Bool ) -> Int
-        \\f p =
-        \\    case p of
-        \\        ( True, b ) ->
-        \\            1
-        \\
-        \\        ( False, b2 ) ->
-        \\            2
-        \\
-    );
-    // `()` has exactly one value, and a record pattern always matches.
-    try expectCodes(&.{},
-        \\pub f : () -> Int
-        \\f u =
-        \\    case u of
-        \\        () ->
-        \\            1
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub f : { name : Int } -> Int
-        \\f r =
-        \\    case r of
-        \\        { name } ->
-        \\            name
-        \\
-    );
-}
-
-test "exhaustiveness: nesting" {
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : Maybe (Maybe Int) -> Int
-        \\f m =
-        \\    case m of
-        \\        Just (Just n) ->
-        \\            n
-        \\
-        \\        Nothing ->
-        \\            0
-        \\
-    );
-    try expectCodes(&.{},
-        \\pub f : Maybe (Maybe Int) -> Int
-        \\f m =
-        \\    case m of
-        \\        Just (Just n) ->
-        \\            n
-        \\
-        \\        Just Nothing ->
-        \\            1
-        \\
-        \\        Nothing ->
-        \\            0
-        \\
-    );
-    // A `Result` of a `Maybe`, with three of the four combinations missing.
-    try expectCodes(&.{.missing_patterns},
-        \\pub f : Result String (Maybe Int) -> Int
-        \\f r =
-        \\    case r of
-        \\        Ok (Just n) ->
-        \\            n
-        \\
-    );
-}
-
-test "exhaustiveness: a branch under a wildcard can never run" {
-    try expectCodes(&.{.redundant_pattern},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        other ->
-        \\            0
-        \\
-        \\        Nothing ->
-        \\            1
-        \\
-    );
-    // The FIRST redundant branch is the one reported, and the missing-
-    // pattern search does not also run: the matrix past a dead row is not
-    // what the author meant (Elm's `toNonRedundantRows` stops the same way).
-    try expectCodes(&.{.redundant_pattern},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-        \\        Just q ->
-        \\            q
-        \\
-        \\        Just z ->
-        \\            z
-        \\
-    );
-}
-
-test "exhaustiveness: a declaration with a type error is not judged twice" {
-    // One mistake, one message: the `case` below is also non-exhaustive,
-    // and saying so would be a second complaint about a declaration whose
-    // types are already unknown (checker.md §6.6).
-    try expectCodes(&.{.type_mismatch},
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            "not an int"
-        \\
-    );
-    // A GOOD declaration in the same module is still checked, though.
-    try expectCodes(&.{ .type_mismatch, .missing_patterns },
-        \\pub bad : Maybe Int -> Int
-        \\bad m =
-        \\    case m of
-        \\        Just n ->
-        \\            "not an int"
-        \\
-        \\
-        \\pub good : Maybe Int -> Int
-        \\good m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-    );
-}
-
-test "exhaustiveness: a case on an opaque imported type needs a variable, and that is enough" {
-    // The importer cannot name the constructors at all (`opaque_constructor`
-    // refuses them), so a variable is the only pattern it can write — and a
-    // variable is exhaustive. The point is that nothing is reported: an
-    // opaque type must not look non-exhaustive from outside.
-    try expectProjectCodes(&.{}, &.{
-        .{ .path = "Token.beni", .source =
-        \\pub opaque type Token
-        \\    = Word String
-        \\    | Number Int
-        \\
-        \\
-        \\pub make : Token
-        \\make =
-        \\    Number 1
-        \\
-        },
-        .{ .path = "M.beni", .source =
-        \\import Token exposing (Token, make)
-        \\
-        \\
-        \\pub size : Token -> Int
-        \\size t =
-        \\    case t of
-        \\        anything ->
-        \\            1
-        \\
-        },
-    });
-}
-
-test "exhaustiveness: an imported type's constructors come from its interface" {
-    // `Tri` is not even imported, and it is still what is missing: the union
-    // comes from the TYPE's declaration, reached through `Shape`'s
-    // interface, not from what the importer happened to name.
-    try expectProjectCodes(&.{.missing_patterns}, &.{
-        .{ .path = "Shape.beni", .source =
-        \\pub type Shape
-        \\    = Circle Int
-        \\    | Square Int
-        \\    | Tri Int Int
-        \\
-        },
-        .{ .path = "M.beni", .source =
-        \\import Shape exposing (Shape, Circle, Square)
-        \\
-        \\
-        \\pub area : Shape -> Int
-        \\area s =
-        \\    case s of
-        \\        Circle r ->
-        \\            r
-        \\
-        \\        Square w ->
-        \\            w
-        \\
-        },
-    });
-}
-
-test "the usefulness budget: an analysis that would cost too much is refused, not skipped" {
-    // The algorithm is exponential in the worst case (Maranget §3.3), so a
-    // `case` that exceeds a fixed work budget is abandoned. Proving that
-    // with a hang is not a test; proving it by turning the budget down to
-    // where an ordinary `case` cannot be analysed is.
-    //
-    // Until queue slice 14 the second line of this test expected `&.{}` —
-    // silence — and that silence was a miscompile: `backend.md` §7's
-    // decision tree emits no default arm because the checker is supposed to
-    // have proved exhaustiveness, so a `case` the checker never decided
-    // falls into its last edge and answers wrongly at exit 0. An analysis
-    // that gave up now SAYS it gave up.
-    const source =
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-    ;
-    try expectBudgetedCodes(&.{.missing_patterns}, source, Session.default_pattern_budget);
-    try expectBudgetedCodes(&.{.pattern_budget_exhausted}, source, 1);
-}
-
-test "the usefulness budget: exhaustion reports ONE code, not a partial answer" {
-    // The same `case` is both non-exhaustive (no `Nothing` branch) and
-    // redundant (`Just n` twice). With room to think the analysis reports
-    // the redundancy, which is the first answer it reaches; out of budget it
-    // reports neither, because a half-searched matrix proves nothing at all
-    // — only `pattern_budget_exhausted`, once.
-    const source =
-        \\pub f : Maybe Int -> Int
-        \\f m =
-        \\    case m of
-        \\        Just n ->
-        \\            n
-        \\
-        \\        Just k ->
-        \\            k
-        \\
-    ;
-    try expectBudgetedCodes(&.{.redundant_pattern}, source, Session.default_pattern_budget);
-    try expectBudgetedCodes(&.{.pattern_budget_exhausted}, source, 1);
-}
-
-test "the usefulness budget: an irrefutable position refuses instead of going silent" {
-    // An irrefutable position the analysis cannot decide would lose the
-    // guarantee that `backend.md` §4's unchecked destructure stands on, so
-    // there the undecided answer has always been a refusal (checker.md §6.6).
-    //
-    // Both answers are refusals since slice 14; what differs is the message
-    // and the way out. A `case` can be split or given a bigger budget; an
-    // irrefutable position has no branch to fall through to at all, so its
-    // message says "`case` on it instead".
-    //
-    // `Boxed` is its type's only constructor, so with room to think the
-    // analysis proves the parameter irrefutable and says nothing.
-    const source =
-        \\pub type Boxed
-        \\    = Boxed Int
-        \\
-        \\
-        \\pub f : Boxed -> Int
-        \\f (Boxed n) =
-        \\    n
-        \\
-    ;
-    try expectBudgetedCodes(&.{}, source, Session.default_pattern_budget);
-    try expectBudgetedCodes(&.{.refutable_parameter_pattern}, source, 1);
-}
-
-test "the usefulness budget: many constructors times many branches terminates" {
-    // Forty constructors and forty branches, each branch a two-deep nest of
-    // them: the shape that makes every column of the matrix complete, which
-    // is where the exponent lives. The contract is that this FINISHES —
-    // with the default budget it is analysed and answers `missing_patterns`,
-    // with a small one it is refused as `pattern_budget_exhausted`, and
-    // neither answer is a hang or a crash.
-    const gpa = testing.allocator;
-    const ctors = 40;
-    var out: std.Io.Writer.Allocating = .init(gpa);
-    defer out.deinit();
-    const w = &out.writer;
-    try w.writeAll("pub type T\n");
-    for (0..ctors) |i| try w.print("    {s} C{d} T\n", .{ if (i == 0) "=" else "|", i });
-    try w.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
-    for (0..ctors) |i| {
-        if (i != 0) try w.writeAll("\n");
-        try w.print("        C{d} (C{d} rest{d}) ->\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
-    }
-    const text = try gpa.dupeZ(u8, out.written());
-    defer gpa.free(text);
-
-    for ([_]u32{ Session.default_pattern_budget, 64 }) |budget| {
-        const codes = try budgetedCodes(gpa, text, budget);
-        defer gpa.free(codes);
-        // Exactly one message either way: the real answer, or the refusal
-        // that says there is no real answer. Never a crash, never two.
-        try testing.expectEqual(@as(usize, 1), codes.len);
-        try testing.expect(codes[0] == .missing_patterns or codes[0] == .pattern_budget_exhausted);
-    }
-}
-
-test "fuzz: arbitrary bytes as the patterns of a `case` never panic the usefulness check" {
-    // The general pipeline fuzz below reaches `Exhaustive` only when random
-    // bytes happen to make a declaration that type-checks, which is almost
-    // never. This one puts the fuzzed bytes where the patterns of a `case`
-    // over a real ADT go, so whatever the parser makes of them is what the
-    // matrix is built from — mixed columns, poisoned references, nesting,
-    // arities that do not match. Contract: no panic, and no diagnostic is
-    // required.
-    try testing.fuzz({}, struct {
-        fn testOne(_: void, smith: *std.testing.Smith) anyerror!void {
-            var buf: [512]u8 = undefined;
-            const len = smith.sliceWithHash(&buf, 0x5E6A2);
-            const gpa = testing.allocator;
-            var out: std.Io.Writer.Allocating = .init(gpa);
-            defer out.deinit();
-            out.writer.writeAll(
-                \\pub type T
-                \\    = A Int
-                \\    | B
-                \\    | C T T
-                \\
-                \\
-                \\pub f : T -> Int
-                \\f t =
-                \\    case t of
-                \\
-            ) catch return;
-            // One branch per line of the fuzzed bytes, each at the branch
-            // indent, so a line that happens to be a pattern becomes one.
-            var it = std.mem.splitScalar(u8, buf[0..len], '\n');
-            while (it.next()) |line| {
-                out.writer.print("        {s} ->\n            0\n\n", .{line}) catch return;
-            }
-            out.writer.writeAll("        _ ->\n            1\n") catch return;
-            const source = gpa.dupeZ(u8, out.written()) catch return;
-            defer gpa.free(source);
-            var codes: std.ArrayList(diagnostic.Code) = .empty;
-            defer codes.deinit(gpa);
-            checkCodes(gpa, source, &codes) catch |err| switch (err) {
-                error.OutOfMemory => return,
-                else => return err,
-            };
-        }
-    }.testOne, .{});
-}
-
-test "fuzz: the whole pipeline through the checker never panics" {
-    // The checker eats a Bir TREE, not bytes, so its harness is the whole
-    // front end plus the checker over arbitrary input: whatever the lexer,
-    // the parser and lowering make of these bytes is what the checker has
-    // to survive. Contract: no panic, and no diagnostic is required.
-    try testing.fuzz({}, struct {
-        fn testOne(_: void, smith: *std.testing.Smith) anyerror!void {
-            var buf: [1024]u8 = undefined;
-            const len = smith.sliceWithHash(&buf, 0xC4EC6);
-            const source = try testing.allocator.dupeZ(u8, buf[0..len]);
-            defer testing.allocator.free(source);
-            var codes: std.ArrayList(diagnostic.Code) = .empty;
-            defer codes.deinit(testing.allocator);
-            checkCodes(testing.allocator, source, &codes) catch |err| switch (err) {
-                error.OutOfMemory => return,
-                else => return err,
-            };
-        }
-    }.testOne, .{});
-}
-
-/// A cache HIT for a module THIS checker checked (`check2/Incremental.install`):
-/// the session capability bits its own dependents read, rebuilt from the
-/// installed record's schemes and table exactly as a cold check sets them.
-/// Moved here from `check2/Incremental.zig` by R8a (checker-v2.md §11.1): the
-/// new checker reads its dependencies' published derived rows instead, and
-/// has no capability reader left (`check2/rules_test.zig`'s S4 fence).
-pub fn restoreCapabilitiesOnHit(
-    gpa: Allocator,
-    types: *Types,
-    graph: *const Graph,
-    artifacts: *const Artifacts,
-    iface: *const Interface,
-    provenance: *const Interface.Provenance,
-    dispatch: *const Dispatch,
-    m: Graph.Index,
-) Error!void {
-    const bir = artifacts.bir(graph.moduleFile(m));
-    const ref_ids = types.ref_ids[m.int()];
-    var store: TypeStore = .init(std.heap.page_allocator);
-    defer store.deinit();
-    try store.reserve(iface.terms.len + iface.schemes.len * 2 + 16, iface.extra.len + 16);
-    const schemes = try gpa.alloc(TypeStore.Var.Optional, bir.decls.len);
-    defer gpa.free(schemes);
-    @memset(schemes, .none);
-    for (iface.values, 0..) |value, i| {
-        const decl = provenance.valueDecl(i) orelse continue;
-        if (decl.int() >= schemes.len or value.scheme == .none) continue;
-        const root = try Schemes.instantiate(iface, ref_ids, &store, @intFromEnum(value.scheme), TypeStore.generalized, gpa, null);
-        schemes[decl.int()] = root.toOptional();
-    }
-    try types.settleDispatchCapabilities(gpa, m, graph, artifacts, &store, schemes);
-    types.restoreDerivedCapabilities(m, dispatch);
-}
-
-/// A cache hit of a module the OLD checker checked: its schema endpoints'
-/// settled properties, from its plan's property bytes (schema.md A.6), which
-/// its v1 dependents read. Moved here from the install path by R8b: a module
-/// the new checker checked keeps no such bits (checker-v2.md §11.5).
-pub fn restoreSchemaPropertiesOnHit(types: *Types, m: Graph.Index, plan: *const SchemaPlan) void {
-    for (plan.definitions) |definition| {
-        types.restoreSchemaPropertyBits(types.ofSchemaDecl(m, definition.decl, .type), definition.program_properties);
-        types.restoreSchemaPropertyBits(types.ofSchemaDecl(m, definition.decl, .encoded), definition.encoded_properties);
-    }
-}
+/// Constraint generation and solving walk an expression TREE, and the parser
+/// accepts 4096 levels of nesting (language.md §10). 4096 frames do not fit
+/// in a default thread stack: M2b measured `bench/pathological/
+/// PlusChain8000.beni` overflowing at 16 MiB and surviving at 32, and
+/// `Session` runs the whole check on a 64 MiB thread for that reason. Every
+/// worker here needs the same room, so the size is stated at every spawn —
+/// `std.Thread.SpawnConfig`'s default is nowhere near it.
+pub const stack_size = 64 * 1024 * 1024;

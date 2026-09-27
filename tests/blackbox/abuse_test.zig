@@ -214,7 +214,7 @@ test "100 000 nested lists stop at exactly one nesting_too_deep" {
     try expectFmtRefuses(&w, "Deep.beni", 1);
 }
 
-test "a record literal nested to the parser's limit checks and compares under both checkers, one past it is one nesting_too_deep (CK-114)" {
+test "a record literal nested to the parser's limit checks and compares, one past it is one nesting_too_deep (CK-114)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -224,7 +224,7 @@ test "a record literal nested to the parser's limit checks and compares under bo
     // accept 4 095. Its record literal now spends one (`Solve.solveFields`),
     // so the parser's own limit is the one limit: 4 095 levels check, and
     // compare (derivation, unification and resolution all that deep), and
-    // 4 096 is the parser's one refusal, under either checker.
+    // 4 096 is the parser's one refusal.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -236,12 +236,12 @@ test "a record literal nested to the parser's limit checks and compares under bo
         try w.write(if (depth == 4095) "Limit.beni" else "Past.beni", source);
     }
 
-    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+    {
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const limit = try w.run(&.{ "check", "--no-cache", checker, "Limit.beni" });
-        const past = try w.run(&.{ "check", "--no-cache", checker, "Past.beni" });
+        const limit = try w.run(&.{ "check", "--no-cache", "Limit.beni" });
+        const past = try w.run(&.{ "check", "--no-cache", "Past.beni" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
@@ -255,7 +255,7 @@ test "a record literal nested to the parser's limit checks and compares under bo
     }
 }
 
-test "a record literal nested to the parser's limit compares and RUNS, under both checkers, dev and release (CK-128)" {
+test "a record literal nested to the parser's limit compares and RUNS, dev and release (CK-128)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -298,7 +298,7 @@ test "a record literal nested to the parser's limit compares and RUNS, under bot
     );
     try w.write("Main.beni", source.items);
 
-    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+    {
         for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
             // ┌─────────────────────────────────────┐
             // │ EXECUTE                             │
@@ -306,9 +306,9 @@ test "a record literal nested to the parser's limit compares and RUNS, under bot
             // `--release` builds with no cache either: a second
             // `--no-cache` would be a repeated flag.
             const r = if (std.mem.eql(u8, flag, "--release"))
-                try w.buildAndRun(&.{ checker, "--release", "--no-cache", "Main.beni" })
+                try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
             else
-                try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+                try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
 
             // ┌─────────────────────────────────────┐
             // │ VERIFY OUTPUT                       │
@@ -333,7 +333,7 @@ test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep,
     // down — so its calls charge `derived_depth_limit` one unit per 32
     // parameters and it reaches the explicit stack after a few levels. The
     // wide one charges one unit, like any other. Every parameter is a
-    // position, so both checkers give the type the same context.
+    // position.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -386,11 +386,11 @@ test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep,
         );
         try w.write("Main.beni", source.items);
 
-        for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+        {
             // ┌─────────────────────────────────────┐
             // │ EXECUTE                             │
             // └─────────────────────────────────────┘
-            const r = try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+            const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
 
             // ┌─────────────────────────────────────┐
             // │ VERIFY OUTPUT                       │
@@ -547,15 +547,15 @@ test "a chain of forwarders as deep as the parser allows compares and runs: `Jus
     );
     try w.write("Main.beni", source.items);
 
-    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+    {
         for ([_]bool{ false, true }) |release| {
             // ┌─────────────────────────────────────┐
             // │ EXECUTE                             │
             // └─────────────────────────────────────┘
             const r = if (release)
-                try w.buildAndRun(&.{ checker, "--release", "--no-cache", "Main.beni" })
+                try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
             else
-                try w.buildAndRun(&.{ checker, "--no-cache", "Main.beni" });
+                try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
 
             // ┌─────────────────────────────────────┐
             // │ VERIFY OUTPUT                       │
@@ -1803,162 +1803,11 @@ test "600 modules check identically at every worker count, twice each" {
 // Degenerate constraint accumulation
 // ---------------------------------------------------------------------------
 
-/// The static-dispatch counters `--self-profile` writes at exit, for one run
-/// (`src/Profile.zig`). They are the only deterministic window the binary
-/// gives on the solver's bookkeeping, and a complexity claim needs a counter
-/// rather than a clock.
-const ChainCounters = struct {
-    obligations: u64 = 0,
-    constraints_created: u64 = 0,
-    constraints_merged: u64 = 0,
-    constraints_deferred: u64 = 0,
-    constraints_discharged: u64 = 0,
-    constraints_promoted: u64 = 0,
-};
-
-/// Check a chain of `links` unannotated declarations, each adding one method
-/// to the set the one before it inferred, and return the counters.
-///
-/// `f1 x = ( x.m1 x, x )` and `fk x = ( x.mk x, f(k-1) x )`: no operator, no
-/// literal and no import, so `--core-root=nocore` holds and every number
-/// below is this file's alone.
-fn constraintChainCounters(w: *World, links: usize, trace: []const u8, source_path: []const u8) !ChainCounters {
-    var source: std.Io.Writer.Allocating = .init(testing.allocator);
-    defer source.deinit();
-    const out = &source.writer;
-    for (1..links + 1) |i| {
-        if (i != 1) try out.writeAll("\n");
-        try out.print("pub f{d} x =\n", .{i});
-        if (i == 1) {
-            try out.writeAll("    ( x.m1 x, x )\n");
-        } else {
-            try out.print("    ( x.m{d} x, f{d} x )\n", .{ i, i - 1 });
-        }
-    }
-    try w.write(source_path, source.written());
-    try w.write("nocore/PLACEHOLDER", "");
-
-    const flag = try std.fmt.allocPrint(testing.allocator, "--self-profile={s}", .{trace});
-    defer testing.allocator.free(flag);
-    // `--checker=v1`: the counters below are v1's constraint sets (A.81), which
-    // checker v2 does not have — it records obligations as rows on their
-    // variables (`checker-v2.md` §4.5), and `perf_test.zig`'s CK-96 and CK-97
-    // hold those linear. Pinned to v1 at the cut-over (R11); deleted with v1
-    // at R12.
-    const r = try w.run(&.{ "check", flag, "--checker=v1", "--core-root=nocore", "--jobs=1", source_path });
-    if (r.term != .exited) {
-        std.debug.print("did not exit normally: {any}\n", .{r.term});
-        return error.CompilerDiedFromSignal;
-    }
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stdout);
-    // Every link is an unannotated `pub` declaration whose inferred scheme
-    // really does carry a `where` suffix, so since A.83 each one warns —
-    // one message per link, all of them §10.9's, and nothing else. Asserted
-    // rather than allowed: an `error` appearing here would mean the chain
-    // stopped being the clean input this measurement is taken on.
-    try testing.expectEqual(links, r.diagnostics.len);
-    for (r.diagnostics) |d| {
-        try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, d.code);
-        try testing.expectEqual(diagnostic.Severity.warning, d.severity);
-    }
-
-    const Event = struct {
-        name: []const u8,
-        ph: []const u8,
-        args: struct {
-            obligations: ?u64 = null,
-            constraints_created: ?u64 = null,
-            constraints_merged: ?u64 = null,
-            constraints_deferred: ?u64 = null,
-            constraints_discharged: ?u64 = null,
-            constraints_promoted: ?u64 = null,
-        },
-    };
-    const text = try w.read(trace);
-    const parsed = try std.json.parseFromSlice(
-        struct { traceEvents: []Event },
-        testing.allocator,
-        text,
-        .{ .ignore_unknown_fields = true },
-    );
-    defer parsed.deinit();
-    var counters: ChainCounters = .{};
-    for (parsed.value.traceEvents) |e| {
-        if (!std.mem.eql(u8, e.ph, "C")) continue;
-        inline for (@typeInfo(ChainCounters).@"struct".fields) |f| {
-            if (std.mem.eql(u8, e.name, f.name)) @field(counters, f.name) = @field(e.args, f.name).?;
-        }
-    }
-    return counters;
-}
-
-test "an unannotated constraint chain costs one merge per link, not one per constraint" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // Link k of an unannotated chain accumulates k method constraints, so a
-    // chain of n carries n(n+1)/2 of them and that quadratic is the FEATURE
-    // (`plans/static-dispatch-spike.md` §7 M2). What is not the feature is a
-    // third factor on top of it: folding each deferred constraint back onto
-    // its own set rebuilt the whole set, so link k copied k constraints k
-    // times and `beni check` went CUBIC in time and memory — 51 ms / 53 MB
-    // at n = 100, 3.1 s / 3.3 GB at n = 400, and at n = 1000 a process
-    // killed at 29 GiB with no diagnostic (A.81).
-    //
-    // The counter says it and a clock does not: `constraints_merged` counts
-    // set rebuilds, and it is one per link when the fold is a no-op and
-    // n(n+1)/2 + n - 1 when it is not. At n = 64 that is 63 against 2 143.
-    //
-    // 32 and 64, not 64 and 128, since A.83: a chain of 128 links promotes
-    // 65 constraints at link 65 and is `too_many_inferred_constraints` from
-    // there on (§10.11), which is a different measurement. 64 is the longest
-    // chain the cap still accepts whole, so it is still the widest set the
-    // fold can be asked to copy, and the growth assertion below is still
-    // what the guard has to hold.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const links = 32;
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const one = try constraintChainCounters(&w, links, "one.json", "Chain.beni");
-    const two = try constraintChainCounters(&w, 2 * links, "two.json", "Longer.beni");
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // Every counter, because the cheap way to make the merges linear is to
-    // stop registering the obligations — and then `beni` would emit calls
-    // an evidence argument short (A.57). The obligations, the deferrals and
-    // the promotions must stay at n(n+1)/2 exactly while the merges go
-    // linear. Nothing is discharged: no receiver is ever a concrete type.
-    try testing.expectEqualDeep(ChainCounters{
-        .obligations = links * (links + 1) / 2,
-        .constraints_created = links,
-        .constraints_merged = links - 1,
-        .constraints_deferred = links * (links + 1) / 2,
-        .constraints_discharged = 0,
-        .constraints_promoted = links * (links + 1) / 2,
-    }, one);
-    try testing.expectEqualDeep(ChainCounters{
-        .obligations = 2 * links * (2 * links + 1) / 2,
-        .constraints_created = 2 * links,
-        .constraints_merged = 2 * links - 1,
-        .constraints_deferred = 2 * links * (2 * links + 1) / 2,
-        .constraints_discharged = 0,
-        .constraints_promoted = 2 * links * (2 * links + 1) / 2,
-    }, two);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // Doubling the chain doubles the rebuilds and no more. Stated as a
-    // growth as well as a value, because the two literals above could both
-    // be re-blessed to whatever the compiler does today while this cannot.
-    try testing.expectEqual(one.constraints_merged * 2 + 1, two.constraints_merged);
-}
+// The chain's constraint-set counters (A.81: one merge per link, not one
+// per constraint) were v1's: its constraint sets and the six `--self-profile`
+// counters that measured them went with it at R12. The checker that stayed
+// records obligations as rows on their variables (`checker-v2.md` §4.5), and
+// `perf_test.zig`'s CK-96 and CK-97 scenarios hold those linear.
 
 test "a chain past the inferred-constraint cap reports a bounded number of errors and finishes" {
     // ┌─────────────────────────────────────────┐

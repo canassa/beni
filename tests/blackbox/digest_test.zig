@@ -13,8 +13,8 @@
 //! type's constructor payload becomes a function, the type stops being
 //! `equatable`, and the declaring module's interface hash does not move by one
 //! byte (measured here and in the plan: `app:Leaf 5c2c9081…` on both sides).
-//! Under checker v2 (the default since R11) the record states it and the hash moves
-//! too (the row's `hashes_v2`; checker-v2.md §14.3 *as built by R10*).
+//! Under checker v2 (the default since R11, the only one since R12) the record
+//! states it and the hash moves too (checker-v2.md §14.3 *as built by R10*).
 //! Row 13 is §6.2's — a `pub type alias` whose body no scheme of its own module
 //! mentions has its expansion nowhere in the record, and renaming a field of it
 //! leaves the hash at `3c04159f…` while an importer goes from exit 0 to
@@ -287,9 +287,6 @@ const Row = struct {
     /// An extra file to add, as `(path, contents)`.
     add: ?struct { path: []const u8, contents: []const u8 } = null,
     hashes: []const []const u8,
-    /// The hash set under `--checker=v2` where it legitimately differs
-    /// (`plans/checker-rewrite.md` R10): null is `hashes`.
-    hashes_v2: ?[]const []const u8 = null,
     digests: []const []const u8,
     errors: bool = false,
 };
@@ -317,8 +314,7 @@ fn runRow(row: Row) !void {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    const hashes = if (w.underV2()) row.hashes_v2 orelse row.hashes else row.hashes;
-    try expectSet(row.what, try movedBetween(arena, before.hashes, after.hashes), hashes);
+    try expectSet(row.what, try movedBetween(arena, before.hashes, after.hashes), row.hashes);
     try expectSet(row.what, try movedBetween(arena, before.digests, after.digests), row.digests);
 }
 
@@ -513,17 +509,16 @@ test "row 10: a PRIVATE type's payload becomes a function — the digest moves a
     try runRow(.{
         .what = "a private type's payload becomes a function",
         .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
-        // NOT ONE interface hash in the project moves — `Mid`'s own record is
-        // unchanged too, because `same` is annotated and an annotation's
-        // scheme is the annotation. So the digest is the only thing in the
-        // build that can see this edit at all.
-        .hashes = nothing,
-        // Under v2 the record DOES state it (checker-v2.md §14.2 *as amended
-        // by R8a*): `make`'s scheme names `Hidden`, so `Hidden` has a
-        // `hidden_types` row, and its derived `eq` and `compare` go from
-        // `present` to `function`. `Leaf`'s hash moves, and no other: `Mid`'s
-        // record is still its annotation. The digest's wave is the same.
-        .hashes_v2 = &.{"app:Leaf"},
+        // Under v1 NOT ONE interface hash in the project moved, so the digest
+        // was the only thing in the build that could see this edit at all.
+        // Under v2, the one checker since R12, the record DOES state it
+        // (checker-v2.md §14.2 *as amended by R8a*): `make`'s scheme names
+        // `Hidden`, so `Hidden` has a `hidden_types` row, and its derived
+        // `eq` and `compare` go from `present` to `function`. `Leaf`'s hash
+        // moves, and no other: `Mid`'s record is still its annotation, because
+        // `same` is annotated and an annotation's scheme is the annotation.
+        // The digest's wave is the same.
+        .hashes = &.{"app:Leaf"},
         .digests = digest_wave_from_leaf,
         .errors = true,
     });

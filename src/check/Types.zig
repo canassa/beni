@@ -55,14 +55,12 @@ const SourceStore = @import("../SourceStore.zig");
 const TypeStore = @import("TypeStore.zig");
 const reads = @import("reads.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
-const Dispatch = @import("Dispatch.zig");
 
 const Types = @This();
 
 pub const Symbol = InternPool.Symbol;
 pub const TypeId = TypeStore.TypeId;
 pub const Var = TypeStore.Var;
-pub const MethodKind = enum { eq, compare };
 
 /// One declared type, wherever it lives.
 pub const Entry = struct {
@@ -82,11 +80,6 @@ pub const Entry = struct {
     kind: Interface.TypeKind,
     /// May be compared with `==` when every argument can (see the header).
     equatable: bool,
-    /// Whether dispatch can answer `eq` for this nominal type. Unlike
-    /// `equatable`, this stops at a public custom method, so the legacy
-    /// structural `Basics.eq` gate stays separate.
-    answers_eq: bool,
-    public_eq: bool,
     /// May be ORDERED with `<` — the same fixpoint, one gate further out
     /// (`docs/design/static-dispatch-spike.md` §3.3, A.50, A.54).
     ///
@@ -100,10 +93,6 @@ pub const Entry = struct {
     /// comparable however equatable it is, and without this field `a < b` on
     /// it derived a function whose one part was `err`.
     comparable: bool,
-    /// Whether dispatch can answer `compare`. Kept separate from the raw
-    /// structural facts for the same reason as `answers_eq`.
-    answers_compare: bool,
-    public_compare: bool,
     /// A function type is reachable inside this type's body — through
     /// another named type as well, which is what makes it a fixpoint and
     /// not a property of one body (A.58).
@@ -164,13 +153,6 @@ entry_offsets: []u32,
 /// dependency has finished (checker.md §4.4), so nothing reads a slot
 /// before it is written.
 ref_ids: [][]TypeId,
-/// One byte per type parameter, grouped by TypeId. Bit 0 means the public
-/// custom method requires that parameter's `eq`; bit 1 means `compare`.
-/// The two columns are separate because the two methods can carry different
-/// `where` clauses.
-method_param_offsets: []u32,
-eq_param_requirements: []u8,
-compare_param_requirements: []u8,
 /// The types the checker itself names (`Int` for a literal, `List` for a
 /// list, `Result`/`Maybe` for `?`). `.none` when the core package is not
 /// part of the run.
@@ -216,9 +198,6 @@ pub const empty: Types = .{
     .schema_offsets = &.{},
     .entry_offsets = &.{},
     .ref_ids = &.{},
-    .method_param_offsets = &.{},
-    .eq_param_requirements = &.{},
-    .compare_param_requirements = &.{},
     .well_known = .{},
 };
 
@@ -235,9 +214,6 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
     gpa.free(types.schema_offsets);
     for (types.ref_ids) |ids| gpa.free(ids);
     gpa.free(types.ref_ids);
-    gpa.free(types.method_param_offsets);
-    gpa.free(types.eq_param_requirements);
-    gpa.free(types.compare_param_requirements);
     gpa.free(types.entry_offsets);
     types.* = empty;
 }
@@ -255,11 +231,7 @@ pub fn entry(types: *const Types, id: TypeId) Entry {
         .arity = 0,
         .kind = .foreign,
         .equatable = true,
-        .answers_eq = true,
-        .public_eq = false,
         .comparable = true,
-        .answers_compare = true,
-        .public_compare = false,
         .has_function = false,
         .schema_endpoint = false,
     };
@@ -281,150 +253,8 @@ pub fn isEquatable(types: *const Types, id: TypeId) bool {
     return types.entry(id).equatable;
 }
 
-pub fn answersEq(types: *const Types, id: TypeId) bool {
-    if (id == .none) return true;
-    return types.entry(id).answers_eq;
-}
-
-/// Whether `<` can be answered for `id` — by §3.2's table, by a `pub
-/// compare` in the declaring module, or by deriving over a body every one
-/// of whose named types can answer it too (A.54).
-pub fn isComparable(types: *const Types, id: TypeId) bool {
-    if (id == .none) return true; // poisoned: say yes and stay quiet
-    return types.entry(id).comparable;
-}
-
-pub fn answersCompare(types: *const Types, id: TypeId) bool {
-    if (id == .none) return true;
-    return types.entry(id).answers_compare;
-}
-
-pub fn hasPublicDispatchMethod(types: *const Types, id: TypeId, kind: MethodKind) bool {
-    if (id == .none) return false;
-    const e = types.entry(id);
-    return switch (kind) {
-        .eq => e.public_eq,
-        .compare => e.public_compare,
-    };
-}
-
-pub fn methodParamRequirement(types: *const Types, id: TypeId, param: usize, kind: MethodKind) u8 {
-    if (id == .none or id.int() + 1 >= types.method_param_offsets.len) return 0;
-    const start = types.method_param_offsets[id.int()];
-    const end = types.method_param_offsets[id.int() + 1];
-    if (param >= end - start) return 0;
-    return switch (kind) {
-        .eq => types.eq_param_requirements[start + param],
-        .compare => types.compare_param_requirements[start + param],
-    };
-}
-
-/// Whether a function is reachable inside `id`, transitively (A.58). Only
-/// ever asked of a type the `equatable`/`comparable` gate has already
-/// refused, to pick §10.3's sentence: a function inside is a different
-/// story from a payload with no ordering, and the folded gates cannot tell
-/// them apart.
-pub fn hasFunction(types: *const Types, id: TypeId) bool {
-    if (id == .none) return false; // poisoned: it has a message already
-    return types.entry(id).has_function;
-}
-
-pub fn settleSchemaEndpoint(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!void {
-    if (id == .none or id.int() >= types.entries.len) return;
-    const p = try types.schemaProperties(gpa, store, id, value);
-    types.entries[id.int()].equatable = p.equatable;
-    types.entries[id.int()].answers_eq = p.equatable;
-    types.entries[id.int()].comparable = p.comparable;
-    types.entries[id.int()].answers_compare = p.comparable;
-    types.entries[id.int()].has_function = p.has_function;
-}
-
-pub fn includeSchemaEndpoint(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!void {
-    if (id == .none or id.int() >= types.entries.len) return;
-    const p = try types.schemaProperties(gpa, store, id, value);
-    types.entries[id.int()].equatable = types.entries[id.int()].equatable and p.equatable;
-    types.entries[id.int()].answers_eq = types.entries[id.int()].answers_eq and p.equatable;
-    types.entries[id.int()].comparable = types.entries[id.int()].comparable and p.comparable;
-    types.entries[id.int()].answers_compare = types.entries[id.int()].answers_compare and p.comparable;
-    types.entries[id.int()].has_function = types.entries[id.int()].has_function or p.has_function;
-}
-
-pub const SchemaProperties = struct { equatable: bool, comparable: bool, has_function: bool };
-
 pub fn count(types: *const Types) usize {
     return types.entries.len;
-}
-
-pub fn schemaPropertyBits(types: *const Types, id: TypeId) u8 {
-    if (id == .none or id.int() >= types.entries.len) return 0;
-    const e = types.entries[id.int()];
-    return @as(u8, @intFromBool(e.equatable)) |
-        (@as(u8, @intFromBool(e.comparable)) << 1) |
-        (@as(u8, @intFromBool(e.has_function)) << 2);
-}
-
-pub fn restoreSchemaPropertyBits(types: *Types, id: TypeId, bits: u8) void {
-    if (id == .none or id.int() >= types.entries.len) return;
-    types.entries[id.int()].equatable = bits & 1 != 0;
-    types.entries[id.int()].answers_eq = bits & 1 != 0;
-    types.entries[id.int()].comparable = bits & 2 != 0;
-    types.entries[id.int()].answers_compare = bits & 2 != 0;
-    types.entries[id.int()].has_function = bits & 4 != 0;
-}
-
-fn schemaProperties(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!SchemaProperties {
-    return types.schemaPropertiesWithDeps(gpa, store, id, value, null);
-}
-
-pub fn schemaPropertiesWithDeps(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var, deps: ?*std.ArrayList(TypeId)) Allocator.Error!SchemaProperties {
-    const seen = try gpa.alloc(bool, store.count());
-    defer gpa.free(seen);
-    @memset(seen, false);
-    var stack: std.ArrayList(Var) = .empty;
-    defer stack.deinit(gpa);
-    try stack.append(gpa, value);
-    var equatable = true;
-    var comparable = true;
-    var has_function = false;
-    while (stack.pop()) |raw| {
-        const root = store.find(raw);
-        if (root.int() >= seen.len or seen[root.int()]) continue;
-        seen[root.int()] = true;
-        switch (store.content(root)) {
-            .err, .flex, .rigid => {},
-            .structure => |shape| switch (shape) {
-                .unit, .empty_record => {},
-                .func => {
-                    equatable = false;
-                    comparable = false;
-                    has_function = true;
-                },
-                .app => |app| {
-                    if (app.type != id) {
-                        const e = types.entry(app.type);
-                        if (e.schema_endpoint and deps != null) {
-                            try deps.?.append(gpa, app.type);
-                        } else {
-                            equatable = equatable and e.equatable;
-                            comparable = comparable and e.comparable;
-                            has_function = has_function or e.has_function;
-                        }
-                    }
-                    try stack.appendSlice(gpa, store.vars(app.args));
-                },
-                .tuple => |r| try stack.appendSlice(gpa, store.vars(r)),
-                .record => |r| {
-                    for (store.fields(r.fields)) |f| try stack.append(gpa, f.value);
-                    try stack.append(gpa, r.ext);
-                },
-            },
-            .alias => |a| {
-                try stack.appendSlice(gpa, store.vars(a.args));
-                try stack.append(gpa, a.actual);
-            },
-        }
-    }
-    return .{ .equatable = equatable, .comparable = comparable, .has_function = has_function };
 }
 
 /// The type declared by `decl` of `module`, or `.none` when that
@@ -652,11 +482,7 @@ pub fn build(
                         .arity = std.math.cast(u16, d.params) orelse std.math.maxInt(u16),
                         .kind = if (tagged) .adt else .alias,
                         .equatable = true,
-                        .answers_eq = true,
-                        .public_eq = false,
                         .comparable = true,
-                        .answers_compare = true,
-                        .public_compare = false,
                         .has_function = false,
                         .schema_endpoint = true,
                     });
@@ -684,11 +510,7 @@ pub fn build(
                     else => .foreign,
                 },
                 .equatable = true, // settled below
-                .answers_eq = true, // settled per module
-                .public_eq = false,
                 .comparable = true, // settled below
-                .answers_compare = true, // settled per module
-                .public_compare = false,
                 .has_function = false, // settled below
                 .schema_endpoint = false,
             });
@@ -738,33 +560,11 @@ pub fn build(
     types.entry_offsets = entry_offsets;
     types.ref_ids = ref_ids;
 
-    const method_param_offsets = try gpa.alloc(u32, types.entries.len + 1);
-    errdefer gpa.free(method_param_offsets);
-    var method_params: u32 = 0;
-    for (types.entries, 0..) |type_entry, i| {
-        method_param_offsets[i] = method_params;
-        method_params += type_entry.arity;
-    }
-    method_param_offsets[types.entries.len] = method_params;
-    const eq_param_requirements = try gpa.alloc(u8, method_params);
-    errdefer gpa.free(eq_param_requirements);
-    @memset(eq_param_requirements, 0);
-    const compare_param_requirements = try gpa.alloc(u8, method_params);
-    errdefer gpa.free(compare_param_requirements);
-    @memset(compare_param_requirements, 0);
-    types.method_param_offsets = method_param_offsets;
-    types.eq_param_requirements = eq_param_requirements;
-    types.compare_param_requirements = compare_param_requirements;
-
     // The table of §3.2 FIRST: `settleEquatable` settles `comparable`
     // alongside `equatable`, and a `Char` is comparable because the table
     // says so and not because `core/Char.beni` declares anything.
     types.findWellKnown(graph, interfaces, interner);
     try types.settleEquatable(gpa, graph, artifacts);
-    for (types.entries) |*type_entry| {
-        type_entry.answers_eq = type_entry.equatable;
-        type_entry.answers_compare = type_entry.comparable;
-    }
     return types;
 }
 
@@ -948,7 +748,7 @@ fn declaresPubCompare(types: *const Types, module: Graph.Index, bir: *const Bir,
     return types.declaresPubMethod(module, bir, id, InternPool.WellKnown.compare.symbol());
 }
 
-pub fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const Bir, id: TypeId, method_name: Symbol) bool {
+fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const Bir, id: TypeId, method_name: Symbol) bool {
     for (bir.decls) |d| {
         if (!d.kind.isValue() or !d.is_pub) continue;
         if (bir.symbol(d.name) != method_name) continue;
@@ -961,388 +761,10 @@ pub fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const B
     return false;
 }
 
-/// Refresh the two dispatch capabilities for one checked module. Only that
-/// module's dense entry range is mutated, so DAG workers may run this in
-/// parallel after their dependencies have published their own ranges.
-///
-/// `equatable` remains the legacy structural `Basics.eq` property. These
-/// answers instead implement static dispatch's recursive rule: a valid
-/// public method is a boundary, and otherwise descent continues through the
-/// declaration body. Completed schemes are required here because a public
-/// method may be inferred.
-pub fn settleDispatchCapabilities(
-    types: *Types,
-    gpa: Allocator,
-    module: Graph.Index,
-    graph: *const Graph,
-    artifacts: *const Artifacts,
-    store: *TypeStore,
-    decl_schemes: []const Var.Optional,
-) Allocator.Error!void {
-    if (module.int() + 1 >= types.entry_offsets.len) return;
-    const start = types.entry_offsets[module.int()];
-    const end = types.entry_offsets[module.int() + 1];
-    const bir = artifacts.bir(graph.moduleFile(module));
-
-    for (types.entries[start..end], start..) |*type_entry, raw| {
-        type_entry.public_eq = false;
-        type_entry.public_compare = false;
-        const req_start = types.method_param_offsets[raw];
-        const req_end = types.method_param_offsets[raw + 1];
-        @memset(types.eq_param_requirements[req_start..req_end], 0);
-        @memset(types.compare_param_requirements[req_start..req_end], 0);
-    }
-
-    for (bir.decls, 0..) |decl, i| {
-        if (!decl.kind.isValue() or !decl.is_pub or i >= decl_schemes.len) continue;
-        const method_name = bir.symbol(decl.name);
-        const kind: DispatchMethod = if (method_name == InternPool.WellKnown.eq.symbol())
-            .eq
-        else if (method_name == InternPool.WellKnown.compare.symbol())
-            .compare
-        else
-            continue;
-        const scheme = decl_schemes[i].unwrap() orelse continue;
-        const info = methodInfo(types, store, scheme, kind) orelse continue;
-        if (info.owner) |owner| {
-            const owner_entry = types.entry(owner);
-            if (owner_entry.module != module or owner_entry.kind == .alias or owner_entry.schema_endpoint) continue;
-            types.installMethodInfo(owner, kind, &.{});
-            types.installMethodRequirements(store, scheme, owner, kind);
-        } else {
-            // A fully polymorphic binary method can serve every nominal
-            // type in its module. Concrete unrelated receivers never reach
-            // this arm, so they retain the module-rule mismatch at use.
-            for (start..end) |raw| {
-                const id: TypeId = @enumFromInt(raw);
-                const type_entry = types.entry(id);
-                if (type_entry.kind == .alias or type_entry.schema_endpoint) continue;
-                types.installMethodInfo(id, kind, &.{});
-            }
-        }
-    }
-
-    // Start optimistic for recursive nominal types. Foreign types have no
-    // body to derive through, while aliases stay transparent and cannot own
-    // a method boundary.
-    for (types.entries[start..end], start..) |*type_entry, raw| {
-        if (type_entry.schema_endpoint) continue;
-        const id: TypeId = @enumFromInt(raw);
-        type_entry.answers_eq = type_entry.public_eq or type_entry.kind != .foreign or type_entry.equatable or types.inWellKnownTable(id);
-        type_entry.answers_compare = type_entry.public_compare or type_entry.kind != .foreign or types.inWellKnownTable(id);
-    }
-
-    const nodes = @as(usize, end - start) * 2;
-    var edge_from: std.ArrayList(u32) = .empty;
-    defer edge_from.deinit(gpa);
-    var edge_to: std.ArrayList(u32) = .empty;
-    defer edge_to.deinit(gpa);
-    var deps: std.ArrayList(CapabilityDependency) = .empty;
-    defer deps.deinit(gpa);
-    var queue: std.ArrayList(u32) = .empty;
-    defer queue.deinit(gpa);
-    var walk: CapabilityWalk = .{ .gpa = gpa, .types = types, .module = module, .bir = bir };
-    defer walk.deinit();
-
-    for (types.entries[start..end], start..) |*type_entry, raw| {
-        if (type_entry.schema_endpoint) continue;
-        const id: TypeId = @enumFromInt(raw);
-        for ([_]DispatchMethod{ .eq, .compare }) |kind| {
-            const node = capabilityNode(start, id, kind);
-            if (type_entry.kind == .foreign or types.hasBoundary(id, kind)) {
-                if (!types.capability(id, kind)) try queue.append(gpa, node);
-                continue;
-            }
-            deps.clearRetainingCapacity();
-            if (!try walk.summarizeDecl(bir.decl(type_entry.decl), kind, &deps)) {
-                types.setCapability(id, kind, false);
-                try queue.append(gpa, node);
-            }
-            for (deps.items) |dep| {
-                const dep_entry = types.entry(dep.id);
-                if (dep_entry.module == module and dep.id.int() >= start and dep.id.int() < end) {
-                    try edge_from.append(gpa, capabilityNode(start, dep.id, dep.kind));
-                    try edge_to.append(gpa, node);
-                } else if (!types.capability(dep.id, dep.kind) and types.capability(id, kind)) {
-                    types.setCapability(id, kind, false);
-                    try queue.append(gpa, node);
-                }
-            }
-        }
-    }
-
-    const offsets = try gpa.alloc(u32, nodes + 1);
-    defer gpa.free(offsets);
-    @memset(offsets, 0);
-    for (edge_from.items) |from| offsets[from + 1] += 1;
-    for (1..offsets.len) |i| offsets[i] += offsets[i - 1];
-    const dependents = try gpa.alloc(u32, edge_to.items.len);
-    defer gpa.free(dependents);
-    const cursor = try gpa.dupe(u32, offsets[0..nodes]);
-    defer gpa.free(cursor);
-    for (edge_from.items, edge_to.items) |from, to| {
-        dependents[cursor[from]] = to;
-        cursor[from] += 1;
-    }
-    while (queue.pop()) |node| {
-        for (dependents[offsets[node]..offsets[node + 1]]) |dependent| {
-            const id: TypeId = @enumFromInt(start + dependent / 2);
-            const kind: DispatchMethod = if (dependent & 1 == 0) .eq else .compare;
-            if (!types.capability(id, kind)) continue;
-            types.setCapability(id, kind, false);
-            try queue.append(gpa, dependent);
-        }
-    }
-}
-
-const DispatchMethod = MethodKind;
-
-const CapabilityDependency = struct { id: TypeId, kind: DispatchMethod };
-
-fn capabilityNode(start: u32, id: TypeId, kind: DispatchMethod) u32 {
-    return (id.int() - start) * 2 + @intFromEnum(kind);
-}
-
-fn capability(types: *const Types, id: TypeId, kind: DispatchMethod) bool {
-    return switch (kind) {
-        .eq => types.answersEq(id),
-        .compare => types.answersCompare(id),
-    };
-}
-
-fn setCapability(types: *Types, id: TypeId, kind: DispatchMethod, value: bool) void {
-    switch (kind) {
-        .eq => types.entries[id.int()].answers_eq = value,
-        .compare => types.entries[id.int()].answers_compare = value,
-    }
-}
-
-pub fn setDispatchCapability(types: *Types, id: TypeId, kind: MethodKind, value: bool) void {
-    types.setCapability(id, kind, value);
-}
-
-pub fn restoreDerivedCapabilities(types: *Types, module: Graph.Index, dispatch: *const Dispatch) void {
-    if (module.int() + 1 >= types.entry_offsets.len) return;
-    const start = types.entry_offsets[module.int()];
-    const end = types.entry_offsets[module.int() + 1];
-    for (start..end) |raw| {
-        const id: TypeId = @enumFromInt(raw);
-        const e = types.entry(id);
-        if (e.schema_endpoint or e.kind != .adt or types.inWellKnownTable(id)) continue;
-        inline for ([_]MethodKind{ .eq, .compare }) |kind| {
-            if (!types.hasBoundary(id, kind)) types.setCapability(id, kind, false);
-        }
-    }
-    for (dispatch.derived) |row| {
-        if (row.shape != .nominal) continue;
-        const id = row.shape.nominal;
-        if (id.int() < start or id.int() >= end) continue;
-        const kind: MethodKind = if (row.kind == .eq) .eq else .compare;
-        if (!types.hasBoundary(id, kind)) types.setCapability(id, kind, true);
-    }
-}
-
-fn hasBoundary(types: *const Types, id: TypeId, kind: DispatchMethod) bool {
-    return types.hasPublicDispatchMethod(id, switch (kind) {
-        .eq => .eq,
-        .compare => .compare,
-    });
-}
-
-const MethodInfo = struct {
-    owner: ?TypeId,
-};
-
-fn methodInfo(types: *const Types, store: *TypeStore, scheme: Var, kind: DispatchMethod) ?MethodInfo {
-    const content = store.resolvedContent(scheme);
-    if (content != .structure or content.structure != .func) return null;
-    const f = content.structure.func;
-    const params = store.vars(f.params);
-    if (params.len != 2) return null;
-    const expected = if (kind == .eq) types.well_known.bool else types.well_known.order;
-    if (headOfStoreVar(store, f.result) != expected) return null;
-    const first = store.resolvedContent(params[0]);
-    const second = store.resolvedContent(params[1]);
-    if ((first == .flex or first == .rigid) and (second == .flex or second == .rigid)) {
-        // An inferred `pub eq left right = ...` generalises the two
-        // parameters independently. Both variables can still instantiate
-        // to the receiver type selected by the module rule, so this is the
-        // fully-polymorphic method boundary rather than a shape mismatch.
-        return .{ .owner = null };
-    }
-    const owner = headOfStoreVar(store, params[0]);
-    if (owner == .none) return null;
-    if (headOfStoreVar(store, params[1]) != owner) return null;
-    const app = switch (store.resolvedContent(params[0])) {
-        .structure => |shape| switch (shape) {
-            .app => |a| a,
-            else => return null,
-        },
-        else => return null,
-    };
-    const args = store.vars(app.args);
-    if (args.len != types.entry(owner).arity) return null;
-    return .{ .owner = owner };
-}
-
-fn headOfStoreVar(store: *TypeStore, v: Var) TypeId {
-    return switch (store.resolvedContent(v)) {
-        .structure => |shape| switch (shape) {
-            .app => |a| a.type,
-            else => .none,
-        },
-        else => .none,
-    };
-}
-
-fn requirementSlice(types: *const Types, id: TypeId, kind: DispatchMethod) []u8 {
-    if (id == .none or id.int() + 1 >= types.method_param_offsets.len) return &.{};
-    const start = types.method_param_offsets[id.int()];
-    const end = types.method_param_offsets[id.int() + 1];
-    return switch (kind) {
-        .eq => @constCast(types.eq_param_requirements[start..end]),
-        .compare => @constCast(types.compare_param_requirements[start..end]),
-    };
-}
-
-fn installMethodInfo(types: *Types, id: TypeId, kind: DispatchMethod, requirements: []const u8) void {
-    if (id == .none or id.int() >= types.entries.len) return;
-    switch (kind) {
-        .eq => types.entries[id.int()].public_eq = true,
-        .compare => types.entries[id.int()].public_compare = true,
-    }
-    const out = types.requirementSlice(id, kind);
-    if (requirements.len == out.len) @memcpy(out, requirements);
-}
-
-fn installMethodRequirements(types: *Types, store: *TypeStore, scheme: Var, owner: TypeId, kind: DispatchMethod) void {
-    const f = switch (store.resolvedContent(scheme)) {
-        .structure => |shape| switch (shape) {
-            .func => |func| func,
-            else => return,
-        },
-        else => return,
-    };
-    const params = store.vars(f.params);
-    if (params.len == 0) return;
-    const app = switch (store.resolvedContent(params[0])) {
-        .structure => |shape| switch (shape) {
-            .app => |value| value,
-            else => return,
-        },
-        else => return,
-    };
-    const args = store.vars(app.args);
-    const req = types.requirementSlice(owner, kind);
-    if (args.len != req.len) return;
-    @memset(req, 0);
-    for (args, 0..) |arg, param| {
-        const flags = store.flagsOf(store.find(arg));
-        if (flags.equatable) req[param] |= 1;
-        const constraint_count = store.constraintCount(flags.constraints);
-        for (0..constraint_count) |j| {
-            const c = store.constraintAt(flags.constraints, @intCast(j));
-            req[param] |= if (c.name == InternPool.WellKnown.eq.symbol())
-                1
-            else if (c.name == InternPool.WellKnown.compare.symbol())
-                2
-            else
-                4;
-        }
-    }
-}
-
-const CapabilityWalk = struct {
-    gpa: Allocator,
-    types: *const Types,
-    module: Graph.Index,
-    bir: *const Bir,
-    stack: std.ArrayList(Frame) = .empty,
-
-    const Frame = struct { inst: Bir.Inst.Index, kind: DispatchMethod };
-
-    fn deinit(w: *CapabilityWalk) void {
-        w.stack.deinit(w.gpa);
-    }
-
-    fn summarizeDecl(w: *CapabilityWalk, decl: Bir.Decl, kind: DispatchMethod, deps: *std.ArrayList(CapabilityDependency)) Allocator.Error!bool {
-        switch (decl.kind) {
-            .type_alias => if (decl.annotation.unwrap()) |body| return w.summarize(body, kind, deps),
-            .type => {
-                for (w.bir.ctors[decl.ctors_start..decl.ctors_end]) |ctor| {
-                    for (w.bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index)) |arg| {
-                        if (!try w.summarize(arg, kind, deps)) return false;
-                    }
-                }
-            },
-            else => {},
-        }
-        return true;
-    }
-
-    fn summarize(w: *CapabilityWalk, root: Bir.Inst.Index, kind: DispatchMethod, deps: *std.ArrayList(CapabilityDependency)) Allocator.Error!bool {
-        w.stack.clearRetainingCapacity();
-        try w.stack.append(w.gpa, .{ .inst = root, .kind = kind });
-        var budget = w.bir.insts.len + 16;
-        while (w.stack.pop()) |frame| {
-            if (budget == 0) return false;
-            budget -= 1;
-            const tag = w.bir.instTag(frame.inst);
-            const data = w.bir.instData(frame.inst);
-            switch (tag) {
-                .type_fn => return false,
-                .type_var, .type_unit, .@"error" => {},
-                .type_top, .ext_type, .schema_type_top, .ext_schema_type => {
-                    const id = w.types.headId(w.module, tag, data);
-                    if (!w.types.hasBoundary(id, frame.kind)) try deps.append(w.gpa, .{ .id = id, .kind = frame.kind });
-                },
-                .type_app => {
-                    const head: Bir.Inst.Index = @enumFromInt(data.lhs);
-                    const id = w.types.headId(w.module, w.bir.instTag(head), w.bir.instData(head));
-                    const args = w.bir.extraSlice(w.bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
-                    if (w.hasBoundary(id, frame.kind)) {
-                        for (args, 0..) |arg, i| {
-                            const req = w.types.methodParamRequirement(id, i, frame.kind);
-                            // An arbitrary requirement is validated by the
-                            // existing target resolver. Keep descending for
-                            // the structural fact here so legacy valid
-                            // constrained methods are not rejected.
-                            if (req & 4 != 0) try w.stack.append(w.gpa, .{ .inst = arg, .kind = frame.kind });
-                            if (req & 1 != 0) try w.stack.append(w.gpa, .{ .inst = arg, .kind = .eq });
-                            if (req & 2 != 0) try w.stack.append(w.gpa, .{ .inst = arg, .kind = .compare });
-                        }
-                    } else {
-                        try deps.append(w.gpa, .{ .id = id, .kind = frame.kind });
-                        for (args) |arg| try w.stack.append(w.gpa, .{ .inst = arg, .kind = frame.kind });
-                    }
-                },
-                .type_tuple => for (w.bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
-                    try w.stack.append(w.gpa, .{ .inst = el, .kind = frame.kind });
-                },
-                .type_record => for (w.bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |field| {
-                    try w.stack.append(w.gpa, .{ .inst = field.value, .kind = frame.kind });
-                },
-                .type_record_ext => for (w.bir.extraSlice(w.bir.subRange(@enumFromInt(data.rhs)), Bir.Field)) |field| {
-                    try w.stack.append(w.gpa, .{ .inst = field.value, .kind = frame.kind });
-                },
-                else => {},
-            }
-        }
-        return true;
-    }
-
-    fn hasBoundary(w: *const CapabilityWalk, id: TypeId, kind: DispatchMethod) bool {
-        return w.types.hasPublicDispatchMethod(id, switch (kind) {
-            .eq => .eq,
-            .compare => .compare,
-        });
-    }
-};
-
 /// The `TypeId` a written type's HEAD names: `Handle`, `List a` and a bare
 /// `Handle` alike. `.none` for anything else — a variable, a tuple, a
 /// record, a function.
-pub fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
+fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
     const tag = bir.instTag(inst);
     if (tag == .type_app) {
         const head: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);

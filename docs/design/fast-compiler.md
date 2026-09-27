@@ -1125,6 +1125,11 @@ every package, `core` included, where it had meant "v2 checks the root package, 
 the text stays `v2`, so the version moves instead, and no `core` entry v1 wrote under `v2` is read
 by a v2 that checks `core` — not even across a `--cache-build-id` that pins the build id.
 
+*Amended by R12 (2026-09-27, `checker-v2.md` §14.3):* `key_version` 5. v1 and the hidden
+`--checker` flag are deleted, and the checker id with them: the compiler-identity component is the
+build id alone again, as before R4a. The bump keeps a key without the term from ever equalling one
+written with it.
+
 **`core_surface` is `core_epoch` with its term changed and nothing else.** `core_epoch` hashed core's
 KEYS, so a comment in `core/Dict.beni` under `--core-root` moved every module in the project.
 Hashing core's `(interface hash, digest)` pairs instead costs the same one term and gives the
@@ -1165,7 +1170,7 @@ nowhere in the record; renaming a field of it leaves the declaring module's hash
 turns an importer's clean build into `missing_field`. An interface-hash-only firewall answers exit 0
 to both, which is the one failure mode `checker.md` §7 says a compiler may not have.
 
-*Amended by R10 (2026-09-27), for the new checker only.* Under `--checker=v2` the first fact's
+*Amended by R10 (2026-09-27), for the new checker only (the only one since R12).* Under `--checker=v2` the first fact's
 hash is no longer byte-identical: a private type a `pub` scheme reaches has a `hidden_types` row in
 the record with its derived `eq` and `compare` (`checker-v2.md` §14.2 *as amended by R8a*), and
 those rows go from `present` to `function`. The digest still moves as well, and the importer is

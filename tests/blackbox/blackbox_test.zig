@@ -752,7 +752,10 @@ test "--self-profile records every phase of every file and every counter, exactl
     // rather than two, and so that what it costs is a row in the trace rather
     // than a number nobody has.
     const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "types", "cache_key", "render" };
-    var counters: [13]?u64 = @splat(null);
+    var counters: [12]?u64 = @splat(null);
+    // v1's counters went with it (R12): `obligations` and the five
+    // `constraints_*` never reach the trace.
+    var v1_counters: usize = 0;
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
             try testing.expectEqualStrings("phase", e.cat.?);
@@ -790,7 +793,7 @@ test "--self-profile records every phase of every file and every counter, exactl
             if (std.mem.eql(u8, e.name, "unifications")) counters[9] = e.args.unifications;
             if (std.mem.eql(u8, e.name, "generalisations")) counters[10] = e.args.generalisations;
             if (std.mem.eql(u8, e.name, "instantiations")) counters[11] = e.args.instantiations;
-            if (std.mem.eql(u8, e.name, "obligations")) counters[12] = e.args.obligations;
+            if (std.mem.eql(u8, e.name, "obligations") or std.mem.startsWith(u8, e.name, "constraints_")) v1_counters += 1;
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
@@ -810,15 +813,15 @@ test "--self-profile records every phase of every file and every counter, exactl
     // declaration against `p -> r`, then `r` against `p`), one
     // instantiation (the reference to `x`) and two generalisations (the
     // arrow and the variable under it). `type Color` declares no value and
-    // contributes nothing to any of them. No obligation: `==`, `${…}` and
-    // `.0` are the only things that make one, and `--core-root=nocore`
-    // means there is no core package to name anyway.
-    try testing.expectEqual([13]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3, 3, 3, 1, 0 }, counters);
+    // contributes nothing to any of them. The fourth, `obligations`, was
+    // v1's and is gone (R12).
+    try testing.expectEqual([12]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3, 3, 3, 1 }, counters);
+    try testing.expectEqual(@as(usize, 0), v1_counters);
     try testing.expectEqual(@as(u64, 67), total_bytes);
     try testing.expectEqual(@as(u64, 17), total_tokens);
 }
 
-test "--self-profile under --checker=v2 records P5, P6, P8 and P9 once per module, inside its check" {
+test "--self-profile records P5, P6, P8 and P9 once per module, inside its check" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -838,7 +841,7 @@ test "--self-profile under --checker=v2 records P5, P6, P8 and P9 once per modul
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--self-profile=trace.json", "--no-cache", "--core-root=nocore", "--jobs=2", "src" });
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--no-cache", "--core-root=nocore", "--jobs=2", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -5952,8 +5955,8 @@ test "checker v2 writes the annotation escape and the infinite type as checker.m
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const one = try w.run(&.{ "check", "--checker=v2", "--jobs=1", "--no-cache", "Texts.beni" });
-    const eight = try w.run(&.{ "check", "--checker=v2", "--jobs=8", "--no-cache", "Texts.beni" });
+    const one = try w.run(&.{ "check", "--jobs=1", "--no-cache", "Texts.beni" });
+    const eight = try w.run(&.{ "check", "--jobs=8", "--no-cache", "Texts.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6011,8 +6014,8 @@ test "R8c review B1: a merge that gives an `err` class structure voids the acycl
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
-    const types = try w.runWith(&.{ "dump", "--stage=types", "--checker=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+    const r = try w.run(&.{ "check", "--no-cache", "Main.beni" });
+    const types = try w.runWith(&.{ "dump", "--stage=types", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6069,7 +6072,7 @@ test "R8c review B1: an infinite type through a schema alias's `err` is still re
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "p" });
+    const r = try w.run(&.{ "check", "--no-cache", "p" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6132,7 +6135,7 @@ test "R8c review B2: a cycle closed between a receiver's test and its positions'
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
+    const r = try w.run(&.{ "check", "--no-cache", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6199,7 +6202,7 @@ test "R8c review round 2, B1: a record merge past a proved `err` row end voids t
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "p" });
+    const r = try w.run(&.{ "check", "--no-cache", "p" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6248,8 +6251,8 @@ test "R8c review round 2, B2: an interior node that became `err` and then struct
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
-    const types = try w.runWith(&.{ "dump", "--stage=types", "--checker=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+    const r = try w.run(&.{ "check", "--no-cache", "Main.beni" });
+    const types = try w.runWith(&.{ "dump", "--stage=types", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6286,7 +6289,7 @@ test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const v1 = try w.runWith(&.{ "check", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
-    const v2 = try w.runWith(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
+    const v2 = try w.runWith(&.{ "check", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6342,10 +6345,10 @@ test "checker v2's library build of a module that declares a type writes the der
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const checked = try w.run(&.{ "check", "--platform=node", "--checker=v2", "--no-cache", "Main.beni" });
-    const app = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--no-cache", "--out=app", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--platform=node", "--no-cache", "Main.beni" });
+    const app = try w.run(&.{ "build", "--platform=node", "--no-cache", "--out=app", "Main.beni" });
     const v1 = try w.run(&.{ "build", "--platform=node", "--library", "--no-cache", "--out=lib1", "Main.beni" });
-    const v2 = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib2", "Main.beni" });
+    const v2 = try w.run(&.{ "build", "--platform=node", "--library", "--no-cache", "--out=lib2", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6405,7 +6408,7 @@ test "a private type reached only through a pub alias body gets a hidden row: v2
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const built = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib", "A.beni", "Main.beni" });
+    const built = try w.run(&.{ "build", "--platform=node", "--library", "--no-cache", "--out=lib", "A.beni", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6476,8 +6479,8 @@ test "CK-108: a payload's equatable requirement survives a derived context under
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const own_args = [_][]const u8{ "check", "--platform=node", "--checker=v2", "--no-cache", "H.beni", "Main.beni" };
-        const mid_args = [_][]const u8{ "check", "--platform=node", "--checker=v2", "--no-cache", "H.beni", "Mid.beni", "Main.beni" };
+        const own_args = [_][]const u8{ "check", "--platform=node", "--no-cache", "H.beni", "Main.beni" };
+        const mid_args = [_][]const u8{ "check", "--platform=node", "--no-cache", "H.beni", "Mid.beni", "Main.beni" };
         const checked = try w.run(if (c.mid) mid_args[0..] else own_args[0..]);
 
         // ┌─────────────────────────────────────┐

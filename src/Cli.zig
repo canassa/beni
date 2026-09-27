@@ -145,18 +145,7 @@ pub const Common = struct {
     /// Makes `check` print one `<package>:<Module> <32 hex digits>` line per
     /// module, `core` and the platform included, sorted by that key.
     iface_hash: bool = false,
-    /// `--checker=v1|v2` — **hidden**, for `--roundtrip-interfaces`' reasons,
-    /// and temporary: which type checker checks the modules
-    /// (`docs/design/checker-v2.md` §20.1, §22.1). `v2`, the default since the
-    /// cut-over (R11), checks every package; `v1`, frozen, still can, for the
-    /// scenarios that compare the two checkers. The value is a term of every
-    /// cache key (§14.3). On `Common`, like the round-trip flags, because
-    /// `dump` runs the checker too. Deleted with v1 at R12.
-    checker: Checker = .v2,
 };
-
-/// `--checker`'s values (`Common.checker`).
-pub const Checker = enum { v1, v2 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
 ///
@@ -466,12 +455,6 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--iface-hash")) {
         if (value != null) return noValue(name);
         common.iface_hash = true;
-        return null;
-    }
-    if (std.mem.eql(u8, name, "--checker")) {
-        const v = value orelse return needsValue(name, "v1|v2");
-        common.checker = std.meta.stringToEnum(Checker, v) orelse
-            return Usage.init("beni: invalid value '{s}' for --checker (expected v1 or v2)", .{v});
         return null;
     }
     if (std.mem.eql(u8, name, "--core-root")) {
@@ -1143,30 +1126,12 @@ test "usage text mentions every subcommand" {
     }
 }
 
-test "--checker is hidden, on every command that checks, and takes v1 or v2" {
-    // `checker-v2.md` §20.1: the one CLI addition of the rewrite, test-only,
-    // R4–R12. On `Common` so `dump` takes it too, as the corpus passes it to
-    // `check`, `build` and `dump` alike (`plans/checker-rewrite.md` §2.4).
-    try expectCommand(
-        .{ .check = .{ .common = .{ .checker = .v2 }, .paths = &.{"src"} } },
-        &.{ "check", "--checker=v2", "src" },
-    );
-    try expectCommand(
-        .{ .check = .{ .common = .{ .checker = .v1 }, .paths = &.{"src"} } },
-        &.{ "check", "--checker=v1", "src" },
-    );
-    try expectCommand(
-        .{ .build = .{ .common = .{ .checker = .v2 }, .platform = "node", .paths = &.{"src"} } },
-        &.{ "build", "--platform=node", "--checker=v2", "src" },
-    );
-    try expectCommand(
-        .{ .dump = .{ .common = .{ .checker = .v2 }, .stage = .types, .file = "M.beni" } },
-        &.{ "dump", "--stage=types", "--checker=v2", "M.beni" },
-    );
-    // Unset is v2 since the cut-over (R11): the default the gates run.
-    try expectCommand(.{ .check = .{ .common = .{ .checker = .v2 }, .paths = &.{"src"} } }, &.{ "check", "src" });
-    try expectUsage("beni: option '--checker' needs a value: --checker=v1|v2", &.{ "check", "--checker", "src" });
-    try expectUsage("beni: invalid value 'v3' for --checker (expected v1 or v2)", &.{ "check", "--checker=v3", "src" });
-    try expectUsage("beni: invalid value '' for --checker (expected v1 or v2)", &.{ "check", "--checker=", "src" });
+test "--checker is gone with v1: an unknown option" {
+    // `checker-v2.md` §20.1: the hidden, test-only `--checker=v1|v2` existed
+    // R4–R11 and was deleted with v1 at R12, so it is an ordinary unknown
+    // option now, on every command that checks.
+    try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "check", "--checker=v2", "src" });
+    try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "build", "--platform=node", "--checker=v1", "src" });
+    try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "dump", "--stage=types", "--checker=v2", "M.beni" });
     try testing.expect(std.mem.indexOf(u8, usage, "--checker") == null);
 }

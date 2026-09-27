@@ -45,19 +45,6 @@ pub fn exePath(arena: Allocator) []const u8 {
     return if (value.len == 0) exe_relative else value;
 }
 
-/// The checker every `build`, `check` and `dump` a `World` runs is given:
-/// `BENI_CHECKER` when it is set and not empty, else null (the default
-/// checker, v2 since the cut-over, R11; `test-v2` used it to run the
-/// determinism scenarios under v2 until then). `build.zig` pins it EMPTY on
-/// every run, so a variable exported in a shell cannot switch a gate's
-/// checker (S11). A run whose argv already names a `--checker` keeps its
-/// own — the scenarios that compare v1 with v2. Deleted with the flag at R12.
-pub fn checkerFlag(arena: Allocator) ?[]const u8 {
-    const value = std.testing.environ.getAlloc(arena, "BENI_CHECKER") catch return null;
-    if (value.len == 0) return null;
-    return std.fmt.allocPrint(arena, "--checker={s}", .{value}) catch null;
-}
-
 /// Where the emitted JavaScript goes when a scenario does not say. Relative
 /// to the world's project directory.
 pub const default_out = "out";
@@ -148,8 +135,6 @@ pub const World = struct {
     /// Null when nothing on `PATH` is called `node`, which a scenario
     /// reports rather than silently skipping.
     node_exe: ?[]const u8,
-    /// `checkerFlag`: `--checker=<value>` from `BENI_CHECKER`, or null.
-    checker: ?[]const u8 = null,
 
     pub fn init(gpa: Allocator, io: Io) !World {
         var tmp = std.testing.tmpDir(.{});
@@ -169,18 +154,7 @@ pub const World = struct {
             .node_exe = null,
         };
         world.node_exe = findOnPath(world.arena.allocator(), io, "node");
-        world.checker = checkerFlag(world.arena.allocator());
         return world;
-    }
-
-    /// Whether this world's runs are checked by the new checker, v2: the
-    /// default since the cut-over (R11), unless `BENI_CHECKER=v1`. A scenario
-    /// whose expectation is one of v2's legitimate differences from v1 (D1,
-    /// the published derived rows) asks this, and says why at the use.
-    /// Deleted with the flag at R12.
-    pub fn underV2(world: *const World) bool {
-        const flag = world.checker orelse return true;
-        return !std.mem.eql(u8, flag, "--checker=v1");
     }
 
     pub const BuildAndRun = struct {
@@ -456,11 +430,6 @@ pub const World = struct {
             (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or
                 std.mem.eql(u8, args[0], "fmt") or std.mem.eql(u8, args[0], "dump"));
         if (wants_json) try argv.append(arena, "--diagnostics=json");
-        if (world.checker) |flag| if (args.len > 0 and !namesChecker(args) and
-            (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "dump")))
-        {
-            try argv.append(arena, flag);
-        };
 
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
         var result = try spawnAndCapture(arena, world.gpa, world.io, argv.items, cwd, options.timeout_ms);
@@ -695,34 +664,17 @@ fn crashBanner(line: []const u8) bool {
     return i > "thread ".len and std.mem.startsWith(u8, line[i..], " panic: ");
 }
 
-/// The two lists `tests/pending/` keeps beside its fixtures
-/// (`plans/checker-rewrite.md` §2.4, §2.6), read by the corpus walker in
-/// pending mode and by `pending_test.zig`'s scenarios, so both apply rules
-/// (c) and (d) to the same records.
+/// The list `tests/pending/` keeps beside its fixtures
+/// (`plans/checker-rewrite.md` §2.4), read by the corpus walker in pending
+/// mode and by `pending_test.zig`'s scenarios, so both apply rule (d) to the
+/// same records. (`CLAIMED`, the second list, and `RED`'s checker column
+/// went with v1 at R12.)
 pub const pending = struct {
     /// One line of `tests/pending/RED`: the red signature a fixture (a
-    /// repo-relative path) or a scenario (`scenario/<id>`) has under a checker.
-    pub const RedLine = struct { path: []const u8, checker: []const u8, signature: []const u8 };
+    /// repo-relative path) or a scenario (`scenario/<id>`) has.
+    pub const RedLine = struct { path: []const u8, signature: []const u8 };
 
-    /// `<root>/CLAIMED`: one repo-relative path (or `scenario/<id>`) per line;
-    /// `#` lines and blank lines are ignored. A missing file is empty.
-    pub fn readClaimed(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
-        var out: std.ArrayList([]const u8) = .empty;
-        var it = try lines(arena, io, root, "CLAIMED");
-        while (it.next()) |raw| {
-            const line = std.mem.trim(u8, raw, " \t\r");
-            if (line.len == 0 or line[0] == '#') continue;
-            const path = std.mem.trimEnd(u8, line, "/");
-            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
-                std.debug.print("{s}/CLAIMED lists {s} twice\n", .{ root, path });
-                return error.DuplicateClaim;
-            };
-            try out.append(arena, path);
-        }
-        return out.items;
-    }
-
-    /// `<root>/RED`: `<path> <checker> <signature…>` per line, the signature
+    /// `<root>/RED`: `<path> <signature…>` per line, the signature
     /// running to the end of the line; `#` lines and blank lines are
     /// ignored. A missing file is empty.
     pub fn readRed(arena: Allocator, io: Io, root: []const u8) ![]const RedLine {
@@ -732,14 +684,13 @@ pub const pending = struct {
             var rest = std.mem.trim(u8, raw, " \t\r");
             if (rest.len == 0 or rest[0] == '#') continue;
             const path = try word(&rest);
-            const checker = try word(&rest);
             const signature = std.mem.trim(u8, rest, " \t");
             if (signature.len == 0) return error.BadRedLine;
-            const entry: RedLine = .{ .path = std.mem.trimEnd(u8, path, "/"), .checker = checker, .signature = signature };
-            // A second line for the same fixture and checker would make one of
-            // the two silently unread: a malformed file, not a choice.
-            for (out.items) |seen| if (std.mem.eql(u8, seen.path, entry.path) and std.mem.eql(u8, seen.checker, entry.checker)) {
-                std.debug.print("{s}/RED has two lines for {s} under {s}\n", .{ root, entry.path, entry.checker });
+            const entry: RedLine = .{ .path = std.mem.trimEnd(u8, path, "/"), .signature = signature };
+            // A second line for the same fixture would make one of the two
+            // silently unread: a malformed file, not a choice.
+            for (out.items) |seen| if (std.mem.eql(u8, seen.path, entry.path)) {
+                std.debug.print("{s}/RED has two lines for {s}\n", .{ root, entry.path });
                 return error.DuplicateRedLine;
             };
             try out.append(arena, entry);
@@ -764,9 +715,3 @@ pub const pending = struct {
         return s[0..end];
     }
 };
-
-/// Whether `args` already names a checker (`World.checker` then adds none).
-fn namesChecker(args: []const []const u8) bool {
-    for (args) |a| if (std.mem.startsWith(u8, a, "--checker")) return true;
-    return false;
-}

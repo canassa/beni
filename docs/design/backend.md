@@ -614,8 +614,9 @@ brotli, release 15 651 → 15 643 brotli; the `emit/` corpus unchanged; across `
 long list literal is 500–900 bytes smaller raw and within ±12 bytes brotli, since nested cells
 compress very well.
 
-**Known gaps.** A `case` of more than 65 046 literal branches is one `switch` SpiderMonkey refuses
-(CK-88). Mobile engines are unmeasured. A lambda applied on the spot, `(\x -> …) a`, costs a
+**Known gaps.** A `case` of more than 65 046 literal branches was one `switch` SpiderMonkey refuses
+(CK-88); *closed by R12 (2026-09-27):* a fan of more than 16 384 labels is consecutive `switch`es
+(§7, *The emitted shape*). Mobile engines are unmeasured. A lambda applied on the spot, `(\x -> …) a`, costs a
 function scope where a `let` would cost none; lowering it as the `let` it means would lift the
 120-function edge. Evidence nested inside a deep expression is counted by the
 exact measure and not by the cheap one, so it can be refused where binding more of it would have
@@ -1148,6 +1149,14 @@ which is why `if` keeps emitting what it emits today.
   `switch` in every program.*
 - Adjacent `case` labels reaching the same body are **not** merged into `case "A": case "B":` — a
   printer-level win, and M3c's.
+- *Added by R12 (2026-09-27, CK-88).* **At most 16 384 labels a `switch`**
+  (`Lower.max_switch_cases`), four times under the 65 046 SpiderMonkey refuses (§4's table). A
+  larger fan is written as consecutive `switch`es over the same discriminant, the `default:` in
+  the last: every case body terminates (above), so a value no label of one names falls through
+  to the next, and they follow one another, so nothing nests. The tree itself groups a column's
+  rows by head in one pass (`Decision.group`), so its construction is linear in the rows at each
+  node; before, the key set, the column choice and the specialisation compared every row with
+  every other, and a 20 000-branch `case` took 8.9 s to build (0.04 s after).
 
 **Bindings are emitted at the leaf, and an occurrence is a member chain, not a name.** A pattern
 variable's occurrence — `subj.a.b` — is fixed by its position in the pattern and is therefore the

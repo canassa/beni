@@ -668,7 +668,6 @@ pub fn instantiate(
     scheme_index: u32,
     rank: u32,
     scratch: Allocator,
-    site: ?Site,
 ) Error!Var {
     const s = iface.schemes[scheme_index];
     const fresh = try scratch.alloc(Var, s.quantified_count);
@@ -700,18 +699,11 @@ pub fn instantiate(
         defer scratch.free(built);
         for (built, 0..) |*c, j| {
             const qc = iface.quantifiedConstraint(q, @intCast(j));
-            const sites: TypeStore.Range = if (site) |sp| try store.addConstraintSites(&.{.{
-                .inst = sp.inst,
-                .evidence_index = sp.next.*,
-                .parent = sp.parent,
-            }}) else .empty;
-            if (site) |sp| sp.next.* +|= 1;
             c.* = .{
                 .name = iface.symbol(qc.name),
                 .fn_var = try reader.read(qc.type),
-                .region = if (site) |sp| sp.inst else @enumFromInt(0),
+                .region = @enumFromInt(0),
                 .origin = .where_clause,
-                .sites = sites,
             };
         }
         const set = try store.addConstraints(built);
@@ -725,30 +717,6 @@ pub fn instantiate(
     }
     return body;
 }
-
-/// Where an instantiation happened, so every constraint it creates can be
-/// tagged with the dispatch site it answers (static-dispatch-spike.md §7.2).
-///
-/// `next` is the instruction's **running** evidence cursor, not a fixed
-/// base: one instruction can instantiate more than one scheme — a
-/// `method_call`'s site 0 names the callee and its evidence starts at 1, and
-/// resolving an evidence slot can instantiate the scheme that answers it, a
-/// nesting `List (List (Box a))` reaches three deep. Every slot of one
-/// instruction has to have its OWN index (§7.2, §7.3), so each instantiation
-/// continues where the last one stopped rather than restarting at a
-/// hard-coded 1. The caller owns the cell and writes it back when the
-/// instantiation is done; `+|=` saturates rather than wrapping, because a
-/// wrapped index would collide with slot 0.
-/// `parent` is the slot of the same instruction whose resolution reached
-/// this instantiation, or `Dispatch.FlatSite.no_parent` at a slot the
-/// instruction owns outright. The cursor is breadth-first and the emitter
-/// reads the list depth-first, so the parent is what puts the two back in
-/// agreement (`Dispatch.FlatSite.parent`, A.68).
-pub const Site = struct {
-    inst: @import("../bir/Bir.zig").Inst.Index,
-    next: *u16,
-    parent: u16 = @import("Dispatch.zig").FlatSite.no_parent,
-};
 
 /// Copy an imported constructor's type into `store` at `rank`:
 /// `arg1 -> … -> argN -> T p0 … pk`, with one fresh variable per parameter
@@ -959,11 +927,7 @@ fn testTypes(entries: []Types.Entry, module: Symbol, names: []const Symbol) Type
         .arity = 0,
         .kind = .adt,
         .equatable = true,
-        .answers_eq = true,
-        .public_eq = false,
         .comparable = true,
-        .answers_compare = true,
-        .public_compare = false,
         .has_function = false,
     };
     var types: Types = .empty;
@@ -1017,8 +981,8 @@ test "a scheme round trips through terms with its sharing intact" {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const first = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator(), null);
-    const second = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator(), null);
+    const first = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator());
+    const second = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator());
     const f1 = target.content(target.find(first)).structure.func;
     const f2 = target.content(target.find(second)).structure.func;
     const p1 = target.vars(f1.params)[0];
@@ -1094,7 +1058,7 @@ test "a method constraint round trips through the interface onto a fresh variabl
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator(), null);
+    const copy = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator());
     const func = target.content(target.find(copy)).structure.func;
     const fresh_a = target.find(target.vars(func.params)[0]);
     try testing.expectEqual(fresh_a, target.find(func.result));
@@ -1112,7 +1076,7 @@ test "a method constraint round trips through the interface onto a fresh variabl
 
     // A second instantiation is independent: two call sites of a
     // constrained value do not share a method type.
-    const again = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator(), null);
+    const again = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator());
     const second = target.content(target.find(again)).structure.func;
     const other_a = target.find(target.vars(second.params)[0]);
     try testing.expect(other_a != fresh_a);
@@ -1365,7 +1329,7 @@ fn expectRoundTrip(seed: u64) !void {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, type_ids, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator(), null);
+    const copy = try instantiate(&iface, type_ids, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator());
 
     // The record must not have smuggled an error term into a type that had
     // none: `err` unifies with anything, so one hiding inside a published

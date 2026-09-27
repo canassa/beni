@@ -9,6 +9,9 @@
   - §15.1's `Session` quiet rule from R1.
 - **`src/check2/`**, the new checker, for everything else from R4b. The flag and harness exist from R4a.
 - **`src/check/`**, the whole document, at the cut-over (R11).
+- *R12 (2026-09-27):* v1 is deleted, with `--checker`, `BENI_CHECKER` and the checker id in the
+  cache key, and `src/check2/` took the name `src/check/` (§19.1 *As built by R12*). A path
+  `check2/X.zig` below is `check/X.zig` now; each note keeps the name it was written with.
 
 Written 2026-09-24 at `master` = `7427828`. **Slice references.** Round 3 split four slices. A bare "R2" below means R2a, the tree contract, except where it names `Convention` (R2b). "R4" means R4a for the flag, harness and cache key, and R4b for the foundation. "R6" means R6a for resolution and `check`, and R6b for elaboration and `build`. "R8" means R8a for the fixpoint, D4 and install, and R8b for D1 privacy and schema endpoints. `checker-rewrite.md` §4 is authoritative. Revised the same day after a read-only design review
 (`review-design.md`, items B1–B7, S1–S22 and N1–N13; the revision is traced in §24). Every owner
@@ -3150,7 +3153,7 @@ A violation is `internal` at the site.
   `std.debug.runtime_safety` holds and `Dispatch.checkI7` names an instruction; a release build
   still reports the `internal` and writes nothing. Nothing in `tests/corpus/` or `tests/pending/`
   reaches it under v2 (every fixture that did under v1 was promoted green), and v1's own assert is
-  unchanged (`internal`, never a panic) until R12 deletes it.
+  unchanged (`internal`, never a panic) until R12 deleted it (2026-09-27).
 
 *Revised 2026-09-24 (S10).*
 
@@ -3346,6 +3349,11 @@ derived method". That is exactly its ABI, so the format is shared by both checke
     reads v1's ABI for that type: `present`, one entry per parameter naming the derived method
     (v1 derives every declared type eagerly). This is the fallback of the importer only, and it
     disappears with v1 (R12).
+    *As built by R12 (2026-09-27):* gone. A missing row counts no evidence
+    (`Dispatch.publishedCount` is 0, `publishedMethod` null), which the I7 assert refuses as
+    `internal`, and `Lower.derivedBodyExists` answers `false`, which is its dispatch-bug wall;
+    `Instances.derivedNominal` already said `internal` from R9. No record a build reads can lack
+    the row, so nothing in the corpus moved.
   - *Amended by R8a's review round (2026-09-26, CK-110).* An alias body is in no record, so a
     private type reached only through a `pub type alias`'s body was named by no `type_refs` row
     and had no row. The hidden set is closed over this module's own alias bodies (the exported
@@ -3418,6 +3426,10 @@ there). The raw interface dump prints ` no_function` when it is set.
     checker id, `v1` or `v2`.
   - R12 removes the component together with the flag. A single checker needs none, and the build
     id already changes with the binary.
+    *As built by R12 (2026-09-27):* `key_version` 5, the own-terms blob back to the build id alone
+    (`cache/Key.zig`, `fast-compiler.md` §8). `cache_test.zig`'s row 10b now holds that
+    `--checker` is refused (exit 2, nothing written), and the checker-crossing scenario is gone
+    with the second checker.
   - A "warm under v2" result in R10 is therefore written by v2 by construction.
   - *As built by R4a:* the id is the text `v1` or `v2`, written as `checker_len: u32, checker`
     right after the build id in every module's own-terms blob, core's included, and `key_version`
@@ -3835,6 +3847,19 @@ event, best of 5, bound 1.25×: red at `919f8be` (167 %), green on R9b (107 %).
 
 Renamed to `src/check/` at R12. No file over about 1 500 lines.
 
+*As built by R12 (2026-09-27):* renamed; the v2 files and the shared ones are one flat
+directory (and `constrain/`), so an import is `"X.zig"` again. `checker.md` §3 *as amended by
+R12* lists it by role. Three files were over 1 500 lines and were split, each re-exporting what
+it moved so no caller changed: `Diagnostics.zig` 2 174 → 1 431 (`DispatchTexts.zig` 793: the
+§10 and obligation texts and the cyclic value), `Exhaustive.zig` 1 590 → 1 453
+(`PatternStore.zig` 159: the simplified pattern language) and `Contexts.zig` 1 620 → 1 318
+(`ContextUnits.zig` 334: the unit graph and `complete`). The largest files now: `Exhaustive`
+1 453, `Diagnostics` 1 431, `Schemes` 1 397, `Contexts` 1 318, `checker_test` 1 294, `Types`
+1 257 (from 1 835), `TypeStore` 1 047; `Dispatch` 907 (from 1 747). 30 551 lines in all, tests
+included. `rules_test.zig` fences I2 (with the kept files that own, serialise or print a type
+listed), the type table's structural bits' readers (S4's fence, its capability half deleted with
+the API), and the 1 500-line cap; S2's fence went with v1.
+
 ```
 check2/
   Check.zig          ~300   public API: run, Module, Options (same shape as today's)
@@ -3859,7 +3884,8 @@ check2/
   Schema*, reads, Command, InterfaceTerms, Dispatch, Convention
 ```
 
-Until R12, `check2` imports the shared files from `src/check/` and does not copy them.
+Until R12, `check2` imports the shared files from `src/check/` and does not copy them. (R12: one
+directory.)
 
 *As built by R4b (2026-09-25; counts after its review):* `Context` 87 lines (the per-module read
 context, no generation state), `Subset` 117 (P0), `Walk` 497, `Unify` 554, `Generalize` 288
@@ -3973,6 +3999,9 @@ is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
 
 - **CLI.** Every command and flag. The one addition is the hidden, test-only `--checker=v1|v2`,
   which exists R4–R11 and is deleted at R12.
+  *As built by R12 (2026-09-27):* deleted. `--checker` is an ordinary unknown option (usage,
+  exit 2), and `--self-profile` no longer writes `obligations` or the five `constraints_*`
+  counters, which only v1 filled (always 0 under v2).
 - **Dump stages.** `tokens`, `ast`, `bir`, `types`, `interface` and `graph` keep their text
   formats.
 - **Diagnostics.** Every diagnostic code, the JSON diagnostic format, exit codes and streams.
@@ -4162,6 +4191,15 @@ meaningful because v1 stops changing, not because R1–R3-style fixes keep landi
   CK-131's ratio, CK-107's, the checker-crossing cache scenarios) and for one v1-only guard
   (`abuse_test.zig`'s constraint-set counters, A.81), until R12.
 - **R12.** v1, the flag and `check2`'s name are deleted.
+  *As built by R12 (2026-09-27):* `src/check/`'s `Solve.zig`, `Constrain.zig` and `Check.zig`
+  (its pipeline tests moved to `checker_test.zig`, which ran them under v2 from R11), v1's
+  capability settle and its per-type bits in `Types.zig` (`answers_*`, `public_*`, the
+  method-parameter requirement tables), the schema endpoints' settled properties
+  (`Schema.settleProperties` and its `Types` API), the flat half of `Dispatch.zig` (`Target`,
+  `FlatSite`, `FlatDerived`, `Builder` and its converter), the constraint sites of
+  `TypeStore` and `Schemes.instantiate`'s `Site`, `Env`'s generator-only fields, six
+  `Reporter` methods nothing called, `Check.Checker`, `Options.usesV2`, `Driver`'s v1 branch
+  and `Incremental.install`'s capability rebuild. Then `git mv src/check2/* src/check/`.
 
 ### 22.2 How v2 is held between slices
 

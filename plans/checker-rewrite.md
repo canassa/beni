@@ -2485,6 +2485,29 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - No file in `src/check/` over about 1 500 lines.
   - A diary entry with the final numbers.
 
+- **As built** (2026-09-27; `checker-v2.md` §19.1 and §22.1 *as built by R12*, `checker.md` §3
+  *as amended by R12*).
+  - **Deleted.** v1's `Solve.zig`, `Constrain.zig` and `Check.zig` (its pipeline tests kept as
+    `check/checker_test.zig`); the capability settle, its bits and the method-parameter tables in
+    `Types.zig`; `Schema.settleProperties` and the schema property API; `Dispatch.zig`'s flat half;
+    `TypeStore`'s constraint sites; `Env`'s generator fields; `--checker`, `Check.Checker`,
+    `usesV2`, `BENI_CHECKER` (`world.zig`, `corpus_test.zig`, `pending_test.zig`, `build.zig`),
+    `tests/pending/CLAIMED` and `RED`'s checker column; the key's checker id (`key_version` 5); the
+    six v1-only `--self-profile` counters (`obligations`, `constraints_*`). v1's-ABI fallbacks for a
+    record with no derived row now count no evidence / refuse (`Dispatch.publishedCount`,
+    `Lower.derivedBodyExists`).
+  - **Renamed.** `git mv src/check2/* src/check/`; three files split under the 1 500-line cap
+    (`DispatchTexts`, `PatternStore`, `ContextUnits`), which `rules_test.zig` now enforces.
+  - **Tests converted.** `abuse_test.zig`'s constraint-chain counters deleted (v1's sets); its
+    both-checker loops run once; row 10b asserts `--checker` is refused; the cache-crossing scenario
+    deleted; `cutoff_test.zig`'s `v2_only` and `digest_test.zig`'s `hashes_v2` folded in;
+    CK-107's v1 run dropped; CK-131 converted to its `a < b` control (≤ 250 %).
+  - **Fixed.** CK-88 (`js/Decision.zig` grouping; `switch`es of at most 16 384 labels), CK-95 and
+    CK-127 (`bir/Lower.zig`'s indexed scope and linear order check), CK-133 (found here).
+  - **Measured.** Check phase, five interleaved rounds, medians (ms): plain 92.98 (`7427828`) /
+    101.83 (R11) / 101.05 (R12), 1.087×; dispatch 101.05 / 114.16 / 113.38, 1.122× — over the
+    1.10× line, so CK-134. Whole process, user cycles: plain 1.06×, dispatch 1.10×.
+
 ### R13 — Diagnostic quality
 
 - **Goal.** `checker-v2.md` §15.3–§15.4's message work. Each message is specified first as an
@@ -2568,13 +2591,14 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R9b | CK-131 (fixed; `perf_test.zig`, `test-perf`) | — | — |
 | R10 | CK-107 (fixed; `perf_test.zig`, `test-perf`) | — | CK-132 (found: v1 only, frozen; its v2 side in `cutoff_test.zig` and `cache_test.zig`; gone at R12) |
 | R11 | all claims above: 119 fixtures, and the scenarios `PERM`, `NEST-OVER`, `NEST-DEEP` (`ordering_test.zig`), `NEST-UNDER` (`perf_test.zig`), CK-79 and CK-82 (`abuse_wide_test.zig`) | — | CK-03, 40, 42, 75, 80: their v1-only pending scenarios deleted (v2 twins in `perf_test.zig` since R6a, R8a) |
+| R12 | CK-88 (`perf_test.zig`, `abuse_wide_test.zig`), CK-95 with its duplicate CK-127 (`perf_test.zig`) | — | CK-132 (closed with v1); CK-133 (found and fixed: the Debug proof check's budget); CK-134 (found: the dispatch bench at 1.12× `7427828`) |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 132 entries appears in this table (CK-132 added by R10, CK-130 and CK-131 added by R9, CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 134 entries appears in this table (CK-133 and CK-134 added by R12, CK-132 added by R10, CK-130 and CK-131 added by R9, CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

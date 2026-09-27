@@ -7,9 +7,9 @@ each fixture are [`plans/checker-rewrite.md`](../../plans/checker-rewrite.md) §
 short version.
 
 ```sh
-zig build test-pending        # NOT a gate: the fixtures here, under the default checker (v2 since
-                              # R11), and the non-timing scenarios, on the Debug binary; passes
-                              # when every one is red for its recorded reason
+zig build test-pending        # NOT a gate: the fixtures here and the non-timing scenarios, on
+                              # the Debug binary; passes when every one is red for its recorded
+                              # reason
 zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
                               # (zig-out/perf/bin/beni); same rules
 zig build test-perf           # NOT a gate: the timing scenarios that were FIXED and promoted
@@ -19,7 +19,7 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
 
 `test-pending` runs at every commit. `test-pending-perf` (about 40 s since R8c, plus about 130 s when `src/`
 changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
-scenario covers (CK-88 since R11; before it R3, R6a, R7 and R8a for theirs),
+scenario covers (none is pending since R12 promoted CK-88; before it R3, R6a, R7, R8a and R12 for theirs),
 any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
 ([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1). Wherever `test-pending-perf` runs,
 `test-perf` runs beside it (the manager's decision of 2026-09-25): a fixed timing scenario that
@@ -32,9 +32,8 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 
 | File | What it is |
 |---|---|
-| `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
-| `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line; empty since R11, when every claim was promoted |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (`test-pending-perf`), or a generated width or depth (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each. Since R11 only CK-88 (time) is left: CK-41 was promoted into `perf_test.zig` by R3, CK-83 into `abuse_wide_test.zig` by R2c, and at R11 `NEST-UNDER` into `perf_test.zig`, CK-79 and CK-82 into `abuse_wide_test.zig`, and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` into `ordering_test.zig`; CK-03, CK-40, CK-42, CK-75 and CK-80 were red under v1 only, with v2 twins already in `perf_test.zig` |
+| `RED` | one line per fixture: `<path> <signature>` — why it is red today (a `<checker>` column between the two, and a second file, `CLAIMED`, of fixtures green under `--checker=v2` before the cut-over, went with v1 at R12) |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (`test-pending-perf`), or a generated width or depth (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each. None is left since R12 promoted CK-88 into `perf_test.zig` (and its shape half into `abuse_wide_test.zig`): CK-41 was promoted into `perf_test.zig` by R3, CK-83 into `abuse_wide_test.zig` by R2c, and at R11 `NEST-UNDER` into `perf_test.zig`, CK-79 and CK-82 into `abuse_wide_test.zig`, and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` into `ordering_test.zig`; CK-03, CK-40, CK-42, CK-75 and CK-80 were red under v1 only, with v2 twins already in `perf_test.zig` |
 
 ## A fixture
 
@@ -61,23 +60,20 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
   nothing on stdout, and produce exactly as many diagnostics as lines. A `.codes` is refused for
   any fixture whose path is not under `tests/pending/`, whatever the mode.
 
-## The four rules
+## The rules
 
 `test-pending` prints `PENDING RED` or `PENDING GREEN` per fixture and fails only for:
 
 - **(a)** a malformed fixture: no `CK-NN` line (two digits or more), no golden, both `.diag` and
   `.codes`, a `.codes` that does not parse or names an unknown code, a red fixture with no `RED`
-  line for the checker under test, or a duplicate line in `RED` or `CLAIMED`;
-- **(b)** a fixture GREEN under the default checker: promote it now (`git mv` into
+  line, or a duplicate line in `RED`;
+- **(b)** a fixture GREEN: promote it now (`git mv` into
   `tests/corpus/`, `.codes` → blessed `.diag`; a TIMING scenario moves verbatim into
   `perf_test.zig`, run by `zig build test-perf` on the same ReleaseFast compiler, and any other
   scenario into `abuse_test.zig`) and delete its `RED` line;
-- **(c)** a `CLAIMED` fixture that is RED under `v2` (moot since R11: `CLAIMED` is empty, and a
-  fixture a slice turns green under the default checker, v2, is promoted at once by rule (b));
-- **(d)** a RED fixture whose signature differs from its `RED` line — under **every** checker,
-  so a fixture red under `v2` needs a `v2` line too — or a fixture GREEN under a non-default
-  checker whose `RED` line for it is still there. A slice that changes why a fixture is red
-  updates the line in the same commit, and the reviewer checks the new reason.
+- **(c)**, a `CLAIMED` fixture RED under `v2`, went with `CLAIMED` and v1 at R12;
+- **(d)** a RED fixture whose signature differs from its `RED` line. A slice that changes why a
+  fixture is red updates the line in the same commit, and the reviewer checks the new reason.
 
 ## Red signatures
 
@@ -109,8 +105,9 @@ not sign alike.
 
 ## Knobs
 
-`BENI_PENDING_VERBOSE=1` prints each failure's full detail as the corpus does. The walker's four
-variables (`BENI_CORPUS_ROOT`, `BENI_CORPUS_MODE`, `BENI_CHECKER`, `BENI_CASE_TIMEOUT_MS`), and
+`BENI_PENDING_VERBOSE=1` prints each failure's full detail as the corpus does. The walker's three
+variables (`BENI_CORPUS_ROOT`, `BENI_CORPUS_MODE`, `BENI_CASE_TIMEOUT_MS`; `BENI_CHECKER` went
+with v1 at R12), and
 `BENI_CORPUS_PART`, `BENI_PENDING_SCENARIOS` (`fast` or `perf`) and `BENI_EXE` (the binary under
 test), are set by `build.zig` on every run, so nothing exported in a shell changes what a step
 means.

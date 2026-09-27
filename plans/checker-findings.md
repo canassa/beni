@@ -13,6 +13,8 @@ reads *claimed* was **promoted** at R11: its fixtures moved from `tests/pending/
 (`PERM`, `NEST-OVER`, `NEST-DEEP`), `abuse_wide_test.zig` (CK-79, CK-82) or `perf_test.zig`
 (`NEST-UNDER`); see `checker-rewrite.md` R11 *As built*. Still red after R11: CK-49, 50, 52 to 56,
 58 to 60 and 86 (R13), CK-88 (R12), CK-126 (the schema slices), CK-37's rest (R14).
+**R12 (2026-09-27)** deleted v1: CK-88 and CK-95 (with its duplicate CK-127) are fixed and in
+`test-perf` and `abuse_wide_test.zig`, and CK-132 (v1 only) is closed with v1.
 
 ## Sources
 
@@ -2677,6 +2679,19 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   count (against every row above), and the specialisation of every row once per key. A fix groups
   rows by literal through the matrix code.
 - **Slice** R12 (manager, 2026-09-25): a backend cleanup once v1 is deleted — group rows by literal throughout `Decision`'s matrix code; the `switch` size limit is split into bounded `switch`es in the same change.
+- **Status** fixed by R12 (2026-09-27). `js/Decision.zig` groups a column's rows by head in one pass
+  (`group`, a head table keyed by what a head is — a constructor's order, a literal's spelling)
+  and specialises each key over its own rows and the wildcard rows only; the column choice's
+  distinct count is the table's size; the key sort is a stable block sort over indices. `js/Lower.zig`
+  writes a fan of more than `max_switch_cases` = 16 384 labels as consecutive `switch`es over the
+  same discriminant, `default:` in the last (`backend.md` §7 *added by R12*). ReleaseFast, `build`
+  CPU: 0.19 / 0.80 s at 3 000 / 6 000 branches before, 8.9 s at 20 000; after, the process floor at
+  both sizes and 0.04 s at 20 000. Fixtures: the pending scenario moved verbatim to `perf_test.zig`
+  (`test-perf`, CK-88), and `abuse_wide_test.zig`'s "CK-88: a case of 70 000 literal branches builds
+  as switches of at most 16 384 labels and runs, in both builds" (five `switch`es, the largest
+  exactly 16 384 labels; the program's answers at each chunk's edges, the default and a miss).
+  Emitted JavaScript is byte-identical for every fan under the bound (the `emit/` and `run/`
+  goldens did not move).
 
 ### CK-89 — A private type's derived context is published nowhere, though an importer can compare it
 
@@ -2833,6 +2848,18 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Expected** linear lowering.
 - **Fixture** none yet.
 - **Slice** R12 (the manager).
+- **Status** fixed by R12 (2026-09-27), with its duplicate CK-127. Four scans in `bir/Lower.zig`
+  were each linear in the block per binding: the shadowing check (`bindVar`) and every lookup
+  (`lookupLocal`) walked the scope stack, which holds the whole block from phase 1 on;
+  `localOfInst` searched the declaration's locals backwards per `let_def`; and `checkLetOrder`
+  reset its visited set and scanned every edge once per binding (and `bindingOfLocal` scanned the
+  bindings per edge). The scope is indexed by name past 64 entries (`scope_index`, each entry
+  chained to the one it shadows; the same reports as the scans, the earliest duplicate of a pattern
+  set included), the local is recorded in phase 1, and the order check walks each binding's own
+  run of edges and resets what it set. `dump --stage=bir` is byte-identical. ReleaseFast `check`,
+  CPU: 0.12 / 0.47 / 1.92 s at 10 000 / 20 000 / 40 000 chained bindings before, 0.01 / 0.02 /
+  0.04 s after. Fixture: `perf_test.zig`'s "CK-95: a let of n chained bindings lowers in time
+  linear in n" (CK-93's generator, the `lower` event, 20 000 / 40 000).
 
 ### CK-96 — Obligation rows riding on one variable cost quadratic time (checker v2)
 
@@ -3114,6 +3141,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Status** fixed by R10 (2026-09-27): both reference tables are indexed by a hash map from the
   row to its index; the rows keep their first-occurrence order, so no entry's bytes move.
   `cache_store` at 6 000 / 12 000: 20 / 72 ms → 4.4 / 8.1 ms (ReleaseFast), both checkers.
+  (R12 dropped the scenario's v1 run with v1; its v2 half is unchanged.)
 
 ### CK-108 — A derived context drops a payload's `equatable` requirement: v2 compared functions
 
@@ -3510,6 +3538,8 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** none yet: a `test-perf` scenario on the `lower` event (`perf_test.zig`'s
   `eventRatio`), CK-93's generator.
 - **Slice** unassigned (frontend; CK-124's family).
+- **Status** fixed by R12 (2026-09-27) as a duplicate of CK-95 (the same defect, found twice): see
+  CK-95. Its fixture is CK-95's scenario, which is the one this entry asked for.
 
 ### CK-128 — Derived `==` and `<` recurse once per level of the data, and overflow node's stack
 
@@ -3637,6 +3667,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   1.10× in cycles; `s_int6000` 0.95×. A differential
   over the corpus, `tests/pending/`, `core` and `bench/` against `919f8be` found no byte of
   difference.
+- *Fixture converted by R12 (2026-09-27).* The `test-perf` scenario compared v2 with v1 on one
+  binary (≤ 1.25× v1), and v1 is gone. It is now the same program against its control
+  (`s_int6000`, `a < b`) on the one checker, ≤ 250 % (`perf_test.zig`, "CK-131: a derived
+  comparison per declaration checks within 2.5× its a < b control"). Three rounds, ReleaseFast:
+  `919f8be` under `--checker=v2` (the defect) 287 / 292 / 299 %, red; R12 213–224 %, green; v1
+  178–190 %.
 
 ### CK-132 — v1's cutoff key cannot see a private `eq` or `compare`: a warm check accepts what a cold one refuses
 
@@ -3667,6 +3703,47 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   fails `ExitCodeDiffers`, exit 1 cold and 0 warm).
 - **Slice** none: v1 is frozen (`checker-rewrite.md` §1). Closed when v1 is deleted (R12); from
   R11 no build reaches v1's path by default.
+- **Status** closed by R12 (2026-09-27): v1 is deleted. Its v2 side stays in the gates
+  (`cutoff_test.zig`'s row, no longer `v2_only`, and `cache_test.zig`'s schema case).
+
+### CK-133 — The Debug check of an acyclicity proof re-walks the proved graph at every stop: 31 s on a 4 095-level record
+
+- **Severity** performance (safe builds only: Debug, and ReleaseSafe, where
+  `std.debug.runtime_safety` also holds). **Area** `check/Walk.zig`'s `assertProved`
+  (R8c's review rounds). **Class** K11. **Sources** R12, running `test-blackbox` (2026-09-27).
+- **Program** `abuse_test.zig`'s CK-128 scenario: two record literals nested 4 095 deep, compared
+  with `==` and `<`.
+- **Command** `build --platform=node --no-cache` on the Debug binary.
+- **Observed** 31.5 s at `ebec203` (and on R12 before the fix), where ReleaseFast takes 0.13 s;
+  `perf record`: the time is `assertProved`'s hash map, reached from `Resolve.position` through
+  `Occurs.check` at every stop at a proved node, each re-walking up to `assert_cap` = 1 024 nodes
+  of the proved graph. Under `test-blackbox`'s parallel load the build passed the harness's 60 s
+  timeout: the scenario failed 2 of 4 R12 runs with `CompilerTimeout` (it did before R12's changes
+  too, in the first run).
+- **Expected** a Debug check that costs at most a constant factor over the check it guards.
+- **Fixture** `abuse_test.zig`'s CK-128 scenario (its timeout; red only under load).
+- **Slice** R12 (found and fixed).
+- **Status** fixed by R12: the walks share a budget per store — 16 visits per store variable, plus
+  a floor of 2²⁰ — so every corpus program is still checked in full (a store under 65 536
+  variables never reaches the floor) and a pathological one until the budget runs out. The
+  scenario's Debug build: 31.5 s → 9.9 s idle.
+
+### CK-134 — The check phase on the dispatch-shaped bench corpus is 1.12× `7427828`'s
+
+- **Severity** performance. **Area** the checker as a whole (v2 against v1's baseline). **Class**
+  K11. **Sources** R12's exit measurement (2026-09-27).
+- **Program** `zig build bench -- --generate=100000 --dispatch` (and the plain corpus beside it).
+- **Observed** ReleaseFast, check phase, five interleaved rounds, medians: plain 92.98 ms at
+  `7427828`, 101.83 at `ebec203` (R11), 101.05 at R12 — **1.087×**; dispatch 101.05, 114.16,
+  113.38 — **1.122×**. Whole process (`perf stat -r 7`, `check --no-cache --jobs=1` of the same
+  generated trees, user cycles): plain 458 M → 486 M (1.06×), dispatch 485 M → 534 M (1.10×).
+  R12 itself moved nothing (R11 → R12 within noise in both); the gap is v2's against v1's
+  7427828 figure, which R11 measured at 1.01× only because it compared the two checkers on ONE
+  binary built from R11's tree.
+- **Expected** `checker-rewrite.md` R12's exit: ≤ 1.0× the `7427828` figure the target, over 1.10×
+  a finding. Plain is inside; dispatch is over.
+- **Fixture** none: the bench is the instrument (`checker-v2.md` §18).
+- **Slice** unassigned (the manager): a profile of the dispatch corpus against `7427828`'s.
 
 ## Summary table
 
@@ -3763,14 +3840,14 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-85 | performance (latent) | K4 | guard `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` | R8a (fixed, both checkers) |
 | CK-86 | diagnostic-quality | K14 | `check/bad/ExposingSameNameConstructor/` | R13 |
 | CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | R8a (fixed, promoted to `tests/corpus/run/`) |
-| CK-88 | performance | K14 | `scenario/CK-88` | unassigned — manager |
+| CK-88 | performance | K14 | `perf_test.zig` (`test-perf`, CK-88), `abuse_wide_test.zig` (CK-88) | R12 (fixed) |
 | CK-89 | latent | K10 | — (v1 is right; the guard program is in the entry) | R8a (§14.2 amended; guard `run/HiddenTypeDerivedRow/`) |
 | CK-90 | unsound-runtime | K8 | `check/bad/LetFunctionUsesLaterPattern.beni` | R4b (claimed) |
 | CK-91 | unsound-runtime | K3 | `check/bad/LetOfManyBindings.beni` | R4b (claimed) |
 | CK-92 | compiler-crash-or-hang (output blow-up) | K13 | `blackbox_test.zig` "CK-92: …" (in the gates) | R4b (fixed) |
 | CK-93 | performance | K11 | `test-perf` "CK-93" (v2, `check` event) | R8c (fixed) |
 | CK-94 | diagnostic-quality | K13 | — | R13 |
-| CK-95 | performance | K14 | — | R12 |
+| CK-95 | performance | K14 | `perf_test.zig` (`test-perf`, CK-95) | R12 (fixed, with CK-127) |
 | CK-96 | performance | K11 | promoted: `perf_test.zig` "CK-96" (`test-perf`) | R5 (fixed) |
 | CK-97 | performance | K11 | promoted: `perf_test.zig` "CK-97" (`test-perf`) | R5 (fixed) |
 | CK-98 | performance | K11 | promoted: `perf_test.zig` "CK-98" (`test-perf`) | R5 (fixed) |
@@ -3802,20 +3879,22 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-124 | performance | K14 | — | unassigned (frontend) |
 | CK-125 | valid-program-rejected | K12 | `test-perf` "CK-125" | R8b (found and fixed by its round-2 review) |
 | CK-126 | unsound-runtime (no runtime path yet) | K7 | `check/bad/PrivateRecordSchemaAliasAcrossModules/` (pending, red under both) | unassigned (found by R8c) |
-| CK-127 | performance | K14 | — (a `lower`-event scenario when taken) | unassigned (frontend; found by R8c) |
+| CK-127 | performance | K14 | CK-95's | R12 (fixed as CK-95's duplicate; found by R8c) |
 | CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
 | CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
 | CK-130 | valid-program-rejected (v2 only) | K7 | promoted: `run/NeverAndOrderDerived.beni` | R9 (fixed) |
 | CK-131 | performance (v2 only) | K11 | `perf_test.zig` (`test-perf`, CK-131) | R9b (fixed; found by R9) |
-| CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | none (v1 frozen; gone at R12; found by R10) |
+| CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | R12 (closed with v1; found by R10) |
+| CK-133 | performance (Debug only) | K11 | `abuse_test.zig` CK-128 scenario (timeout under load) | R12 (found and fixed) |
+| CK-134 | performance | K11 | — (the bench) | unassigned — manager (found by R12) |
 
 Totals:
-- 132 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 134 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 29 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 15 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 24 (CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 3 (CK-132 among them, v1 only).
-- performance: 20 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127 and CK-131 among them).
+- performance: 22 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
 - diagnostic-quality: 27 (CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 15 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

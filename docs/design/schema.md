@@ -1184,8 +1184,9 @@ bits, and a cache hit of a module it checked restores nothing into the session t
 old checker's settle (`Schema.settleProperties`) is not on its path. What a dependent observes
 about an endpoint — whether and how it derives `eq` and `compare`, and its `equatable` gate — is
 in the record's hidden rows, which the interface hash covers; the digest's named-type rows hash
-the table's bits, which are the same in a cold and a warm build. The old checker keeps the rule
-above until it is deleted (R12).
+the table's bits, which are the same in a cold and a warm build. The old checker kept the rule
+above until R12 deleted it (2026-09-27), with `Schema.settleProperties` and the table's schema
+property bits.
 
 S2 moves the temporary wall rather than removing it. `check` accepts a valid
 schema program and all resolution-requiring dumps see these interface members.

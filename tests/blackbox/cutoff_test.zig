@@ -288,14 +288,11 @@ const Edit = struct {
     source: []const u8,
     /// The skip decision, pinned (R10): modules re-checked by the warm build
     /// after the edit, and modules cut off. `--cache-keys` already predicts
-    /// the first; pinning it too is what makes "v2 re-checks exactly what v1
-    /// re-checks" a fact, since both checkers run this table with these
-    /// numbers (`test-blackbox`, and `test-v2` until the cut-over, R11).
+    /// the first; pinning it too made "v2 re-checks exactly what v1
+    /// re-checks" a fact while both checkers ran this table with these
+    /// numbers (until R12 deleted v1).
     rechecked: u64,
     cut_off: u64,
-    /// Run under v2 only: v1's key cannot see the edit and its warm check
-    /// disagrees with its cold one (CK-132, v1 frozen; deleted with v1).
-    v2_only: bool = false,
 };
 
 /// **Every edit class of `plans/m4-3.md` §10.2, and at least one instance of
@@ -424,7 +421,6 @@ const edits = [_]Edit{
         .what = "add a private eq (§11.3, D1)",
         .rechecked = 4,
         .cut_off = 11,
-        .v2_only = true,
         .source = leaf_source ++ "\n\neq : Hidden, Hidden -> Bool\neq a b =\n    True\n",
     },
 };
@@ -443,7 +439,6 @@ test "the differential harness: every edit class, byte-identical AND cut off exa
         const arena = arena_state.allocator();
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
-        if (edit.v2_only and !w.underV2()) continue;
         try writeProject(&w);
 
         // ┌─────────────────────────────────────────┐

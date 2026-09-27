@@ -682,39 +682,41 @@ test "row 10: --cache-build-id moves every module's key, core included" {
     try expectMoved("the same --cache-build-id twice", pretend, again, &.{});
 }
 
-test "row 10b: --checker=v1 moves every module's key, core included, and v2 is the default" {
+test "row 10b: --checker is gone with v1, so it is refused and moves no key" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §14.3 (S22): the checker id is part of the compiler
-    // identity every key starts with, so the two checkers never share an
-    // entry — core's included. Since the cut-over (R11) v2 is the default,
-    // so no flag and `--checker=v2` are one key and `--checker=v1` another.
+    // `checker-v2.md` §14.3 (S22) made the checker id part of the compiler
+    // identity every key starts with, so the two checkers never shared an
+    // entry. R12 deleted v1, the hidden `--checker` and the id with them
+    // (key version 5): the flag is an ordinary unknown option now, refused
+    // before anything is read or written, and there is one key per module.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    // The scenario is about the DEFAULT, so its baseline runs with no
-    // `--checker` at all, whatever `BENI_CHECKER` says.
-    w.checker = null;
     try writeProject(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const base = try baselineKeys(&w, arena);
-    const v2 = try keysOf(&w, arena, &.{ "--jobs=1", "--checker=v2", "src" });
-    // The v1 run checks the project clean too, and prints its keys.
-    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--checker=v1", "src" }, .{ .raw_diagnostics = true });
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    const v1 = try parseKeys(arena, r.stdout);
+    const again = try baselineKeys(&w, arena);
+    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--cache-dir=c", "--checker=v1", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectMoved("--checker=v2 against no flag", base, v2, &.{});
-    try expectEveryKeyMoved("--checker=v1", base, v1);
+    try expectMoved("the default twice", base, again, &.{});
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("beni: unknown option '--checker'; run 'beni help' for usage\n", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("c"));
 }
 
 test "--core moves the app modules' keys and leaves core's alone" {
@@ -1596,19 +1598,15 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
     try testing.expectEqualStrings(hidden_oracle.result.stdout, hidden.result.stdout);
     try testing.expectEqualStrings(hidden_oracle.result.stderr, hidden.result.stderr);
     try testing.expectEqual(@as(u64, 2), hidden.counters.checked);
+    // The two comparisons are `private_method` (D1, checker-v2.md §11.3):
+    // `Inner`'s `eq` is private, so `Outer`'s derived `eq` cannot use it
+    // (v1 said `not_equatable` here, until R12 deleted it). The warm build
+    // still says exactly what the cold one says (above).
     const expected_hidden =
-        \\[{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"},{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"}]
-        \\
-    ;
-    // Under v2 the same two comparisons are `private_method` (D1,
-    // checker-v2.md §11.3): `Inner`'s `eq` is private, so `Outer`'s derived
-    // `eq` cannot use it — the reason v1 hides behind `not_equatable`. The
-    // warm build still says exactly what the cold one says (above).
-    const expected_hidden_v2 =
         \\[{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"},{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"}]
         \\
     ;
-    try testing.expectEqualStrings(if (w.underV2()) expected_hidden_v2 else expected_hidden, hidden.result.stderr);
+    try testing.expectEqualStrings(expected_hidden, hidden.result.stderr);
     try testing.expect(!w.exists("hidden"));
     try testing.expect(!w.exists("hidden-oracle"));
 }
@@ -2186,93 +2184,10 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
 }
 
-test "a cache written under one checker is never read under the other" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `checker-v2.md` §14.3 (S22): v1 and v2 write the same entry format into
-    // the same directory, and after R8 a derived function's evidence ABI
-    // differs between them, so a warm cache must never hand one checker's
-    // output to the other's callers. The keys moving (row 10b) is necessary;
-    // this is the counters' half — nothing is READ across the line, in either
-    // direction, and each checker still reads its own.
-    //
-    // From R4b v2 checks this project (no dispatch, no obligation), clean, so
-    // the counters are the whole evidence: a v2 run that read v1's entries
-    // would say exactly what one that did not says.
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try writeProject(&w);
-    // Each run names its checker: a run
-    // without the flag is v2's since the cut-over (R11).
-    const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v1", "src" };
-    const v2_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v2", "src" };
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    // A v1-written cache, then v2 over it twice, then v1 again.
-    const v1_cold = try runCounted(&w, arena, &v1_args, "v1-cold.json");
-    const v2_first = try runCounted(&w, arena, &v2_args, "v2-first.json");
-    const v2_warm = try runCounted(&w, arena, &v2_args, "v2-warm.json");
-    const v1_warm = try runCounted(&w, arena, &v1_args, "v1-warm.json");
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), v1_cold.result.exit_code);
-    try testing.expectEqualStrings("", v1_cold.result.stderr);
-    try testing.expectEqual(@as(u64, 0), v1_cold.counters.hits);
-    const modules = v1_cold.counters.misses;
-    try testing.expect(modules >= 12);
-
-    // v2 over a v1-written cache reads NOTHING: every module misses, core's
-    // too.
-    try testing.expectEqual(@as(u8, 0), v2_first.result.exit_code);
-    try testing.expectEqualStrings("", v2_first.result.stderr);
-    try testing.expectEqual(@as(u64, 0), v2_first.counters.hits);
-    try testing.expectEqual(modules, v2_first.counters.misses);
-    try testing.expectEqual(modules, v2_first.counters.checked);
-    // It wrote every entry under its own keys and reads exactly those back.
-    try testing.expect(v2_first.counters.bytes > 0);
-    try testing.expectEqual(@as(u8, 0), v2_warm.result.exit_code);
-    try testing.expectEqualStrings("", v2_warm.result.stderr);
-    try testing.expectEqual(modules, v2_warm.counters.hits);
-    try testing.expectEqual(@as(u64, 0), v2_warm.counters.misses);
-
-    // v1 afterwards: all of its own entries, untouched by v2's run.
-    try testing.expectEqual(@as(u8, 0), v1_warm.result.exit_code);
-    try testing.expectEqualStrings(v1_cold.result.stderr, v1_warm.result.stderr);
-    try testing.expectEqualStrings(v1_cold.result.stdout, v1_warm.result.stdout);
-    try testing.expectEqual(modules, v1_warm.counters.hits);
-    try testing.expectEqual(@as(u64, 0), v1_warm.counters.misses);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE (the reverse)                   │
-    // └─────────────────────────────────────────┘
-    // A cache v2 wrote first, then v1 over it.
-    const v2_cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v2", "src" }, "v2-cold.json");
-    const v2_written = (try entriesOnly(arena, try w.listFiles("b"))).len;
-    const v1_after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v1", "src" }, "v1-after.json");
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u64, 0), v2_cold.counters.hits);
-    try testing.expect(v2_cold.counters.bytes > 0);
-    try testing.expectEqual(@as(usize, @intCast(modules)), v2_written);
-    // v1 reads none of them, and says exactly what a cold v1 run says.
-    try testing.expectEqual(@as(u8, 0), v1_after.result.exit_code);
-    try testing.expectEqualStrings(v1_cold.result.stderr, v1_after.result.stderr);
-    try testing.expectEqual(@as(u64, 0), v1_after.counters.hits);
-    try testing.expectEqual(modules, v1_after.counters.misses);
-    try testing.expectEqual(modules, v1_after.counters.checked);
-    // And it wrote its own, beside v2's rather than over them: different keys,
-    // different files.
-    try testing.expectEqual(v2_written + @as(usize, @intCast(modules)), (try entriesOnly(arena, try w.listFiles("b"))).len);
-}
+// "A cache written under one checker is never read under the other"
+// (`checker-v2.md` §14.3, S22) crossed a cache between `--checker=v1` and
+// v2 in both directions. It went with v1 and the flag at R12: there is one
+// checker, and row 10b holds that the flag is refused.
 
 test "a comment re-checks ONE module — the counters' half of the cutoff" {
     // ┌─────────────────────────────────────────┐
@@ -3655,7 +3570,7 @@ const holder_by_eq =
     \\
 ;
 
-test "checker v2: a warm build after an edit that moves a derived context writes what a cold build writes" {
+test "a warm build after an edit that moves a derived context writes what a cold build writes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3665,7 +3580,7 @@ test "checker v2: a warm build after an edit that moves a derived context writes
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeDerivedProject(&w, holder_by_key);
-    const build = [_][]const u8{ "build", "--checker=v2", "--platform=node", "--jobs=1", "--diagnostics=json" };
+    const build = [_][]const u8{ "build", "--platform=node", "--jobs=1", "--diagnostics=json" };
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -3740,10 +3655,9 @@ const EditCase = struct {
     };
 };
 
-fn editArgs(arena: std.mem.Allocator, case: EditCase, checker: ?[]const u8, cache: ?[]const u8, jobs: []const u8, out: []const u8) ![]const []const u8 {
+fn editArgs(arena: std.mem.Allocator, case: EditCase, cache: ?[]const u8, jobs: []const u8, out: []const u8) ![]const []const u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.append(arena, if (case.main != null) "build" else "check");
-    if (checker) |c| try argv.append(arena, c);
     if (case.main != null) {
         try argv.append(arena, "--platform=node");
         try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{out}));
@@ -3785,8 +3699,8 @@ fn expectOutcome(w: *World, arena: std.mem.Allocator, case: EditCase, state: usi
     }
 }
 
-/// `case`, under `checker` (null: the world's own, `BENI_CHECKER`).
-fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
+/// `case`: cold, each edit warm against cold, then settled.
+fn runEditCase(case: EditCase) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3795,7 +3709,6 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const v2 = if (checker) |c| std.mem.eql(u8, c, "--checker=v2") else w.underV2();
     try w.write("src/N.beni", case.n);
     if (case.main) |text| try w.write("src/Main.beni", text);
     try w.write("src/M.beni", case.states[0].m);
@@ -3803,12 +3716,12 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY: cold                  │
     // └─────────────────────────────────────────┘
-    const first = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=1", "first"), "first.json");
+    const first = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "first"), "first.json");
     try expectOutcome(&w, arena, case, 0, first, "first");
     try testing.expectEqual(@as(u64, 0), first.counters.hits);
-    // v2 derived the types of `M` and `N` itself: that is what a hit must
-    // not do again.
-    if (v2) try testing.expect(first.counters.derived > 0);
+    // The check derived the types of `M` and `N` itself: that is what a
+    // hit must not do again.
+    try testing.expect(first.counters.derived > 0);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY: each edit, warm = cold │
@@ -3820,8 +3733,8 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
         try w.write("src/M.beni", case.states[state].m);
         const warm_out = try std.fmt.allocPrint(arena, "warm{d}", .{step});
         const cold_out = try std.fmt.allocPrint(arena, "cold{d}", .{step});
-        const warm = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=8", warm_out), try std.fmt.allocPrint(arena, "warm{d}.json", .{step}));
-        const cold = try runCounted(&w, arena, try editArgs(arena, case, checker, null, "--jobs=1", cold_out), try std.fmt.allocPrint(arena, "cold{d}.json", .{step}));
+        const warm = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=8", warm_out), try std.fmt.allocPrint(arena, "warm{d}.json", .{step}));
+        const cold = try runCounted(&w, arena, try editArgs(arena, case, null, "--jobs=1", cold_out), try std.fmt.allocPrint(arena, "cold{d}.json", .{step}));
         try testing.expectEqual(cold.result.exit_code, warm.result.exit_code);
         try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
         try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
@@ -3841,7 +3754,7 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
     // Back at the first version, whose entries the cache still holds: a
     // warm build checks nothing, derives nothing and writes what `first`
     // wrote.
-    const settled = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=1", "settled"), "settled.json");
+    const settled = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "settled"), "settled.json");
     try testing.expectEqualStrings(first.result.stderr, settled.result.stderr);
     // A module whose check reported an error has no entry (fast-compiler.md
     // §8), so a version that fails re-checks those modules every time —
@@ -3856,13 +3769,12 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
 
 test "adv's k1–k8: a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
     // The adversarial review's cache probes (`plans/checker-rewrite.md` R10's
-    // exit): under the world's checker, so `test-blackbox` ran them under
-    // v1 and `test-v2` under v2 until the cut-over (R11) — no probe's
-    // outcome differs between the two.
-    for (k_cases) |case| try runEditCase(case, null);
+    // exit). Until the cut-over (R11) `test-blackbox` ran them under v1 and
+    // `test-v2` under v2; no probe's outcome differed between the two.
+    for (k_cases) |case| try runEditCase(case);
 }
 
-test "checker v2: an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build" {
+test "an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build" {
     // R10's reviewer focus: a dependency whose derived context changes must
     // invalidate its dependents' EVIDENCE — the dispatch tables and the
     // JavaScript they emit — not only their types. Four ways to move one:
@@ -3872,14 +3784,14 @@ test "checker v2: an edit that moves a dependency's derived context rebuilds its
     // and dropping it; the payload's method made private (D1: `private_method`,
     // §11.3), removed, and a private `compare`; and a schema whose `via`
     // target — a type in no record — gains a function and then a private `eq`
-    // (§11.5, the endpoint's `no_function` and derived rows). Named `v2`
-    // explicitly: v1 answers the `where` and `private` cases differently
-    // (D1, D4), and its warm check of the last edit of the schema case exits
-    // 0 where a cold one refuses the program (CK-132, v1 only, frozen).
-    for (evidence_cases) |case| try runEditCase(case, "--checker=v2");
+    // (§11.5, the endpoint's `no_function` and derived rows). v1, deleted by
+    // R12, answered the `where` and `private` cases differently (D1, D4),
+    // and its warm check of the last edit of the schema case exited 0 where
+    // a cold one refused the program (CK-132, closed with v1).
+    for (evidence_cases) |case| try runEditCase(case);
 }
 
-test "checker v2: a cache hit installs the published derived contexts and runs no fixpoint (I10)" {
+test "a cache hit installs the published derived contexts and runs no fixpoint (I10)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3896,7 +3808,7 @@ test "checker v2: a cache hit installs the published derived contexts and runs n
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeDerivedProject(&w, holder_by_key);
-    const build = [_][]const u8{ "build", "--checker=v2", "--platform=node", "--diagnostics=json" };
+    const build = [_][]const u8{ "build", "--platform=node", "--diagnostics=json" };
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │

@@ -579,7 +579,7 @@ test "CK-109: a derived row of more than 65 535 context entries checks, and buil
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const built = try w.buildAndRun(&.{ "--no-cache", "--checker=v2", "H.beni", "Main.beni" });
+    const built = try w.buildAndRun(&.{ "--no-cache", "H.beni", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -595,7 +595,79 @@ test "CK-109: a derived row of more than 65 535 context entries checks, and buil
     defer testing.allocator.free(params);
     try w.write("H.beni", compare);
     try w.write("Main.beni", params);
-    const checked = try w.run(&.{ "check", "--no-cache", "--checker=v2", "--platform=node", "H.beni", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "H.beni", "Main.beni" });
     try expectExited(checked, 0);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}
+
+// CK-88, found by R2c and fixed by R12 (`plans/checker-findings.md`): one
+// `case` of n literal branches. `js/Decision.zig` compared every row with
+// every other three times over, so a build of 20 000 branches took 8.6 s
+// (ReleaseFast) and 70 000 would take minutes; and the one `switch` it
+// wrote had n labels, where SpiderMonkey — Firefox and its shell — refuses
+// more than 65 046 (`backend.md` §4's table), so the module would have
+// thrown at load in Firefox while Node, which takes 300 000, ran it. The
+// rows are grouped by literal now, and a fan of more than 16 384 labels is
+// written as consecutive `switch`es over the same discriminant. The timing
+// half is `perf_test.zig`'s CK-88 scenario; this is the shape half.
+test "CK-88: a case of 70 000 literal branches builds as switches of at most 16 384 labels and runs, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    const branches = 70_000;
+    const max_labels = 16_384;
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\ng : Int -> Int\ng k =\n    case k of\n");
+    for (0..branches) |i| try out.print("        {d} ->\n            {d}\n\n", .{ i, i + 1 });
+    try out.writeAll("        _ ->\n            -1\n\n\n");
+    // Each chunk's first and last label, the default, and a miss past the end.
+    try out.writeAll(
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.map [ 0, 16383, 16384, 32768, 65535, 69999, 70000, -5 ] (\k -> String.fromInt (g k)))
+        \\
+    );
+    try w.write("Main.beni", source.written());
+
+    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r.build, 0);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("1\n16384\n16385\n32769\n65536\n70000\n-1\n-1\n", r.program.?.stdout);
+        try testing.expectEqualStrings("", r.program.?.stderr);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        // The module's one `case` is ⌈70 001 / 16 384⌉ = 5 `switch`es, none
+        // over the bound: every label between two `switch`es is counted
+        // against the one before.
+        const js = try w.read("out/Main.mjs");
+        var switches: usize = 0;
+        var labels: usize = 0;
+        var worst: usize = 0;
+        for (0..js.len) |i| {
+            if (std.mem.startsWith(u8, js[i..], "switch")) {
+                switches += 1;
+                labels = 0;
+            } else if (std.mem.startsWith(u8, js[i..], "case ") or std.mem.startsWith(u8, js[i..], "default:")) {
+                labels += 1;
+                worst = @max(worst, labels);
+            }
+        }
+        try testing.expectEqual(@as(usize, 5), switches);
+        try testing.expectEqual(@as(usize, max_labels), worst);
+    }
 }

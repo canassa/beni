@@ -119,11 +119,12 @@ pub const Input = struct {
     /// `dump --stage=dispatch` already takes it for the same reason
     /// (`src/dump/dispatch.zig:34`).
     ///
-    /// **And two more fields than a name service needs.**
-    /// `derivedBodyExists` reads `Entry.kind` and `Entry.equatable` to
-    /// answer whether the module that owns an `ext_derived` target actually
-    /// emitted a body for it — a `foreign type` has no constructors and so
-    /// no module wrote one (A.55, A.60). After §5.2 no program can make
+    /// **And one more field than a name service needs.**
+    /// `derivedBodyExists` reads `Entry.kind` to answer whether the module
+    /// that owns an `ext_derived` target actually emitted a body for it — a
+    /// `foreign type` has no constructors and so no module wrote one (A.55,
+    /// A.60); the rest is the owner's published row (`Entry.equatable`
+    /// was read too, for v1's records, until R12). After §5.2 no program can make
     /// that answer `false`, so what is left is the guard against a table
     /// the checker did not write. That is still a question about the TABLE
     /// and not about a value, but it is a judgement and not a lookup, and
@@ -358,6 +359,16 @@ const steps_positional = 16;
 /// temporary, which is a scope; 16 of them are an eighth of
 /// `nesting.scope_budget`. Shorter chains keep the nested form they always had.
 const chain_min = 16;
+
+/// The most `case` labels one `switch` is written with (CK-88, R12).
+/// SpiderMonkey — Firefox and its shell alike — refuses a `switch` of more
+/// than 65 046 (`backend.md` §4's table), and every other engine measured
+/// takes 300 000; this is four times under the one that refuses. A fan with
+/// more labels is written as consecutive `switch`es over the same
+/// discriminant (`emitFan`): every case body leaves, so a value no label of
+/// one `switch` names falls through to the next, and only the last carries
+/// the `default:`. They follow one another, so nothing nests deeper.
+const max_switch_cases = 16_384;
 
 /// How many closures deep an evidence value may nest before it is bound to a
 /// `const` (`Lowerer.hoistEvidence`, `backend.md` §4): each is a call inside
@@ -3853,8 +3864,8 @@ const Lowerer = struct {
             // `Float` it settles on. `Basics.eq` IS that answer.
             //
             // INVARIANT, and it is the CHECKER's to hold: `undetermined`
-            // means exactly that and nothing else. v1's converter writes it
-            // for a legacy `err` part, and what pins which programs make one
+            // means exactly that and nothing else. v1's converter wrote it
+            // for a legacy `err` part (until R12), and what pins which programs make one
             // is `tests/corpus/dispatch/ErrParts`.
             .undetermined => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
             .derived, .ext_derived => {
@@ -4163,38 +4174,15 @@ const Lowerer = struct {
                 if (entry.kind != .adt) return false;
                 // The declaring module's published row says whether it emits
                 // the function (checker-v2.md §14.2 *as amended by R8a*): the
-                // one answer, whichever checker wrote it. A record with no
-                // row for the type — the old checker's, for a private type —
-                // falls back to the session's capability bits below, which
-                // that checker settles for its own modules.
-                if (Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner, use.type, use.kind)) |published| {
-                    return published.row.status == .present;
-                }
-                if (!l.wellKnownDerivedRow(use.type, use.kind)) {
-                    if (entry.module.int() >= l.in.interfaces.len) return false;
-                    const spelling = switch (use.kind) {
-                        .eq => InternPool.WellKnown.eq,
-                        .compare => InternPool.WellKnown.compare,
-                    };
-                    if (l.in.interfaces[entry.module.int()].findValue(l.interner, spelling.symbol()) != null) return false;
-                }
-                return switch (use.kind) {
-                    .eq => entry.answers_eq,
-                    .compare => entry.answers_compare,
-                };
+                // one answer. A record the checker wrote has a row for every
+                // type it can reach, so no row is a table the checker did not
+                // write, and a wall. (Until R12 no row read the session
+                // table's structural bits, for a record v1 wrote.)
+                const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner, use.type, use.kind) orelse return false;
+                return published.row.status == .present;
             },
             else => return false,
         }
-    }
-
-    /// Whether §3.2's table answers `(T, kind)` with a DERIVED function
-    /// rather than a primitive — the two rows that do: `Order`'s `compare`,
-    /// which cannot be alphabetic on its own tags, and both of `Never`'s.
-    fn wellKnownDerivedRow(l: *Lowerer, id: Dispatch.TypeId, kind: Dispatch.Derived.Kind) bool {
-        const wk = l.in.types.well_known;
-        if (id == .none) return false;
-        if (id == wk.order) return kind == .compare;
-        return id == wk.never;
     }
 
     fn operandNames(l: *Lowerer) ![2]JsIr.NameIndex {
@@ -5716,10 +5704,20 @@ const Lowerer = struct {
                 @intFromEnum(record),
             ));
         }
-        const cases_range = try l.b.addRange(cases.items);
-        const cases_record = try l.b.addRecord(cases_range);
-        const discriminant = try l.fanDiscriminant(c, fan);
-        try out.append(l.scratch, try l.add(.switch_stmt, c.p, discriminant.int(), @intFromEnum(cases_record)));
+        // At most `max_switch_cases` labels a `switch` (CK-88): a longer fan
+        // is consecutive `switch`es, the `default:` in the last. Every case
+        // body leaves — a `return`, a `continue`, a `break` out of the
+        // `case`'s block or to a shared leaf — which one `switch` already
+        // relies on, since a case that did not would fall into the next.
+        var from: usize = 0;
+        while (from < cases.items.len) {
+            const to = @min(from + max_switch_cases, cases.items.len);
+            const cases_range = try l.b.addRange(cases.items[from..to]);
+            const cases_record = try l.b.addRecord(cases_range);
+            const discriminant = try l.fanDiscriminant(c, fan);
+            try out.append(l.scratch, try l.add(.switch_stmt, c.p, discriminant.int(), @intFromEnum(cases_record)));
+            from = to;
+        }
     }
 
     /// The conditional-expression form of a chain: `a ? b : c`, built from

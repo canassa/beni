@@ -26,10 +26,6 @@
 //! `pub` functions, each adding one method constraint to the scheme the one
 //! before it inferred.
 //!
-//! `--checker=v1|v2` picks the checker the `check` line measures (the hidden
-//! `--checker` flag's, `checker-v2.md` §18, R9): both on one binary, so a
-//! ratio compares checkers and not builds. Deleted at R12.
-//!
 //! `emit` is the back end's line (`backend.md` §13, target > 5 MB/s of
 //! JavaScript): `Bir` → `JsIr` → bytes for every module of a project that
 //! has already been checked, with `mb_per_s` measured over the JavaScript
@@ -64,7 +60,6 @@ const iface_bytes = beni.resolve.iface_bytes;
 const Ast = beni.Ast;
 const Arena = beni.Arena;
 const Session = beni.Session;
-const Checker = @FieldType(Session.Options, "checker");
 
 const Options = struct {
     corpus: []const u8 = "bench/corpus",
@@ -82,10 +77,6 @@ const Options = struct {
     dispatch: bool = false,
     iterations: u32 = 5,
     seed: u64 = gen.default_seed,
-    /// `--checker=v1|v2`: which checker the `check` measurement runs
-    /// (`checker-v2.md` §18, `plans/checker-rewrite.md` R9): v2 against v1 on
-    /// one binary; v2 by default since R11. Deleted at R12.
-    checker: Checker = .v2,
 };
 
 const generated_dir = ".zig-cache/bench-gen";
@@ -115,7 +106,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     const args = try init.minimal.args.toSlice(arena);
     const options = parseArgs(args[1..]) catch |err| {
-        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--dispatch] [--wide=<declarations>] [--pathological=<name>[=<n>]] [--iterations=<n>] [--seed=<n>] [--checker=v1|v2]\n", .{err});
+        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--dispatch] [--wide=<declarations>] [--pathological=<name>[=<n>]] [--iterations=<n>] [--seed=<n>]\n", .{err});
         return 2;
     };
 
@@ -179,7 +170,7 @@ pub fn main(init: std.process.Init) !u8 {
     const resolved = try measureResolve(gpa, io, corpus, options.iterations);
     try printResolveLine(stdout, resolved);
     total.ns += resolved.ns;
-    const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines, options.checker);
+    const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines);
     try printCheckLine(stdout, checked);
     total.ns += checked.ns;
     const emitted = try measureEmit(gpa, io, corpus, options.iterations);
@@ -295,8 +286,6 @@ fn parseArgs(args: []const [:0]const u8) !Options {
             if (options.iterations == 0) return error.ZeroIterations;
         } else if (std.mem.startsWith(u8, arg, "--seed=")) {
             options.seed = try std.fmt.parseInt(u64, arg["--seed=".len..], 0);
-        } else if (std.mem.startsWith(u8, arg, "--checker=")) {
-            options.checker = std.meta.stringToEnum(Checker, arg["--checker=".len..]) orelse return error.UnknownChecker;
         } else {
             return error.UnknownArgument;
         }
@@ -573,20 +562,10 @@ const CheckMeasurement = struct {
     unifications: u64 = 0,
     generalisations: u64 = 0,
     instantiations: u64 = 0,
-    obligations: u64 = 0,
-    /// `plans/static-dispatch-spike.md` §7 M1b. Zero until the checker
-    /// raises method constraints; on the line now so the baseline and the
-    /// measurement are the same fields.
-    constraints_created: u64 = 0,
-    constraints_merged: u64 = 0,
-    constraints_deferred: u64 = 0,
-    constraints_discharged: u64 = 0,
-    constraints_promoted: u64 = 0,
     /// The derived-context fixpoints v2 ran (`Contexts.run`, checker-v2.md
     /// §11.2), summed over the modules it CHECKED. A module installed from
     /// the cache runs none: its rows are read off its record (I10, §14.3 *as
-    /// built by R10*), which is what a warm run's 0 here says. v1 has no
-    /// fixpoint and reports 0.
+    /// built by R10*), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
     diagnostics: u64 = 0,
     /// The check step alone.
@@ -595,19 +574,19 @@ const CheckMeasurement = struct {
     total_ns: u64 = 0,
 };
 
-fn measureCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, resolve_total_ns: u64, lines: u64, checker: Checker) !CheckMeasurement {
+fn measureCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, resolve_total_ns: u64, lines: u64) !CheckMeasurement {
     var m: CheckMeasurement = .{ .lines = lines };
-    m.total_ns = try coldCheck(gpa, io, corpus, iterations, &m, checker);
+    m.total_ns = try coldCheck(gpa, io, corpus, iterations, &m);
     m.ns = m.total_ns -| resolve_total_ns;
     return m;
 }
 
-fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, counts: *CheckMeasurement, checker: Checker) !u64 {
+fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, counts: *CheckMeasurement) !u64 {
     var sink: Io.Writer.Discarding = .init(&.{});
     var best: u64 = std.math.maxInt(u64);
     var iteration: u32 = 0;
     while (iteration < iterations + 1) : (iteration += 1) {
-        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true, .checker = checker });
+        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
         defer session.deinit();
         const start = Io.Timestamp.now(io, .awake);
         _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch continue;
@@ -615,7 +594,7 @@ fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32
         if (iteration == 0) continue; // warm-up
         best = @min(best, ns);
         counts.modules = session.graph.count();
-        // By name: `CheckMeasurement` mirrors `Solve.Counters`, and a
+        // By name: `CheckMeasurement` mirrors `Check.Counters`, and a
         // counter added there but not copied here would print as zero.
         inline for (@typeInfo(@TypeOf(session.checked.counters)).@"struct".fields) |f| {
             @field(counts, f.name) = @field(session.checked.counters, f.name);

@@ -51,13 +51,10 @@
 //!
 //! The same walker runs `tests/pending/` (`plans/checker-rewrite.md` §2):
 //! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending` reports
-//! RED/GREEN per fixture instead of failing on it, `BENI_CHECKER` adds
-//! `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds each run. (Until
-//! the cut-over, R11, `zig build test-v2` ran the corpus strictly under
-//! `BENI_CHECKER=v2`, exempting `tests/pending/v2-expected.md`'s fixtures;
-//! v2 is the default now, so `test-blackbox` is that run.) Unset
-//! (or empty), each is today's strict corpus run; see `Config`, and
-//! `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
+//! RED/GREEN per fixture instead of failing on it, and `BENI_CASE_TIMEOUT_MS`
+//! bounds each run. (`BENI_CHECKER`, which added `--checker=<value>`, went
+//! with v1 at R12.) Unset (or empty), each is today's strict corpus run; see
+//! `Config`, and `tests/pending/README.md` for `.codes` and `RED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
 //! `test-blackbox` spreads the corpus over parallel processes.
 
@@ -375,16 +372,13 @@ fn walk(kind: Kind) !void {
 /// How this run of the walker behaves, read once per kind from the
 /// environment (`plans/checker-rewrite.md` §2.4). Every variable defaults to
 /// the corpus's own strict behaviour, and an EMPTY value counts as unset:
-/// `build.zig` pins all four on every run (the defaults for `test-blackbox`), so a
+/// `build.zig` pins them on every run (the defaults for `test-blackbox`), so a
 /// variable exported in a shell cannot change what a gate means (S11).
 const Config = struct {
     /// `BENI_CORPUS_ROOT`, default `tests/corpus`.
     root: []const u8,
     is_default_root: bool,
     mode: Mode,
-    /// `BENI_CHECKER`: when set, `--checker=<value>` rides on every `check`,
-    /// `build` and `dump` (the flag exists from slice R4).
-    checker: ?[]const u8,
     /// `BENI_CASE_TIMEOUT_MS`: the bound on one compiler run. Pending mode
     /// defaults to 20 s so a hang is a fast RED(timeout).
     timeout_ms: i64,
@@ -396,10 +390,8 @@ const Config = struct {
     /// runs, or null for every part. `test-blackbox` runs each part in its
     /// own process, in parallel.
     part: ?Part,
-    /// `tests/pending/CLAIMED` (§2.6): repo-relative paths, pending mode only.
-    claimed: []const []const u8,
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
-    /// each fixture under each checker, pending mode only.
+    /// each fixture, pending mode only.
     red: []const world.pending.RedLine,
 
     const Mode = enum {
@@ -407,7 +399,7 @@ const Config = struct {
         /// R11, `test-v2` exempted the fixtures of `v2-expected.md` here).
         strict,
         /// `pending`: every fixture is reported RED or GREEN, and the step
-        /// fails only for rules (a)–(d).
+        /// fails only for rules (a), (b) and (d).
         pending,
     };
 
@@ -448,24 +440,18 @@ const Config = struct {
             .part = part,
             .is_default_root = std.mem.eql(u8, std.mem.trimEnd(u8, root, "/"), default_root),
             .mode = mode,
-            .checker = envOr(arena, "BENI_CHECKER"),
             .timeout_ms = timeout_ms,
             .verbose = envOr(arena, "BENI_PENDING_VERBOSE") != null,
-            .claimed = &.{},
             .red = &.{},
         };
-        if (mode == .pending) {
-            cfg.claimed = try world.pending.readClaimed(arena, testing.io, cfg.root);
-            cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
-        }
+        if (mode == .pending) cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
         return cfg;
     }
 
-    /// The signature `RED` records for `repo_path` under the checker under
-    /// test, or null.
+    /// The signature `RED` records for `repo_path`, or null.
     fn redSignature(cfg: *const Config, repo_path: []const u8) ?[]const u8 {
         for (cfg.red) |line| {
-            if (std.mem.eql(u8, line.path, repo_path) and std.mem.eql(u8, line.checker, cfg.checkerName())) return line.signature;
+            if (std.mem.eql(u8, line.path, repo_path)) return line.signature;
         }
         return null;
     }
@@ -473,23 +459,6 @@ const Config = struct {
     /// Whether this process runs `part`.
     fn runs(cfg: *const Config, part: Part) bool {
         return cfg.part == null or cfg.part.? == part;
-    }
-
-    /// The label of the checker under test in a report line.
-    fn checkerName(cfg: *const Config) []const u8 {
-        return cfg.checker orelse "v2";
-    }
-
-    /// Whether the checker under test is the DEFAULT one, the checker the
-    /// three gates run. Rule (b) applies to it alone: since the cut-over
-    /// (R11) that is `v2`, reached by leaving `BENI_CHECKER` unset (v1 was the default until then).
-    fn isDefaultChecker(cfg: *const Config) bool {
-        return std.mem.eql(u8, cfg.checkerName(), "v2");
-    }
-
-    fn isClaimed(cfg: *const Config, repo_path: []const u8) bool {
-        for (cfg.claimed) |p| if (std.mem.eql(u8, p, repo_path)) return true;
-        return false;
     }
 };
 
@@ -744,73 +713,57 @@ const Case = struct {
 
     /// Pending mode's verdict on one fixture (`plans/checker-rewrite.md`
     /// §2.4): print RED or GREEN, and return false only when the fixture
-    /// breaks one of the three rules — (a) it is malformed, (b) it is GREEN
-    /// under the default checker and so must be promoted, (c) it is claimed
-    /// and RED under `v2`.
+    /// breaks a rule — (a) it is malformed, (b) it is GREEN and so must be
+    /// promoted, (d) it is red for another reason than `RED` records. (Rule
+    /// (c), a claimed fixture red under v2, went with v1 at R12.)
     fn pending(c: Case, path: []const u8) !bool {
         const rel = if (std.mem.startsWith(u8, path, c.cfg.root) and path.len > c.cfg.root.len)
             path[c.cfg.root.len + 1 ..]
         else
             path;
-        const checker = c.cfg.checkerName();
 
         // Rule (a): a finding named, and exactly the golden its kind needs.
         const ck = c.findingId() catch |err| {
-            std.debug.print("PENDING  MALFORMED  {s}  {s}: {t} — the first line of a pending fixture (or of the first `.beni` of a project) is `-- CK-NN: <what it proves>`\n", .{ checker, rel, err });
+            std.debug.print("PENDING  MALFORMED  {s}: {t} — the first line of a pending fixture (or of the first `.beni` of a project) is `-- CK-NN: <what it proves>`\n", .{ rel, err });
             return false;
         };
         if (c.malformedGolden()) |what| {
-            std.debug.print("PENDING  MALFORMED  {s}  {s}  {s}  {s}\n", .{ checker, ck, rel, what });
+            std.debug.print("PENDING  MALFORMED  {s}  {s}  {s}\n", .{ ck, rel, what });
             return false;
         }
         const repo_path = std.mem.trimEnd(u8, path, "/");
         // Rule (d)'s record: the signature `tests/pending/RED` holds for this
-        // fixture under THIS checker. Every checker is held to it: a fixture
-        // red under v2 needs a `v2` line as much as one red under v1 needs a
-        // `v1` line, so a v2 slice cannot drift a claimed-later fixture from
-        // "red for the bug" to "red for a typo" unseen either.
+        // fixture, so a slice cannot drift it from "red for the bug" to "red
+        // for a typo" unseen.
         const recorded = c.cfg.redSignature(repo_path);
 
         reason_len = 0;
         class_len = 0;
         const verdict: ?[]const u8 = if (c.run()) |_| null else |err| blk: {
             const signature = classFor(err);
-            std.debug.print("PENDING  RED    {s}  {s}  {s}  [{s}]  {s}\n", .{ checker, ck, rel, signature, reasonFor(err, c.cfg) });
+            std.debug.print("PENDING  RED    {s}  {s}  [{s}]  {s}\n", .{ ck, rel, signature, reasonFor(err, c.cfg) });
             break :blk signature;
         };
         const green = verdict == null;
-        if (green) std.debug.print("PENDING  GREEN  {s}  {s}  {s}\n", .{ checker, ck, rel });
+        if (green) std.debug.print("PENDING  GREEN  {s}  {s}\n", .{ ck, rel });
 
-        // Rule (c): a claim is a promise that v2 keeps it green.
-        if (!green and std.mem.eql(u8, checker, "v2") and c.cfg.isClaimed(repo_path)) {
-            std.debug.print("PENDING  RULE (c)  {s}  {s} is listed in CLAIMED and is RED under v2\n", .{ ck, rel });
-            return false;
-        }
         // Rule (a), the record half: red with no `RED` line at all.
         if (verdict) |signature| if (recorded == null) {
-            std.debug.print("PENDING  MALFORMED  {s}  {s}  {s}  no line in {s}/RED: add `{s} {s} {s}` once the reason is checked against the finding (tests/pending/README.md)\n", .{ checker, ck, rel, c.cfg.root, repo_path, checker, signature });
+            std.debug.print("PENDING  MALFORMED  {s}  {s}  no line in {s}/RED: add `{s} {s}` once the reason is checked against the finding (tests/pending/README.md)\n", .{ ck, rel, c.cfg.root, repo_path, signature });
             return false;
         };
         // Rule (d): red, but not for the recorded reason — a defect of the
         // fixture or a change in the bug. Either way `RED` is updated
         // deliberately, in the same commit, and never silently.
         if (verdict) |signature| if (!std.mem.eql(u8, signature, recorded.?)) {
-            std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ checker, ck, rel, signature, c.cfg.root, recorded.? });
+            std.debug.print("PENDING  RULE (d)  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ ck, rel, signature, c.cfg.root, recorded.? });
             return false;
         };
-        // Green under a checker whose `RED` line still says why it is red:
-        // the line is stale. (Under the default checker rule (b) below says
-        // the same thing more loudly.)
-        if (green and recorded != null and !c.cfg.isDefaultChecker()) {
-            std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is GREEN, and {s}/RED still records [{s}]: delete the `{s}` line\n", .{ checker, ck, rel, c.cfg.root, recorded.?, checker });
-            return false;
-        }
-
         // Rule (b): fixed on the checker the gates run, so it belongs in the
         // corpus now, where the gates keep it fixed.
-        if (green and c.cfg.isDefaultChecker()) {
+        if (green) {
             std.debug.print(
-                "PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: promote it now — `git mv {s} {s}/{s}` (with its goldens), and bless a `.diag` for any `.codes` (plans/checker-rewrite.md §2.6)\n",
+                "PENDING  RULE (b)  {s}  {s} is GREEN: promote it now — `git mv {s} {s}/{s}` (with its goldens), and bless a `.diag` for any `.codes` (plans/checker-rewrite.md §2.6)\n",
                 .{ ck, rel, path, default_root, rel },
             );
             return false;
@@ -943,15 +896,6 @@ const Case = struct {
         if (c.fixture.core) try list.append(c.arena, "--core");
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
             try list.append(c.arena, "--no-cache");
-        }
-        // `BENI_CHECKER` (`plans/checker-rewrite.md` §2.4): the checker under
-        // test, on the three commands that run one. `fmt` checks nothing.
-        if (c.cfg.checker) |checker| {
-            if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build") or
-                std.mem.eql(u8, args[0], "dump")))
-            {
-                try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--checker={s}", .{checker}));
-            }
         }
         return list.items;
     }

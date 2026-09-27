@@ -59,8 +59,7 @@ const Graph = @import("resolve/Graph.zig");
 const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
-const Check = @import("check2/Check.zig");
-const Solve = @import("check/Solve.zig");
+const Check = @import("check/Check.zig");
 const Key = @import("cache/Key.zig");
 const FileKey = @import("cache/FileKey.zig");
 const CacheDir = @import("cache/Dir.zig");
@@ -222,9 +221,6 @@ pub const Options = struct {
     /// per-file phase ends — before `Resolve`, before the graph, before
     /// anything downstream reads them.
     roundtrip_frontend: bool = false,
-    /// `--checker=v1|v2` (`Cli.Common.checker`, checker-v2.md §22.1): which
-    /// checker checks the modules; v2 since the cut-over (R11). A cache-key term (§14.3).
-    checker: Check.Checker = .v2,
     /// `--frontend-keys` (`Cli.Cache`, `frontend.md` §1): make `check` print
     /// one `<path> <32 hex digits>` line per file on stdout, sorted by path.
     frontend_keys: bool = false,
@@ -1432,10 +1428,10 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(.cache_misses, misses);
         session.profile.addCounter(.modules_checked, n - hits);
     }
-    // By name, so a counter added to `Solve.Counters` without a matching
+    // By name, so a counter added to `Check.Counters` without a matching
     // `Profile.Counter` is a compile error rather than a number that never
     // reaches the trace.
-    inline for (@typeInfo(Solve.Counters).@"struct".fields) |f| {
+    inline for (@typeInfo(Check.Counters).@"struct".fields) |f| {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
@@ -1595,7 +1591,6 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.interner,
         .{
             .build_id = compilerBuildId(session.options.cache_build_id),
-            .checker = @tagName(session.options.checker),
             .informational = session.options.informational,
             .pattern_budget = session.options.pattern_budget,
             .lower_core = lower_core,
@@ -1666,7 +1661,6 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
                     .cached = r.cached,
                     .cutoff = r.cutoff,
-                    .checker = r.session.options.checker,
                 },
             );
         }

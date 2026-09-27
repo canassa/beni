@@ -4,12 +4,10 @@
 //!
 //! ```
 //! "BENIKEY\x00"           8       magic
-//! key_version: u32                4 — `v2` checks core (3: the checker id; 2: the cutoff)
-//! build_id: [16]u8                the compiler build id (`src/build_id.zig`)
-//! checker_len: u32, checker       `v1` or `v2`: the checker that checks every
-//!                                 package (`--checker`, checker-v2.md
-//!                                 §14.3, S22); with the build id, the
-//!                                 compiler-identity component. R12 removes it
+//! key_version: u32                5 — no checker id (4: `v2` checks core;
+//!                                 3: the checker id; 2: the cutoff)
+//! build_id: [16]u8                the compiler build id (`src/build_id.zig`),
+//!                                 the compiler-identity component
 //! package: u8                     SourceStore.Package — app, core or platform
 //! name_len: u32, name             the DOTTED module name ("Json.Decode"), UTF-8
 //! options_len: u32, options       the canonical option string, below
@@ -60,7 +58,7 @@
 //! that an edit to core no module can observe re-checks nothing outside core.
 //!
 //! **Keys are finished ON THE DAG**, by the worker that claimed the module
-//! (`check2/Incremental.zig`'s `claim`): an import's pair exists only once that import has
+//! (`check/Incremental.zig`'s `claim`): an import's pair exists only once that import has
 //! been checked or loaded. What is still serial here is the part with no import
 //! term — `writeOwn`'s middle — and the propagation of uncacheability.
 //!
@@ -97,7 +95,11 @@ pub const magic = "BENIKEY\x00";
 /// checks every package", and a `--cache-build-id` pins the build id across
 /// that change — so a `core` entry v1 wrote under `v2` must not be read by a
 /// v2 that checks `core`.
-pub const key_version: u32 = 4;
+/// **5 since R12**: v1 and `--checker` are deleted, and the checker id with
+/// them (`checker-v2.md` §14.3). The build id alone is the compiler identity
+/// again; the bump keeps a key without the term from ever equalling one
+/// written with it.
+pub const key_version: u32 = 5;
 
 /// The recipe M4-1 and M4-2 used: an import contributes its own KEY, and the
 /// core term is `core_epoch` over core's keys. **Nothing is stored under it.**
@@ -132,8 +134,6 @@ pub const Import = struct {
 /// Everything the recipe reads about one module.
 pub const Terms = struct {
     build_id: [16]u8,
-    /// `v1` or `v2` (`--checker`): with `build_id`, the compiler identity.
-    checker: []const u8,
     package: SourceStore.Package,
     name: []const u8,
     options: []const u8,
@@ -155,7 +155,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
     try writeRest(gpa, out, t.core_epoch, t.imports);
 }
 
-/// The middle with NO import term: build id, checker id, package, name, option string,
+/// The middle with NO import term: build id, package, name, option string,
 /// source hash, sibling hash.
 ///
 /// **It is a slice of the byte string and not a hash of one**, which is the
@@ -169,8 +169,6 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
 /// computes both recipes from one blob, and the two differ in their version.
 pub fn writeOwn(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
     try out.appendSlice(gpa, &t.build_id);
-    try appendInt(gpa, out, u32, @intCast(t.checker.len));
-    try out.appendSlice(gpa, t.checker);
     try out.append(gpa, @intFromEnum(t.package));
     try appendInt(gpa, out, u32, @intCast(t.name.len));
     try out.appendSlice(gpa, t.name);
@@ -423,8 +421,6 @@ pub const Asset = struct { path: []const u8, bytes: []const u8 };
 
 pub const Options = struct {
     build_id: [16]u8,
-    /// The checker id, `v1` or `v2` (`Terms.checker`).
-    checker: []const u8,
     informational: bool,
     pattern_budget: u32,
     /// Per FILE index: `Lower.Options`' two bits as that file's lowering
@@ -445,7 +441,7 @@ pub const Options = struct {
 /// **No key is finished here any more.** From M4-3 an import contributes its
 /// `(interface hash, dependency digest)` pair, which exists only once that
 /// import has been CHECKED or LOADED, so every key is finished on the DAG by
-/// the worker that claimed the module (`check2/Incremental.zig`'s `claim`). What stays is
+/// the worker that claimed the module (`check/Incremental.zig`'s `claim`). What stays is
 /// what this pass was always the expensive part of: reading and hashing every
 /// source and every sibling `.js`, and propagating uncacheability along the
 /// import edges, which needs no key at all.
@@ -532,7 +528,6 @@ fn ownTermsOf(
     errdefer bytes.deinit(gpa);
     try writeOwn(gpa, &bytes, .{
         .build_id = options.build_id,
-        .checker = options.checker,
         .package = module.package,
         .name = interner.slice(module.name),
         .options = option_string,
@@ -622,7 +617,6 @@ fn expectDifferentKeys(a: Terms, b: Terms) !void {
 fn sampleTerms() Terms {
     return .{
         .build_id = sample_build_id,
-        .checker = "v1",
         .package = .app,
         .name = "Mid",
         .options = "core=0;platform=0;informational=1;pattern_budget=1000000",
@@ -664,10 +658,6 @@ test "the key's byte string is the recipe, field by field" {
     at += 4;
     try testing.expectEqualSlices(u8, &sample_build_id, bytes.items[at..][0..16]);
     at += 16;
-    try testing.expectEqual(@as(u32, 2), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
-    at += 4;
-    try testing.expectEqualStrings("v1", bytes.items[at..][0..2]);
-    at += 2;
     try testing.expectEqual(@as(u8, @intFromEnum(SourceStore.Package.app)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u32, 3), std.mem.readInt(u32, bytes.items[at..][0..4], .little));
@@ -706,13 +696,6 @@ test "every term of the recipe moves the key" {
     {
         var t = sampleTerms();
         t.build_id = @splat(0);
-        try expectDifferentKeys(sampleTerms(), t);
-    }
-    {
-        // The checker id (checker-v2.md §14.3, S22): a v1-written entry is
-        // never read by a v2 build, nor the reverse.
-        var t = sampleTerms();
-        t.checker = "v2";
         try expectDifferentKeys(sampleTerms(), t);
     }
     {

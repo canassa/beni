@@ -380,6 +380,14 @@ holds a slice into the source; strings and identifiers are `Symbol`s.
 Lowering is one pass over the AST with an explicit scope stack (a flat array of `(symbol,
 local_index)` pairs with per-scope marks; lookups scan backwards — scopes are small and this
 beats a hash map on every measurement Zig and Roc made).
+*Amended by R12 (2026-09-27, CK-95, CK-127):* a `let` binds all its names before any body is
+lowered, so a block of n bindings made every lookup and every shadowing check a scan of n, and
+lowering it quadratic (0.45 s at 20 000 chained bindings, ReleaseFast; 1.9 s at 40 000). Past 64
+entries the stack is indexed by name (`Lower.scope_index`, each entry chained to the one of its
+name it shadows) until it shrinks back to 32; below that it is still scanned. §7's initialisation
+check reads each binding's own edges and resets only what it set, and a `let_def`'s local is
+recorded where phase 1 binds it. The Bir is byte-identical; `perf_test.zig`'s CK-95 holds it
+linear.
 
 **Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
 `method_call` and `type_dispatch` join the tag set; a declaration stores its `where` clause as a

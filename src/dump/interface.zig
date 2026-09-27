@@ -406,7 +406,6 @@ fn writeSchemeIndexMaybeExpanded(
         @intFromEnum(index),
         TypeStore.generalized,
         arena.allocator(),
-        null,
     );
     if (expand_outer_alias) {
         const root = store.find(v);

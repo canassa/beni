@@ -989,7 +989,8 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 > method (§11.2, D3 as amended in §21.1).
 > The row above was amended by slice R7 (2026-09-26); the code is never removed from this catalogue.
 > **Superseded** for the ordering case since the cut-over (`../../plans/checker-rewrite.md` R11,
-> 2026-09-27): v2 is the default checker, and v1's refusal survives only under `--checker=v1` until R12.
+> 2026-09-27): v2 is the default checker, and v1's refusal survived only under `--checker=v1` until R12
+> deleted both (2026-09-27).
 
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into

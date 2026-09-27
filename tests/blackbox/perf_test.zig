@@ -77,12 +77,12 @@ fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
 // row on it, at each attach and each merge with a fresh variable: O(rows²)
 // (8 000 `${p}` took 31 s under `--checker=v2` against v1's 0.15 s). Checker
 // v2 only (v1 has no rows). Calibration: see R5's *As built*.
-test "CK-96: obligation rows on one variable cost linear time (checker v2)" {
+test "CK-96: obligation rows on one variable cost linear time" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("R.beni", try rowsOnOne(s.arena(), 2_000));
     try s.w.write("R2.beni", try rowsOnOne(s.arena(), 4_000));
-    const verdict = try s.ratioWith("R.beni", "R2.beni", 2_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("R.beni", "R2.beni", 2_000, &.{});
     try s.finish("CK-96", verdict);
 }
 
@@ -104,12 +104,12 @@ fn rowsOnOne(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // merges a set of i rows into one of 1, n times; R5 as first built copied
 // both sets and re-lowered every row of the survivor at every merge,
 // O(rows × merges). Checker v2 only.
-test "CK-97: merging variables that carry obligation rows is linear (checker v2)" {
+test "CK-97: merging variables that carry obligation rows is linear" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("M.beni", try mergeChain(s.arena(), 2_000));
     try s.w.write("M2.beni", try mergeChain(s.arena(), 4_000));
-    const verdict = try s.ratioWith("M.beni", "M2.beni", 2_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("M.beni", "M2.beni", 2_000, &.{});
     try s.finish("CK-97", verdict);
 }
 
@@ -131,12 +131,12 @@ fn mergeChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // declaration of n `let` bindings each holding an undecided `u?` cost
 // O(n²). Step 3 now reads the frame's own list, and a row that escaped moves
 // down once. Checker v2 only.
-test "CK-98: the `?` default step is linear in the open `?`s and the boundaries (checker v2)" {
+test "CK-98: the `?` default step is linear in the open `?`s and the boundaries" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("D.beni", try openTries(s.arena(), 1_500));
     try s.w.write("D2.beni", try openTries(s.arena(), 3_000));
-    const verdict = try s.ratioWith("D.beni", "D2.beni", 1_500, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("D.beni", "D2.beni", 1_500, &.{});
     try s.finish("CK-98", verdict);
 }
 
@@ -160,7 +160,7 @@ fn openTries(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // the cycle (checker-v2.md §9.5), so it is ONE `infinite_type` at the `==`
 // and the check ends: under 10 ms (ReleaseFast, CPU) on R6a, where v1 never
 // finishes. The bound is `pending_test.zig`'s, 500 ms.
-test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms (checker v2)" {
+test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("Cyclic.beni",
@@ -173,7 +173,7 @@ test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms (c
         \\    z
         \\
     );
-    const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", "Cyclic.beni" }, 500, "infinite_type");
+    const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Cyclic.beni" }, 500, "infinite_type");
     try s.finish("CK-03", verdict);
 }
 
@@ -186,13 +186,13 @@ test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms (c
 // (ReleaseFast, CPU, R6a): the module's `check` event is 34 / 69 / 136 ms at
 // 8 000 / 16 000 / 32 000 declarations, and the control 23 / 46 / 93 ms, so n
 // = 8 000 keeps the fixed build clear of start-up.
-test "CK-42: nominal dispatch is linear in the number of declarations (checker v2)" {
+test "CK-42: nominal dispatch is linear in the number of declarations" {
     var s = try Perf.init();
     defer s.deinit();
     const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
     try s.w.write("E.beni", try generate(s.arena(), 8_000, nominal, 6));
     try s.w.write("E2.beni", try generate(s.arena(), 16_000, nominal, 6));
-    const verdict = try s.ratioWith("E.beni", "E2.beni", 8_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("E.beni", "E2.beni", 8_000, &.{});
     try s.finish("CK-42", verdict);
 }
 
@@ -205,12 +205,12 @@ test "CK-42: nominal dispatch is linear in the number of declarations (checker v
 // since (`Solve.settleSchemas`) — never after each group — so a module that
 // compares nothing settles twice in all. On R8a (ReleaseFast, CPU) 300 / 600
 // schemas take 13 / 25 ms (ratio 1.9), where v1 takes 295 ms and over 737.
-test "CK-40: schema property settling is linear in the number of schemas (checker v2)" {
+test "CK-40: schema property settling is linear in the number of schemas" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("S.beni", try generate(s.arena(), 300, "pub schema S{d} = Int\n\n\n", 1));
     try s.w.write("S2.beni", try generate(s.arena(), 600, "pub schema S{d} = Int\n\n\n", 1));
-    const verdict = try s.ratioWith("S.beni", "S2.beni", 300, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("S.beni", "S2.beni", 300, &.{});
     try s.finish("CK-40", verdict);
 }
 
@@ -224,13 +224,13 @@ test "CK-40: schema property settling is linear in the number of schemas (checke
 // `solve` and `constrain` 8 / 15 ms each — all linear — and `dep_digest` is
 // too small to show, so none of CK-75 is R10's. A cache directory shows
 // `cache_store` at 20 / 73 ms, super-linear: CK-107, a new finding (R10).
-test "CK-75: checking is linear in the number of declarations (checker v2)" {
+test "CK-75: checking is linear in the number of declarations" {
     var s = try Perf.init();
     defer s.deinit();
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 6_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 12_000, control, 4));
-    const verdict = try s.ratioWith("X.beni", "X2.beni", 6_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("X.beni", "X2.beni", 6_000, &.{});
     try s.finish("CK-75", verdict);
 }
 
@@ -243,17 +243,13 @@ test "CK-75: checking is linear in the number of declarations (checker v2)" {
 // event. Calibration (ReleaseFast, wall time of the event, R10): before, 20 /
 // 72 ms at 6 000 / 12 000 under both checkers (ratio 3.6); after, 4.4 / 8.1
 // ms (1.8). n = 12 000, so the event is long enough to time.
-test "CK-107: writing a module's cache entry is linear in its types (both checkers)" {
+test "CK-107: writing a module's cache entry is linear in its types" {
     var s = try Perf.init();
     defer s.deinit();
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 12_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 24_000, control, 4));
-    const v1 = try s.storeRatio("X.beni", "X2.beni", 12_000, "--checker=v1");
-    const v2 = try s.storeRatio("X.beni", "X2.beni", 12_000, "--checker=v2");
-    std.debug.print("PERF  {s}  CK-107  v1 {s}\n", .{ if (v1.green) "GREEN" else "RED  ", v1.detail });
-    try s.finish("CK-107", v2);
-    if (!v1.green) return error.PerfRegression;
+    try s.finish("CK-107", try s.storeRatio("X.beni", "X2.beni", 12_000));
 }
 
 // CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n
@@ -262,12 +258,12 @@ test "CK-107: writing a module's cache entry is linear in its types (both checke
 // a receiver already given a DERIVED answer for the same method is an alias
 // of it (checker-v2.md §9, *As built by R6a* as revised by its review). Calibration (ReleaseFast,
 // CPU, R6a): depth 9 / 18 / 36 / 72 all under 10 ms; v1 takes 190 ms at 18.
-test "CK-80: == on a value whose type is a doubling DAG is linear in its depth (checker v2)" {
+test "CK-80: == on a value whose type is a doubling DAG is linear in its depth" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("N9.beni", try nestedPair(s.arena(), 9));
     try s.w.write("N18.beni", try nestedPair(s.arena(), 18));
-    const verdict = try s.ratioWith("N9.beni", "N18.beni", 9, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("N9.beni", "N18.beni", 9, &.{});
     try s.finish("CK-80", verdict);
 }
 
@@ -280,13 +276,13 @@ test "CK-80: == on a value whose type is a doubling DAG is linear in its depth (
 // depth 12 and 144 MB at 20 (×4 every two levels). Calibration
 // (ReleaseFast, CPU, R6b's review): depth 9 / 18 build in 6 / 11 ms; with the
 // binding off, 8 / 873 ms (ratio 109).
-test "CK-80: building == on a value whose type is a doubling DAG is linear in its depth (checker v2)" {
+test "CK-80: building == on a value whose type is a doubling DAG is linear in its depth" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("N9.beni", try nestedPairApp(s.arena(), 9));
     try s.w.write("N18.beni", try nestedPairApp(s.arena(), 18));
     const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out" };
-    const verdict = try s.ratioOf(build, "N9.beni", "N18.beni", 9, &.{"--checker=v2"});
+    const verdict = try s.ratioOf(build, "N9.beni", "N18.beni", 9, &.{});
     try s.finish("CK-80 build", verdict);
 }
 
@@ -297,7 +293,7 @@ test "CK-80: building == on a value whose type is a doubling DAG is linear in it
 // the cost is the distinct pairs (checker-v2.md §9 *As built by R6a*, §18).
 // v1 recurses once per boundary with fresh marks and does not finish at depth
 // 9. Calibration (ReleaseFast, CPU, R6a's review): depth 9 / 18, 6 / 6 ms.
-test "CK-101: == across alternating method boundaries on a doubling DAG is linear in its depth (checker v2)" {
+test "CK-101: == across alternating method boundaries on a doubling DAG is linear in its depth" {
     var s = try Perf.init();
     defer s.deinit();
     for ([_][]const u8{ "A9", "A18" }) |dir| {
@@ -306,7 +302,7 @@ test "CK-101: == across alternating method boundaries on a doubling DAG is linea
     }
     try s.w.write("A9/Main.beni", try alternatingDag(s.arena(), 9));
     try s.w.write("A18/Main.beni", try alternatingDag(s.arena(), 18));
-    const verdict = try s.ratioWith("A9", "A18", 9, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("A9", "A18", 9, &.{});
     try s.finish("CK-101", verdict);
 }
 
@@ -432,8 +428,7 @@ const Perf = struct {
         return s.ratioWith(small, large, n, &.{});
     }
 
-    /// `ratio` with extra flags on every run (`--checker=v2` for a v2-only
-    /// scenario).
+    /// `ratio` with extra flags on every run.
     fn ratioWith(s: *Perf, small: []const u8, large: []const u8, n: usize, extra: []const []const u8) !Verdict {
         return s.ratioOf(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" }, small, large, n, extra);
     }
@@ -538,7 +533,7 @@ const Perf = struct {
     /// into a FRESH cache directory every run, so every run writes the
     /// module's entry. The event is the whole serial store pass, not one
     /// file's. Each point the best of 3, wall time of the event.
-    fn storeRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, checker: []const u8) !Verdict {
+    fn storeRatio(s: *Perf, small: []const u8, large: []const u8, n: usize) !Verdict {
         var ms: [2]f64 = undefined;
         var fresh: usize = 0;
         for ([_][]const u8{ small, large }, &ms) |file, *slot| {
@@ -546,7 +541,7 @@ const Perf = struct {
             for (0..3) |_| {
                 fresh += 1;
                 const dir = try std.fmt.allocPrint(s.arena(), "--cache-dir=store-{d}", .{fresh});
-                const args = [_][]const u8{ "check", dir, "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", checker, file };
+                const args = [_][]const u8{ "check", dir, "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", file };
                 const run = try s.timed(&args, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
                 try expectClean(run.result);
                 const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0 };
@@ -564,28 +559,29 @@ const Perf = struct {
         const r = ms[1] / @max(ms[0], 0.001);
         return .{
             .green = r <= 2.5,
-            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `cache_store` event, {s}", .{ n, ms[0], ms[1], r, checker }),
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `cache_store` event", .{ n, ms[0], ms[1], r }),
         };
     }
 
-    /// The file's own `check` event under `--checker=v2` over the same under
-    /// `--checker=v1` (CK-131): not a ratio of sizes but of checkers, on one
-    /// binary, so a constant factor v2 adds per use is what it sees. Each
-    /// checker the best of `runs`, interleaved (a loaded machine only adds
-    /// time, and to both alike); green when v2 ≤ `bound_pct` % of v1.
-    fn checkerRatio(s: *Perf, file: []const u8, runs: usize, bound_pct: u64) !Verdict {
+    /// The file's own `check` event over its CONTROL's, the same number of
+    /// declarations each doing the cheapest form of the same work (CK-131,
+    /// converted by R12): not a ratio of sizes, so a constant factor added
+    /// per use is what it sees. Each file the best of `runs`, interleaved (a
+    /// loaded machine only adds time, and to both alike); green when the
+    /// file costs ≤ `bound_pct` % of its control.
+    fn controlRatio(s: *Perf, file: []const u8, control: []const u8, runs: usize, bound_pct: u64) !Verdict {
         var best = [2]f64{ std.math.inf(f64), std.math.inf(f64) };
         for (0..runs) |_| {
-            for ([_][]const u8{ "--checker=v1", "--checker=v2" }, &best) |checker, *slot| {
-                const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", checker, file }, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+            for ([_][]const u8{ control, file }, &best) |one, *slot| {
+                const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", one }, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
                 try expectClean(run.result);
-                slot.* = @min(slot.*, try fileEvent(s, "trace.json", "check", file));
+                slot.* = @min(slot.*, try fileEvent(s, "trace.json", "check", one));
             }
         }
         const pct: u64 = @intFromFloat(@round(best[1] * 100.0 / @max(best[0], 0.001)));
         return .{
             .green = pct <= bound_pct,
-            .detail = try std.fmt.allocPrint(s.arena(), "{s}: v1 {d:.1} ms, v2 {d:.1} ms ({d} % of v1, bound {d} %), `check` event, best of {d}", .{ file, best[0], best[1], pct, bound_pct, runs }),
+            .detail = try std.fmt.allocPrint(s.arena(), "{s} {d:.1} ms, {s} {d:.1} ms ({d} % of it, bound {d} %), `check` event, best of {d}", .{ file, best[1], control, best[0], pct, bound_pct, runs }),
         };
     }
 
@@ -624,19 +620,23 @@ const Perf = struct {
 // declaration before. The fixes (§18 *as measured by R9b*) answer a table
 // primitive whose method type already has the table's shape directly, take a
 // plain imported method's requirements without instantiating it, and keep
-// the derivability of a ground shape by its structure. Not a size ratio: a
-// constant factor is what it was, so the scenario is v2 against v1 on one
-// binary. `s_int6000` (`a < b`) is its control. The budget is 1.10× on
-// medians (§18); the bound here, 1.25× on the best of 5, leaves room for a
-// busy machine and still fails the 1.6× this was.
-test "CK-131: a derived comparison per declaration checks within 1.25× v1 (checker v2)" {
+// the derivability of a ground shape by its structure.
+//
+// Until R12 the scenario was v2 against v1 on one binary (≤ 1.25× v1, best
+// of 5). v1 is gone, so it is converted to the same program against its
+// control, `s_int6000` (`a < b`), on one checker: a constant factor per
+// derived position is still exactly what it sees. Calibration (R12,
+// ReleaseFast, this scenario on an idle machine, three rounds): 919f8be
+// (R9, the defect, `--checker=v2`) 287 / 292 / 299 %; R12 217 / 213 / 224 %;
+// v1 (7427828, and R9's default) 178–190 %. The bound, 250 %, is v1's ratio
+// with §18's 1.25 of room over it, near enough, about 12 % over R12 and 12 %
+// under R9.
+test "CK-131: a derived comparison per declaration checks within 2.5× its a < b control" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("Tup.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    ( a, [ b ] ) < ( b, [ a ] )\n\n\n", 2));
     try s.w.write("IntLt.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    a < b\n\n\n", 2));
-    const tuple = try s.checkerRatio("Tup.beni", 5, 125);
-    const control = try s.checkerRatio("IntLt.beni", 5, 125);
-    try s.finish("CK-131", .{ .green = tuple.green and control.green, .detail = try std.fmt.allocPrint(s.arena(), "{s}; {s}", .{ tuple.detail, control.detail }) });
+    try s.finish("CK-131", try s.controlRatio("Tup.beni", "IntLt.beni", 5, 250));
 }
 
 /// `nestedPair` as a program: `main` prints whether `v` holds.
@@ -662,12 +662,12 @@ fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
 // mentions as edges before the unit runs, the ring is one unit, and it is
 // one joint fixpoint (checker-v2.md §11.5 *as amended by R8b's review*).
 // Calibration (ReleaseFast, CPU): see the scenario's detail line.
-test "CK-119: a ring of types closed through a `via` is one joint fixpoint, in linear time (checker v2)" {
+test "CK-119: a ring of types closed through a `via` is one joint fixpoint, in linear time" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("V.beni", try viaRing(s.arena(), 4_000));
     try s.w.write("V2.beni", try viaRing(s.arena(), 8_000));
-    const verdict = try s.ratioWith("V.beni", "V2.beni", 4_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("V.beni", "V2.beni", 4_000, &.{});
     try s.finish("CK-119", verdict);
 }
 
@@ -697,13 +697,13 @@ fn viaRing(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // `nesting_too_deep` too; with `h` first both checked. Now a run has a
 // budget of its own and a budget run out is never memoised
 // (checker-v2.md §11.5 *as amended by R8b's review rounds*).
-test "CK-125: a derived context's step budget is its own, in either declaration order (checker v2)" {
+test "CK-125: a derived context's step budget is its own, in either declaration order" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("G.beni", try budgetOrders(s.arena(), true));
     try s.w.write("H.beni", try budgetOrders(s.arena(), false));
     for ([_][]const u8{ "G.beni", "H.beni" }) |file| {
-        const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
+        const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
         try Perf.expectClean(run.result);
         try testing.expectEqualStrings("", std.mem.trim(u8, run.result.stderr, " \r\n"));
     }
@@ -743,7 +743,7 @@ fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
 // types not yet completed and merges units locally, so each type and each
 // `via` target is read once (checker-v2.md §11.5 *as amended by R8b's review
 // rounds*). The frontend's own cost at this size is CK-124's.
-test "CK-119: many schemas with `via`s, each compared, cost linear time (checker v2)" {
+test "CK-119: many schemas with `via`s, each compared, cost linear time" {
     var s = try Perf.init();
     defer s.deinit();
     const head = "import Schema exposing (Conversion)\n\n\n";
@@ -757,7 +757,7 @@ test "CK-119: many schemas with `via`s, each compared, cost linear time (checker
     for ([_][]const u8{ "M.beni", "X.beni", "M2.beni", "X2.beni" }, &ms) |file, *slot| {
         var best: i64 = std.math.maxInt(i64);
         for (0..3) |_| {
-            const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
+            const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
             try Perf.expectClean(run.result);
             best = @min(best, run.ms);
         }
@@ -784,12 +784,12 @@ test "CK-119: many schemas with `via`s, each compared, cost linear time (checker
 // 64 uses): `b64342b`+CK-122 takes 9.6 s at d = 1 000 and 40 s at 2 000, a
 // ratio of 4.2; R8c 0.25 / 0.52 s, 2.1. d stays under 2 100, where the
 // unfixed build refused the literal (CK-114, which the abuse test holds).
-test "CK-111: derived == on a deeply nested record is linear per use (checker v2)" {
+test "CK-111: derived == on a deeply nested record is linear per use" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("R.beni", try nestedRecord(s.arena(), 1_000, 64));
     try s.w.write("R2.beni", try nestedRecord(s.arena(), 2_000, 64));
-    const verdict = try s.ratioWith("R.beni", "R2.beni", 1_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("R.beni", "R2.beni", 1_000, &.{});
     try s.finish("CK-111", verdict);
 }
 
@@ -815,12 +815,12 @@ fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8
 // and is frozen; the scenario is v2's. Calibration (ReleaseFast, CPU):
 // `b64342b`+CK-122 takes 0.21 s at 16 000 and 0.8 s at 32 000; R8c 40 / 70
 // ms.
-test "CK-112: a type of n parameters costs linear time (checker v2)" {
+test "CK-112: a type of n parameters costs linear time" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("W.beni", try manyParams(s.arena(), 16_000));
     try s.w.write("W2.beni", try manyParams(s.arena(), 32_000));
-    const verdict = try s.ratioWith("W.beni", "W2.beni", 16_000, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("W.beni", "W2.beni", 16_000, &.{});
     try s.finish("CK-112", verdict);
 }
 
@@ -848,12 +848,12 @@ fn manyParams(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // scope scan per name), which is the frontend's (CK-127), not this finding.
 // Calibration (ReleaseFast, the event's wall time at --jobs=1): R8c's parent
 // takes 635 / 2 520 ms at N = 8 000 / 16 000 (4.0); R8c 9 / 15 ms (1.7).
-test "CK-93: a let chain whose types grow is linear to check (checker v2)" {
+test "CK-93: a let chain whose types grow is linear to check" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("L.beni", try letChain(s.arena(), 8_000));
     try s.w.write("L2.beni", try letChain(s.arena(), 16_000));
-    const verdict = try s.eventRatio("L.beni", "L2.beni", 8_000, "check", &.{"--checker=v2"});
+    const verdict = try s.eventRatio("L.beni", "L2.beni", 8_000, "check", &.{});
     try s.finish("CK-93", verdict);
 }
 
@@ -875,12 +875,12 @@ fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
 // frame walk per nesting — reads as 4. Calibration (ReleaseFast, CPU): v2 on
 // R7 77 / 151 ms, a ratio of 1.96; v1 refused every link above its
 // definition (METHOD NEEDS AN ANNOTATION), red by its codes, not by time.
-test "NEST-UNDER: a reverse-ordered chain of own methods checks in linear time (checker v2)" {
+test "NEST-UNDER: a reverse-ordered chain of own methods checks in linear time" {
     var s = try Perf.init();
     defer s.deinit();
     try s.w.write("C.beni", try chains(s.arena(), 40, 250));
     try s.w.write("C2.beni", try chains(s.arena(), 40, 500));
-    const verdict = try s.ratioWith("C.beni", "C2.beni", 250, &.{"--checker=v2"});
+    const verdict = try s.ratioWith("C.beni", "C2.beni", 250, &.{});
     try s.finish("NEST-UNDER", verdict);
 }
 
@@ -895,4 +895,59 @@ fn chains(arena: std.mem.Allocator, count: usize, n: usize) ![]const u8 {
         try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    x\n\n\n", .{ c, n, c });
     }
     return out.items;
+}
+
+// CK-88 (found by R2c, 2026-09-25), fixed and promoted from
+// `pending_test.zig` by R12: one `case` of n integer literal branches was
+// emitted in time quadratic in n — `check` took 18 ms at 10 000 branches and
+// `build` 2.2 s, 8.6 s at 20 000 (ReleaseFast), all of it in the emit phase,
+// because `js/Decision.zig` compared every row with every other three times
+// over (the key set, the column choice's distinct count, the
+// specialisation). It groups rows by head in one pass now. Moved verbatim
+// (§2.5): n = 3 000 / 6 000, R2c's calibration. Measured on R12
+// (ReleaseFast, CPU): 190 / 800 ms before the fix (ratio 4.2), and after it
+// both points are the process floor; 20 000 branches build in 0.04 s where
+// they took 8.9. The shape half, the `switch` SpiderMonkey refused past
+// 65 046 labels, is `abuse_wide_test.zig`'s.
+test "CK-88: a case of n literal branches builds in time linear in n" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("C.beni", try bigCase(s.arena(), 3_000));
+    try s.w.write("C2.beni", try bigCase(s.arena(), 6_000));
+    const build = [_][]const u8{ "build", "--no-cache", "--jobs=1", "--library", "--platform=node", "--out=out", "--diagnostics=json" };
+    const verdict = try s.ratioOf(&build, "C.beni", "C2.beni", 3_000, &.{});
+    try s.finish("CK-88", verdict);
+}
+
+/// `pub g k = case k of 0 -> 0; 1 -> 1; … _ -> -1` with `count` literal
+/// branches.
+fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub g : Int -> Int\ng k =\n    case k of\n");
+    for (0..count) |i| try out.print(arena, "        {d} ->\n            {d}\n\n", .{ i, i });
+    try out.appendSlice(arena, "        _ ->\n            -1\n");
+    return out.items;
+}
+
+// CK-95 (found by R4b's adversarial review, F8) and its duplicate CK-127
+// (R8c, measuring CK-93), fixed by R12: lowering a `let` to Bir was
+// quadratic in its binding count, before either checker saw it. Four scans of the whole block per binding: the shadowing check and
+// every name lookup walked the scope stack, which holds every binding of the
+// block from phase 1 on; `localOfInst` searched the declaration's locals
+// backwards for each `let_def`; and §7's initialisation check reset its
+// visited set and scanned every edge once per binding. The scope is indexed
+// by name past 64 entries now, the local is recorded where it is bound, and
+// the order check walks each binding's own edges. CK-93's program (a bracket
+// per binding, which the parser's depth guard releases; an operator in every
+// binding would be charged to the declaration, `Parse.depth`), timed on the
+// module's `lower` event as CK-127 asked. Calibration (R12, ReleaseFast):
+// see the detail line; the whole `check` was 0.12 / 0.45 s CPU at 10 000 /
+// 20 000 before (ratio 3.8).
+test "CK-95: a let of n chained bindings lowers in time linear in n" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("L.beni", try letChain(s.arena(), 20_000));
+    try s.w.write("L2.beni", try letChain(s.arena(), 40_000));
+    const verdict = try s.eventRatio("L.beni", "L2.beni", 20_000, "lower", &.{});
+    try s.finish("CK-95", verdict);
 }

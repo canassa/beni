@@ -104,8 +104,14 @@ ctor_names: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 types: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// Schema namespace skeleton; S2 resolves members and imports.
 schemas: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
-/// The lexical scope stack (frontend.md §3.6).
+/// The lexical scope stack (frontend.md §3.6). Pushed by `bindLocal` and
+/// popped by `popScope` only, which keep `scope_index` in step.
 scope: std.ArrayList(ScopeEntry) = .empty,
+/// The innermost scope entry of each name, while `scope_indexed`: set when
+/// the scope grows past `indexed_scope` and dropped when it shrinks to half
+/// of it (CK-95).
+scope_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+scope_indexed: bool = false,
 /// Enclosing definitions and lambdas, for `?` (§6.6).
 frames: std.ArrayList(Frame) = .empty,
 /// Where lists of children are gathered before they are copied to `extra`.
@@ -189,7 +195,17 @@ const ScopeEntry = struct {
     symbol: Symbol,
     local: u32,
     token: TokenIndex,
+    /// The entry of the same name this one shadows, an index into `scope`,
+    /// or `none_u32`. Kept while the scope is indexed (`scope_index`).
+    prev: u32 = none_u32,
 };
+
+/// Past this many entries the scope is looked up by name (`scope_index`)
+/// instead of scanned (CK-95, CK-127): a `let` binds all its names before
+/// any body is lowered, so a block of n bindings made every lookup and every
+/// shadowing check a scan of n. Below it a scan is the cheaper of the two,
+/// and it is what almost every scope is.
+const indexed_scope = 64;
 
 /// One binding of one `let` block, gathered by `lowerBindings` for §7's
 /// initialisation rule and read by `checkLetOrder`. Annotations and `<-`
@@ -1353,7 +1369,7 @@ fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) A
     try l.frames.append(l.scratch_allocator, Frame.definition(def.params.len > 0, .none));
     const body = try l.lowerExpr(def.body);
     _ = l.frames.pop();
-    l.scope.shrinkRetainingCapacity(0);
+    l.popScope(0);
     const d = &l.decls.items[l.cur_decl];
     d.params = @intCast(def.params.len);
     d.params_start = params.start;
@@ -1385,19 +1401,35 @@ fn lowerParams(l: *Lower, params: []const NodeIndex) Allocator.Error!SubRange {
 fn bindVar(l: *Lower, token: TokenIndex, set_start: usize, kind: Bir.Local.Kind, inst: Index) Allocator.Error!u32 {
     const symbol = l.tokenSymbol(token);
     check: {
-        for (l.scope.items[set_start..]) |entry| {
+        if (l.scope_indexed) {
+            // The same answers as the scans below, off the name's chain:
+            // the EARLIEST entry of this pattern set, else the innermost
+            // entry outside it.
+            if (l.scope_index.get(symbol)) |latest| {
+                var at = latest;
+                if (at >= set_start) {
+                    while (l.scope.items[at].prev != none_u32 and l.scope.items[at].prev >= set_start) at = l.scope.items[at].prev;
+                    try l.reportPair(.duplicate_pattern_variable, token, l.scope.items[at].token);
+                } else {
+                    try l.reportPair(.shadowing, token, l.scope.items[at].token);
+                }
+                break :check;
+            }
+        } else for (l.scope.items[set_start..]) |entry| {
             if (entry.symbol == symbol) {
                 try l.reportPair(.duplicate_pattern_variable, token, entry.token);
                 break :check;
             }
         }
-        var i = set_start;
-        while (i > 0) {
-            i -= 1;
-            const entry = l.scope.items[i];
-            if (entry.symbol == symbol) {
-                try l.reportPair(.shadowing, token, entry.token);
-                break :check;
+        if (!l.scope_indexed) {
+            var i = set_start;
+            while (i > 0) {
+                i -= 1;
+                const entry = l.scope.items[i];
+                if (entry.symbol == symbol) {
+                    try l.reportPair(.shadowing, token, entry.token);
+                    break :check;
+                }
             }
         }
         if (l.values.get(symbol)) |entry| {
@@ -1420,8 +1452,47 @@ fn bindLocal(l: *Lower, symbol: Symbol.Optional, token: TokenIndex, kind: Bir.Lo
         .kind = kind,
         .inst = inst,
     });
-    if (symbol.unwrap()) |s| try l.scope.append(l.scratch_allocator, .{ .symbol = s, .local = index, .token = token });
+    if (symbol.unwrap()) |s| try l.pushScope(.{ .symbol = s, .local = index, .token = token });
     return index;
+}
+
+fn pushScope(l: *Lower, entry: ScopeEntry) Allocator.Error!void {
+    const at: u32 = @intCast(l.scope.items.len);
+    try l.scope.append(l.scratch_allocator, entry);
+    if (l.scope_indexed) return l.indexScopeEntry(at);
+    if (l.scope.items.len > indexed_scope) {
+        l.scope_index.clearRetainingCapacity();
+        for (0..l.scope.items.len) |i| try l.indexScopeEntry(@intCast(i));
+        l.scope_indexed = true;
+    }
+}
+
+fn indexScopeEntry(l: *Lower, at: u32) Allocator.Error!void {
+    const gop = try l.scope_index.getOrPut(l.scratch_allocator, l.scope.items[at].symbol);
+    l.scope.items[at].prev = if (gop.found_existing) gop.value_ptr.* else none_u32;
+    gop.value_ptr.* = at;
+}
+
+/// Leave every scope entry above `mark`, restoring each name's innermost
+/// entry in the index.
+fn popScope(l: *Lower, mark: usize) void {
+    if (l.scope_indexed) {
+        var i = l.scope.items.len;
+        while (i > mark) {
+            i -= 1;
+            const e = l.scope.items[i];
+            if (e.prev == none_u32) {
+                _ = l.scope_index.remove(e.symbol);
+            } else {
+                l.scope_index.getPtr(e.symbol).?.* = e.prev;
+            }
+        }
+        if (mark <= indexed_scope / 2) {
+            l.scope_index.clearRetainingCapacity();
+            l.scope_indexed = false;
+        }
+    }
+    l.scope.shrinkRetainingCapacity(mark);
 }
 
 /// The index the next local of this declaration will get.
@@ -1435,6 +1506,10 @@ fn freshLocal(l: *Lower, inst: Index) Allocator.Error!u32 {
 }
 
 fn lookupLocal(l: *const Lower, symbol: Symbol) ?u32 {
+    if (l.scope_indexed) {
+        const at = l.scope_index.get(symbol) orelse return null;
+        return l.scope.items[at].local;
+    }
     var i = l.scope.items.len;
     while (i > 0) {
         i -= 1;
@@ -1945,7 +2020,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             try l.frames.append(l.scratch_allocator, .{ .kind = .lambda, .inst = .none });
             const body = try l.lowerExpr(lam.body);
             _ = l.frames.pop();
-            l.scope.shrinkRetainingCapacity(mark);
+            l.popScope(mark);
             const params_record = try l.addRangeRecord(params);
             return l.addInstAt(main_token, .lambda, @intFromEnum(params_record), body.int());
         },
@@ -2273,7 +2348,7 @@ fn lowerBranch(l: *Lower, pattern: NodeIndex, body: NodeIndex) Allocator.Error!I
     const mark = l.scope.items.len;
     const pat = try l.lowerPattern(pattern, mark, .pattern);
     const value = try l.lowerExpr(body);
-    l.scope.shrinkRetainingCapacity(mark);
+    l.popScope(mark);
     return l.addInst(.branch, pat.int(), value.int());
 }
 
@@ -2406,9 +2481,12 @@ fn lowerBindings(
                 try l.frames.append(l.scratch_allocator, Frame.definition(def.params.len > 0, inst.toOptional()));
                 const body = try l.lowerExpr(def.body);
                 _ = l.frames.pop();
-                l.scope.shrinkRetainingCapacity(inner_mark);
+                l.popScope(inner_mark);
                 const record = try l.addExtra(Bir.LetDef{
-                    .local = l.localOfInst(inst),
+                    // Phase 1 bound it: a `let_def` binds exactly one
+                    // local, `local_start` (CK-95: a search of the
+                    // declaration's locals per binding was quadratic).
+                    .local = row.local_start,
                     .annotation = annotation,
                     .params_start = params.start,
                     .params_end = params.end,
@@ -2450,7 +2528,7 @@ fn lowerBindings(
         try l.lowerExpr(body_node)
     else
         try l.lowerBind(rest[0], rest[1..], body_node);
-    l.scope.shrinkRetainingCapacity(scope_mark);
+    l.popScope(scope_mark);
     const items = l.scratchSince(mark);
     // Nothing left to bind: the `let` node would be empty. That happens for
     // the block a `<-` rewrote (its callback body is `rest`, which can be
@@ -2480,7 +2558,9 @@ fn lowerBindings(
 /// `let`, lambda or `case` lies inside the range of the binding that
 /// contains it, so a reference from one of those to a binding of THIS
 /// block is attributed to the binding it runs inside, for free. Resolution
-/// is hot and pays nothing; this walk is once per `let`.
+/// is hot and pays nothing; this walk is once per `let`, and linear in it
+/// (CK-95): each binding's edges are a contiguous run, since they are read
+/// binding by binding, and the visited set is reset where it was set.
 fn checkLetOrder(
     l: *Lower,
     bindings: []const LetBinding,
@@ -2492,9 +2572,19 @@ fn checkLetOrder(
     const tags = l.insts.items(.tag);
     const data = l.insts.items(.data);
     const tokens = l.insts.items(.main_token);
+    // The binding each local of the block belongs to, by local.
+    const binding_of = try l.scratch_allocator.alloc(u32, end_local - first_local);
+    defer l.scratch_allocator.free(binding_of);
+    for (bindings, 0..) |b, i| {
+        for (b.local_start..b.local_end) |local| binding_of[local - first_local] = @intCast(i);
+    }
     var edges: std.ArrayList(LetEdge) = .empty;
     defer edges.deinit(l.scratch_allocator);
+    // `edges[starts[k]..starts[k + 1]]` are binding `k`'s.
+    const starts = try l.scratch_allocator.alloc(u32, bindings.len + 1);
+    defer l.scratch_allocator.free(starts);
     for (bindings, 0..) |b, from| {
+        starts[from] = @intCast(edges.items.len);
         var i = b.inst_start;
         while (i < b.inst_end) : (i += 1) {
             if (tags[i] != .local) continue;
@@ -2502,15 +2592,19 @@ fn checkLetOrder(
             if (local < first_local or local >= end_local) continue;
             try edges.append(l.scratch_allocator, .{
                 .from = @intCast(from),
-                .to = bindingOfLocal(bindings, local),
+                .to = binding_of[local - first_local],
                 .local = local,
                 .token = tokens[i],
             });
         }
     }
+    starts[bindings.len] = @intCast(edges.items.len);
     if (edges.items.len == 0) return;
     const seen = try l.scratch_allocator.alloc(bool, bindings.len);
     defer l.scratch_allocator.free(seen);
+    @memset(seen, false);
+    var touched: std.ArrayList(u32) = .empty;
+    defer touched.deinit(l.scratch_allocator);
     var work: std.ArrayList(u32) = .empty;
     defer work.deinit(l.scratch_allocator);
     for (bindings, 0..) |b, index| {
@@ -2519,9 +2613,9 @@ fn checkLetOrder(
         // THROUGH, which is the walk below.
         if (b.defers) continue;
         const k: u32 = @intCast(index);
-        @memset(seen, false);
-        for (edges.items) |e| {
-            if (e.from != k) continue;
+        for (touched.items) |t| seen[t] = false;
+        touched.clearRetainingCapacity();
+        for (edges.items[starts[k]..starts[k + 1]]) |e| {
             if (tooSoon(bindings, e.to, k)) {
                 const forward: Diagnostics.Item.Forward = if (e.to == k) .self else .direct;
                 try l.reportForward(e.token, local_tokens[e.local - first_local], forward);
@@ -2529,7 +2623,8 @@ fn checkLetOrder(
             }
             if (!bindings[e.to].defers or seen[e.to]) continue;
             seen[e.to] = true;
-            if (try l.reachesTooSoon(edges.items, bindings, seen, &work, e.to, k)) |hit| {
+            try touched.append(l.scratch_allocator, e.to);
+            if (try l.reachesTooSoon(edges.items, starts, bindings, seen, &touched, &work, e.to, k)) |hit| {
                 // CK-46: the binding reached may be `k` itself — `n = get ()`
                 // where `get` reads `n` — and then it is not "further down".
                 const forward: Diagnostics.Item.Forward = if (hit.to == k) .self_through else .through;
@@ -2546,8 +2641,10 @@ fn checkLetOrder(
 fn reachesTooSoon(
     l: *Lower,
     edges: []const LetEdge,
+    starts: []const u32,
     bindings: []const LetBinding,
     seen: []bool,
+    touched: *std.ArrayList(u32),
     work: *std.ArrayList(u32),
     start: u32,
     k: u32,
@@ -2555,11 +2652,11 @@ fn reachesTooSoon(
     work.clearRetainingCapacity();
     try work.append(l.scratch_allocator, start);
     while (work.pop()) |p| {
-        for (edges) |e| {
-            if (e.from != p) continue;
+        for (edges[starts[p]..starts[p + 1]]) |e| {
             if (tooSoon(bindings, e.to, k)) return e;
             if (bindings[e.to].defers and !seen[e.to]) {
                 seen[e.to] = true;
+                try touched.append(l.scratch_allocator, e.to);
                 try work.append(l.scratch_allocator, e.to);
             }
         }
@@ -2572,13 +2669,6 @@ fn reachesTooSoon(
 /// uninitialised, itself included, unless it is hoisted.
 fn tooSoon(bindings: []const LetBinding, to: u32, k: u32) bool {
     return to >= k and !bindings[to].hoisted;
-}
-
-fn bindingOfLocal(bindings: []const LetBinding, local: u32) u32 {
-    for (bindings, 0..) |b, i| {
-        if (local >= b.local_start and local < b.local_end) return @intCast(i);
-    }
-    unreachable; // the caller filtered to the locals this block binds
 }
 
 /// `p <- f a` with `rest` after it: `f a (\p -> rest)` (§6.7). The call is
@@ -2708,7 +2798,7 @@ fn lowerCallback(
     try l.frames.append(l.scratch_allocator, .{ .kind = .lambda, .inst = .none });
     const rest_expr = try l.lowerBindings(rest, body_node);
     _ = l.frames.pop();
-    l.scope.shrinkRetainingCapacity(scope_mark);
+    l.popScope(scope_mark);
     const params = try l.addRangeRecord(try l.addRange(&.{pat.int()}));
     return l.addInstAt(bind_token, .lambda, @intFromEnum(params), rest_expr.int());
 }
@@ -2721,18 +2811,6 @@ fn annotationToken(l: *const Lower, bindings: []const NodeIndex) TokenIndex {
         if (l.tree.nodeTag(bindings[i]) == .let_annotation) return l.tree.nodeMainToken(bindings[i]);
     }
     unreachable; // only called when phase 2 left an annotation pending
-}
-
-/// The local index a reserved `let_def` instruction binds (its `Local`
-/// row points back at it).
-fn localOfInst(l: *const Lower, inst: Index) u32 {
-    const rows = l.locals.items[l.cur_locals_start..];
-    var i = rows.len;
-    while (i > 0) {
-        i -= 1;
-        if (rows[i].inst == inst) return @intCast(i);
-    }
-    unreachable; // every reserved let_def bound a local in phase 1
 }
 
 /// Record fields to a range of `Field` pairs, with `duplicate_field` (§6.3).

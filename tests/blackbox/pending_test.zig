@@ -10,17 +10,19 @@
 //! Each scenario generates its program into a `World`, times the installed
 //! binary on it, and prints one line in the corpus walker's pending format:
 //!
-//!   PENDING  RED    v2  CK-88  scenario/CK-88  [slow]  n=3000: 204 ms; 2n > 510 ms (2.5×) on 3 of 3 runs
+//!   PENDING  RED    CK-88  scenario/CK-88  [slow]  n=3000: 204 ms; 2n > 510 ms (2.5×) on 3 of 3 runs
+//!
+//! (CK-88's line before R12 fixed it)
 //!
 //! and fails the step only under the walker's rules:
-//!   (b) GREEN under the default checker: it is fixed on the gated checker,
-//!       so it moves VERBATIM now — a timing scenario into `perf_test.zig`
+//!   (b) GREEN: it is fixed on the checker the gates run, so it moves
+//!       VERBATIM now — a timing scenario into `perf_test.zig`
 //!       (`zig build test-perf`, the manager's decision of 2026-09-25, CK-41
 //!       the first), any other into `abuse_test.zig`;
-//!   (c) listed as `scenario/CK-NN` in `tests/pending/CLAIMED` and RED under v2
-//!       (a claim was a v2 fix before the cut-over; CLAIMED is empty since R11);
 //!   (d) RED with another signature than `tests/pending/RED` records
-//!       (`scenario/CK-NN v2 <signature>`), or with no record at all.
+//!       (`scenario/CK-NN <signature>`), or with no record at all.
+//! (Rule (c), a `CLAIMED` scenario red under v2, and the checker column went
+//! with v1 at R12.)
 //!
 //! **Scaling findings assert a ratio**: time(2n) / time(n) ≤ 2.5, linear with
 //! head-room (quadratic is about 4, cubic about 8), because a ratio holds
@@ -39,7 +41,7 @@
 //! is killed.
 //!
 //! **Two steps** (2026-09-25). The scenarios whose claim is about TIME
-//! (CK-88 since the cut-over, R11) run in `zig build
+//! (none since R12 promoted CK-88) run in `zig build
 //! test-pending-perf`, on a ReleaseFast compiler (`BENI_EXE`), because the
 //! budgets they guard (`fast-compiler.md` §2) are ReleaseFast budgets; the
 //! rest run in `zig build test-pending`, on the Debug binary the gates run.
@@ -63,11 +65,11 @@ const World = world.World;
 const Io = std.Io;
 const testing = std.testing;
 
-/// The directory whose `CLAIMED` and `RED` the scenarios read.
+/// The directory whose `RED` the scenarios read.
 const pending_root = "tests/pending";
 
-/// Every scenario of this file, by the `scenario/<id>` name `CLAIMED` and `RED`
-/// use for it, and the step that runs it (`plans/checker-rewrite.md` §2.5):
+/// Every scenario of this file, by the `scenario/<id>` name `RED` uses for
+/// it, and the step that runs it (`plans/checker-rewrite.md` §2.5):
 ///
 ///   .perf  `zig build test-pending-perf`: a claim about TIME, measured on
 ///          the ReleaseFast compiler (`BENI_EXE`), alone, sized for it;
@@ -85,8 +87,9 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // NEST-DEEP into `ordering_test.zig`, CK-79 and CK-82 into
     // `abuse_wide_test.zig`, NEST-UNDER into `perf_test.zig`; CK-03, CK-40,
     // CK-42, CK-75 and CK-80 were red under v1 only, and their v2 twins were
-    // already in `perf_test.zig` (R6a, R8a).
-    .{ .name = "scenario/CK-88", .step = .perf },
+    // already in `perf_test.zig` (R6a, R8a). CK-88, the last, went to
+    // `perf_test.zig` when R12 fixed it. The table is empty, and the harness
+    // stays for the next finding a fixture cannot state.
 };
 
 const Step = enum { fast, perf };
@@ -107,42 +110,20 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// CK-88 (found by R2c, 2026-09-25): one `case` of n integer literal branches
-// is emitted in time quadratic in n — `check` takes 18 ms at 10 000
-// branches and `build` 2.2 s, 8.6 s at 20 000 (ReleaseFast, 7ae452f and R2c
-// alike), all of it in the emit phase. Past 65 046 branches the one `switch`
-// it writes is also refused by SpiderMonkey (`backend.md` §4's table), so a
-// fix that splits the `switch` closes both halves. Calibration (ReleaseFast,
-// CPU, R2c): n = 3 000 / 6 000. No reference fix.
-test "CK-88: a case of n literal branches builds in time linear in n" {
-    var s = try Scenario.init("CK-88");
-    defer s.deinit();
-    try s.w.write("C.beni", try bigCase(s.arena(), 3_000));
-    try s.w.write("C2.beni", try bigCase(s.arena(), 6_000));
-    const build = [_][]const u8{ "build", "--no-cache", "--jobs=1", "--library", "--platform=node", "--out=out", "--diagnostics=json" };
-    const verdict = try s.ratioOf(&(build ++ .{"C.beni"}), &(build ++ .{"C2.beni"}), 3_000);
-    try s.finish(verdict);
-}
+// (None left: CK-88, the last, was fixed and promoted into `perf_test.zig`
+// by R12.)
 
-// The two lists stay honest: every `CLAIMED` and `RED` entry names a pending
-// fixture that exists or a scenario of this file. A fixture promoted into
-// the corpus takes its lines with it; a stale one would make rule (c) or (d)
-// silently check nothing.
-test "pending: CLAIMED and RED name fixtures and scenarios that exist" {
+// The list stays honest: every `RED` entry names a pending fixture that
+// exists or a scenario of this file. A fixture promoted into the corpus takes
+// its line with it; a stale one would make rule (d) silently check nothing.
+test "pending: RED names fixtures and scenarios that exist" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     // Once, in `test-pending`: the lists do not depend on the binary.
     if (try selectedStep(arena) != .fast) return error.SkipZigTest;
-    const claimed = try world.pending.readClaimed(arena, testing.io, pending_root);
     const red = try world.pending.readRed(arena, testing.io, pending_root);
     var stale: usize = 0;
-    for (claimed) |path| {
-        if (!exists(path)) {
-            std.debug.print("PENDING  STALE  CLAIMED names {s}, which is neither a pending fixture nor a scenario\n", .{path});
-            stale += 1;
-        }
-    }
     for (red) |line| {
         if (!exists(line.path)) {
             std.debug.print("PENDING  STALE  RED names {s}, which is neither a pending fixture nor a scenario\n", .{line.path});
@@ -163,16 +144,6 @@ fn exists(path: []const u8) bool {
     return true;
 }
 
-/// `pub g k = case k of 0 -> 0; 1 -> 1; … _ -> -1` with `count` literal
-/// branches.
-fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub g : Int -> Int\ng k =\n    case k of\n");
-    for (0..count) |i| try out.print(arena, "        {d} ->\n            {d}\n\n", .{ i, i });
-    try out.appendSlice(arena, "        _ ->\n            -1\n");
-    return out.items;
-}
-
 const Verdict = struct {
     green: bool,
     /// `tests/pending/RED`'s vocabulary, extended for time: `slow` (the
@@ -188,8 +159,6 @@ const Scenario = struct {
     name: []const u8,
     w: World,
     arena_state: std.heap.ArenaAllocator,
-    checker: ?[]const u8,
-    claimed: []const []const u8,
     red: []const world.pending.RedLine,
 
     fn init(comptime id: []const u8) !Scenario {
@@ -216,17 +185,9 @@ const Scenario = struct {
             .name = "scenario/" ++ id,
             .w = try World.init(testing.allocator, testing.io),
             .arena_state = .init(testing.allocator),
-            .checker = null,
-            .claimed = &.{},
             .red = &.{},
         };
-        const a = s.arena_state.allocator();
-        s.checker = blk: {
-            const value = testing.environ.getAlloc(a, "BENI_CHECKER") catch break :blk null;
-            break :blk if (value.len == 0) null else value;
-        };
-        s.claimed = try world.pending.readClaimed(a, testing.io, pending_root);
-        s.red = try world.pending.readRed(a, testing.io, pending_root);
+        s.red = try world.pending.readRed(s.arena_state.allocator(), testing.io, pending_root);
         return s;
     }
 
@@ -237,19 +198,6 @@ const Scenario = struct {
 
     fn arena(s: *Scenario) std.mem.Allocator {
         return s.arena_state.allocator();
-    }
-
-    fn checkerName(s: *const Scenario) []const u8 {
-        return s.checker orelse "v2";
-    }
-
-    /// `args` plus `--checker=<value>` when `BENI_CHECKER` is set, as the
-    /// corpus walker does.
-    fn argv(s: *Scenario, args: []const []const u8) ![]const []const u8 {
-        var list: std.ArrayList([]const u8) = .empty;
-        try list.appendSlice(s.arena(), args);
-        if (s.checker) |checker| try list.append(s.arena(), try std.fmt.allocPrint(s.arena(), "--checker={s}", .{checker}));
-        return list.items;
     }
 
     /// One compiler run, timed; null when it was killed at `kill_ms` of WALL
@@ -264,7 +212,7 @@ const Scenario = struct {
     /// not spend, and `--jobs=1` everywhere keeps CPU time equal to work.
     fn timed(s: *Scenario, args: []const []const u8, kill_ms: i64) !?struct { ms: i64, wall_ms: i64, result: world.Result } {
         const start = Io.Timestamp.now(testing.io, .awake);
-        const result = s.w.runWith(try s.argv(args), .{ .raw_diagnostics = true, .timeout_ms = kill_ms }) catch |err| switch (err) {
+        const result = s.w.runWith(args, .{ .raw_diagnostics = true, .timeout_ms = kill_ms }) catch |err| switch (err) {
             error.CompilerTimeout => return null,
             else => return err,
         };
@@ -348,41 +296,28 @@ const Scenario = struct {
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
     }
 
-    /// Print the verdict and apply rules (b)–(d).
+    /// Print the verdict and apply rules (b) and (d).
     fn finish(s: *Scenario, v: Verdict) !void {
-        const checker = s.checkerName();
         if (v.green) {
-            std.debug.print("PENDING  GREEN  {s}  {s}  {s}  {s}\n", .{ checker, s.id, s.name, v.detail });
+            std.debug.print("PENDING  GREEN  {s}  {s}  {s}\n", .{ s.id, s.name, v.detail });
         } else {
-            std.debug.print("PENDING  RED    {s}  {s}  {s}  [{s}]  {s}\n", .{ checker, s.id, s.name, v.signature, v.detail });
+            std.debug.print("PENDING  RED    {s}  {s}  [{s}]  {s}\n", .{ s.id, s.name, v.signature, v.detail });
         }
-        const default = std.mem.eql(u8, checker, "v2");
-        if (v.green and default) {
+        if (v.green) {
             std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario) or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
             return error.PendingScenarioIsGreen;
         }
-        if (!v.green and default) {
-            for (s.claimed) |path| if (std.mem.eql(u8, path, s.name)) {
-                std.debug.print("PENDING  RULE (c)  {s}  {s} is listed in CLAIMED and is RED under v2\n", .{ s.id, s.name });
-                return error.ClaimedScenarioIsRed;
-            };
-        }
-        // Rule (d) and the record half of rule (a), under every checker, as
-        // the corpus walker applies them.
+        // Rule (d) and the record half of rule (a), as the corpus walker
+        // applies them.
         const recorded = for (s.red) |line| {
-            if (std.mem.eql(u8, line.path, s.name) and std.mem.eql(u8, line.checker, checker)) break line.signature;
+            if (std.mem.eql(u8, line.path, s.name)) break line.signature;
         } else null;
-        if (!v.green) {
-            if (recorded == null) {
-                std.debug.print("PENDING  MALFORMED  {s}  {s}  no line in {s}/RED: `{s} {s} {s}`\n", .{ checker, s.id, pending_root, s.name, checker, v.signature });
-                return error.PendingScenarioUnrecorded;
-            } else if (!std.mem.eql(u8, recorded.?, v.signature)) {
-                std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ checker, s.id, s.name, v.signature, pending_root, recorded.? });
-                return error.PendingScenarioDrifted;
-            }
-        } else if (recorded != null and !default) {
-            std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is GREEN, and {s}/RED still records [{s}]: delete the `{s}` line\n", .{ checker, s.id, s.name, pending_root, recorded.?, checker });
-            return error.PendingScenarioStaleRecord;
+        if (recorded == null) {
+            std.debug.print("PENDING  MALFORMED  {s}  no line in {s}/RED: `{s} {s}`\n", .{ s.id, pending_root, s.name, v.signature });
+            return error.PendingScenarioUnrecorded;
+        } else if (!std.mem.eql(u8, recorded.?, v.signature)) {
+            std.debug.print("PENDING  RULE (d)  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ s.id, s.name, v.signature, pending_root, recorded.? });
+            return error.PendingScenarioDrifted;
         }
     }
 };

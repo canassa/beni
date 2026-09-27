@@ -392,10 +392,10 @@ pub const TypeFacts = struct {
 };
 
 /// The facts of this module's nominal type `name`: its `types` row, else its
-/// `hidden_types` row, else null. A record the old checker (v1) wrote has no
-/// hidden rows, and v1's own `check/Dispatch.zig` reads its ABI instead;
-/// from R9 every record a v2 build reads is v2's, so v2's callers say
-/// `internal` for a null (`check2/Instances.zig`'s `derivedNominal`;
+/// `hidden_types` row, else null. A record the old checker (v1) wrote had no
+/// hidden rows, and `check/Dispatch.zig` read v1's ABI for one until R12
+/// deleted v1; every record a build reads is the checker's, so its callers
+/// say `internal` for a null (`check/Instances.zig`'s `derivedNominal`;
 /// checker-v2.md §14.2 *as amended by R8a*, §22.1).
 pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
     if (find(iface, interner, Type, iface.types, name)) |i| {

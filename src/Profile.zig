@@ -158,19 +158,12 @@ pub const Counter = enum {
     emitted_files,
     emitted_bytes,
     /// The checker's work (checker.md §9). M4's incrementality tests assert
-    /// these did NOT move when only a body changed.
+    /// these did NOT move when only a body changed. `obligations` and the
+    /// five `constraints_*` counters were v1's, and went with it (R12): the
+    /// checker that stayed never wrote them.
     unifications,
     generalisations,
     instantiations,
-    obligations,
-    /// Static dispatch (`plans/static-dispatch-spike.md` §7). Zero until the
-    /// checker raises method constraints; they are here now so the before
-    /// and after of that change are the same trace fields.
-    constraints_created,
-    constraints_merged,
-    constraints_deferred,
-    constraints_discharged,
-    constraints_promoted,
     /// v2's derived-context fixpoints over the modules it checked
     /// (`Check.Counters.derived_context_runs`): 0 on a fully warm run, the
     /// I10 witness (checker-v2.md §14.3 *as built by R10*).
