@@ -83,8 +83,12 @@ pub const State = struct {
     derived: std.AutoHashMapUnmanaged(MemoKey, WantedId) = .empty,
     /// The `(root, method kind)` pairs the derivability walk proved
     /// derivable over a GROUND subgraph — no variable below, so the verdict
-    /// cannot change (`Derivable.derivability`).
-    derivable: std.AutoHashMapUnmanaged(Derivable.PairKey, void) = .empty,
+    /// cannot change (`Derivable.derivability`). A dense column indexed by
+    /// the root, one bit per kind (CK-131: as a hash map, its hashing was
+    /// half of the walk's cost).
+    derivable: Derivable.GroundMemo = .{},
+    /// The ground shapes proved derivable, by structure (`Derivable.Shapes`).
+    shapes: Derivable.Shapes = .{},
     /// The pairs the walk proved derivable over a subgraph with variables
     /// below (CK-111): true until a leaf below is given successors. The walk
     /// records each leaf it meets as proved (`TypeStore.prove`: a leaf is
@@ -96,6 +100,9 @@ pub const State = struct {
     derivable_open_voids: u64 = std.math.maxInt(u64),
     /// `missing_where_constraint`s said, per use, rigid and method (F4).
     missing: std.AutoHashMapUnmanaged(MissingKey, void) = .empty,
+    /// Per imported method and well-known name, its plain shape or null
+    /// (`Instances.plainImported`, CK-131): read off the interface once.
+    plain: std.AutoHashMapUnmanaged(u64, ?Instances.Plain) = .empty,
     /// Steps in the current top-level group.
     steps: u32 = 0,
     /// What promotion kept, per unannotated declaration: a range of
@@ -109,9 +116,11 @@ pub const State = struct {
     pub fn deinit(r: *State, gpa: Allocator) void {
         r.wanters.deinit(gpa);
         r.derived.deinit(gpa);
-        r.derivable.deinit(gpa);
+        r.derivable.bits.deinit(gpa);
+        r.shapes.deinit(gpa);
         r.derivable_open.deinit(gpa);
         r.missing.deinit(gpa);
+        r.plain.deinit(gpa);
         r.requirement_rows.deinit(gpa);
         r.requirement_roots.deinit(gpa);
     }
@@ -198,6 +207,17 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
         },
         .rigid => |flags| return rigid(s, id, root, flags),
         .structure => |flat| {
+            // §3.2's table on a primitive whose method type already IS
+            // `root, root -> Bool|Order` (a derived shape's position, a
+            // plain method's requirement readied at the element): the
+            // answer `Instances.lookup` would give, without its
+            // unification, which could only succeed (CK-131). A nullary
+            // application is on no cycle, and no derived answer is ever
+            // remembered for a table primitive (`memoised`).
+            if (Instances.tablePrimitive(s, w.method, flat)) |p| {
+                if (s.evidence.isRejected(root, flagOf(w))) return reject(s, id, true);
+                if (hasWellKnownType(s, w.method, w.method_type, root)) return answer(s, id, .{ .primitive = p });
+            }
             // A receiver on a cycle is one `infinite_type`, before anything
             // is shared or looked up (§9.5, the cycle test that replaced the
             // lineage rule: round-2 review, N1).
@@ -282,10 +302,31 @@ pub fn wellKnownType(s: *Solve, name: Symbol, root: Var) Error!Var {
     return s.fresh(.{ .structure = .{ .func = .{ .params = params, .result = result } } });
 }
 
+/// Whether `method_type` already is `root, root -> Bool|Order` for method
+/// `name`: both parameters `root` itself, the result the well-known type. A
+/// unification with `wellKnownType` could then only succeed.
+pub fn hasWellKnownType(s: *Solve, name: Symbol, method_type: Var, root: Var) bool {
+    const st = s.store();
+    const f = Walk.function(st, method_type) orelse return false;
+    if (f.params.len != 2 or st.find(f.params[0]) != root or st.find(f.params[1]) != root) return false;
+    const result = wellKnownResult(s, name);
+    if (result == .none) return false;
+    return switch (st.resolvedContent(f.result)) {
+        .structure => |flat| switch (flat) {
+            .app => |a| a.type == result and a.args.len == 0,
+            else => false,
+        },
+        else => false,
+    };
+}
+
 /// Unify `w.method_type` with `root, root -> Bool|Order`, reported at the
 /// wanted's origin. False when it failed (and was reported).
 pub fn unifyWellKnown(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
+    // Already that type (a comparison's operands, a position): the
+    // unification could only succeed, silently (CK-131).
+    if (hasWellKnownType(s, w.method, w.method_type, root)) return true;
     const wanted = try wellKnownType(s, w.method, root);
     // A clause's declared type against the method's: `.where_clause` (CK-55).
     const category: Tree.Category = .{ .tag = if (w.kind == .where_clause) .where_clause else .general };

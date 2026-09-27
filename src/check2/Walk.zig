@@ -141,6 +141,73 @@ fn shape(store: *const TypeStore, root: Var, n: u32, comptime successors: Succes
     }
 }
 
+/// What `encodeGround` found besides the encoding.
+pub const Ground = struct {
+    /// `heads.kept` said yes to every nominal head.
+    kept: bool,
+};
+
+/// A GROUND type's structure as words (CK-131, `Derivable.Shapes`): `first`,
+/// then `root` in preorder, each node a tag and its arity — an application
+/// its type, a record its field names — with aliases read through to their
+/// expansion. Null for a variable, an `err` or a function anywhere, or past
+/// `cap` words (a graph with a cycle among them). `heads.kept(app)` says
+/// whether a nominal head may be kept by structure. `words` and `stack` are
+/// the caller's, reused.
+pub fn encodeGround(
+    store: *TypeStore,
+    gpa: Allocator,
+    words: *std.ArrayList(u32),
+    stack: *std.ArrayList(Var),
+    root: Var,
+    first: u32,
+    cap: usize,
+    heads: anytype,
+) Error!?Ground {
+    const Tag = enum(u32) { unit, empty_record, tuple, app, record };
+    words.clearRetainingCapacity();
+    stack.clearRetainingCapacity();
+    var found: Ground = .{ .kept = true };
+    try words.append(gpa, first);
+    try stack.append(gpa, root);
+    while (stack.pop()) |v| {
+        if (words.items.len > cap) return null;
+        const flat = switch (store.resolvedContent(v)) {
+            .structure => |flat| flat,
+            .flex, .rigid, .err, .alias => return null,
+        };
+        switch (flat) {
+            .unit => try words.append(gpa, @intFromEnum(Tag.unit)),
+            .empty_record => try words.append(gpa, @intFromEnum(Tag.empty_record)),
+            .func => return null,
+            .tuple => |t| {
+                const elements = store.vars(t);
+                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.tuple), @intCast(elements.len) });
+                var i = elements.len;
+                while (i > 0) : (i -= 1) try stack.append(gpa, elements[i - 1]);
+            },
+            .app => |a| {
+                if (a.type == .none) return null;
+                if (!heads.kept(a)) found.kept = false;
+                const args = store.vars(a.args);
+                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.app), a.type.int(), @intCast(args.len) });
+                var i = args.len;
+                while (i > 0) : (i -= 1) try stack.append(gpa, args[i - 1]);
+            },
+            .record => |rec| {
+                const fields = store.fields(rec.fields);
+                try words.appendSlice(gpa, &.{ @intFromEnum(Tag.record), @intCast(fields.len) });
+                for (fields) |f| try words.append(gpa, @intFromEnum(f.name));
+                try stack.append(gpa, rec.ext);
+                var i = fields.len;
+                while (i > 0) : (i -= 1) try stack.append(gpa, fields[i - 1].value);
+            },
+        }
+    }
+    if (words.items.len > cap) return null;
+    return found;
+}
+
 // ---------------------------------------------------------------------------
 // The one reading of a variable's method constraints (§4.1, S3)
 // ---------------------------------------------------------------------------

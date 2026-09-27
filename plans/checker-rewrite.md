@@ -2277,6 +2277,40 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   findings totals.
 - **Exit.** `s_tup6000`, `s_int6000` and the dispatch corpus's bench check phase ≤ 1.10× v1
   (medians of 7, plus whole-process perf stat); a `test-perf` scenario for CK-131; all steps green.
+- **As built** (2026-09-27; `checker-v2.md` §9.3, §9.5 and §18 *as amended / measured by R9b*).
+  - **CK-131.** Five changes kept, each measured alone: (a) a table primitive whose method type
+    already is `root, root -> Bool|Order` is answered in `Resolve.step`, and `unifyWellKnown`
+    skips such a type everywhere (a shape test, never a unification used as one); (b) the
+    plain-method fast path, `Instances.plainImported`: an imported plain `eq`/`compare`
+    (`List.compare`) is not instantiated — its requirements are made on the receiver's
+    arguments in canonical order and readied as the binding would ready them, plainness read off
+    the interface once per module; the ground derivability memo is a dense column; (c)
+    `Derivable.Shapes`, derivability kept per module by the ground shape's structure
+    (`Walk.encodeGround`, ≤ 64 words, only §3.2's and other modules' heads); P6's unit memo is
+    searched inline below 16 keys. Not kept (paid nothing): a cheap hash and a dense column for
+    `Resolve.State.derived`. Measured and declined by the manager: skipping the cycle test for a
+    bounded alias-free ground encoding (−1 %, resting on an argument, not the walk). The two
+    memos keyed by variable ids (`GroundMemo`, `Shapes.last`) record `TypeStore.rollbacks` and
+    panic in a safe build if the store ever rolls back under them (§9.3). Final tree, two rounds
+    of medians of 7: `s_tup6000` 1.60× → **1.058× and 1.103×** v1, 1.10× in whole-process cycles
+    (160.8M / 146.3M); `s_int6000` 0.955× and 0.954×; the pair 1.093× and 1.047×. Before the
+    revert: the dispatch corpus's check phase 1.05×, the plain one's 1.06×. `perf_test.zig` gained the CK-131 scenario (v2 against v1, the module's
+    `check` event, best of 5, ≤ 1.25×): 167 % on `919f8be`, 107 % on R9b.
+  - **Identical output, proved.** `test-v2` strict and `test-pending` (PERM) green; a
+    differential of every fixture of `tests/corpus/{check,dispatch,emit,run,regress,build}` and
+    `tests/pending/` (656: `check --diagnostics=json`, `dump --stage=types|dispatch|interface`,
+    and `build` dev and `--release` with every file written), `dump --stage=raw|interface|types|
+    dispatch` of the 11 `core` modules, `bench/corpus` and both generated bench corpora (build
+    output and diagnostics) under `--checker=v2`, against `919f8be`'s binary: no byte differs.
+  - **R9's review leftovers.** The filtered determinism binaries of `test-v2` each carry a
+    `test-v2 guard` test that matches the filter and checks `builtin.test_functions.len` against
+    `BENI_EXPECTED_TESTS`, which `build.zig` sets (7, 3, 3); a wrong count was shown to fail the
+    step. A `v2-expected.md` fixture still runs under strict `test-v2` — quietly, never blessed —
+    and one that passes fails the step (`V2-EXPECTED  GREEN`), shown with a planted entry.
+    `Contexts.tableRow` is THE statement of §3.2 (primitive and derived rows), read by
+    `wellKnownAnswer`, the verdict walk, `Publish` and the contexts, where a `primitive` row is
+    `own_method` whatever values the module declares (`notDerived`). The two stale comments are
+    rewritten; `checker-findings.md`'s totals are recounted from its summary table (131).
 
 ### R10 — Incrementality under v2
 
@@ -2409,7 +2443,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R8c | CK-122 (fixed in shared code, both checkers: `check/good/SchemaEndpointAlias*`, `check/bad/SchemaEndpointAliasKeepsItsType`); CK-114 (`abuse_test.zig`) | — | CK-93, 111, 112 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-42's v2 twin resized; CK-126 (found, pending, red under both), CK-127 (found, frontend) and CK-128 (found; R8d) |
 | R8d | CK-128 (`run/DerivedDeepData`, `…Paths`, `…Order/`, `…AcrossModules/`; three `abuse_test.zig` scenarios, one pinning the stated exclusion) | — | CK-129 (found, frontend) |
 | R8e | — (CK-128's cost: loops, forwarders, one runtime; two `abuse_test.zig` scenarios) | — | — |
-| R9 | CK-130 (found and fixed: `run/NeverAndOrderDerived.beni`) | — | CK-15 (rest, closed for v2); CK-131 (found: §18's `s_tup6000` median at 1.58×, unassigned) |
+| R9 | CK-130 (found and fixed: `run/NeverAndOrderDerived.beni`) | — | CK-15 (rest, closed for v2); CK-131 (found: §18's `s_tup6000` median at 1.58×) |
+| R9b | CK-131 (fixed; `perf_test.zig`, `test-perf`) | — | — |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |

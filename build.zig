@@ -243,12 +243,16 @@ pub fn build(b: *std.Build) void {
     for (std.enums.values(corpus_parts.Part)) |part| {
         v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .checker = "v2", .part = @tagName(part) }).step);
     }
-    for ([_]struct { root: []const u8, filters: []const []const u8 }{
-        .{ .root = "tests/blackbox/blackbox_test.zig", .filters = &.{"--jobs=1 and --jobs=8"} },
-        .{ .root = "tests/blackbox/build_test.zig", .filters = &.{"byte-identical at every --jobs"} },
-        .{ .root = "tests/blackbox/abuse_test.zig", .filters = &.{ "600 modules check identically", "empty modules produce identical output" } },
+    // Each filtered binary must hold `tests` tests — its scenarios and the
+    // file's `test-v2 guard`, which checks the count (`world.zig`'s
+    // `expectFilteredTests`; R9b): a renamed scenario that no filter matches
+    // fails the step instead of silently running nothing.
+    for ([_]struct { root: []const u8, filters: []const []const u8, tests: []const u8 }{
+        .{ .root = "tests/blackbox/blackbox_test.zig", .filters = &.{"--jobs=1 and --jobs=8"}, .tests = "7" },
+        .{ .root = "tests/blackbox/build_test.zig", .filters = &.{"byte-identical at every --jobs"}, .tests = "3" },
+        .{ .root = "tests/blackbox/abuse_test.zig", .filters = &.{ "600 modules check identically", "empty modules produce identical output" }, .tests = "3" },
     }) |d| {
-        v2_step.dependOn(&bb.run(bb.filtered(d.root, d.filters), .{ .root = "tests/corpus", .checker = "v2" }).step);
+        v2_step.dependOn(&bb.run(bb.filtered(d.root, d.filters), .{ .root = "tests/corpus", .checker = "v2", .expected_tests = d.tests }).step);
     }
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
@@ -595,7 +599,8 @@ fn collectFiles(
 /// run MEANS: the corpus walker's four knobs (`tests/blackbox/corpus_test.zig`'s
 /// `Config`, `plans/checker-rewrite.md` §2.4, S11), its part
 /// (`corpus_parts.zig`), which pending scenarios run (`pending_test.zig`) and
-/// which binary is under test (`world.zig`'s `exePath`). An empty value is
+/// which binary is under test (`world.zig`'s `exePath`), and how many tests a
+/// filtered binary holds (`expectFilteredTests`). An empty value is
 /// the harness's "unset": every field but the root defaults to it.
 const HarnessEnvironment = struct {
     root: []const u8,
@@ -606,6 +611,9 @@ const HarnessEnvironment = struct {
     scenarios: []const u8 = "",
     /// Relative to the install prefix; empty is `bin/beni`, the Debug build.
     exe: []const u8 = "",
+    /// How many tests a name-filtered binary must hold (`test-v2`'s
+    /// determinism scenarios); empty for every other binary.
+    expected_tests: []const u8 = "",
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -657,6 +665,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_EXE", if (env.exe.len == 0) "" else bb.b.getInstallPath(.prefix, env.exe));
+        r.setEnvironmentVariable("BENI_EXPECTED_TESTS", env.expected_tests);
         return r;
     }
 };

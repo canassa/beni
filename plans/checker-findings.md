@@ -3597,17 +3597,31 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   walk's two hash maps (about 6 %, halved by R9), the store's growth (about 6 %, gone with R9's
   reserve), and a sub-wanted created and stepped per position.
 - **Expected** §18's rule: ≤ 1.10× v1 on each of the three medians at R9 and at the cut-over.
-- **Fix** not done. v1's answer to the same program was row 72's `plainMethodMask` (diary
+- **Fix** done by R9b (below, *Status*). v1's answer to the same program was row 72's `plainMethodMask` (diary
   2026-09-24 00:17): an imported method whose scheme is `T a1 … an, T a1 … an -> Bool|Order` with
   exactly its own name required of its parameters answers without instantiating. v2's analogue must
   create each position's sub-wanted with the requirement's own `kind`, and ready it on the frame's
   queue as the unification of the instantiated scheme would (`Unify.readyWanted`), so the
   resolution order and every diagnostic stay the same; beyond that the per-position wanted itself
   is the next cost.
-- **Fixture** none yet: a `perf_test.zig` ratio cannot see a constant factor. The measurement
-  is `checker-v2.md` §18 *as measured by R9*.
-- **Slice** unassigned: proposed as an R9 follow-up before R11 (the manager's call), since §18
-  holds R11 to the same budget.
+- **Fixture** `tests/blackbox/perf_test.zig`'s `CK-131` scenario (`zig build test-perf`): not a
+  size ratio but v2 against v1 on one binary, the file's own `check` event, best of 5, bound
+  1.25× — red on `919f8be` (167 %), green on R9b (107 %); `a < b` over `Int` is its control.
+  The budget itself (1.10× on medians) is `checker-v2.md` §18 *as measured by R9b*.
+- **Slice** R9b (2026-09-27), the manager's: fixed.
+- **Status** fixed by R9b. Five changes, each measured on its own (§18 *as measured by R9b*): a
+  table primitive whose method type already is `root, root -> Bool|Order` is answered in
+  `Resolve.step` without the unification that could only succeed, and `unifyWellKnown` skips it
+  on that shape everywhere; the plain-method fast path (`Instances.plainImported`, v1's
+  `plainMethodMask`: `List.compare`'s requirement made directly, readied as the binding would
+  ready it); the ground derivability memo a dense column instead of a hash map; a per-module memo
+  of derivability keyed by the ground shape's STRUCTURE (`Derivable.Shapes`,
+  `Walk.encodeGround`); and P6's unit memo searched inline for small units. (A sixth, skipping
+  the cycle test for a bounded ground encoding, was measured at −1 % and declined.)
+  `s_tup6000` 1.60× → 1.06–1.10× v1 (summed `check` events, medians of 7), whole process
+  1.10× in cycles; `s_int6000` 0.95×. A differential
+  over the corpus, `tests/pending/`, `core` and `bench/` against `919f8be` found no byte of
+  difference.
 
 ## Summary table
 
@@ -3747,15 +3761,15 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
 | CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
 | CK-130 | valid-program-rejected (v2 only) | K7 | promoted: `run/NeverAndOrderDerived.beni` | R9 (fixed) |
-| CK-131 | performance (v2 only) | K11 | — (§18's `s_tup6000` median) | unassigned (found by R9; proposed: an R9 follow-up before R11) |
+| CK-131 | performance (v2 only) | K11 | `perf_test.zig` (`test-perf`, CK-131) | R9b (fixed; found by R9) |
 
 Totals:
-- 128 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 131 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 29 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 14 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
-- valid-program-rejected: 22 (CK-87, CK-99, CK-114, CK-118 and CK-125 among them).
+- compiler-crash-or-hang: 15 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
+- valid-program-rejected: 24 (CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 2.
-- performance: 19 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124 and CK-127 among them).
-- diagnostic-quality: 26 (CK-86, CK-94, CK-115 and CK-116 among them).
+- performance: 20 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127 and CK-131 among them).
+- diagnostic-quality: 27 (CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 15 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

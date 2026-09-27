@@ -512,6 +512,41 @@ const Perf = struct {
         };
     }
 
+    /// The file's own `check` event under `--checker=v2` over the same under
+    /// `--checker=v1` (CK-131): not a ratio of sizes but of checkers, on one
+    /// binary, so a constant factor v2 adds per use is what it sees. Each
+    /// checker the best of `runs`, interleaved (a loaded machine only adds
+    /// time, and to both alike); green when v2 ≤ `bound_pct` % of v1.
+    fn checkerRatio(s: *Perf, file: []const u8, runs: usize, bound_pct: u64) !Verdict {
+        var best = [2]f64{ std.math.inf(f64), std.math.inf(f64) };
+        for (0..runs) |_| {
+            for ([_][]const u8{ "--checker=v1", "--checker=v2" }, &best) |checker, *slot| {
+                const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", checker, file }, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+                try expectClean(run.result);
+                slot.* = @min(slot.*, try fileEvent(s, "trace.json", "check", file));
+            }
+        }
+        const pct: u64 = @intFromFloat(@round(best[1] * 100.0 / @max(best[0], 0.001)));
+        return .{
+            .green = pct <= bound_pct,
+            .detail = try std.fmt.allocPrint(s.arena(), "{s}: v1 {d:.1} ms, v2 {d:.1} ms ({d} % of v1, bound {d} %), `check` event, best of {d}", .{ file, best[0], best[1], pct, bound_pct, runs }),
+        };
+    }
+
+    /// The summed duration of `event`'s events for `file` in a trace, in ms.
+    fn fileEvent(s: *Perf, trace: []const u8, event: []const u8, file: []const u8) !f64 {
+        const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0, args: struct { file: ?[]const u8 = null } = .{} };
+        const text = try s.w.read(trace);
+        const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, s.arena(), text, .{ .ignore_unknown_fields = true });
+        var total: ?f64 = null;
+        for (parsed.traceEvents) |e| {
+            if (!std.mem.eql(u8, e.ph, "X") or !std.mem.eql(u8, e.name, event)) continue;
+            if (!std.mem.eql(u8, e.args.file orelse continue, file)) continue;
+            total = (total orelse 0) + e.dur / 1000.0;
+        }
+        return total orelse error.PerfEventMissing;
+    }
+
     fn expectClean(r: world.Result) !void {
         if (r.exit_code == 0) return;
         std.debug.print("a timed run exited {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 400)] });
@@ -524,6 +559,29 @@ const Perf = struct {
         if (!v.green) return error.PerfRegression;
     }
 };
+
+// CK-131, fixed by R9b (2026-09-27): 6 000 declarations each comparing
+// `( a, [ b ] ) < ( b, [ a ] )` over `Int` (`s_tup6000`, checker-v2.md §18)
+// checked at 1.6× v1: per derived position v2 made and stepped a wanted,
+// unified its method type again, instantiated `List.compare`'s scheme from
+// its interface, and walked the derivability of a shape it had proved in the
+// declaration before. The fixes (§18 *as measured by R9b*) answer a table
+// primitive whose method type already has the table's shape directly, take a
+// plain imported method's requirements without instantiating it, and keep
+// the derivability of a ground shape by its structure. Not a size ratio: a
+// constant factor is what it was, so the scenario is v2 against v1 on one
+// binary. `s_int6000` (`a < b`) is its control. The budget is 1.10× on
+// medians (§18); the bound here, 1.25× on the best of 5, leaves room for a
+// busy machine and still fails the 1.6× this was.
+test "CK-131: a derived comparison per declaration checks within 1.25× v1 (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("Tup.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    ( a, [ b ] ) < ( b, [ a ] )\n\n\n", 2));
+    try s.w.write("IntLt.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    a < b\n\n\n", 2));
+    const tuple = try s.checkerRatio("Tup.beni", 5, 125);
+    const control = try s.checkerRatio("IntLt.beni", 5, 125);
+    try s.finish("CK-131", .{ .green = tuple.green and control.green, .detail = try std.fmt.allocPrint(s.arena(), "{s}; {s}", .{ tuple.detail, control.detail }) });
+}
 
 /// `nestedPair` as a program: `main` prints whether `v` holds.
 fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {

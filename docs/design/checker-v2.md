@@ -1417,6 +1417,20 @@ returns "unknown, accept" (I8).
 1. **Well-known table** (`static-dispatch-spike.md` §3.2), for `eq` and `compare` on a core
    primitive: `primitive p`. First, `w.method_type` is unified with the well-known signature
    `t, t -> Bool|Order` (CK-21).
+   *Amended by R9b (CK-131).* A method type that already IS that signature — both parameters
+   the receiver's root itself, the result the well-known type (`Resolve.hasWellKnownType`) — is
+   not unified again: the unification could only succeed, and would report nothing. This is a
+   test of the type's shape, never a unification used as a test (§9.5). `Resolve.step` answers
+   such a wanted on a `primitive` row before the cycle test and the sharing memo, neither of
+   which can apply to a nullary application (a table primitive is never remembered). The table's
+   rows are stated once, `Contexts.tableRow` (R9's review, nit 1).
+   *Memos keyed by a variable id (R9b).* `Resolve.State.derivable` (a dense column) and
+   `Derivable.Shapes.last` (the last ground encoding) key on a variable's id, which is sound
+   only while no id is reused for another type — true because v2 never speculates and so never
+   rolls the store back (§7.5). The store counts its rollbacks (`TypeStore.rollbacks`); each memo
+   records the count when it is first written, and a read or write after it moved is a panic in a
+   safe build (and empties the memo, or misses, in a release one), so a future rollback while they
+   are live cannot silently answer from a stale id.
 2. *(Moved on 2026-09-24, B4/S5.)* The `number` bridge is now a row of §9.2's receiver table, for
    flex and rigid roots. It creates no evidence parameter, the same ABI as today, and it checks the
    declared type first (CK-21). There is no `appendable` bridge. The step numbers are kept, so
@@ -1436,6 +1450,19 @@ returns "unknown, accept" (I8).
    - Because the requirements come from the instantiated scheme, their receivers are whatever
      unification made them. That is the fix for CK-27 and CK-28: `Holder (List a)`'s `a.eq` gets
      the element's `eq`, not the list's.
+   - *Amended by R9b (CK-131): the plain-method fast path* (v1's `plainMethodMask`, diary
+     2026-09-24 00:17). Another module's method whose interface scheme is PLAIN —
+     `T q₁ … qₙ, T q₁ … qₙ -> Bool|Order` over distinct quantifiers of kind `any`, not
+     `equatable`, each asked for nothing but the method's own name at `qᵢ, qᵢ -> Bool|Order`
+     (`List.compare … where a.compare`) — asked on `T t₁ … tₙ` at a method type that already is
+     `root, root -> Bool|Order`, every `tᵢ` a structure or an alias and none younger than the
+     frame, is not instantiated: the instantiation and the match could only succeed, and all they
+     leave is one sub-wanted per constrained `qᵢ`, made in canonical order (the argument order:
+     the quantifiers are discovered in the receiver), `kind` `.where_clause`, on `tᵢ` at
+     `tᵢ, tᵢ -> Bool|Order`, with the use's origin, declaration, parent, `seq` and queue, and
+     readied at once — as binding `qᵢ` to `tᵢ` readies it (`Instances.plainImported`). The
+     resolution order and every diagnostic are the instantiation's. Plainness is read off the
+     interface once per module check (`Resolve.State.plain`).
 5. **Derived.** Not found, the method is well-known, and the call is marked (§1.3 of the spike):
    - **nominal `T args`**: `Instances.derivedContext(T, m)` (§11.2):
      - `present(ctx)`: answer `derived(index)` in this module or `ext_derived`, with one sub-wanted
@@ -1578,6 +1605,13 @@ v1's, through `Report`.
   - a variable is not a verdict: it rides, and its sub-wanted is asked again when it is bound;
   - linear on a DAG: a pair is walked once per walk, and a pair whose whole subgraph is ground
     (no variable below) is kept in `Resolve.State.derivable` and never walked again in the module.
+    *Amended by R9b (CK-131):* that memo is a dense column indexed by the root (one bit per
+    kind), not a hash map; and a ground receiver of at most 64 words whose every nominal head is
+    §3.2's or another module's is kept by its STRUCTURE (`Derivable.Shapes`, the encoding
+    `Walk.encodeGround` makes): its verdict reads nothing but the structure, the table and
+    interfaces that cannot change during the module's check, so 6 000 declarations comparing
+    `( Int, List Int )` walk it once. The dense column and the shape memo's last-encoding cache
+    are keyed by variable ids; §9.3 step 1's *amended by R9b* note says what guards them.
 - **Sharing (CK-80)** *(narrowed by R6a's review, B3)*: only an answer that depends on the receiver
   alone is shared — a DERIVED one (`Resolve.State.derived`, keyed by the receiver's root and the
   method). A later well-known wanted there has its own method type checked against
@@ -3684,6 +3718,51 @@ cycles): no slice had measured it since the diary's entry. It is
 CK-131, recorded with its profile; the bench's own figures (whole process and check phase) are
 within 1.10×. `zig build bench` gained `--checker=v1|v2` for the check line (R9).
 
+
+*As measured by R9b (2026-09-27): CK-131 fixed.* The same method as R9's: ReleaseFast, v1 and v2
+by `--checker` on one binary (v1 is frozen, so v1 is `919f8be`'s), `check --no-cache --jobs=1
+--self-profile`, the sum of the `check` events, median of 7, all binaries interleaved; the whole
+process by `perf stat -r 11`. The programs are R9's, and `perf_test.zig`'s `CK-131` scenario now
+keeps their generator: `s_tup6000` (6 000 of `( a, [ b ] ) < ( b, [ a ] )` over `Int`),
+`s_int6000` (`a < b`) and, from R9's review, the tuple of two `Int`s (`( a, b ) < ( b, a )`).
+Each change was measured on its own and kept only if it paid; each row adds one to the row above.
+
+| Change | `s_tup6000` ms (× v1) | pair ms (× v1) | `s_int6000` ms (× v1) | `s_tup6000` cycles / instructions, M |
+|---|---|---|---|---|
+| v1 | 29.7 | 25.7 | 17.6 | 146.7 / 408.5 |
+| v2 at `919f8be` | 47.6 (1.60) | 33.6 (1.31) | 18.5 (1.05) | 209.1 / 565.6 |
+| (a) a table primitive whose method type already is `root, root -> Bool\|Order` answered in `Resolve.step` (§9.3 step 1 *amended by R9b*) | 45.3 | 30.9 | 17.2 | 200.8 / 542.2 |
+| (b) the plain-method fast path (§9.3 step 4 *amended by R9b*) | 37.8 | 31.2 | 17.5 | 178.1 / 482.3 |
+| the ground derivability memo a dense column (§9.5 *amended by R9b*) | 36.7 | 29.6 | 16.9 | 171.1 / 475.3 |
+| `unifyWellKnown` skips a method type of that shape (a use's operands) | 36.1 | 28.4 | 17.2 | 168.3 / 464.9 |
+| (c) derivability kept by ground shape, per module (`Derivable.Shapes`) | 33.5 | 27.8 | 17.2 | 162.5 / 455.2 |
+| P6's unit memo searched inline below 16 keys (`Unit.wanted`) — **as kept** | 32.5 (1.09) | 28.1 (1.09) | 16.5 (0.94) | 161.4 / 453.7 (1.10 / 1.11) |
+
+Not kept, for paying nothing measurable: a multiplicative hash for `Resolve.State.derived`, and
+that memo as a dense column (its map's cost is the misses of a 60 000-entry table, not the hash).
+**Measured and declined** (the manager, 2026-09-27): skipping §9.5's cycle test for a receiver
+whose ground encoding is bounded and met no alias. It measured 32.7 ms (cycles 159.9M, about
+−1 %), and it rested on an argument — a bounded preorder expansion over exactly the `structural`
+successors cannot reach a cycle — rather than on the walk. R8c's review rounds showed where a
+proof that is only an argument for a narrower condition leads (three holes), so the walk stays
+and the 1 % is paid.
+The final tree (the rows above as kept, the rollback guard of §9.3 added), rounds of the three
+programs alone (v1, `919f8be`, R9b), two rounds of medians of 7: `s_tup6000` **1.058× and
+1.103×**, the pair 1.093× and 1.047×, `s_int6000` 0.955× and 0.954×; whole process on
+`s_tup6000` 160.8M / 146.3M cycles, 1.10×. The median of `s_tup6000` moves by ±4 % between
+rounds on this machine, so it sits on the 1.10× line rather than clearly under it. What is left over v1 on it is no longer the resolver — whose share of the
+profile is below v1's — but the constant factor of v2's unification, rank adjustment and P6 on
+every declaration, spread thin.
+
+| Measure (R9b measured before the declined cycle-test skip was reverted) | v1 | v2, R9 | v2, R9b | R9b / v1 |
+|---|---|---|---|---|
+| plain corpus, whole process, `perf stat -r 11` cycles, two rounds | 475–478M | 494–496M | 487–488M | 1.02–1.03 |
+| dispatch corpus, the same | 508–509M | 538M | 532–533M | 1.05 |
+| plain corpus, `zig build bench … --checker=` check phase, three rounds, median | 93.8 ms | 97.9 ms | 99.8 ms | 1.06 (rounds 1.03–1.07) |
+| dispatch corpus, the same | 102.5 ms | 111.0 ms | 107.7 ms | 1.05 (rounds 1.03–1.06) |
+
+The scenario (`zig build test-perf`, CK-131) is v2 against v1 on the module's own `check`
+event, best of 5, bound 1.25×: red at `919f8be` (167 %), green on R9b (107 %).
 ---
 
 ## 19. What is kept from the current code

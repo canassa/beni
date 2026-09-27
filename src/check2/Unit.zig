@@ -53,12 +53,22 @@ pub const Pending = struct { node: u32, key: Key };
 nodes: std.ArrayList(Node) = .empty,
 /// Every node's arguments, as node indices.
 node_args: std.ArrayList(u32) = .empty,
+/// Each wanted's node. A site's unit is a handful of nodes, so the first
+/// `inline_len` are searched in `inline_keys` and only a larger unit hashes
+/// (CK-131: the hashing was a seventh of P6 on 6 000 tuple comparisons).
 memo: std.AutoHashMapUnmanaged(Key, u32) = .empty,
+inline_keys: [inline_len]Key = undefined,
+inline_nodes: [inline_len]u32 = undefined,
+/// Keys held inline, or `inline_len + 1` once they moved into `memo`.
+inlined: u32 = 0,
+
 /// Wanted nodes whose term is not written yet.
 pending: std.ArrayList(Pending) = .empty,
 /// The unit's roots, in order: a site's callee, then its evidence roots, or
 /// a row's body positions. A root may repeat a node.
 roots: std.ArrayList(u32) = .empty,
+
+const inline_len = 16;
 
 pub fn deinit(u: *Unit, scratch: Allocator) void {
     u.nodes.deinit(scratch);
@@ -72,6 +82,7 @@ pub fn begin(u: *Unit) void {
     u.nodes.clearRetainingCapacity();
     u.node_args.clearRetainingCapacity();
     u.memo.clearRetainingCapacity();
+    u.inlined = 0;
     u.pending.clearRetainingCapacity();
     u.roots.clearRetainingCapacity();
 }
@@ -79,12 +90,31 @@ pub fn begin(u: *Unit) void {
 /// The node for `key`'s wanted (already followed through its aliases), made
 /// and queued when it is new.
 pub fn wanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
+    if (u.inlined <= inline_len) {
+        for (u.inline_keys[0..u.inlined], u.inline_nodes[0..u.inlined]) |k, n| {
+            if (k.wanted == key.wanted and k.ctx == key.ctx) return n;
+        }
+        if (u.inlined < inline_len) {
+            const n = try u.newWanted(scratch, key);
+            u.inline_keys[u.inlined] = key;
+            u.inline_nodes[u.inlined] = n;
+            u.inlined += 1;
+            return n;
+        }
+        try u.memo.ensureTotalCapacity(scratch, inline_len * 2);
+        for (u.inline_keys, u.inline_nodes) |k, n| u.memo.putAssumeCapacity(k, n);
+        u.inlined = inline_len + 1;
+    }
     const entry = try u.memo.getOrPut(scratch, key);
     if (entry.found_existing) return entry.value_ptr.*;
+    entry.value_ptr.* = try u.newWanted(scratch, key);
+    return entry.value_ptr.*;
+}
+
+fn newWanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
     const n: u32 = @intCast(u.nodes.items.len);
     try u.nodes.append(scratch, .{ .term = .undetermined });
     try u.pending.append(scratch, .{ .node = n, .key = key });
-    entry.value_ptr.* = n;
     return n;
 }
 

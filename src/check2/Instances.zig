@@ -13,7 +13,9 @@
 //!      module's any (the P3 index), another's `pub`, or `private_method` —
 //!      whose scheme is instantiated per use, its requirements the
 //!      sub-wanteds in canonical order (I5), and matched against the
-//!      wanted's method type;
+//!      wanted's method type — or, for another module's PLAIN method,
+//!      the requirements made directly, as that would make them
+//!      (`plainImported`, CK-131);
 //!   5. derivation, for a well-known name asked by anything but a dot-call:
 //!      `Derivable.derivable`, the ONE verdict on "can this receiver derive
 //!      the method" (I10; review B1), which reads the derived contexts and
@@ -104,26 +106,35 @@ fn noMethods(s: *Solve, id: WantedId, root: Var) Error!void {
 
 const WellKnownAnswer = union(enum) { primitive: Dispatch.Primitive, derived };
 
-/// §3.2's table: `eq` and `compare` on `Int`, `Float`, `Bool`, `Char`,
-/// `String`, `Order` and `Never`.
+/// §3.2's answer for `name` on `a`: the row `Contexts.tableRow` states,
+/// with each primitive's function (`Order`'s `eq` is `===`: all-nullary).
 fn wellKnownAnswer(s: *Solve, name: Symbol, a: TypeStore.Structure.App) ?WellKnownAnswer {
-    if (a.args.len != 0) return null;
+    if (a.args.len != 0 or !Resolve.isWellKnownName(name)) return null;
+    const kind = Contexts.kindOf(name);
+    switch (Contexts.tableRow(s.cx.types, a.type, kind) orelse return null) {
+        .derived => return .derived,
+        .primitive => {},
+    }
+    if (kind == .eq) return .{ .primitive = .strict_eq };
     const wk = s.cx.types.well_known;
-    const is_eq = name == InternPool.WellKnown.eq.symbol();
-    if (!Resolve.isWellKnownName(name)) return null;
-    const t = a.type;
-    if (t == .none) return null;
-    if (t == wk.int or t == wk.float or t == wk.bool) return .{ .primitive = if (is_eq) .strict_eq else .num_compare };
-    if (t == wk.char) return .{ .primitive = if (is_eq) .strict_eq else .char_compare };
-    if (t == wk.string) return .{ .primitive = if (is_eq) .strict_eq else .string_compare };
-    // `Order` is all-nullary, so `eq` is `===`; `compare` is not
-    // alphabetic, so it is derived.
-    if (t == wk.order) return if (is_eq) .{ .primitive = .strict_eq } else .derived;
-    if (t == wk.never) return .derived;
-    return null;
+    if (a.type == wk.char) return .{ .primitive = .char_compare };
+    if (a.type == wk.string) return .{ .primitive = .string_compare };
+    return .{ .primitive = .num_compare };
 }
 
 const Symbol = InternPool.Symbol;
+
+/// §3.2's primitive answer for `name` on `flat`, when the table has one.
+pub fn tablePrimitive(s: *Solve, name: Symbol, flat: TypeStore.Structure) ?Dispatch.Primitive {
+    const a = switch (flat) {
+        .app => |a| a,
+        else => return null,
+    };
+    return switch (wellKnownAnswer(s, name, a) orelse return null) {
+        .primitive => |p| p,
+        .derived => null,
+    };
+}
 
 fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!void {
     const cx = s.cx;
@@ -147,7 +158,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         return Resolve.reject(s, id, true);
     } else {
         const iface = cx.iface(entry.module);
-        if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, entry, value);
+        if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, a.type, entry, value);
         if (privateIn(s, entry.module, w.method)) return refusePrivate(s, id, a.type, w.method);
     }
     // 5. Derivation, for a well-known name on a shape that supports it.
@@ -243,7 +254,8 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
     }
 }
 
-fn importedMethod(s: *Solve, id: WantedId, root: Var, entry: Types.Entry, value: Interface.ValueIndex) Error!void {
+fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex) Error!void {
+    if (try plainImported(s, id, root, type_id, entry, value)) return;
     const w = s.evidence.get(id);
     s.instantiate.made.clearRetainingCapacity();
     s.instantiate.origin = w.origin;
@@ -257,6 +269,131 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, entry: Types.Entry, value:
     const args = try s.evidence.addArgs(s.cx.gpa, s.instantiate.made.items);
     if (!try match(s, id, root, copy, entry)) return;
     return Resolve.answer(s, id, .{ .ext = .{ .module = entry.module, .value = value, .args = args } });
+}
+
+/// **The plain-method fast path** (CK-131; v1's `plainMethodMask`, diary
+/// 2026-09-24 00:17). An imported method whose scheme is PLAIN —
+/// `T q₁ … qₙ, T q₁ … qₙ -> Bool|Order` over distinct quantifiers, each
+/// asked for nothing but the method's own name at `qᵢ, qᵢ -> Bool|Order`
+/// (`List.compare … where a.compare`) — asked on `T t₁ … tₙ` at a method
+/// type that already is `root, root -> Bool|Order`, every `tᵢ` a structure
+/// (or an alias of one) no younger than the frame: the instantiation and
+/// `match` could only succeed, and all they would leave is one sub-wanted
+/// per constrained `qᵢ`, created in the scheme's canonical order (the
+/// argument order: the quantifiers are discovered in the receiver) and
+/// readied at once by the binding of `qᵢ` to `tᵢ`. Those are made here
+/// directly — the same method, receiver, method type, kind, origin,
+/// declaration, parent, `seq` and queue — so the resolution order and every
+/// diagnostic are the slow path's. Anything else takes the slow path.
+fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex) Error!bool {
+    const w = s.evidence.get(id);
+    if (!Resolve.isWellKnownName(w.method)) return false;
+    const plain = (try plainMethod(s, type_id, entry, value, w.method)) orelse return false;
+    if (!Resolve.hasWellKnownType(s, w.method, w.method_type, root)) return false;
+    const st = s.store();
+    const rank = s.frame().rank;
+    {
+        const args = Walk.positions(st, root);
+        if (args.len != plain.arity) return false;
+        for (args) |arg| {
+            const r = st.find(arg);
+            if (st.rank(r) > rank) return false;
+            switch (st.content(r)) {
+                .structure, .alias => {},
+                .flex, .rigid, .err => return false,
+            }
+        }
+    }
+    const gpa = s.cx.gpa;
+    const args = try s.cx.scratch.dupe(Var, Walk.positions(st, root));
+    defer s.cx.scratch.free(args);
+    const made = &s.instantiate.made;
+    made.clearRetainingCapacity();
+    for (args, 0..) |arg, i| {
+        if (plain.mask & (@as(u64, 1) << @intCast(i)) == 0) continue;
+        const method_type = try Resolve.wellKnownType(s, w.method, arg);
+        const sub = try Resolve.create(s, w.method, arg, method_type, w.origin, .where_clause, id.toOptional());
+        // The sub-wanteds are the use's: its declaration owns their failures.
+        s.evidence.ptr(sub).decl = w.decl;
+        try made.append(gpa, sub);
+    }
+    // Readied as the binding of each quantifier would ready it, in order.
+    for (made.items) |sub| {
+        const p = s.evidence.ptr(sub);
+        p.state = .ready;
+        try s.unifier.enqueue(p.frame, sub.int() | Evidence.queued_wanted);
+    }
+    const sub_args = try s.evidence.addArgs(gpa, made.items);
+    Resolve.answer(s, id, .{ .ext = .{ .module = entry.module, .value = value, .args = sub_args } });
+    return true;
+}
+
+/// A plain method's shape (`plainImported`): its receiver's arity and the
+/// arguments its requirements ask the method of.
+pub const Plain = struct { arity: u32, mask: u64 };
+
+/// Whether `entry`'s module's value `value` is a plain `name` method on
+/// `entry`'s type, read off its interface scheme once per module check.
+fn plainMethod(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex, name: Symbol) Error!?Plain {
+    const key = (@as(u64, entry.module.int()) << 33) | (@as(u64, @intFromEnum(value)) << 1) |
+        @intFromBool(name == InternPool.WellKnown.compare.symbol());
+    const got = try s.resolver.plain.getOrPut(s.cx.gpa, key);
+    if (!got.found_existing) got.value_ptr.* = readPlain(s, type_id, entry, value, name);
+    return got.value_ptr.*;
+}
+
+fn readPlain(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex, name: Symbol) ?Plain {
+    const cx = s.cx;
+    const iface = cx.iface(entry.module);
+    const refs = cx.types.refIds(entry.module);
+    const result_type = Resolve.wellKnownResult(s, name);
+    if (result_type == .none or @intFromEnum(value) >= iface.values.len) return null;
+    const index = iface.values[@intFromEnum(value)].scheme;
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
+    const scheme = iface.scheme(index);
+    const body = iface.term(scheme.body);
+    if (body.tag != .func) return null;
+    const params = iface.range(body.lhs);
+    if (params.len != 2 or !isNullaryRef(iface, refs, @enumFromInt(body.rhs), result_type)) return null;
+    const p0 = iface.term(@enumFromInt(params[0]));
+    const p1 = iface.term(@enumFromInt(params[1]));
+    if (p0.tag != .app or p1.tag != .app or p0.lhs != p1.lhs) return null;
+    if (p0.lhs >= refs.len or refs[p0.lhs] != type_id) return null;
+    const a0 = iface.range(p0.rhs);
+    const a1 = iface.range(p1.rhs);
+    if (a0.len != a1.len or a0.len > 64 or a0.len != scheme.quantified_count) return null;
+    var seen: u64 = 0;
+    var mask: u64 = 0;
+    for (a0, a1, 0..) |t0, t1, i| {
+        const v0 = iface.term(@enumFromInt(t0));
+        const v1 = iface.term(@enumFromInt(t1));
+        if (v0.tag != .@"var" or v1.tag != .@"var" or v0.lhs != v1.lhs or v0.lhs >= scheme.quantified_count) return null;
+        const bit = @as(u64, 1) << @intCast(v0.lhs);
+        if (seen & bit != 0) return null;
+        seen |= bit;
+        const q = iface.quantified(scheme, v0.lhs);
+        if (q.kind != @intFromEnum(TypeStore.Kind.any) or q.equatable or q.constraints_len > 1) return null;
+        if (q.constraints_len == 0) continue;
+        const c = iface.quantifiedConstraint(q, 0);
+        if (iface.symbol(c.name) != name) return null;
+        const ct = iface.term(c.type);
+        if (ct.tag != .func) return null;
+        const cps = iface.range(ct.lhs);
+        if (cps.len != 2) return null;
+        for (cps) |cp| {
+            const cv = iface.term(@enumFromInt(cp));
+            if (cv.tag != .@"var" or cv.lhs != v0.lhs) return null;
+        }
+        if (!isNullaryRef(iface, refs, @enumFromInt(ct.rhs), result_type)) return null;
+        mask |= @as(u64, 1) << @intCast(i);
+    }
+    return .{ .arity = @intCast(a0.len), .mask = mask };
+}
+
+/// Whether interface term `t` is the nullary application of `type_id`.
+fn isNullaryRef(iface: *const Interface, refs: []const Types.TypeId, t: Interface.TermIndex, type_id: Types.TypeId) bool {
+    const term = iface.term(t);
+    return term.tag == .app and term.lhs < refs.len and refs[term.lhs] == type_id and iface.range(term.rhs).len == 0;
 }
 
 /// §9.3 step 4: the instantiated method against the wanted's method type.

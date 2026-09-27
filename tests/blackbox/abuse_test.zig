@@ -1183,6 +1183,13 @@ test "an empty directory is zero files and zero diagnostics" {
     try testing.expectEqualStrings("", f.stderr);
 }
 
+// `test-v2` runs this file's determinism scenarios alone, selected by name
+// (`build.zig`). This guard's name matches the same filter, so it runs with
+// them and checks the binary holds every one (`world.expectFilteredTests`).
+test "test-v2 guard: the 600 modules check identically scenario and its twin run in the filtered binary" {
+    try world.expectFilteredTests(@import("builtin").test_functions.len);
+}
+
 test "5 000 empty modules produce identical output at --jobs=1 and the machine default" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

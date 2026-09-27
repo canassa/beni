@@ -893,6 +893,13 @@ fn indexOfName(names: []const []const u8, name: []const u8) ?usize {
     return null;
 }
 
+// `test-v2` runs this file's determinism scenarios alone, selected by name
+// (`build.zig`). This guard's name matches the same filter, so it runs with
+// them and checks the binary holds every one (`world.expectFilteredTests`).
+test "test-v2 guard: the --jobs=1 and --jobs=8 scenarios all run in the filtered binary" {
+    try world.expectFilteredTests(@import("builtin").test_functions.len);
+}
+
 test "every stream of every command is byte-identical across --jobs=1 and --jobs=8, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

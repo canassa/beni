@@ -353,6 +353,12 @@ proof_voids: u64 = 0,
 /// v2 (`check2/Module.zig`); checker v1 never proves, and pays one branch per
 /// content write.
 tracks_proofs: bool = false,
+/// How many times `rollback` ran: never decreases. Checker v2 never
+/// speculates (§7.5), so under v2 it stays 0; v2's memos keyed by a variable
+/// id (`check2/Derivable.zig`'s `GroundMemo` and `Shapes.last`) record it
+/// and refuse to be read across a rollback, which could reuse an id for
+/// another type (CK-131, R9b).
+rollbacks: u32 = 0,
 
 const Entry = struct { v: Var, desc: Descriptor };
 
@@ -888,6 +894,7 @@ pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     // A rolled-back write is not seen by the proofs, and a reused index could
     // read as proved: v2 never speculates (§7.5), and a rollback voids them.
     if (store.tracks_proofs) store.voidProofs();
+    store.rollbacks +%= 1;
     store.depth -= 1;
     const exact = !store.broken;
     var i = store.journal.items.len;

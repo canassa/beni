@@ -692,24 +692,44 @@ fn id(c: *const Contexts, t: u32) Types.TypeId {
 }
 
 /// Whether the module rule answers `kind` for this module's type `type_id`:
-/// the module has a value of the name (§11.3), and §3.2's table does not
-/// derive it first. `core/Basics.beni` declares `Order` and `Never` beside
-/// `pub compare : number, number -> Order` and `pub foreign eq`, and the
-/// table — consulted before the module rule (`Instances.onApp`) — derives
-/// `Order`'s `compare` and both of `Never`'s (static-dispatch-spike.md §3.2).
-/// Their rows must say so, or an importer finds no `compare` for `Order`
-/// (CK-130: first seen when R9 made v2 check `core`).
+/// the module has a value of the name (§11.3), and §3.2's table has no row
+/// for it — the table is consulted before the module rule
+/// (`Instances.onApp`). `core/Basics.beni` declares `Order` and `Never`
+/// beside `pub compare : number, number -> Order` and `pub foreign eq`, and
+/// the table derives `Order`'s `compare` and both of `Never`'s
+/// (static-dispatch-spike.md §3.2). Their rows must say so, or an importer
+/// finds no `compare` for `Order` (CK-130: first seen when R9 made v2 check
+/// `core`).
 pub fn moduleRuleAnswers(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
     if (!c.module_has[@intFromEnum(kind)]) return false;
-    return !tableDerives(c.cx.types, type_id, kind);
+    return tableRow(c.cx.types, type_id, kind) == null;
 }
 
-/// §3.2's `derived` rows: `Order`'s `compare`, and `Never`'s `eq` and
-/// `compare`. (`Order`'s `eq` is the table's `primitive strict_eq`.)
-pub fn tableDerives(types: *const Types, type_id: Types.TypeId, kind: Kind) bool {
+/// Whether `kind` on this module's `type_id` is answered by no derived
+/// context of its own: the module rule's method, or §3.2's `primitive` row
+/// (`Bool` and `Order`'s `eq` in `core/Basics.beni`, whatever values the
+/// module declares; R9's review, nit 1). Read as `own_method`: nothing is
+/// derived, and nothing is emitted for it (P5).
+pub fn notDerived(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
+    return tableRow(c.cx.types, type_id, kind) == .primitive or c.moduleRuleAnswers(type_id, kind);
+}
+
+/// A row of §3.2's table (static-dispatch-spike.md §3.2).
+pub const TableRow = enum { primitive, derived };
+
+/// THE statement of §3.2's table (R9's review, nit 1): `eq` and `compare`
+/// on `Int`, `Float`, `Bool`, `Char` and `String`, and `Order`'s `eq`,
+/// are `primitive`; `Order`'s `compare` (not alphabetic) and both of
+/// `Never`'s are `derived`; any other type has no row. The resolver
+/// (`Instances.wellKnownAnswer`), the verdict walk, the contexts and the
+/// published rows (`Publish`) all read it.
+pub fn tableRow(types: *const Types, type_id: Types.TypeId, kind: Kind) ?TableRow {
     const wk = types.well_known;
-    if (type_id == .none) return false;
-    return type_id == wk.never or (type_id == wk.order and kind == .compare);
+    if (type_id == .none) return null;
+    if (type_id == wk.int or type_id == wk.float or type_id == wk.bool or type_id == wk.char or type_id == wk.string) return .primitive;
+    if (type_id == wk.order) return if (kind == .eq) .primitive else .derived;
+    if (type_id == wk.never) return .derived;
+    return null;
 }
 
 /// The module-local index of type `type_id`, if it is this module's.
@@ -828,7 +848,7 @@ pub fn peek(c: *Contexts, s: *const Solve, type_id: Types.TypeId, kind: Kind) Er
     const t = c.local(type_id) orelse return .{ .status = .absent_other };
     const u = c.unit_of[t];
     if (u == none) return .{ .status = .absent_other };
-    if (c.moduleRuleAnswers(type_id, kind)) return .{ .status = .own_method };
+    if (c.notDerived(type_id, kind)) return .{ .status = .own_method };
     if (c.readable(s, u)) |ri| {
         const slot = c.member_of[t] * 2 + @intFromEnum(kind);
         try c.noteApprox(s, ri, slot);
@@ -1070,7 +1090,7 @@ fn run(s: *Solve, u: u32) Error!void {
         while (slot > 0) {
             slot -= 1;
             const kind: Kind = @enumFromInt(slot % 2);
-            if (c.moduleRuleAnswers(c.id(members[slot / 2]), kind)) {
+            if (c.notDerived(c.id(members[slot / 2]), kind)) {
                 r.approx[slot] = .{ .status = .own_method };
                 continue;
             }

@@ -40,6 +40,126 @@ const Kind = Dispatch.Derived.Kind;
 
 pub const PairKey = struct { root: Var, kind: Kind };
 
+/// The pairs proved derivable over a ground subgraph
+/// (`Resolve.State.derivable`): one byte per variable, bit `kind`, grown
+/// with the store. A dense id indexes a column, never a hash map.
+///
+/// Keyed by a variable id, so sound only while no id is reused for another
+/// type: v2 never rolls the store back (§7.5). A rollback while the memo
+/// holds anything (`TypeStore.rollbacks` moved since its first write) is a
+/// panic in a safe build, and empties it otherwise (§9.3 *amended by R9b*).
+pub const GroundMemo = struct {
+    bits: std.ArrayList(u8) = .empty,
+    /// `TypeStore.rollbacks` at the first write, or null while empty.
+    generation: ?u32 = null,
+
+    pub fn contains(m: *GroundMemo, store: *const TypeStore, key: PairKey) bool {
+        m.guard(store);
+        const i = key.root.int();
+        return i < m.bits.items.len and m.bits.items[i] & bit(key.kind) != 0;
+    }
+
+    fn guard(m: *GroundMemo, store: *const TypeStore) void {
+        const g = m.generation orelse return;
+        if (g == store.rollbacks) return;
+        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3 *amended by R9b*, CK-131)", .{});
+        m.bits.clearRetainingCapacity();
+        m.generation = null;
+    }
+
+    pub fn put(m: *GroundMemo, gpa: std.mem.Allocator, store: *const TypeStore, key: PairKey) Error!void {
+        m.guard(store);
+        if (m.generation == null) m.generation = store.rollbacks;
+        const i = key.root.int();
+        if (i >= m.bits.items.len) {
+            const len = @max(store.count(), i + 1);
+            try m.bits.appendNTimes(gpa, 0, len - m.bits.items.len);
+        }
+        m.bits.items[i] |= bit(key.kind);
+    }
+
+    fn bit(kind: Kind) u8 {
+        return @as(u8, 1) << @as(u3, @intCast(@intFromEnum(kind)));
+    }
+};
+
+/// The ground shapes this module proved derivable (CK-131;
+/// `Resolve.State.shapes`), keyed by their STRUCTURE, not by a variable: a
+/// module that compares `( Int, List Int )` in 6 000 declarations walks it
+/// once. Only a shape whose every nominal head is §3.2's or another
+/// module's is kept — the verdict then reads nothing but the structure, the
+/// table and interfaces that cannot change during the module's check — and
+/// only up to `shape_cap` words, which also stops at a cyclic graph.
+pub const Shapes = struct {
+    /// Owned keys: `std.mem.sliceAsBytes` of an encoding.
+    map: std.StringHashMapUnmanaged(void) = .empty,
+    /// The encoding being built: the kind, then the receiver in preorder,
+    /// each node a tag and its arity (so no two shapes share an encoding).
+    words: std.ArrayList(u32) = .empty,
+    stack: std.ArrayList(Var) = .empty,
+    /// The last encoding's receiver and kind, what it found, and
+    /// `TypeStore.rollbacks` then: `words` holds its encoding while `last`
+    /// names it (`derivable` reads it before and after the walk). Keyed by a
+    /// variable id: a rollback since is a panic in a safe build and a miss
+    /// otherwise (`GroundMemo`).
+    last: ?struct { root: Var, kind: Kind, ground: ?Ground, generation: u32 } = null,
+
+    pub fn deinit(sh: *Shapes, gpa: std.mem.Allocator) void {
+        var it = sh.map.keyIterator();
+        while (it.next()) |k| gpa.free(k.*);
+        sh.map.deinit(gpa);
+        sh.words.deinit(gpa);
+        sh.stack.deinit(gpa);
+    }
+};
+
+const shape_cap = 64;
+
+/// A ground receiver of at most `shape_cap` words.
+pub const Ground = struct {
+    /// Its encoding, valid until the next `groundShape`.
+    key: []const u8,
+    /// Every nominal head is §3.2's or another module's: `Shapes` may keep it.
+    kept: bool,
+};
+
+/// `root`'s encoding for `Shapes` under `kind`, or null when it has a
+/// variable, a function, or more than `shape_cap` words (a cyclic graph
+/// among them).
+pub fn groundShape(s: *Solve, root: Var, kind: Kind) Error!?Ground {
+    const sh = &s.resolver.shapes;
+    const generation = s.store().rollbacks;
+    if (sh.last) |l| if (l.root == root and l.kind == kind) {
+        if (l.generation == generation) return l.ground;
+        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3 *amended by R9b*, CK-131)", .{});
+    };
+    const ground = try encode(s, root, kind);
+    sh.last = .{ .root = root, .kind = kind, .ground = ground, .generation = generation };
+    return ground;
+}
+
+fn encode(s: *Solve, root: Var, kind: Kind) Error!?Ground {
+    const sh = &s.resolver.shapes;
+    const Heads = struct {
+        s: *Solve,
+        pub fn kept(h: @This(), a: TypeStore.Structure.App) bool {
+            return isWellKnownType(h.s, a) or h.s.cx.types.entry(a.type).module != h.s.cx.module;
+        }
+    };
+    const found = (try Walk.encodeGround(s.store(), s.cx.gpa, &sh.words, &sh.stack, root, @intFromEnum(kind), shape_cap, Heads{ .s = s })) orelse return null;
+    return .{ .key = std.mem.sliceAsBytes(sh.words.items), .kept = found.kept };
+}
+
+fn keep(s: *Solve, key: []const u8) Error!void {
+    const map = &s.resolver.shapes.map;
+    const got = try map.getOrPut(s.cx.gpa, key);
+    if (got.found_existing) return;
+    got.key_ptr.* = s.cx.gpa.dupe(u8, key) catch |err| {
+        map.removeByPtr(got.key_ptr);
+        return err;
+    };
+}
+
 /// Why a receiver cannot derive a well-known method, or that it can.
 pub const Verdict = union(enum) {
     ok,
@@ -69,6 +189,10 @@ pub const Verdict = union(enum) {
 pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
     const kind = Contexts.kindOf(w.method);
+    // A ground shape proved derivable before (`Shapes`, CK-131).
+    if (try groundShape(s, root, kind)) |g| {
+        if (g.kept and s.resolver.shapes.map.contains(g.key)) return true;
+    }
     var forced: std.ArrayList(Forced) = .empty;
     defer forced.deinit(s.cx.scratch);
     // The common case, `T … == T …` on an own type whose context nothing
@@ -98,7 +222,12 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
         verdict = try derivability(s, root, kind, forced.items);
     }
     switch (verdict) {
-        .ok => return true,
+        .ok => {
+            if (try groundShape(s, root, kind)) |g| {
+                if (g.kept) try keep(s, g.key);
+            }
+            return true;
+        },
         .pending, .query => unreachable,
         .cycle => |node| {
             try s.reportCycle(w.origin, .none, root, node);
@@ -164,8 +293,8 @@ fn headNeedsRun(s: *Solve, root: Var, kind: Kind) Error!?u32 {
     };
     const c = &s.contexts;
     const t = c.local(a.type) orelse return null;
-    if (c.unit_of[t] == Contexts.none or c.moduleRuleAnswers(a.type, kind)) return null;
-    if (!Contexts.tableDerives(s.cx.types, a.type, kind) and s.ownValue(Contexts.methodName(kind)) != null) return null;
+    if (c.unit_of[t] == Contexts.none or c.notDerived(a.type, kind)) return null;
+    if (Contexts.tableRow(s.cx.types, a.type, kind) == null and s.ownValue(Contexts.methodName(kind)) != null) return null;
     if (try c.peek(s, a.type, kind) != null) return null;
     return c.unit_of[t];
 }
@@ -275,7 +404,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
     const gpa = s.cx.gpa;
     const scratch = s.cx.scratch;
     const first: PairKey = .{ .root = st.find(start), .kind = kind };
-    if (s.resolver.derivable.contains(first)) return .ok;
+    if (s.resolver.derivable.contains(st, first)) return .ok;
     // The open memo (CK-111) holds while no leaf a walk met has been given
     // successors since (`TypeStore.proof_voids`), and only for a walk with
     // nothing forced.
@@ -304,7 +433,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
             try colours.put(scratch, done.key, if (done.ground) .black else .black_open);
             if (!walker.volatile_read) {
                 if (done.ground) {
-                    try s.resolver.derivable.put(gpa, done.key, {});
+                    try s.resolver.derivable.put(gpa, st, done.key);
                 } else if (open_memo) {
                     try r.derivable_open.put(gpa, done.key, {});
                 }
@@ -322,7 +451,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
                 continue;
             },
         };
-        if (s.resolver.derivable.contains(key)) continue;
+        if (s.resolver.derivable.contains(st, key)) continue;
         if (open_memo and r.derivable_open.contains(key)) {
             top.ground = false;
             continue;
@@ -378,11 +507,9 @@ fn open(s: *Solve, w: *Walker, key: PairKey, map: ?Verdict, forced: []const Forc
 
 const Opened = union(enum) { frame: Frame, refusal: Verdict };
 
+/// A type with a row of §3.2's table (`Contexts.tableRow`; both kinds have one).
 fn isWellKnownType(s: *const Solve, a: TypeStore.Structure.App) bool {
-    if (a.args.len != 0 or a.type == .none) return false;
-    const wk = s.cx.types.well_known;
-    const t = a.type;
-    return t == wk.int or t == wk.float or t == wk.bool or t == wk.char or t == wk.string or t == wk.order or t == wk.never;
+    return a.args.len == 0 and Contexts.tableRow(s.cx.types, a.type, .eq) != null;
 }
 
 /// A nominal head `T args` (§11.2): its steps, or why it cannot answer.

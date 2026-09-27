@@ -3,8 +3,10 @@
 `zig build test-v2` runs the whole of `tests/corpus/` under `--checker=v2`
 ([`plans/checker-rewrite.md`](../../plans/checker-rewrite.md) §2.4,
 [`checker-v2.md`](../../docs/design/checker-v2.md) §22.2). Every fixture covered by an entry
-below is **skipped**, in report mode (R4a–R8b, where it was printed) and in strict mode (R9–R11)
-alike. Nothing else is exempt: from R9 `test-v2` fails on any other red fixture.
+below is **exempt**: skipped in report mode (R4a–R8b, where it was printed); in strict mode it still
+runs, quietly and never blessed, and it must still fail — from R9b one that now passes fails the
+step, like `test-pending`'s rule (b), so its entry is deleted (or the fixture re-blessed) then.
+Nothing else is exempt: from R9 `test-v2` fails on any other red fixture.
 
 An entry is a list item that starts with a back-quoted repo-relative path: one fixture (a `.beni`
 file or a project directory directly under a kind directory, written without a trailing `/`). The

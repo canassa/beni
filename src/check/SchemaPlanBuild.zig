@@ -30,8 +30,9 @@ pub fn build(
     schemas: *const Schema.State,
     /// Per declaration, its endpoints' property bytes `(program, encoded)`
     /// as the new checker read them off its derived contexts
-    /// (checker-v2.md §11.5 *as built by R8b*), or null: the old checker's
-    /// settled session bits.
+    /// (checker-v2.md §11.5 *as built by R8b*) — always, under v2 — or null
+    /// under `--checker=v1`, which reads the old checker's settled session
+    /// bits instead.
     properties: ?[]const [2]u8,
 ) Allocator.Error!SchemaPlan {
     var b: Builder = .{

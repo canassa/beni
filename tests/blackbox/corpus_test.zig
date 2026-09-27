@@ -54,8 +54,9 @@
 //! RED/GREEN per fixture instead of failing on it, `BENI_CHECKER` adds
 //! `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds each run. `zig build
 //! test-v2` is the strict corpus run under `BENI_CHECKER=v2` (strict from R9;
-//! a `report` mode with a `v2-green.txt` ratchet until then): it skips the
-//! fixtures of `tests/pending/v2-expected.md` and fails on any other. Unset
+//! a `report` mode with a `v2-green.txt` ratchet until then): it exempts the
+//! fixtures of `tests/pending/v2-expected.md` — each still runs, and one
+//! that now passes fails the step (R9b) — and fails on any other. Unset
 //! (or empty), each is today's strict corpus run; see `Config`, and
 //! `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
@@ -355,9 +356,27 @@ fn walk(kind: Kind) !void {
         switch (cfg.mode) {
             .strict => {
                 // `test-v2` from R9 (§2.4): a fixture `v2-expected.md`
-                // covers is skipped, never run; every other one must pass.
+                // covers is exempt; every other one must pass. It is still
+                // run — quietly, never blessed — and one that now PASSES
+                // fails the step (R9b, R9's review: like pending rule (b)),
+                // so an expected difference that stopped differing cannot
+                // stay exempt unseen.
                 if (cfg.holds_expected and world.pending.expectedCovers(cfg.v2_expected, path)) {
-                    skipped += 1;
+                    var exempt = case;
+                    exempt.bless = false;
+                    const was_quiet = quiet;
+                    quiet = true;
+                    world.announce_timeouts = false;
+                    reason_len = 0;
+                    const green = if (exempt.run()) |_| true else |_| false;
+                    quiet = was_quiet;
+                    world.announce_timeouts = !quiet;
+                    if (green) {
+                        std.debug.print("V2-EXPECTED  GREEN  {s}: tests/pending/v2-expected.md exempts it, and it now passes under v2 — delete its entry (plans/checker-rewrite.md §2.4)\n", .{path});
+                        failures += 1;
+                    } else {
+                        skipped += 1;
+                    }
                     continue;
                 }
                 case.run() catch |err| {
@@ -418,8 +437,9 @@ const Config = struct {
     red: []const world.pending.RedLine,
     /// `tests/pending/v2-expected.md` (§2.4, checker-v2.md §22.1): read by a
     /// strict run of the default root under `BENI_CHECKER=v2` — `test-v2`,
-    /// strict from R9 (`holds_expected`). A covered fixture is skipped,
-    /// never run. (R4a–R8b ran `test-v2` in a `report` mode with a
+    /// strict from R9 (`holds_expected`). A covered fixture is exempt: it
+    /// runs quietly and is never blessed, and it must still FAIL — one that
+    /// passes is stale and fails the step (R9b). (R4a–R8b ran `test-v2` in a `report` mode with a
     /// `v2-green.txt` ratchet; strict mode made both redundant.)
     v2_expected: []const []const u8 = &.{},
     holds_expected: bool = false,

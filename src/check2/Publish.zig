@@ -334,10 +334,7 @@ const Facts = struct {
     /// payload's context reached.
     fn derived(f: *Facts, id: Types.TypeId, kind: Contexts.Kind) Error!Interface.Derived {
         const types = f.cx.types;
-        const wk = types.well_known;
-        if (id == wk.int or id == wk.float or id == wk.bool or id == wk.char or id == wk.string or (id == wk.order and kind == .eq)) {
-            return .{ .status = .primitive };
-        }
+        if (Contexts.tableRow(types, id, kind) == .primitive) return .{ .status = .primitive };
         if (f.contexts.moduleRuleAnswers(id, kind)) {
             if (f.contexts.module_pub[@intFromEnum(kind)]) return .{ .status = .own_method };
             return f.private(id, Contexts.methodName(kind));

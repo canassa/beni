@@ -45,6 +45,26 @@ pub fn exePath(arena: Allocator) []const u8 {
     return if (value.len == 0) exe_relative else value;
 }
 
+/// `test-v2`'s guard on its name-filtered determinism binaries (R9b, R9's
+/// review): `build.zig` sets `BENI_EXPECTED_TESTS` to how many tests a
+/// filtered binary must hold — its scenarios and the guard that calls this —
+/// so a renamed scenario that no filter matches any more fails the step
+/// instead of silently leaving v2's determinism unrun. `tests` is
+/// `builtin.test_functions.len`. Empty (every other binary): nothing to check.
+pub fn expectFilteredTests(tests: usize) !void {
+    const gpa = std.testing.allocator;
+    const value = std.testing.environ.getAlloc(gpa, "BENI_EXPECTED_TESTS") catch |err| switch (err) {
+        error.EnvironmentVariableMissing => return,
+        else => return err,
+    };
+    defer gpa.free(value);
+    if (value.len == 0) return;
+    const want = try std.fmt.parseInt(usize, value, 10);
+    if (tests == want) return;
+    std.debug.print("this filtered binary holds {d} tests where build.zig expects {d}: a determinism scenario test-v2 selects by name was renamed or removed (update its filter and count in build.zig)\n", .{ tests, want });
+    return error.FilteredTestCount;
+}
+
 /// The checker every `build`, `check` and `dump` a `World` runs is given:
 /// `BENI_CHECKER` when it is set and not empty, else null (the default
 /// checker). It is how `test-v2` runs the determinism scenarios of

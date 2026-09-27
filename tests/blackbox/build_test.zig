@@ -253,6 +253,13 @@ test "a non-zero exit code from the platform reaches the process" {
     try testing.expectEqualStrings("", program.stderr);
 }
 
+// `test-v2` runs this file's determinism scenarios alone, selected by name
+// (`build.zig`). This guard's name matches the same filter, so it runs with
+// them and checks the binary holds every one (`world.expectFilteredTests`).
+test "test-v2 guard: every scenario of a build byte-identical at every --jobs runs in the filtered binary" {
+    try world.expectFilteredTests(@import("builtin").test_functions.len);
+}
+
 test "a build is byte-identical at every --jobs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
