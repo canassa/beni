@@ -1,9 +1,0 @@
-import Data
-import Interp
-import Node exposing (Program)
-import Tree
-
-
-main : Program
-main =
-    Node.printLines (List.concat [ Interp.run, Tree.run, Data.run ])

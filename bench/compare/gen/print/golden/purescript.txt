@@ -1,0 +1,40 @@
+module Gold001 where
+
+import Prelude
+
+import Data.List (List(..), (:), filter)
+import Data.Foldable (foldl)
+import Data.Tuple (Tuple(..))
+import Base as Base
+
+data T8001000 a
+  = C8001000x0 a Int
+  | C8001000x1
+
+f8001000 :: (T8001000 Int) -> Int -> Boolean -> String
+f8001000 v0 v1 v2 =
+    case v0 of
+        C8001000x0 v3 3 ->
+            if v2 && (v1 < 10) then
+                show (v3 + v1 + 1)
+            else
+                "s1"
+        C8001000x0 _ _ ->
+            if not v2 then
+                "s4"
+            else
+                "s5"
+        C8001000x1 ->
+            let
+                v4 = "s3"
+            in
+            v4 <> "s2"
+
+f8001001 :: (List Int) -> (Base.Seq Int) -> (Tuple Int (Base.Seq Int))
+f8001001 v0 v1 =
+    Tuple (foldl (\v5 v4 -> v5 - v4) 0 (filter (\v3 -> v3 == 4) (map (\v2 -> v2 * 2) v0)) + (v1 # Base.srev # Base.slen)) (Base.SCons 5 v1)
+
+entry :: Int -> Int
+entry _ =
+    Base.pfst (f8001001 (1 : 2 : Nil) Base.SNil)
+

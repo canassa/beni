@@ -1,0 +1,53 @@
+import * as Base from "./Base";
+
+export type T8001000<a> =
+  | { readonly tag: "C8001000x0"; readonly f0: a; readonly f1: number }
+  | { readonly tag: "C8001000x1" };
+
+export function C8001000x0<a>(f0: a, f1: number): T8001000<a> {
+  return { tag: "C8001000x0", f0, f1 };
+}
+
+export function C8001000x1<a>(): T8001000<a> {
+  return { tag: "C8001000x1" };
+}
+
+export function f8001000(v0: T8001000<number>, v1: number, v2: boolean): string {
+  switch (v0.tag) {
+    case "C8001000x0": {
+      const m1 = v0.f1;
+      switch (m1) {
+        case 3: {
+          let v3 = v0.f0;
+          if (v2 && (v1 < 10)) {
+            return String(v3 + v1 + 1);
+          } else {
+            return "s1";
+          }
+        }
+        default: {
+          if (!v2) {
+            return "s4";
+          } else {
+            return "s5";
+          }
+        }
+      }
+    }
+    case "C8001000x1": {
+      let v4 = "s3";
+      return v4 + "s2";
+    }
+    default:
+      return Base.absurd(v0);
+  }
+}
+
+export function f8001001(v0: ReadonlyArray<number>, v1: Base.Seq<number>): readonly [number, Base.Seq<number>] {
+  return Base.pair(v0.map((v2) => v2 * 2).filter((v3) => v3 === 4).reduce<number>((v5, v4) => v5 - v4, 0) + Base.slen(Base.srev(v1)), Base.SCons(5, v1));
+}
+
+export function entry(_1: number): number {
+  return Base.pfst(f8001001([1, 2], Base.SNil<number>()));
+}
+

@@ -1,0 +1,38 @@
+import Base
+
+
+pub type T8001000 a
+    = C8001000x0 a Int
+    | C8001000x1
+
+
+pub f8001000 : (T8001000 Int), Int, Bool -> String
+f8001000 v0 v1 v2 =
+    case v0 of
+        C8001000x0 v3 3 ->
+            if v2 && (v1 < 10) then
+                String.fromInt (v3 + v1 + 1)
+            else
+                "s1"
+        C8001000x0 _ _ ->
+            if not v2 then
+                "s4"
+            else
+                "s5"
+        C8001000x1 ->
+            let
+                v4 = "s3"
+            in
+            v4 ++ "s2"
+
+
+pub f8001001 : (List Int), (Base.Seq Int) -> ( Int, Base.Seq Int )
+f8001001 v0 v1 =
+    ( List.foldl (List.filter (List.map v0 (\v2 -> v2 * 2)) (\v3 -> v3 == 4)) 0 (\v4 v5 -> v5 - v4) + (v1 |> Base.srev |> Base.slen), Base.SCons 5 v1 )
+
+
+pub entry : Int -> Int
+entry _ =
+    Base.pfst (f8001001 [ 1, 2 ] Base.SNil)
+
+

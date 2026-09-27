@@ -14,3 +14,7 @@
 # one. A cache is machine-local by policy and is never committed; deleting it
 # is always safe, because every entry is content-addressed.
 .beni-cache/
+
+# bench/compare's generated projects and fetched dependencies
+# (docs/design/compare-bench.md §8.2, §12): generated code is never committed.
+/bench/compare/work/

@@ -1,0 +1,37 @@
+import gleam/int
+import gleam/list
+import base
+
+pub type T8001000(a) {
+  C8001000x0(a, Int)
+  C8001000x1
+}
+
+pub fn f8001000(v0: T8001000(Int), v1: Int, v2: Bool) -> String {
+  case v0 {
+      C8001000x0(v3, 3) ->
+          case v2 && { v1 < 10 } {
+              True -> int.to_string(v3 + v1 + 1)
+              False -> "s1"
+          }
+      C8001000x0(_, _) ->
+          case !v2 {
+              True -> "s4"
+              False -> "s5"
+          }
+      C8001000x1 ->
+          {
+              let v4 = "s3"
+              v4 <> "s2"
+          }
+  }
+}
+
+pub fn f8001001(v0: List(Int), v1: base.Seq(Int)) -> #(Int, base.Seq(Int)) {
+  #(list.fold(list.filter(list.map(v0, fn(v2) { v2 * 2 }), fn(v3) { v3 == 4 }), 0, fn(v5, v4) { v5 - v4 }) + { v1 |> base.srev |> base.slen }, base.SCons(5, v1))
+}
+
+pub fn entry(_: Int) -> Int {
+  base.pfst(f8001001([1, 2], base.SNil))
+}
+

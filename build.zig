@@ -14,6 +14,11 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf; §2.5)
+//! And the cross-language benchmark (docs/design/compare-bench.md §12), which
+//! needs `nix develop .#compare` and is not a gate either:
+//!   zig build compare-gen         write the generated projects
+//!   zig build compare             time them; results/<date>.json and README
+//!   zig build compare-smoke       size 1, both modes: acceptance only
 //! (`test-v2`, the corpus under `--checker=v2` while v1 was the default, was
 //! deleted at the cut-over, R11; v1 and `--checker` themselves at R12.)
 const std = @import("std");
@@ -258,10 +263,69 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Measure per-phase throughput over bench/corpus (ReleaseFast)");
     bench_step.dependOn(&bench_run.step);
 
+    // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
+    // The generator is its own target: it imports nothing from `src/`. It
+    // runs ReleaseFast (it generates and prints ~1 M nodes per round); its
+    // unit tests run in `test` at the build's mode, like `bench/gen.zig`'s.
+    // The beni it times is the ReleaseFast one of `test-pending-perf`.
+    const compare_options = b.addOptions();
+    compare_options.addOption([]const u8, "generator_hash", compareGeneratorHash(b));
+    compare_options.addOption([]const u8, "beni_exe", b.getInstallPath(.prefix, perf_bin_dir ++ "/beni"));
+    compare_options.addOption([]const u8, "repo_root", b.pathFromRoot("."));
+    const compare_exe = b.addExecutable(.{
+        .name = "compare",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compare/gen/main.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{.{ .name = "compare_options", .module = compare_options.createModule() }},
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compare/gen/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "compare_options", .module = compare_options.createModule() }},
+        }),
+    })).step);
+    inline for (.{
+        .{ "compare-gen", "gen", "Generate the cross-language benchmark's projects (docs/design/compare-bench.md §12)" },
+        .{ "compare", "run", "Run the cross-language type-checking benchmark; needs `nix develop .#compare` (compare-bench.md §12)" },
+        .{ "compare-smoke", "smoke", "Size 1, both modes: every compiler accepts the generated projects (compare-bench.md §12)" },
+    }) |s| {
+        const run = b.addRunArtifact(compare_exe);
+        run.addArg(s[1]);
+        run.setCwd(b.path("."));
+        if (b.args) |args| run.addArgs(args);
+        // Timing and acceptance are facts about the machine now, never cached.
+        run.has_side_effects = true;
+        if (!std.mem.eql(u8, s[1], "gen")) run.step.dependOn(&perf_install.step);
+        b.step(s[0], s[2]).dependOn(&run.step);
+    }
+    // The beni printer in the gates (compare-bench.md §15): the generated
+    // project at seed 1, size 1, both modes, must check.
+    const compare_lib = b.createModule(.{ .root_source_file = b.path("bench/compare/gen/lib.zig"), .target = target, .optimize = optimize });
+    const compare_bb = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/blackbox/compare_gen_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "diagnostic", .module = diagnostic_mod },
+                .{ .name = "compare_gen", .module = compare_lib },
+            },
+        }),
+    });
+    blackbox_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
+
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
     fmt_step.dependOn(&b.addFmt(.{
         .paths = &.{ "src", "build.zig", "tests", "bench" },
+        // The compare benchmark's generated projects and fetched
+        // dependencies (Roc's sources among them) are not ours to format.
+        .exclude_paths = &.{"bench/compare/work"},
         .check = true,
     }).step);
 }
@@ -614,3 +678,33 @@ const Blackbox = struct {
         return r;
     }
 };
+
+/// SHA-256 over every file under `bench/compare/gen/` (sources and
+/// templates), path then bytes in sorted path order, length-prefixed like
+/// `compilerBuildId`: the generator hash every results file records
+/// (docs/design/compare-bench.md §3.2).
+fn compareGeneratorHash(b: *std.Build) []const u8 {
+    const root = "bench/compare/gen";
+    var paths: std.ArrayList([]const u8) = .empty;
+    collectAll(b, root, "", &paths);
+    sortPaths(&paths);
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    const io = b.graph.io;
+    for (paths.items) |rel| {
+        var len: [8]u8 = undefined;
+        std.mem.writeInt(u64, &len, rel.len, .little);
+        hasher.update(&len);
+        hasher.update(rel);
+        const full = b.pathJoin(&.{ root, rel });
+        const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
+            std.debug.panic("cannot read generator source {s}: {t}", .{ full, err });
+        };
+        std.mem.writeInt(u64, &len, bytes.len, .little);
+        hasher.update(&len);
+        hasher.update(bytes);
+        b.allocator.free(bytes);
+    }
+    var digest: [32]u8 = undefined;
+    hasher.final(&digest);
+    return b.fmt("sha256:{x}", .{digest});
+}
