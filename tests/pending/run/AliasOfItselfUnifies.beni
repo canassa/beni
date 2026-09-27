@@ -1,0 +1,25 @@
+-- CK-172: a variable unified with an alias of itself is not an infinite
+-- type. `wrap x : Id a` where `x : a`, and `Id a` IS `a`. At 346268b
+-- unifying the flex `a` with the alias `Id a` bound `a` to the alias, whose
+-- expansion is `a` itself: a cycle through the alias's expansion, then
+-- INFINITE TYPE `a = Id a` at the binder. Expected: it builds and prints
+-- `a` twice. Oracle twin: `g x = [ x, x ]` prints the same.
+import Node exposing (Program)
+
+
+type alias Id a =
+    a
+
+
+wrap : a -> Id a
+wrap x =
+    x
+
+
+g x =
+    [ x, wrap x ]
+
+
+main : Program
+main =
+    Node.printLines (g "a")

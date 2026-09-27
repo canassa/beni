@@ -1,0 +1,2 @@
+# CK-170: `p.0` is a number, 1 200 aliases deep.
+type_mismatch 26:20 contains "String"

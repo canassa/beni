@@ -1,0 +1,25 @@
+-- CK-169: an alias chain longer than 1 024 links is not a silent `<error>`.
+-- `deep`'s result is its argument under 400 `Id`s; three calls chain
+-- 1 200 aliases, all naming `String -> Int`. At 346268b
+-- `TypeStore.resolved` stopped at 1 024 links and answered `err`, and a
+-- wanted on `err` is `poisoned` and reports nothing: `check` exits 0,
+-- `build` says INTERNAL ERROR. Expected: NOT EQUATABLE, as with one call.
+import String
+
+
+type alias Id a =
+    a
+
+
+deep : a -> Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id a)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+deep x =
+    x
+
+
+same : Bool
+same =
+    let
+        p =
+            deep (deep (deep String.length))
+    in
+    p == p

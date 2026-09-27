@@ -1,0 +1,26 @@
+-- CK-170: an alias chain longer than 1 024 links keeps its type.
+-- Three calls of `deep` (400 `Id`s each) over `( 2, 7 )`: past 1 024 links
+-- `TypeStore.resolved` answered `err` at 346268b, and `err` unifies with
+-- anything, so `String.isEmpty p.0` checked, built, and called
+-- `String.isEmpty` on the number 2. Expected: the TYPE MISMATCH that two
+-- calls (800 links) report. Oracle twin: `deep (deep ( 2, 7 ))` reports
+-- it at the same place.
+import String
+
+
+type alias Id a =
+    a
+
+
+deep : a -> Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id (Id a)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+deep x =
+    x
+
+
+empty : Bool
+empty =
+    let
+        p =
+            deep (deep (deep ( 2, 7 )))
+    in
+    String.isEmpty p.0

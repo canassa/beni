@@ -99,6 +99,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     .{ .name = "scenario/CK-165", .step = .perf },
     .{ .name = "scenario/CK-166", .step = .fast },
     .{ .name = "scenario/CK-167", .step = .fast },
+    .{ .name = "scenario/CK-171", .step = .perf },
 };
 
 const Step = enum { fast, perf };
@@ -299,6 +300,35 @@ test "CK-167: a case over a wide type's every constructor checks" {
     const run = try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Main.beni" }, world.bulk_timeout_ms) orelse
         return s.finish(.{ .green = false, .signature = "timeout", .detail = "did not finish" });
     try s.finish(if (run.result.exit_code == 0) .{ .green = true, .signature = "", .detail = "checks" } else try s.failed(run.result));
+}
+
+// CK-171 (R15-fix-C, found by R15-fix-A's review): an alias DAG is expanded
+// as a tree. `A0 = Int`, `A{i} = ( A{i-1}, A{i-1} )` and one `f : A{n} ->
+// A{n}`: `Types.Builder.aliasBody` reads each alias's body once per USE, so
+// the annotation costs 2^n expansions for n declarations. Calibration
+// (ReleaseFast, CPU, 346268b): depth 9 / 18 check in 7 / 535 ms (ratio 76;
+// 18 s at 18 in Debug).
+// Expected: each (alias, arguments) expanded once per annotation — linear
+// in the depth.
+test "CK-171: an annotation over a doubling alias DAG is linear in its depth" {
+    var s = try Scenario.init("CK-171");
+    defer s.deinit();
+    try s.w.write("D9.beni", try aliasDag(s.arena(), 9));
+    try s.w.write("D18.beni", try aliasDag(s.arena(), 18));
+    const check: []const []const u8 = &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" };
+    const small = try std.mem.concat(s.arena(), []const u8, &.{ check, &.{"D9.beni"} });
+    const large = try std.mem.concat(s.arena(), []const u8, &.{ check, &.{"D18.beni"} });
+    try s.finish(try s.ratioOf(small, large, 9));
+}
+
+/// `type alias A0 = Int`, `type alias A{i} = ( A{i-1}, A{i-1} )` up to
+/// `depth`, and `f : A{depth} -> A{depth}`.
+fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 =\n    Int\n\n\n");
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} =\n    ( A{d}, A{d} )\n\n\n", .{ i, i - 1, i - 1 });
+    try out.print(arena, "f : A{d} -> A{d}\nf x =\n    x\n", .{ depth, depth });
+    return out.items;
 }
 
 /// `count` copies of `template`, `{d}` the index, `per` holes in each

@@ -4307,6 +4307,85 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `check/bad/OwnMethodSignatureReportedOnce.beni`, red `why=count`.
 - **Slice** R15-fix.
 
+### CK-169 — An alias chain past 1 024 links is a silent `<error>`
+
+- **Severity** compiler-crash-or-hang (`check` exits 0 over a program `build` refuses with INTERNAL
+  ERROR). **Area** `TypeStore.resolved` (TypeStore.zig:654), whose guard answered `err` past 1 024
+  alias links; since R15-fix-A a wanted meeting `err` is `poisoned` and reports nothing (§12.2).
+  **Class** K3 (a walk that stops at a fixed depth), K5 (the stop answered by default). **Sources**
+  R15-fix-A's review, D1.
+- **Program** `deep : a -> Id (Id (… 400 … a))`, `p = deep (deep (deep String.length))`, `p == p`.
+  Also a `let` of 1 100 bindings `a{i} = wrap a{i-1}` through `wrap : a -> Id a`, then
+  `a1100 == a1100` (valid). 1 023 links check correctly; 1 024 are silent.
+- **Observed** the first: `check` exits 0, `build` INTERNAL ERROR "I cannot tell what this call
+  dispatches to". The second (valid): `check` exits 0, `build` the same INTERNAL ERROR.
+- **Expected** an alias chain is as long as it is: NOT EQUATABLE for the first, `T` for the second.
+  Every `err` has a message wherever it was made (§12.2 *amended by R15-fix-A*), and nothing
+  answers `err` for a type it did not finish reading.
+- **Fixture** `check/bad/AliasChainNotEquatable.beni` (red `exit=0 codes=none`) and
+  `run/AliasChainThroughLet.beni` (red `dev: exit=1 codes=internal×1`).
+- **Slice** R15-fix-C.
+
+### CK-170 — An alias chain past 1 024 links unifies with anything (unsound)
+
+- **Severity** unsound-runtime. **Area** CK-169's guard: the `err` it answered unifies with any
+  type, so a wrong use of the value checks and builds. **Class** K3, K5. **Sources** R15-fix-A's
+  review, D1b; not a regression (the guard predates R15-fix-A).
+- **Program** `p = deep (deep (deep ( 2, 7 )))` with CK-169's `deep`, then `String.isEmpty p.0`.
+- **Observed** builds and runs, calling `String.isEmpty` on the number 2.
+- **Expected** the TYPE MISMATCH two calls (800 links) report at `p.0`.
+- **Fixture** `check/bad/AliasChainKeepsItsType.beni`, red `exit=0 codes=none`.
+- **Slice** R15-fix-C.
+
+### CK-171 — An alias DAG is expanded as a tree: exponential in its depth
+
+- **Severity** performance. **Area** `Types.Builder.aliasBody`, which reads an alias's body once
+  per USE, so `A{i} = ( A{i-1}, A{i-1} )` costs 2^n expansions for n declarations. **Class** K11.
+  **Sources** R15-fix-A's review, D3; related to CK-144 (the same chain, bytes of the interface).
+- **Program** `type alias A0 = Int`, `type alias A{i} = ( A{i-1}, A{i-1} )`, `f : A18 -> A18`.
+- **Observed** 18 s of CPU in Debug; 535 ms against 7 ms at depth 9 in ReleaseFast (ratio 76).
+- **Expected** each alias expanded once per (alias, arguments) and annotation: linear in the depth.
+- **Fixture** `scenario/CK-171` (`test-pending-perf`, depth 9 / 18), red `slow`.
+- **Slice** R15-fix-C.
+
+### CK-172 — A variable unified with an alias of itself is an INFINITE TYPE
+
+- **Severity** valid-program-rejected. **Area** `Unify.flex` against an alias: it binds the variable
+  to the alias's content, and when the alias expands to that same variable the binding closes a
+  cycle through the alias's expansion — `a = Id a`, which the binder's occurs check then reports.
+  The same cycle is what `TypeStore.resolved`'s guard was "belt and braces" against. **Class** K3.
+  **Sources** R15-fix-C, writing CK-169's fixtures.
+- **Program** `wrap : a -> Id a`, `g x = [ x, wrap x ]`.
+- **Observed** INFINITE TYPE "`a = Id a`" at `g`'s parameter.
+- **Expected** `Id a` is `a`: it builds. Unifying two types whose aliases expand to the same
+  variable is a no-op.
+- **Fixture** `run/AliasOfItselfUnifies.beni`, red `dev: exit=1 codes=infinite_type×1`.
+- **Slice** R15-fix-C.
+
+### CK-173 — A rigid variable does not unify with an alias that expands to it
+
+- **Severity** valid-program-rejected. **Area** `Unify.rigid`, whose `.alias` row answered "no"
+  without looking through the alias. **Class** K5. **Sources** R15-fix-C, writing CK-169's fixtures.
+- **Program** `unwrapId : Id a -> a`, `unwrapId x = x`.
+- **Observed** TYPE MISMATCH "The body is: `Id a` … should be: `a`" (`rigid_mismatch`).
+- **Expected** it checks: `Id a` is `a`.
+- **Fixture** `run/RigidMeetsAliasOfItself.beni`, red `dev: exit=1 codes=rigid_mismatch×1`.
+- **Slice** R15-fix-C.
+
+### CK-174 — A kinded variable meeting an alias of a variable is a kind mismatch
+
+- **Severity** valid-program-rejected. **Area** `Unify.flex`'s `.alias` row: a `number` flex
+  meeting an alias tests its kind against the alias's expansion, and when that is itself a variable
+  (the literal's own `number`) the test says no. **Class** K5. **Sources** R15-fix-C, writing
+  CK-169's fixtures.
+- **Program** `wrap : a -> Id a`, `a0 = wrap 1`, `a0 == a0`.
+- **Observed** TYPE MISMATCH "`Id number, Id number -> Bool` … But I need: `number, number ->
+  Bool`" (`kind_mismatch`).
+- **Expected** it builds and prints `T`: a variable meeting an alias of a variable is the two
+  variables meeting.
+- **Fixture** `run/NumberUnderAliasCompared.beni`, red `dev: exit=1 codes=kind_mismatch×1`.
+- **Slice** R15-fix-C.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -4483,14 +4562,20 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-166 | diagnostic-quality | K14 | `scenario/CK-166` | R15-fix (frontend) |
 | CK-167 | valid-program-rejected | K11 | `scenario/CK-167` | R15-fix |
 | CK-168 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureReportedOnce.beni` | R15-fix |
+| CK-169 | compiler-crash-or-hang | K3 | `check/bad/AliasChainNotEquatable.beni`, `run/AliasChainThroughLet.beni` | R15-fix-C |
+| CK-170 | unsound-runtime | K3 | `check/bad/AliasChainKeepsItsType.beni` | R15-fix-C |
+| CK-171 | performance | K11 | `scenario/CK-171` (`test-pending-perf`) | R15-fix-C |
+| CK-172 | valid-program-rejected | K3 | `run/AliasOfItselfUnifies.beni` | R15-fix-C |
+| CK-173 | valid-program-rejected | K5 | `run/RigidMeetsAliasOfItself.beni` | R15-fix-C |
+| CK-174 | valid-program-rejected | K5 | `run/NumberUnderAliasCompared.beni` | R15-fix-C |
 
 Totals:
-- 168 entries (CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 31 (CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 21 (CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
-- valid-program-rejected: 28 (CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
+- 174 entries (CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 32 (CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 22 (CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
+- valid-program-rejected: 31 (CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 3 (CK-132 among them, v1 only).
-- performance: 26 (CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
+- performance: 27 (CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
 - diagnostic-quality: 33 (CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 25 (CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 21 (CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

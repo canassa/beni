@@ -1,0 +1,32 @@
+-- CK-174: a kinded variable meets an alias that expands to a variable.
+-- `wrap 1 : Id number`, and `==` asks that its operand be a `number`
+-- (or anything): the alias expands to the literal's own `number`
+-- variable. At 346268b `Unify.flex` bound the `number` flex to the alias
+-- and tested the kind against its expansion, a variable, which is not
+-- `Int` or `Float`: TYPE MISMATCH "Id number, Id number -> Bool … But I
+-- need: number, number -> Bool". Expected: it builds and prints `T`.
+-- Oracle twin: `a0 = identity 1` prints `T`.
+import Node exposing (Program)
+
+
+type alias Id a =
+    a
+
+
+wrap : a -> Id a
+wrap x =
+    x
+
+
+g : Bool
+g =
+    let
+        a0 =
+            wrap 1
+    in
+    a0 == a0
+
+
+main : Program
+main =
+    Node.printLines [ if g then "T" else "F" ]

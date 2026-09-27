@@ -37,3 +37,14 @@ scenario/CK-165 slow
 scenario/CK-166 exit=1 codes=nesting_too_deep×907
 scenario/CK-167 exit=1 codes=pattern_budget_exhausted×1
 tests/pending/check/bad/OwnMethodSignatureReportedOnce.beni exit=1 codes=type_mismatch×2 why=count
+# R15-fix-C (2026-09-28): R15-fix-A's review found CK-169 to CK-171 (alias
+# chains past `TypeStore.resolved`'s 1 024-link guard; the alias DAG
+# expanded as a tree), and writing their fixtures found CK-172 to CK-174
+# (`Unify`'s alias rows). Written and checked on 346268b.
+tests/pending/check/bad/AliasChainNotEquatable.beni exit=0 codes=none
+tests/pending/check/bad/AliasChainKeepsItsType.beni exit=0 codes=none
+tests/pending/run/AliasChainThroughLet.beni dev: exit=1 codes=internal×1
+tests/pending/run/AliasOfItselfUnifies.beni dev: exit=1 codes=infinite_type×1
+tests/pending/run/RigidMeetsAliasOfItself.beni dev: exit=1 codes=rigid_mismatch×1
+tests/pending/run/NumberUnderAliasCompared.beni dev: exit=1 codes=kind_mismatch×1
+scenario/CK-171 slow
