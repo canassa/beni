@@ -213,6 +213,16 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
     const scratch = s.cx.scratch;
     const first: PairKey = .{ .root = st.find(start), .kind = kind };
     if (s.resolver.derivable.contains(first)) return .ok;
+    // The open memo (CK-111) holds while no leaf a walk met has been given
+    // successors since (`TypeStore.proof_voids`), and only for a walk with
+    // nothing forced.
+    const r = &s.resolver;
+    if (r.derivable_open_voids != st.proof_voids) {
+        r.derivable_open.clearRetainingCapacity();
+        r.derivable_open_voids = st.proof_voids;
+    }
+    const open_memo = forced.len == 0;
+    if (open_memo and r.derivable_open.contains(first)) return .ok;
     var colours: std.AutoHashMapUnmanaged(PairKey, Colour) = .empty;
     defer colours.deinit(scratch);
     var frames: std.ArrayList(Frame) = .empty;
@@ -229,7 +239,13 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
         const next = nextStep(s, &walker, top) orelse {
             const done = frames.pop().?;
             try colours.put(scratch, done.key, if (done.ground) .black else .black_open);
-            if (done.ground and !walker.volatile_read) try s.resolver.derivable.put(gpa, done.key, {});
+            if (!walker.volatile_read) {
+                if (done.ground) {
+                    try s.resolver.derivable.put(gpa, done.key, {});
+                } else if (open_memo) {
+                    try r.derivable_open.put(gpa, done.key, {});
+                }
+            }
             if (frames.items.len > 0 and !done.ground) frames.items[frames.items.len - 1].ground = false;
             continue;
         };
@@ -244,10 +260,17 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
             },
         };
         if (s.resolver.derivable.contains(key)) continue;
+        if (open_memo and r.derivable_open.contains(key)) {
+            top.ground = false;
+            continue;
+        }
         switch (st.content(key.root)) {
             // A variable holds nothing yet: not a verdict, but not ground.
             .flex, .rigid, .err => {
                 top.ground = false;
+                // Recorded, so the open memo is voided if it is ever given
+                // successors (`TypeStore.gains`).
+                if (open_memo) st.prove(key.root);
                 continue;
             },
             else => {},

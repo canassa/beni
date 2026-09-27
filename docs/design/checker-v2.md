@@ -564,6 +564,10 @@ phase reads and writes only what its row says.
 - The profile events `constrain`, `solve`, `resolve`, `derived`, `elaborate`, `exhaustive` and
   `publish` nest inside `check`, one per phase. Nothing super-linear can then hide *between* events
   (orch F3).
+  *As built by R8c (2026-09-26):* `derived` (P5), `elaborate` (P6), `publish` (P8) and `finish`
+  (P9) are `Profile.Phase`s, one event each per module under `--checker=v2`, nested in `check`
+  (`blackbox_test.zig`, "--self-profile under --checker=v2 …"). `resolve` stays inside `solve`: the
+  name is the frontend's resolution event.
 - `--roundtrip-interfaces` stays where it is, after P8.
 - The inter-module machinery is kept (§19): the DAG scheduler, the core gate, the cutoff-key
   protocol and cache install. It moves out of `Check.zig` into `Driver.zig` and `Incremental.zig`,
@@ -886,6 +890,18 @@ that keeps unifying after a failed field — and were reported as `nesting_too_d
 Fixtures: `tests/pending/check/bad/InfiniteTypeCaseSubject*.beni`,
 `…/InfiniteTypeTwoCyclesUnified.beni` and `tests/corpus/check/good/CyclicArgumentsUnify.beni`.
 
+*Amended by R8c (2026-09-26): the pair stack's scan is bounded.* The scan per pair of
+non-variables was R8a's profile's largest unify cost and quadratic in depth on a deep acyclic
+unification (CK-93's note). Below 8 pairs on the stack nothing is scanned — a cycle is then met
+again at most 8 levels further down, where the scan finds it; the first 64 pairs are scanned by
+their current roots; deeper pairs are also kept in an array hash map keyed by their roots when
+pushed, and popped in stack order (a plain hash map's tombstones made each probe longer on a deep
+unification, CK-111's scenario). A deep pair whose root a merge below it has since changed is
+missed and unrolled once more; merges only reduce the roots, so that happens boundedly often.
+Two structures with no children (`Int`, `()`, `{}`) are merged without a pair on the stack: they
+recurse into nothing, so they cannot meet a pair again (R8c's review round 2, −0.5 % of
+instructions).
+
 ### 7.4 Kinds
 
 The kind lattice is unchanged: `any ⊒ number`, `any ⊒ appendable`, `number ⊓ appendable = ⊥`.
@@ -1129,6 +1145,71 @@ N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a 
 
 An `infinite_type` sets its declaration's failure bit but does not gate exhaustiveness (§15.2 *As
 built by R4b's review*).
+
+*Amended by R8c (2026-09-26, CK-93, CK-111; restated by R8c's two review rounds): proofs that
+outlive a walk.* A `let` chain whose types grow (`x1 = [ x0 ] … xN = [ xN-1 ]`) occurs-checked the
+whole chain at every link: O(N²). And `==` on a record nested *d* deep ran the §9.5 cycle test on
+each of its *d* nested positions, each over its subtree: O(*d*²). Both now keep a proof past its
+walk, and a proof never changes a verdict.
+
+- **What is proved** (`TypeStore.acyclic`, beside the content it is about). A proving run — step
+  4's at a boundary, and §9.5's cycle test (`Instances.cyclic`) — records, with the current epoch,
+  the root it proves and every leaf (flex, rigid, `err`) it meets; §9.5's run also records every
+  node it blackens (`Occurs.interior`). A later walk, of any run, stops at a proved node. So a later
+  link of the chain stops at the link below, and a position of a receiver just tested is proved
+  already and costs one lookup.
+- **The invariant (Inv).** *A proved node's graph is acyclic, and every node without successors in
+  that graph is proved.* The second half is what lets a rule about leaves catch every new edge.
+- **What voids the proofs** (`voidProofs`: the epoch moves and every proof is void). The store sees
+  every content write — `setContent` and `merge` — and voids them on either of two writes:
+  - **a proved node without successors given some** (`gains`): a bind of a proved flex, a proved
+    `err` given structure; and, conservatively, a proved structure overwritten with another kind;
+  - **the `err` rule** (`touchesErr`): any write where one side is `err` — before or after — and
+    any side has successors. That covers a node with successors turned `err` (a merge whose
+    survivor is `err`, a poison), which leaves a leaf nobody recorded inside any proved graph that
+    held the node and lets a record merge carry extra fields absorbed into an `err` row end on
+    unwalked; and an `err` given structure, proved or not. It happens only on a program with an
+    error. *Why the broad form* (the manager, 2026-09-26): Inv alone would allow the narrower "a
+    node with successors turned `err`", since an unrecorded `err` given structure lies in no proved
+    graph; but two holes in this section came from arguments that a narrower condition sufficed,
+    and the broad rule is the one R8c's second review verified. It costs a content read per merge,
+    about 0.8 % of instructions on the dispatch corpus (§18).
+
+  Binding a fresh, unproved variable — each link of the chain does — keeps them. A merge carries a
+  proof either side had to the survivor unless it voided them. Out of memory voids them, and so
+  does a rollback (v2 never speculates, §7.5).
+- **Why Inv holds** (the second review round's argument). A proved leaf gaining successors voids.
+  A `func`, `app` or `tuple` merge unifies every child pair first, so the survivor's children are
+  the proved side's child classes whichever side's content it keeps (a coinductive skip needs a
+  pair that recurs, which in an acyclic proved graph needs an earlier merge that made it cyclic,
+  which voided). A same-type alias merge keeps `b`'s expansion over `b`'s arguments, whose classes
+  are `a`'s. A record merge's fresh extension and extra-field records reach the proved side only
+  through a bind of its row end, which voids — except when that row end is `err`, which absorbs
+  them: the `err` rule. A structure turned `err` adds no edge but makes an unrecorded leaf: the
+  `err` rule again, which also voids on any `err` given structure. No other write adds an edge: flag-only rewrites of a flex, fresh copies,
+  and `Messages`' temporary flex (whose restore voids conservatively).
+- **How it got here.** R8c first kept the stamps beside the walks, voided them only in
+  `Unify.bind` (a flex given structure) and stamped only flexes, and claimed "only a bind adds an
+  edge": false. Its first review found an `err` class given structure by `Unify.flat` (which merges
+  with content read before the children were unified) — one INFINITE TYPE of two lost, and with
+  CK-126's `err` an infinite type accepted — and a position's proof "inherited" across a Rule U1
+  join and a user instance's unification that closed `x = List x`. The first fix moved the proofs
+  into the store and voided on a proved leaf gaining successors, and claimed "an edge is added in
+  exactly one way" and "`merge` only redirects a class to a survivor whose children were unified
+  with the other side's first": both false through `err`. The second review found a record merge
+  past a proved `err` row end (an infinite type accepted again) and an unproved interior node
+  turned `err` and then given structure (a cyclic scheme); the `err` rule closes both, since both
+  begin with a node with successors turned `err`.
+  `blackbox_test.zig` holds all five programs ("R8c review …"). `Unify.flat` keeps writing the
+  structure, as v1 and `5f18e23` do: the write is seen, not forbidden, so no golden moved.
+- **Checked in Debug** wherever a walk stops at a proved node (`Walk.assertProved`): a walk of its
+  own that trusts no proof and touches no mark, over at most 1 024 nodes, panics if the node
+  reaches a cycle. With the `err` rule switched off it panics on both second-round programs.
+  `Resolve.step` also re-walks every proved receiver fewer than 64 positions deep.
+- The derivability walk's verdict over a graph with variables below (`Resolve.State.derivable_open`,
+  CK-111) is kept while no proof has been voided (`TypeStore.proof_voids`, a count that does not
+  wrap as the epoch does): the walk records every leaf it meets, so any leaf given successors, an
+  `err` included, drops the memo.
 
 ### 8.3 Annotation generality (I1, CK-01)
 
@@ -2659,6 +2740,28 @@ built by R8b* it names.
   `absent_budget` entry is never memoised (P5 computes it again), and one that survives to P8 is
   `internal`, not a published `unanswerable` (CK-125).
 
+*Amended by R8c (2026-09-26, CK-122).* **An alias of an endpoint is the endpoint.** "Its expansion
+answers wherever it is met" held for a record endpoint written directly, but not for a `type
+alias` whose body names an endpoint (`type alias RW = R.Type`, `List R.Type`, a record of
+endpoints): the alias body is read by a reader of its own (`Types.Builder.aliasBody`), and that
+reader had no schema lookup, so the body was a silent `err`. A comparison of it was an `internal`,
+a wrapper of it a false `not_equatable`, and any other use a hole (`r + 1` checked). The rule, in
+the shared reader and so for both checkers:
+
+- the body of an alias declared by the module being checked is read with that module's schema
+  lookup (the caller's: `lookupOpaque` for an annotation, `lookupFresh` in a pass);
+- the body of another module's alias names that module's schema by declaration; the endpoint is
+  read from its member scheme in that module's interface (`Types.schemaMemberOfDecl`), exactly as
+  `Other.R.Type` written in the importer is;
+- a **private** schema is in no interface. Its tagged endpoints are nominal, whole in their
+  `TypeId`, and read as such. A private **record** schema's endpoint has no shape outside its
+  module — the interface carries no alias bodies (`checker.md` §7's `alias_body`) and no private
+  schema — and is still a silent `err` in an importer: CK-126, pending, whose fix is an interface
+  row, not a reader rule.
+
+The interface is unchanged: an alias row never prints a body (`alias RW`, like `alias Q` for
+`type alias Q = P`); a record alias's row prints only its constructor.
+
 ---
 
 ## 12. Evidence and elaboration
@@ -3509,6 +3612,44 @@ v1 is deleted.
   first fix is to run `cyclic` only for a readied wanted (an immediate one's receiver was checked
   when it was bound).
 
+*As built by R8c (2026-09-26): the per-operation overhead, and the last bullet above.* R8a's
+structural review profiled v2 at 1.15× v1's cycles on the generated corpora — the same work done
+dearer — and R8b's tree read 1.07–1.08× in whole-process cycles. Each change below was measured
+on its own (ReleaseFast, `perf stat -r 11`, whole process, `check --no-cache --jobs=1`, both
+`zig build bench -- --generate=100000` corpora, two interleaved rounds; the table per change is
+`plans/checker-rewrite.md` R8c's *As built*):
+
+- **Rank adjustment** (§8.1 step 2), the largest. A node's `owned` successors are read in one
+  decode (`Walk.eachOwned`) and pushed on a stack, not re-decoded once per successor through a
+  cursor; a successor that can be answered at once — a node that is not young, or a young leaf
+  with nothing riding on it — is answered from its parent's frame, as Elm's recursion answers it
+  (neither answer depends on what the walk has seen, so taking it early changes no rank); a pool
+  of one rank skips the counting sort; and step 2 leaves only roots in the pool (`adjustRanks`'
+  `compact`), so steps 4–5 do not `find` merged-away variables again (a frame handed down keeps
+  its pool whole). About −37M instructions and −15M cycles on the dispatch corpus.
+- **Unify**: the pair stack's bounded scan (§7.3 *amended by R8c*), a flex-flex join with nothing
+  on either side merged directly, `reportJoins` skipped when there is nothing to report. About
+  −5M instructions.
+- **P6** builds no call map in a module with no evidence rows and no group call, and a dense one
+  otherwise (it hashed every `call` of every module). About −6M instructions.
+- **§18's last bullet came true** as CK-111: a record nested *d* deep compared once was O(*d*²) in
+  the derivability walk and in the cycle test; both are linear now (§8.2 *amended by R8c*,
+  `Resolve.State.derivable_open`). CK-93's `let` chain is linear to check (§8.2). The proofs
+  both need cost about 1 % of instructions on the corpora against a build that keeps none (after
+  the review round's fix, §8.2 *as restated*).
+- **Not done**: per-group memoisation of imported schemes (the review's 1 %): an instantiation
+  makes fresh variables per use, which a memo would copy anyway, and the profile puts v2's
+  instantiation within 1 % of v1's.
+
+Result, R8c's tree after its two review rounds, v1 from the same binary, two rounds: the plain
+corpus 1.031–1.033× v1 in cycles (493 / 478M) and 1.03× in task-clock; the dispatch corpus
+1.054–1.058× in cycles (542–543 / 513–514M) and 1.056–1.058× in task-clock — over R8c's 1.05×
+target by choice: the broad `err` rule (§8.2) costs 0.8 % of instructions, and R9's budget is
+1.10×. The parent read 1.05–1.06× and 1.08× in cycles. The four phases after
+P4 have events of their own (§5 *as built by R8c*): on the dispatch corpus `derived`, `elaborate`,
+`publish` and `finish` take about 2, 4, 8 and 4 ms of v2's 100 ms of `check` (wall, the root
+package's modules).
+
 ---
 
 ## 19. What is kept from the current code
@@ -3662,6 +3803,14 @@ template per answer, bodies per run, the template assert), `Derivable` 504 (`for
 `Eager` 237 (`markerKeys`), `Elaborate` 800, `Publish` 451 (the alias-body closure), `Walk` 626
 (`sameShape`), `Generalize` 538, `rules_test` 190 (`isEquatable(` fenced to
 `Marker`): 14 603 lines in all, every file under §19.1's ~1 500.
+
+*After R8c (2026-09-26):* `Generalize` 630 (rank adjustment's successor stack and inline
+answers, the pool's compaction), `Walk` 688 (`eachOwned`, proving runs), `Unify` 932 (the bounded pair
+scan, the flex-flex fast path), `Resolve` 689 (the open derivability memo, the Debug check of a
+proof), `Derivable` 581, `Solve` 882 (`solveFields`), `Elaborate` 813, `Module` 539 (the P5–P9
+events), `Groups` 565, `Instances` 648: 15 905 lines in all (after the review round; the proofs
+themselves live in the shared `TypeStore`). `Contexts`
+is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
 
 ---
 

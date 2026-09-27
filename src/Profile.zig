@@ -106,6 +106,16 @@ pub const Phase = enum {
     /// clean, and a regression in one must not be read as a regression in
     /// the other.
     exhaustive,
+    /// The new checker's phases after P4 (`checker-v2.md` §5), per module
+    /// and nested inside `check` like the three above, so no cost hides
+    /// between events: P5's eager derived contexts and rows, P6's
+    /// elaboration into the dispatch table, P8's publication of the
+    /// interface record, and P9's round trips, cycle check, evidence assert
+    /// and schema plan. Emitted by `--checker=v2` only (R8c).
+    derived,
+    elaborate,
+    publish,
+    finish,
     /// Reachability elimination, once per build (`backend.md` §9): the
     /// declaration graph and the walk over it, inside `emit` and before a
     /// byte is lowered. Its own row because it is the pass that decides how

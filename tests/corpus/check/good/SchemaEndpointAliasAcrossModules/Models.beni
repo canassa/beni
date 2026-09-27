@@ -1,0 +1,55 @@
+pub schema R tagged "k" of
+    A as "a"
+        v : Int
+    C as "c"
+
+
+pub schema Rec =
+    x : Int
+    y : String
+
+
+pub schema Page item =
+    item : item
+
+
+schema Priv tagged "k" of
+    P as "p"
+        w : Int
+
+
+pub type alias RW =
+    R.Type
+
+
+pub type alias RE =
+    R.Encoded
+
+
+pub type alias RecW =
+    Rec.Type
+
+
+pub type alias RL =
+    List R.Type
+
+
+pub type alias Both =
+    { r : Rec.Type, t : R.Type }
+
+
+pub type alias PageW a =
+    Page.Type a
+
+
+pub type alias PrivW =
+    Priv.Type
+
+
+pub mkPriv : Int -> PrivW
+mkPriv n =
+    Priv.P { w = n }
+
+
+pub type H =
+    H RW

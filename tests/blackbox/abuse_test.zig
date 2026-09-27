@@ -214,6 +214,47 @@ test "100 000 nested lists stop at exactly one nesting_too_deep" {
     try expectFmtRefuses(&w, "Deep.beni", 1);
 }
 
+test "a record literal nested to the parser's limit checks and compares under both checkers, one past it is one nesting_too_deep (CK-114)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // CK-114: v2's solver spent two depth units a record level — the literal
+    // and its fields' conjunction — so past about 2 100 levels it said
+    // NESTING TOO DEEP ("more than 4200 levels") where v1 and the parser
+    // accept 4 095. Its record literal now spends one (`Solve.solveFields`),
+    // so the parser's own limit is the one limit: 4 095 levels check, and
+    // compare (derivation, unification and resolution all that deep), and
+    // 4 096 is the parser's one refusal, under either checker.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    for ([_]usize{ 4095, 4096 }) |depth| {
+        const record = try nested(gpa, "{ x = ", "1", ", y = 0 }", depth);
+        defer gpa.free(record);
+        const source = try std.mem.concat(gpa, u8, &.{ record, "\n\nsame =\n    main == main\n" });
+        defer gpa.free(source);
+        try w.write(if (depth == 4095) "Limit.beni" else "Past.beni", source);
+    }
+
+    for ([_][]const u8{ "--checker=v1", "--checker=v2" }) |checker| {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const limit = try w.run(&.{ "check", "--no-cache", checker, "Limit.beni" });
+        const past = try w.run(&.{ "check", "--no-cache", checker, "Past.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(limit, 0);
+        try testing.expectEqual(@as(usize, 0), limit.diagnostics.len);
+        try expectExited(past, 1);
+        // The `1` inside the 4 096th `{ x = ` (six bytes each, after `main =`):
+        // the first token one level too deep.
+        try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{nestingTooDeep("Past.beni", 2, 5 + 4096 * 6, 1)}, past.diagnostics);
+    }
+}
+
 test "100 000 nested lambdas report every shadowed parameter, then stop nesting" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

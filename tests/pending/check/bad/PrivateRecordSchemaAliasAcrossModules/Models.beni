@@ -1,0 +1,11 @@
+schema PrivRec =
+    z : Int
+
+
+pub type alias PrivRecW =
+    PrivRec.Type
+
+
+pub mk : Int -> PrivRecW
+mk n =
+    { z = n }

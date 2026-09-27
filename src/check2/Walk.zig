@@ -25,8 +25,9 @@
 //! (`TypeStore.nextMark`, never a memset), and nothing here stops at a depth.
 //! A 100 000-deep type is walked to the bottom.
 //!
-//! Only `child` and `owned` read a descriptor's children; the walks below and
-//! in `Generalize.zig` enumerate successors through them.
+//! Only `child`, `owned` and `eachOwned` (`owned` in one decode, R8c) read a
+//! descriptor's children; the walks below and in `Generalize.zig` enumerate
+//! successors through them.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -74,6 +75,36 @@ pub fn owned(store: *TypeStore, obligations: ?*const Obligations, root: Var, n: 
             return o.successor(store, flags.obls, root, n - count);
         },
         else => return shape(store, root, n, .owned),
+    }
+}
+
+/// Every `owned` successor of `root`, whose content is `content`, handed to
+/// `visitor.add` in `owned`'s order: the node decoded once, not once per
+/// successor as a cursor over `owned` does (R8c, rank adjustment's walk).
+pub inline fn eachOwned(store: *TypeStore, obligations: ?*const Obligations, root: Var, content: TypeStore.Content, visitor: anytype) Error!void {
+    switch (content) {
+        .err => {},
+        .flex, .rigid => {
+            var n: u32 = 0;
+            while (owned(store, obligations, root, n)) |c| : (n += 1) try visitor.add(c);
+        },
+        .alias => |a| {
+            try visitor.add(a.actual);
+            for (store.vars(a.args)) |c| try visitor.add(c);
+        },
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => {},
+            .func => |f| {
+                for (store.vars(f.params)) |c| try visitor.add(c);
+                try visitor.add(f.result);
+            },
+            .app => |a| for (store.vars(a.args)) |c| try visitor.add(c),
+            .tuple => |t| for (store.vars(t)) |c| try visitor.add(c),
+            .record => |r| {
+                for (store.fields(r.fields)) |f| try visitor.add(f.value);
+                try visitor.add(r.ext);
+            },
+        },
     }
 }
 
@@ -188,6 +219,8 @@ pub const Stacks = struct {
     vars: std.ArrayList(Var) = .empty,
     /// Rank adjustment's frames (`Generalize.adjustRanks`).
     ranks: std.ArrayList(RankFrame) = .empty,
+    /// Rank adjustment's pending successors; a frame's start at `base`.
+    rank_kids: std.ArrayList(Var) = .empty,
     /// The module's obligation table, which every `owned` walk reads (§4.5);
     /// null where there is none (a unit test). It rides here, beside the
     /// scratch stacks, because every `owned` walk already takes `Stacks`:
@@ -197,20 +230,20 @@ pub const Stacks = struct {
     ordered: std.ArrayList(OrderedFrame) = .empty,
     kids: std.ArrayList(Var) = .empty,
     fields: std.ArrayList(TypeStore.Field) = .empty,
-
     pub fn deinit(s: *Stacks, gpa: Allocator) void {
         s.frames.deinit(gpa);
         s.vars.deinit(gpa);
         s.ranks.deinit(gpa);
+        s.rank_kids.deinit(gpa);
         s.ordered.deinit(gpa);
         s.kids.deinit(gpa);
         s.fields.deinit(gpa);
     }
 };
 
-/// One frame of the iterative rank walk: a node, its next successor, and
-/// the running maximum of its successors' ranks when it folds them.
-pub const RankFrame = struct { v: Var, cursor: u32, max: u32, maxes: bool };
+/// One frame of the iterative rank walk: a node, where its pending successors
+/// start on `Stacks.rank_kids`, and the running maximum of its successors' ranks when it folds them.
+pub const RankFrame = struct { v: Var, base: u32, max: u32, maxes: bool };
 
 // ---------------------------------------------------------------------------
 // Occurs (§8.2): three colours over `structural` successors
@@ -226,13 +259,35 @@ pub const RankFrame = struct { v: Var, cursor: u32, max: u32, maxes: bool };
 pub const Occurs = struct {
     grey: u32,
     black: u32,
+    /// Whether this run records what it proves (`TypeStore.acyclic`, CK-93,
+    /// CK-111): every node it blackens and every leaf it meets, so a later
+    /// walk — a later boundary's, or a nested position's cycle test — stops
+    /// at any of them (`checker-v2.md` §8.2 *as restated by R8c's review rounds*).
+    /// `binders_end`'s runs could prove too (every node a run blackens is
+    /// acyclic); they do not, which keeps their cost what it was.
+    proves: bool = false,
+    /// Whether a proving run records every node it blackens, or only its
+    /// roots and the leaves it meets (enough for soundness: a proved root's
+    /// leaves are proved). §9.5's cycle test records every node, so the
+    /// positions of the receiver it proved are proved (CK-111); a boundary's
+    /// run only its roots, which is all a later boundary meets (CK-93).
+    interior: bool = false,
+    /// Whether this run stops at a proved node. False only for the Debug
+    /// check of a proof (`Resolve.step`).
+    trusts: bool = true,
 
     pub fn begin(store: *TypeStore) Occurs {
         return .{ .grey = store.nextMark(), .black = store.nextMark() };
     }
 
     pub fn restart(o: *Occurs, store: *TypeStore) void {
+        const proves = o.proves;
+        const trusts = o.trusts;
+        const interior = o.interior;
         o.* = begin(store);
+        o.proves = proves;
+        o.trusts = trusts;
+        o.interior = interior;
     }
 
     /// The node on a cycle reachable from `v` — the one the walk met again
@@ -240,6 +295,10 @@ pub const Occurs = struct {
     pub fn check(o: *Occurs, store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!?Var {
         const start = store.find(v);
         if (isLeaf(store, start) or store.mark(start) == o.black) return null;
+        if (o.trusts and store.proved(start)) {
+            try assertProved(store, gpa, start);
+            return null;
+        }
         const frames = &stacks.frames;
         frames.clearRetainingCapacity();
         try frames.append(gpa, .{ .v = start, .cursor = 0 });
@@ -255,17 +314,65 @@ pub const Occurs = struct {
                 if (mark == o.grey) return r;
                 // A node with no successor cannot be on a cycle, and a black
                 // one was walked to the bottom already: neither is pushed.
-                if (mark == o.black or isLeaf(store, r)) continue;
+                if (mark == o.black) continue;
+                if (o.trusts and store.proved(r)) {
+                    try assertProved(store, gpa, r);
+                    continue;
+                }
+                if (isLeaf(store, r)) {
+                    // A leaf of the graph being proved: giving it successors
+                    // voids the proof (`TypeStore.gains`).
+                    if (o.proves) store.prove(r);
+                    continue;
+                }
                 store.setMark(r, o.grey);
                 try frames.append(gpa, .{ .v = r, .cursor = 0 });
                 continue;
             }
             store.setMark(root, o.black);
+            if (o.proves and (o.interior or frames.items.len == 1)) store.prove(root);
             _ = frames.pop();
         }
         return null;
     }
 };
+
+/// Debug: a proved node reaches no cycle (`checker-v2.md` §8.2 *as restated by
+/// R8c's review rounds*), checked by a walk of its own that trusts no proof
+/// and touches no mark, over at most `assert_cap` nodes, wherever a walk
+/// stops at a proof. A hole in the invariant panics in the tests instead of
+/// hiding a cycle.
+fn assertProved(store: *TypeStore, gpa: Allocator, v: Var) Error!void {
+    if (!std.debug.runtime_safety) return;
+    const Colour = enum { grey, black };
+    var colours: std.AutoHashMapUnmanaged(Var, Colour) = .empty;
+    defer colours.deinit(gpa);
+    var frames: std.ArrayList(Frame) = .empty;
+    defer frames.deinit(gpa);
+    try frames.append(gpa, .{ .v = v, .cursor = 0 });
+    try colours.put(gpa, v, .grey);
+    while (frames.items.len > 0) {
+        if (colours.count() > assert_cap) return;
+        const top = &frames.items[frames.items.len - 1];
+        const next = child(store, top.v, top.cursor, .structural);
+        top.cursor += 1;
+        if (next) |c| {
+            const r = store.find(c);
+            if (colours.get(r)) |colour| {
+                if (colour == .grey) std.debug.panic("a proved node reaches a cycle (checker-v2.md §8.2)", .{});
+                continue;
+            }
+            if (isLeaf(store, r)) continue;
+            try colours.put(gpa, r, .grey);
+            try frames.append(gpa, .{ .v = r, .cursor = 0 });
+            continue;
+        }
+        try colours.put(gpa, top.v, .black);
+        _ = frames.pop();
+    }
+}
+
+const assert_cap = 1024;
 
 /// A node with no `structural` successor: no cycle passes through it.
 fn isLeaf(store: *const TypeStore, root: Var) bool {

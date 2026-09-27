@@ -534,7 +534,7 @@ pub fn handDown(gs: *Groups, s: *Solve, binders: []const u32, own: []const u32) 
     // 1. Settle: this frame's own queue, as any frame drains it.
     try Decide.drain(s, s.frames.items[index].queue, true);
     // 2. Adjust ranks without quantifying.
-    try Generalize.adjustRanks(st, &s.stacks, gpa, gs.cx.scratch, s.frames.items[index].pool.items, rank);
+    try Generalize.adjustRanks(st, &s.stacks, gpa, gs.cx.scratch, &s.frames.items[index].pool, rank, false);
 
     const j = gs.frame_of[gs.root(s.frames.items[index].group)];
     std.debug.assert(j < index);

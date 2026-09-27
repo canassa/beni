@@ -637,6 +637,10 @@ fn funcOf(s: *Solve, params: []const Var, result: Var) Error!Var {
 /// runs it for every wanted on a structure.
 pub fn cyclic(s: *Solve, id: WantedId, root: Var) Error!bool {
     var run: Walk.Occurs = .begin(s.store());
+    // It proves: a position met later in the same resolution stops here
+    // (`TypeStore.acyclic`, CK-111).
+    run.proves = true;
+    run.interior = true;
     const node = (try run.check(s.store(), &s.stacks, s.cx.gpa, root)) orelse return false;
     try s.reportCycle(s.evidence.get(id).origin, .none, root, node);
     try Resolve.reject(s, id, false);

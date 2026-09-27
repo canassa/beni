@@ -322,22 +322,47 @@ fn bucketLessThan(_: void, a: Entry, b: Entry) bool {
 /// Step 2 of §8.1: Elm's `poolToRankTable` + `adjustRank` over `pool`, whose
 /// young rank is `young`, lowest ranks first so every rank is computed in
 /// one pass. Afterwards a variable's rank says whether it escapes.
+///
+/// With `compact`, a pool member merged away is dropped from the pool once
+/// its root has been walked (R8c): every later pass over the pool —
+/// occurs from its requirements, rule (a), quantification — skips it
+/// anyway, and v2 has no speculation to undo the merge (§7.5). A frame
+/// handed down (`Groups.handDown`) keeps its pool whole.
 pub fn adjustRanks(
     store: *TypeStore,
     stacks: *Walk.Stacks,
     gpa: Allocator,
     scratch: Allocator,
-    pool: []const Var,
+    list: *std.ArrayList(Var),
     young: u32,
+    compact: bool,
 ) Error!void {
+    const pool = list.items;
     const young_mark = store.nextMark();
     const visit_mark = store.nextMark();
     const entries = try scratch.alloc(Entry, pool.len);
     defer scratch.free(entries);
+    defer if (compact) {
+        var kept: usize = 0;
+        for (entries, 0..) |e, i| {
+            if (e.v != pool[i]) continue;
+            pool[kept] = pool[i];
+            kept += 1;
+        }
+        list.shrinkRetainingCapacity(kept);
+    };
+    var all_young = true;
     for (pool, entries) |v, *e| {
         const root = store.find(v);
         store.setMark(root, young_mark);
         e.* = .{ .v = root, .bucket = @min(store.rank(root), young) };
+        all_young = all_young and e.bucket == young;
+    }
+    // One bucket: pool order is already the sorted order (the common case,
+    // R8c's profile).
+    if (all_young) {
+        for (entries) |e| _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, young, e.v);
+        return;
     }
     // Lowest ranks first. A counting sort by bucket rather than one list per
     // rank: a `let` 200 deep would otherwise allocate 200 lists at every
@@ -375,8 +400,8 @@ pub fn adjustRanks(
 /// application, a tuple, a unit and `{}` are at least `outermost`.
 const Fold = struct { maxes: bool, floor: u32 };
 
-fn foldOf(store: *const TypeStore, root: Var, group_rank: u32) Fold {
-    return switch (store.content(root)) {
+fn foldOf(content: TypeStore.Content, group_rank: u32) Fold {
+    return switch (content) {
         .err, .flex, .rigid => .{ .maxes = false, .floor = group_rank },
         .alias => .{ .maxes = true, .floor = 0 },
         .structure => |flat| switch (flat) {
@@ -392,6 +417,12 @@ const RankFrame = Walk.RankFrame;
 /// Elm's `adjustRank` without recursion. A young node is marked `visit`
 /// BEFORE its successors are walked, because the graph may be cyclic (a
 /// cycle's rank is read mid-walk, as Elm's recursion reads it).
+///
+/// A node's `owned` successors are pushed onto `stacks.rank_kids` when it is
+/// entered, last first, and entered one at a time as they are popped: the
+/// same depth-first order as a cursor over `Walk.owned`, without decoding
+/// the node's content once per successor (R8c). A young leaf with nothing
+/// riding on it is answered at once, with no frame (v1's `adjustRank`).
 fn adjustRank(
     store: *TypeStore,
     stacks: *Walk.Stacks,
@@ -402,15 +433,17 @@ fn adjustRank(
     start: Var,
 ) Error!u32 {
     const frames = &stacks.ranks;
+    const kids = &stacks.rank_kids;
     frames.clearRetainingCapacity();
+    kids.clearRetainingCapacity();
     var result: u32 = undefined;
     // `enter` returns the rank at once for a node it does not descend into.
-    if (try enter(store, frames, gpa, young_mark, visit_mark, group_rank, start)) |r| return r;
+    if (try enter(store, stacks, gpa, young_mark, visit_mark, group_rank, start)) |r| return r;
     while (frames.items.len > 0) {
         const top = &frames.items[frames.items.len - 1];
-        if (Walk.owned(store, stacks.obligations, top.v, top.cursor)) |c| {
-            top.cursor += 1;
-            if (try enter(store, frames, gpa, young_mark, visit_mark, group_rank, c)) |r| {
+        if (kids.items.len > top.base) {
+            const c = kids.pop().?;
+            if (try enter(store, stacks, gpa, young_mark, visit_mark, group_rank, c)) |r| {
                 const parent = &frames.items[frames.items.len - 1];
                 if (parent.maxes) parent.max = @max(parent.max, r);
             }
@@ -429,7 +462,7 @@ fn adjustRank(
 
 fn enter(
     store: *TypeStore,
-    frames: *std.ArrayList(RankFrame),
+    stacks: *Walk.Stacks,
     gpa: Allocator,
     young_mark: u32,
     visit_mark: u32,
@@ -437,20 +470,79 @@ fn enter(
     v: Var,
 ) Error!?u32 {
     const root = store.find(v);
-    const rank = store.rank(root);
     const mark = store.mark(root);
-    if (mark == young_mark) {
-        store.setMark(root, visit_mark);
-        const fold = foldOf(store, root, group_rank);
-        try frames.append(gpa, .{ .v = root, .cursor = 0, .max = fold.floor, .maxes = fold.maxes });
-        return null;
+    if (mark != young_mark) return settled(store, root, mark, visit_mark, group_rank);
+    store.setMark(root, visit_mark);
+    const content = store.content(root);
+    if (isLeaf(content)) {
+        store.setRank(root, group_rank);
+        return group_rank;
     }
+    const fold = foldOf(content, group_rank);
+    var max = fold.floor;
+    const kids = &stacks.rank_kids;
+    const base: u32 = @intCast(kids.items.len);
+    var succ: Successor = .{ .store = store, .kids = kids, .gpa = gpa, .young_mark = young_mark, .visit_mark = visit_mark, .group_rank = group_rank, .max = &max, .maxes = fold.maxes };
+    try Walk.eachOwned(store, stacks.obligations, root, content, &succ);
+    if (kids.items.len == base) {
+        store.setRank(root, max);
+        return max;
+    }
+    std.mem.reverse(Var, kids.items[base..]);
+    try stacks.ranks.append(gpa, .{ .v = root, .base = base, .max = max, .maxes = fold.maxes });
+    return null;
+}
+
+/// A young node with no successor to walk: an `err`, or a variable with
+/// nothing riding on it. Its rank is its group's (Elm's `adjustRankContent`).
+fn isLeaf(content: TypeStore.Content) bool {
+    return switch (content) {
+        .err => true,
+        .flex, .rigid => |flags| Walk.constraints(flags).isEmpty() and flags.obls == .none,
+        else => false,
+    };
+}
+
+/// The rank of a node that is not young: one already visited keeps its own
+/// (final, or an ancestor's still being walked), an older one is lowered to
+/// the group's rank at most.
+fn settled(store: *TypeStore, root: Var, mark: u32, visit_mark: u32, group_rank: u32) u32 {
+    const rank = store.rank(root);
     if (mark == visit_mark) return rank;
     const min_rank = @min(group_rank, rank);
     store.setMark(root, visit_mark);
     store.setRank(root, min_rank);
     return min_rank;
 }
+
+/// One successor of the node `enter` descends into. What can be answered at
+/// once is — a node that is not young, and a young leaf — exactly as its own
+/// visit would answer it later: neither answer depends on what the walk has
+/// seen, so taking it early changes no rank (R8c). The rest are pushed, to
+/// be entered in order.
+const Successor = struct {
+    store: *TypeStore,
+    kids: *std.ArrayList(Var),
+    gpa: Allocator,
+    young_mark: u32,
+    visit_mark: u32,
+    group_rank: u32,
+    max: *u32,
+    maxes: bool,
+
+    pub inline fn add(s: *Successor, c: Var) Error!void {
+        const root = s.store.find(c);
+        const mark = s.store.mark(root);
+        const rank = if (mark != s.young_mark)
+            settled(s.store, root, mark, s.visit_mark, s.group_rank)
+        else if (isLeaf(s.store.content(root))) blk: {
+            s.store.setMark(root, s.visit_mark);
+            s.store.setRank(root, s.group_rank);
+            break :blk s.group_rank;
+        } else return s.kids.append(s.gpa, root);
+        if (s.maxes) s.max.* = @max(s.max.*, rank);
+    }
+};
 
 /// Step 5 of §8.1: every pool member still at the young rank is quantified;
 /// everything below it escaped and joins the pool of the frame at its rank
@@ -508,7 +600,7 @@ test "an inner frame's variable bound to an outer one escapes; its own is quanti
     const own = try store.freshFlex(2);
     try frames[1].pool.appendSlice(testing.allocator, &.{ inner, own });
 
-    try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, frames[1].pool.items, 2);
+    try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, &frames[1].pool, 2, true);
     try testing.expectEqual(@as(u32, 1), store.rank(inner));
     var carriers: std.ArrayList(Var) = .empty;
     defer carriers.deinit(testing.allocator);
@@ -532,7 +624,7 @@ test "rank adjustment walks a 100 000-deep type without recursion" {
         v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 3);
         try pool.append(testing.allocator, v);
     }
-    try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, pool.items, 3);
+    try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, &pool, 3, true);
     // Every level holds the outer variable, so none of them is young any more.
     try testing.expectEqual(@as(u32, 1), store.rank(v));
 }

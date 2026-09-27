@@ -1,0 +1,2 @@
+# `bump`'s `r + 1`: the alias is a record, not a number.
+type_mismatch Main.beni:18:5

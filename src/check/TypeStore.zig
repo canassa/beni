@@ -333,6 +333,26 @@ depth: u32 = 0,
 /// fit" and stops trying alternatives.
 broken: bool = false,
 next_mark: u32 = no_mark + 1,
+/// Checker v2's acyclicity proofs (`checker-v2.md` §8.2 *as restated by R8c's
+/// review rounds*): per variable, the epoch in which an occurs walk proved
+/// it acyclic. They live here, beside the content they are about, because
+/// every write that can add an edge to a proved graph or leave it an
+/// unrecorded leaf — a proved leaf given successors, any write touching an
+/// `err` with successors on either side — goes through `setContent` or
+/// `merge`, which void them (`gains`, `touchesErr`). The
+/// epoch wraps after 2³² voids and restarts at 1 with the table cleared;
+/// what must not see a stale epoch keys on `proof_voids`. Checker v1 never
+/// proves (`tracks_proofs`), and pays one branch per content write.
+acyclic: std.ArrayList(u32) = .empty,
+acyclic_epoch: u32 = 1,
+/// How many times the proofs were voided: never wraps, so a memo keyed on it
+/// (`check2/Resolve.zig`'s `derivable_open`) cannot match a stale epoch after
+/// `acyclic_epoch` wraps and restarts.
+proof_voids: u64 = 0,
+/// Whether this store keeps the proofs at all: set by checker
+/// v2 (`check2/Module.zig`); checker v1 never proves, and pays one branch per
+/// content write.
+tracks_proofs: bool = false,
 
 const Entry = struct { v: Var, desc: Descriptor };
 
@@ -460,6 +480,20 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     const merged_rank = @min(ranks[a.int()], ranks[b.int()]);
     const keep, const drop = if (sizes[a.int()] >= sizes[b.int()]) .{ a, b } else .{ b, a };
     const total = sizes[a.int()] + sizes[b.int()];
+    var carry = false;
+    var epoch: u32 = 0;
+    if (store.tracks_proofs) {
+        const contents = store.descriptors.items(.content);
+        store.touchesErr(contents[a.int()], contents[b.int()], survivor);
+        const pa = store.proved(a);
+        const pb = store.proved(b);
+        if (pa or pb) {
+            carry = true;
+            epoch = store.acyclic_epoch;
+            if (pa) store.gains(a, survivor);
+            if (pb) store.gains(b, survivor);
+        }
+    }
     store.record(drop);
     store.record(keep);
     const parents = store.descriptors.items(.parent);
@@ -467,6 +501,11 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     sizes[keep.int()] = total;
     ranks[keep.int()] = merged_rank;
     store.descriptors.items(.content)[keep.int()] = survivor;
+    // A class keeps a proof either side had, unless the merge voided every
+    // proof: a proved flat structure's children were unified with the other
+    // side's before the merge, a proved leaf that stays a leaf gains no edge,
+    // and a record's new rows reach it through a bind or an `err` (both void) (§8.2 *as restated by R8c's review rounds*).
+    if (carry and store.acyclic_epoch == epoch) store.prove(keep);
     return keep;
 }
 
@@ -495,8 +534,79 @@ pub fn copy(store: *const TypeStore, v: Var) Var.Optional {
     return store.descriptors.items(.copy)[v.int()];
 }
 
+/// Whether `v` was proved acyclic in the current epoch.
+pub fn proved(store: *const TypeStore, v: Var) bool {
+    return v.int() < store.acyclic.items.len and store.acyclic.items[v.int()] == store.acyclic_epoch;
+}
+
+/// Record that `v` is acyclic, and that every node it reaches was walked.
+/// Out of memory voids every proof instead: a proof is only ever a skipped
+/// walk.
+pub fn prove(store: *TypeStore, v: Var) void {
+    if (!store.tracks_proofs) return;
+    if (v.int() >= store.acyclic.items.len) {
+        const want = @max(store.count(), v.int() + 1);
+        store.acyclic.appendNTimes(store.gpa(), 0, want - store.acyclic.items.len) catch return store.voidProofs();
+    }
+    store.acyclic.items[v.int()] = store.acyclic_epoch;
+}
+
+/// Every proof is void.
+pub fn voidProofs(store: *TypeStore) void {
+    store.proof_voids += 1;
+    store.acyclic_epoch +%= 1;
+    if (store.acyclic_epoch == 0) {
+        @memset(store.acyclic.items, 0);
+        store.acyclic_epoch = 1;
+    }
+}
+
+fn hasSuccessors(c: Content) bool {
+    return switch (c) {
+        .err, .flex, .rigid => false,
+        .alias => true,
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => false,
+            .app => |a| a.args.len != 0,
+            .func, .tuple, .record => true,
+        },
+    };
+}
+
+/// The proved node `v`'s content is about to become `c` (the callers test
+/// `proved` first: it is the cheap half). A proved leaf given successors adds
+/// an edge to a proved graph, so every proof is void; so, conservatively, is a
+/// proved structure overwritten with another kind. What a merge's survivor
+/// holds besides that is the `err` rule's (`touchesErr`) and §8.2's argument
+/// (`checker-v2.md` §8.2 *as restated by R8c's review rounds*).
+/// The `err` rule (§8.2 *as restated by R8c's review rounds*): a write where
+/// one side is `err` — before or after — and any side has successors voids
+/// every proof. `err` is the one kind without successors that can absorb a
+/// structure (a merge whose survivor is `err`, a poison: an unrecorded leaf
+/// in a proved graph, or a record's extra fields absorbed into an `err` row
+/// end and carried on unwalked) or be given one outside a proved leaf's bind
+/// (`Unify.flat` writes the structure it read before the children were
+/// unified). The broad form, not the narrowest one an argument allows: two
+/// holes came from arguments that a narrower condition sufficed (the
+/// manager, 2026-09-26). It costs a content read per merge, about 0.8 % of
+/// instructions on the generated dispatch corpus.
+fn touchesErr(store: *TypeStore, before_a: Content, before_b: Content, after: Content) void {
+    if (before_a != .err and before_b != .err and after != .err) return;
+    if (hasSuccessors(before_a) or hasSuccessors(before_b) or hasSuccessors(after)) store.voidProofs();
+}
+
+fn gains(store: *TypeStore, v: Var, c: Content) void {
+    if (!hasSuccessors(c)) return;
+    const before = store.descriptors.items(.content)[v.int()];
+    if (!hasSuccessors(before) or std.meta.activeTag(before) != std.meta.activeTag(c)) store.voidProofs();
+}
+
 pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
     store.record(v);
+    if (store.tracks_proofs) {
+        store.touchesErr(store.descriptors.items(.content)[v.int()], c, c);
+        if (store.proved(v)) store.gains(v, c);
+    }
     store.descriptors.items(.content)[v.int()] = c;
 }
 
@@ -775,6 +885,9 @@ pub fn commit(store: *TypeStore, snapshot: Snapshot) void {
 /// trade. The sole caller stops guessing once an undo comes back inexact.
 pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     std.debug.assert(store.depth > 0);
+    // A rolled-back write is not seen by the proofs, and a reused index could
+    // read as proved: v2 never speculates (§7.5), and a rollback voids them.
+    if (store.tracks_proofs) store.voidProofs();
     store.depth -= 1;
     const exact = !store.broken;
     var i = store.journal.items.len;

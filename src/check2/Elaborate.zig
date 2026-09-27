@@ -236,15 +236,27 @@ fn siteRows(e: *Elaborate) Error!void {
     // A reference's evidence rides on the `call` that applies it, when one
     // does (§13.1 as R2a wrote it: `Lower` reads a call's site for its
     // callee's hidden arguments, a bare reference's for its own).
-    var call_of: std.AutoHashMapUnmanaged(Bir.Inst.Index, Bir.Inst.Index) = .empty;
-    defer call_of.deinit(e.scratch);
-    for (bir.decls) |d| {
+    //
+    // Only the evidence and group events are moved onto their call, so a
+    // module with neither — most of them — needs no scan at all (R8c's
+    // profile); where one is needed, the map is a dense array over the
+    // instructions, not a hash of every `call`.
+    const requirements = for (e.in.decls) |d| {
+        if (d.requirements.len != 0) break true;
+    } else false;
+    const call_of: []Bir.Inst.OptionalIndex = if (rows.len != 0 or requirements) try e.scratch.alloc(Bir.Inst.OptionalIndex, bir.insts.len) else &.{};
+    defer e.scratch.free(call_of);
+    @memset(call_of, .none);
+    if (call_of.len != 0) for (bir.decls) |d| {
         if (!d.kind.isValue()) continue;
         var i = d.inst_start.int();
         while (i < d.inst_end.int() and i < bir.insts.len) : (i += 1) {
             const inst: Bir.Inst.Index = @enumFromInt(i);
             switch (bir.instTag(inst)) {
-                .call => try call_of.put(e.scratch, @enumFromInt(bir.instData(inst).lhs), inst),
+                .call => {
+                    const callee = bir.instData(inst).lhs;
+                    if (callee < call_of.len) call_of[callee] = inst.toOptional();
+                },
                 // A reference to a value with requirements that instantiated
                 // nothing: an unannotated member of the group being checked
                 // (§12.3).
@@ -257,13 +269,14 @@ fn siteRows(e: *Elaborate) Error!void {
                 else => {},
             }
         }
-    }
+    };
     for (rows) |r| try events.append(e.scratch, .{ .inst = r.inst, .what = .{ .evidence = r.args } });
+    if (events.items.len == 0) return;
     var owner: Owner = try .init(e.scratch, bir);
     defer owner.deinit(e.scratch);
     for (events.items) |*event| {
         event.binder = owner.of(event.inst);
-        if (event.what != .callee) event.inst = call_of.get(event.inst) orelse event.inst;
+        if (event.what != .callee and event.inst.int() < call_of.len) event.inst = call_of[event.inst.int()].unwrap() orelse event.inst;
     }
     std.mem.sort(Event, events.items, {}, eventLessThan);
     for (events.items, 0..) |event, i| {

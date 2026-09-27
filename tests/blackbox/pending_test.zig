@@ -182,16 +182,29 @@ test "CK-40: schema property settling is linear in the number of schemas" {
 // extra (70 ms) is well clear of the noise of two subtracted points. No
 // reference fix exists: R6a's dispatch work is the first that can turn it
 // green, and whether it does at n = 4 000 is R6a's to confirm.
+//
+// **Sized for v2 too (R8c, 2026-09-26).** Under `--checker=v2` the extra is
+// the whole nominal cost (v2's control is linear, CK-75) and small: about 10
+// ms at 4 000, so two subtracted best-of-3 points read 1.7 to 2.4 against the
+// 2.5 bound and failed one run of five at `3c09146`. Under v2 the scenario
+// takes n = 32 000 and the best of 7 runs per point, where the extra is about
+// 65 / 137 ms. Ten runs on R8c read 1.92 to 2.22 (median 2.09; at 16 000 they
+// read 1.73 to 2.22): the ratio sits near 2.1, not 2 — most likely an n log n
+// term (sorting by name) — and the noise is what the larger n narrows. v1
+// keeps n = 4 000 and 3 runs: it is red by a factor of four, and frozen.
 test "CK-42: nominal dispatch adds linear cost per declaration" {
     var s = try Scenario.init("CK-42");
     defer s.deinit();
     const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
-    try s.w.write("E.beni", try generate(s.arena(), 4_000, nominal, 6));
-    try s.w.write("E2.beni", try generate(s.arena(), 8_000, nominal, 6));
-    try s.w.write("X.beni", try generate(s.arena(), 4_000, control, 4));
-    try s.w.write("X2.beni", try generate(s.arena(), 8_000, control, 4));
-    const verdict = try s.extraRatio(.{ "E.beni", "E2.beni" }, .{ "X.beni", "X2.beni" }, 4_000);
+    const v2 = std.mem.eql(u8, s.checkerName(), "v2");
+    const n: usize = if (v2) 32_000 else 4_000;
+    try s.w.write("E.beni", try generate(s.arena(), n, nominal, 6));
+    try s.w.write("E2.beni", try generate(s.arena(), 2 * n, nominal, 6));
+    try s.w.write("X.beni", try generate(s.arena(), n, control, 4));
+    try s.w.write("X2.beni", try generate(s.arena(), 2 * n, control, 4));
+    s.best_of = if (v2) 7 else 3;
+    const verdict = try s.extraRatio(.{ "E.beni", "E2.beni" }, .{ "X.beni", "X2.beni" }, n);
     try s.finish(verdict);
 }
 
@@ -1047,6 +1060,8 @@ const Scenario = struct {
     checker: ?[]const u8,
     claimed: []const []const u8,
     red: []const world.pending.RedLine,
+    /// Runs per point of `best` (`extraRatio`); a scenario may raise it.
+    best_of: usize = 3,
 
     fn init(comptime id: []const u8) !Scenario {
         const entry = comptime for (scenarios) |e| {
@@ -1259,11 +1274,12 @@ const Scenario = struct {
         return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "one {t} at {d}:{d}, with the hint, in {d} ms", .{ code, diags[0].span.start.line, diags[0].span.start.col, run.ms }) };
     }
 
-    /// The best of 3 `check --jobs=1` runs of `file`, or a red verdict.
+    /// The best of `best_of` (3 unless a scenario says) `check --jobs=1` runs of
+    /// `file`, or a red verdict.
     fn best(s: *Scenario, file: []const u8) !union(enum) { ms: i64, red: Verdict } {
         const args = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", file };
         var fastest: i64 = std.math.maxInt(i64);
-        for (0..3) |_| {
+        for (0..s.best_of) |_| {
             const run = try s.timed(&args, world.bulk_timeout_ms) orelse
                 return .{ .red = .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "{s} did not finish within {d} ms", .{ file, world.bulk_timeout_ms }) } };
             if (run.result.exit_code != 0) return .{ .red = try s.failed(run.result) };

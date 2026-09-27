@@ -276,6 +276,9 @@ cost eleven minutes a run. A timing scenario refuses to run on `zig-out/bin/beni
   `src/` changed since the last build). One finding of the recalibration: with CK-40's reference
   fix the schema program is linear only up to about 800 schemas — 1 000 / 1 600 take 77 / 158 ms —
   so CK-40's fix, when R8a writes it, should be measured past that too.
+  *R8c (2026-09-26):* `scenario/CK-42` under `--checker=v2` takes 32 000 / 64 000 declarations and
+  the best of 7 runs per point (v2's extra was about 10 ms at 4 000, so its ratio sampled noise);
+  v1 keeps 4 000 / 8 000 and 3 runs. The step now takes about 40 s once its compiler is built.
 - **The permutation scenario (R7)** asserts, for each program and each permutation of its
   top-level declarations (capped at 120):
   - **exit 0**;
@@ -1959,6 +1962,167 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Exit criteria.** Gates, `test-pending`, `test-v2`, both perf steps green; each CK fixed is
   promoted with a `test-perf` scenario; v2/v1 ≤ 1.05× whole-process on both generated corpora
   (perf stat, ≥ 9 runs), and each change's gain measured separately.
+- **As built (2026-09-26).** Spec first: `checker-v2.md` §5 *as built by R8c*, §7.3 *amended by
+  R8c*, §8.2 *amended by R8c*, §11.5 *amended by R8c* (CK-122), §18 *as built by R8c*, §19.1
+  *after R8c*.
+  - **CK-122, its own commit.** The shared alias reader (`Types.Builder.aliasBody`) built its inner
+    reader with no schema lookup and no interfaces, so an endpoint in an alias body was a silent
+    `err`: a comparison was `internal`, a wrapper a false `not_equatable`, and any other use a hole
+    (`r + 1` on an `RW` checked in both checkers). The body of the checked module's own alias now
+    reads with the caller's lookup; another module's through that module's interface
+    (`Types.schemaMemberOfDecl`, an index built with the table); a private tagged schema's endpoint
+    as its nominal type. The interface's `alias RW` with no body row is not a defect: no alias row
+    prints a body. Fixtures `check/good/SchemaEndpointAlias.beni`, `…AcrossModules/`,
+    `check/bad/SchemaEndpointAliasKeepsItsType.beni` (red before under both checkers), `v2-green`
+    +3. Found: **CK-126** — a private RECORD schema's endpoint through another module's `pub`
+    alias is still a silent `err` in the importer (both checkers; the fix is an interface row;
+    pending, `RED` lines under both).
+  - **Performance, each change measured alone** (ReleaseFast, `perf stat -r 11`, whole process,
+    `check --no-cache --jobs=1`, two interleaved rounds, the dispatch corpus's user cycles and
+    instructions; the plain corpus moved alike):
+
+    | Change | v2 cycles | v2 instructions |
+    |---|---|---|
+    | parent (`3c09146` + CK-122) | 549.0M (v1 509.4M, 1.08×) | 1 087.2M |
+    | rank adjustment: successors on a stack, leaves answered at once, one-rank pools unsorted | −5.2M | −5.4M |
+    | Unify: bounded pair scan, flex-flex fast path, `reportJoins` guard | −1.1M | −4.9M |
+    | rank adjustment: successors answered from the parent's frame | −6.9M | −17.5M |
+    | pool compacted to roots after step 2 | −1.8M | −10.6M |
+    | P6: no call map without evidence, a dense one otherwise | −2.8M | −5.3M |
+    | CK-111 (open derivability memo, positions' proofs, array hash map; first form) | −1.2M | +0.2M |
+    | CK-112, CK-114 | noise | ±0 |
+    | CK-93 (acyclicity stamps; first form) | +0.6M | +6.3M |
+    | review round: the proofs in the store, voided by any edge (B1, B2; checked first on the cheap half) | +3.5M | +4.7M |
+    | review round 2: the broad `err` rule, childless pairs unpushed | +6M | +3.7M |
+    | **R8c** | **542–543M (v1 513–514M, 1.054–1.058×)** | **1 058.2M** |
+
+    Whole process after the review round, against the parent, v1 from the same binary: plain
+    corpus v2/v1 = 1.02 in cycles (485–486 / 475–476M), 1.02–1.03 in task-clock (162–163 / 158–160
+    ms); dispatch corpus 1.05 in cycles (536 / 511M), 1.03–1.04 in task-clock (177–178 / 170–173
+    ms). The parent: 1.05–1.06 and 1.07–1.08 in cycles. v1 moved +2.6M instructions (0.25 %: the
+    shared CK-112 and CK-122 code and one branch per content write). Kept all; the proofs (stamps
+    and their upkeep) cost about 1 % of instructions against a build that keeps none, and are
+    CK-93's and CK-111's price. Not done: per-group memoisation of imported schemes (§18 says why). `--self-profile`
+    gains `derived`, `elaborate`, `publish`, `finish` per module under v2 (`blackbox_test.zig`).
+  - **CK-111** (`test-perf` "CK-111", d = 1 000 / 2 000, 64 uses: 10.5 / 44.3 s, ratio 4.20 on the
+    parent; 0.29 / 0.58 s, 2.03, now). Three walks per nested position: derivability (a verdict over
+    variables kept while no leaf it met is given successors, `Resolve.State.derivable_open`), the
+    §9.5 cycle test (it proves every node it walks, so a position is proved already; Debug re-walks
+    a proved receiver at depth < 64), and the new deep-pair hash map's tombstones (an array hash
+    map popped in order).
+  - **CK-114** (`abuse_test.zig`). The solver's per-declaration guard, not `Unify.max_depth`: a
+    record literal spent two depth units a level. `Solve.solveFields` makes it one; 4 095 levels
+    check and compare under both checkers, 4 096 is the parser's one `nesting_too_deep`. Found:
+    **CK-128** — running such a comparison throws `RangeError` in node from about 4 000 levels
+    (both checkers; the derived `eq` recurses a level at a time); the owner assigned it to R8d.
+  - **CK-112** (`test-perf` "CK-112", 16 000 / 32 000 parameters: 253 / 913 ms, 3.60, on the
+    parent; 42 / 78 ms, 1.85, now). Shared code: `Lower.type_param_index` past 8 parameters, and
+    `Types.Builder.typeVar` reads the slot `TypeVarInfo.param` names. v1 keeps a quadratic of its
+    own (frozen).
+  - **CK-93** (`test-perf` "CK-93", 8 000 / 16 000 bindings, on the module's `check` event:
+    602 / 2 359 ms, 3.92, on the parent; 6.3 / 12.5 ms, 1.97, now). Measured on the event because
+    lowering the `let` is itself quadratic: **CK-127**, found (frontend, unassigned).
+    `perf_test.zig` gains `eventRatio` for it.
+  - **`scenario/CK-42` under v2** takes n = 32 000 and the best of 7 per point (v1 unchanged).
+    Ten runs: 1.92–2.22, median 2.09 (at 16 000: 1.73–2.22; at 4 000 before: 1.7–2.4). The
+    `test-pending-perf` step now takes about 40 s once its compiler is built (it was about 22 s).
+  - **Review round (2026-09-26).** Spec first: `checker-v2.md` §8.2 *restated by R8c's review
+    round* (its two R8c claims were false).
+    - **Blocking, fixed.** B1: a merge that gave an `err` class structure (`Unify.flat` writes
+      content read before the children were unified) added an edge no bind made; the stamp moved
+      to the survivor, one INFINITE TYPE of two was lost (a cyclic type in a scheme, a 1.4 GB
+      dump), and with CK-126's `err` an infinite type was accepted. B2: a position inherited its
+      parent's proof across a Rule U1 join and a user instance's unification that closed
+      `x = List x` with no demand in between (a Debug panic). Both have one fix: the proofs moved
+      into `TypeStore` (`acyclic`, `prove`, `proved`), which sees every content write; a proved
+      node with no successors given some voids every proof (`gains`), and a proving run records
+      every leaf it meets (flex, rigid, `err`). Positions inherit nothing: §9.5's run records every
+      node it blackens (`Occurs.interior`), so a position is proved already. `flat` still writes
+      the structure (v1's and `5f18e23`'s behaviour; the write is now seen), so no golden moved.
+      The open derivability memo is voided by the same epoch (the walk records the leaves it
+      meets); `Unify.binds` and `Groups.demands_made` are gone. v1's stores do not track
+      (`tracks_proofs`), one branch per write.
+    - **Fixtures** (`blackbox_test.zig`, v2, the Debug binary): "R8c review B1: a merge that
+      gives an `err` class structure …", "… an infinite type through a schema alias's `err` …",
+      "R8c review B2: a cycle closed between a receiver's test and its positions' …", each the
+      reviewer's repro with `5f18e23`'s v2 output; red with the voiding switched off (one
+      INFINITE TYPE of two; exit 0; the Debug panic).
+    - **Fuzz, against `5f18e23`'s v2** (ReleaseFast, `check --diagnostics=json` plus
+      `dump --stage=types`; the position programs also on the Debug binary for panics): 3 000
+      let-chain programs and 5 500 position programs (user `eq`/`compare` of five shapes, depths
+      1–200, `x.eq y` interleaved): 0 differences, 0 panics. The same fuzz finds about 1 100 and
+      2 900 differences with the voiding switched off. And 562 corpus and pending fixtures give
+      identical `check` JSON and type dumps, bar the three CK-122 fixtures.
+    - **Docs.** CK-125's `Slice` line restored; CK-128 rewritten with the review's measurements
+      (3 747 levels, an 8 940-cell user list, Elm's explicit stack), its slice R8d (the owner,
+      2026-09-26); R8d added below.
+  - **Review round 2 (2026-09-26).** Spec first: `checker-v2.md` §8.2 *restated by R8c's two review
+    rounds* (the invariant stated — *a proved node's graph is acyclic and every node without
+    successors in it is proved* — and the first round's "an edge is added in exactly one way" and
+    "`merge` only redirects a class to a survivor whose children were unified first" corrected;
+    the nonexistent `TypeStore.leaf_binds` citation gone), §7.3 (childless pairs).
+    - **Blocking, fixed.** Both through `err`, the one leaf that absorbs structure. B1: a record
+      merge past a proved `err` row end — the extra fields merge into the `err` (no leaf gains
+      successors), the merged record carries them unwalked, the proof moves to the survivor; an
+      infinite type accepted again (exit 0, with CK-126's `err`). B2: an unproved interior node of a
+      proved graph turned `err`, then `Unify.flat` wrote structure over it: a cyclic scheme reached
+      `f`. Fix: **the `err` rule** (`TypeStore.touchesErr`), the reviewer's verified form — any write
+      where one side is `err`, before or after, and any side has successors voids every proof. The
+      implementer first shipped a narrower rule (only a node with successors turned `err`, which
+      the invariant alone allows); **the manager chose the broad rule** (2026-09-26): two holes had
+      already come from arguments that a narrower condition sufficed, and the broad rule is the one
+      the review verified. It reads contents on every merge: +8.7M instructions on the dispatch
+      corpus (0.8 %).
+    - **Debug detector.** `Walk.assertProved`: wherever a walk stops at a proved node, a walk of its
+      own that trusts no proof and touches no mark (≤ 1 024 nodes) panics if the node reaches a
+      cycle. With the `err` rule switched off it panics on both programs.
+    - **Nits.** A rollback voids the proofs (v2 never speculates). The derivability memo keys on
+      `TypeStore.proof_voids`, a count that does not wrap as the epoch does. The `gains` and
+      `TypeStore` comments say what the rules are.
+    - **Fixtures** (`blackbox_test.zig`, v2, Debug): "R8c review round 2, B1: a record merge past a
+      proved `err` row end …" (INFINITE TYPE at 21:9) and "… B2: an interior node that became `err`
+      and then structure …" (one NAMING ERROR, `f : a -> ( ?, String )`); red before as a Debug
+      panic of the detector, and in ReleaseFast as the reviewer reports.
+    - **Fuzz** (my generators; the reviewer's were gone): 12 000 record-heavy programs with an
+      `R Models.PrivRecW` err-row parameter (two in three), `case` binders and `List.length`
+      hiding, against a build that trusts no proof (`np`); 3 000 let-chain programs (with `bogus`
+      leaves) and 5 500 position programs against `5f18e23`'s v2; every program also on the Debug
+      binary with the detector. 0 differences, 0 panics — before and after the childless-pair
+      change below. With the `err` rule switched off the record fuzz finds 744 differences.
+    - **Bench, by choice over the line.** Unify no longer pushes a coinduction pair for two
+      childless structures (`isChildless`, §7.3): −5.8M instructions. With the broad `err` rule,
+      `perf stat -r 11`, two rounds, v1 from the same binary: plain 1.031–1.033× in cycles
+      (493 / 478M), 1.03× in task-clock; dispatch **1.054–1.058×** in cycles (542–543 / 513–514M)
+      and 1.056–1.058× in task-clock (181–183 / 172–173 ms); v2 1 058.2M instructions (v1
+      1 029.2M). R8c's ≤ 1.05× was the manager's own target, not a budget: R9's is 1.10× (§18). The
+      manager accepted about 1.055× for the broad rule (the narrow rule measured 1.050×). With the
+      narrow rule and no coinduction change the tree read 1.055×; the measured costs left are the
+      proofs CK-93 and CK-111 need and Unify's own content loads.
+  - **Evidence** (after review round 2). The three gates; `test-v2` 942 / 0 / 29; `test-pending`
+    green (`scenario/PERM` 71 programs, 4 506 orders; CK-126 red under both, recorded);
+    `test-perf` 17 scenarios green (CK-111 1.98, CK-112 1.92, CK-93 1.99), the three new ones red
+    on the parent binary through the same harness; `test-pending-perf` green in 23 runs before the
+    review rounds and 3 after each, and once more with the broad `err` rule (round 2:
+    `scenario/CK-42` 2.04–2.21, then 2.05; CK-88 red, R12's). Fuzz with the broad rule: the three
+    families again, 0 differences and 0 Debug panics.
+
+### R8d — Derived `==` and `compare` never throw on deep data (added by the manager, 2026-09-26)
+
+- **Goal.** CK-128, the owner's decision of 2026-09-26: a derived `eq` or `compare` must never
+  throw on deep data. Fix it the way Elm does (`_Utils_eqHelp`): recurse to a depth threshold,
+  then continue from an explicit stack, so the native stack does not grow with the data. No
+  `RangeError` on any value the program can build.
+- **Scope.** The emitted derived `eq` and `compare` (records, tuples, nominal types, their
+  evidence), in development and `--release`, under both checkers while v1 emits. Spec first:
+  `backend.md` states the rule and the threshold.
+- **Exit criteria.**
+  - A `run/` fixture that builds two 100 000-cell user linked lists (`type L = Cons Int L | Nil`)
+    and compares them with `==` and `<`, and a record nested 10 000 deep compared with `==`,
+    printing the right answers in dev and `--release`; red before the fix (`RangeError`).
+  - An abuse test at the parser's limit (a record literal 4 095 deep, compared and run).
+  - Small programs' emitted JavaScript byte-identical where possible; every golden that moves is
+    listed with the reason.
+  - The gates, `test-pending`, `test-v2` and both perf steps green.
 
 ### R9 — v2 checks `core`; `test-v2` strict; parity
 
@@ -2109,6 +2273,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76; CK-105 and CK-106 (found by R7's reviews, claimed) | — |
 | R8a | CK-87 (promoted, `run/DerivedEqDeepRecord`); CK-85 (fixed in the shared emitter, its guard re-blessed) | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24); CK-22's cross-module half and CK-24, green early (R8b's) | CK-107 found (`cache_store`, both checkers; R10 proposed); CK-108 to CK-110 found by its reviews and fixed in the slice; CK-111 to CK-114 found (CK-112 by R8a, the rest by its reviews; the perf and limits slice proposed); CK-115 and CK-116 found by its review (R13); CK-117 found by its review round (R8b proposed); CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24, 117; CK-118 (found by R8b, claimed); CK-120 (found by its review round, claimed) | CK-119 and CK-121 (found and fixed by its review round), CK-125 (found and fixed by its round-2 review); CK-122 (R8b follow-up proposed, before R9), CK-123 (schema S3/S4 owner), CK-124 (frontend, unassigned) |
+| R8c | CK-122 (fixed in shared code, both checkers: `check/good/SchemaEndpointAlias*`, `check/bad/SchemaEndpointAliasKeepsItsType`); CK-114 (`abuse_test.zig`) | — | CK-93, 111, 112 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-42's v2 twin resized; CK-126 (found, pending, red under both), CK-127 (found, frontend) and CK-128 (found; R8d) |
+| R8d | CK-128 (a `run/` fixture and an abuse test; the owner, 2026-09-26) | — | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
@@ -2117,7 +2283,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 125 entries appears in this table (CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 128 entries appears in this table (CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

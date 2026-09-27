@@ -123,8 +123,15 @@ region: Bir.Inst.Index = @enumFromInt(0),
 argument: bool = false,
 problem: ?Problem = null,
 /// The pairs of non-variables being unified, outermost first: the
-/// coinduction of §7.3.
+/// coinduction of §7.3. Each pair is stored in the order `(min, max)` of
+/// its roots when pushed.
 active: std.ArrayList([2]Var) = .empty,
+/// The pairs of `active` from index `hash_from` on, hashed (R8c, CK-93's
+/// note): a deep acyclic unification would otherwise scan its whole path
+/// per pair, quadratic in depth. An array hash map, popped in stack order:
+/// a plain hash map's removals leave tombstones, and a deep unification's
+/// pushes and pops made every probe longer (CK-111's scenario).
+active_deep: std.AutoArrayHashMapUnmanaged([2]Var, void) = .empty,
 /// Scratch: the rows of a merge side whose rank dropped (`lowerOwned`).
 lowered: std.ArrayList(Obligations.Id) = .empty,
 depth: u32 = 0,
@@ -171,6 +178,8 @@ fn fresh(u: *Unify, content: TypeStore.Content) Error!Var {
 /// remains — never keyed by a variable that stopped being a root.
 fn merge(u: *Unify, a: Var, b: Var, content: TypeStore.Content) Error!Var {
     if (std.debug.runtime_safety) u.assertContained(a, b);
+    // The store keeps the acyclicity proofs through the merge, or voids them
+    // all when it adds an edge (`TypeStore.merge`, CK-93).
     const keep = u.store.merge(a, b, content);
     try u.evidence.mergeRejected(u.gpa, if (keep == a) b else a, keep);
     return keep;
@@ -411,6 +420,17 @@ fn lowerOwned(u: *Unify, root: Var, ids: []const Obligations.Id) Error!void {
     }
 }
 
+fn isChildless(c: TypeStore.Content) bool {
+    return switch (c) {
+        .structure => |s| switch (s) {
+            .unit, .empty_record => true,
+            .app => |a| a.args.len == 0,
+            else => false,
+        },
+        else => false,
+    };
+}
+
 fn go(u: *Unify, a: Var, b: Var) Error!bool {
     u.depth += 1;
     defer u.depth -= 1;
@@ -431,13 +451,12 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     // (in a finite graph no pair is its own descendant). Children are still
     // unified before the merge, so a message still prints two types.
     if (!isVariable(ca) and !isVariable(cb)) {
-        for (u.active.items) |pair| {
-            const x = st.find(pair[0]);
-            const y = st.find(pair[1]);
-            if ((x == ra and y == rb) or (x == rb and y == ra)) return true;
-        }
-        try u.active.append(u.gpa, .{ ra, rb });
-        defer _ = u.active.pop();
+        // Two structures with no children (`Int`, `()`, `{}`) recurse into
+        // nothing, so they cannot meet a pair again: no pair is pushed (R8c).
+        if (isChildless(ca) and isChildless(cb)) return u.flat(ra, ca.structure, rb, cb.structure);
+        if (u.isActive(ra, rb)) return true;
+        try u.pushActive(ra, rb);
+        defer u.popActive();
         return switch (ca) {
             .alias => |aa| u.alias(ra, aa, rb, cb),
             .structure => |sa| u.structure(ra, sa, rb, cb),
@@ -459,6 +478,47 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     };
 }
 
+/// Below this many active pairs nothing is scanned: a cycle is then met
+/// again at most `scan_from` levels further down, where the scan finds it.
+const scan_from = 8;
+/// From this many active pairs on, the deeper ones are also hashed.
+const hash_from = 64;
+
+/// Whether the pair `(ra, rb)` is being unified further up (§7.3). The
+/// shallow pairs are compared by their current roots; a hashed deep pair
+/// by its roots when pushed, so a pair whose root a merge below it has
+/// since changed is missed, and unrolled once more: merges only reduce the
+/// roots, so that happens a bounded number of times.
+fn isActive(u: *Unify, ra: Var, rb: Var) bool {
+    const n = u.active.items.len;
+    if (n < scan_from) return false;
+    const st = u.store;
+    for (u.active.items[0..@min(n, hash_from)]) |pair| {
+        const x = st.find(pair[0]);
+        const y = st.find(pair[1]);
+        if ((x == ra and y == rb) or (x == rb and y == ra)) return true;
+    }
+    return n > hash_from and u.active_deep.contains(orderedPair(ra, rb));
+}
+
+fn orderedPair(a: Var, b: Var) [2]Var {
+    return if (a.int() <= b.int()) .{ a, b } else .{ b, a };
+}
+
+fn pushActive(u: *Unify, ra: Var, rb: Var) Error!void {
+    const pair = orderedPair(ra, rb);
+    if (u.active.items.len >= hash_from) try u.active_deep.put(u.gpa, pair, {});
+    try u.active.append(u.gpa, pair);
+}
+
+fn popActive(u: *Unify) void {
+    const pair = u.active.pop().?;
+    if (u.active.items.len >= hash_from) {
+        const keys = u.active_deep.keys();
+        if (keys.len != 0 and std.mem.eql(Var, &keys[keys.len - 1], &pair)) _ = u.active_deep.pop();
+    }
+}
+
 fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content) Error!bool {
     const st = u.store;
     switch (cb) {
@@ -470,6 +530,15 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
         .flex => |fb| {
             const kind = TypeStore.Kind.meet(fa.kind, fb.kind) orelse
                 return u.fail(.{ .kinds = .{ .left = fa.kind, .right = fb.kind } });
+            // Nothing rides on either side and neither is marked: the join
+            // below reduces to this (R8c's profile: the common case).
+            if (fa.obls == .none and fb.obls == .none and fa.constraints == .none and fb.constraints == .none and !fa.equatable and !fb.equatable) {
+                var plain = fb;
+                plain.name = if (fb.name != .none) fb.name else fa.name;
+                plain.kind = kind;
+                _ = try u.merge(ra, rb, .{ .flex = plain });
+                return true;
+            }
             // One `Flags`, copied and changed field by field, never rebuilt
             // from parts: a rebuilt one drops what it does not name (CK-18).
             var joined = fb;
@@ -863,6 +932,7 @@ fn isVariable(c: TypeStore.Content) bool {
 
 pub fn deinit(u: *Unify) void {
     u.active.deinit(u.gpa);
+    u.active_deep.deinit(u.gpa);
     u.lowered.deinit(u.gpa);
     u.join_failures.deinit(u.gpa);
 }

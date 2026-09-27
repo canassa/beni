@@ -19,7 +19,7 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
                               # a red one fails the step
 ```
 
-`test-pending` runs at every commit. `test-pending-perf` (about 22 s, plus about 95 s when `src/`
+`test-pending` runs at every commit. `test-pending-perf` (about 40 s since R8c, plus about 130 s when `src/`
 changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
 scenario covers — R3 (CK-41), R6a (CK-42, CK-80, CK-03), R8a (CK-40, CK-75), R7 (`NEST-UNDER`),
 any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on

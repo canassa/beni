@@ -219,3 +219,7 @@ tests/pending/check/bad/EquatableMarkerThroughWrappedEndpoint v1 exit=1 codes=no
 tests/pending/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni v1 exit=0 codes=none
 tests/pending/check/bad/EquatableMarkerUncheckedSchema.beni v1 exit=0 codes=none
 tests/pending/check/bad/EquatableMarkerInFlightSchema.beni v1 exit=0 codes=none
+# R8c (2026-09-26): CK-126, found while fixing CK-122: a private record schema's endpoint through
+# another module's pub alias reads as a silent err in the importer, under both checkers.
+tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules v1 exit=0 codes=none
+tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules v2 exit=0 codes=none

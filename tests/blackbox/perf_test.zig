@@ -476,6 +476,42 @@ const Perf = struct {
         }
         return .{ .green = false, .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
     }
+    /// `ratioWith` on one `--self-profile` event of the file's own module
+    /// rather than the process (R8c, CK-93): for a finding in one phase whose
+    /// program also carries another phase's super-linear cost, a finding of
+    /// its own. The event's duration is wall time, of a `--jobs=1` run; each
+    /// point the best of 3.
+    fn eventRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8, extra: []const []const u8) !Verdict {
+        var ms: [2]f64 = undefined;
+        for ([_][]const u8{ small, large }, &ms) |file, *slot| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json" });
+            try args.appendSlice(s.arena(), extra);
+            try args.append(s.arena(), file);
+            var best: f64 = std.math.inf(f64);
+            for (0..3) |_| {
+                const run = try s.timed(args.items, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+                try expectClean(run.result);
+                const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0, args: struct { file: ?[]const u8 = null } = .{} };
+                const text = try s.w.read("trace.json");
+                const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, s.arena(), text, .{ .ignore_unknown_fields = true });
+                var total: ?f64 = null;
+                for (parsed.traceEvents) |e| {
+                    if (!std.mem.eql(u8, e.ph, "X") or !std.mem.eql(u8, e.name, event)) continue;
+                    if (!std.mem.eql(u8, e.args.file orelse continue, file)) continue;
+                    total = (total orelse 0) + e.dur / 1000.0;
+                }
+                best = @min(best, total orelse return error.PerfEventMissing);
+            }
+            slot.* = best;
+        }
+        const r = ms[1] / @max(ms[0], 0.001);
+        return .{
+            .green = r <= 2.5,
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `{s}` event", .{ n, ms[0], ms[1], r, event }),
+        };
+    }
+
     fn expectClean(r: world.Result) !void {
         if (r.exit_code == 0) return;
         std.debug.print("a timed run exited {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 400)] });
@@ -621,4 +657,96 @@ test "CK-119: many schemas with `via`s, each compared, cost linear time (checker
     const large = ms[2] - ms[3];
     const green = large * 2 <= small * 5 or large * 20 <= ms[3];
     try s.finish("CK-119 many", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms (5 % of the control: {d} ms), CPU time", .{ ms[0], ms[1], small, ms[2], ms[3], large, @divTrunc(ms[3], 20) }) });
+}
+
+// CK-111, fixed by R8c (2026-09-26): `==` on a record literal nested d deep,
+// `uses` times. Each use resolves d nested positions, and v2 walked each
+// position's whole subtree twice more: the derivability walk (a `number`
+// leaf keeps every position non-ground, so nothing was memoised) and the
+// occurs walk `Resolve.step` runs on every structure. A position's walks now
+// read its parent's: `Resolve.State.derivable_open` holds a verdict proved
+// over variables until a variable is bound, and `State.proofs` carries the
+// parent's acyclicity proof to its positions. Calibration (ReleaseFast, CPU,
+// 64 uses): `b64342b`+CK-122 takes 9.6 s at d = 1 000 and 40 s at 2 000, a
+// ratio of 4.2; R8c 0.25 / 0.52 s, 2.1. d stays under 2 100, where the
+// unfixed build refused the literal (CK-114, which the abuse test holds).
+test "CK-111: derived == on a deeply nested record is linear per use (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("R.beni", try nestedRecord(s.arena(), 1_000, 64));
+    try s.w.write("R2.beni", try nestedRecord(s.arena(), 2_000, 64));
+    const verdict = try s.ratioWith("R.beni", "R2.beni", 1_000, &.{"--checker=v2"});
+    try s.finish("CK-111", verdict);
+}
+
+/// `mk` a record literal nested `depth` deep, and `uses` declarations
+/// comparing it with itself.
+fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "mk =\n    ");
+    for (0..depth) |_| try out.appendSlice(arena, "{ x = ");
+    try out.append(arena, '1');
+    for (0..depth) |_| try out.appendSlice(arena, ", y = 0 }");
+    try out.appendSlice(arena, "\n\n\n");
+    for (0..uses) |j| try out.print(arena, "u{d} =\n    mk == mk\n\n\n", .{j});
+    return out.items;
+}
+
+// CK-112, fixed by R8c (2026-09-26): a type of n parameters. Lowering looked
+// each type variable up by a scan of the declaration's parameters, and the
+// type reader (`Types.Builder.typeVar`) by a scan of its scope: O(n²) in both
+// checkers. Lowering now indexes a declaration of more than 8 parameters by
+// name, and the reader takes a parameter's slot from the index lowering
+// recorded. v1 has a quadratic of its own beyond these two (21 s at 32 000),
+// and is frozen; the scenario is v2's. Calibration (ReleaseFast, CPU):
+// `b64342b`+CK-122 takes 0.21 s at 16 000 and 0.8 s at 32 000; R8c 40 / 70
+// ms.
+test "CK-112: a type of n parameters costs linear time (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("W.beni", try manyParams(s.arena(), 16_000));
+    try s.w.write("W2.beni", try manyParams(s.arena(), 32_000));
+    const verdict = try s.ratioWith("W.beni", "W2.beni", 16_000, &.{"--checker=v2"});
+    try s.finish("CK-112", verdict);
+}
+
+/// `pub type W p0 … pn = W p0 … pn`.
+fn manyParams(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub type W");
+    for (0..n) |i| try out.print(arena, " p{d}", .{i});
+    try out.appendSlice(arena, "\n    = W");
+    for (0..n) |i| try out.print(arena, " p{d}", .{i});
+    try out.append(arena, '\n');
+    return out.items;
+}
+
+// CK-93, fixed by R8c (2026-09-26): `foo x0 = let x1 = [ x0 ] … xN = [ xN-1 ]
+// in List.length xN`. Every `let` boundary occurs-checks its header, and
+// xi's type holds the whole chain below it: O(N²). A boundary's run now
+// stamps what it proves (`Walk.Stacks.acyclic`) — the root and every flex in
+// the proved graph — and a later walk stops at a stamped root, until a
+// stamped flex is bound (the one change that can close a cycle). Each link
+// binds a fresh element variable, so the proofs hold down the chain.
+//
+// Measured on the module's `check` event, not the process: lowering the
+// `let` itself is quadratic in its bindings (`bir.Lower.lowerBindings`, a
+// scope scan per name), which is the frontend's (CK-127), not this finding.
+// Calibration (ReleaseFast, the event's wall time at --jobs=1): R8c's parent
+// takes 635 / 2 520 ms at N = 8 000 / 16 000 (4.0); R8c 9 / 15 ms (1.7).
+test "CK-93: a let chain whose types grow is linear to check (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("L.beni", try letChain(s.arena(), 8_000));
+    try s.w.write("L2.beni", try letChain(s.arena(), 16_000));
+    const verdict = try s.eventRatio("L.beni", "L2.beni", 8_000, "check", &.{"--checker=v2"});
+    try s.finish("CK-93", verdict);
+}
+
+fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "foo x0 =\n    let\n");
+    for (1..n + 1) |i| try out.print(arena, "        x{d} =\n            [ x{d} ]\n\n", .{ i, i - 1 });
+    try out.print(arena, "    in\n    List.length x{d}\n", .{n});
+    return out.items;
 }

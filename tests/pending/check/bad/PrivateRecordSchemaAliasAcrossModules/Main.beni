@@ -1,0 +1,23 @@
+-- CK-126: a private record schema's endpoint, reached through another
+-- module's `pub type alias`, has no shape in the importer. `Models.PrivRecW`
+-- expands, in `Models`, to `PrivRec.Type`; `PrivRec` is in no interface, so
+-- the importer reads the expansion as an `err` and `r + 1` is accepted in
+-- silence by both checkers. Expected: the alias is `{ z : Int }` here, as it
+-- is in `Models`, so `field` checks and `bump` is a TYPE MISMATCH. Oracle
+-- twin: the same program with `PrivRec` made `pub` reports exactly that.
+import Models
+
+
+field : Models.PrivRecW -> Int
+field r =
+    r.z
+
+
+bump : Models.PrivRecW -> Int
+bump r =
+    r + 1
+
+
+use : Int -> Int
+use n =
+    field (Models.mk n)

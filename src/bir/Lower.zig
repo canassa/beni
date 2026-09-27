@@ -119,6 +119,10 @@ ctor_stamp: []u32 = &.{},
 /// The type parameters of the declaration being lowered (tokens), or
 /// null inside an annotation, where type variables are free (§7).
 type_params: ?[]const TokenIndex = null,
+/// `type_params` by name, first occurrence, when there are more than
+/// `indexed_params` of them: a scan per type variable was O(n²) in the
+/// parameter count (CK-112).
+type_param_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
 /// The type variables already seen in the type expression being lowered,
 /// for the "first occurrence" half of the `equatable` rule (checker.md
 /// Appendix A). Cleared by `lowerRootType` per type expression, not per
@@ -302,6 +306,7 @@ pub fn lower(
         l.list_scratch.deinit(scratch);
         l.decl_sources.deinit(scratch);
         l.type_vars_seen.deinit(scratch);
+        l.type_param_index.deinit(scratch);
         l.annotation_vars.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
@@ -1297,6 +1302,14 @@ fn lowerTypeParams(l: *Lower, all_params: []const TokenIndex) Allocator.Error!vo
     d.type_params_end = @intCast(l.symbols.items.len);
     d.params = @intCast(params.len);
     l.type_params = params;
+    l.type_param_index.clearRetainingCapacity();
+    if (params.len > indexed_params) {
+        try l.type_param_index.ensureTotalCapacity(l.scratch_allocator, @intCast(params.len));
+        for (params, 0..) |p, i| {
+            const gop = l.type_param_index.getOrPutAssumeCapacity(l.tokenSymbol(p));
+            if (!gop.found_existing) gop.value_ptr.* = @intCast(i);
+        }
+    }
     if (params.len < 2) return;
 
     // `order` sorted by (symbol, position): each run of one name starts at
@@ -1781,13 +1794,19 @@ fn lowerTypeVar(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 /// function of two arguments, so a second marker, or one on a later
 /// occurrence, is a mistake about what the prefix means rather than a
 /// harmless repetition.
+/// Above this many type parameters a declaration's are looked up by name
+/// (`type_param_index`), not scanned.
+const indexed_params = 8;
+
 fn lowerTypeVarMarked(l: *Lower, token: TokenIndex, marker: Ast.OptionalTokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     const name = try l.addSymbol(symbol);
     var info: Bir.TypeVarInfo = .{ .param = Bir.TypeVarInfo.param_none, .equatable = false };
     if (l.type_params) |params| {
-        for (params, 0..) |p, i| {
+        if (params.len > indexed_params) {
+            if (l.type_param_index.get(symbol)) |i| info.param = @intCast(i);
+        } else for (params, 0..) |p, i| {
             if (l.tokenSymbol(p) == symbol) {
                 info.param = @intCast(i);
                 break;

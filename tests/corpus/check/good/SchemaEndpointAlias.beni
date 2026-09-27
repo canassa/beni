@@ -1,0 +1,92 @@
+-- check/good: CK-122. A `type alias` of a schema endpoint answers as the
+-- endpoint written directly (checker-v2.md §11.5 *amended by R8c*). Before
+-- the fix the alias's body was read without the module's schema lookup, so
+-- it expanded to a silent `err`: every comparison below was an `internal`
+-- (both checkers), and `H`/`W` were a false NOT EQUATABLE.
+schema R tagged "k" of
+    A as "a"
+        v : Int
+    C as "c"
+
+
+schema Rec =
+    x : Int
+    y : String
+
+
+type alias RW =
+    R.Type
+
+
+type alias RE =
+    R.Encoded
+
+
+type alias RecW =
+    Rec.Type
+
+
+type alias RL =
+    List R.Type
+
+
+type alias Both =
+    { r : Rec.Type, t : R.Type }
+
+
+type H =
+    H RW
+
+
+type W =
+    W RecW
+
+
+same : RW, RW -> Bool
+same p q =
+    p == q
+
+
+less : RE, RE -> Bool
+less p q =
+    p < q
+
+
+method : RW, RW -> Bool
+method p q =
+    Basics.eq p q
+
+
+records : RecW, RecW -> Bool
+records p q =
+    p == q
+
+
+sorted : RL -> RL
+sorted xs =
+    List.sort xs
+
+
+fields : Both, Both -> Bool
+fields p q =
+    p == q
+
+
+wrapped : H, H -> Bool
+wrapped p q =
+    p < q
+
+
+wrappedRecord : W, W -> Bool
+wrappedRecord p q =
+    p == q
+
+
+field : RecW -> Int
+field r =
+    r.x
+
+
+direct : R.Type -> RW
+direct r =
+    r

@@ -1,0 +1,39 @@
+-- check/bad: CK-122. An alias of a schema endpoint is that endpoint, not a
+-- hole: before the fix its body read as an `err`, which unifies with
+-- anything, so both checkers accepted `r + 1` on it without a word. And a
+-- refusal through the alias is the endpoint's own: `F`'s payload goes
+-- `via` a conversion to a function, so `F.Type` is not equatable.
+import Schema exposing (Conversion)
+
+
+conv : Conversion Int (Int -> Int)
+conv =
+    Debug.todo "checker-only conversion"
+
+
+schema R tagged "k" of
+    A as "a"
+        v : Int
+
+
+schema F tagged "k" of
+    B as "b"
+        f : Int via conv
+
+
+type alias RW =
+    R.Type
+
+
+type alias FW =
+    F.Type
+
+
+bump : RW -> Int
+bump r =
+    r + 1
+
+
+same : FW, FW -> Bool
+same p q =
+    p == q

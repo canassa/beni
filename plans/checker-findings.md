@@ -2773,8 +2773,18 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   (CK-91's shape) is linear.
 - **Expected** linear: the nodes an older boundary generalised or proved acyclic need not be
   walked again (for occurs, black marks that persist across boundaries for generalised nodes).
-- **Fixture** none yet: a `pending_test.zig` timing scenario when a slice takes it.
-- **Slice** R6a (manager, 2026-09-25), with the resolver's boundary work. Also measure there the coinductive `Unify.active` pair stack, which scans linearly per pair of non-variables and is quadratic in depth on a very deep acyclic unification; replace it with a hashed set if it shows.
+- **Fixed** by R8c (2026-09-26): an occurs check at a boundary records what it proves (every node
+  it blackens and every leaf it meets, `TypeStore.acyclic`), a later walk stops at a proved node,
+  and any write that gives a proved leaf successors voids every proof (`checker-v2.md` §8.2
+  *restated by R8c's review*: its first form voided them only on a flex bound in `Unify.bind`,
+  and missed an `err` class given structure by a merge — review B1; its second review found two more
+  holes through `err` — a record row end absorbing fields, an interior node turned `err` — closed
+  by the `err` rule: a node with successors turned `err` voids them) The unify pair stack's scan is bounded
+  and deep pairs hashed (§7.3 *amended by R8c*). At R8c's parent the chain's `check` took 166 / 635 /
+  2 520 ms at N = 4 000 / 8 000 / 16 000; now 6 / 9 / 15 ms. Lowering the `let` stays quadratic:
+  that is the frontend's, CK-127. v1 is still quadratic (frozen).
+- **Fixture** `test-perf` "CK-93" (8 000 / 16 000, on the module's `check` event).
+- **Slice** R6a (manager, 2026-09-25), with the resolver's boundary work. Also measure there the coinductive `Unify.active` pair stack, which scans linearly per pair of non-variables and is quadratic in depth on a very deep acyclic unification; replace it with a hashed set if it shows. Taken by R8c (manager, 2026-09-26), and fixed there.
 
 ### CK-94 — A `number` variable is printed as `a`
 
@@ -3154,8 +3164,16 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   `Resolve.position`: a `number` flex keeps every nested position non-ground, so
   `resolver.derivable` never caches it, and each position re-walks its subtree.
 - **Expected** linear in the type's size per use, as v1 is.
-- **Fixture** none yet: a timing scenario when the slice takes it.
-- **Slice** unassigned — the perf slice proposed.
+- **Fixed** by R8c (2026-09-26). Three quadratics, each a walk per nested position: the derivability
+  walk (a verdict over variables is now kept until a leaf anywhere is given successors,
+  `Resolve.State.derivable_open`), the §9.5 cycle test (it proves, and a position is a node it
+  proved — the first form "inherited" the parent's proof across joins and user-instance
+  unifications that could close a cycle, review B2), and — once those were
+  gone — the unify pair stack's hash map, whose removals left tombstones (an array hash map popped
+  in stack order; `checker-v2.md` §7.3, §8.2 *amended by R8c*). ReleaseFast, 64 uses: d = 1 000 /
+  2 000 took 9.6 / 40 s at R8c's parent; now 0.26 / 0.53 s (v1 0.10 / 0.20 s).
+- **Fixture** `test-perf` "CK-111" (d = 1 000 / 2 000, 64 uses).
+- **Slice** R8c.
 
 ### CK-112 — A type of n parameters costs O(n²) in lowering and in the type reader
 
@@ -3167,8 +3185,13 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   linear scan of the declaration's parameters per type variable) and 28% `Builder.typeVar` (the
   same, per read).
 - **Expected** linear: a map from parameter name to index, built once per declaration.
-- **Fixture** none yet.
-- **Slice** unassigned — the perf slice proposed.
+- **Fixed** by R8c (2026-09-26) in shared code: lowering indexes a declaration of more than 8
+  parameters by name (`Lower.type_param_index`), and the type reader takes a parameter's scope slot
+  from the index lowering recorded (`TypeVarInfo.param`), checked, falling back to the scan. v2,
+  ReleaseFast: 16 000 / 32 000 parameters took 0.21 / 0.8 s; now 41 / 78 ms. v1 keeps a quadratic
+  of its own beyond these two (1.3 / 5.1 / 21 s at 8 000 / 16 000 / 32 000) and is frozen.
+- **Fixture** `test-perf` "CK-112" (v2).
+- **Slice** R8c.
 
 ### CK-113 — Evidence built at a use defeats CK-85's one-slot memo
 
@@ -3195,8 +3218,16 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Observed** v2: `NESTING TOO DEEP … more than 4200 levels deep`, twice; 2 099 deep passes.
   v1: exit 0.
 - **Expected** v1's acceptance, or one refusal at the parser's own depth limit.
-- **Fixture** none yet.
-- **Slice** unassigned — the perf and limits slice proposed.
+- **Cause** (R8c): not `Unify.max_depth` but the solver's per-declaration depth guard
+  (`Solve.solve`, `Tree.Generator.max_depth`): a record literal cost two depth units a level — its
+  node and its fields' conjunction — where every other expression costs one.
+- **Fixed** by R8c (2026-09-26): the literal's fields are solved from its own frame
+  (`Solve.solveFields`), one unit a level. The parser's limit is now the one limit: 4 095 levels
+  check and compare under both checkers, 4 096 is the parser's single `nesting_too_deep`. (Running
+  such a comparison overflows node's stack at about 4 000 levels, both checkers: the emitted
+  derived `eq` nests a call a level: CK-128.)
+- **Fixture** `abuse_test.zig` "a record literal nested to the parser's limit … (CK-114)".
+- **Slice** R8c.
 
 ### CK-115 — An extra UNKNOWN METHOD follows a TYPE MISMATCH at the same call
 
@@ -3363,6 +3394,18 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   endpoint's nominal app, in the annotation reader and in the interface's alias body), R9 makes v2
   check everything and must not start with an `internal` on valid code, and it is small and
   separable from R8c's performance work.
+- **Root cause** (R8c, 2026-09-26): `Types.Builder.aliasBody`, the shared reader of an alias's
+  body, built its inner reader with no schema lookup and no interfaces, so an endpoint in the body
+  read as a silent `err`. Worse than the internals: an `err` unifies with anything, so `r + 1` on
+  an `RW` checked clean in both checkers (a hole). The interface's `alias RW` with no body row is
+  not part of it: no alias row prints a body.
+- **Fixed** in R8c (its own commit): the body of the checked module's own alias is read with the
+  caller's schema lookup; another module's alias body reads the endpoint from that module's
+  interface (`Types.schemaMemberOfDecl`, a per-declaration index built with the table), and a
+  private tagged schema's endpoint as its nominal type (`checker-v2.md` §11.5 *amended by R8c*).
+  Fixtures `check/good/SchemaEndpointAlias`, `check/good/SchemaEndpointAliasAcrossModules`,
+  `check/bad/SchemaEndpointAliasKeepsItsType` (all red before: `internal`, a false refusal, or
+  exit 0). The residue — a private RECORD schema through another module's alias — is CK-126.
 
 ### CK-123 — A polymorphic `via` target leaks a free type variable into an endpoint
 
@@ -3413,6 +3456,67 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   budget shared (exit 1), green now.
 - **Slice** R8b (found and fixed).
 
+### CK-126 — A private record schema's endpoint has no shape through another module's alias
+
+- **Severity** unsound-runtime (a silent hole; no runtime path until schemas emit). **Area** the
+  shared alias reader (`Types.Builder.aliasBody`) and the interface, both checkers. **Class** K7.
+  **Sources** R8c, fixing CK-122 (2026-09-26); pre-existing.
+- **Program** `Models`: `schema PrivRec = z : Int` (private), `pub type alias PrivRecW =
+  PrivRec.Type`. `Main`: `bump : Models.PrivRecW -> Int`, `bump r = r + 1`.
+- **Observed** exit 0 under both checkers: the importer reads `PrivRecW`'s body in `Models`, where
+  `PrivRec.Type` names a schema that is in no interface, so the expansion is an `err` and unifies
+  with `Int`. A tagged private schema is read as its nominal type since R8c; a record endpoint's
+  shape exists only in its module's schema state.
+- **Expected** `PrivRecW` is `{ z : Int }` in the importer as in `Models`: `r.z` checks, `r + 1`
+  is a TYPE MISMATCH. The oracle twin (`PrivRec` made `pub`) says exactly that.
+- **Fix** an interface row, not a reader rule: the interface carries no alias bodies
+  (`checker.md` §7's `alias_body`) and lists `pub` schemas only, so the importer has nothing to
+  expand. A hidden endpoint row for a private schema a `pub` alias body names, or `alias_body`.
+- **Fixture** `tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules` (red under both).
+- **Slice** unassigned: the schema slices' owner or R9 (interface work).
+
+### CK-127 — Lowering a `let` of many bindings is quadratic
+
+- **Severity** performance. **Area** frontend (`bir.Lower.lowerBindings`, `resolveValue`,
+  `bindVar`), both checkers. **Class** K14. **Sources** R8c, measuring CK-93 (2026-09-26).
+- **Program** CK-93's: `foo x0 = let x1 = [ x0 ] … xN = [ xN-1 ] in List.length xN`.
+- **Observed** ReleaseFast, the `lower` event: 16 / 61 / 249 ms at N = 4 000 / 8 000 / 16 000
+  (`check` under v2 after R8c: 6 / 9 / 15 ms). `perf record` at 16 000: 49 % in `lowerBindings`,
+  16 % `resolveValue`, 13 % `bindVar` — a scan of the scope per name bound or read — and 15 %
+  `memset`.
+- **Expected** linear: a scope lookup that does not scan every binding of the block.
+- **Fixture** none yet: a `test-perf` scenario on the `lower` event (`perf_test.zig`'s
+  `eventRatio`), CK-93's generator.
+- **Slice** unassigned (frontend; CK-124's family).
+
+### CK-128 — Derived `==` and `<` recurse once per level of the data, and overflow node's stack
+
+- **Severity** unsound-runtime (a runtime exception on a program the compiler accepts; the owner
+  decided on 2026-09-26 that it must never throw). **Area** the emitted derived
+  `eq` and `compare` (backend), both checkers. **Class** K14. **Sources** R8c, testing CK-114;
+  measured by R8c's review (2026-09-26).
+- **Program** two shapes, built for node (node 24, default stack), the emitted JavaScript the same
+  under both checkers and in development and `--release`:
+  - CK-114's record literal nested d deep, `u0 = mk == mk`, printed by `main`;
+  - a user linked list built by a tail-recursive loop, `type L = Cons Int L | Nil`, compared with
+    derived `==` and `<`.
+- **Observed**
+  - The record passes at 3 746 levels and throws `RangeError: Maximum call stack size exceeded` at
+    3 747 (the parser accepts 4 095): two frames a level, `Main` and the evidence closure.
+  - The linked list — the realistic case — throws on `==` at **8 940 cells** (8 939 pass), and on
+    `<` at 10 000. Any user recursive type of modest length is exposed.
+  - Core `List.eq` on 10⁶ elements is fine: it is a loop.
+- **Precedent** Elm's `_Utils_eqHelp` (`elm/core`, `Utils.js`) recurses to depth 100 and then
+  defers the rest to an explicit stack, so Elm's `==` does not throw here. Its `_Utils_cmp`
+  recurses (only a list's spine is a loop), so Elm's `<` on a user linked list would. (Elm
+  compares only tuples, lists and primitives with `<`, so the case does not arise there.)
+- **Expected** the comparison's answer: a derived `eq`/`compare` that does not grow the native
+  stack with the data (the owner, 2026-09-26: as Elm does, an explicit stack past a depth
+  threshold).
+- **Fixture** none yet: a `run/` fixture (the 8 940-cell list) when a slice takes it.
+- **Slice** R8d (owner 2026-09-26: fix as Elm does — no RangeError on deep data; black-box run/ and
+  abuse tests required).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3462,7 +3566,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-39 | valid-program-rejected | K10 | promoted: `run/RecordAliasConstructorImported/` | R3 (fixed) |
 | CK-40 | performance | K11 | `scenario/CK-40` (400 schemas) | R8a (v2: `perf_test.zig` "CK-40", `test-perf`) |
 | CK-41 | performance | K11 | promoted: `perf_test.zig` "CK-41: …" (`test-perf`) | R3 (fixed) |
-| CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`, × 5 000) | R6a (v2 timing twin in `perf_test.zig`) |
+| CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`; v1 × 4 000, v2 × 16 000 best of 7 since R8c) | R6a (v2 timing twin in `perf_test.zig`) |
 | CK-43 | unsound-runtime | K14 | `run/RecordAliasConstructor.beni` | R1 |
 | CK-44 | diagnostic-quality | K14 | `check/bad/DuplicateRecordTypeField.beni` | R1 |
 | CK-45 | diagnostic-quality | K14 | `parse/bad/FloatPattern.beni` | R1 |
@@ -3513,7 +3617,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-90 | unsound-runtime | K8 | `check/bad/LetFunctionUsesLaterPattern.beni` | R4b (claimed) |
 | CK-91 | unsound-runtime | K3 | `check/bad/LetOfManyBindings.beni` | R4b (claimed) |
 | CK-92 | compiler-crash-or-hang (output blow-up) | K13 | `blackbox_test.zig` "CK-92: …" (in the gates) | R4b (fixed) |
-| CK-93 | performance | K11 | — (a scenario when taken) | unassigned — manager |
+| CK-93 | performance | K11 | `test-perf` "CK-93" (v2, `check` event) | R8c (fixed) |
 | CK-94 | diagnostic-quality | K13 | — | R13 |
 | CK-95 | performance | K14 | — | R12 |
 | CK-96 | performance | K11 | promoted: `perf_test.zig` "CK-96" (`test-perf`) | R5 (fixed) |
@@ -3531,10 +3635,10 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-108 | unsound-runtime | K7 | promoted: `check/bad/DerivedContextEquatableFlag*` (v1's text) + `blackbox_test.zig` "CK-108: …" (v2) | R8a (fixed; found by its review) |
 | CK-109 | compiler-crash-or-hang | K10 | promoted: `abuse_wide_test.zig` "CK-109: …" (v2); `scenario/CK-82` at 65 537 | R8a (fixed; found by its review) |
 | CK-110 | latent | K10 | promoted: `blackbox_test.zig` "a private type reached only through a pub alias body …" | R8a (fixed; found by its review) |
-| CK-111 | performance | K11 | — (a scenario when taken) | unassigned — perf slice proposed (found by R8a's review) |
-| CK-112 | performance | K11 | — | unassigned — perf slice proposed (found by R8a) |
+| CK-111 | performance | K11 | `test-perf` "CK-111" (v2) | R8c (fixed; found by R8a's review) |
+| CK-112 | performance | K11 | `test-perf` "CK-112" (v2; shared code) | R8c (fixed; found by R8a) |
 | CK-113 | performance (latent) | K4 | — | unassigned — perf slice proposed (found by R8a's review) |
-| CK-114 | valid-program-rejected | K10 | — | unassigned — perf and limits slice proposed (found by R8a's review) |
+| CK-114 | valid-program-rejected | K10 | `abuse_test.zig` "a record literal nested to the parser's limit …" | R8c (fixed; found by R8a's review) |
 | CK-115 | diagnostic-quality | K13 | — | R13 (found by R8a's review) |
 | CK-116 | diagnostic-quality | K7 | — | R13 (found by R8a's review) |
 | CK-117 | latent | K7 | `run/DerivedContextPassMergesDown` (and the Debug frame assert) | R8b (claimed; found by R8a's review round) |
@@ -3542,18 +3646,21 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-119 | performance | K3 | `test-perf` "CK-119"; `tests/corpus/check/good/SchemaViaRing.beni` | R8b (found and fixed by its review round) |
 | CK-120 | unsound-runtime (no runtime path yet) | K7 | `check/bad/EquatableMarkerThroughWrappedEndpoint/`, `…Local.beni` | R8b (claimed; found by its review round) |
 | CK-121 | compiler-crash-or-hang | K9 | `tests/corpus/check/bad/WhereAnnotationAfterDefinition.beni`, `…Repeated.beni` | R8b (fixed; found by its review round) |
-| CK-122 | compiler-crash-or-hang | K7 | — | R8b follow-up proposed, before R9 |
+| CK-122 | compiler-crash-or-hang | K7 | `check/good/SchemaEndpointAlias.beni`, `…AcrossModules/`, `check/bad/SchemaEndpointAliasKeepsItsType.beni` | R8c (fixed, its own commit) |
 | CK-123 | unsound-runtime (no runtime path yet) | K1 | — | schema S3/S4 owner |
 | CK-124 | performance | K14 | — | unassigned (frontend) |
 | CK-125 | valid-program-rejected | K12 | `test-perf` "CK-125" | R8b (found and fixed by its round-2 review) |
+| CK-126 | unsound-runtime (no runtime path yet) | K7 | `check/bad/PrivateRecordSchemaAliasAcrossModules/` (pending, red under both) | unassigned (found by R8c) |
+| CK-127 | performance | K14 | — (a `lower`-event scenario when taken) | unassigned (frontend; found by R8c) |
+| CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | — (a `run/` fixture when taken) | R8d (owner 2026-09-26; found by R8c) |
 
 Totals:
-- 125 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 27 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120 and CK-123 among them). Four of them (CK-13, CK-24, CK-120, CK-123) have no runtime path until schemas emit.
+- 128 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 29 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 14 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 22 (CK-87, CK-99, CK-114, CK-118 and CK-125 among them).
 - nondeterminism: 2.
-- performance: 18 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119 and CK-124 among them).
+- performance: 19 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124 and CK-127 among them).
 - diagnostic-quality: 26 (CK-86, CK-94, CK-115 and CK-116 among them).
 - latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 13 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104 and CK-124 among them).
+- Outside the checker (K14): 15 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

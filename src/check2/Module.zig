@@ -100,6 +100,8 @@ pub fn check(in: Input) Error!Check.Counters {
     const store = if (in.keep) |k| &k.store else &owned_store;
     defer if (in.keep == null) owned_store.deinit();
     try store.reserve(bir.insts.len + 64, bir.insts.len * 2 + 64);
+    // The acyclicity proofs (§8.2 *as restated by R8c's review rounds*).
+    store.tracks_proofs = true;
     const scratch = in.scratch.allocator();
 
     const decl_scheme = try newTable(gpa, bir.decls.len);
@@ -188,8 +190,12 @@ pub fn check(in: Input) Error!Check.Counters {
     // table's trees.
     var eager: Eager = .{};
     defer eager.deinit(gpa);
+    const p5_token = if (in.profile) |p| p.begin() else null;
     try eager.build(&solver);
+    if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
+    const p6_token = if (in.profile) |p| p.begin() else null;
     const p6_internals = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
+    if (in.profile) |p| p.end(in.tid, p6_token.?, .elaborate, file.int(), 0);
 
     // P7.
     const exhaustive_token = if (in.profile) |p| p.begin() else null;
@@ -215,6 +221,7 @@ pub fn check(in: Input) Error!Check.Counters {
     }
 
     // P8.
+    const p8_token = if (in.profile) |p| p.begin() else null;
     const empty_provenance: Interface.Provenance = .empty;
     try Publish.fill(.{
         .cx = &cx,
@@ -228,8 +235,10 @@ pub fn check(in: Input) Error!Check.Counters {
         .contexts = &solver.contexts,
     });
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
+    if (in.profile) |p| p.end(in.tid, p8_token.?, .publish, file.int(), 0);
 
     // P9.
+    const p9_token = if (in.profile) |p| p.begin() else null;
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
@@ -253,6 +262,7 @@ pub fn check(in: Input) Error!Check.Counters {
         break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties);
     } else .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
+    if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
 
     // A declaration with no body shows its scheme.
     for (decl_display, decl_scheme) |*display, scheme| {

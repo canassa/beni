@@ -364,9 +364,9 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                 const info = s.tree.extraData(node.a, Tree.RecordLiteral);
                 if (try s.takesFields(info.expected, info.record)) {
                     _ = try s.unify(info.expected, info.record, node.region, node.category);
-                    try s.solve(info.fields);
+                    try s.solveFields(info.fields);
                 } else {
-                    try s.solve(info.fields);
+                    try s.solveFields(info.fields);
                     _ = try s.unify(info.expected, info.record, node.region, node.category);
                 }
             },
@@ -386,6 +386,18 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
         // the same step a type known earlier would have been.
         if (s.readied()) try Decide.drain(s, s.frame().queue, false);
     }
+}
+
+/// A record literal's fields: their conjunction's children solved from the
+/// literal's own frame, not through a frame and a depth unit of the
+/// conjunction's own. A literal nested d deep was 2d units deep, and one
+/// past about 2 100 levels was refused though the parser accepts 4 096
+/// (CK-114); now it is d, one unit per level like every other expression.
+inline fn solveFields(s: *Solve, fields: Constraint) Error!void {
+    if (fields == .none) return;
+    const node = s.tree.node(fields);
+    if (node.tag != .and_) return s.solve(fields);
+    for (s.tree.constraints(node.a, node.b)) |child| try s.solve(child);
 }
 
 /// §6.5 as built by R5: whether a record literal is checked against the
@@ -492,6 +504,7 @@ pub fn unifyQuiet(s: *Solve, a: Var, b: Var, region: Bir.Inst.Index) Error!bool 
 }
 
 pub fn reportJoins(s: *Solve) Error!void {
+    if (s.unifier.fault == null and s.unifier.join_failures.items.len == 0) return;
     if (s.unifier.fault) |what| {
         s.unifier.fault = null;
         try s.report.internal(s.unifier.region, what);
@@ -716,7 +729,7 @@ pub fn settle(s: *Solve) Error!void {
         if (s.frame().merged) return;
         // 2. Adjust ranks without quantifying: from here a variable's rank
         // says whether it escapes this frame.
-        try Generalize.adjustRanks(s.store(), &s.stacks, gpa, s.cx.scratch, s.frame().pool.items, rank);
+        try Generalize.adjustRanks(s.store(), &s.stacks, gpa, s.cx.scratch, &s.frame().pool, rank, true);
         // 3. Defaults (§8.6): back to 1 when one was applied or anything was
         // readied, which a default makes happen. It terminates: a default
         // decides its obligation, and there are finitely many.
@@ -736,6 +749,9 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // branch's were checked by its `binders_end`. Only binders: Elm's
     // placement, §18's fallback (*As built by R4b*).
     var run: Walk.Occurs = .begin(s.store());
+    // The whole run stamps what it proves (CK-93): a header walk may stop at
+    // a node a pattern's walk blackened, whose variables must be stamped too.
+    run.proves = true;
     if (s.frame().inherited != null) {
         try Groups.occursMerged(s, &run, binders);
     } else {

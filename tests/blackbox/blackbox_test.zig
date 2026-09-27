@@ -815,6 +815,73 @@ test "--self-profile records every phase of every file and every counter, exactl
     try testing.expectEqual(@as(u64, 17), total_tokens);
 }
 
+test "--self-profile under --checker=v2 records P5, P6, P8 and P9 once per module, inside its check" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §5: the phases after P4 each have an event nested in
+    // `check`, so no cost hides between events (R8c). The three modules of
+    // the scenario above, with no core package mixed in.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const files = [_]struct { path: []const u8, source: []const u8 }{
+        .{ .path = "src/A.beni", .source = "main =\n    1\n" },
+        .{ .path = "src/B.beni", .source = "double x =\n    x\n" },
+        .{ .path = "src/C.beni", .source = "pub type Color\n    = Red\n    | Green\n" },
+    };
+    for (files) |f| try w.write(f.path, f.source);
+    try w.write("nocore/PLACEHOLDER", "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--self-profile=trace.json", "--no-cache", "--core-root=nocore", "--jobs=2", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const Event = struct {
+        name: []const u8,
+        ph: []const u8,
+        ts: f64 = 0,
+        dur: f64 = 0,
+        tid: u32 = 0,
+        args: struct { file: ?[]const u8 = null } = .{},
+    };
+    const text = try w.read("trace.json");
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, text, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    const phases = [_][]const u8{ "check", "derived", "elaborate", "publish", "finish" };
+    var found: [files.len][phases.len]?Event = @splat(@splat(null));
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "X")) continue;
+        const phase = indexOfName(&phases, e.name) orelse continue;
+        const f = indexOfPath(&files, e.args.file orelse return error.PhaseEventWithoutFile) orelse return error.UnexpectedPhaseEvent;
+        try testing.expect(found[f][phase] == null); // exactly one each
+        found[f][phase] = e;
+    }
+    for (found) |per_file| {
+        const check = per_file[0] orelse return error.MissingCheckEvent;
+        for (per_file[1..]) |maybe| {
+            const e = maybe orelse return error.MissingPhaseEvent;
+            // Nested: the same worker, inside the module's `check`, in
+            // microseconds with the printer's three decimals of slack.
+            try testing.expectEqual(check.tid, e.tid);
+            try testing.expect(e.ts + 0.001 >= check.ts);
+            try testing.expect(e.ts + e.dur <= check.ts + check.dur + 0.002);
+        }
+        // In phase order.
+        for (per_file[1 .. per_file.len - 1], per_file[2..]) |a, b| try testing.expect(a.?.ts <= b.?.ts);
+    }
+}
+
 /// The index of `path` in `files`, or null.
 fn indexOfPath(files: anytype, path: []const u8) ?usize {
     for (files, 0..) |f, i| if (std.mem.eql(u8, f.path, path)) return i;
@@ -5866,6 +5933,307 @@ test "checker v2 writes the annotation escape and the infinite type as checker.m
         try testing.expectEqualStrings("", r.stdout);
         try testing.expectEqualDeep(expected, r.diagnostics);
     }
+}
+
+/// An `infinite_type` diagnostic at `line:col` over `width` bytes of `file`,
+/// its subject `about` ("for `w`" or "here") and its drawing.
+fn infiniteType(file: []const u8, line: u32, col: u32, width: u32, comptime about: []const u8, comptime drawing: []const u8) diagnostic.Diagnostic {
+    return .{
+        .code = .infinite_type,
+        .severity = .@"error",
+        .span = .{ .file = file, .start = .{ .line = line, .col = col }, .end = .{ .line = line, .col = col + width } },
+        .title = "INFINITE TYPE",
+        .message = "I am inferring a weird self-referential type " ++ about ++ ":\n\nHere is my best effort at writing it down, with `a` standing for the whole\ntype wherever it repeats inside itself:\n\n    " ++ drawing ++ "\n\nHint: the type would go on forever, so I gave up. This usually means a\ndefinition is missing an argument, or is being used with one argument too\nmany, somewhere inside itself.\n",
+    };
+}
+
+test "R8c review B1: a merge that gives an `err` class structure voids the acyclicity proofs (checker v2)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §8.2 *as amended by R8c's review*. Unifying `( y4, w )`
+    // with `( y7, w )`'s pieces merges a class that had become `err` (the
+    // cycle through `y4` was poisoned) with a tuple: the merge gives the
+    // `err` class structure — an edge no bind made — and closes `w = ( w, w )`.
+    // R8c's first stamps carried the proof onto the survivor, so the
+    // boundary's occurs walk stopped there: one INFINITE TYPE instead of two,
+    // and the cyclic type generalised into `f`'s scheme (a 1.4 GB type dump).
+    // Now a leaf given successors voids every proof (`TypeStore.gains`).
+    // The expectation is 5f18e23's v2 output (the reviewer's base).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\f w =
+        \\    let
+        \\        y4 =
+        \\            { w | a = [ w ] }
+        \\
+        \\        y7 =
+        \\            ( y4, w )
+        \\
+        \\        y8 =
+        \\            ( y7, w )
+        \\    in
+        \\    [ y8, y7 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
+    const types = try w.runWith(&.{ "dump", "--stage=types", "--checker=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        infiniteType("Main.beni", 1, 3, 1, "for `w`", "a = ( a, a )"),
+        infiniteType("Main.beni", 2, 5, 3, "for `y4`", "a = { r | a : List a }"),
+    }), r.diagnostics);
+    // Both cycles poisoned: nothing cyclic reaches the scheme.
+    try testing.expectEqualStrings("module Main\n  f : ? -> List ?\n    w : ?\n    y4 : ?\n    y7 : ?\n    y8 : ?\n", types.stdout);
+}
+
+test "R8c review B1: an infinite type through a schema alias's `err` is still refused (checker v2)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The same mechanism with CK-126's silent `err` as the source: under R8c's
+    // first stamps this program was ACCEPTED (exit 0). The expectation is
+    // 5f18e23's v2 output. When CK-126 is fixed `PrivRecW` stops being an
+    // `err`, and this expectation may name it differently.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("p/Models.beni",
+        \\schema PrivRec =
+        \\    z : Int
+        \\
+        \\
+        \\pub type alias PrivRecW =
+        \\    PrivRec.Type
+        \\
+    );
+    try w.write("p/Main.beni",
+        \\import Models
+        \\
+        \\
+        \\h : Models.PrivRecW -> Int
+        \\h w =
+        \\    let
+        \\        y7 =
+        \\            ( w, w )
+        \\
+        \\        y8 =
+        \\            ( y7, w )
+        \\
+        \\        z =
+        \\            [ y8, y7 ]
+        \\    in
+        \\    0
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "p" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        infiniteType("p/Main.beni", 6, 5, 3, "for `z`", "a = ( a, PrivRecW )"),
+    }), r.diagnostics);
+}
+
+test "R8c review B2: a cycle closed between a receiver's test and its positions' is found (checker v2)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `k == x` resolves positions of `k`'s type. Between the receiver's cycle
+    // test and a later position's, Rule U1 joins `x.eq y`'s wanted (`y ~ x`)
+    // and the user `eq` on `P (Q b b)` binds `y ~ List x`: `x = List x`, with
+    // no demand in between. R8c's first "a position inherits its parent's
+    // proof" skipped the later test: a Debug panic (the self-check), and in
+    // ReleaseFast the INFINITE TYPE at another place. A proof is now voided by
+    // the bind itself (`TypeStore.gains`). The expectation is 5f18e23's v2
+    // output; the Debug binary is the one this suite runs.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type Q a b
+        \\    = Q a b
+        \\
+        \\
+        \\type P a
+        \\    = P a
+        \\
+        \\
+        \\pub eq : P (Q b b), P (Q b b) -> Bool
+        \\eq p q =
+        \\    True
+        \\
+        \\
+        \\pub compare : P (Q b b), P (Q b b) -> Order
+        \\compare p q =
+        \\    EQ
+        \\
+        \\
+        \\f x y =
+        \\    let
+        \\        k =
+        \\            ( [ ( x, y ) ], P (Q y [ x ]) )
+        \\
+        \\        _ =
+        \\            x.eq y
+        \\
+        \\        t =
+        \\            k == x
+        \\    in
+        \\    t
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        infiniteType("Main.beni", 28, 15, 2, "here", "a = List a"),
+    }), r.diagnostics);
+}
+
+test "R8c review round 2, B1: a record merge past a proved `err` row end voids the proofs (checker v2)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `q : { a : Int | err }` (CK-126's silent `err` as the row end) is
+    // proved at its boundary. `p` unifies it with `{ a, b : List α }`: the
+    // extra fields merge into the `err` row end, which absorbs them (the
+    // survivor is `err`, so no leaf gained successors), yet the merged
+    // record carries `b`, unwalked; then `α ~ List α` closes behind the
+    // proof. R8c's round-1 fix accepted the program (exit 0). The `err`
+    // rule (`TypeStore.touchesErr`) voids every proof on such a merge. The
+    // expectation is 5f18e23's v2 output (and v2 with no proof trusted).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("p/Models.beni",
+        \\schema PrivRec =
+        \\    z : Int
+        \\
+        \\
+        \\pub type alias PrivRecW =
+        \\    PrivRec.Type
+        \\
+    );
+    try w.write("p/Main.beni",
+        \\import Models
+        \\
+        \\
+        \\type alias R r =
+        \\    { r | a : Int }
+        \\
+        \\
+        \\h : R Models.PrivRecW -> Int
+        \\h w0 =
+        \\    let
+        \\        q =
+        \\            { w0 | a = 1 }
+        \\
+        \\        ee =
+        \\            []
+        \\
+        \\        p =
+        \\            [ q, { a = 1, b = ee } ]
+        \\    in
+        \\    case p of
+        \\        r :: _ ->
+        \\            List.length [ r.b, [ r.b ] ]
+        \\
+        \\        [] ->
+        \\            0
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "p" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        infiniteType("p/Main.beni", 21, 9, 1, "for `r`", "a = List a"),
+    }), r.diagnostics);
+}
+
+test "R8c review round 2, B2: an interior node that became `err` and then structure voids the proofs (checker v2)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `q`'s type is proved at its boundary, which records its root and
+    // leaves, not its interior. The `bogus` list merges an interior node of
+    // it with an `err`; `y`'s list then has `Unify.flat` write a tuple over
+    // that `err` class, closing a cycle inside the proved graph with no
+    // proved node gaining successors. Round 1 generalised the cyclic type
+    // into `f`'s scheme. The expectation is 5f18e23's v2 output: one NAMING
+    // ERROR and `f : a -> ( ?, String )`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\fst : ( a, b ) -> a
+        \\fst ( a, _ ) =
+        \\    a
+        \\
+        \\
+        \\f v =
+        \\    let
+        \\        q =
+        \\            ( ( [ v ], "s" ), "t" )
+        \\
+        \\        z =
+        \\            List.length [ fst (fst q), bogus ]
+        \\
+        \\        y =
+        \\            List.length [ ( fst q, "s" ), fst q ]
+        \\    in
+        \\    q
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" });
+    const types = try w.runWith(&.{ "dump", "--stage=types", "--checker=v2", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unbound_variable,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 12, .col = 40 }, .end = .{ .line = 12, .col = 45 } },
+        .title = "NAMING ERROR",
+        .message = "I cannot find a `bogus` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
+    }}), r.diagnostics);
+    try testing.expectEqualStrings("module Main\n  fst : ( a, b ) -> a\n    a : a\n  f : a -> ( ?, String )\n    v : a\n    q : ( ?, String )\n    z : Int\n    y : Int\n", types.stdout);
 }
 
 test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {

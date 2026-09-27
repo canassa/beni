@@ -85,6 +85,15 @@ pub const State = struct {
     /// derivable over a GROUND subgraph — no variable below, so the verdict
     /// cannot change (`Derivable.derivability`).
     derivable: std.AutoHashMapUnmanaged(Derivable.PairKey, void) = .empty,
+    /// The pairs the walk proved derivable over a subgraph with variables
+    /// below (CK-111): true until a leaf below is given successors. The walk
+    /// records each leaf it meets as proved (`TypeStore.prove`: a leaf is
+    /// trivially acyclic), so such a write voids the proofs, and the memo is
+    /// kept only while `TypeStore.proof_voids` is `derivable_open_voids`. A
+    /// record nested d deep compared once resolves d positions, each over
+    /// its subtree, and walked each one again: O(d²).
+    derivable_open: std.AutoHashMapUnmanaged(Derivable.PairKey, void) = .empty,
+    derivable_open_voids: u64 = std.math.maxInt(u64),
     /// `missing_where_constraint`s said, per use, rigid and method (F4).
     missing: std.AutoHashMapUnmanaged(MissingKey, void) = .empty,
     /// Steps in the current top-level group.
@@ -101,6 +110,7 @@ pub const State = struct {
         r.wanters.deinit(gpa);
         r.derived.deinit(gpa);
         r.derivable.deinit(gpa);
+        r.derivable_open.deinit(gpa);
         r.missing.deinit(gpa);
         r.requirement_rows.deinit(gpa);
         r.requirement_roots.deinit(gpa);
@@ -191,6 +201,18 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             // A receiver on a cycle is one `infinite_type`, before anything
             // is shared or looked up (§9.5, the cycle test that replaced the
             // lineage rule: round-2 review, N1).
+            //
+            // A receiver an earlier cycle test proved acyclic, whose proof
+            // nothing has voided since (`TypeStore.acyclic`), is not walked
+            // again: a position of a receiver just resolved is in the graph
+            // its parent's test proved (CK-111). Debug checks the proof on
+            // shallow positions (a check at every depth would make a Debug
+            // build quadratic again).
+            if (std.debug.runtime_safety and s.resolve_depth < 64 and st.proved(root)) {
+                var run: Walk.Occurs = .begin(st);
+                run.trusts = false;
+                if (try run.check(st, &s.stacks, s.cx.gpa, root) != null) std.debug.panic("a receiver proved acyclic is on a cycle (checker-v2.md §8.2, CK-111)", .{});
+            }
             if (try Instances.cyclic(s, id, root)) return;
             if (s.evidence.isRejected(root, flagOf(w))) return reject(s, id, true);
             if (derives(w) and try memoised(s, id, root)) return;

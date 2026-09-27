@@ -131,6 +131,12 @@ interfaces: []const Interface,
 by_decl: []TypeId,
 schema_type_by_decl: []TypeId,
 schema_encoded_by_decl: []TypeId,
+/// Owned, parallel to `by_decl`: the index in its module's interface of
+/// the schema a declaration declares, `no_schema` for any other
+/// declaration and for a private schema. An alias body read from another
+/// module names that module's schema by declaration, and the endpoint's
+/// scheme is in the interface (CK-122).
+schema_iface_by_decl: []u32,
 decl_offsets: []u32,
 /// Owned. `by_interface[module][interface type index] = TypeId`.
 by_interface: []TypeId,
@@ -202,6 +208,7 @@ pub const empty: Types = .{
     .by_decl = &.{},
     .schema_type_by_decl = &.{},
     .schema_encoded_by_decl = &.{},
+    .schema_iface_by_decl = &.{},
     .decl_offsets = &.{},
     .by_interface = &.{},
     .interface_offsets = &.{},
@@ -220,6 +227,7 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
     gpa.free(types.by_decl);
     gpa.free(types.schema_type_by_decl);
     gpa.free(types.schema_encoded_by_decl);
+    gpa.free(types.schema_iface_by_decl);
     gpa.free(types.decl_offsets);
     gpa.free(types.by_interface);
     gpa.free(types.interface_offsets);
@@ -462,6 +470,27 @@ pub fn ofSchemaDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclInde
     };
 }
 
+pub const no_schema: u32 = std.math.maxInt(u32);
+
+/// The interface member for `endpoint` of the schema `module` declares at
+/// `decl`, or null when that schema is not in the interface.
+pub fn schemaMemberOfDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint) ?u32 {
+    if (module.int() + 1 >= types.decl_offsets.len or module.int() >= types.interfaces.len) return null;
+    const base = types.decl_offsets[module.int()];
+    const limit = types.decl_offsets[module.int() + 1];
+    if (decl.int() >= limit - base) return null;
+    const si = types.schema_iface_by_decl[base + decl.int()];
+    const iface = &types.interfaces[module.int()];
+    if (si >= iface.schemas.len) return null;
+    const schema = iface.schemas[si];
+    const want: Interface.SchemaMember.Kind = if (endpoint == .type) .type else .encoded;
+    var m = schema.members_start;
+    while (m < schema.members_end and m < iface.schema_members.len) : (m += 1) {
+        if (iface.schema_members[m].kind == want) return m;
+    }
+    return null;
+}
+
 fn typesFromLists(base: u32, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, type_ids: []const TypeId, encoded_ids: []const TypeId) TypeId {
     const at = @as(u64, base) + decl.int();
     const ids = if (endpoint == .type) type_ids else encoded_ids;
@@ -564,6 +593,8 @@ pub fn build(
     errdefer schema_type_by_decl.deinit(gpa);
     var schema_encoded_by_decl: std.ArrayList(TypeId) = .empty;
     errdefer schema_encoded_by_decl.deinit(gpa);
+    var schema_iface_by_decl: std.ArrayList(u32) = .empty;
+    errdefer schema_iface_by_decl.deinit(gpa);
     var by_interface: std.ArrayList(TypeId) = .empty;
     errdefer by_interface.deinit(gpa);
     var by_schema: std.ArrayList(TypeId) = .empty;
@@ -601,6 +632,7 @@ pub fn build(
         const bir = artifacts.bir(graph.moduleFile(m));
         const package = graph.modules.items(.package)[i];
         const module_name = graph.moduleName(m);
+        try schema_iface_by_decl.appendNTimes(gpa, no_schema, bir.decls.len);
         for (bir.decls, 0..) |d, di| {
             if (d.kind == .schema) {
                 try by_decl.append(gpa, .none);
@@ -682,6 +714,7 @@ pub fn build(
                 try by_schema.appendSlice(gpa, &.{ .none, .none });
                 continue;
             };
+            if (decl.int() < bir.decls.len) schema_iface_by_decl.items[decl_offsets[i] + decl.int()] = @intCast(si);
             inline for ([_]Interface.SchemaCtor.Endpoint{ .type, .encoded }) |endpoint| {
                 try by_schema.append(gpa, typesFromLists(decl_offsets[i], decl, endpoint, schema_type_by_decl.items, schema_encoded_by_decl.items));
             }
@@ -696,6 +729,7 @@ pub fn build(
     types.by_decl = try by_decl.toOwnedSlice(gpa);
     types.schema_type_by_decl = try schema_type_by_decl.toOwnedSlice(gpa);
     types.schema_encoded_by_decl = try schema_encoded_by_decl.toOwnedSlice(gpa);
+    types.schema_iface_by_decl = try schema_iface_by_decl.toOwnedSlice(gpa);
     types.by_interface = try by_interface.toOwnedSlice(gpa);
     types.by_schema = try by_schema.toOwnedSlice(gpa);
     types.decl_offsets = decl_offsets;
@@ -1614,6 +1648,15 @@ pub const Builder = struct {
     }
 
     fn typeVar(b: *Builder, name_symbol: Symbol, info: Bir.TypeVarInfo) Error!Var {
+        // A declaration's parameter carries its index (`TypeVarInfo.param`),
+        // and every reader binds a declaration's parameters first and in
+        // order (`bind`), so the slot is checked, not searched: a scan per
+        // variable was O(n²) in the parameter count (CK-112). Anything else
+        // falls back to the scan.
+        if (info.param != Bir.TypeVarInfo.param_none and info.param < b.scope.items.len) {
+            const s = b.scope.items[info.param];
+            if (s.name == name_symbol) return s.v;
+        }
         for (b.scope.items) |s| {
             if (s.name == name_symbol) return s.v;
         }
@@ -1649,21 +1692,27 @@ pub const Builder = struct {
     /// type, an interned `alias` for an alias (checker.md §5 — never
     /// expanded away, only looked THROUGH).
     fn named(b: *Builder, tag: Bir.Inst.Tag, data: Bir.Inst.Data, args: []const Var) Error!Var {
-        if (tag == .ext_schema_type) {
-            const module: Graph.Index = @enumFromInt(data.lhs);
-            if (module.int() >= b.interfaces.len) return b.store.freshErr(b.varRank());
-            const iface = &b.interfaces[module.int()];
-            if (data.rhs >= iface.schema_members.len) return b.store.freshErr(b.varRank());
-            const scheme_i = iface.schema_members[data.rhs].scheme;
-            if (scheme_i == .none) return b.store.freshErr(b.varRank());
-            const scheme = iface.scheme(scheme_i);
-            return InterfaceTerms.instantiateRoot(iface, b.types.refIds(module), b.store, scheme.body, args, b.rank, b.scratch);
-        }
+        if (tag == .ext_schema_type) return b.schemaMember(@enumFromInt(data.lhs), data.rhs, args);
         const id: TypeId = switch (tag) {
             .type_top => b.types.ofDecl(b.module, @enumFromInt(data.lhs)),
             .ext_type => b.types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
             .schema_type_top => blk: {
                 if (b.schema_context) |ctx| if (b.schema_lookup) |lookup| if (try lookup(ctx, data.lhs, data.rhs != 0, args)) |root| return root;
+                // An alias body read from the module that declares it
+                // (`aliasBody`), when that is not the module being
+                // checked: the endpoint's scheme is in that module's
+                // interface (CK-122).
+                if (b.schema_context == null) {
+                    const endpoint: Interface.SchemaCtor.Endpoint = if (data.rhs == 0) .type else .encoded;
+                    if (b.types.schemaMemberOfDecl(b.module, @enumFromInt(data.lhs), endpoint)) |member| {
+                        return b.schemaMember(b.module, member, args);
+                    }
+                    // A private schema is in no interface. Its tagged
+                    // endpoint is a nominal type, whole in its `TypeId`;
+                    // a record endpoint's shape is not (CK-126).
+                    const id = b.types.ofSchemaDecl(b.module, @enumFromInt(data.lhs), endpoint);
+                    if (id != .none and b.types.entry(id).kind == .adt) break :blk id;
+                }
                 break :blk .none;
             },
             .ext_schema_type => unreachable,
@@ -1671,6 +1720,17 @@ pub const Builder = struct {
         };
         if (id == .none) return b.store.freshErr(b.varRank());
         return b.apply(id, args);
+    }
+
+    /// A schema endpoint of another module, from its interface's scheme.
+    fn schemaMember(b: *Builder, module: Graph.Index, member: u32, args: []const Var) Error!Var {
+        if (module.int() >= b.interfaces.len) return b.store.freshErr(b.varRank());
+        const iface = &b.interfaces[module.int()];
+        if (member >= iface.schema_members.len) return b.store.freshErr(b.varRank());
+        const scheme_i = iface.schema_members[member].scheme;
+        if (scheme_i == .none) return b.store.freshErr(b.varRank());
+        const scheme = iface.scheme(scheme_i);
+        return InterfaceTerms.instantiateRoot(iface, b.types.refIds(module), b.store, scheme.body, args, b.rank, b.scratch);
     }
 
     /// Build `id args`, expanding an alias's body ONCE under its
@@ -1717,6 +1777,17 @@ pub const Builder = struct {
         // scope inside it and must not leak into it.
         var inner: Builder = .init(b.store, b.types, b.graph, b.artifacts, e.module, bir, b.mode, b.rank, b.scratch, b.interner);
         inner.depth = b.depth;
+        // A schema endpoint in the body is read as the caller would read
+        // it written directly (CK-122): through the caller's schema lookup
+        // when the alias is the checked module's own, and through the
+        // declaring module's interface otherwise (`named`). Without them
+        // the body was a silent `err`, and a comparison of the alias an
+        // `internal`.
+        inner.interfaces = b.interfaces;
+        if (e.module == b.module) {
+            inner.schema_context = b.schema_context;
+            inner.schema_lookup = b.schema_lookup;
+        }
         defer {
             // The inner builder is a different object reading a different
             // module's tree; its verdict is part of THIS read's answer.

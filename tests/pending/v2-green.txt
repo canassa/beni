@@ -649,3 +649,6 @@ tests/corpus/check/bad/WhereAnnotationRepeated.beni
 tests/corpus/check/good/SchemaEndpointInFlightClosed.beni
 tests/corpus/check/good/SchemaEncodedInFlight.beni
 tests/corpus/check/good/SchemaViaRing.beni
+tests/corpus/check/good/SchemaEndpointAlias.beni
+tests/corpus/check/good/SchemaEndpointAliasAcrossModules
+tests/corpus/check/bad/SchemaEndpointAliasKeepsItsType.beni
