@@ -368,7 +368,9 @@ pub const Generator = struct {
 
     /// A `let` or top-level header (§6.3).
     pub fn header(g: *Generator, v: Var, region: Bir.Inst.Index, name: Symbol.Optional) Error!u32 {
-        return g.binderOf(.header, v, region, name);
+        const index = try g.binderOf(.header, v, region, name);
+        g.tree.binders.items[index].header = true;
+        return index;
     }
 
     fn binderOf(g: *Generator, kind: Binder.Kind, v: Var, region: Bir.Inst.Index, name: Symbol.Optional) Error!u32 {

@@ -392,7 +392,7 @@ which is what turns a constraint into a call target and an evidence slot.
 
 ### 6.3 Generalisation and the ad-hoc kinds
 
-> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (a) itself still holds until R14 builds D5: since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27) it holds as checker v2's rule (the `let_constrained_monomorphic` switch), so this section stays normative until R14.
+> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). **Superseded by R14 (2026-09-27):** D5 is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4 *As built by R14*). Rule (a) below is history, not the rule.
 
 A generalised scheme records, per quantified variable, its kind and equatable flag. That is
 the entire mechanism of §3.1: `number` and `appendable` are closed sets tested by a flat

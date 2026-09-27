@@ -370,7 +370,9 @@ R6a records.* `check2/Evidence.zig` holds the tables; §4.1's *Decided by R5* le
 - **`Given`** is `{ rigid, method, method_type, decl, k }`: registered when a top-level annotated
   declaration's rigid reading is made (`Evidence.registerGivens`), `k` its index in
   `Evidence.requirements` of that reading. A `let` annotation has no `where` clause
-  (`language.md`), so every binder is `decl` until D5 (R14).
+  (`language.md`), so every binder is `decl` until D5 (R14). *R14 (2026-09-27):* still true of
+  givens; a `let` binding's promoted wanted is answered `promoted`, and P6 names its parameter
+  `param let <inst> k` (§12.3 *as built by R14*).
 - **`Wanted`** is §4.2's row less `owner` and `frame` (one top-level frame at a time until R7:
   every wanted joins `Solve.ready`) and plus `parent` (the lineage of §9.5) and `kind` (the surface:
   dot-call, operator, `where` clause, `type_dispatch` — which decides derivation and the texts).
@@ -1063,7 +1065,8 @@ with the deciders in `Decide.zig`.
   `owned`), to the enclosing rank before quantification, so the enclosing frame receives it, and
   the binding is recorded for `type_mismatch`'s hint (`Env.monomorphic`). Lowering the method types
   too is what keeps the binding's result tied to the receiver: v1 held back only the receiver.
-  So every promotion is a top-level declaration's.
+  So every promotion is a top-level declaration's. *Superseded by R14 (2026-09-27):* the switch is
+  deleted, and step 5 at a `let` frame holds only what §8.4 *As built by R14* holds.
 - **Step 7, at a top-level frame** (`Resolve.close`): promotion, the cap, `constrained_constant`,
   `ambiguous_method_receiver`, then the proven-undetermined default (§9.4 *As built by R6a*).
   Quantify collects the quantified flexes that carry wanteds (`Resolve.State.wanters`) as it collects
@@ -1260,6 +1263,59 @@ was not what `adjustRank` computes.*
 
 Slices R4–R13 ship with a **`let_constrained_monomorphic` switch** that keeps rule (a)'s behaviour,
 so the pre-cut-over corpus compares like with like. R14 deletes the switch (`checker-rewrite.md`).
+
+*As built by R14 (2026-09-27), written before its code.* The switch is deleted
+(`Solve.holdConstrained` with it). Step 5 at a `let` frame (`Resolve.holdLet`, then `quantify`,
+then `Resolve.closeLet` in step 7):
+
+- **What a `let` generalises over.** A young root that carries an open wanted is quantified by the
+  `let` when all three hold, and otherwise it is **held** — lowered with its method types to the
+  enclosing rank (`Walk.lowerTo`, `owned`, I15), exactly as rule (a) held every such root — so the
+  enclosing frame receives it and its wanteds keep riding on it:
+  1. it is reachable, by `Schemes.quantifierOrder`'s walk (the walk §12.1's canonical order reads),
+     from the header of an unannotated **function** binding of the frame: a `let_def` with
+     parameters, or whose right-hand side is a `lambda`;
+  2. it is reachable from no other header of the frame — a `let` **value** binding (no parameters,
+     not a `lambda`) or a `let` pattern;
+  3. not every open wanted on it is a dot-call's own (`Wanted.field_ok`: a `method_call`'s callee,
+     not joined with a scheme's requirement). That is §21.1's D5 row of 2026-09-26, decided by the
+     owner: `let call s = s.f 10 in call { f = … }` keeps its field call, and so does
+     `check/bad/LetConstrainedTwice`'s `show x = x.render 1`, which stays a `type_mismatch` at its
+     second use.
+
+  Rule 1's first half keeps §9.4's proven-undetermined default at the top level for a requirement
+  no binder's type reaches (`let e = [] == []`). Rule 2 is the **value restriction** (Haskell's
+  monomorphism restriction): a value binding has nowhere to take evidence except by becoming a
+  function of it, which would run its right-hand side at each read and break `language.md` §6
+  *Evaluation order*'s "`let` bindings: in the order written", evaluated once where written — so it
+  stays monomorphic, and `static-dispatch-spike.md` §6.2's `let t = decodeInto "zz" in label t`
+  is still pinned by its later use. A pattern binding is held for the same reason. Rule 3 and the
+  value restriction are the two places a `let` is not HM(X), with the cap below; `type_mismatch`'s A.30 hint names
+  which one held the binding (`Env.monomorphic` gains the reason). *R14's review (B1):* a header
+  is a header wherever its `let` stands — inside a lambda or a `case`/`if` branch the generator
+  marks its binder `.ended` once its occurs check is placed, and `Generalize.Binder.header` keeps
+  the fact (`run/LetHelperBelowLambdaOrBranch`).
+- **The cap** (`holdLet`, R14's review B2). A function binding whose own requirements, counted
+  as `closeLet` would list them, number more than `max_inferred_constraints` (64, spike §10.11)
+  is **held whole**, as every constrained `let` was before D5, with no diagnostic: at the top
+  level an annotation lifts the cap, and a `let` annotation cannot carry a `where` clause, so a
+  refusal would have no escape hatch (rule 7). A second use at another type gets A.30's hint
+  with the cap's reason (`run/LetHelperOverTheCap`, `check/bad/LetHelperOverTheCapTwice`).
+- **Promotion** (`Resolve.closeLet`, step 7). For each unannotated function binding, its
+  requirement list is `Evidence.requirements` of its generalised header, restricted to the roots
+  this `let` quantified (a requirement on an outer root is not the binding's own: I15, CK-02). The
+  open wanteds on those roots are answered `promoted { root, method }`, as at the top level; their
+  index is computed by P6 per site (§12.3, case 2). A quantified root carrying an open wanted that no
+  binding's list holds cannot arise by rule 1, because `holdLet` decides "reached" by the same
+  `Schemes.quantifierOrder` walk `Evidence.requirements` lists by; in a module that has reported
+  no error it is `internal` (`Solve.expect`), and otherwise it is not asked (review S2).
+- **The record.** Each promoting binding is one `LetInfo { inst = its let_def, requirements }`
+  (§13.1), its rows appended to `requirements` after every declaration's, sorted by `inst`; its
+  quantifier roots are kept beside them for P6 as a declaration's are.
+- **Uses.** A use outside the binding's group instantiates its scheme like a top-level one
+  (`Instantiate.copy`, I5): an `inst_evidence` row at the `local`, moved by P6 onto the `call`
+  that applies it. A use inside the group (a recursive `let`) instantiates nothing and is a group
+  call, P6's §12.3 cases with the callee's final list.
 
 ### 8.5 Obligations at a boundary (I3, CK-05)
 
@@ -2911,6 +2967,14 @@ time (CK-30b).
   A `promoted` answer is matched the same way, per site. Case 3 answers `undetermined` for `eq` and
   `compare` — at a site root, the structural function itself (§13.1) — and `internal` for any other
   method, which no structural answer can stand for. Case 2 is R14's.
+  *As built by R14 (2026-09-27):* a site's binders are its declaration and the promoting `let`
+  bindings whose `let_def` subtree holds it (`Elaborate.LetScopes`, from the Bir by
+  `constrain/Decl.pushChildren`), innermost first. A `promoted` answer and cases 1 and 2 search
+  them innermost first and name the first list that holds `(root, method)`: `param let <inst> k`
+  for a `let`, `param k` for the declaration. Case 3's reachability test reads the innermost
+  binder's type (the `let`'s header, else the declaration's scheme). A reference to a `let`
+  function binding from inside its own group instantiated nothing and is a group call, found as a
+  `local` naming a `let_def` with requirements and no `inst_evidence` row.
 - **Failure (§12.2 as built).** A wanted whose alias chain ends in a `failed` one is failed (R6a's
   round-2 nit): the site keeps its callee term only, when that is a value (`top`, `ext`), so
   `Cycles` still sees the edge, and in a module that reported nothing it is `internal`. P6 never
@@ -3208,6 +3272,20 @@ A violation is `internal` at the site.
   body of every derived row of this module a site names, so emission order (`Lower.siteTops`) and
   the value-cycle check see that a constant calling `Main$W$$eq` depends on the `Main$key` its body
   reads (`backend.md` §5). Both checkers built such a program and it threw at load.
+
+*Amended 2026-09-27 by R14 (D5), before its code:*
+
+- **`lets` is filled**, one row per promoting `let` function binding (§8.4 *As built by R14*),
+  sorted by `inst`, each a range of `requirements` placed after every declaration's rows. No format
+  bump: the column and its bytes existed since R2a (N6), and `dispatch_bytes` already verifies its
+  ranges.
+- **A `local` naming such a binding counts its requirements.** `Dispatch.referenceCount` reads the
+  reference's declaration (a `local`'s index is the declaration's), and the local's `let_def`; the
+  I7 assert and `Lower` both call it, so a `call` of a constrained `let` with no site, or a site of
+  the wrong width, is refused as for a top-level callee. The placement pass reads such a callee's
+  slot methods from its `LetInfo`.
+- **`param let <inst> k`** names the `k`th evidence parameter of the `let_def` at `inst`, which must
+  enclose the site; `Lower` spells it `$l<inst>$<k>` (§13.3).
 
 ### 13.2 `dump --stage=dispatch`, format v2
 
@@ -4046,6 +4124,10 @@ is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
    `Result`, `List` and every type that compares each parameter do not change.
 2. **Every CK fix.**
 3. **`let` evidence parameters (D5, R14).**
+   *As built by R14 (2026-09-27):* a `let` function binding with requirements is
+   `function <name>($l<inst>$0, …, params…)` (or its arrow, for a `lambda` right-hand side), each
+   use passes its evidence first, `f(ev…, args…)`, and a reference in value position is its
+   eta-expansion over the binding's arity. `emit/LetEvidenceParameter` pins the shape.
 
 *As measured by R8a (2026-09-26):* no golden of `tests/corpus/emit/`, `dispatch/` or `run/` moved
 under v2 for item 1 — every derived type the corpus emits compares each of its parameters with the
@@ -4096,6 +4178,13 @@ this table's among them — were re-blessed one by one, each with its reason, in
 them for their v2 texts, not for D5, which still changes them at R14. No `emit/` golden moved
 (§20.3's item 1 was measured by R8a).
 
+*As built by R14 (2026-09-27):* `check/bad/LetHelperCyclicReceiver` is `run/LetHelperCyclicReceiver`,
+which prints both answers, and the `abuse_test.zig` row-76 scenario expects exit 0 within its
+bound. `check/bad/LetConstrainedTwice` is **still refused**, and its row above is withdrawn: its
+`show x = x.render 1` carries only a dot-call's own requirement, which the owner's D5 row of
+2026-09-26 (§21.1) keeps monomorphic. Its golden moved in its hint alone, which now says why the
+binding has one type (§8.4 *As built by R14*).
+
 ---
 
 ## 21. Decisions
@@ -4140,6 +4229,7 @@ Each one records what changed and why.
 | **D8** (round 4) | Elm's `exposing (T(..))` also gets a dedicated message under an existing code: **`expected_token`** at the `(` after the type name, suggesting `exposing (T, Ctor1, Ctor2)` (`language.md` §5.2). Later uses of the unexposed constructors stay quiet. *As built by R1 (2026-09-24): every unknown constructor in that file stays quiet, not only `T`'s — lowering is per file and cannot tell which names are `T`'s constructors, and resolution, which can, finds only silent error instructions. No guarantee is lost: the file already fails, and a misspelt constructor is reported once the import is corrected.* | CK-47. Same reasoning as D8: the grammar already refuses it, and only the message and the cascade were wrong |
 | **D5** (round 2) | Generalisation is plain HM(X) on levels. A young receiver's promoted requirement may mention outer variables free. I15 binds only receivers that are not generalised | S-new-4. The round-1 wording contradicted `adjustRank`, and I15 |
 | **D5** (R7's round-2 review, 2026-09-26; **decided by the owner 2026-09-26: yes**) | A `let` binding whose constrained variables carry ONLY dot-calls' own requirements is not generalised over them, so `let call s = s.f 10 in call { f = … }` stays a field call once D5 lands (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26) | Without it, R14 generalises `call` and the amended rule refuses the record: a program accepted today would be refused, and generalising there buys no guarantee (rule 7) while taking the field call away. The alternative (b) accepts the flip and moves the case to a `check/bad` fixture |
+| **D5** (R14, 2026-09-27; **confirmed by the manager 2026-09-27**, R14's review S1) | A `let` **value** binding (no parameters, and a right-hand side that is not a `lambda`) and a `let` pattern are not generalised over a constrained variable (§8.4 *As built by R14*, rule 2): Haskell's monomorphism restriction | A value binding can take evidence only by becoming a function of it, whose right-hand side then runs at each read: that breaks `language.md` §6's "evaluated once, where written" for `let` bindings, silently re-runs a `Debug.log` or an expensive table per read, and would move `static-dispatch-spike.md` §6.2's pinned-by-a-later-use example. It refuses nothing v1 or pre-R14 v2 accepted, once a `let` over the 64-requirement cap is held rather than refused (R14's review B2; R14's first cut refused one). The workarounds are a parameter, or a placeholder application `f a _`, which is a `lambda` and so a function binding. The alternative is a per-evidence memo like the top level's (A.85 as amended by R8a), at a `let` |
 | **D11** (round 2) | **Nesting happens at demand**, not at a boundary. **Only top-level frames merge**, and every `let` frame generalises at its own boundary. **A reference to an annotated binding is never a back-edge**. It instantiates the scheme (§6.6) | N3, N5, N8. Boundary-time nesting was still order-dependent; merging `let` frames was order-dependent; treating annotated members as in-flight killed polymorphic recursion that v1 accepts. The at-demand design also deletes parking, pinning and prefix closures |
 
 ---

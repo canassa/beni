@@ -19,10 +19,10 @@
 //! the obligations.
 //!
 //! **Promotion and the proven-undetermined default** (§9.4) are step 7 of
-//! the top-level boundary: `close`. A `let` binding keeps rule (a) until
-//! R14 (§8.4's `let_constrained_monomorphic` switch): a young variable that
-//! carries a wanted is not quantified by a `let` (`Solve.holdConstrained`),
-//! so every promotion is a top-level declaration's. A promoted wanted
+//! the top-level boundary: `close`; at a `let` boundary they are `holdLet`
+//! (step 5: what a `let` does not generalise drops to the enclosing rank)
+//! and `closeLet` (step 7: a function binding's own requirements promoted to
+//! it, §8.4 *As built by R14*, D5). A promoted wanted
 //! records its requirement `(root, method)`, never an index: the index is the
 //! site's member's, which P6 computes by §12.3.
 //!
@@ -55,6 +55,8 @@ const Recursion = @import("Recursion.zig");
 const Solve = @import("Solve.zig");
 const Walk = @import("Walk.zig");
 const Tree = @import("constrain/Tree.zig");
+const Schemes = @import("Schemes.zig");
+const EnvFile = @import("Env.zig");
 
 const Var = TypeStore.Var;
 const Symbol = InternPool.Symbol;
@@ -112,8 +114,12 @@ pub const State = struct {
     /// Each row's quantifier, as a root: what P6 matches a `promoted`
     /// answer and a group call against (§12.3), never recomputed.
     requirement_roots: std.ArrayList(Var) = .empty,
+    /// What each promoting `let` function binding kept (§8.4 *As built by
+    /// R14*): its `let_def`, a range of `requirement_rows`, and its header.
+    let_rows: std.ArrayList(LetRow) = .empty,
 
     pub fn deinit(r: *State, gpa: Allocator) void {
+        r.let_rows.deinit(gpa);
         r.wanters.deinit(gpa);
         r.derived.deinit(gpa);
         r.derivable.bits.deinit(gpa);
@@ -125,6 +131,8 @@ pub const State = struct {
         r.requirement_roots.deinit(gpa);
     }
 };
+
+pub const LetRow = struct { inst: Bir.Inst.Index, requirements: Dispatch.Range, scheme: Var };
 
 pub const MemoKey = struct { root: Var, method: Symbol };
 const MissingKey = struct { origin: Bir.Inst.Index, rigid: Var, method: Symbol };
@@ -749,4 +757,212 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
         }
     }
     try s.report.tooManyInferredConstraints(d.body.unwrap().?, d.name_token, bir.symbol(d.name), @intCast(reqs.len), max_inferred_constraints, names[0..named], receivers[0..named]);
+}
+
+// ---------------------------------------------------------------------------
+// Steps 5 and 7 of a `let` boundary (§8.4 *As built by R14*, D5)
+// ---------------------------------------------------------------------------
+
+/// What a header binder of a `let` frame is, for §8.4's three rules.
+const LetBinding = enum { function, value, annotated };
+
+fn letBinding(s: *const Solve, b: Tree.Binder) LetBinding {
+    const bir = s.cx.bir;
+    if (b.region.int() >= bir.insts.len or bir.instTag(b.region) != .let_def) return .value;
+    const data = bir.instData(b.region);
+    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+    if (def.annotation != .none) return .annotated;
+    if (def.params_end != def.params_start) return .function;
+    const rhs: Bir.Inst.Index = @enumFromInt(data.rhs);
+    return if (rhs.int() < bir.insts.len and bir.instTag(rhs) == .lambda) .function else .value;
+}
+
+/// Step 5's hold at a `let` frame of rank `rank`, before `quantify`: a young
+/// root carrying an open wanted is quantified only when a function binding
+/// of the frame reaches it, no value or pattern binding does, and not every
+/// wanted on it is a dot-call's own. Everything else drops, with its method
+/// types, to the enclosing rank (I15), where the enclosing frame receives it
+/// — rule (a)'s mechanism, for what §8.4 still holds. Each held root is
+/// recorded for `type_mismatch`'s A.30 hint and for D14 (`Recursion`).
+pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
+    const st = s.store();
+    const gpa = s.cx.gpa;
+    const scratch = s.cx.scratch;
+    var young: std.ArrayList(Var) = .empty;
+    defer young.deinit(scratch);
+    for (s.frame().pool.items) |v| {
+        if (st.find(v) != v or st.rank(v) < rank) continue;
+        const flags = switch (st.content(v)) {
+            .flex => |f| f,
+            else => continue,
+        };
+        if (Walk.constraints(flags).count(st) == 0) continue;
+        try young.append(scratch, v);
+    }
+    if (young.items.len == 0) return;
+    // What the frame's headers reach, by the walk §12.1's order reads.
+    var by_function: std.AutoHashMapUnmanaged(Var, void) = .empty;
+    defer by_function.deinit(scratch);
+    var by_value: std.AutoHashMapUnmanaged(Var, void) = .empty;
+    defer by_value.deinit(scratch);
+    var reached: std.ArrayList(Var) = .empty;
+    defer reached.deinit(scratch);
+    for (binders) |i| {
+        const b = s.tree.binders.items[i];
+        if (!b.header) continue;
+        const into = switch (letBinding(s, b)) {
+            .function => &by_function,
+            .value => &by_value,
+            .annotated => continue,
+        };
+        reached.clearRetainingCapacity();
+        try Schemes.quantifierOrder(st, s.cx.interner, b.v, &reached, scratch);
+        for (reached.items) |r| try into.put(scratch, st.find(r), {});
+    }
+    // The decision per young root, before anything is lowered.
+    var held: std.AutoArrayHashMapUnmanaged(Var, EnvFile.Monomorphic.Why) = .empty;
+    defer held.deinit(scratch);
+    for (young.items) |v| {
+        const why: EnvFile.Monomorphic.Why = if (by_value.contains(v))
+            .value
+        else if (!by_function.contains(v))
+            .unreached
+        else if (onlyDotCalls(s, v))
+            .dot_call
+        else
+            continue;
+        try held.put(scratch, v, why);
+    }
+    // Over the cap (spike §10.11), a function binding is held whole rather
+    // than refused: a `let` annotation cannot carry the `where` clause that
+    // lifts the cap at the top level, so a refusal would have no escape
+    // hatch (rule 7), and v1 and pre-R14 v2 built such a helper
+    // monomorphically (R14's review B2). The count is what `closeLet` would
+    // promote: every entry on a young root the binding reaches and the
+    // rules above do not hold.
+    for (binders) |i| {
+        const b = s.tree.binders.items[i];
+        if (!b.header or letBinding(s, b) != .function) continue;
+        reached.clearRetainingCapacity();
+        try Schemes.quantifierOrder(st, s.cx.interner, b.v, &reached, scratch);
+        var count: usize = 0;
+        for (reached.items) |r| {
+            const root = st.find(r);
+            if (root != r or st.rank(root) < rank or held.contains(root)) continue;
+            if (st.content(root) != .flex) continue;
+            count += Walk.constraints(st.flagsOf(root)).count(st);
+        }
+        if (count <= max_inferred_constraints) continue;
+        for (reached.items) |r| {
+            const root = st.find(r);
+            if (root != r or st.rank(root) < rank or held.contains(root)) continue;
+            if (st.content(root) != .flex or Walk.constraints(st.flagsOf(root)).count(st) == 0) continue;
+            try held.put(scratch, root, .cap);
+        }
+    }
+    // In `young`'s order, so the store and the hint list are the same in
+    // every run.
+    for (young.items) |v| {
+        const why = held.get(v) orelse continue;
+        // A root an earlier hold lowered, or merged away, is no longer young.
+        if (st.find(v) != v or st.rank(v) < rank) continue;
+        const set = Walk.constraints(st.flagsOf(v));
+        try s.report.monomorphic.append(scratch, .{ .v = v, .method = set.at(st, 0).name, .why = why });
+        try Walk.lowerTo(st, &s.stacks, gpa, v, rank - 1);
+    }
+}
+
+/// Whether every open wanted riding on `v` is a dot-call's own
+/// (`Wanted.field_ok`): the owner's D5 row of 2026-09-26.
+fn onlyDotCalls(s: *Solve, v: Var) bool {
+    const st = s.store();
+    const set = Walk.constraints(st.flagsOf(v));
+    const n = set.count(st);
+    var i: u32 = 0;
+    var any = false;
+    while (i < n) : (i += 1) {
+        const id = s.evidence.slotAt(Evidence.position(st, set.set, i)).asWanted() orelse return false;
+        const w = s.evidence.get(id);
+        if (w.state == .failed) continue;
+        if (!w.field_ok) return false;
+        any = true;
+    }
+    return any;
+}
+
+/// Step 7's promotion at a `let` frame, after `quantify` (whose wanted
+/// carriers are `wanters`): each unannotated function binding's list is its
+/// header's requirements on roots this frame quantified, in canonical order
+/// (§12.1); its open wanteds are answered `promoted`, and the list is one
+/// `LetRow`. Over the cap `holdLet` has already held the binding. A
+/// quantified carrier no list holds is `internal`: `holdLet` held it.
+pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
+    const st = s.store();
+    const scratch = s.cx.scratch;
+    var own: std.AutoHashMapUnmanaged(Var, void) = .empty;
+    defer own.deinit(scratch);
+    for (s.resolver.wanters.items) |v| try own.put(scratch, st.find(v), {});
+    var listed: std.AutoHashMapUnmanaged(Var, void) = .empty;
+    defer listed.deinit(scratch);
+    var all: std.ArrayList(Evidence.Requirement) = .empty;
+    defer all.deinit(scratch);
+    var reqs: std.ArrayList(Evidence.Requirement) = .empty;
+    defer reqs.deinit(scratch);
+    for (binders) |i| {
+        const b = s.tree.binders.items[i];
+        if (!b.header or letBinding(s, b) != .function) continue;
+        all.clearRetainingCapacity();
+        try Evidence.requirements(st, s.cx.interner, b.v, scratch, &all);
+        reqs.clearRetainingCapacity();
+        for (all.items) |r| {
+            if (own.contains(st.find(r.root))) try reqs.append(scratch, r);
+        }
+        if (reqs.items.len == 0) continue;
+        for (reqs.items) |r| try listed.put(scratch, st.find(r.root), {});
+        const first: u32 = @intCast(s.resolver.requirement_rows.items.len);
+        for (reqs.items) |r| {
+            try s.resolver.requirement_rows.append(s.cx.gpa, .{ .quantified = r.quantified, .var_name = st.flagsOf(r.root).name, .method = r.method });
+            try s.resolver.requirement_roots.append(s.cx.gpa, r.root);
+            const id = s.evidence.slotAt(r.position).asWanted() orelse {
+                _ = try s.expect(false, b.region, "a `let` binding's promoted requirement is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+                continue;
+            };
+            const wp = s.evidence.ptr(id);
+            if (wp.state != .open) continue;
+            wp.state = .promoted;
+            s.evidence.setAnswer(id, .{ .promoted = .{ .root = r.root, .method = r.method } });
+        }
+        try s.resolver.let_rows.append(s.cx.gpa, .{
+            .inst = b.region,
+            .requirements = .{ .start = first, .len = @intCast(reqs.items.len) },
+            .scheme = b.v,
+        });
+    }
+    // Every carrier this frame quantified is some binding's (rule 1). It
+    // holds because `holdLet` decides "reached" by `Schemes.quantifierOrder`,
+    // the very walk `Evidence.requirements` lists a scheme's requirements by:
+    // change one and the other must follow. Asked only of a module that has
+    // reported nothing, so an error's poisoned types never reach the assert
+    // (R14's review S2).
+    if (s.module_report.errors == 0 and !s.module_report.quiet) for (s.resolver.wanters.items) |v| {
+        const root = st.find(v);
+        if (listed.contains(root)) continue;
+        if (st.content(root) != .flex or !carriesOpen(s, root)) continue;
+        const region: Bir.Inst.Index = if (binders.len != 0) s.tree.binders.items[binders[0]].region else @enumFromInt(0);
+        _ = try s.expect(false, region, "a `let` quantified a constrained variable no function binding lists (checker-v2.md §8.4 *As built by R14*)");
+        break;
+    };
+}
+
+/// Whether an open wanted rides on `v`.
+fn carriesOpen(s: *Solve, v: Var) bool {
+    const st = s.store();
+    const set = Walk.constraints(st.flagsOf(v));
+    const n = set.count(st);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const id = s.evidence.slotAt(Evidence.position(st, set.set, i)).asWanted() orelse continue;
+        if (s.evidence.get(id).state == .open) return true;
+    }
+    return false;
 }

@@ -1,0 +1,69 @@
+-- R14's review B1 (checker-v2.md §8.4 *As built by R14*): D5 generalises a
+-- `let` function binding wherever the `let` stands — inside a lambda, a
+-- `case` branch or an `if` branch too. The generator marks a binder below a
+-- lambda or branch `.ended` once its occurs check is placed; R14's first cut
+-- read that as "not a header", so such a `let` held every constrained
+-- variable and its helper was refused at its second type. `A`'s `eq` is
+-- always `True` and `B`'s always `False`, so structural evidence would
+-- print differently: each `same` must receive its own type's `eq`.
+-- Expected `TF`, `TF`, `TF`, `TF`.
+import Node exposing (Program)
+import B exposing (B)
+
+
+type A
+    = A Int
+
+
+pub eq : A, A -> Bool
+eq a b =
+    True
+
+
+verdict : Bool, Bool -> String
+verdict x y =
+    (if x then "T" else "F") ++ (if y then "T" else "F")
+
+
+inLambda : List Int -> List String
+inLambda xs =
+    List.map xs
+        (\x ->
+            let
+                same p q =
+                    p == q
+            in
+            verdict (same (A x) (A 0)) (same (B.B x) (B.B x))
+        )
+
+
+inCase : Int -> String
+inCase n =
+    case n of
+        0 ->
+            let
+                same p q =
+                    p == q
+            in
+            verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
+
+        _ ->
+            "x"
+
+
+inIf : Int -> String
+inIf n =
+    if n == 0 then
+        let
+            same p q =
+                p == q
+        in
+        verdict (same (A 1) (A 2)) (same (B.B 1) (B.B 1))
+
+    else
+        "y"
+
+
+main : Program
+main =
+    Node.printLines (inLambda [ 1, 2 ] ++ [ inCase 0, inIf 0 ])

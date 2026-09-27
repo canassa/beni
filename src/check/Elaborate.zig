@@ -13,15 +13,17 @@
 //!   - P5's rows (`Eager.zig`, which also writes their bodies through the
 //!     unit builder here).
 //!
-//! A `promoted` answer is `(root, method)`: its index is the SITE's
-//! declaration's, found in that declaration's own list (§12.3), and a
-//! reference to an unannotated member of the group being checked — which
+//! A `promoted` answer is `(root, method)`: its index is found in the list
+//! of a binder around the SITE — the promoting `let` bindings whose `let_def`
+//! holds it, innermost first (D5, `LetScopes`), then its declaration (§12.3
+//! *as built by R14*) — and a reference to an unannotated member of the group
+//! being checked, or to a promoting `let` of its own recursive group — which
 //! instantiated nothing, so it has no `inst_evidence` — is a group call,
-//! whose arguments come from the callee's final list by §12.3's cases 1
-//! and 3 (case 2 is R14's). Case 3 is taken only when the requirement's
-//! variable is unreachable from the site's declaration's type, and a
-//! `promoted` answer only inside the group that promoted it: either other
-//! case is the compiler's (`internal`, §12.3).
+//! whose arguments come from the callee's final list by §12.3's cases 1 to
+//! 3. Case 3 is taken only when the requirement's variable is unreachable
+//! from every binder's type around the site, and a `promoted` answer only
+//! inside the group that promoted it: either other case is the compiler's
+//! (`internal`, §12.3).
 //!
 //! **What never becomes a term.** An `open` or `ready` wanted is `internal`
 //! (I6), never a structural answer (v1's root cause #6) — except OPEN on a
@@ -57,6 +59,7 @@ const Evidence = @import("Evidence.zig");
 const Report = @import("Report.zig");
 const Unit = @import("Unit.zig");
 const Walk = @import("Walk.zig");
+const Decl = @import("constrain/Decl.zig");
 
 const Elaborate = @This();
 
@@ -80,6 +83,11 @@ pub const Input = struct {
     roots: []const Var,
     /// Per declaration, its published scheme (case 3's reachability test).
     decl_scheme: []const Var.Optional,
+    /// The promoting `let` function bindings, by instruction (D5, §13.1
+    /// *amended by R14*), their requirements in `requirements`/`roots`, and
+    /// each one's generalised header (case 3's reachability test).
+    lets: []const Dispatch.LetInfo = &.{},
+    let_schemes: []const Var = &.{},
     /// Per declaration, its top-level binding group.
     group_of: []const u32,
     report: *Report,
@@ -151,6 +159,54 @@ stacks: Walk.Stacks = .{},
 /// Why the last unit failed.
 why: Why = .failed,
 what: []const u8 = "",
+/// Which promoting `let`s enclose each instruction (§12.3 *as built by R14*).
+scopes: LetScopes = .{},
+/// The innermost promoting `let` around the site being built, or `no_let`
+/// (a P5 row, or a site no such `let` holds).
+site_let: u32 = no_let,
+
+pub const no_let = std.math.maxInt(u32);
+
+/// The promoting `let` bindings around each instruction: the innermost one
+/// (`owner`) and, per `let`, the one around it (`parent`). A `let_def`'s
+/// subtree is walked with `Decl.pushChildren`, outer bindings first, so an
+/// inner binding's instructions end up its own. Empty when the module has
+/// no `let` row, which is almost every module.
+pub const LetScopes = struct {
+    owner: []u32 = &.{},
+    parent: []u32 = &.{},
+
+    fn build(scratch: Allocator, bir: *const Bir, lets: []const Dispatch.LetInfo) Error!LetScopes {
+        if (lets.len == 0) return .{};
+        const owner = try scratch.alloc(u32, bir.insts.len);
+        @memset(owner, no_let);
+        const parent = try scratch.alloc(u32, lets.len);
+        var stack: std.ArrayList(Bir.Inst.Index) = .empty;
+        defer stack.deinit(scratch);
+        // `lets` is sorted by instruction, and a `let_def` is reserved
+        // before the bindings its body holds, so an outer one comes first.
+        for (lets, 0..) |l, i| {
+            parent[i] = if (l.inst.int() < owner.len) owner[l.inst.int()] else no_let;
+            stack.clearRetainingCapacity();
+            try Decl.pushChildren(bir, scratch, l.inst, &stack);
+            while (stack.pop()) |inst| {
+                if (inst.int() >= owner.len) continue;
+                owner[inst.int()] = @intCast(i);
+                try Decl.pushChildren(bir, scratch, inst, &stack);
+            }
+        }
+        return .{ .owner = owner, .parent = parent };
+    }
+
+    fn deinit(s: *LetScopes, scratch: Allocator) void {
+        scratch.free(s.owner);
+        scratch.free(s.parent);
+    }
+
+    fn of(s: *const LetScopes, inst: Bir.Inst.Index) u32 {
+        return if (inst.int() < s.owner.len) s.owner[inst.int()] else no_let;
+    }
+};
 
 pub const MarkerKey = struct { root: Var, method: Symbol };
 
@@ -175,6 +231,7 @@ fn deinit(e: *Elaborate) void {
     e.row_entries.deinit(e.gpa);
     e.marker_keys.deinit(e.scratch);
     e.stacks.deinit(e.gpa);
+    e.scopes.deinit(e.scratch);
 }
 
 pub fn fail(e: *Elaborate, why: Why, what: []const u8) void {
@@ -206,7 +263,9 @@ pub fn internal(e: *Elaborate, region: Bir.Inst.Index, what: []const u8) Error!v
 
 const Event = struct {
     inst: Bir.Inst.Index,
-    what: union(enum) { callee: WantedId, evidence: Evidence.Range, group: u32 },
+    what: union(enum) { callee: WantedId, evidence: Evidence.Range, group: u32, let_group: u32 },
+    /// The innermost promoting `let` the instruction is in, or `no_let`.
+    let: u32 = no_let,
     /// The declaration the instruction is in.
     binder: Binder = .none,
 };
@@ -243,11 +302,11 @@ fn siteRows(e: *Elaborate) Error!void {
     // instructions, not a hash of every `call`.
     const requirements = for (e.in.decls) |d| {
         if (d.requirements.len != 0) break true;
-    } else false;
+    } else e.in.lets.len != 0;
     const call_of: []Bir.Inst.OptionalIndex = if (rows.len != 0 or requirements) try e.scratch.alloc(Bir.Inst.OptionalIndex, bir.insts.len) else &.{};
     defer e.scratch.free(call_of);
     @memset(call_of, .none);
-    if (call_of.len != 0) for (bir.decls) |d| {
+    if (call_of.len != 0) for (bir.decls, 0..) |d, decl_index| {
         if (!d.kind.isValue()) continue;
         var i = d.inst_start.int();
         while (i < d.inst_end.int() and i < bir.insts.len) : (i += 1) {
@@ -266,16 +325,27 @@ fn siteRows(e: *Elaborate) Error!void {
                     if (std.sort.binarySearch(Evidence.InstEvidence, rows, inst, instOrder) != null) continue;
                     try events.append(e.scratch, .{ .inst = inst, .what = .{ .group = target } });
                 },
+                // The same inside a recursive `let` (§12.3 *as built by
+                // R14*): a `local` naming a promoting `let_def` of its own
+                // group instantiated nothing.
+                .local => {
+                    const l = e.letOfLocal(@intCast(decl_index), bir.instData(inst).lhs) orelse continue;
+                    if (e.in.lets[l].requirements.len == 0) continue;
+                    if (std.sort.binarySearch(Evidence.InstEvidence, rows, inst, instOrder) != null) continue;
+                    try events.append(e.scratch, .{ .inst = inst, .what = .{ .let_group = l } });
+                },
                 else => {},
             }
         }
     };
     for (rows) |r| try events.append(e.scratch, .{ .inst = r.inst, .what = .{ .evidence = r.args } });
     if (events.items.len == 0) return;
+    e.scopes = try .build(e.scratch, bir, e.in.lets);
     var owner: Owner = try .init(e.scratch, bir);
     defer owner.deinit(e.scratch);
     for (events.items) |*event| {
         event.binder = owner.of(event.inst);
+        event.let = e.scopes.of(event.inst);
         if (event.what != .callee and event.inst.int() < call_of.len) event.inst = call_of[event.inst.int()].unwrap() orelse event.inst;
     }
     std.mem.sort(Event, events.items, {}, eventLessThan);
@@ -336,10 +406,13 @@ fn site(e: *Elaborate, event: Event) Error!void {
     e.beginUnit();
     var kept: ?Dispatch.Term = null;
     const has_callee = event.what == .callee;
+    e.site_let = event.let;
+    defer e.site_let = no_let;
     var ok = switch (event.what) {
         .callee => |id| try e.calleeNodes(id, event.binder, &kept),
         .evidence => |r| try e.wantedRoots(e.in.evidence.argsOf(r)),
         .group => |d| try e.groupNodes(d, event.binder, .none, &e.unit.roots),
+        .let_group => |l| try e.groupNodesOf(e.in.lets[l].requirements, event.binder, .none, &e.unit.roots),
     } and try e.fillUnit(event.binder);
     if (ok) {
         var terms: std.ArrayList(TermIndex) = .empty;
@@ -405,14 +478,19 @@ fn wantedRoots(e: *Elaborate, ids: []const WantedId) Error!bool {
 }
 
 /// A group call's arguments (§12.3): one per requirement of the callee's
-/// final list — the caller's own parameter for it (case 1), or, when the
-/// caller's list does not hold it, the proven-undetermined answer (case 3).
-/// Leaf nodes, appended to `out`.
+/// final list — the caller's own parameter for it (cases 1 and 2), or, when
+/// no binder around the site holds it, the proven-undetermined answer (case
+/// 3). Leaf nodes, appended to `out`.
 fn groupNodes(e: *Elaborate, callee: u32, binder: Binder, ctx: Ctx, out: *std.ArrayList(u32)) Error!bool {
-    const r = e.in.decls[callee].requirements;
+    return e.groupNodesOf(e.in.decls[callee].requirements, binder, ctx, out);
+}
+
+/// The same for a callee whose final list is the run `r` of `requirements`
+/// and `roots`: a declaration's, or a promoting `let`'s (D5).
+fn groupNodesOf(e: *Elaborate, r: Dispatch.Range, binder: Binder, ctx: Ctx, out: *std.ArrayList(u32)) Error!bool {
     for (e.in.requirements[r.start..][0..r.len], e.in.roots[r.start..][0..r.len]) |req, q| {
-        const t: Dispatch.Term = if (e.paramFor(binder, q, req.method)) |k|
-            .{ .param = .{ .binder = .decl, .k = k } }
+        const t: Dispatch.Term = if (e.paramFor(binder, q, req.method)) |p|
+            .{ .param = p }
         else
             (try e.caseThree(binder, q, req.method, ctx)) orelse return false;
         try out.append(e.scratch, try e.unit.leaf(e.scratch, t));
@@ -420,30 +498,67 @@ fn groupNodes(e: *Elaborate, callee: u32, binder: Binder, ctx: Ctx, out: *std.Ar
     return true;
 }
 
-/// `(q, method)`'s index in the site's declaration's list, if it has one.
-fn paramFor(e: *Elaborate, binder: Binder, q: Var, method: Symbol) ?u16 {
+/// The `lets` row of the binding a `local` of declaration `decl` names.
+fn letOfLocal(e: *const Elaborate, decl: u32, local: u32) ?u32 {
+    const bir = e.in.cx.bir;
+    if (e.in.lets.len == 0 or decl >= bir.decls.len) return null;
+    const d = bir.decls[decl];
+    const at = d.locals_start + local;
+    if (at >= d.locals_end or at >= bir.locals.len) return null;
+    const l = bir.locals[at];
+    if (l.kind != .let) return null;
+    const Order = struct {
+        fn order(key: Bir.Inst.Index, item: Dispatch.LetInfo) std.math.Order {
+            return std.math.order(key.int(), item.inst.int());
+        }
+    };
+    const i = std.sort.binarySearch(Dispatch.LetInfo, e.in.lets, l.inst, Order.order) orelse return null;
+    return @intCast(i);
+}
+
+/// `(q, method)` as a parameter of a binder around the site, innermost
+/// first (§12.3 cases 1 and 2, *as built by R14*): the promoting `let`s
+/// whose `let_def` holds the site, then its declaration.
+fn paramFor(e: *Elaborate, binder: Binder, q: Var, method: Symbol) ?Dispatch.Term.Param {
+    const st = e.in.cx.store;
+    const root = st.find(q);
+    var l = e.site_let;
+    while (l != no_let) : (l = e.scopes.parent[l]) {
+        if (inList(e, e.in.lets[l].requirements, root, method)) |k| return .{ .binder = .{ .let = e.in.lets[l].inst }, .k = k };
+    }
     const d = switch (binder) {
         .decl => |d| d,
         else => return null,
     };
+    if (inList(e, e.in.decls[d].requirements, root, method)) |k| return .{ .binder = .decl, .k = k };
+    return null;
+}
+
+fn inList(e: *const Elaborate, r: Dispatch.Range, root: Var, method: Symbol) ?u32 {
     const st = e.in.cx.store;
-    const root = st.find(q);
-    const r = e.in.decls[d].requirements;
     for (e.in.requirements[r.start..][0..r.len], e.in.roots[r.start..][0..r.len], 0..) |req, x, k| {
         if (req.method == method and st.find(x) == root) return @intCast(k);
     }
     return null;
 }
 
-/// §12.3's case 3: `q` is in no list the site's declaration has, which is
-/// sound only when its type cannot reach `q` — else the lists disagree with
-/// the types, and that is `internal` ("in the member's type, but not in its
-/// list", review S1).
+/// §12.3's case 3: `q` is in no list of a binder around the site, which is
+/// sound only when none of their types reaches `q` — else the lists disagree
+/// with the types, and that is `internal` ("in the member's type, but not in
+/// its list", review S1).
 fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Error!?Dispatch.Term {
+    const st = e.in.cx.store;
+    var l = e.site_let;
+    while (l != no_let) : (l = e.scopes.parent[l]) {
+        if (try Walk.reaches(st, &e.stacks, e.gpa, e.in.let_schemes[l], q)) {
+            e.fail(.internal, "a requirement an enclosing `let` binding's type reaches is not in its list (checker-v2.md §12.3)");
+            return null;
+        }
+    }
     if (binder == .decl) {
         const d = binder.decl;
         if (d < e.in.decl_scheme.len) if (e.in.decl_scheme[d].unwrap()) |scheme| {
-            if (try Walk.reaches(e.in.cx.store, &e.stacks, e.gpa, scheme, q)) {
+            if (try Walk.reaches(st, &e.stacks, e.gpa, scheme, q)) {
                 e.fail(.internal, "a requirement the site's declaration's type reaches is not in its list (checker-v2.md §12.3)");
                 return null;
             }
@@ -578,7 +693,7 @@ fn promotedTerm(e: *Elaborate, w: Evidence.Wanted, root: Var, method: Symbol, bi
             return e.failTerm(.internal, "a promoted requirement is used outside the group that promoted it (checker-v2.md §12.3)");
         }
     }
-    if (e.paramFor(binder, root, method)) |k| return .{ .param = .{ .binder = .decl, .k = k } };
+    if (e.paramFor(binder, root, method)) |p| return .{ .param = p };
     return e.caseThree(binder, root, method, ctx);
 }
 

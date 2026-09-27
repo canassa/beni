@@ -1,0 +1,80 @@
+-- D5 (checker-v2.md §8.4 *As built by R14*; queue row 76, CK-37): a `let`
+-- FUNCTION binding whose requirement is its own generalises over it and
+-- takes it as a hidden parameter (`$l<inst>$<k>`, backend.md §4), so each
+-- use instantiates it at its own type.
+--
+--   - `pairEq` is row 76's program: `inner`'s `eq` is an operator's, so
+--     `inner` generalises and `inner x y` and `inner [ x ] [ y ]` are two
+--     instantiations — no `x ~ List x`. It was `infinite_type` before R14
+--     (`check/bad/LetHelperCyclicReceiver`, now `run/`).
+--   - `describe`'s `show` needs `render` through `label`'s `where` clause
+--     (a scheme's requirement, not a dot-call's own, which D5's row of
+--     2026-09-26 keeps monomorphic), and is used at `Colour` and at
+--     `Shape.Shape`, which both have one.
+--
+-- Expected `True`, `False`, `True`, `False`, `<red1><square2>`.
+--
+-- Oracle twin, run on 3e924cc: `inner` and `show` lifted to top-level
+-- declarations with the `where` clauses written out print exactly the
+-- expected lines. As written, 3e924cc refuses `pairEq` with INFINITE TYPE and
+-- `describe` with TYPE MISMATCH at `show s`.
+import Node exposing (Program)
+import Shape exposing (Shape, Square)
+
+
+pub type Colour
+    = Red
+    | Green
+
+
+pub render : Colour, Int -> String
+render c n =
+    case c of
+        Red ->
+            "red" ++ String.fromInt n
+
+        Green ->
+            "green" ++ String.fromInt n
+
+
+label : a, Int -> String
+    where a.render : a, Int -> String
+label x n =
+    x.render n
+
+
+pairEq x y =
+    let
+        inner a b =
+            a == b
+    in
+    inner x y && inner [ x ] [ y ]
+
+
+describe : Colour, Shape -> String
+describe c s =
+    let
+        show x =
+            "<" ++ label x 1 ++ ">"
+    in
+    show c ++ show s
+
+
+text : Bool -> String
+text b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ text (pairEq 1 1)
+        , text (pairEq "a" "b")
+        , text (pairEq { v = Green } { v = Green })
+        , text (pairEq ( 1, "x" ) ( 1, "y" ))
+        , describe Red (Square 2)
+        ]

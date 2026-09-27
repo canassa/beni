@@ -94,6 +94,23 @@ pub fn ofDecl(dispatch: *const Dispatch, bir: *const Bir, decl: u32) Use {
     };
 }
 
+/// A `let` function binding D5 generalised (`Dispatch.lets[i]`,
+/// checker-v2.md §8.4 *As built by R14*): only a FUNCTION binding — written
+/// parameters, or a `lambda` right-hand side — ever takes evidence, so its
+/// convention is `function`, over those parameters (the value restriction
+/// keeps a `thunk` from arising at a `let`).
+pub fn ofLet(dispatch: *const Dispatch, bir: *const Bir, i: u32) Use {
+    if (i >= dispatch.lets.len) return .{ .convention = .plain, .evidence = 0, .arity = 0 };
+    const inst = dispatch.lets[i].inst;
+    const evidence = dispatch.lets[i].requirements.len;
+    const data = bir.instData(inst);
+    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+    var arity: u32 = @intCast(bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index).len);
+    const rhs: Bir.Inst.Index = @enumFromInt(data.rhs);
+    if (arity == 0 and bir.instTag(rhs) == .lambda) arity = bir.subRange(@enumFromInt(bir.instData(rhs).lhs)).len();
+    return .{ .convention = of(arity, false, arity, evidence), .evidence = evidence, .arity = arity };
+}
+
 /// Whether declaration `decl`'s ENTIRE body is a `lambda` — the one place
 /// the question is asked, by `Dispatch.finish` (for `of`), `Cycles` and
 /// `Lower` (for `definition`). False for a declaration with no body.

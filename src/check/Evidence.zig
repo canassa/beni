@@ -428,6 +428,8 @@ pub const Requirement = struct { root: Var, quantified: u16, method: Symbol, pos
 /// text. THE one function for promotion, instantiation evidence and the
 /// interface's `where` blocks (which the writer computes by the same rule,
 /// `Schemes.quantifierOrder`): exporter and importer agree by construction.
+/// `Resolve.holdLet` decides what a `let` generalises by that same
+/// `Schemes.quantifierOrder` walk, so a root it lets be quantified is listed.
 pub fn requirements(
     store: *TypeStore,
     interner: *const InternPool.Global,

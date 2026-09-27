@@ -561,7 +561,8 @@ config =
 alike.** An *annotation* on the caller is the first, and the only one report 18 described. The
 second is a **later use**: nothing says the flex has to be made concrete by the expression that
 created it, and `let t = decodeInto "zz" in label t` is pinned by `label`, one line down, because
-§6.4 rule (a) holds a constrained `let` binding at the enclosing rank instead of generalising it —
+§6.4 rule (a) holds a constrained `let` binding at the enclosing rank instead of generalising it (since
+R14, the value restriction does, `checker-v2.md` §8.4 *As built by R14*: `t` is a value binding) —
 the succeeding half of the rule that `check/bad/LetConstrainedTwice` shows the failing half of.
 Underneath both sits the third: a caller that is *itself* constrained on the same variable
 **forwards** its evidence rather than choosing, so `decodeTwo : String, String -> ( a, a ) where
@@ -1054,7 +1055,7 @@ must report first". `tests/corpus/check/depth/ConstraintChain{Ok,Deep}.beni` is 
 
 ### 6.4 Generalisation and promotion
 
-> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. Rule (a) itself still holds until R14 builds D5: since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27) it holds as checker v2's rule (the `let_constrained_monomorphic` switch), so this section stays normative until R14.
+> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. **Superseded by R14 (2026-09-27):** D5 is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4 *As built by R14*). Rule (a) below is history, not the rule.
 
 Constraints ride on `Flags`, so `generalize` and `makeCopy` carry them within a module for free,
 with one addition: **`copyHelp` must copy each constraint's `fn_var` through the same memo** as the
@@ -1743,6 +1744,17 @@ closure over it.
 value whose TYPE is not a function. One whose type is a function — `h = maxOf` under a `where` —
 takes its evidence and then its type's parameters, `($m$0, $p$1, $p$2) => …`, exactly as if it had
 been written with them, so that a call, a reference and an importer all agree.*
+
+> **Amended by R14 (2026-09-27, owner decision D5; [`checker-v2.md`](checker-v2.md) §8.4 *As built
+> by R14*, §13.1).** A generalised `let` **function** binding has evidence parameters too, one per
+> requirement of its own scheme in canonical order, **before** its own parameters, named
+> `$l<inst>$<k>` where `<inst>` is its `let_def` instruction — so an inner binding never shadows an
+> outer `$m$k` or `$l…` it also captures. Each use passes them first, `inner($m$0, x, y)` or
+> `inner(Main$eq$prim, x, y)`, and a reference in value position is the eta-expansion over the
+> binding's arity. A `let` value binding, a `let` pattern and a variable carrying only dot-calls'
+> own requirements are still held at the enclosing rank, so they take none. Everything below about
+> lexical capture holds unchanged for `$l…`: a lambda two closures down reads it by capture
+> (`run/LetEvidenceCapture.beni`). The paragraph below is the pre-R14 text.
 
 **Only a top-level declaration has evidence parameters**, and a lambda never does. §6.4 rule (a)
 keeps a `let` binding from being generalised over a constrained variable, so no nested binding
@@ -3078,7 +3090,7 @@ another module's wrapper).
 
 ## 11. Known limits, and where the design may change
 
-> **Checker v2 (2026-09-24).** Two limits below are lifted by owner decisions: "a constrained `let` binding is monomorphic" (D5, [`checker-v2.md`](checker-v2.md) §8.4, slice R14) and, in §10.12, the annotation an own untyped method needed (D3, §10, slice R7). Both remain the current checker's behaviour until those slices land.
+> **Checker v2 (2026-09-24).** Two limits below are lifted by owner decisions: "a constrained `let` binding is monomorphic" (D5, [`checker-v2.md`](checker-v2.md) §8.4, slice R14) and, in §10.12, the annotation an own untyped method needed (D3, §10, slice R7). Both slices have landed: R7 lifted the second (2026-09-26), and R14 the first for `let` function bindings (2026-09-27; the row below says what stays).
 
 Everything here is a limit the design **accepts on purpose**. None of it is a bug to be filed; each
 was either measured (§7 of the plan) or recorded in report 19, and the 2026-09-18 adoption took them
@@ -3107,7 +3119,13 @@ so a method whose only parameter is the receiver — `t.toString`, `s.length` �
 `M.toString t`. This is the price of keeping `language.md` §6.3 unchanged, and it is why §5 adds no
 zero-argument methods to core.
 
-**A constrained `let` binding is monomorphic.** §6.4 rule (a) refuses to generalise a `let` over a
+**A constrained `let` binding is monomorphic.** *Lifted by R14 (2026-09-27, D5) for a `let`
+**function** binding whose requirements are not only dot-calls' own: it generalises and takes
+evidence (§8.1 as amended), so the row-76 helper and a helper used at two types each check and run
+(`run/LetConstrainedHelperPolymorphic.beni`). What stays is narrower and deliberate: a variable
+carrying only dot-calls' own requirements (the owner's D5 row of 2026-09-26: the call may still be
+a field call), and a `let` value or pattern binding (the value restriction, `checker-v2.md` §21.1).
+`LetConstrainedTwice` is the first of those. The text below is the pre-R14 limit.* §6.4 rule (a) refuses to generalise a `let` over a
 variable carrying a method constraint, which is how the spike avoids Roc's promoted-requirements
 side table (`references/roc/design.md:5461-5468`, report 20 §9 row S3-4). The price is that a helper
 defined in a `let` and used at two types is a `type_mismatch` at the second use
@@ -3564,6 +3582,10 @@ assert fires. *Cost:* a constrained `let` helper used at two types is refused ra
 instantiated twice; §11 carries the row and
 `tests/corpus/check/bad/LetConstrainedTwice.beni` the fixture. **Amended by A.49**: the refusal is a
 `type_mismatch` at the second use with a hint of its own, not `method_constraint_mismatch`.
+**Superseded by D5 (R14, 2026-09-27):** a `let` function binding generalises and promotes its own
+requirements; I15 keeps an outer receiver's method-type variables outer, which is the case the side
+table existed for, so there is still no side table (`checker-v2.md` §8.4). A.31's single level is
+superseded with it: `param let <inst> k` names an enclosing `let`'s parameter (§8.1 as amended).
 
 **A.31 — `Target.evidence` is one number, with no depth** (§6.4, §7.1, §8.1) [S4-1]. Roc carries
 `EvidenceChainIndex { depth, index }` and resolves it by walking out through enclosing callables.

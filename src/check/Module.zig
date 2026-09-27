@@ -425,6 +425,21 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
             .convention = Convention.of(bir.decls[i].params, Convention.bodyIsLambda(bir, @intCast(i)), arity, count),
         };
     }
+    // The promoting `let` function bindings (D5, §8.4 *As built by R14*),
+    // by instruction, their rows after every declaration's.
+    const let_rows = try scratch.dupe(Resolve.LetRow, solver.resolver.let_rows.items);
+    std.mem.sort(Resolve.LetRow, let_rows, {}, letRowLessThan);
+    const lets = try gpa.alloc(Dispatch.LetInfo, let_rows.len);
+    errdefer gpa.free(lets);
+    const let_schemes = try scratch.alloc(Var, let_rows.len);
+    for (let_rows, lets, let_schemes) |row, *info, *scheme| {
+        const start: u32 = @intCast(requirements.items.len);
+        const kept = row.requirements;
+        try requirements.appendSlice(gpa, solver.resolver.requirement_rows.items[kept.start..][0..kept.len]);
+        try roots.appendSlice(scratch, solver.resolver.requirement_roots.items[kept.start..][0..kept.len]);
+        info.* = .{ .inst = row.inst, .requirements = .{ .start = start, .len = kept.len } };
+        scheme.* = row.scheme;
+    }
     const out = try Elaborate.run(.{
         .cx = solver.cx,
         .evidence = &solver.evidence,
@@ -434,6 +449,8 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .requirements = requirements.items,
         .roots = roots.items,
         .decl_scheme = decl_scheme,
+        .lets = lets,
+        .let_schemes = let_schemes,
         .group_of = try groupOf(scratch, groups),
         .report = report,
         .clean = !report.quiet and report.errors == 0,
@@ -446,6 +463,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     in.dispatch.* = .{
         .decls = decls,
         .tries = sorted,
+        .lets = lets,
         .requirements = try requirements.toOwnedSlice(gpa),
         .terms = out.terms,
         .args = out.args,
@@ -533,6 +551,10 @@ fn roundtripPlan(in: Input, report: *Report) Error!void {
     }
     in.plan.deinit(gpa);
     in.plan.* = loaded;
+}
+
+fn letRowLessThan(_: void, a: Resolve.LetRow, b: Resolve.LetRow) bool {
+    return a.inst.int() < b.inst.int();
 }
 
 fn tryLessThan(_: void, a: Dispatch.Try, b: Dispatch.Try) bool {

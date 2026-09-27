@@ -1,0 +1,10 @@
+-- See Main.beni: a type whose `eq` is always `False`.
+
+
+pub type B
+    = B Int
+
+
+pub eq : B, B -> Bool
+eq a b =
+    False

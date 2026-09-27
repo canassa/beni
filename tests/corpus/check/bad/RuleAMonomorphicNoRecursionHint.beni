@@ -1,18 +1,28 @@
 -- CK-72: D14's hint is attached only to a mismatch D14 caused (checker-v2.md
--- §10.8). `pairK` is monomorphic because its type carries `==`'s
--- requirement and a constrained `let` is not generalised until R14 (§8.4's
--- switch, rule (a)) — not because of the recursive group `f`/`g` — and the
--- same helper in a non-recursive declaration gets the same error with no
--- hint. R7's first cut added "this comes from a recursive group (`f`,
--- `g`) … Annotate `f`, `g`", which does not help (R7's adversarial review,
--- F4).
+-- §10.8). `pairK` is monomorphic because the only requirement its type
+-- carries is a dot-call's own, which a `let` does not generalise (D5's row
+-- of 2026-09-26, §8.4 *As built by R14*) — not because of the recursive
+-- group `f`/`g` — and the same helper in a non-recursive declaration gets
+-- the same error with no hint. R7's first cut added "this comes from a
+-- recursive group (`f`, `g`) … Annotate `f`, `g`", which does not help
+-- (R7's adversarial review, F4). Until R14 the helper was `z == z`, which
+-- rule (a) held; since D5 that one generalises and the program is valid.
+type T
+    = T Int
+
+
+pub same : T, T -> Bool
+same (T a) (T b) =
+    a == b
+
+
 f n x =
     let
         pairK z =
-            ( z, z == z )
+            ( z, z.same z )
 
         ( a1, _ ) =
-            pairK 1
+            pairK (T 1)
 
         ( a2, _ ) =
             pairK "s"

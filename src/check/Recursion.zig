@@ -86,7 +86,7 @@ pub const Pending = struct { item: u32, decl: u32, region: Bir.Inst.Index, call:
 /// obligation of an open recursive group whose deciding variable is
 /// group-level — which D14 lowered, or I15 on the flex it rides on, the same
 /// lowering in the other order (§10.7) — reaches either side. A receiver
-/// rule (a) held back at a `let` (§8.4's switch, `report.monomorphic`) is
+/// a `let` held back (§8.4 *As built by R14*, `report.monomorphic`) is
 /// not D14's, and its error gets no hint (R7's adversarial review, F4). Only
 /// items made since the lowest open recursive frame was pushed are read.
 pub fn involved(s: *Solve, expected: Var, actual: Var) Error!bool {

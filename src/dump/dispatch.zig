@@ -62,8 +62,8 @@ pub fn write(
         try w.print("  decl {s} evidence={d} arity={d} convention={s}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, info.value_arity, @tagName(info.convention) });
         for (requirements, 0..) |e, k| try cx.writeRequirement(w, k, e);
     }
-    // D5's constrained `let`s (§13.1). Empty until R14; printed so the day
-    // the column fills, the dump already says so.
+    // D5's promoting `let` function bindings (§13.1 *amended by R14*), by
+    // instruction, each with its requirement list.
     for (dispatch.lets) |let| {
         const r = let.requirements;
         try w.print("  let {d} evidence={d}\n", .{ let.inst.int(), r.len });

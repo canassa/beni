@@ -2573,6 +2573,39 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - CK-02's program must **stay** a `type_mismatch`: its requirement sits on an outer receiver.
   - An inner binder's evidence captured by a lambda, two closures down (the `EvidenceCapture`
     shape, at `let` level).
+- **As built (2026-09-27).** Spec first: `checker-v2.md` §8.4 *As built by R14* (the three hold
+  rules), §12.3 case 2, §13.1 *amended by R14*, §20.3 item 3, §20.4, §21.1's value-restriction row
+  (the implementer's reading, for the manager and owner to confirm); `backend.md` §4's
+  constrained-declaration row; `static-dispatch-spike.md` §8.1, §11, A.30; the two D5 pointer notes
+  (`checker.md` §6.3, spike §6.4) say "superseded".
+  - **Checker.** `Solve.holdConstrained` and the switch are gone. `Resolve.holdLet` (step 5) holds a
+    young constrained root that no `let` function binding reaches, that a value or pattern
+    binding reaches, or that carries only dot-calls' own wanteds (`field_ok`); `Resolve.closeLet`
+    (step 7) promotes each function binding's own requirements (`LetRow`), with the cap.
+    `Env.Monomorphic` gains `why`, and A.30's hint says which rule held the binding.
+  - **Contract.** `Dispatch.lets` filled; `referenceCount` takes the reference's declaration and
+    counts a `local` naming a promoting `let`; the I7 placement pass reads its slots.
+    `Elaborate.LetScopes` gives each site its enclosing `let`s; `paramFor` searches them innermost
+    first (`param let <inst> k`); a `local` to a `let` of its own group with no row is a
+    `let_group` event.
+  - **Backend.** `Convention.ofLet`; `Lower` names the parameters `$l<inst>$<k>`
+    (`letEvidenceName`), passes them at every use, eta-expands in value position, and a tail loop
+    forwards them (`Loop.ev_let`).
+  - **Fixtures.** New: `run/LetConstrainedHelperPolymorphic/` (red on 3e924cc: INFINITE TYPE and
+    TYPE MISMATCH), `run/LetEvidenceCapture`, `run/LetFieldCallInMergedGroup`,
+    `run/LetHelperCyclicReceiver` (was `check/bad/`), `check/bad/LetValueConstrainedTwice`,
+    `emit/LetEvidenceParameter`; three PERM programs. Re-blessed: `check/bad/LetConstrainedTwice`
+    (hint, D5), `check/bad/RuleAMonomorphicNoRecursionHint` (rewritten over a dot-call-only
+    helper: its `z == z` helper is valid under D5; PERM's `p3n` now expects `type_mismatch`). The
+    `abuse_test.zig` row-76 scenario expects exit 0.
+  - **Review round (2026-09-27).** B1: a `let` below a lambda or a `case`/`if` branch now
+    generalises (`Generalize.Binder.header`; `run/LetHelperBelowLambdaOrBranch/`, red on the first
+    cut). B2: a `let` function binding over the 64-requirement cap is held, not refused
+    (`Monomorphic.why = .cap` and its hint; `run/LetHelperOverTheCap`,
+    `check/bad/LetHelperOverTheCapTwice`). S1: the value restriction confirmed by the manager. S2:
+    `closeLet`'s assert only in a module with no error, the two walks tied in comments. N2: one
+    message per receiver and use (`Report.hasErrorAt` in `Instances.noMethodsAs`;
+    `check/bad/LetHelperRecordOneError`).
 
 ### R15 — Structural audit (added by the manager, 2026-09-24)
 

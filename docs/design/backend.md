@@ -303,7 +303,7 @@ mapping.
 | method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
 | method call on a `primitive` target | the JavaScript operator the surface origin names — `===` for `==`, and the `Order` result of `compare` tested in place rather than built |
 | return-type dispatch | a direct call of whatever the constrained variable resolved to, or of the evidence parameter standing in for it |
-| a declaration that carries constraints | hidden **leading** parameters, one per constraint in canonical order, invisible in beni and fixed at every call site by the checker |
+| a declaration that carries constraints | hidden **leading** parameters, one per constraint in canonical order, invisible in beni and fixed at every call site by the checker. A top-level declaration's are `$m$<k>`. **A generalised `let` function binding** (D5, R14, 2026-09-27: `checker-v2.md` §8.4 *As built by R14*, §13.1) takes them too, named `$l<inst>$<k>` after its `let_def` instruction so an inner binding never shadows an outer name it captures: `function inner($l2$0, a, b)`, or its `const` arrow for a `lambda` right-hand side; each use passes its evidence first, a reference in value position is the eta-expansion over the binding's arity, and a lambda inside reads the names by capture. A `let` value binding never takes evidence (the value restriction) |
 | a derived `eq` / `compare` | a generated top-level function per type or per structural shape, emitted sorted by printed name |
 
 The last five are static dispatch's, and

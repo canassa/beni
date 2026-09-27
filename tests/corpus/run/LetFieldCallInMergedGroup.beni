@@ -1,0 +1,45 @@
+-- R14's reviewer focus (plans/checker-rewrite.md R14; D5's row of
+-- 2026-09-26): a `let` whose helper carries only a dot-call's own
+-- requirement is not generalised over it (checker-v2.md §8.4 *As built by
+-- R14*, rule 3), so the record the helper is applied to reaches the call
+-- before the constraint is generalised and `s.run n` is the field call
+-- (static-dispatch-spike.md §11 *Deferred receiver*) — here inside a MERGED
+-- group: `f`'s `(T n).combine 1` demands this module's unannotated
+-- `combine`, whose body names `f` back, so the two merge (§10.4) while
+-- `f`'s `let` is in flight, and `combine` holds a `let` of the same shape.
+-- `f 3` is `(T 3).combine 1` = 4 plus `call { run = … }` = 6 plus `go` in
+-- `combine`'s `let`, 0: expected `10`.
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+pub combine (T a) b =
+    let
+        go r =
+            r.run b
+    in
+    if b > 100 then
+        f b
+
+    else
+        a + b + go { run = \k -> k - k }
+
+
+f n =
+    let
+        call s =
+            s.run n
+    in
+    if n > 50 then
+        0
+
+    else
+        (T n).combine 1 + call { run = \k -> k * 2 }
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (f 3) ]

@@ -1,0 +1,18 @@
+-- The value restriction (checker-v2.md §8.4 *As built by R14*, rule 2;
+-- §21.1's D5 row of 2026-09-27): `same` is a `let` VALUE — no parameters,
+-- and its right-hand side is an `if`, not a lambda — so D5 does not
+-- generalise it over the `eq` its type carries. It is computed once, where
+-- it is written, and has one type: the first use fixes it to `String` and
+-- the second is a `type_mismatch`, whose hint says why and offers a
+-- parameter. Written `same a b = …`, it generalises and the program is
+-- valid (`run/LetConstrainedHelperPolymorphic`).
+check flag =
+    let
+        same =
+            if flag then
+                \a b -> a == b
+
+            else
+                \a b -> a /= b
+    in
+    same "a" "a" && same 'b' 'b'

@@ -1,0 +1,12 @@
+-- See Main.beni: a second type with a `render` method.
+
+
+pub type Shape
+    = Square Int
+
+
+pub render : Shape, Int -> String
+render s n =
+    case s of
+        Square side ->
+            "square" ++ String.fromInt (side * n)

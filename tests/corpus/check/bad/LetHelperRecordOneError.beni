@@ -1,0 +1,20 @@
+-- R14's review N2: one failure, one owner. `h` asks its receiver for `name`
+-- (a dot-call) and for `eq` (an operator), so D5 generalises it, and its use
+-- at a record with a function field fails both at `h { … }`: `==` on a
+-- function is NOT EQUATABLE, and a record has no methods for `.name`. The
+-- second says nothing more about the same receiver at the same use, so the
+-- use gets one message (`Instances.noMethodsAs`); R14's first cut gave two.
+text : Bool -> String
+text b =
+    if b then
+        "T"
+    else
+        "F"
+
+
+f u =
+    let
+        h s =
+            s.name 0 ++ text (s == s)
+    in
+    h { name = \n -> "x" }

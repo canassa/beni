@@ -394,3 +394,13 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
     try r.texts.constrainedConstant(region, token, decl, var_name, method);
     try r.flush();
 }
+
+/// Whether this module already has an error at `region`: an error path's
+/// question (a scan), so one use is not refused twice for one receiver
+/// (`Instances.noMethodsAs`, R14's review N2).
+pub fn hasErrorAt(r: *const Report, region: Bir.Inst.Index) bool {
+    for (r.items.items) |item| {
+        if (item.module == r.module and item.region == region and item.severity == .@"error") return true;
+    }
+    return false;
+}

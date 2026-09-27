@@ -100,7 +100,8 @@ pub const TermIndex = enum(u32) {
 /// the one whose instruction range holds it.
 pub const Binder = union(enum(u8)) {
     decl,
-    /// A generalised constrained `let` (D5, R14). Never written before R14.
+    /// A generalised constrained `let` function binding (D5, R14): its
+    /// `let_def`, which has a row of `lets`.
     let: Bir.Inst.Index,
     /// A derived function's context entry, by SORTED `derived` index.
     derived: u32,
@@ -180,8 +181,9 @@ pub const DeclInfo = struct {
     convention: Convention = .plain,
 };
 
-/// A generalised constrained `let` (D5). The column exists, EMPTY, from R2a,
-/// so R14 owes no format bump (N6).
+/// A generalised constrained `let` function binding (D5). The column existed,
+/// EMPTY, from R2a, and R14 fills it (checker-v2.md §13.1 *amended by R14*),
+/// with no format bump (N6).
 pub const LetInfo = struct { inst: Bir.Inst.Index, requirements: Range };
 
 /// One evidence parameter: which quantifier of its scheme it came from, and
@@ -242,7 +244,7 @@ args: []const TermIndex = &.{},
 sites: []const Site = &.{},
 /// One per `Bir.Decl`.
 decls: []const DeclInfo = &.{},
-/// EMPTY until R14.
+/// One per promoting `let` function binding, sorted by `inst` (D5, R14).
 lets: []const LetInfo = &.{},
 requirements: []const Requirement = &.{},
 contexts: []const ContextEntry = &.{},
@@ -434,17 +436,73 @@ pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interfa
     };
 }
 
-/// The requirement count of the value a Bir REFERENCE names: a `top` or an
-/// `ext_value`. Anything else — a local, a lambda, a constructor — takes
-/// none, because only a top-level declaration has evidence before R14.
-pub fn referenceCount(d: *const Dispatch, bir: *const Bir, interfaces: []const Interface, inst: Bir.Inst.Index) u32 {
+/// The requirement count of the value a Bir REFERENCE names: a `top`, an
+/// `ext_value`, or a `local` naming a generalised `let` function binding
+/// with requirements (D5, checker-v2.md §13.1 *amended by R14*) — whose
+/// local index is `owner`'s, the declaration holding the reference, which a
+/// caller that met no `let` row may leave null. Anything else — a lambda, a
+/// constructor, any other local — takes none.
+pub fn referenceCount(d: *const Dispatch, bir: *const Bir, interfaces: []const Interface, owner: ?u32, inst: Bir.Inst.Index) u32 {
     if (inst.int() >= bir.insts.len) return 0;
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
         .top => @intCast(d.declRequirements(data.lhs).len),
         .ext_value => extRequirementCount(interfaces, @enumFromInt(data.lhs), data.rhs),
+        .local => if (d.localLet(bir, owner orelse return 0, data.lhs)) |i| d.lets[i].requirements.len else 0,
         else => 0,
     };
+}
+
+/// The row of `lets` for the `let_def` at `inst`, if it has one. One binary
+/// search over a table sorted by instruction.
+pub fn letIndex(d: *const Dispatch, inst: Bir.Inst.Index) ?u32 {
+    var lo: usize = 0;
+    var hi: usize = d.lets.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = d.lets[mid].inst;
+        if (at == inst) return @intCast(mid);
+        if (at.int() < inst.int()) lo = mid + 1 else hi = mid;
+    }
+    return null;
+}
+
+/// The `lets` row of the binding a `local` reference of declaration `decl`
+/// names: the local's `let_def`, when it is one with a row.
+pub fn localLet(d: *const Dispatch, bir: *const Bir, decl: u32, local: u32) ?u32 {
+    if (d.lets.len == 0 or decl >= bir.decls.len) return null;
+    const at = bir.decls[decl].locals_start + local;
+    if (at >= bir.decls[decl].locals_end or at >= bir.locals.len) return null;
+    const l = bir.locals[at];
+    if (l.kind != .let) return null;
+    return d.letIndex(l.inst);
+}
+
+/// The evidence parameters of `lets[i]`, in canonical order.
+pub fn letRequirements(d: *const Dispatch, i: u32) []const Requirement {
+    if (i >= d.lets.len) return &.{};
+    const r = d.lets[i].requirements;
+    return d.requirements[r.start..][0..r.len];
+}
+
+/// Per instruction, the value declaration whose range holds it (or
+/// `maxInt`): what a `local` reference's index is relative to. Built only
+/// when the table has a `let` row; empty otherwise.
+pub fn instOwners(d: *const Dispatch, bir: *const Bir, gpa: Allocator) Allocator.Error![]u32 {
+    if (d.lets.len == 0) return &.{};
+    const out = try gpa.alloc(u32, bir.insts.len);
+    @memset(out, std.math.maxInt(u32));
+    for (bir.decls, 0..) |decl, i| {
+        if (!decl.kind.isValue()) continue;
+        var at = decl.inst_start.int();
+        while (at < decl.inst_end.int() and at < out.len) : (at += 1) out[at] = @intCast(i);
+    }
+    return out;
+}
+
+fn ownerAt(owners: []const u32, inst: u32) ?u32 {
+    if (inst >= owners.len or owners[inst] == std.math.maxInt(u32)) return null;
+    return owners[inst];
 }
 
 /// I7 (checker-v2.md §2, §13.1): every term's argument count is its callee's
@@ -468,7 +526,9 @@ pub fn checkI7(
     gpa: Allocator,
     out: *std.ArrayList(Bir.Inst.Index),
 ) Allocator.Error!void {
-    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types, .interner = interner };
+    const owners = try d.instOwners(bir, gpa);
+    defer gpa.free(owners);
+    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types, .interner = interner, .owners = owners };
     const below = try gpa.alloc(bool, d.terms.len);
     defer gpa.free(below);
     var at = d.terms.len;
@@ -515,7 +575,7 @@ pub fn checkI7(
         }
         const missing = switch (tag) {
             .method_call, .type_dispatch => true,
-            .call => referenceCount(d, bir, interfaces, @enumFromInt(payload.lhs)) != 0,
+            .call => referenceCount(d, bir, interfaces, ownerAt(owners, @intCast(raw)), @enumFromInt(payload.lhs)) != 0,
             else => false,
         };
         if (missing) try out.append(gpa, inst);
@@ -578,6 +638,8 @@ const I7 = struct {
     interfaces: []const Interface,
     types: *const Types,
     interner: *const InternPool.Global,
+    /// Per instruction, its declaration (`instOwners`): empty with no `let` row.
+    owners: []const u32 = &.{},
     /// Per term: it and everything below it add up (`localOk`).
     below: []const bool = &.{},
 
@@ -617,8 +679,8 @@ const I7 = struct {
         const t = tag orelse return true;
         const data = bir.instData(site.inst);
         const expected: u32 = switch (t) {
-            .call => referenceCount(d, bir, cx.interfaces, @enumFromInt(data.lhs)),
-            .top, .ext_value, .local => referenceCount(d, bir, cx.interfaces, site.inst),
+            .call => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), @enumFromInt(data.lhs)),
+            .top, .ext_value, .local => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), site.inst),
             // A site the backend never reads: nothing to measure it against.
             else => return true,
         };
@@ -689,6 +751,8 @@ const I7 = struct {
             if (@as(u64, site.evidence.start) + site.evidence.len > d.args.len) continue;
             stack.clearRetainingCapacity();
             var owner: ?Term = null;
+            // A `let` callee's slots are its own list's (§13.1 *amended by R14*).
+            var let_slots: []const Requirement = &.{};
             if (site.callee.unwrap()) |callee| {
                 if (callee.int() >= d.terms.len) continue;
                 try stack.append(gpa, .{ .term = callee.int(), .ctx = 0, .method = .none });
@@ -701,12 +765,18 @@ const I7 = struct {
                     owner = switch (bir.instTag(ref)) {
                         .top => .{ .top = .{ .decl = @enumFromInt(data.lhs) } },
                         .ext_value => .{ .ext = .{ .module = @enumFromInt(data.lhs), .value = @enumFromInt(data.rhs) } },
+                        .local => blk: {
+                            if (ownerAt(cx.owners, site.inst.int())) |decl| if (d.localLet(bir, decl, data.lhs)) |i| {
+                                let_slots = d.letRequirements(i);
+                            };
+                            break :blk null;
+                        },
                         else => null,
                     };
                 }
             }
             for (d.argsAt(site.evidence), 0..) |t, k| {
-                const method: Symbol.Optional = if (owner) |o| (if (slotMethod(cx, o, k)) |m| m.toOptional() else .none) else .none;
+                const method: Symbol.Optional = if (owner) |o| (if (slotMethod(cx, o, k)) |m| m.toOptional() else .none) else if (k < let_slots.len) let_slots[k].method.toOptional() else .none;
                 try stack.append(gpa, .{ .term = t.int(), .ctx = 0, .method = method });
             }
             if (!try cx.placed(&seen, &stack, gpa)) try out.append(gpa, site.inst);

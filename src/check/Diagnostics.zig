@@ -26,7 +26,9 @@ const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
-const Env = @import("Env.zig").Env;
+const EnvFile = @import("Env.zig");
+const Resolve = @import("Resolve.zig");
+const Env = EnvFile.Env;
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
@@ -162,9 +164,10 @@ pub const Reporter = struct {
             try r.emit(.schema_conversion_mismatch, region, &out);
             return;
         }
-        // **A.30's boundary, said out loud.** A `let` binding whose type
-        // carries a method constraint is not generalised over it (§6.4 rule
-        // (a)), so a second use at another type arrives here as an ordinary
+        // **A.30's boundary, said out loud.** A `let` binding D5 does not
+        // generalise over a constrained variable (a dot-call's own
+        // requirement, or a value binding: checker-v2.md §8.4 *As built by
+        // R14*) meets a second use at another type here, as an ordinary
         // mismatch — and the numeric hints below would tell the author to
         // check their arithmetic. This one names the binding and the
         // constraint instead, and says what to do.
@@ -197,23 +200,63 @@ pub const Reporter = struct {
             (if (bir.locals[at].name.unwrap()) |sym| r.env.interner.slice(bir.symbols[sym]) else "it")
         else
             "it";
-        w.print(
-            \\
-            \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method, and such a
-            \\binding is used at ONE type inside the definition that holds it
-            \\(`docs/design/static-dispatch-spike.md` §6.4). The first use fixed the type;
-            \\this is the second.
-            \\
-            \\Move `{s}` out to a top-level declaration and annotate it with
-            \\`where … .{s} : …` to use it at two.
-            \\
-        , .{ name, article(r.env.interner.slice(found)), r.env.interner.slice(found), name, r.env.interner.slice(found) }) catch return error.OutOfMemory;
+        const method = r.env.interner.slice(found.method);
+        // Why the binding has one type (checker-v2.md §8.4 *As built by
+        // R14*): D5 generalises every other constrained `let` function.
+        switch (found.why) {
+            .dot_call => w.print(
+                \\
+                \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method only
+                \\through a dot-call, which could still turn out to call a record's field,
+                \\so the binding has ONE type inside the definition that holds it
+                \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
+                \\the second.
+                \\
+                \\Move `{s}` out to a top-level declaration and annotate it with
+                \\`where … .{s} : …` to use it at two.
+                \\
+            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
+            .value => w.print(
+                \\
+                \\Hint: `{s}` is a `let` value, with no parameters, whose type needs {s}
+                \\`{s}` method. A value is computed once, where it is written, so it has ONE
+                \\type inside the definition that holds it (`docs/design/checker-v2.md`
+                \\§8.4). The first use fixed the type; this is the second.
+                \\
+                \\Give `{s}` a parameter, or move it out to a top-level declaration
+                \\annotated with `where … .{s} : …`, to use it at two.
+                \\
+            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
+            .cap => w.print(
+                \\
+                \\Hint: `{s}` is a `let` binding whose type needs more than {d} methods, one
+                \\of them {s} `{s}` method, and past that many a `let` binding is not
+                \\generalised: it has ONE type inside the definition that holds it
+                \\(`docs/design/static-dispatch-spike.md` §10.11). The first use fixed the
+                \\type; this is the second.
+                \\
+                \\Move `{s}` out to a top-level declaration annotated with its `where`
+                \\clause to use it at two.
+                \\
+            , .{ name, Resolve.max_inferred_constraints, article(method), method, name }) catch return error.OutOfMemory,
+            .unreached => w.print(
+                \\
+                \\Hint: `{s}` is a `let` binding whose type needs {s} `{s}` method, and such a
+                \\binding is used at ONE type inside the definition that holds it
+                \\(`docs/design/checker-v2.md` §8.4). The first use fixed the type; this is
+                \\the second.
+                \\
+                \\Move `{s}` out to a top-level declaration and annotate it with
+                \\`where … .{s} : …` to use it at two.
+                \\
+            , .{ name, article(method), method, name, method }) catch return error.OutOfMemory,
+        }
         return true;
     }
 
-    /// The method that made `v`'s binding monomorphic, if any: a variable
-    /// inside `v`'s type is one §6.4 rule (a) held back.
-    fn monomorphicMethod(r: *Reporter, v: Var) ?Symbol {
+    /// The held variable that made `v`'s binding monomorphic, if any: a
+    /// variable inside `v`'s type that a `let` held back.
+    fn monomorphicMethod(r: *Reporter, v: Var) ?EnvFile.Monomorphic {
         if (r.env.monomorphic.items.len == 0) return null;
         const st = r.env.store;
         const seen = st.nextMark();
@@ -228,7 +271,7 @@ pub const Reporter = struct {
             if (st.mark(root) == seen) continue;
             st.setMark(root, seen);
             for (r.env.monomorphic.items) |m| {
-                if (st.find(m.v) == root) return m.method;
+                if (st.find(m.v) == root) return m;
             }
             const push = struct {
                 fn f(buf: *[64]Var, l: *usize, x: Var) void {

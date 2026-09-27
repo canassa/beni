@@ -109,6 +109,11 @@ fn noMethodsAs(s: *Solve, id: WantedId, root: Var, late: bool, shape: Diagnostic
     // A dot-call joined with a scheme's requirement is refused where the
     // requirement is (the use that needed a method), in every order (X1).
     const at = w.blocked_at.unwrap() orelse w.origin;
+    // One failure, one owner: a receiver that already refused another
+    // method at this very use (its `==`, as NOT EQUATABLE, when one
+    // instantiation of a `let` helper asks both) says nothing more there
+    // (R14's review N2).
+    if (s.evidence.rejected.contains(s.store().find(root)) and s.report.hasErrorAt(at)) return Resolve.reject(s, id, true);
     if (late) {
         try s.report.noMethodsOnShapeLate(at, w.method, root, shape);
     } else {

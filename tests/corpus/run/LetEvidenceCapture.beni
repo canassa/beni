@@ -1,0 +1,117 @@
+-- D5 (checker-v2.md §8.4 *As built by R14*, §12.3 case 2): a `let` function
+-- binding's evidence parameters `$l<inst>$<k>` (backend.md §4) are read by
+-- lexical capture, as a declaration's `$m$k` are (run/EvidenceCapture):
+--
+--   - `countEach`'s `eq` is read two closures down, inside `List.foldl`'s
+--     lambda inside `List.map`'s, and `countEach` is used at `Int` and at
+--     `String`;
+--   - `pairs` holds `both`, whose own `eq` is its parameter and whose
+--     `xs == xs` needs `pairs`'s — an inner binder capturing an outer one's
+--     evidence, with neither shadowing the other;
+--   - `go` is a recursive `let` with evidence: its self-call is a group call
+--     passing its own parameter, and a tail loop;
+--   - `isIn` and `notIn` call each other, a recursive `let` group of two;
+--   - `twice` is passed to `List.map` in value position, eta-expanded over
+--     its evidence.
+--
+-- Expected `2,1,2`, `2,1,2`, `True,True`, `3 1`, `False False` (`notIn`
+-- skips an element), `True,True`.
+import Node exposing (Program)
+
+
+tallies u =
+    let
+        countEach xs =
+            List.map xs (\x -> List.foldl xs 0 (\y n -> if x == y then n + 1 else n))
+    in
+    ( countEach [ 1, 2, 1 ], countEach [ "b", "a", "b" ] )
+
+
+nested u =
+    let
+        pairs xs =
+            let
+                both a b =
+                    a == b && xs == xs
+            in
+            List.map xs (\x -> both x x)
+    in
+    pairs [ 'a', 'b' ]
+
+
+loops u =
+    let
+        go ys acc =
+            case ys of
+                [] ->
+                    acc
+
+                y :: rest ->
+                    go rest (if y == y then acc + 1 else acc)
+    in
+    ( go [ 1, 2, 3 ] 0, go [ "a" ] 0 )
+
+
+mutual u =
+    let
+        isIn x ys =
+            case ys of
+                [] ->
+                    False
+
+                y :: rest ->
+                    y == x || notIn x rest
+
+        notIn x ys =
+            case ys of
+                [] ->
+                    False
+
+                _ :: rest ->
+                    isIn x rest
+    in
+    ( isIn 2 [ 1, 2 ], isIn "z" [ "a" ] )
+
+
+values u =
+    let
+        twice y =
+            [ y ] == [ y ]
+    in
+    List.map [ ( 1, 2 ) ] twice ++ List.map [ "a" ] twice
+
+
+text : Bool -> String
+text b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+ints : List Int -> String
+ints xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            tallies ()
+
+        ( c, d ) =
+            loops ()
+
+        ( g, h ) =
+            mutual ()
+    in
+    Node.printLines
+        [ ints a
+        , ints b
+        , String.join (List.map (nested ()) text) ","
+        , String.fromInt c ++ " " ++ String.fromInt d
+        , text g ++ " " ++ text h
+        , String.join (List.map (values ()) text) ","
+        ]

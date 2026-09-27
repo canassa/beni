@@ -401,6 +401,8 @@ const Lowerer = struct {
     /// Names the module has to import from another module, in first-use
     /// order so the import list is a function of the source.
     needed: std.ArrayList(Needed) = .empty,
+    /// The declaration being lowered: what a `local`'s index is relative to.
+    decl_index: ?u32 = null,
     /// The declaration being lowered: its locals and its parameter count.
     locals: []const Bir.Local = &.{},
     /// The JavaScript name of each local, parallel to `locals`, filled the
@@ -629,14 +631,33 @@ const Lowerer = struct {
     /// `no_tag`, so the printer spells it exactly; `$` cannot start a beni
     /// identifier, so no source name collides.
     ///
-    /// One level, no depth (A.31): only a top-level declaration has
-    /// evidence parameters (§6.4 rule (a)), and a lambda in its body reads
-    /// `$m$k` by ordinary lexical capture.
+    /// A lambda never has evidence parameters: it reads its enclosing
+    /// declaration's `$m$k`, and any enclosing `let`'s `$l<inst>$<k>`
+    /// (`letEvidenceName`), by ordinary lexical capture.
     fn evidenceName(l: *Lowerer, k: u32) !JsIr.NameIndex {
         var buf: [16]u8 = undefined;
         const spelled = std.fmt.bufPrint(&buf, "$m${d}", .{k}) catch unreachable;
         const base = try l.interner.getOrPut(l.gpa, spelled);
         return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    /// `$l<inst>$<k>`: the k-th evidence parameter of the `let` function
+    /// binding D5 generalised at `let_def` `inst` (checker-v2.md §8.4 *As
+    /// built by R14*, backend.md §4). The instruction makes it unique in the
+    /// declaration, so an inner binding never shadows an outer name a
+    /// closure inside it also captures.
+    fn letEvidenceName(l: *Lowerer, inst: Inst.Index, k: u32) !JsIr.NameIndex {
+        var buf: [32]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$l{d}${d}", .{ inst.int(), k }) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    /// The k-th evidence parameter of a declaration (`ev_let` none) or of
+    /// the `let` function binding at `ev_let`.
+    fn evidenceNameOf(l: *Lowerer, ev_let: Inst.OptionalIndex, k: u32) !JsIr.NameIndex {
+        const inst = ev_let.unwrap() orelse return l.evidenceName(k);
+        return l.letEvidenceName(inst, k);
     }
 
     /// `$in$<i>`: the loop slot of the i-th parameter of a function that
@@ -889,6 +910,7 @@ const Lowerer = struct {
         }
         const body = d.body.unwrap() orelse return;
         l.locals = l.bir.declLocals(d);
+        l.decl_index = index;
         l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
         @memset(l.local_names, .none);
 
@@ -909,7 +931,7 @@ const Lowerer = struct {
         switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, params, body, p);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p);
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
@@ -921,7 +943,7 @@ const Lowerer = struct {
             .lambda => {
                 const ld = l.bir.instData(body);
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, lambda_params, @enumFromInt(ld.rhs), p);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p);
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
             .applied => try l.constDecl(out, n, try l.appliedArrow(out, l.bir.symbol(d.name), evidence, use.arity, body, p), p),
@@ -1212,7 +1234,7 @@ const Lowerer = struct {
     /// The `Func` record for `params` and `body`: what both an `arrow` and
     /// a `func_decl` carry, built once so a `let` binding can choose which
     /// of the two it becomes without lowering the body twice.
-    fn functionOf(l: *Lowerer, evidence: u32, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
+    fn functionOf(l: *Lowerer, evidence: u32, ev_let: Inst.OptionalIndex, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
@@ -1220,11 +1242,11 @@ const Lowerer = struct {
         l.case_depth = 0;
         defer l.case_depth = depth;
         // The evidence parameters come FIRST, before the declaration's own
-        // (§8.1). `evidence` is zero for every lambda: §6.4 rule (a) keeps a
-        // nested binding from being generalised over a constrained
-        // variable, so only a top-level declaration ever has any (A.31).
+        // (§8.1): `$m$<k>` for a declaration, `$l<inst>$<k>` for a `let`
+        // function binding D5 generalised (`ev_let`, backend.md §4). A lambda
+        // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
-        while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceName(k));
+        while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
         for (params) |param| {
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
@@ -1321,6 +1343,9 @@ const Lowerer = struct {
         label: JsIr.NameIndex,
         self: Self,
         evidence: u32,
+        /// The `let_def` whose `$l…` names the evidence slots are, or `.none`
+        /// for a declaration's `$m…` (D5, backend.md §4).
+        ev_let: Inst.OptionalIndex = .none,
         slots: []Slot,
 
         /// Which reference, syntactically, names this function.
@@ -1362,6 +1387,7 @@ const Lowerer = struct {
         label: JsIr.NameIndex,
         self: Loop.Self,
         evidence: u32,
+        ev_let: Inst.OptionalIndex,
         params: []const Inst.Index,
         body: Inst.Index,
         p: u32,
@@ -1382,8 +1408,8 @@ const Lowerer = struct {
                 slot.carried = true;
             }
         }
-        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .slots = slots };
-        if (!l.markTails(body, &loop)) return l.functionOf(evidence, params, body);
+        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots };
+        if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body);
 
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
@@ -1394,7 +1420,7 @@ const Lowerer = struct {
         for (slots, 0..) |*slot, i| {
             const index: u32 = @intCast(i);
             slot.body = if (index < evidence)
-                try l.evidenceName(@intCast(index))
+                try l.evidenceNameOf(ev_let, @intCast(index))
             else if (slot.local != Loop.no_local)
                 try l.localName(slot.local)
             else if (l.bir.instTag(slot.pattern.unwrap().?) == .pat_wild)
@@ -1494,7 +1520,11 @@ const Lowerer = struct {
         const roots = l.rootsOf(inst);
         for (roots[0..@min(roots.len, loop.evidence)], 0..) |root, k| {
             const forwarded = switch (l.in.dispatch.term(root)) {
-                .param => |p| p.binder == .decl and p.k == k,
+                .param => |p| p.k == k and switch (p.binder) {
+                    .decl => loop.ev_let == .none,
+                    .let => |at| loop.ev_let == at.toOptional(),
+                    .derived => false,
+                },
                 else => false,
             };
             if (!forwarded) loop.slots[k].carried = true;
@@ -2106,7 +2136,7 @@ const Lowerer = struct {
                 // R2c, S1).
                 const height = l.expr_height;
                 l.expr_height = 0;
-                const record = try l.functionOf(0, params, @enumFromInt(d.rhs));
+                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs));
                 const body = l.expr_height;
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
                 if (body < lambda_spill) {
@@ -2383,7 +2413,7 @@ const Lowerer = struct {
         const value = try l.referenceName(inst);
         const site = l.in.dispatch.siteOf(inst) orelse return value;
         const roots = l.in.dispatch.argsAt(site.evidence);
-        const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, inst);
+        const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, inst);
         if (roots.len == 0 and expected == 0) return value;
         l.region = inst;
         if (try l.refuseEvidence(inst, roots, expected)) {
@@ -2422,6 +2452,7 @@ const Lowerer = struct {
         return switch (l.bir.instTag(inst)) {
             .top => Convention.ofDecl(l.in.dispatch, l.bir, d.lhs),
             .ext_value => Convention.ofImport(l.in.interfaces, @enumFromInt(d.lhs), d.rhs),
+            .local => if (l.decl_index) |decl| (if (l.in.dispatch.localLet(l.bir, decl, d.lhs)) |i| Convention.ofLet(l.in.dispatch, l.bir, i) else Convention.Use{ .convention = .plain, .evidence = 0, .arity = 0 }) else .{ .convention = .plain, .evidence = 0, .arity = 0 },
             else => .{ .convention = .plain, .evidence = 0, .arity = 0 },
         };
     }
@@ -2522,7 +2553,10 @@ const Lowerer = struct {
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
             // sits in (§8.1, §9).
-            .param => |param| try l.ownEvidence(param.k, p),
+            .param => |param| switch (param.binder) {
+                .let => |at| try l.ident(try l.letEvidenceName(at, param.k), p),
+                else => try l.ownEvidence(param.k, p),
+            },
             .primitive => |prim| try l.primitiveValue(prim, p),
             // Unreachable: `field` cannot be evidence (§8.2), `undetermined`
             // is answered by `termValue`, and a derived term goes through
@@ -4896,7 +4930,7 @@ const Lowerer = struct {
         // The list has to be as wide as the CALLEE's own evidence, which is
         // the callee's record and not this call's; the two disagreeing is
         // the miscompile §7.2 says the table exists to catch.
-        if (try l.refuseEvidence(inst, roots, l.in.dispatch.referenceCount(l.bir, l.in.interfaces, callee_inst))) {
+        if (try l.refuseEvidence(inst, roots, l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee_inst))) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
@@ -5104,6 +5138,10 @@ const Lowerer = struct {
                     );
                     const n = try l.localName(payload.local);
                     const self: Loop.Self = .{ .local = payload.local };
+                    // A function binding D5 generalised takes its evidence
+                    // first, named `$l<inst>$<k>` (backend.md §4).
+                    const evidence: u32 = if (l.in.dispatch.letIndex(def)) |i| l.in.dispatch.lets[i].requirements.len else 0;
+                    const ev_let: Inst.OptionalIndex = if (evidence != 0) def.toOptional() else .none;
                     if (params.len == 0) {
                         // §8 again: `go = \i acc -> …` inherits the binding's
                         // name exactly as `go i acc = …` does.
@@ -5115,7 +5153,8 @@ const Lowerer = struct {
                             const lambda_record = try l.functionOrLoop(
                                 n,
                                 self,
-                                0,
+                                evidence,
+                                ev_let,
                                 lambda_params,
                                 @enumFromInt(ld.rhs),
                                 lambda_p,
@@ -5132,7 +5171,7 @@ const Lowerer = struct {
                     // `function` (§8's cases table), so the loop is
                     // contained; excluding it would leave the language's
                     // most natural loop idiom overflowing.
-                    const record = try l.functionOrLoop(n, self, 0, params, @enumFromInt(d.rhs), p);
+                    const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @enumFromInt(d.rhs), p);
                     try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
                 },
                 .let_pattern => {

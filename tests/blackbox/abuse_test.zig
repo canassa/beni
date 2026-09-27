@@ -1905,19 +1905,21 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     try testing.expectEqualStrings("", r.stdout);
 }
 
-test "a monomorphic let helper used at `a` and `List a` is an infinite type within seconds" {
+test "a constrained let helper used at `a` and `List a` checks, within seconds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // Queue row 76. A constrained `let` helper is monomorphic
-    // (static-dispatch-spike.md §11), so `inner x y` and then
-    // `inner [ x ] [ y ]` make `x ~ List x`. The occurs check waits for
-    // generalisation (design §7 #3), and until then the method obligation on
-    // that cyclic receiver asked for the element's method forever: 875f623
-    // panicked after 2^20 rounds (about 10 s), and the row 72 tree grew a
-    // million dispatch sites and never finished. The drain now asks whether
-    // the receiver is cyclic every `Solver.cycle_check_depth` generations.
-    // The limit is the assertion: the old panic took 10 s, a hang forever.
+    // Queue row 76, CK-37. Until R14 a constrained `let` helper was
+    // monomorphic (static-dispatch-spike.md §6.4 rule (a)), so `inner x y`
+    // and then `inner [ x ] [ y ]` made `x ~ List x`, and the method
+    // obligation on that cyclic receiver asked for the element's method
+    // forever: 875f623 panicked after 2^20 rounds (about 10 s), and the row
+    // 72 tree grew a million dispatch sites and never finished. From
+    // 7427828 to R13 it was one `infinite_type`. Under D5 (checker-v2.md
+    // §8.4 *As built by R14*) `inner` generalises — each body's requirement
+    // is an operator's, not a dot-call's own — so its two uses are two
+    // instantiations and every body checks: exit 0, no diagnostic. The limit
+    // is still the assertion: whatever the answer, it must come at once.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const bodies = [_][]const u8{
@@ -1952,8 +1954,9 @@ test "a monomorphic let helper used at `a` and `List a` is an infinite type with
             std.debug.print("[{s}] did not exit normally: {any}\n", .{ body, r.term });
             return error.CompilerDiedFromSignal;
         }
-        try testing.expectEqual(@as(u8, 1), r.exit_code);
-        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
-        try testing.expectEqual(diagnostic.Code.infinite_type, r.diagnostics[0].code);
+        if (r.exit_code != 0) std.debug.print("[{s}] stderr:\n{s}\n", .{ body, r.stderr });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+        try testing.expectEqualStrings("", r.stdout);
     }
 }

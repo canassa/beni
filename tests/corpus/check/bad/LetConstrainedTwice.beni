@@ -1,9 +1,12 @@
--- check/bad: §6.4 rule (a) and §10.5. A `let` binding is never generalised
--- over a variable carrying a method constraint (until D5, R14), so `show` is
--- monomorphic inside `report`, the first use pins it to `Int`, and the
--- second is a conflict rather than a second instantiation. Since R11 `Int`'s
--- missing `render` is reported first, where `show n` pins it (eager draining,
--- checker-v2.md §9.1). The fix is a top-level annotated declaration.
+-- check/bad: D5 as the owner amended it on 2026-09-26 (checker-v2.md §8.4
+-- *As built by R14*, rule 3). `show`'s only requirement is `x.render 1`, a
+-- dot-call's own, which could still be a record's field call, so a `let`
+-- does not generalise over it: `show` is monomorphic inside `report`, the
+-- first use pins it to `Int`, and the second is a conflict rather than a
+-- second instantiation. `Int`'s missing `render` is reported first, where
+-- `show n` pins it (eager draining, checker-v2.md §9.1). Before R14 this was
+-- rule (a) (§6.4) for every constrained `let`; the hint now says why this
+-- one holds. The fix is a top-level annotated declaration.
 pub report : Int, String -> String
 report n s =
     let

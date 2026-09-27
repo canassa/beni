@@ -24,8 +24,9 @@
 //!      is poisoned (§8.2, CK-04, CK-57). No `touched` walk: §18's fallback.
 //!      Then from every wanted's method type and open obligation riding on the
 //!      pool (R6a);
-//!   5. quantify what is still at the young rank — at a `let`, what carries
-//!      a wanted is held at the enclosing rank first (rule (a), until R14);
+//!   5. quantify what is still at the young rank — at a `let`,
+//!      what D5 does not generalise is held at the enclosing rank first
+//!      (`Resolve.holdLet`, §8.4 *As built by R14*);
 //!   6. check every annotated binding's rigids (§8.3, I1): still rigid, and
 //!      generalised — an escaped one is `rigid_mismatch` at its first
 //!      capture (CK-01), and the binding's scheme is poisoned;
@@ -770,10 +771,11 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     const f = s.frame();
     const requirements = s.evidence.wanteds.items.len != f.wanteds_start or s.obligations.rows.items.len != f.rows_start;
     if (requirements) try s.occursRequirements(&run);
-    // 5. Quantify. A `let` keeps rule (a) until R14 (§8.4's
-    // `let_constrained_monomorphic` switch): what carries a wanted stays
-    // at the enclosing rank, with its method types (I15).
-    if (!top and requirements) try s.holdConstrained(rank);
+    // 5. Quantify. At a `let`, what §8.4 *As built by R14* does not
+    // generalise (D5: no function binding reaches it, a value binding does,
+    // or only dot-calls ride on it) stays at the enclosing rank, with its
+    // method types (I15).
+    if (!top and requirements) try Resolve.holdLet(s, rank, binders);
     s.carriers.clearRetainingCapacity();
     s.resolver.wanters.clearRetainingCapacity();
     s.generalisations += try Generalize.quantify(s.store(), gpa, s.frames.items, rank, &s.carriers, &s.resolver.wanters);
@@ -783,6 +785,8 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // escaped one stays attached to it (I3). At the top level, promotion and
     // the proven-undetermined default (§9.4).
     try Decide.close(s);
+    // A `let` function binding's own requirements are promoted to it (D5).
+    if (!top and s.resolver.wanters.items.len != 0) try Resolve.closeLet(s, binders);
     if (members) |m| {
         if (s.resolver.wanters.items.len != 0) {
             // Step 7 unifies nothing in R6a: a default answers `undetermined`, a
@@ -828,26 +832,6 @@ fn occursRequirements(s: *Solve, run: *Walk.Occurs) Error!void {
                 run.restart(st);
             }
         }
-    }
-}
-
-/// Rule (a) of static-dispatch-spike.md §6.4, kept until R14 (§8.4's
-/// switch): a `let` does not generalise a variable that carries a wanted.
-/// It and its method types drop to the enclosing rank (so step 5 hands them
-/// to the enclosing frame), and the binding's uses share one type — which
-/// `type_mismatch` names (`Env.monomorphic`, v1's hint).
-fn holdConstrained(s: *Solve, rank: u32) Error!void {
-    const st = s.store();
-    for (s.frame().pool.items) |v| {
-        if (st.find(v) != v or st.rank(v) < rank) continue;
-        const flags = switch (st.content(v)) {
-            .flex => |f| f,
-            else => continue,
-        };
-        const set = Walk.constraints(flags);
-        if (set.count(st) == 0) continue;
-        try s.report.monomorphic.append(s.cx.scratch, .{ .v = v, .method = set.at(st, 0).name });
-        try Walk.lowerTo(st, &s.stacks, s.cx.gpa, v, rank - 1);
     }
 }
 

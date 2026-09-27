@@ -46,6 +46,11 @@ pub const Binder = struct {
     /// attributed to (§15.2, review S10).
     decl: ?u32 = null,
     kind: Kind = .pattern,
+    /// A `let` or top-level header, whatever `kind` says: `bindersEnd`
+    /// rewrites a `let` header inside a lambda or a branch to `.ended` (its
+    /// occurs check is done), and D5 still needs to know it is a header
+    /// (`Resolve.holdLet`, R14's review B1).
+    header: bool = false,
 
     pub const Kind = enum(u8) {
         /// A pattern variable or parameter, checked at the boundary.

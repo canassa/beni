@@ -1,0 +1,23 @@
+-- emit: a `let` function binding D5 generalised takes its evidence as
+-- hidden leading parameters named `$l<inst>$<k>` after its `let_def`
+-- instruction (backend.md §4, checker-v2.md §8.4 *As built by R14*, §20.3
+-- item 3), and every use passes its own first: `inner` is called with
+-- `$m$0`, the declaration's `eq` for `a`, and with the list `eq` built from
+-- it. `$l…` never shadows `$m$0`, which `inner`'s body does not need but a
+-- closure inside it could capture.
+import Node exposing (Program)
+
+
+pub pairEq : a, a -> Bool
+    where a.eq : a, a -> Bool
+pairEq x y =
+    let
+        inner a b =
+            a == b
+    in
+    inner x y && inner [ x ] [ y ]
+
+
+main : Program
+main =
+    Node.printLines []

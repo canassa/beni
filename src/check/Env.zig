@@ -19,8 +19,28 @@ pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
-/// One `let` binding rule (a) refused to generalise; see `Env.monomorphic`.
-pub const Monomorphic = struct { v: Var, method: Symbol };
+/// One variable a `let` held at the enclosing rank rather than generalise
+/// (checker-v2.md §8.4 *As built by R14*); see `Env.monomorphic`.
+pub const Monomorphic = struct {
+    v: Var,
+    method: Symbol,
+    why: Why,
+
+    pub const Why = enum(u8) {
+        /// Only dot-calls' own requirements ride on it (D5's row of
+        /// 2026-09-26): the call may still be a record's field.
+        dot_call,
+        /// A `let` value or pattern binding reaches it (the value
+        /// restriction).
+        value,
+        /// No function binding of the `let` reaches it: it is decided, or
+        /// defaulted, where it escapes to.
+        unreached,
+        /// A function binding over `max_inferred_constraints` (spike §10.11)
+        /// is held whole, as before D5 (R14's review B2).
+        cap,
+    };
+};
 
 /// What the texts read of one module's check: its own Bir, the interfaces
 /// of its imports and the store it owns (checker.md §4.4).

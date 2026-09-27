@@ -107,7 +107,7 @@ const perm_programs = [_]PermProgram{
     .{ .name = "t102", .path = "tests/corpus/check/bad/RecursiveGroupRefusalRendering.beni", .expect = .{ .refused_region = .not_equatable } },
     .{ .name = "hint2", .path = "tests/corpus/check/bad/RecursiveGroupHintOneMember.beni", .expect = .{ .refused = .kind_mismatch } },
     .{ .name = "hint1", .path = "tests/corpus/check/bad/RecursiveGroupHintAllMembers.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "p3n", .path = "tests/corpus/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "p3n", .path = "tests/corpus/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .type_mismatch } },
     .{ .name = "merge-at-boundary", .path = "tests/corpus/run/MergeAtBoundary", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/MergeAtBoundary/_expected.expected" } },
     // R7's round-2 review: a dot-call joined with a scheme's requirement (X1),
     // both halves of the rule (S2), a `number` receiver's method in a group
@@ -163,6 +163,13 @@ const perm_programs = [_]PermProgram{
     .{ .name = "ck120-in-flight", .path = "tests/corpus/check/bad/EquatableMarkerInFlightSchema.beni", .expect = .{ .refused = .not_equatable } },
     .{ .name = "ck118-joint", .path = "tests/corpus/check/good/SchemaViaMutualOwnType.beni", .expect = .checks },
     .{ .name = "ck118-record", .path = "tests/corpus/check/good/SchemaRecordViaWrapped.beni", .expect = .checks },
+    // R14 (D5, checker-v2.md §8.4 *As built by R14*): a `let` helper with a
+    // dot-call's own requirement inside a merged group keeps its field call;
+    // `let` function bindings with evidence, recursive and mutual; the
+    // row-76 helper and a helper used at two types, across two modules.
+    .{ .name = "r14-field-merged", .path = "tests/corpus/run/LetFieldCallInMergedGroup.beni", .expect = .{ .prints = "tests/corpus/run/LetFieldCallInMergedGroup.expected" } },
+    .{ .name = "r14-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
+    .{ .name = "r14-polymorphic", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
 };
 
 test "PERM: every declaration order of an own-method program does what its twin says" {
