@@ -1,3 +1,0 @@
-# At the second `Box` comparison (line 22); which region of it, the operator
-# or an operand, is R7's to bless.
-type_mismatch 22:* contains "recursive through method calls"

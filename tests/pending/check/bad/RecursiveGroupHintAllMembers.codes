@@ -1,2 +1,0 @@
-# At `q "s"`: the final class, in every order.
-kind_mismatch 35:14 contains "recursive group (`ma`, `mb`, `md`)"

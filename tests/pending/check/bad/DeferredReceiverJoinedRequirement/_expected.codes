@@ -1,3 +1,0 @@
-# One per module, at `h x` (the use that needs a method), in both `let` orders.
-no_methods_on_shape PFirst.beni:22:13
-no_methods_on_shape QFirst.beni:9:13

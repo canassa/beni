@@ -7,16 +7,15 @@
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!
-//! And four that are NOT gates — the first two because their fixtures are red
-//! by design, the third because a timing claim is not a gate (rule 4), the
-//! fourth because it holds the checker under construction (report mode, R4a–R8b):
+//! And three that are NOT gates — the first two because their fixtures are red
+//! by design, the third because a timing claim is not a gate (rule 4):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf; §2.5)
-//!   zig build test-v2             the corpus and the determinism scenarios
-//!                                 under --checker=v2, strict (R9–R11)
+//! (`test-v2`, the corpus under `--checker=v2` while v1 was the default, was
+//! deleted at the cut-over, R11: every step above now runs v2 by default.)
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
@@ -184,6 +183,7 @@ pub fn build(b: *std.Build) void {
         "tests/blackbox/frontend_test.zig",
         "tests/blackbox/iface_test.zig",
         "tests/blackbox/matrix_test.zig",
+        "tests/blackbox/ordering_test.zig",
     }) |root| {
         // The walker's knobs are pinned on every binary, not only the
         // walker: `run.setEnvironmentVariable` is the one place a test's
@@ -192,9 +192,9 @@ pub fn build(b: *std.Build) void {
     }
     // The corpus's knobs (`plans/checker-rewrite.md` §2.4), pinned EMPTY —
     // which the walker reads as unset — so a variable exported in the
-    // developer's shell (`BENI_CHECKER=v2 zig build test-blackbox`) cannot
+    // developer's shell (`BENI_CHECKER=v1 zig build test-blackbox`) cannot
     // turn the gate into something else; only the part differs per process.
-    // `test-v2`, below, is the same loop with `.checker = "v2"`.
+    // Unset is the default checker, v2 since the cut-over (R11).
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     for (std.enums.values(corpus_parts.Part)) |part| {
         blackbox_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
@@ -205,9 +205,9 @@ pub fn build(b: *std.Build) void {
     // walker in pending mode over `tests/pending/`, and the scenarios of
     // `pending_test.zig`. A fixture here is EXPECTED to be red: the step
     // fails only when one is malformed, green under the default checker
-    // (promote it), claimed and red under v2, or red for another reason than
-    // `tests/pending/RED` records. Never part of `test-blackbox`, so the three
-    // gates never run a red fixture.
+    // (promote it), or red for another reason than `tests/pending/RED`
+    // records. Never part of `test-blackbox`, so the three gates never run
+    // a red fixture.
     //
     // Two steps. `test-pending` runs the pending corpus and the scenarios
     // that measure no time (`BENI_PENDING_SCENARIOS=fast`), in parallel, on
@@ -216,66 +216,22 @@ pub fn build(b: *std.Build) void {
     // are ReleaseFast budgets — and alone, one scenario after another: a
     // ratio is CPU time, but a machine busy on every core still perturbs the
     // caches and clocks it is measured on (§2.5).
+    //
+    // One run each, under the default checker. Until the cut-over (R11)
+    // each step ran twice — v1, the default, then `--checker=v2` — and
+    // `test-v2` ran the corpus and the determinism and incrementality
+    // scenarios under v2; with v2 the default, `test-blackbox` is that run,
+    // and v1, frozen, is reached only by the scenarios that name
+    // `--checker=v1` to compare the two (deleted with it at R12).
     const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode, and the non-timing scenarios");
-    // Runs 1 and 2 of `plans/checker-rewrite.md` §2.4: the default checker,
-    // then `--checker=v2` (from R4a, with the flag). Rules (a)–(d) hold under
-    // both, so a fixture red under v2 has a `v2` line in `RED` too.
     pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending" }).step);
-    pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending", .checker = "v2" }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
-    // The scenarios under `--checker=v2` too (R7): a claimed scenario is held
-    // to rule (c) only where it runs under v2 (`scenario/PERM`).
-    pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast", .checker = "v2" }).step);
-
-    // `test-v2` (`plans/checker-rewrite.md` §2.4, `checker-v2.md` §22.2): the
-    // whole corpus under `--checker=v2`, part by part as `test-blackbox` runs
-    // it. STRICT from R9: every fixture must pass except those
-    // `tests/pending/v2-expected.md` lists, which are skipped. (R4a–R8b ran
-    // it in a report mode with the `v2-green.txt` ratchet, S12.) Beside the
-    // corpus, the determinism scenarios (`checker-v2.md` §17): the `--jobs`
-    // tests of `blackbox_test.zig`, `build_test.zig` and `abuse_test.zig`
-    // (the 600-module one among them), selected by name and run with
-    // `BENI_CHECKER=v2`, which `world.zig`'s `checkerFlag` turns into
-    // `--checker=v2` on every `build`, `check` and `dump`. Deleted at R12.
-    // Not a gate.
-    const v2_step = b.step("test-v2", "Run the corpus and the determinism scenarios under --checker=v2, strict but for tests/pending/v2-expected.md (plans/checker-rewrite.md §2.4)");
-    for (std.enums.values(corpus_parts.Part)) |part| {
-        v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .checker = "v2", .part = @tagName(part) }).step);
-    }
-    // Each filtered binary must hold `tests` tests — its scenarios and the
-    // file's `test-v2 guard`, which checks the count (`world.zig`'s
-    // `expectFilteredTests`; R9b): a renamed scenario that no filter matches
-    // fails the step instead of silently running nothing.
-    for ([_]struct { root: []const u8, filters: []const []const u8, tests: []const u8 }{
-        .{ .root = "tests/blackbox/blackbox_test.zig", .filters = &.{"--jobs=1 and --jobs=8"}, .tests = "7" },
-        .{ .root = "tests/blackbox/build_test.zig", .filters = &.{"byte-identical at every --jobs"}, .tests = "3" },
-        .{ .root = "tests/blackbox/abuse_test.zig", .filters = &.{ "600 modules check identically", "empty modules produce identical output" }, .tests = "3" },
-    }) |d| {
-        v2_step.dependOn(&bb.run(bb.filtered(d.root, d.filters), .{ .root = "tests/corpus", .checker = "v2", .expected_tests = d.tests }).step);
-    }
-    // The incrementality scenarios (`plans/checker-rewrite.md` R10): every
-    // cache, cutoff, matrix and digest scenario, whole, under
-    // `BENI_CHECKER=v2`. A scenario that compares the two checkers names
-    // each run's checker itself, and `world.zig` then adds none.
-    for ([_][]const u8{
-        "tests/blackbox/cache_test.zig",
-        "tests/blackbox/cutoff_test.zig",
-        "tests/blackbox/digest_test.zig",
-        "tests/blackbox/matrix_test.zig",
-    }) |root| {
-        v2_step.dependOn(&bb.run(bb.artifact(root), .{ .root = "tests/corpus", .checker = "v2" }).step);
-    }
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
     const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });
     perf_run.step.dependOn(&perf_install.step);
     perf_step.dependOn(&perf_run.step);
-    // Then again under `--checker=v2` (R7: `scenario/NEST-UNDER`), after the
-    // default checker's run and never beside it.
-    const perf_run_v2 = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni", .checker = "v2" });
-    perf_run_v2.step.dependOn(&perf_run.step);
-    perf_step.dependOn(&perf_run_v2.step);
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`):
     // promoted out of `test-pending-perf` when a slice turns one green, and
@@ -611,8 +567,7 @@ fn collectFiles(
 /// run MEANS: the corpus walker's four knobs (`tests/blackbox/corpus_test.zig`'s
 /// `Config`, `plans/checker-rewrite.md` §2.4, S11), its part
 /// (`corpus_parts.zig`), which pending scenarios run (`pending_test.zig`) and
-/// which binary is under test (`world.zig`'s `exePath`), and how many tests a
-/// filtered binary holds (`expectFilteredTests`). An empty value is
+/// which binary is under test (`world.zig`'s `exePath`). An empty value is
 /// the harness's "unset": every field but the root defaults to it.
 const HarnessEnvironment = struct {
     root: []const u8,
@@ -623,9 +578,6 @@ const HarnessEnvironment = struct {
     scenarios: []const u8 = "",
     /// Relative to the install prefix; empty is `bin/beni`, the Debug build.
     exe: []const u8 = "",
-    /// How many tests a name-filtered binary must hold (`test-v2`'s
-    /// determinism scenarios); empty for every other binary.
-    expected_tests: []const u8 = "",
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -647,24 +599,10 @@ const Blackbox = struct {
         });
     }
 
-    /// `artifact` compiled with only the tests whose names contain one of
-    /// `filters` (`test-v2`'s determinism scenarios).
-    fn filtered(bb: Blackbox, root: []const u8, filters: []const []const u8) *std.Build.Step.Compile {
-        return bb.b.addTest(.{
-            .filters = filters,
-            .root_module = bb.b.createModule(.{
-                .root_source_file = bb.b.path(root),
-                .target = bb.target,
-                .optimize = bb.optimize,
-                .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
-            }),
-        });
-    }
-
     /// One process of `t`, after the install step, cwd = repo root, with
     /// every variable of `env` set explicitly — whatever the developer's
     /// shell exports: the Run step otherwise hands the child the build's
-    /// whole environment, and one stray `export BENI_CHECKER=v2` would
+    /// whole environment, and one stray `export BENI_CHECKER=v1` would
     /// silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = bb.b.addRunArtifact(t);
@@ -677,7 +615,6 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_EXE", if (env.exe.len == 0) "" else bb.b.getInstallPath(.prefix, env.exe));
-        r.setEnvironmentVariable("BENI_EXPECTED_TESTS", env.expected_tests);
         return r;
     }
 };

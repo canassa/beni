@@ -864,3 +864,35 @@ fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
     try out.print(arena, "    in\n    List.length x{d}\n", .{n});
     return out.items;
 }
+
+// NEST-UNDER, R7's nesting scenario (S-3; checker-v2.md §10.2), claimed by
+// R7 and promoted from `pending_test.zig` at the cut-over (R11): chains of
+// own methods `m0 … mn` on one type, each calling the next, written in
+// REVERSE dependency order (`m0`, which needs `m1`, first), so checking `m0`
+// nests `m1`, which nests `m2`, and so on. 40 chains of 250 and of 500
+// links, below the nesting budget, check in linear time. Each chain's depth
+// doubles with n; a nesting cost that grew with the depth — a queue or a
+// frame walk per nesting — reads as 4. Calibration (ReleaseFast, CPU): v2 on
+// R7 77 / 151 ms, a ratio of 1.96; v1 refused every link above its
+// definition (METHOD NEEDS AN ANNOTATION), red by its codes, not by time.
+test "NEST-UNDER: a reverse-ordered chain of own methods checks in linear time (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("C.beni", try chains(s.arena(), 40, 250));
+    try s.w.write("C2.beni", try chains(s.arena(), 40, 500));
+    const verdict = try s.ratioWith("C.beni", "C2.beni", 250, &.{"--checker=v2"});
+    try s.finish("NEST-UNDER", verdict);
+}
+
+/// `count` chains of `n + 1` own methods, chain `c` on type `Tc`:
+/// `pub mc_0 (Tc x) u = (Tc x).mc_1 ()` … `pub mc_n (Tc x) u = x`, each
+/// written BEFORE the one it calls.
+fn chains(arena: std.mem.Allocator, count: usize, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (0..count) |c| {
+        try out.print(arena, "type T{d}\n    = T{d} Int\n\n\n", .{ c, c });
+        for (0..n) |i| try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    (T{d} x).m{d}_{d} ()\n\n\n", .{ c, i, c, c, c, i + 1 });
+        try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    x\n\n\n", .{ c, n, c });
+    }
+    return out.items;
+}

@@ -1,7 +1,0 @@
-# One per self-applied lambda parameter `y` — two in `g`, one in `f`.
-# checker-v2.md §6.3's `binders_end` node occurs-checks a lambda's
-# parameters when its body ends, before the application meets its argument,
-# so `f`'s `"s"` adds no second diagnostic (design review S4).
-infinite_type 19:15
-infinite_type 19:27
-infinite_type 26:7

@@ -223,8 +223,8 @@ pub const Options = struct {
     /// anything downstream reads them.
     roundtrip_frontend: bool = false,
     /// `--checker=v1|v2` (`Cli.Common.checker`, checker-v2.md §22.1): which
-    /// checker checks the root package. A term of every cache key (§14.3).
-    checker: Check.Checker = .v1,
+    /// checker checks the modules; v2 since the cut-over (R11). A cache-key term (§14.3).
+    checker: Check.Checker = .v2,
     /// `--frontend-keys` (`Cli.Cache`, `frontend.md` §1): make `check` print
     /// one `<path> <32 hex digits>` line per file on stdout, sorted by path.
     frontend_keys: bool = false,

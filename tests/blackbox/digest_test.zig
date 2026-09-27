@@ -13,7 +13,7 @@
 //! type's constructor payload becomes a function, the type stops being
 //! `equatable`, and the declaring module's interface hash does not move by one
 //! byte (measured here and in the plan: `app:Leaf 5c2c9081…` on both sides).
-//! Under `--checker=v2` (`test-v2`) the record states it and the hash moves
+//! Under checker v2 (the default since R11) the record states it and the hash moves
 //! too (the row's `hashes_v2`; checker-v2.md §14.3 *as built by R10*).
 //! Row 13 is §6.2's — a `pub type alias` whose body no scheme of its own module
 //! mentions has its expansion nowhere in the record, and renaming a field of it

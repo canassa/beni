@@ -1,8 +1,8 @@
 -- A regression guard from the checker-v2 design review (round 1, B3; plans/
 -- checker-rewrite.md §5.1): `y = x?` and then `y` and `x` in the same
 -- position make `x`'s type contain itself, whichever shape `?` settles on
--- — an infinite type, not a `?` defaulted into a cycle. 7427828 reports it;
--- checker-v2's deferred `?` (D2, §8.6) must too.
+-- — an infinite type, not a `?` defaulted into a cycle. Since R11 it is
+-- reported at the binder `x`, as `a = Result b a` (CK-04, CK-57; D2, §8.6).
 f x =
     let
         y =

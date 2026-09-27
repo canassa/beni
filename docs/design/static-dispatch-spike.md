@@ -441,7 +441,7 @@ falls through to the module rule and finds `Basics.toString` or fails there.
 
 ### 3.3 Derivation, and who wins
 
-> **Checker v2 (2026-09-24), owner decision D1 (amended the same day).** A private method answers dispatch only for uses inside its module, including structural shapes (records, tuples, lists) derived there. It is still the module's method for every type the module declares, under the module rule: step 1 below is unchanged by privacy; from any other module, reaching it directly or through derivation is `private_method`. A.63's "a private `eq` still lets every other module derive" is superseded ([`checker-v2.md`](checker-v2.md) §11.3). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24), owner decision D1 (amended the same day).** A private method answers dispatch only for uses inside its module, including structural shapes (records, tuples, lists) derived there. It is still the module's method for every type the module declares, under the module rule: step 1 below is unchanged by privacy; from any other module, reaching it directly or through derivation is `private_method`. A.63's "a private `eq` still lets every other module derive" is superseded ([`checker-v2.md`](checker-v2.md) §11.3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 For a name that is not in the table, resolution of `(T, name)` is:
 
@@ -724,7 +724,7 @@ There are no `Set.String` / `Set.Int` modules to delete.
 
 ## 6. The checker
 
-> **Checker v2 (2026-09-24).** §6.1–§6.4 and §6.3.1's capability paragraphs are replaced by [`checker-v2.md`](checker-v2.md) §4 and §7–§11: wanteds with evidence variables instead of constraint sets carrying sites, resolution outside `unify`, instance lookup by matching a method's head, one derived-context fixpoint instead of capability settling, deferral instead of priority groups. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24).** §6.1–§6.4 and §6.3.1's capability paragraphs are replaced by [`checker-v2.md`](checker-v2.md) §4 and §7–§11: wanteds with evidence variables instead of constraint sets carrying sites, resolution outside `unify`, instance lookup by matching a method's head, one derived-context fixpoint instead of capability settling, deferral instead of priority groups. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 This section extends `checker.md` §5 (the type store), §6.2 (solving), §6.3 (generalisation), §6.4
 (obligations) and §7 (the interface record). It is written as **rules**: an implementer building
@@ -1054,7 +1054,7 @@ must report first". `tests/corpus/check/depth/ConstraintChain{Ok,Deep}.beni` is 
 
 ### 6.4 Generalisation and promotion
 
-> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. Rule (a) itself still holds until R14 builds D5: since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27) it holds as checker v2's rule (the `let_constrained_monomorphic` switch), so this section stays normative until R14.
 
 Constraints ride on `Flags`, so `generalize` and `makeCopy` carry them within a module for free,
 with one addition: **`copyHelp` must copy each constraint's `fn_var` through the same memo** as the
@@ -2122,7 +2122,7 @@ const Main$compare$unit = (x, y) => "EQ";
 
 ### 9.4 Nominal types
 
-> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11). *Built by R8a (2026-09-26) for `--checker=v2`: the context is inferred per type by `check2/Contexts.zig` and published in interface v3 (checker-v2.md §14.2 as amended by R8a); every type the corpus emits compares each parameter with the derived method, so its function is unchanged byte for byte.*
+> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it. *Built by R8a (2026-09-26) for `--checker=v2`: the context is inferred per type by `check2/Contexts.zig` and published in interface v3 (checker-v2.md §14.2 as amended by R8a); every type the corpus emits compares each parameter with the derived method, so its function is unchanged byte for byte.*
 
 > **The wide form** (§9.2, A.87) applies here too: a nominal derived function with more than 4 096 evidence parameters takes them as one array `$m`, and its callers pass one array literal.
 
@@ -2896,7 +2896,7 @@ plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 > refusal. A use of a module's own untyped method checks that method's group nested **at the
 > moment of the use** ([`checker-v2.md`](checker-v2.md) §10,
 > slice R7). The code survives for one non-ordering case: a derived context entry indexed by a type
-> parameter that depends on an in-flight inferred method (`checker-v2.md` §11.2). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> parameter that depends on an in-flight inferred method (`checker-v2.md` §11.2). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 Appended 2026-09-23, after §10.11, so no number above it moves (A.86).
 
@@ -2923,7 +2923,7 @@ no-silent-wrong-answer. *Alternative*, and the proper fix: order such a method's
 group that uses it, or defer the use until the method is solved. Uses are only known once types
 are, so neither is a syntactic edge, and a method and its user can be mutually recursive.
 
-Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form).
+Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form), until the cut-over (R11): under D3 the program is valid, and it is `tests/corpus/run/OwnEqCheckedAfterItsUse/`, which prints both answers.
 
 ---
 
@@ -4243,7 +4243,7 @@ too. A use that reaches the module's own untyped method is `method_needs_annotat
 an `err` site that reaches the emitter is `internal`. *Why not the alternative* — deferring the whole
 comparison until every part is pinned — a part can stay a flex through generalisation, and then its
 answer is evidence the comparison could not name before the promotion. Fixtures:
-`tests/corpus/run/DerivedPartTypedLater/`, `tests/corpus/check/bad/MethodNeedsAnnotation/`, and the
+`tests/corpus/run/DerivedPartTypedLater/`, `tests/corpus/check/bad/MethodNeedsAnnotation/` (since R11 `tests/corpus/run/OwnEqCheckedAfterItsUse/`, D3), and the
 changed `crossed` line of `tests/corpus/dispatch/ErrParts.dispatch`.
 
 A part site made one old non-termination visible as a hang (queue row 76): a monomorphic constrained

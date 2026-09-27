@@ -1,1 +1,0 @@
-infinite_type Main.beni:5:5 contains "a = Maybe a" lacks "List"

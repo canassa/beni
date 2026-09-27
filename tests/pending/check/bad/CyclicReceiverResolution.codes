@@ -1,6 +1,0 @@
-# One per form, each at its `==`: pinned by R6a (2026-09-25). The eager drain
-# after the node that closes `y = ( y, y )` runs the resolver's cycle-safe
-# walk before any `binders_end` (checker-v2.md §9.5, *Which defence fires
-# first is fixed*), so the use reports it and the parameter's check is silent.
-infinite_type 13:22 contains "( a, a )"
-infinite_type 20:26 contains "( a, a )"

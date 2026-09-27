@@ -682,20 +682,21 @@ test "row 10: --cache-build-id moves every module's key, core included" {
     try expectMoved("the same --cache-build-id twice", pretend, again, &.{});
 }
 
-test "row 10b: --checker=v2 moves every module's key, core included, and v1 is the default" {
+test "row 10b: --checker=v1 moves every module's key, core included, and v2 is the default" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `checker-v2.md` §14.3 (S22): the checker id is part of the compiler
     // identity every key starts with, so the two checkers never share an
-    // entry — not even core's, which v1 checks under both flags until R9.
+    // entry — core's included. Since the cut-over (R11) v2 is the default,
+    // so no flag and `--checker=v2` are one key and `--checker=v1` another.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     // The scenario is about the DEFAULT, so its baseline runs with no
-    // `--checker` at all, whatever `BENI_CHECKER` says (`test-v2`).
+    // `--checker` at all, whatever `BENI_CHECKER` says.
     w.checker = null;
     try writeProject(&w);
 
@@ -703,18 +704,17 @@ test "row 10b: --checker=v2 moves every module's key, core included, and v1 is t
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const base = try baselineKeys(&w, arena);
-    const v1 = try keysOf(&w, arena, &.{ "--jobs=1", "--checker=v1", "src" });
-    // The v2 run checks the project clean (from R4b v2 checks it: no
-    // dispatch, no obligation) and prints its keys.
-    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--checker=v2", "src" }, .{ .raw_diagnostics = true });
+    const v2 = try keysOf(&w, arena, &.{ "--jobs=1", "--checker=v2", "src" });
+    // The v1 run checks the project clean too, and prints its keys.
+    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--checker=v1", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
-    const v2 = try parseKeys(arena, r.stdout);
+    const v1 = try parseKeys(arena, r.stdout);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectMoved("--checker=v1 against no flag", base, v1, &.{});
-    try expectEveryKeyMoved("--checker=v2", base, v2);
+    try expectMoved("--checker=v2 against no flag", base, v2, &.{});
+    try expectEveryKeyMoved("--checker=v1", base, v1);
 }
 
 test "--core moves the app modules' keys and leaves core's alone" {
@@ -2206,8 +2206,8 @@ test "a cache written under one checker is never read under the other" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeProject(&w);
-    // Each run names its checker: under `test-v2` (`BENI_CHECKER=v2`) a run
-    // without the flag would be v2's too (`world.zig`'s `checkerFlag`).
+    // Each run names its checker: a run
+    // without the flag is v2's since the cut-over (R11).
     const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v1", "src" };
     const v2_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v2", "src" };
     // ┌─────────────────────────────────────────┐
@@ -3856,8 +3856,8 @@ fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
 
 test "adv's k1–k8: a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
     // The adversarial review's cache probes (`plans/checker-rewrite.md` R10's
-    // exit): under the world's checker, so `test-blackbox` runs them under
-    // v1 and `test-v2` under v2, with the same expectations — no probe's
+    // exit): under the world's checker, so `test-blackbox` ran them under
+    // v1 and `test-v2` under v2 until the cut-over (R11) — no probe's
     // outcome differs between the two.
     for (k_cases) |case| try runEditCase(case, null);
 }

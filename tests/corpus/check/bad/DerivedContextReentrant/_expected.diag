@@ -1,0 +1,1 @@
+[{"code":"type_mismatch","severity":"error","span":{"file":"tests/corpus/check/bad/DerivedContextReentrant/Main.beni","start":{"line":29,"col":15},"end":{"line":29,"col":16}},"title":"TYPE MISMATCH","message":"The 1st argument to `key` is not what I expect:\n\nThis argument is:\n\n    String\n\nBut `key` needs the 1st argument to be:\n\n    ()\n"}]

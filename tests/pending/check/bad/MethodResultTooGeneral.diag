@@ -1,1 +1,0 @@
-[{"code":"type_mismatch","severity":"error","span":{"file":"tests/pending/check/bad/MethodResultTooGeneral.beni","start":{"line":40,"col":27},"end":{"line":40,"col":29}},"title":"TYPE MISMATCH","message":"Something is off here:\n\nThis is:\n\n    Int\n\nBut I need:\n\n    String\n\nHint: want to turn a number into a `String`? Use `String.fromInt` or\n`String.fromFloat`.\n"}]

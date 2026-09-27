@@ -7,11 +7,9 @@ each fixture are [`plans/checker-rewrite.md`](../../plans/checker-rewrite.md) §
 short version.
 
 ```sh
-zig build test-pending        # NOT a gate: the fixtures here (under v1, then --checker=v2) and the
-                              # non-timing scenarios, on the Debug binary; passes when every one is
-                              # red for its recorded reason
-zig build test-v2             # NOT a gate: tests/corpus/ and the --jobs determinism scenarios under
-                              # --checker=v2, strict (R9): every fixture passes but v2-expected.md's
+zig build test-pending        # NOT a gate: the fixtures here, under the default checker (v2 since
+                              # R11), and the non-timing scenarios, on the Debug binary; passes
+                              # when every one is red for its recorded reason
 zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
                               # (zig-out/perf/bin/beni); same rules
 zig build test-perf           # NOT a gate: the timing scenarios that were FIXED and promoted
@@ -21,7 +19,7 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
 
 `test-pending` runs at every commit. `test-pending-perf` (about 40 s since R8c, plus about 130 s when `src/`
 changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
-scenario covers — R3 (CK-41), R6a (CK-42, CK-80, CK-03), R8a (CK-40, CK-75), R7 (`NEST-UNDER`),
+scenario covers (CK-88 since R11; before it R3, R6a, R7 and R8a for theirs),
 any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
 ([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1). Wherever `test-pending-perf` runs,
 `test-perf` runs beside it (the manager's decision of 2026-09-25): a fixed timing scenario that
@@ -35,10 +33,8 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | File | What it is |
 |---|---|
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
-| `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
-| `v2-expected.md` | corpus fixtures `test-v2` skips: the expected differences of `checker-v2.md` §20.4 (until R9 also the `--core` fixtures, §22.1; R4a–R8b's `v2-green.txt` ratchet went with report mode at R9) |
-| `v2-subset.sh` | the corpus fixtures R4b's v2 is held to, read off v1's dumps (`checker-rewrite.md` R4b): run from the repo root, prints one fixture per line |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`; CK-41 was promoted into `perf_test.zig` by R3), a generated width or depth (CK-82, and CK-79 from R8a; CK-83 was promoted by R2c) and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` (`test-pending`, under both checkers since R7) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
+| `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line; empty since R11, when every claim was promoted |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (`test-pending-perf`), or a generated width or depth (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each. Since R11 only CK-88 (time) is left: CK-41 was promoted into `perf_test.zig` by R3, CK-83 into `abuse_wide_test.zig` by R2c, and at R11 `NEST-UNDER` into `perf_test.zig`, CK-79 and CK-82 into `abuse_wide_test.zig`, and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` into `ordering_test.zig`; CK-03, CK-40, CK-42, CK-75 and CK-80 were red under v1 only, with v2 twins already in `perf_test.zig` |
 
 ## A fixture
 
@@ -76,7 +72,8 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
   `tests/corpus/`, `.codes` → blessed `.diag`; a TIMING scenario moves verbatim into
   `perf_test.zig`, run by `zig build test-perf` on the same ReleaseFast compiler, and any other
   scenario into `abuse_test.zig`) and delete its `RED` line;
-- **(c)** a `CLAIMED` fixture that is RED under `v2`;
+- **(c)** a `CLAIMED` fixture that is RED under `v2` (moot since R11: `CLAIMED` is empty, and a
+  fixture a slice turns green under the default checker, v2, is promoted at once by rule (b));
 - **(d)** a RED fixture whose signature differs from its `RED` line — under **every** checker,
   so a fixture red under `v2` needs a `v2` line too — or a fixture GREEN under a non-default
   checker whose `RED` line for it is still there. A slice that changes why a fixture is red
@@ -143,5 +140,6 @@ promoted it), `050cd2d` with the fix reads GREEN through the same harness. The n
 - **`scenario/CK-71` was promoted by R1** into the gates: `blackbox_test.zig`'s loaded
   determinism test and `Session.zig`'s `mergeInterners` test. The report-only rule it needed
   is gone with it.
-- **`scenario/CK-42` measures the extra cost of nominal `==`** over the same program with
+- **`scenario/CK-42` measured the extra cost of nominal `==`** (until R11; its v2 twin is in
+  `perf_test.zig`) over the same program with
   `x == x`; the control's own super-linearity is `scenario/CK-75`.

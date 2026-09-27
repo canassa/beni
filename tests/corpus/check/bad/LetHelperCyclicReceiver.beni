@@ -2,8 +2,8 @@
 -- (static-dispatch-spike.md §11), so the two calls make `x ~ List x`. The
 -- `==` obligation on that cyclic receiver asked for the element's `eq`
 -- forever — 875f623 panicked after about 10 s and the row 72 tree never
--- finished. It is an infinite type, reported once, at the comparison.
--- `abuse_test.zig` holds the time-bounded twin of this fixture.
+-- finished. It is an infinite type, reported once, at the `==`, as `a = List
+-- a` since R11 (CK-57). `abuse_test.zig` holds the time-bounded twin.
 pairEq x y =
     let
         inner a b =

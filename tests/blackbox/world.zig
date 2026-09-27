@@ -45,34 +45,13 @@ pub fn exePath(arena: Allocator) []const u8 {
     return if (value.len == 0) exe_relative else value;
 }
 
-/// `test-v2`'s guard on its name-filtered determinism binaries (R9b, R9's
-/// review): `build.zig` sets `BENI_EXPECTED_TESTS` to how many tests a
-/// filtered binary must hold — its scenarios and the guard that calls this —
-/// so a renamed scenario that no filter matches any more fails the step
-/// instead of silently leaving v2's determinism unrun. `tests` is
-/// `builtin.test_functions.len`. Empty (every other binary): nothing to check.
-pub fn expectFilteredTests(tests: usize) !void {
-    const gpa = std.testing.allocator;
-    const value = std.testing.environ.getAlloc(gpa, "BENI_EXPECTED_TESTS") catch |err| switch (err) {
-        error.EnvironmentVariableMissing => return,
-        else => return err,
-    };
-    defer gpa.free(value);
-    if (value.len == 0) return;
-    const want = try std.fmt.parseInt(usize, value, 10);
-    if (tests == want) return;
-    std.debug.print("this filtered binary holds {d} tests where build.zig expects {d}: a determinism scenario test-v2 selects by name was renamed or removed (update its filter and count in build.zig)\n", .{ tests, want });
-    return error.FilteredTestCount;
-}
-
 /// The checker every `build`, `check` and `dump` a `World` runs is given:
 /// `BENI_CHECKER` when it is set and not empty, else null (the default
-/// checker). It is how `test-v2` runs the determinism scenarios of
-/// `blackbox_test.zig`, `build_test.zig` and `abuse_test.zig` under
-/// `--checker=v2` (`checker-v2.md` §17, `plans/checker-rewrite.md` R9);
-/// `build.zig` pins it EMPTY on every other run, so a variable exported in a
-/// shell cannot switch a gate's checker (S11). A run whose argv already names
-/// a `--checker` keeps its own. Deleted with the flag at R12.
+/// checker, v2 since the cut-over, R11; `test-v2` used it to run the
+/// determinism scenarios under v2 until then). `build.zig` pins it EMPTY on
+/// every run, so a variable exported in a shell cannot switch a gate's
+/// checker (S11). A run whose argv already names a `--checker` keeps its
+/// own — the scenarios that compare v1 with v2. Deleted with the flag at R12.
 pub fn checkerFlag(arena: Allocator) ?[]const u8 {
     const value = std.testing.environ.getAlloc(arena, "BENI_CHECKER") catch return null;
     if (value.len == 0) return null;
@@ -194,14 +173,14 @@ pub const World = struct {
         return world;
     }
 
-    /// Whether this world's runs are checked by the new checker, v2
-    /// (`BENI_CHECKER=v2`, `test-v2`). A scenario whose expectation is one
-    /// of v2's legitimate differences (`tests/pending/v2-expected.md`'s
-    /// reasons: D1, the published derived rows) asks this, and says why at
-    /// the use. Deleted with the flag at R12.
+    /// Whether this world's runs are checked by the new checker, v2: the
+    /// default since the cut-over (R11), unless `BENI_CHECKER=v1`. A scenario
+    /// whose expectation is one of v2's legitimate differences from v1 (D1,
+    /// the published derived rows) asks this, and says why at the use.
+    /// Deleted with the flag at R12.
     pub fn underV2(world: *const World) bool {
-        const flag = world.checker orelse return false;
-        return std.mem.eql(u8, flag, "--checker=v2");
+        const flag = world.checker orelse return true;
+        return !std.mem.eql(u8, flag, "--checker=v1");
     }
 
     pub const BuildAndRun = struct {
@@ -766,38 +745,6 @@ pub const pending = struct {
             try out.append(arena, entry);
         }
         return out.items;
-    }
-
-    /// `<root>/v2-expected.md` (`plans/checker-rewrite.md` §2.4,
-    /// `checker-v2.md` §22.1): the corpus fixtures `test-v2` skips. Every
-    /// list item whose text starts with a back-quoted path — "- `<path>` …"
-    /// — is an entry, one fixture (until R9 a path ending in `/` could name a
-    /// whole `<kind>/core/` directory). Everything else in the file is prose.
-    pub fn readV2Expected(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
-        var out: std.ArrayList([]const u8) = .empty;
-        var it = try lines(arena, io, root, "v2-expected.md");
-        while (it.next()) |raw| {
-            const line = std.mem.trim(u8, raw, " \t\r");
-            if (!std.mem.startsWith(u8, line, "- `")) continue;
-            const rest = line["- `".len..];
-            const end = std.mem.indexOfScalar(u8, rest, '`') orelse return error.BadExpectedLine;
-            const path = rest[0..end];
-            if (path.len == 0) return error.BadExpectedLine;
-            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
-                std.debug.print("{s}/v2-expected.md lists {s} twice\n", .{ root, path });
-                return error.DuplicateExpected;
-            };
-            try out.append(arena, path);
-        }
-        return out.items;
-    }
-
-    /// Whether `v2-expected.md`'s `entries` cover the fixture at `path`.
-    pub fn expectedCovers(entries: []const []const u8, path: []const u8) bool {
-        for (entries) |entry| {
-            if (std.mem.eql(u8, entry, std.mem.trimEnd(u8, path, "/"))) return true;
-        }
-        return false;
     }
 
     fn lines(arena: Allocator, io: Io, root: []const u8, name: []const u8) !std.mem.SplitIterator(u8, .scalar) {

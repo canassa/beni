@@ -15,7 +15,7 @@ below assumes them.
   every commit.
 - **The two tracking steps (§2, `checker-v2.md` §22.2).** From R0, `zig build test-pending` passes
   at every commit. From R4, `zig build test-v2` runs at every commit: report mode until R8, strict
-  from R9.
+  from R9, deleted at R11 (v2 the default, `test-blackbox` is that run).
 - **The perf step (§2.5, split out 2026-09-25).** `zig build test-pending-perf` times the
   performance scenarios on a ReleaseFast compiler; it is not run at every commit. It must pass (all
   RED as recorded, or the finding's scenario turned GREEN and promoted) in:
@@ -226,7 +226,7 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
   the step also runs the `--jobs` determinism scenarios under v2 (`checker-v2.md` §17 *as built by
   R9*). Report mode, the ratchet and `v2-green.txt` are deleted: strict holds every fixture the
   ratchet held, and more.
-- **Deleted at R12.**
+- **Deleted at R11** (planned for R12): with v2 the default, `test-blackbox` is the same run.
 
 ### 2.5 Performance and permutation scenarios
 
@@ -456,7 +456,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - Review fixes: no converter depth cap that writes a term (B1, pinned by the blackbox scenario
     "evidence nested past a thousand levels…"); the assert runs last, after `Cycles` and the round
     trip (S2, `check/bad/CycleNoEvidenceNoise`); `check` now refuses a v1 miscount in dead code,
-    kept on purpose (S1, `tests/pending/run/DeadMiscount.beni`, CK-30). Derived callees' own
+    kept on purpose (S1, `tests/corpus/run/DeadMiscount.beni`, CK-30). Derived callees' own
     arguments print as `arg` lines. Pending perf scenarios measure CPU time.
   - Stage 2 (CK-79, CK-81) is a separate brief.
 - **As built (stage 2, 2026-09-24): CK-81.** CK-79 moved to R8a before the brief.
@@ -1046,10 +1046,10 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     100 000-field record with a function last is one `not_equatable`).
   - **Reviewer-focus fixtures.** `tests/corpus/run/TryDefaultAtLetBoundary.beni` (a guard, green on
     v1: a `?` whose target is a `let` definition defaults at that definition's own boundary and it
-    is used at two error types); `tests/pending/run/TryEscapesToLaterFact.beni` (its variables
+    is used at two error types); `tests/corpus/run/TryEscapesToLaterFact.beni` (its variables
     escape the `let` to the declaration, decided `Maybe` by a later fact);
-    `tests/pending/run/TryEscapeLowersOnlyItsOwn.beni` (N-3: `twice`, beside `v = u?` whose target
-    escapes, is still generalised); `tests/pending/check/good/MutualGroupFiveMembers.beni` (CK-09's
+    `tests/corpus/run/TryEscapeLowersOnlyItsOwn.beni` (N-3: `twice`, beside `v = u?` whose target
+    escapes, is still generalised); `tests/corpus/check/good/MutualGroupFiveMembers.beni` (CK-09's
     shape, five members, shuffled parameters, obligation forms).
   - **Evidence.** The three gates green. `test-v2` (report) exits 0: 587 passes, every one of the
     355 fixtures the widened `v2-subset.sh` names passes, no drift; `v2-green.txt` gains 36
@@ -1442,7 +1442,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - **CK-103** (B1b, v1): a `compare` slot under an `eq` ancestor got the `eq` leaf
     (`List$compare(Basics$eq, …)`), harmless at run time only because no value of the slot's type
     exists. v2 writes `num_compare`; the placement rule makes v1's `check` refuse it
-    (`tests/pending/run/UndeterminedCompareSlot`, claimed). No `run/` fixture can print a wrong
+    (`tests/corpus/run/UndeterminedCompareSlot`, claimed). No `run/` fixture can print a wrong
     answer: by parametricity the slot's function is applied to nothing.
   - **CK-104** (S5/F2, backend, both checkers): emission order and the value-cycle check now walk
     the bodies of the derived rows a declaration's sites name (`Edges.termsEdges` through rows,
@@ -1677,7 +1677,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     `let` orders) and `…JoinedInGroup` (the `Rec1` variant), both `internal` with the join rule off.
   - **S2.** Corpus guard `check/bad/DeferredReceiverGeneralised` (the refusing half; v1 agrees on
     code and place; v2 renders the record before the lambda is constrained, a `v2-expected.md` row) and
-    `tests/pending/run/DeferredReceiverRecursiveTwin` (accepted, prints `2`; v1 miscompiles it — it
+    `tests/corpus/run/DeferredReceiverRecursiveTwin` (accepted, prints `2`; v1 miscompiles it — it
     passes `f` a `compare` evidence and the program prints `EQ` — so it is a claimed pending fixture
     with a v1 RED line, not a corpus guard).
   - **S3 → CK-106.** A `number` receiver's non-well-known method in a group: `unknown_method` at
@@ -2387,6 +2387,85 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     what R13 and R14 own.
 - **Reviewer focus.** Every re-blessed golden has a CK or D reason, and no golden was re-blessed in
   bulk.
+- **As built** (2026-09-27; `checker-v2.md` §13.1, §20.4 and §22 *as built by R11*).
+  - **The default.** `--checker` defaults to `v2` (`Cli.zig`; `Session.Options`,
+    `check2/Check.zig`'s `Options` and `bench` with it), so `zig build test`, `test-blackbox` and
+    `fmt-check` run v2. `--checker=v1` stays, hidden, for what compares the checkers (the cache
+    key's checker row, `perf_test.zig`'s CK-107 and CK-131, `cache_test.zig`'s crossings), and
+    `abuse_test.zig`'s constraint-chain counters now name it: they count v1's constraint sets
+    (A.81), which v2 does not have (its rows are CK-96/CK-97's). All go at R12. From R11 a
+    safe build panics on an I7 violation under v2 (§13.1); nothing in the corpus or the pending
+    tree reaches it.
+  - **Steps.** `test-v2` is deleted: with v2 the default, `test-blackbox` is that run, its
+    determinism and incrementality scenarios included; the name-filtered binaries, their
+    `test-v2 guard` tests and `world.expectFilteredTests` went with it, and so did
+    `v2-expected.md`'s machinery (`corpus_test.zig`, `world.pending.readV2Expected`) and
+    `v2-subset.sh`. `test-pending` and `test-pending-perf` run once each, under the default
+    checker (their `--checker=v2` runs were the same run now): rule (b) holds v2, and every `v1`
+    line of `RED` went with v1's run. So R12's "delete `test-v2` and run 2 of `test-pending`" is
+    done; R12 keeps the flag, `BENI_CHECKER` and the cache key's checker id.
+  - **Promotions.** Every `CLAIMED` fixture — 119 of them — was `git mv`'d into `tests/corpus/`
+    with its goldens, and `CLAIMED` is empty. The 70 `.codes` became blessed `.diag`s, each
+    checked line by line against its `.codes` by a script (code, `file:line:col` or its `*`
+    forms, every `contains`/`lacks`, and the count) before the `.codes` was deleted; all 70
+    held. Two promoted `.diag`s (`MethodResultTooGeneral`, `NumberBridgeRigidLyingWhere`) were
+    re-blessed for their path alone (`tests/pending/` → `tests/corpus/` in `span.file`). The
+    references to the moved fixtures in `checker-v2.md`, `checker-findings.md`, this plan and one
+    fixture comment follow them. The claimed scenarios: `NEST-UNDER` (timing) into
+    `perf_test.zig`; `PERM`, `NEST-OVER` and `NEST-DEEP` into a new `tests/blackbox/ordering_test.zig`,
+    a `test-blackbox` binary of its own — not into `abuse_test.zig` as §2.5 says, only because
+    `PERM` alone takes about 170 s in Debug and `abuse_test.zig` about 190 s, and one process
+    holding both would bound the whole step (§2.4 *Parts*' reason); CK-79 and CK-82 into
+    `abuse_wide_test.zig`, beside CK-81. CK-03, CK-40, CK-42, CK-75 and CK-80's pending scenarios
+    were red under v1 only and their v2 twins were already in `perf_test.zig` (R6a, R8a); they
+    are deleted.
+  - **Re-blessed, one by one** (every entry of `v2-expected.md`, then the file):
+
+    | Fixture | Golden | Reason |
+    |---|---|---|
+    | `check/bad/InfiniteType.beni` | `.diag` | CK-04, CK-57 (§6.3, §8.2; `checker.md` §8.5): at the parameter `f` (4:7), `a = a -> b`, for v1's body (5:5) and `a  =  … a …` |
+    | `check/bad/TryDefaultCycle.beni` | `.diag` | CK-04, CK-57, D2: at the parameter `x` (6:3), `a = Result b a` |
+    | `check/bad/CyclicReceiverReportedOnce.beni` | `.diag` | CK-57: same `==` (7:7), written `a = List a` |
+    | `check/bad/LetHelperCyclicReceiver.beni` | `.diag` | CK-57: same `==` (10:15), `a = List a`; a D5 row, which R14 changes again |
+    | `check/bad/LetConstrainedTwice.beni` | `.diag` | §9.1 eager draining: `unknown_method` (`Int` has no `render`) at 11:14 before the same `type_mismatch` at 13:20; a D5 row, R14 changes it again |
+    | `check/bad/MethodConstraintMismatch.beni` | `.diag` | review F6 (§14.1, §9.4 *as built by R6a's review*): v1's extra warning printing `where a.render : ?` is gone; the `method_constraint_mismatch` is unchanged |
+    | `check/bad/MissingField.beni` | `.diag` | CK-59 (§6.5 as built by R5): `{ x : number }` for `{ x : a }` |
+    | `check/bad/UnknownField.beni` | `.diag` | CK-59: `{ x : number, y : number2, z : number3 }` |
+    | `check/bad/RecordNotClosed.beni` | `.diag` | CK-59: `{ x : Int }` |
+    | `check/bad/TryMixedShapes.beni` | `.diag` | CK-51, D2 (§8.6, `checker.md` §8.6): names the enclosing leg, not "neither" |
+    | `check/bad/DeferredReceiverGeneralised.beni` | `.diag` | §9.1 eager draining (R6b; CK-105's guard, §10.8): the record as it met the receiver, `{ combine : a -> b }`, same code and place |
+    | `check/bad/DerivedContextEquatableFlag` | `.diag` | CK-108, D4 (§11.2 *as built by R8a*): "There is a function in there" at 21:20 |
+    | `check/bad/DerivedContextEquatableFlagPublished` | `.diag` | CK-108, D4: the same at 15:26 |
+    | `check/bad/DerivedContextEquatableFlagCompare` | `.diag` | CK-108, D4: "There is a function inside it" at 18:20 |
+    | `check/bad/core/PrivateForeignCompare` | `.diag` | D1 (§11.3): `private_method` at 17:7 for `no_methods_on_shape` |
+    | `dispatch/PrivateEqStillDerives.beni` | `.dispatch` | D1: no `derived 1 eq` row; the comment rewritten for D1 (the name is kept) |
+    | `dispatch/core/NoForeignDerivedRow.beni` | `.dispatch` | §12.2, CK-103: the `undetermined` leaf for `ext Basics eq`; the emitted JavaScript is the same |
+    | `check/good/RecordExtChain.beni` | `.iface` | CK-08 (§4.1 normalised records): the whole open record `{ r \| a1 … a65 }`, no `… \|` |
+    | `check/depth/RecordExtTruncatedDeep.beni` | `.diag` | CK-08, §4.1: the same record in the mismatch; its README row says v2 never reaches `Render.max_ext_links` |
+    | `check/bad/MethodNeedsAnnotation/` | → `run/OwnEqCheckedAfterItsUse/` | D3 (R7): valid; a `run/` fixture printing `EQ`, `True`, `True` (two top-level twins of the two comparisons added so each answer prints) |
+
+    Comments that described v1's text or place were reworded without moving a line (so no other
+    region moved): `InfiniteType`, `TryDefaultCycle`, `TryDefaultCycleAtBinder`,
+    `CyclicReceiverReportedOnce`, `LetHelperCyclicReceiver`, `LetConstrainedTwice`,
+    `RecordExtChain`, `RecordExtTruncatedDeep`, and §20.4's `PriorityGroupSpecializedPayloadEq`
+    and `run/DerivedEqInPriorityGroup` (whose goldens did not move under v2).
+  - **Black-box scenarios whose expectation was v1's** (they ran only under the default checker
+    until now, so `test-v2` never held them): `blackbox_test.zig` "a dozen checker diagnostics"
+    (`selfApply f` at the binder 1:11, CK-04/CK-57); "interface v3's rows" (`no_function`, §14.2
+    *as amended by R8b*; `Phantom`'s context loses its phantom entry, D4/CK-23); "--self-profile
+    records every phase" (v2's `derived`, `elaborate`, `publish`, `finish` per module, §5); "a
+    private eq wins inside its module" (D1: `private_method` at `Main`'s `==`, nothing written;
+    without it the private `eq` still wins inside); `cache_test.zig` row 10b (v2 is the default,
+    `--checker=v1` moves every key); `abuse_wide_test.zig`'s record `==` at 4 096 / 4 097 /
+    65 530 fields now builds and runs (CK-79, the cap lifted by R8a).
+  - **Pending after R11** (rule (b) on v2; `test-pending` green): 12 fixtures of R13's (CK-49,
+    50, 52, 53, 54, 55, 56 ×2, 58, 59, 60, 86), `check/bad/PrivateRecordSchemaAliasAcrossModules`
+    (CK-126, the schema slices S3/S4) and `scenario/CK-88` (R12). Nothing green is left.
+  - **Measured.** `zig build bench` check phase, ABBA: 6.11 / 6.52 ms (v2) against 6.06 / 6.43 ms
+    (v1), 1.01×. `test-perf` and `test-pending-perf` green (`NEST-UNDER` 1.82; CK-88 still red,
+    3.89). `test-blackbox` takes about 5 min of wall time on this machine, bounded by
+    `abuse_test.zig` (about 190 s alone, under either checker) and `ordering_test.zig` (about
+    170 s alone).
 
 ### R12 — Delete v1
 
@@ -2394,7 +2473,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - Delete v1's `Solve.zig`, `Constrain.zig`, the capability code in `Types.zig`, and `Check.zig`'s
     `ModuleCheck`.
   - Rename `check2/` to `check/`.
-  - Delete `--checker`, `BENI_CHECKER`, `test-v2`, run 2 of `test-pending`, and the checker id in the
+  - Delete `--checker`, `BENI_CHECKER` (`test-v2` and run 2 of `test-pending` went at R11), and the checker id in the
     cutoff key.
   - Re-measure `bench`.
 - **Files.** `src/check/**`, `build.zig`, `Cli.zig`, and the design documents' layout sections
@@ -2488,7 +2567,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R9 | CK-130 (found and fixed: `run/NeverAndOrderDerived.beni`) | — | CK-15 (rest, closed for v2); CK-131 (found: §18's `s_tup6000` median at 1.58×) |
 | R9b | CK-131 (fixed; `perf_test.zig`, `test-perf`) | — | — |
 | R10 | CK-107 (fixed; `perf_test.zig`, `test-perf`) | — | CK-132 (found: v1 only, frozen; its v2 side in `cutoff_test.zig` and `cache_test.zig`; gone at R12) |
-| R11 | all claims above | — | — |
+| R11 | all claims above: 119 fixtures, and the scenarios `PERM`, `NEST-OVER`, `NEST-DEEP` (`ordering_test.zig`), `NEST-UNDER` (`perf_test.zig`), CK-79 and CK-82 (`abuse_wide_test.zig`) | — | CK-03, 40, 42, 75, 80: their v1-only pending scenarios deleted (v2 twins in `perf_test.zig` since R6a, R8a) |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
@@ -2601,10 +2680,10 @@ These were re-run on the `7427828` binary. The first line of each fixture names 
 
 | Probe(s) | v1 | Expected under v2 | Where | CK | Slice |
 |---|---|---|---|---|---|
-| `evA` / `evB` (instantiation evidence on another member's result) | INTERNAL / runs | in both orders, one `type_mismatch` at `q "s"` with the D14 hint "annotate `g`" | `tests/pending/check/bad/RecursiveGroupEvidenceReceiver/` (both orders as two modules; `.codes`) | CK-76 (CK-72 family) | R7 |
-| `subA` / `subB` (sub-wanted of an inline resolution on a young receiver) | INTERNAL / runs | the same | `tests/pending/check/bad/RecursiveGroupSubWanted/` | CK-76 | R7 |
+| `evA` / `evB` (instantiation evidence on another member's result) | INTERNAL / runs | in both orders, one `type_mismatch` at `q "s"` with the D14 hint "annotate `g`" | `tests/corpus/check/bad/RecursiveGroupEvidenceReceiver/` (both orders as two modules; `.codes`) | CK-76 (CK-72 family) | R7 |
+| `subA` / `subB` (sub-wanted of an inline resolution on a young receiver) | INTERNAL / runs | the same | `tests/corpus/check/bad/RecursiveGroupSubWanted/` | CK-76 | R7 |
 | `xm` / `xm2` (derived contexts that depend across `eq` and `compare`) | refused in both orders (NOT EQUATABLE, NO METHODS HERE) | stays refused, with the same codes | `tests/corpus/check/bad/DerivedCrossMethodCycle/` (**guard**, `.diag` blessed from v1) | — | R8a keeps it green |
-| `cbA` / `cbB` (a closed in-flight derived query from another group) | NOT EQUATABLE in both | in both orders, one `type_mismatch` at `pick "s"` | `tests/pending/check/bad/DerivedContextMergesAsker/` (`.codes`) | CK-77 (CK-67 family) | R8a |
+| `cbA` / `cbB` (a closed in-flight derived query from another group) | NOT EQUATABLE in both | in both orders, one `type_mismatch` at `pick "s"` | `tests/corpus/check/bad/DerivedContextMergesAsker/` (`.codes`) | CK-77 (CK-67 family) | R8a |
 
 The R7 permutation scenario gains `evA`/`evB` and `subA`/`subB`, each the same single diagnostic in
 every order. R8a's permutation list gains `cbA`/`cbB` (the same `type_mismatch` in both orders) and

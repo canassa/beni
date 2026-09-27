@@ -1,2 +1,0 @@
-# At `pairK "s"`: rule (a), not D14 — no recursive-group hint.
-kind_mismatch 18:19 lacks "recursive group"

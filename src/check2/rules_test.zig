@@ -3,7 +3,7 @@
 //!
 //! - **v1 stays deletable (S2).** No file imports v1's `Constrain.zig` or
 //!   `Solve.zig`; only `Driver.zig` imports v1's `Check.zig` — the one switch
-//!   between the checkers, until R11. Everything else v2 takes from
+//!   between the checkers, until R12 deletes v1. Everything else v2 takes from
 //!   `src/check/` is on §19's KEPT list (`checker-v2.md` §19.1 *As built*).
 //! - **I2: children only through `Walk` (S6).** A type's children — a
 //!   range's variables, a record's fields, a variable's constraints — are

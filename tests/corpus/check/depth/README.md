@@ -15,7 +15,7 @@ without one, is a failure.
 | `ParserOk` / `ParserDeep` | `Parse.max_depth` (4096) | 4095 clean, 4096 reports |
 | `TypeParensOk` / `TypeParensDeep` | the same guard, reached through a **type** | 4095 clean, 4096 reports |
 | `RenderTruncatedDeep` | `Render.max_depth` (24) | truncates one type to `…` |
-| `RecordExtTruncatedDeep` | `Render.max_ext_links` (64) | elides the tail as `… \| ` and stays OPEN |
+| `RecordExtTruncatedDeep` | `Render.max_ext_links` (64), which checker v2 never reaches: its records are one node (`checker-v2.md` §4.1, since R11) | prints all 65 fields and stays OPEN (v1 elided the tail as `… \| `) |
 
 ## Why this kind exists
 

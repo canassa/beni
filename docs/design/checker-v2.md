@@ -762,7 +762,7 @@ its article, which is R13's.
 *Refined by R5's review (2026-09-25).*
 - **An unkinded variable** takes the literal expectation-first. A `number` or `appendable` one does
   not: it fails on the kind, so the fields go first (`Basics.add x { a = 1, b = "s" }` shows `{ a :
-  number, b : String }`; structural review S1, `tests/pending/check/bad/KindedExpectationShowsLiteral`).
+  number, b : String }`; structural review S1, `tests/corpus/check/bad/KindedExpectationShowsLiteral`).
 - **A record open on a flex whose field names are all the literal's** also takes it expectation
   first, since the meeting cannot fail on a name. So a flagged field of a comparing function's
   parameter meets the literal's field before the lambda does, and the lambda is where
@@ -887,7 +887,7 @@ that keeps unifying after a failed field — and were reported as `nesting_too_d
   `infinite_type` at the unification (§8.2's reporting rule), and only a genuinely deep acyclic
   type is `nesting_too_deep`.
 
-Fixtures: `tests/pending/check/bad/InfiniteTypeCaseSubject*.beni`,
+Fixtures: `tests/corpus/check/bad/InfiniteTypeCaseSubject*.beni`,
 `…/InfiniteTypeTwoCyclesUnified.beni` and `tests/corpus/check/good/CyclicArgumentsUnify.beni`.
 
 *Amended by R8c (2026-09-26): the pair stack's scan is bounded.* The scan per pair of
@@ -1335,7 +1335,7 @@ enclosing leg then fails with the message above.
 - **The dispatch table's `tries` row** (`checker.md` §6.5) is written when the subject and target
   legs succeed. P9 sorts the rows by instruction.
 - **Fixtures.**
-  - `tests/pending/run/TryEscapesToLaterFact.beni` is N2's program (claimed, CK-62): `g u = k
+  - `tests/corpus/run/TryEscapesToLaterFact.beni` is N2's program (claimed, CK-62): `g u = k
     (u?)` escapes to `f` through `k`, is not defaulted at `g`'s boundary, and is decided `Maybe`
     by `Maybe.withDefault (k 5) 0`.
   - `tests/corpus/run/TryDefaultAtLetBoundary.beni`: `unwrap u = u?` defaults at `unwrap`'s own
@@ -2066,10 +2066,10 @@ There is no `touched` list to hand down (§8.1's fallback, R4b).
 here).* "No group is nested after a frame has applied its first default: a default only makes a
 `Result`, whose methods are core's" is false. A default readies a wanted on the `Result`, whose
 derived answer asks each POSITION's method — an own unannotated `eq`, say, whose group is
-`unchecked` and is nested there (`tests/pending/check/good/NestAfterDefault.beni`). R7 does not
+`unchecked` and is nested there (`tests/corpus/check/good/NestAfterDefault.beni`). R7 does not
 add the assert. And R7's first reason — "the nested group shares no variable with the defaulted
 frame" — is false once the nested group back-edges into the frame that is running its boundary
-(R7's structural review, B1; `tests/pending/run/MergeAtBoundary`). As built:
+(R7's structural review, B1; `tests/corpus/run/MergeAtBoundary`). As built:
 - Steps 1–3 run first (`Solve.settle`), and the members, the binders and the pool a boundary
   reads are read after them, so a group that joined during them is promoted, failed and settled
   with the rest; before this, its requirements were never promoted and P6 reported `internal`.
@@ -2148,11 +2148,11 @@ Every member's facts arrive before the class is generalised, in every order.
   order in which the two were created decided between an internal I7 miscount and the refusal.
 - The refusing half — a constraint already generalised, met by a record at a caller outside the
   group — is pinned by `check/bad/DeferredReceiverGeneralised`, and its recursive twin, accepted,
-  by `tests/pending/run/DeferredReceiverRecursiveTwin` (a caller in the same group decides what
+  by `tests/corpus/run/DeferredReceiverRecursiveTwin` (a caller in the same group decides what
   `x.m a` means, as it decides a parameter's type under monomorphic recursion). v1 miscompiles the
   twin (it passes `f` evidence `f` does not take, and prints `EQ`), so it is a claimed pending
   fixture; v2's message for the refusing half renders the record before the lambda's body is
-  constrained (§9.1), an expected difference until R11.
+  constrained (§9.1), an expected difference until R11, which re-blessed the golden.
 
 **A `number` receiver's method in a group (CK-106).** A requirement on a `number`-kinded
 variable whose method is not `eq`/`compare`, which some member's type does not reach (that member
@@ -2610,7 +2610,7 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
     reached first, which depends on symbol ids, changes nothing (I13).
   - A "no" marks the origin `reported`, and no row of that origin reports again. So one comparison
     whose argument holds two bad parts, or whose flags were merged, says `not_equatable` once.
-  - Fixtures: `tests/pending/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite`, and the
+  - Fixtures: `tests/corpus/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite`, and the
     symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` (structural
     review B1).
 - **Nominal types.** At `T args` the walk first asks the session's gate for `T` itself,
@@ -3125,7 +3125,7 @@ A violation is `internal` at the site.
   violations too — the answer `Lower` gives, one phase earlier. **It is not "what `build` would
   say" everywhere:** `Lower` only meets the code DCE (`backend.md` §9) keeps, and the assert walks
   every declaration. So a v1 miscount (CK-30, CK-72, CK-76) in a declaration nothing reaches, which
-  built and ran before R2a, is refused by `check` since R2a — `tests/pending/run/DeadMiscount.beni`
+  built and ran before R2a, is refused by `check` since R2a — `tests/corpus/run/DeadMiscount.beni`
   is that program. The manager kept this on purpose (review of R2a, S1): the table is wrong whether
   or not it is emitted, and v2 removes the miscount itself.
 - **The assert runs only on a module that reported no error.** A module with errors never reaches
@@ -3146,6 +3146,11 @@ A violation is `internal` at the site.
   corpus with the assert on before landing.
 - **From R11 (v2 only)** a debug build panics, because a violation is then a v2 bug with no known
   exception.
+  *As built by R11 (2026-09-27):* `check2/Module.zig`'s `assertEvidence` panics when
+  `std.debug.runtime_safety` holds and `Dispatch.checkI7` names an instruction; a release build
+  still reports the `internal` and writes nothing. Nothing in `tests/corpus/` or `tests/pending/`
+  reaches it under v2 (every fixture that did under v1 was promoted green), and v1's own assert is
+  unchanged (`internal`, never a panic) until R12 deletes it.
 
 *Revised 2026-09-24 (S10).*
 
@@ -3521,7 +3526,7 @@ a diagnostic's region against an instruction range.
 - **What P7 skips** is a second bitset, `failed_patterns`: the same, except that an
   `infinite_type` does not set it. Exhaustiveness reads no solved type (CK-61), and an infinite
   type says nothing about a pattern, so a `case` beside one is still checked (the review's F9:
-  `tests/pending/check/bad/InfiniteTypeKeepsUsefulness.beni`). Every other error sets both.
+  `tests/corpus/check/bad/InfiniteTypeKeepsUsefulness.beni`). Every other error sets both.
 
 ### 15.3 Stable texts
 
@@ -4033,6 +4038,16 @@ These change at the slice named, and are re-blessed with review, never in bulk:
 | `check/bad/LetHelperCyclicReceiver` | R14 | D5: the program is valid. It becomes `run/LetHelperCyclicReceiver` |
 | `abuse_test.zig`'s row-76 scenario | R14 | expects exit 0 within the bound |
 
+*As built by R11 (2026-09-27):* `check/bad/MethodNeedsAnnotation/` is `run/OwnEqCheckedAfterItsUse/`,
+which prints both answers (`EQ`, `True`, `True`; v1 still refuses it). The refusal of
+`PriorityGroupSpecializedPayloadEq` is v2's at the SAME region and text as v1's, so its golden
+did not move; its intent comment, and `DerivedEqInPriorityGroup`'s, now say how v2 reaches it.
+The entries of `tests/pending/v2-expected.md` (deleted at R11) — the differences R4b to R9 introduced,
+this table's among them — were re-blessed one by one, each with its reason, in
+`checker-rewrite.md` R11 *As built*; `LetConstrainedTwice` and `LetHelperCyclicReceiver` among
+them for their v2 texts, not for D5, which still changes them at R14. No `emit/` golden moved
+(§20.3's item 1 was measured by R8a).
+
 ---
 
 ## 21. Decisions
@@ -4141,6 +4156,11 @@ meaningful because v1 stops changing, not because R1–R3-style fixes keep landi
   the `no_function` bit of §14.2 *as amended by R8b*, which v1 never writes, once CK-130 was fixed
   (§23 item 4).
 - **R11.** The default flips.
+  *As built by R11 (2026-09-27):* `--checker` defaults to `v2` (`Cli.zig`, and `Session`,
+  `check2/Check.zig`'s `Options` and `bench` with it), so the three gates run v2. `--checker=v1`
+  stays, hidden, for the scenarios that compare the two checkers (the cache key's checker row,
+  CK-131's ratio, CK-107's, the checker-crossing cache scenarios) and for one v1-only guard
+  (`abuse_test.zig`'s constraint-set counters, A.81), until R12.
 - **R12.** v1, the flag and `check2`'s name are deleted.
 
 ### 22.2 How v2 is held between slices
@@ -4160,6 +4180,13 @@ the default checker only.
 `BENI_CHECKER=v2`: a fixture `v2-expected.md` lists is skipped (an entry must name one fixture the
 walk runs, or the step fails), and any other red fixture fails the step. Report mode and the
 `v2-green.txt` ratchet are deleted; the `--core` section of `v2-expected.md` with them.
+
+*As built by R11 (2026-09-27):* both rows are history. `test-v2` is deleted — with v2 the default,
+`test-blackbox` is the same run, and its determinism and incrementality scenarios run under v2
+as they are — and so are `v2-expected.md` (each entry re-blessed individually, `checker-rewrite.md`
+R11 *As built*), `v2-subset.sh` and the name-filtered binaries' guards. `test-pending` and
+`test-pending-perf` run once each, under the default checker: rule (b) holds v2 to promoting
+every fixture it turns green, and `CLAIMED` is empty.
 
 Both are part of every rewrite slice's exit criteria (`checker-rewrite.md`), beside the three
 gates.

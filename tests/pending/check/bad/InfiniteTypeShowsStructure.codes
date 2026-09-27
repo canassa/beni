@@ -1,4 +1,0 @@
-# On the binder line: checker-v2.md §8.2 reports at a binder, `f` (7:1) or
-# `r` (7:3) by binder order; 7427828 reports at the body (8:5). The finding
-# is the rendering.
-infinite_type 7:* lacks "… a …"

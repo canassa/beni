@@ -84,8 +84,8 @@ const Options = struct {
     seed: u64 = gen.default_seed,
     /// `--checker=v1|v2`: which checker the `check` measurement runs
     /// (`checker-v2.md` §18, `plans/checker-rewrite.md` R9): v2 against v1 on
-    /// one binary. Every other phase is the same under both. Deleted at R12.
-    checker: Checker = .v1,
+    /// one binary; v2 by default since R11. Deleted at R12.
+    checker: Checker = .v2,
 };
 
 const generated_dir = ".zig-cache/bench-gen";

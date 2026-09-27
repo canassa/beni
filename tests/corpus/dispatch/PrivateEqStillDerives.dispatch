@@ -4,8 +4,5 @@ module PrivateEqStillDerives
   derived 0 compare PrivateEqStillDerives.Id context=0
     body 0 primitive num_compare
     body 1 primitive num_compare
-  derived 1 eq PrivateEqStillDerives.Id context=0
-    body 0 primitive strict_eq
-    body 1 primitive strict_eq
   site 20 callee primitive strict_eq
   site 33 callee top eq

@@ -89,50 +89,132 @@ fn wideEqProgram(gpa: std.mem.Allocator, n: usize) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "== on a record runs up to the derived-field cap and is refused past it, never a runtime exception" {
+test "== on a record builds and runs at every width, never a runtime exception" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `==` on a record DERIVES one function with a parameter per field, and a
     // JavaScript call that wide overflows the engine's stack: under Node 24
     // a 60 000- and a 65 530-field `r == r` built and then threw `RangeError`
-    // (R1's review). So a derived record comparison is refused at check time
-    // past `max_derived_record_fields`, 4 096 (`check/Diagnostics.zig`,
-    // CK-79), and the no-runtime-exception guarantee holds at every width:
-    // at the cap it builds and RUNS, one past it and at the widths that threw
-    // it is `not_equatable` before anything is written.
+    // (R1's review). Checker v1 therefore refused a derived record
+    // comparison past `max_derived_record_fields`, 4 096, as `not_equatable`
+    // (CK-79). The wide form takes the evidence as one array past 4 096
+    // positions (`static-dispatch-spike.md` §9.2, CK-81), and checker v2
+    // lifts the cap (`checker-v2.md` §11.2's D4 bullet, R8a): since the
+    // cut-over (R11) the no-runtime-exception guarantee holds at every width
+    // by building and RUNNING — at the old cap, one past it, and at the
+    // widths that threw.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const at_cap = try wideEqProgram(testing.allocator, 4_096);
-    defer testing.allocator.free(at_cap);
-    try w.write("AtCap.beni", at_cap);
+
+    for ([_]usize{ 4_096, 4_097, 65_530 }) |n| {
+        const source = try wideEqProgram(testing.allocator, n);
+        defer testing.allocator.free(source);
+        try w.write("Wide.beni", source);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const ran = try w.buildAndRun(&.{ "--no-cache", "Wide.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(ran.build, 0);
+        try testing.expectEqualStrings("", ran.build.stderr);
+        try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
+        try testing.expectEqualStrings("eq\n", ran.program.?.stdout);
+    }
+}
+
+// CK-79 (promoted from `tests/pending/`'s `scenario/CK-79` at the cut-over,
+// R11): `==` and `<` on a record of 40 000 fields. The old checker capped a
+// derived record `eq`/`compare` at `max_derived_record_fields` = 4 096
+// (`not_equatable` and `no_methods_on_shape` past it, R1), because a derived
+// function took one JavaScript parameter per field and V8 threw between
+// 40 000 and 60 000. The wide form (`static-dispatch-spike.md` §9.2, CK-81)
+// takes the evidence as one array past 4 096 positions, so R8a's checker
+// lifts the cap (checker-v2.md §11.2's D4 bullet): the program builds, runs
+// and prints its three answers; a refusal is the finding.
+test "CK-79: `==` and `<` on a 40 000-field record build and run" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const n = 40_000;
+    var text: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer text.deinit();
+    const out = &text.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\nr =\n    { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
+    try out.print(" }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if r == r then \"eq\" else \"ne\", if r == {{ r | f{d} = 0 }} then \"eq\" else \"ne\", if {{ r | f1 = 0 }} < r then \"lt\" else \"ge\" ]\n", .{n});
+    try w.write("Main.beni", text.written());
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const ran = try w.buildAndRun(&.{"AtCap.beni"});
+    const ran = try w.buildAndRun(&.{ "--no-cache", "--jobs=1", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExited(ran.build, 0);
-    try testing.expectEqualStrings("eq\n", ran.program.?.stdout);
+    try testing.expectEqualStrings("", ran.build.stderr);
     try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
+    try testing.expectEqualStrings("eq\nne\nlt\n", ran.program.?.stdout);
+}
 
-    for ([_]usize{ 4_097, 40_000, 60_000, 65_530 }) |n| {
-        const source = try wideEqProgram(testing.allocator, n);
-        defer testing.allocator.free(source);
-        try w.write("Wide.beni", source);
-        const r = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Wide.beni" });
-        try expectExited(r, 1);
-        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
-        try testing.expectEqual(diagnostic.Code.not_equatable, r.diagnostics[0].code);
-        try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "4096") != null);
+// CK-82 (promoted from `tests/pending/`'s `scenario/CK-82` at the cut-over,
+// R11): a nominal payload record of 65 537 fields. The eager pass probed
+// `T`'s derived `eq`, and v1's `Solve.derivedUse` cast the field count into
+// the `u16` evidence count: a panic in Debug, whether or not anything
+// compares `T`. 65 535 builds and runs (CK-81, below). 65 537 and not
+// 65 536 since R8a's review: the record's structural row has one entry per
+// field, so its last entry's index `k` is 65 536, one past what a `u16`
+// `Dispatch.Param.k` holds (CK-109). On the Debug binary, whose safety
+// checks are part of the claim. What is required is the program built and
+// run, printing its two answers, or a refusal by name — exit 1 with
+// diagnostics and not one of them `internal`; never a crash.
+test "CK-82: a nominal payload of 65 537 fields checks, and builds and runs or is refused by name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const n = 65_537;
+    var text: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer text.deinit();
+    const out = &text.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\ntype T =\n    T { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
+    try out.writeAll(" }\n\n\nr =\n    { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
+    try out.print(" }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if T r == T r then \"eq\" else \"ne\", if T r == T {{ r | f{d} = 0 }} then \"eq\" else \"ne\" ]\n", .{n});
+    try w.write("Main.beni", text.written());
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--no-cache", "--jobs=1", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(built.term == .exited);
+    if (built.exit_code == 0) {
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        const program = try w.node(world.entry_file);
+        try testing.expectEqual(@as(u8, 0), program.exit_code);
+        try testing.expectEqualStrings("eq\nne\n", program.stdout);
+    } else {
+        try expectExited(built, 1);
+        try testing.expect(built.diagnostics.len != 0);
+        for (built.diagnostics) |d| try testing.expect(d.code != .internal);
         // ┌─────────────────────────────────────┐
         // │ VERIFY SIDE EFFECTS                 │
         // └─────────────────────────────────────┘
-        // A refused build writes nothing.
-        try testing.expect(!w.exists("wide"));
+        try testing.expect(!w.exists("out"));
     }
 }
 

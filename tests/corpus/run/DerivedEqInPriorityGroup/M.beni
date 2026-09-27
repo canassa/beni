@@ -1,8 +1,8 @@
--- Row 72: an unannotated `pub compare` is checked before the module's other
--- groups, so the `==` inside it must already see W's scheme-checked
--- capability. `ArbitraryHolder.eq` needs `a.key`, which Keyed supplies,
--- so W derives equality through it even though Keyed holds a function.
--- The same `==` in `same` below, checked later, was always accepted.
+-- Row 72: an unannotated `pub compare` is checked by v1 before the module's
+-- other groups (a priority group; v2 has none since R11, and asks W's derived
+-- context, checker-v2.md §11.2). `ArbitraryHolder.eq` needs `a.key`, which
+-- Keyed supplies, so W derives equality through it even though Keyed holds a
+-- function. The same `==` in `same` below was always accepted.
 import ArbitraryHolder
 import KeyedFunction
 

@@ -1,2 +1,0 @@
-# At `hh "s"`: the hint names `mb`, in every order.
-kind_mismatch 33:24 contains "comes from `mb`, which is in a recursive group with `ma`, `mc`"

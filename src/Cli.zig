@@ -147,12 +147,12 @@ pub const Common = struct {
     iface_hash: bool = false,
     /// `--checker=v1|v2` — **hidden**, for `--roundtrip-interfaces`' reasons,
     /// and temporary: which type checker checks the modules
-    /// (`docs/design/checker-v2.md` §20.1, §22.1). `v1`, the default, checks
-    /// every package, and so does `v2` (from R9; until R9 it left `core` and
-    /// the platform to v1). The value is a term of every cache key (§14.3).
-    /// On `Common`, like the round-trip flags, because `dump` runs the checker
-    /// too. Exists R4–R11 and is deleted at R12.
-    checker: Checker = .v1,
+    /// (`docs/design/checker-v2.md` §20.1, §22.1). `v2`, the default since the
+    /// cut-over (R11), checks every package; `v1`, frozen, still can, for the
+    /// scenarios that compare the two checkers. The value is a term of every
+    /// cache key (§14.3). On `Common`, like the round-trip flags, because
+    /// `dump` runs the checker too. Deleted with v1 at R12.
+    checker: Checker = .v2,
 };
 
 /// `--checker`'s values (`Common.checker`).
@@ -1145,7 +1145,7 @@ test "usage text mentions every subcommand" {
 
 test "--checker is hidden, on every command that checks, and takes v1 or v2" {
     // `checker-v2.md` §20.1: the one CLI addition of the rewrite, test-only,
-    // R4–R11. On `Common` so `dump` takes it too, as the corpus passes it to
+    // R4–R12. On `Common` so `dump` takes it too, as the corpus passes it to
     // `check`, `build` and `dump` alike (`plans/checker-rewrite.md` §2.4).
     try expectCommand(
         .{ .check = .{ .common = .{ .checker = .v2 }, .paths = &.{"src"} } },
@@ -1163,8 +1163,8 @@ test "--checker is hidden, on every command that checks, and takes v1 or v2" {
         .{ .dump = .{ .common = .{ .checker = .v2 }, .stage = .types, .file = "M.beni" } },
         &.{ "dump", "--stage=types", "--checker=v2", "M.beni" },
     );
-    // Unset is v1: the default the gates run.
-    try expectCommand(.{ .check = .{ .paths = &.{"src"} } }, &.{ "check", "src" });
+    // Unset is v2 since the cut-over (R11): the default the gates run.
+    try expectCommand(.{ .check = .{ .common = .{ .checker = .v2 }, .paths = &.{"src"} } }, &.{ "check", "src" });
     try expectUsage("beni: option '--checker' needs a value: --checker=v1|v2", &.{ "check", "--checker", "src" });
     try expectUsage("beni: invalid value 'v3' for --checker (expected v1 or v2)", &.{ "check", "--checker=v3", "src" });
     try expectUsage("beni: invalid value '' for --checker (expected v1 or v2)", &.{ "check", "--checker=", "src" });

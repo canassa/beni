@@ -1,4 +1,0 @@
-# The first argument, as `Basics.eq x y` directly is refused; the messages the
-# direct controls print on 7427828.
-not_equatable 14:15 contains "ANY type"
-not_equatable 23:12 contains "function"

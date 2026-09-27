@@ -197,7 +197,7 @@ plan data, not a TypeStore. Open questions there precede dependent implementatio
 
 ## 5. The type store
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 Elm's `Type.Variable` + Roc's `types/store.zig`, in the design's data rules:
 
@@ -319,7 +319,7 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 
 ### 6.2 Solving
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 Elm's `Type/Solve.hs` on the store above: walk the tree; `equal` calls `unify`; `let`
 introduces a new rank, solves the headers, **generalises** by scanning only the pool of
@@ -360,7 +360,7 @@ which is what turns a constraint into a call target and an evidence slot.
 
 ### 6.3 Generalisation and the ad-hoc kinds
 
-> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (a) itself still holds until R14 builds D5: since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27) it holds as checker v2's rule (the `let_constrained_monomorphic` switch), so this section stays normative until R14.
 
 A generalised scheme records, per quantified variable, its kind and equatable flag. That is
 the entire mechanism of §3.1: `number` and `appendable` are closed sets tested by a flat
@@ -388,7 +388,7 @@ M3 decides how a literal of type `number` is emitted.
 
 ### 6.4 Obligations, discharged post-solve
 
-> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, until R12 deletes it.
 
 Each obligation is `(kind, var, region)` in a per-rank list. At generalisation time, for each
 obligation whose variable's root is:
@@ -411,7 +411,7 @@ guard that poisons must report first", applied here. → `static-dispatch-spike.
 
 ### 6.5 `?`
 
-> **Checker v2 (2026-09-24), owner decision D2 — effective at R11.** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11), when D2 replaces it.
+> **Checker v2 (2026-09-24), owner decision D2 — effective since R11 (2026-09-27).** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11): D2 replaced it, and this section describes checker v1 only, until R12 deletes it.
 
 `try(e, target)` where the enclosing function's declared or inferred result type is `r`:
 speculatively unify `e` with `Result x a` and `r` with `Result x b` (journal mark); if that
@@ -1197,7 +1197,11 @@ of links used to print `{ a : Int, … }` **closed**, and a closed record is not
 open one — it refuses the extra fields the open one accepts, so the reader was shown a constraint
 the program does not have, and a `--stage=interface` dump said so as an artifact. `… | ` is the
 defined form for "open, and there is more here"; `check/depth/RecordExtTruncatedDeep` and
-`check/good/RecordExtChain` pin it in a diagnostic and in an interface respectively.
+`check/good/RecordExtChain` pinned it in a diagnostic and in an interface respectively.
+*Since the cut-over (R11, 2026-09-27)* those two print the whole 65-field record, open
+(`{ r | … }`): checker v2 keeps a record as one node (`checker-v2.md` §4.1, CK-08), so no chain
+reaches `max_ext_links`, and no fixture reaches the `… | ` form any more. The bound and its rule
+stand for any chain a later store can build.
 
 *A third bound, added 2026-09-25 by R4b's review (CK-92).* A type is printed as a TREE, so a shared
 or cyclic graph — `x = ( x, x )`, a doubling `let` — printed 2^24 leaves under `max_depth` alone:
@@ -1264,8 +1268,8 @@ properties make it safe to run over prose nobody re-read:
 ### 8.5 Checker v2's texts: the annotation escape and the infinite type
 
 Added 2026-09-25 by R4b (`checker-v2.md` §15.3, S20), **before** the code that prints them. They
-are what `--checker=v2` prints; the old checker keeps its own texts until the cut-over (R11), when
-these become the only ones. Everything else below is unchanged.
+are what checker v2 prints; the old checker kept its own texts until the cut-over (R11), since
+which these are the default checker's. Everything else below is unchanged.
 
 **The annotation escape (CK-01, `checker-v2.md` §8.3, D7).** Code `rigid_mismatch`, title
 `TYPE MISMATCH`. An annotated `let` binding whose rigid variable the body tied to a type of the
@@ -1324,7 +1328,7 @@ many, somewhere inside itself.
 ### 8.6 Checker v2's texts: which leg of a `?` failed
 
 Added 2026-09-25 by R5 (`checker-v2.md` §8.6, §15.3; CK-51), **before** the code that prints
-them. They are what `--checker=v2` prints; v1 keeps §6.5's one text until the cut-over. Code
+them. They are what checker v2 prints; v1 kept §6.5's one text until the cut-over (R11). Code
 `try_shape`, title `BAD QUESTION MARK`, region the `?` expression, in all three.
 
 Deciding a `?` is three unifications (§6.5): the subject `e ~ Shape x a`, the enclosing result

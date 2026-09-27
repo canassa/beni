@@ -1183,13 +1183,6 @@ test "an empty directory is zero files and zero diagnostics" {
     try testing.expectEqualStrings("", f.stderr);
 }
 
-// `test-v2` runs this file's determinism scenarios alone, selected by name
-// (`build.zig`). This guard's name matches the same filter, so it runs with
-// them and checks the binary holds every one (`world.expectFilteredTests`).
-test "test-v2 guard: the 600 modules check identically scenario and its twin run in the filtered binary" {
-    try world.expectFilteredTests(@import("builtin").test_functions.len);
-}
-
 test "5 000 empty modules produce identical output at --jobs=1 and the machine default" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1847,7 +1840,12 @@ fn constraintChainCounters(w: *World, links: usize, trace: []const u8, source_pa
 
     const flag = try std.fmt.allocPrint(testing.allocator, "--self-profile={s}", .{trace});
     defer testing.allocator.free(flag);
-    const r = try w.run(&.{ "check", flag, "--core-root=nocore", "--jobs=1", source_path });
+    // `--checker=v1`: the counters below are v1's constraint sets (A.81), which
+    // checker v2 does not have — it records obligations as rows on their
+    // variables (`checker-v2.md` §4.5), and `perf_test.zig`'s CK-96 and CK-97
+    // hold those linear. Pinned to v1 at the cut-over (R11); deleted with v1
+    // at R12.
+    const r = try w.run(&.{ "check", flag, "--checker=v1", "--core-root=nocore", "--jobs=1", source_path });
     if (r.term != .exited) {
         std.debug.print("did not exit normally: {any}\n", .{r.term});
         return error.CompilerDiedFromSignal;

@@ -725,7 +725,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // because what they measure is a graph and a constraint tree, not a
     // span of source. Per module and not per run, because "this module was
     // not re-checked" is what M4's incrementality tests have to see.
-    var per_module_seen: [files.len][7]bool = @splat(@splat(false));
+    var per_module_seen: [files.len][11]bool = @splat(@splat(false));
     var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
     // `cache_load` and `dep_digest` are per MODULE from M4-3 on, not serial
@@ -733,8 +733,11 @@ test "--self-profile records every phase of every file and every counter, exactl
     // values are computed on the worker that claimed the module, because an
     // import's contribution exists only once that import has been checked
     // (`fast-compiler.md` §8). Both are emitted with or without a cache
-    // directory, so that there is one code path rather than two.
-    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "cache_load", "dep_digest" };
+    // directory, so that there is one code path rather than two. `derived`,
+    // `elaborate`, `publish` and `finish` are checker v2's P5, P6, P8 and P9
+    // (`checker-v2.md` §5), nested in `check`; they are here since v2 became
+    // the default checker (R11), and the scenario below pins their nesting.
+    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "elaborate", "publish", "finish", "cache_load", "dep_digest" };
     // `types` is serial and once per run (checker.md §5): numbering every
     // declared type and settling equatability. It is in the trace because
     // it can DOMINATE a build — a project of long alias chains spent 1.3 s
@@ -791,7 +794,7 @@ test "--self-profile records every phase of every file and every counter, exactl
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([files.len][7]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([files.len][11]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
     try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
@@ -891,13 +894,6 @@ fn indexOfPath(files: anytype, path: []const u8) ?usize {
 fn indexOfName(names: []const []const u8, name: []const u8) ?usize {
     for (names, 0..) |n, i| if (std.mem.eql(u8, n, name)) return i;
     return null;
-}
-
-// `test-v2` runs this file's determinism scenarios alone, selected by name
-// (`build.zig`). This guard's name matches the same filter, so it runs with
-// them and checks the binary holds every one (`world.expectFilteredTests`).
-test "test-v2 guard: the --jobs=1 and --jobs=8 scenarios all run in the filtered binary" {
-    try world.expectFilteredTests(@import("builtin").test_functions.len);
 }
 
 test "every stream of every command is byte-identical across --jobs=1 and --jobs=8, twice each" {
@@ -3050,7 +3046,10 @@ test "a dozen checker diagnostics, each by code and span" {
             .path = "B.beni",
             .source = "selfApply f =\n    f f\n",
             .code = .infinite_type,
-            .start = .{ .line = 2, .col = 5 },
+            // At the binder `f` since the cut-over (R11): checker v2 runs the
+            // occurs check at every binder (CK-04, CK-57; `checker-v2.md` §6.3,
+            // §8.2), where v1 reported the body `f f` (2:5).
+            .start = .{ .line = 1, .col = 11 },
         },
         .{
             .path = "C.beni",
@@ -3630,22 +3629,23 @@ test "a constrained value in a part position is handed its own evidence" {
     try testing.expect(std.mem.indexOf(u8, main_js, "Lib$eq(Main$eq$prim,") != null);
 }
 
-test "a private eq wins inside its module and still lets every other module derive" {
+test "a private eq wins inside its module and is private_method from every other (D1)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
     // §3.3 step 1 reaches exactly as far as `Interface` does, and the eager
     // pass has to use the same ruler.
     //
     // `Ids.eq` is NOT `pub`. Inside `Ids` it wins — `sameMajor` compares
-    // the major number only. Outside it, `Interface.findValue` maps only
-    // the `pub` entries, so `Main` cannot reach it at all and derives over
-    // `Id`'s shape instead, naming `Ids$Id$$eq` in `Ids` by §8.5.
-    //
-    // The eager pass excluded the row on ANY declaration of the name,
-    // `pub` or not, so `Ids` wrote no such function: the build exited 0 and
-    // emitted `import { Ids$Id$$eq } from "./Ids.mjs"` against a module
-    // that exported no such name — `SyntaxError` at load, before a line of
-    // the program ran. Both answers are printed here, because a fix that
-    // wrote the row by making the private value invisible everywhere would
-    // pass with only one of them.
+    // the major number only. Until the cut-over (R11) `Main` then derived
+    // over `Id`'s shape, naming `Ids$Id$$eq`, and this scenario pinned that
+    // the declaring module wrote the row (it once did not: `SyntaxError` at
+    // load). Owner decision D1 (`checker-v2.md` §11.3, R8b) made a private
+    // method answer dispatch only inside its module while staying the method
+    // of every type the module declares, so `Main`'s comparison of a
+    // `{ k : Id }` is `private_method` at its `==`, and nothing is written.
+    // The same program without that comparison builds, and the private `eq`
+    // still wins inside `Ids`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Ids.beni",
@@ -3667,7 +3667,7 @@ test "a private eq wins inside its module and still lets every other module deri
         \\    a == b
         \\
     );
-    try w.write("src/Main.beni",
+    const main_head =
         \\import Ids exposing (Id)
         \\import Node exposing (Program)
         \\
@@ -3685,29 +3685,47 @@ test "a private eq wins inside its module and still lets every other module deri
         \\main =
         \\    Node.printLines
         \\        [ show (Ids.sameMajor (Ids.Id 3 4) (Ids.Id 3 99))
+        \\
+    ;
+    try w.write("src/Main.beni", main_head ++
         \\        , show ({ k = Ids.Id 3 4 } == { k = Ids.Id 3 99 })
         \\        ]
         \\
     );
 
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const refused = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_method, refused.diagnostics[0].code);
+    try testing.expectEqualDeep(diagnostic.Span{
+        .file = "src/Main.beni",
+        .start = .{ .line = 18, .col = 36 },
+        .end = .{ .line = 18, .col = 38 },
+    }, refused.diagnostics[0].span);
+    try testing.expect(std.mem.indexOf(u8, refused.diagnostics[0].message, "`Ids.eq` is not `pub`.") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+
+    // Without the comparison outside `Ids`, the private `eq` still wins
+    // inside it: the major numbers are equal.
+    try w.write("src/Main.beni", main_head ++
+        \\        ]
+        \\
+    );
     const built = try w.buildAndRun(&.{"src"});
     try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    // The private `eq` inside `Ids`; the derived shape outside it.
-    try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
-
-    // And the name the importer reaches for is the one the declaring module
-    // wrote, which is the half that used to be missing.
-    const ids = try w.read("out/Ids.mjs");
-    try testing.expect(std.mem.indexOf(u8, ids, "const Ids$Id$$eq = ") != null);
-    try testing.expect(std.mem.indexOf(u8, ids, "export { Ids$Id$$eq,") != null);
-    // And `Ids$Id$$compare` is NOT there, though derivation wrote it: the
-    // program compares an `Id` for equality and never orders one, so
-    // `backend.md` §9 drops the row and its export with it. The export list
-    // shrinks to exactly the surviving names it used to hold (§5).
-    try testing.expect(std.mem.indexOf(u8, ids, "Ids$Id$$compare") == null);
-    const main = try w.read("out/Main.mjs");
-    try testing.expect(std.mem.indexOf(u8, main, "Ids$Id$$eq") != null);
-    try testing.expect(std.mem.indexOf(u8, main, "from \"./Ids.mjs\";") != null);
+    try testing.expectEqualStrings("", built.build.stderr);
+    try testing.expectEqualStrings("True\n", built.program.?.stdout);
 }
 
 test "core/Basics carries the derived rows §3.2's table asks it for" {
@@ -4693,9 +4711,12 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     // bitset still comes from the hidden constructor, whose function payload
     // makes its `compare` `function`; `Own` declares its module's `eq`, so
     // `eq` is `own_method` for every type of the module (the module rule,
-    // decided before the function) while `compare` is derived with v1's
-    // context, one entry per parameter; `Phantom`'s `a` holds no value, so
-    // its bitset has `b` alone; `HoldsValue` holds a `foreign type` with no
+    // decided before the function) while `compare` is derived; `Phantom`'s
+    // `a` holds no value, so its bitset has `b` alone, and so does its
+    // derived context since the cut-over (R11: D4, CK-23 — v1's context had
+    // one entry per parameter); a derived row whose payload reaches no
+    // function says `no_function` (§14.2 *as amended by R8b*, which v1 never
+    // wrote); `HoldsValue` holds a `foreign type` with no
     // method, so neither row can be derived (`unanswerable`). The rest of
     // the status vocabulary (§14.2 *As built*, N1) is pinned on core below.
     //
@@ -4783,12 +4804,11 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     try testing.expectEqualStrings(
         \\module Facts
         \\type 0 Hidden arity=1 kind=adt opaque=true equatable=false ctors=0..0 eq=own_method compare=function payload={0}
-        \\type 1 LocalWrap arity=1 kind=adt opaque=false equatable=false ctors=0..1 eq=own_method compare=present payload={0}
+        \\type 1 LocalWrap arity=1 kind=adt opaque=false equatable=false ctors=0..1 eq=own_method compare=present payload={0} no_function
         \\  context compare param=0 method=compare
-        \\type 2 Own arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=own_method compare=present payload={0}
+        \\type 2 Own arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=own_method compare=present payload={0} no_function
         \\  context compare param=0 method=compare
-        \\type 3 Phantom arity=2 kind=adt opaque=false equatable=false ctors=2..3 eq=own_method compare=present payload={1}
-        \\  context compare param=0 method=compare
+        \\type 3 Phantom arity=2 kind=adt opaque=false equatable=false ctors=2..3 eq=own_method compare=present payload={1} no_function
         \\  context compare param=1 method=compare
         \\type 4 Point arity=0 kind=alias opaque=false equatable=false ctors=3..4 eq=alias compare=alias payload=-
         \\ctor 0 LW type=1 arity=1 result=nominal
@@ -4799,7 +4819,7 @@ test "interface v3's rows are in the record: record-alias field names, payload p
         \\  field 1 x
         \\module Uses
         \\type 0 HoldsValue arity=0 kind=adt opaque=false equatable=false ctors=0..1 eq=unanswerable compare=unanswerable payload={}
-        \\type 1 WithSchema arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=present compare=present payload={0}
+        \\type 1 WithSchema arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=present compare=present payload={0} no_function
         \\  context eq param=0 method=eq
         \\  context compare param=0 method=compare
         \\ctor 0 HV type=0 arity=1 result=nominal
@@ -6413,8 +6433,8 @@ test "CK-108: a payload's equatable requirement survives a derived context under
     // `Basics.eq`, so its scheme asks `equatable` of `a` as a FLAG, not as an
     // `a.eq` clause. R8a's first draft read only open wanteds off a pass's
     // markers, so `W`'s context was empty and v2 compared two functions.
-    // The corpus fixtures `check/bad/DerivedContextEquatableFlag*` pin v1's
-    // text; v2 names the function (`v2-expected.md`), so this pins v2's code
+    // The corpus fixtures `check/bad/DerivedContextEquatableFlag*` pinned v1's
+    // text until R11 and pin v2's since (they name the function); this pins v2's code
     // and place.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

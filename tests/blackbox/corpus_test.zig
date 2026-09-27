@@ -52,11 +52,10 @@
 //! The same walker runs `tests/pending/` (`plans/checker-rewrite.md` §2):
 //! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending` reports
 //! RED/GREEN per fixture instead of failing on it, `BENI_CHECKER` adds
-//! `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds each run. `zig build
-//! test-v2` is the strict corpus run under `BENI_CHECKER=v2` (strict from R9;
-//! a `report` mode with a `v2-green.txt` ratchet until then): it exempts the
-//! fixtures of `tests/pending/v2-expected.md` — each still runs, and one
-//! that now passes fails the step (R9b) — and fails on any other. Unset
+//! `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds each run. (Until
+//! the cut-over, R11, `zig build test-v2` ran the corpus strictly under
+//! `BENI_CHECKER=v2`, exempting `tests/pending/v2-expected.md`'s fixtures;
+//! v2 is the default now, so `test-blackbox` is that run.) Unset
 //! (or empty), each is today's strict corpus run; see `Config`, and
 //! `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
@@ -348,37 +347,12 @@ fn walk(kind: Kind) !void {
     defer w.deinit();
 
     var failures: usize = 0;
-    var skipped: usize = 0;
     for (fixtures.items) |fixture| {
         const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
         const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
         const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this, .cfg = &cfg };
         switch (cfg.mode) {
             .strict => {
-                // `test-v2` from R9 (§2.4): a fixture `v2-expected.md`
-                // covers is exempt; every other one must pass. It is still
-                // run — quietly, never blessed — and one that now PASSES
-                // fails the step (R9b, R9's review: like pending rule (b)),
-                // so an expected difference that stopped differing cannot
-                // stay exempt unseen.
-                if (cfg.holds_expected and world.pending.expectedCovers(cfg.v2_expected, path)) {
-                    var exempt = case;
-                    exempt.bless = false;
-                    const was_quiet = quiet;
-                    quiet = true;
-                    world.announce_timeouts = false;
-                    reason_len = 0;
-                    const green = if (exempt.run()) |_| true else |_| false;
-                    quiet = was_quiet;
-                    world.announce_timeouts = !quiet;
-                    if (green) {
-                        std.debug.print("V2-EXPECTED  GREEN  {s}: tests/pending/v2-expected.md exempts it, and it now passes under v2 — delete its entry (plans/checker-rewrite.md §2.4)\n", .{path});
-                        failures += 1;
-                    } else {
-                        skipped += 1;
-                    }
-                    continue;
-                }
                 case.run() catch |err| {
                     std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
                     failures += 1;
@@ -388,14 +362,6 @@ fn walk(kind: Kind) !void {
                 failures += 1;
             },
         }
-    }
-    if (cfg.holds_expected) {
-        var visited: std.ArrayList([]const u8) = .empty;
-        for (fixtures.items) |fixture| try visited.append(arena, try std.fs.path.join(arena, &.{ fixture.dir, fixture.name }));
-        if (!try cfg.expectVisited(arena, kind, visited.items)) failures += 1;
-    }
-    if (failures != 0 and skipped != 0) {
-        std.debug.print("corpus {s}: {d} fixtures skipped (tests/pending/v2-expected.md)\n", .{ kind_dir, skipped });
     }
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
@@ -435,18 +401,10 @@ const Config = struct {
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture under each checker, pending mode only.
     red: []const world.pending.RedLine,
-    /// `tests/pending/v2-expected.md` (§2.4, checker-v2.md §22.1): read by a
-    /// strict run of the default root under `BENI_CHECKER=v2` — `test-v2`,
-    /// strict from R9 (`holds_expected`). A covered fixture is exempt: it
-    /// runs quietly and is never blessed, and it must still FAIL — one that
-    /// passes is stale and fails the step (R9b). (R4a–R8b ran `test-v2` in a `report` mode with a
-    /// `v2-green.txt` ratchet; strict mode made both redundant.)
-    v2_expected: []const []const u8 = &.{},
-    holds_expected: bool = false,
 
     const Mode = enum {
-        /// Unset: every fixture must pass (today's behaviour), except, under
-        /// `BENI_CHECKER=v2`, the fixtures `v2-expected.md` covers.
+        /// Unset: every fixture must pass (today's behaviour; until the cut-over,
+        /// R11, `test-v2` exempted the fixtures of `v2-expected.md` here).
         strict,
         /// `pending`: every fixture is reported RED or GREEN, and the step
         /// fails only for rules (a)–(d).
@@ -500,77 +458,7 @@ const Config = struct {
             cfg.claimed = try world.pending.readClaimed(arena, testing.io, cfg.root);
             cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
         }
-        if (mode == .strict and cfg.is_default_root and cfg.checker != null and std.mem.eql(u8, cfg.checker.?, "v2")) {
-            cfg.holds_expected = true;
-            cfg.v2_expected = try world.pending.readV2Expected(arena, testing.io, pending_root);
-            // The escape hatch is checked first: an entry names one existing
-            // fixture. (Until R9 an entry could also be a whole
-            // `<kind>/core/` directory, N13: v2 did not check `core` yet.)
-            // After the walk, every entry in a kind this process ran must
-            // also have been VISITED (`expectVisited`).
-            for (cfg.v2_expected) |entry| {
-                if (!try cfg.isFixturePath(arena, entry)) {
-                    std.debug.print("{s}/v2-expected.md lists {s}, which is not a fixture: a `.beni` file or a project directory directly under a kind directory of {s}\n", .{ pending_root, entry, cfg.root });
-                    return error.StaleExpected;
-                }
-            }
-        }
         return cfg;
-    }
-
-    /// The directories a kind collects fixtures from (`walk`): the kind's
-    /// own, its `core/`, and for `emit/` also `app/` and `release/`.
-    fn fixtureDirs(cfg: *const Config, arena: std.mem.Allocator, kind: Kind) ![]const []const u8 {
-        var dirs: std.ArrayList([]const u8) = .empty;
-        const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
-        try dirs.append(arena, kind_dir);
-        try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "core" }));
-        if (kind == .emit) {
-            try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "app" }));
-            try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "release" }));
-        }
-        return dirs.items;
-    }
-
-    /// Whether `path` is fixture-shaped and exists: a `.beni` file or a
-    /// directory whose parent is one of some kind's `fixtureDirs`. A golden,
-    /// a README or a file inside a project is not.
-    fn isFixturePath(cfg: *const Config, arena: std.mem.Allocator, path: []const u8) !bool {
-        const parent = std.fs.path.dirname(path) orelse return false;
-        var under_kind = false;
-        for (std.enums.values(Kind)) |kind| {
-            for (try cfg.fixtureDirs(arena, kind)) |dir| {
-                if (std.mem.eql(u8, dir, parent)) under_kind = true;
-            }
-        }
-        if (!under_kind) return false;
-        const stat = Io.Dir.cwd().statFile(testing.io, path, .{}) catch return false;
-        return stat.kind == .directory or (stat.kind == .file and std.mem.endsWith(u8, path, ".beni"));
-    }
-
-    /// `test-v2`, after `kind`'s walk: every `v2-expected.md` entry that sits
-    /// in one of this kind's directories must be among the fixtures the walk
-    /// collected — so an entry can only ever name something the walk runs.
-    fn expectVisited(cfg: *const Config, arena: std.mem.Allocator, kind: Kind, visited: []const []const u8) !bool {
-        const dirs = try cfg.fixtureDirs(arena, kind);
-        var ok = true;
-        for (cfg.v2_expected) |path| {
-            const parent = std.fs.path.dirname(path) orelse continue;
-            var mine = false;
-            for (dirs) |dir| {
-                if (std.mem.eql(u8, dir, parent)) mine = true;
-            }
-            if (!mine) continue;
-            var seen = false;
-            for (visited) |v| {
-                if (std.mem.eql(u8, v, path)) seen = true;
-            }
-            if (!seen) {
-                std.debug.print("STALE  {s}/v2-expected.md lists {s}, which the walk of {s} never ran\n", .{ pending_root, path, kind.sub() });
-                ok = false;
-            }
-        }
-        return ok;
     }
 
     /// The signature `RED` records for `repo_path` under the checker under
@@ -589,14 +477,14 @@ const Config = struct {
 
     /// The label of the checker under test in a report line.
     fn checkerName(cfg: *const Config) []const u8 {
-        return cfg.checker orelse "v1";
+        return cfg.checker orelse "v2";
     }
 
     /// Whether the checker under test is the DEFAULT one, the checker the
-    /// three gates run. Rule (b) applies to it alone: until the cut-over
-    /// (R11) that is `v1`, reached by leaving `BENI_CHECKER` unset.
+    /// three gates run. Rule (b) applies to it alone: since the cut-over
+    /// (R11) that is `v2`, reached by leaving `BENI_CHECKER` unset (v1 was the default until then).
     fn isDefaultChecker(cfg: *const Config) bool {
-        return cfg.checker == null;
+        return std.mem.eql(u8, cfg.checkerName(), "v2");
     }
 
     fn isClaimed(cfg: *const Config, repo_path: []const u8) bool {
@@ -894,7 +782,7 @@ const Case = struct {
         if (green) std.debug.print("PENDING  GREEN  {s}  {s}  {s}\n", .{ checker, ck, rel });
 
         // Rule (c): a claim is a promise that v2 keeps it green.
-        if (!green and c.cfg.checker != null and std.mem.eql(u8, c.cfg.checker.?, "v2") and c.cfg.isClaimed(repo_path)) {
+        if (!green and std.mem.eql(u8, checker, "v2") and c.cfg.isClaimed(repo_path)) {
             std.debug.print("PENDING  RULE (c)  {s}  {s} is listed in CLAIMED and is RED under v2\n", .{ ck, rel });
             return false;
         }

@@ -7,6 +7,13 @@ type checker ([`docs/design/checker-v2.md`](../docs/design/checker-v2.md) is the
 **IDs are stable.** `CK-NN` is never renumbered or reused. A finding that turns out to be wrong
 is marked *withdrawn* in place. A new finding takes the next free number at the end.
 
+**The cut-over (R11, 2026-09-27).** v2 is the default checker. Every finding whose status below
+reads *claimed* was **promoted** at R11: its fixtures moved from `tests/pending/` into
+`tests/corpus/` (the paths below are updated), and its scenarios into `ordering_test.zig`
+(`PERM`, `NEST-OVER`, `NEST-DEEP`), `abuse_wide_test.zig` (CK-79, CK-82) or `perf_test.zig`
+(`NEST-UNDER`); see `checker-rewrite.md` R11 *As built*. Still red after R11: CK-49, 50, 52 to 56,
+58 to 60 and 86 (R13), CK-88 (R12), CK-126 (the schema slices), CK-37's rest (R14).
+
 ## Sources
 
 Five read-only reviews of `7427828`, all on 2026-09-24, merged here with duplicates folded
@@ -215,7 +222,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     cycle-safe resolver walk (at the `==`). R6 blesses the real `.diag`. The scenario is
     `scenario/CK-03`: best of 3 runs, each bounded at 5 s, red signature `timeout`.
 - **Slice** R6.
-- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/CyclicReceiverNoMethodLookup.beni` (a method used on a receiver already on a cycle is one `infinite_type` and no lookup: review F5), claimed.
+- **Added by R6a's review (2026-09-25):** `tests/corpus/check/bad/CyclicReceiverNoMethodLookup.beni` (a method used on a receiver already on a cycle is one `infinite_type` and no lookup: review F5), claimed.
 
 ### CK-04 — The occurs check covers only headers, so lambda and case binders can have infinite types
 
@@ -627,7 +634,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     words of the direct controls' messages.
 - **Slice** R5.
 - **Status** claimed by R5 (2026-09-25): `check2/Instances.zig`'s marker walk requires a rigid's flag and propagates it, with an obligation at the same region, to a flex (`checker-v2.md` §11.4 *As built by R5*). The fixture is GREEN under `--checker=v2` and in `CLAIMED`.
-- **Status, after R5's review (2026-09-25).** One question is one message: the walk flags only after a `yes`, every row it makes carries the question's `origin`, and an origin reports once (`checker-v2.md` §11.4 *As built by R5, after its review*). The claim now also rests on `tests/pending/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite` and `…/EqRecordFieldFunctionAtComparison` (claimed), and on the symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` and `…/EqFunctionFieldThroughCall`, which are green on v1 and v2 and listed in `v2-green.txt`. CK-17's class holds under v2 too: `check/bad/WideRecordEqFunction` is in `v2-green.txt`.
+- **Status, after R5's review (2026-09-25).** One question is one message: the walk flags only after a `yes`, every row it makes carries the question's `origin`, and an origin reports once (`checker-v2.md` §11.4 *As built by R5, after its review*). The claim now also rests on `tests/corpus/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite` and `…/EqRecordFieldFunctionAtComparison` (claimed), and on the symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` and `…/EqFunctionFieldThroughCall`, which are green on v1 and v2 and listed in `v2-green.txt`. CK-17's class holds under v2 too: `check/bad/WideRecordEqFunction` is in `v2-green.txt`.
 
 ### CK-17 — The equatable walk gives up at 256 entries, and giving up means "equatable"
 
@@ -734,7 +741,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/RigidInsideDerivedShape.beni`. `.codes`: `missing_where_constraint` ×2 at
   the operators.
 - **Slice** R6. The `Lower` half (no structural answer to a hole) is R2.
-- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/RigidInDerivedShapeOncePerSite.beni` (one `missing_where_constraint` per rigid and method at a use: review F4), claimed.
+- **Added by R6a's review (2026-09-25):** `tests/corpus/check/bad/RigidInDerivedShapeOncePerSite.beni` (one `missing_where_constraint` per rigid and method at a use: review F4), claimed.
 
 ### CK-21 — A `where` clause's method type is never checked when the receiver is a `number` literal
 
@@ -1107,7 +1114,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
-  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
+  amended); pinned by `tests/corpus/run/DeadMiscount.beni`.
 
 ### CK-31 — A mutually recursive group's sites carry the evidence indices of its first member
 
@@ -1358,7 +1365,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     `RejectedReceiverDoesNotSilence` (`unknown_method` at 18:6 and 18:16, `type_mismatch` at
     18:49).
 - **Slice** R6 (cycle-safe walks, class flag). R14 for D5.
-- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/RejectedMethodClassWide` (the class flag OR-merged on every union, so `[ x, y ]` and `[ y, x ]` report alike: review F3), claimed.
+- **Added by R6a's review (2026-09-25):** `tests/corpus/check/bad/RejectedMethodClassWide` (the class flag OR-merged on every union, so `[ x, y ]` and `[ y, x ]` report alike: review F3), claimed.
 
 ---
 
@@ -2167,7 +2174,7 @@ and `ck/r3x/` (this catalogue's).
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
-  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
+  amended); pinned by `tests/corpus/run/DeadMiscount.beni`.
 
 ### CK-73 — An own method used in a `case` scrutinee before its definition is refused
 
@@ -2213,7 +2220,7 @@ and `ck/r3x/` (this catalogue's).
       Its `.iface` is R0's with `f`'s result changed to the pair's type, a pair of two `number`s
       written as the interface renders them, which R7 confirms when blessing. `g : Box a, b ->
       number` must stay generic in `a`.
-    - R0's current `tests/pending/check/good/ScrutineeMethodMergeVariant/` is therefore wrong, and
+    - R0's current `tests/corpus/check/good/ScrutineeMethodMergeVariant/` is therefore wrong, and
       is to be split as above. That is R7's first commit, or a follow-up touch by R0.
   - *R0 follow-up: done.* `check/bad/ScrutineeMethodMergeD14/` has `.codes` `type_mismatch
     Later.beni:29:* contains "Annotate `h`"` and the same at `Sooner.beni:33:*`. D14's hint
@@ -2304,7 +2311,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
-  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
+  amended); pinned by `tests/corpus/run/DeadMiscount.beni`.
 
 ### CK-77 — A derived context that reaches an in-flight method does not merge the asker
 
@@ -2397,7 +2404,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   change, with `Dispatch.Derived.evidence_count: u16` widened or removed.
 - **Fixture** the abuse scenario above. Its expectation changes with the fix.
 - **Slice** R8a (manager, 2026-09-24, moved from R2a): the cap exists because a derived record function takes one evidence parameter per field. D4 (R8a) already changes the derived-function signature to one parameter per context entry; packing the evidence belongs to that change, so it is done once, not twice.
-- **Status** R8a (2026-09-26), claimed under v2: the verdict has no field cap (`scenario/CK-79`: 40 000 fields, `==` and `<` built and run under v2; red under v1, whose abuse test still pins the refusal).
+- **Status** R8a (2026-09-26), claimed under v2: the verdict has no field cap (`scenario/CK-79`: 40 000 fields, `==` and `<` built and run under v2; red under v1, whose abuse test pinned the refusal). Promoted at R11 into `abuse_wide_test.zig`, whose record `==` scenario now builds and runs at 4 096, 4 097 and 65 530 fields.
 - **Note** (R2a stage 2, 2026-09-24, for the manager): the one-value representation the Expected line
   asks for now exists past 4 096 positions — `static-dispatch-spike.md` §9.2's wide form, landed for
   CK-81 and reached today only through a nominal payload. What lifting the cap still needs is the
@@ -2733,7 +2740,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 
 - **Severity** unsound-runtime. **Area** core: the solver's recursion guard. **Class** K3.
   **Sources** R4b, while driving a 100 000-deep type through every walk (I4).
-- **Program** `tests/pending/check/bad/LetOfManyBindings.beni`: `f x0 = let x1 = negate x0 … x5000 =
+- **Program** `tests/corpus/check/bad/LetOfManyBindings.beni`: `f x0 = let x1 = negate x0 … x5000 =
   negate x4999; bad = String.length x5000 in bad` (one binding per line, generated).
 - **Observed** on 986b2c5: exit 0, `f : number -> a` — the result promises any type, so
   `String.toUpper (f 1)` checks. Each of a `let`'s groups is a `let` node nested in the previous
@@ -2929,10 +2936,10 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixed by** v2's resolver (R6a): the wanted rides on the receiver, is resolved when it is bound
   (eager draining, `checker-v2.md` §9.1), and matching unifies the method's instantiated scheme
   with the call's method type, so the result is the method's.
-- **Fixtures** `tests/pending/check/bad/MethodResultTooGeneral.beni` and
-  `tests/pending/check/good/EagerDrainInnerLet.beni`, both claimed.
+- **Fixtures** `tests/corpus/check/bad/MethodResultTooGeneral.beni` and
+  `tests/corpus/check/good/EagerDrainInnerLet.beni`, both claimed.
 - **Slice** R6a (claimed).
-- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/MethodResultMismatchOnce` (a call's result mismatch is one message; the callee's requirements fail in silence: review F6), claimed.
+- **Added by R6a's review (2026-09-25):** `tests/corpus/check/bad/MethodResultMismatchOnce` (a call's result mismatch is one message; the callee's requirements fail in silence: review F6), claimed.
 
 ### CK-101 — A derivability walk through alternating method boundaries recurses without end (checker v1)
 
@@ -2967,7 +2974,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   distinct nodes.
 - **Fixed by** R6a's review: `Instances.derivability`, one iterative walk over `(node, method)`
   pairs coloured per pair (`checker-v2.md` §9 *As built by R6a*).
-- **Fixtures** `tests/pending/check/bad/DerivabilityAlternatingCycle` (claimed) and the v2 timing
+- **Fixtures** `tests/corpus/check/bad/DerivabilityAlternatingCycle` (claimed) and the v2 timing
   scenario `perf_test.zig` "CK-101".
 - **Slice** R6a (claimed).
 
@@ -3025,7 +3032,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   and the structural function for the slot's method everywhere else (`checker-v2.md` §13.1 as
   amended by R6b's review); the I7 assert now checks each leaf's place against its slot's method,
   so v1's `check` refuses the program with `internal`.
-- **Fixtures** `tests/pending/run/UndeterminedCompareSlot` (claimed; red on v1 as `internal`).
+- **Fixtures** `tests/corpus/run/UndeterminedCompareSlot` (claimed; red on v1 as `internal`).
 - **Slice** R6b (claimed).
 
 ### CK-104 — A constant that calls a derived row whose body names a later own value throws at load (backend)
@@ -3041,7 +3048,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixed by** R6b's review: `Edges.termsEdges` walks through this module's derived rows for a
   declaration's edges, which both emission order (`Lower.siteTops`) and the value-cycle check read.
 - **Fixtures** `tests/corpus/run/DerivedRowBodyEmissionOrder` (fails on e763e12 under both
-  checkers), and `tests/pending/run/DerivedContextClosedOwnMethodPermuted` (CK-67's program with each
+  checkers), and `tests/corpus/run/DerivedContextClosedOwnMethodPermuted` (CK-67's program with each
   `key` last; claimed, red on v1 for CK-67's reason).
 - **Slice** R6b (fixed).
 
@@ -3283,7 +3290,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Severity** latent (no wrong output found). **Area** the derived-context fixpoint
   (`Contexts`) and group merging (§10.4), v2 only. **Class** K7. **Sources** R8a's review round,
   building the linear frame assert the structural review proposed (2026-09-26).
-- **Program** `tests/pending/check/bad/DerivedContextMergesAsker/` (CK-77), `…ReentrantSameFirst`
+- **Program** `tests/corpus/check/bad/DerivedContextMergesAsker/` (CK-77), `…ReentrantSameFirst`
   (CK-74), `run/DerivedContextClosedOwnMethodPermuted` (CK-104), and orders in `scenario/PERM`.
 - **Observed** with a Debug assert at `popFrame` of a `.fixpoint` frame ("every young variable's
   class is at the frame's rank or deeper, or generalized"): young variables of the pass end in

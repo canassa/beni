@@ -468,6 +468,10 @@ fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: []const Elabo
     defer bad.deinit(scratch);
     try in.dispatch.checkI7(bir, in.interfaces, in.types, in.interner, scratch, &bad);
     if (bad.items.len == 0) return;
+    // From the cut-over (R11) a violation is a v2 bug with no known
+    // exception, so a safe build stops at it (§13.1); a release build still
+    // says `internal` below and writes nothing.
+    if (std.debug.runtime_safety) std.debug.panic("I7: {d} instruction(s) whose evidence tree does not add up (checker-v2.md §13.1)", .{bad.items.len});
     std.mem.sort(Bir.Inst.Index, bad.items, {}, regionLessThan);
     var previous: ?Bir.Inst.Index = null;
     for (bad.items) |inst| {

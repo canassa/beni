@@ -1,8 +1,0 @@
-# One per module, at `q "s"`; the call or its argument is R7's to bless.
-# Amended by R7 (2026-09-26): the code is `kind_mismatch`, not `type_mismatch`.
-# D14 makes `q` monomorphic, so `q 1` fixes its parameter to a `number` and
-# `q "s"` meets `String` against it: a literal number against a type that is
-# not one is `kind_mismatch` by v1's rule, whatever made the parameter
-# monomorphic. The hint, and the one diagnostic per order, are what D14 owes.
-kind_mismatch FirstF.beni:31:* contains "Annotate `g`"
-kind_mismatch FirstG.beni:35:* contains "Annotate `g`"

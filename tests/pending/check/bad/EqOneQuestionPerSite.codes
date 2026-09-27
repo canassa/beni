@@ -1,3 +1,0 @@
-# One per comparison, naming the function.
-not_equatable 20:15 contains "( (Int -> Int), Box )" contains "There is a function"
-not_equatable 25:15 contains "{ a : Int -> Int, b : Box }" contains "There is a function"

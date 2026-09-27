@@ -1,0 +1,1 @@
+[{"code":"missing_field","severity":"error","span":{"file":"tests/corpus/check/bad/FieldErrorTextOrder.beni","start":{"line":26,"col":7},"end":{"line":26,"col":8}},"title":"MISSING FIELD","message":"This record does not have a `apple` field:\n\n    { cherry : Int }\n\nBut I need a record like:\n\n    { apple : Int }\n"}]

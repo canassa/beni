@@ -290,7 +290,7 @@ const Edit = struct {
     /// after the edit, and modules cut off. `--cache-keys` already predicts
     /// the first; pinning it too is what makes "v2 re-checks exactly what v1
     /// re-checks" a fact, since both checkers run this table with these
-    /// numbers (`test-blackbox`, `test-v2`).
+    /// numbers (`test-blackbox`, and `test-v2` until the cut-over, R11).
     rechecked: u64,
     cut_off: u64,
     /// Run under v2 only: v1's key cannot see the edit and its warm check

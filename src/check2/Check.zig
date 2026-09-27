@@ -236,8 +236,8 @@ pub const Options = struct {
     /// The firewall cutoff's per-module work (`fast-compiler.md` §8). Null on
     /// a run that computes no keys at all — every checking run has one.
     cutoff: ?*Cutoff = null,
-    /// `--checker` (`Checker`). v1 checks every module unless this is `v2`.
-    checker: Checker = .v1,
+    /// `--checker` (`Checker`). v2 by default since the cut-over (R11); `v1` is the frozen old checker.
+    checker: Checker = .v2,
 
     /// Whether v2 checks the modules: every package's, `core` and the
     /// platforms included, under `--checker=v2` (checker-v2.md §22.1, R9).
