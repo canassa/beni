@@ -46,10 +46,11 @@ const Digest = @import("../cache/Digest.zig");
 const Driver = @import("Driver.zig");
 
 /// Which type checker checks a module (checker-v2.md §22.1, D6): the hidden
-/// `--checker=v1|v2`. Under `v2` the ROOT package is checked by v2 and every
-/// other package — `core`, a platform — by v1, until R9. The id is also a
-/// term of every cache key (`cache/Key.zig`, §14.3), so a cache written under
-/// one checker is never read under the other. Deleted at R12.
+/// `--checker=v1|v2`. Under `v2` every package — the root, `core`, a
+/// platform — is checked by v2 (from R9; until R9 v1 kept every non-root
+/// package). The id is also a term of every cache key (`cache/Key.zig`,
+/// §14.3), so a cache written under one checker is never read under the
+/// other. Deleted at R12.
 pub const Checker = enum { v1, v2 };
 
 const Check = @This();
@@ -231,15 +232,12 @@ pub const Options = struct {
     cutoff: ?*Cutoff = null,
     /// `--checker` (`Checker`). v1 checks every module unless this is `v2`.
     checker: Checker = .v1,
-    /// `--core`: the root package's files are lowered as core
-    /// (`Session.fileIsCore`), so under `--checker=v2` they are core for this
-    /// purpose too and v1 checks them until R9 (checker-v2.md §22.1, N13).
-    root_is_core: bool = false,
 
-    /// Whether v2 checks module `m`: the root package, under
-    /// `--checker=v2`, unless `--core` made it core (checker-v2.md §22.1).
-    pub fn usesV2(options: *const Options, graph: *const Graph, m: Graph.Index) bool {
-        return options.checker == .v2 and !options.root_is_core and graph.module(m).package == .app;
+    /// Whether v2 checks the modules: every package's, `core` and the
+    /// platforms included, under `--checker=v2` (checker-v2.md §22.1, R9).
+    /// Until R9 it was the root package's only, and not under `--core`.
+    pub fn usesV2(options: *const Options) bool {
+        return options.checker == .v2;
     }
 };
 

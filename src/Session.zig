@@ -1667,7 +1667,6 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .cached = r.cached,
                     .cutoff = r.cutoff,
                     .checker = r.session.options.checker,
-                    .root_is_core = r.session.options.core,
                 },
             );
         }

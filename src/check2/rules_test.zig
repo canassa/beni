@@ -192,8 +192,8 @@ const capability_readers = [_][]const u8{};
 /// §11.4 (`Marker.zig`'s walk refuses a `foreign type` declared not
 /// equatable), not the dispatch settle — R8a's review, S3. A second reader
 /// fails here. A schema endpoint's gate is computed, not read (R8b), except
-/// for an endpoint of a record the old checker wrote, which has no hidden
-/// row: that checker's own bit, as its ABI is read for its other types.
+/// (before R9, for an endpoint of a record the old checker wrote, which had
+/// no hidden row; from R9 every record a v2 build reads is v2's).
 const equatable_readers = [_][]const u8{"Marker.zig"};
 
 test "S4: nothing in check2 reads v1's capability API" {

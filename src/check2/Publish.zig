@@ -338,7 +338,7 @@ const Facts = struct {
         if (id == wk.int or id == wk.float or id == wk.bool or id == wk.char or id == wk.string or (id == wk.order and kind == .eq)) {
             return .{ .status = .primitive };
         }
-        if (f.contexts.module_has[@intFromEnum(kind)]) {
+        if (f.contexts.moduleRuleAnswers(id, kind)) {
             if (f.contexts.module_pub[@intFromEnum(kind)]) return .{ .status = .own_method };
             return f.private(id, Contexts.methodName(kind));
         }

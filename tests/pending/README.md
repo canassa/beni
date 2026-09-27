@@ -10,8 +10,8 @@ short version.
 zig build test-pending        # NOT a gate: the fixtures here (under v1, then --checker=v2) and the
                               # non-timing scenarios, on the Debug binary; passes when every one is
                               # red for its recorded reason
-zig build test-v2             # NOT a gate: tests/corpus/ under --checker=v2, PASS/FAIL per fixture
-                              # (report mode until R9); fails only for a red v2-green.txt fixture
+zig build test-v2             # NOT a gate: tests/corpus/ and the --jobs determinism scenarios under
+                              # --checker=v2, strict (R9): every fixture passes but v2-expected.md's
 zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
                               # (zig-out/perf/bin/beni); same rules
 zig build test-perf           # NOT a gate: the timing scenarios that were FIXED and promoted
@@ -36,8 +36,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 |---|---|
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
 | `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
-| `v2-green.txt` | corpus fixtures a landed slice made green under v2: `zig build test-v2` (R4a) fails when one is red |
-| `v2-expected.md` | corpus fixtures `test-v2` skips: `--core` fixtures until R9 (`checker-v2.md` §22.1), and the expected differences of §20.4 |
+| `v2-expected.md` | corpus fixtures `test-v2` skips: the expected differences of `checker-v2.md` §20.4 (until R9 also the `--core` fixtures, §22.1; R4a–R8b's `v2-green.txt` ratchet went with report mode at R9) |
 | `v2-subset.sh` | the corpus fixtures R4b's v2 is held to, read off v1's dumps (`checker-rewrite.md` R4b): run from the repo root, prints one fixture per line |
 | `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`; CK-41 was promoted into `perf_test.zig` by R3), a generated width or depth (CK-82, and CK-79 from R8a; CK-83 was promoted by R2c) and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` (`test-pending`, under both checkers since R7) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
 

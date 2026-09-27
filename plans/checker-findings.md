@@ -579,6 +579,13 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - "Were there priority groups?" is encoded as `pending.capacity != 0` (`1298`, `1312`).
 - **Fixture** none. `checker-v2.md` §5's named phases.
 - **Slice** R4 and R9.
+- **Status, after R9 (2026-09-27).** Closed for v2, which from R9 checks every module under
+  `--checker=v2`: `check2/Module.zig` runs P1–P9 once each, in order, named; the schema plan is
+  built in P9 after `Cycles.run`, gated on no error (`checker-v2.md` §16); P5, P6, P8 and P9 have
+  profile events of their own (R8c); and `Incremental.install`'s header now lists the five steps
+  its body does, numbered in order. v1's rot (`ModuleCheck.run`'s step numbers, its
+  `schema_plan_ok`, the dead `Types` settles, `pending.capacity`) stays with frozen v1 and goes with
+  it at R12.
 
 ---
 
@@ -3548,6 +3555,60 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** none yet.
 - **Slice** unassigned (frontend).
 
+### CK-130 — Under v2 checking `core`, `Order` has no `compare` and `Never` no `eq` or `compare`
+
+- **Severity** valid-program-rejected. **Area** derived contexts and publication (§11.2, §14.2),
+  v2 only. **Class** K7. **Sources** R9, the first build with v2 checking `core` (2026-09-27).
+- **Program** any module outside `Basics` writing `LT < GT`, `Just LT < Just EQ`, `List.sort` over
+  `Order`s, or `==`/`<=` on a `Maybe Never`.
+- **Observed** `no_methods_on_shape` at each use: "This type has no `compare`: Order". `Basics`'
+  record, now written by v2, said `own_method` for `Order`'s `compare` and for both of `Never`'s
+  methods, and wrote no derived row: `Contexts.module_has` (the module rule, §11.3) saw `Basics`'
+  `pub compare : number, number -> Order` and `pub foreign eq`, and `Contexts.peek`, the fixpoint's
+  first approximation, `Derivable.headNeedsRun` and `Publish.derived` read it without asking the
+  well-known table first. Resolution (`Instances.onApp`) consults the table before the module rule
+  and answered `derived` — from a row the record did not have.
+- **Expected** v1's rows: `Order` `eq=primitive compare=present`, `Never` `eq=present
+  compare=present`, each with its derived function (`static-dispatch-spike.md` §3.2).
+- **Fix** (R9) `Contexts.moduleRuleAnswers`: the module rule answers a type's method unless §3.2's
+  table derives it (`Contexts.tableDerives`: `Order`'s `compare`, both of `Never`'s), read at all
+  four places. `core`'s records under v2 are then v1's but for the `no_function` bit (§14.2 *as
+  amended by R8b*).
+- **Fixture** `tests/corpus/run/NeverAndOrderDerived.beni` (every use outside `Basics`: direct, in
+  a `Maybe`, a tuple, a record, a list, a type of the module, through a `where` clause, and a
+  `Maybe Never` / own `Never`-holding type), and the existing `run/OrderValues.beni` and
+  `dispatch/Primitives.beni`; all three red under `test-v2` before the fix, green after.
+- **Slice** R9 (fixed).
+
+### CK-131 — v2's check of a derived comparison at a use costs about 1.6× v1's (`s_tup6000`)
+
+- **Severity** performance. **Area** the resolver's derived path (`Instances.derivedPositions`,
+  `importedMethod`, `Derivable.derivability`), v2 only. **Class** K11. **Sources** R9, measuring
+  `checker-v2.md` §18's three medians, which no slice had re-measured since the diary's
+  2026-09-24 entry (2026-09-27).
+- **Program** `s_tup6000`: 6 000 declarations `fN : Int, Int -> Bool`, `fN a b = ( a, [ b ] ) <
+  ( b, [ a ] )`, one module (R9's scratch generator; the diary's program of 2026-09-24 was not kept).
+- **Observed** ReleaseFast, `--self-profile`, the sum of `check` events, median of 7: v1 29.4 ms,
+  v2 55.6 ms at `ed61b07` (1.89×; whole process 1.53× in cycles); 47.0 ms after R9's two changes
+  (1.58×). `s_int6000` (`a < b`) is 1.07×, and the tuple of two `Int`s alone
+  (`( a, b ) < ( b, a )`) 1.66×: the cost is per derived position. The profile of `ed61b07`: the
+  imported `List.compare` instantiated from its interface bytes at every position
+  (`Schemes.instantiate`, `Reader.read`, `orderWalk`, about 5 % of v2's check), the derivability
+  walk's two hash maps (about 6 %, halved by R9), the store's growth (about 6 %, gone with R9's
+  reserve), and a sub-wanted created and stepped per position.
+- **Expected** §18's rule: ≤ 1.10× v1 on each of the three medians at R9 and at the cut-over.
+- **Fix** not done. v1's answer to the same program was row 72's `plainMethodMask` (diary
+  2026-09-24 00:17): an imported method whose scheme is `T a1 … an, T a1 … an -> Bool|Order` with
+  exactly its own name required of its parameters answers without instantiating. v2's analogue must
+  create each position's sub-wanted with the requirement's own `kind`, and ready it on the frame's
+  queue as the unification of the instantiated scheme would (`Unify.readyWanted`), so the
+  resolution order and every diagnostic stay the same; beyond that the per-position wanted itself
+  is the next cost.
+- **Fixture** none yet: a `perf_test.zig` ratio cannot see a constant factor. The measurement
+  is `checker-v2.md` §18 *as measured by R9*.
+- **Slice** unassigned: proposed as an R9 follow-up before R11 (the manager's call), since §18
+  holds R11 to the same budget.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3685,6 +3746,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-127 | performance | K14 | — (a `lower`-event scenario when taken) | unassigned (frontend; found by R8c) |
 | CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
 | CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
+| CK-130 | valid-program-rejected (v2 only) | K7 | promoted: `run/NeverAndOrderDerived.beni` | R9 (fixed) |
+| CK-131 | performance (v2 only) | K11 | — (§18's `s_tup6000` median) | unassigned (found by R9; proposed: an R9 follow-up before R11) |
 
 Totals:
 - 128 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c). CK-78 records a decision, not a defect, and is counted under none of the severities below.

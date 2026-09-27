@@ -131,9 +131,18 @@ find dict predicate =
         )
 
 
+-- A `case`, not `find dict predicate /= Nothing`: `/=` on a
+-- `Maybe ( String, v )` needs `v.eq`, which this annotation does not give,
+-- so `--checker=v2` refuses the comparison (`missing_where_constraint`,
+-- CK-20's rule); the old checker answered `v` with structural equality.
 pub any : Dict String v, (String, v -> Bool) -> Bool
 any dict predicate =
-    find dict predicate /= Nothing
+    case find dict predicate of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
 
 
 pub all : Dict String v, (String, v -> Bool) -> Bool

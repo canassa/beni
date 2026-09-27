@@ -2682,7 +2682,9 @@ reads them from the memo in P9.
   bits' readers and writers and `settleSchemas`; nothing in `src/check2/` names them.
 - **An endpoint of a record the old checker wrote** has no hidden row: the importer reads v1's ABI
   for it (derives, one entry per parameter), as for any type of such a record (§14.2 *as amended by
-  R8a*). Under `--checker=v2` that is a module of another package, until R9.
+  R8a*). Under `--checker=v2` that is a module of another package, until R9. *R9 (2026-09-27):*
+  gone — every record a v2 build reads is v2's, so another package's endpoint has its hidden row
+  like any other, and the fallback is deleted (§22.1 *as built by R9*).
 
 *Amended by R8b's review round (2026-09-26).* The two reviews found the lazy `via` join
 exponential (CK-119) and three rules to change; each change below replaces the bullet of *as
@@ -3386,6 +3388,8 @@ there). The raw interface dump prints ` no_function` when it is set.
     from R4a to R8, and "v2 checks everything" from R9. A `--cache-build-id` pins the build id
     across that change, so R9 must also change the id text (say `v2c`) or bump `key_version`.
     Otherwise a `core` entry v1 wrote under `v2` could be read by a v2 that checks `core`.
+    *As built by R9 (2026-09-27):* `key_version` 4 (`cache/Key.zig`, `fast-compiler.md` §8); the
+    id text stays `v1`/`v2`.
 - *R8a (2026-09-26):* `iface_bytes.format_version` 3 → 4 (the `hidden_types` column and the
   three-word context entry, §14.2 *as amended by R8a*) and `dispatch_bytes` 3 → 4 (a context
   entry's `param` is a `u32`, CK-82; and, from R8a's review round, a `param` term's entry index
@@ -3511,6 +3515,14 @@ Within a module, every order the checker chooses is one of these:
 
 The `--jobs=1` versus `--jobs=8` determinism test and the matrix test run under `--checker=v2` from
 R9 (§22).
+
+*As built by R9 (2026-09-27):* `zig build test-v2` runs, beside the corpus, the `--jobs`
+determinism scenarios with `BENI_CHECKER=v2`, selected by name from `blackbox_test.zig` (every
+test named "… --jobs=1 and --jobs=8": the streams, the interface record, the dispatch table,
+resolution, the graph dump, an unreadable file), `build_test.zig` ("byte-identical at every
+--jobs", with and without cross-module evidence) and `abuse_test.zig` (the 600-module and the
+5 000-module scenarios); `world.zig`'s `checkerFlag` adds `--checker=v2` to each `build`, `check`
+and `dump`. All pass with `core` under v2. The matrix test is R10's.
 
 ---
 
@@ -3649,6 +3661,28 @@ target by choice: the broad `err` rule (§8.2) costs 0.8 % of instructions, and 
 P4 have events of their own (§5 *as built by R8c*): on the dispatch corpus `derived`, `elaborate`,
 `publish` and `finish` take about 2, 4, 8 and 4 ms of v2's 100 ms of `check` (wall, the root
 package's modules).
+
+*As measured by R9 (2026-09-27), with `core` under v2.* ReleaseFast, one binary, v1 and v2 by
+`--checker`. Two changes of R9's, both in v2 only: the store reserves three variables per
+instruction (it reserved one, and grew two or three times, a copy each; `Module.zig` P1), and the
+derivability walk keeps its first 16 colours inline and neither colours nor memoises a node with no
+successor (`Derivable.Colours`, `isLeaf`).
+
+| Measure | v1 | v2, `core` under v2, before the two changes | v2, R9 | R9 / v1 |
+|---|---|---|---|---|
+| plain corpus, whole process, `perf stat -r 11` cycles, two rounds | 475–478M | 494–496M | 494M | 1.036–1.040 |
+| dispatch corpus, the same | 510–511M | 545M (core under v2; 542–543M under v1 at R8c) | 538–540M | 1.055–1.058 |
+| plain corpus, `zig build bench … --checker=` check phase, three rounds, median | 93.2 ms | 101.2 ms | 97.9 ms | 1.05 |
+| dispatch corpus, the same | 101.3 ms | 111.9 ms | 111.0 ms | 1.10 (rounds 1.06–1.12) |
+| `s_int6000`, sum of `check` events, median of 7 | 16.9 ms | 19.3 ms | 18.0 ms | 1.07 |
+| `s_tup6000`, the same | 29.7 ms | 55.6 ms | 47.0 ms | **1.58** |
+
+`s_int6000` and `s_tup6000` are the diary's programs rebuilt (6 000 declarations of `a < b`, and
+of `( a, [ b ] ) < ( b, [ a ] )`, over `Int`); the dispatch corpus stands for `gen`. `s_tup6000` is over
+the rule, and was before R9 (1.89×; `ed61b07`'s binary, `core` under v1, read 1.54× in whole-process
+cycles): no slice had measured it since the diary's entry. It is
+CK-131, recorded with its profile; the bench's own figures (whole process and check phase) are
+within 1.10×. `zig build bench` gained `--checker=v1|v2` for the check line (R9).
 
 ---
 
@@ -3859,6 +3893,18 @@ under both checkers (the emitter is shared): `run/EvidenceFunctionBodyPerCall` p
 `table (where)` line where it printed three (`static-dispatch-spike.md` A.85 *as amended by R8a*),
 and CK-87's cap removal turns `run/DerivedEqDeepRecord` from refused to built.
 
+*As measured by R9 (2026-09-27), with `core` under v2:* `bench/corpus` built with `--library` under
+both checkers (dev and `--release`) differs in one kind of line, and no item 1 function: a derived
+body's position whose type is an all-nullary nominal type (`Dict`'s `NColor`, `ExprParser`'s `Op`,
+`Router`'s `Sort` and `SettingsTab`) is `x.a === y.a` under v2 where v1 calls the type's derived
+`eq`, whose body is that same `===` — A.18's rule (`Instances.onApp` step 5), which v2 applies at
+every position and v1 only at a site. The `Router` and `ExprParser` lines were already there before
+R9 (root-package modules); R9 adds `core/Dict.mjs`'s two, and `--release` renames the short names
+after the `Dict$NColor$$eq` it no longer reaches. `bench/corpus/DictExtra.beni`'s `any` was a
+`find dict predicate /= Nothing` on `Maybe ( String, v )` with `v` rigid, which v2 refuses
+(`missing_where_constraint`, CK-20's rule) and v1 answered with structural equality; it is a
+`case` since R9.
+
 ### 20.4 Existing fixtures whose expectations change
 
 These change at the slice named, and are re-blessed with review, never in bulk:
@@ -3970,6 +4016,16 @@ meaningful because v1 stops changing, not because R1–R3-style fixes keep landi
   the graph poisoned, is checked silently by v2 as by v1 (`checker.md` §4.3), so R4a's stub reports
   `not_implemented` only on the root modules that reach it clean.
 - **R9.** `--checker=v2` covers every package including `core`, and `test-v2` becomes strict.
+  *As built by R9 (2026-09-27):* `Options.usesV2` is `checker == .v2` and nothing else — the root
+  package, `core`, platform packages and `--core` fixtures alike — and `Options.root_is_core` is
+  deleted. Every record a v2 build reads is therefore v2-written, cold or warm (`key_version` 4,
+  §14.3), so v2's fallbacks for a record the old checker wrote are deleted with
+  `Context.oldCheckerWrote`: v1's ABI for a row-less private type in `Instances.derivedNominal` and
+  `Derivable.head` (now `internal`, as for any v2 record), and v1's table bit in `Marker`'s imported
+  gate. `Incremental.install` keeps v1's capability rebuild for `--checker=v1` only. `core`'s
+  records under v2 are v1's byte for byte (`dump --stage=raw` and `interface`, every module) except
+  the `no_function` bit of §14.2 *as amended by R8b*, which v1 never writes, once CK-130 was fixed
+  (§23 item 4).
 - **R11.** The default flips.
 - **R12.** v1, the flag and `check2`'s name are deleted.
 
@@ -3985,6 +4041,11 @@ meaningful because v1 stops changing, not because R1–R3-style fixes keep landi
 `tests/pending/v2-green.txt` (the ratchet, S12), or for a line of either file that names no
 fixture the walk runs (`checker-rewrite.md` §2.4). The scenarios of `pending_test.zig` run under
 the default checker only.
+
+*As built by R9 (2026-09-27):* strict. `test-v2` is the corpus walker's strict mode under
+`BENI_CHECKER=v2`: a fixture `v2-expected.md` lists is skipped (an entry must name one fixture the
+walk runs, or the step fails), and any other red fixture fails the step. Report mode and the
+`v2-green.txt` ratchet are deleted; the `--core` section of `v2-expected.md` with them.
 
 Both are part of every rewrite slice's exit criteria (`checker-rewrite.md`), beside the three
 gates.
@@ -4004,6 +4065,8 @@ These are honest uncertainties for the implementing slices, not open owner decis
    precondition. Which existing fixtures exercise it is unknown until R6 runs the corpus.
 4. **Interface v3's context rows for `core`.** `core`'s derived types (`Maybe`, `Result`, `Order`)
    get contexts equal to today's ABI. That must be confirmed by `emit/` goldens not moving in R8.
+   *R9 (2026-09-27):* confirmed with `core` checked by v2: every context row of every `core` record
+   is v1's (`dump --stage=raw`), once CK-130 put back §3.2's derived rows of `Order` and `Never`.
 5. **Schema endpoints in the fixpoint (§11.5)** depend on S3/S4 of `schema.md`, which have not
    landed. R8 covers S2's check-only endpoints, and later schema slices must use `Instances`, not
    add a property pass.

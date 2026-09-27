@@ -85,14 +85,3 @@ pub fn noteDeepDecl(cx: *const Context, decl: ?Bir.DeclIndex) Error!void {
     const d = cx.bir.decl(index);
     try cx.noteTooDeep(d.annotation.unwrap() orelse d.body.unwrap() orelse d.inst_start, index.int());
 }
-
-/// Whether the old checker wrote module `m`'s record (§14.2 *as amended by
-/// R8a*, R8a's review S2): the one case where a type with no derived row
-/// reads as v1's ABI. `Options.usesV2` is a function of the package alone,
-/// and this module is v2's, so a module of its own package is v2's too, and
-/// its record has a row — exported or hidden — for every own type a
-/// published term or alias body can reach. Every other package is v1's
-/// until R9 (§22.1).
-pub fn oldCheckerWrote(cx: *const Context, m: Graph.Index) bool {
-    return cx.graph.module(m).package != cx.graph.module(cx.module).package;
-}

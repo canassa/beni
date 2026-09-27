@@ -119,8 +119,8 @@ fn gate(in: *Marker, id: Types.TypeId, root: Var) Error!bool {
 /// its payloads — through its module's own types and schema endpoints
 /// (their `via` targets as inferred so far), and the gate of every other
 /// module's type; another module's type is its published `no_function`
-/// (§14.2 *as amended by R8b*), or, for a record the old checker wrote
-/// (which has none), that checker's table bit. Memoised per local type in
+/// (§14.2 *as amended by R8b*; from R9 every record a v2 build reads is
+/// v2's, §22.1). Memoised per local type in
 /// `Contexts` for the current generation (a group completing may infer a
 /// `via` target), permanently in a module without schemas; a walk that
 /// finds no function proves it of every type it met.
@@ -194,11 +194,10 @@ pub fn functionFree(cx: *const Context, contexts: *Contexts, solve: ?*Solve, id:
     return ok;
 }
 
-/// Another module's type's gate: its published `no_function`, or the old
-/// checker's table bit for a record it wrote.
+/// Another module's type's gate: its published `no_function`.
 fn importedGate(cx: *const Context, id: Types.TypeId) bool {
     const entry = cx.types.entry(id);
-    if (entry.module.int() >= cx.interfaces.len or cx.oldCheckerWrote(entry.module)) return cx.types.isEquatable(id);
+    if (entry.module.int() >= cx.interfaces.len) return cx.types.isEquatable(id);
     const iface = cx.iface(entry.module);
     const facts = iface.typeFacts(cx.interner, entry.name) orelse return cx.types.isEquatable(id);
     return facts.no_function;
@@ -344,7 +343,7 @@ fn has(bits: Bits, i: usize) bool {
 /// module's own declaration read now, another module's from its interface
 /// (§14.2): its exported row, or the hidden row of a private type an importer
 /// reaches (R8b). Every parameter when that cannot be known — a type with no
-/// row (a record the old checker wrote), a record not yet filled, a schema
+/// row, a record not yet filled, a schema
 /// endpoint — which is the side that asks more, never less.
 fn payloadParams(in: *Marker, id: Types.TypeId) Error!Bits {
     const cx = in.cx;

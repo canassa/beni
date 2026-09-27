@@ -691,6 +691,27 @@ fn id(c: *const Contexts, t: u32) Types.TypeId {
     return @enumFromInt(c.start + t);
 }
 
+/// Whether the module rule answers `kind` for this module's type `type_id`:
+/// the module has a value of the name (§11.3), and §3.2's table does not
+/// derive it first. `core/Basics.beni` declares `Order` and `Never` beside
+/// `pub compare : number, number -> Order` and `pub foreign eq`, and the
+/// table — consulted before the module rule (`Instances.onApp`) — derives
+/// `Order`'s `compare` and both of `Never`'s (static-dispatch-spike.md §3.2).
+/// Their rows must say so, or an importer finds no `compare` for `Order`
+/// (CK-130: first seen when R9 made v2 check `core`).
+pub fn moduleRuleAnswers(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
+    if (!c.module_has[@intFromEnum(kind)]) return false;
+    return !tableDerives(c.cx.types, type_id, kind);
+}
+
+/// §3.2's `derived` rows: `Order`'s `compare`, and `Never`'s `eq` and
+/// `compare`. (`Order`'s `eq` is the table's `primitive strict_eq`.)
+pub fn tableDerives(types: *const Types, type_id: Types.TypeId, kind: Kind) bool {
+    const wk = types.well_known;
+    if (type_id == .none) return false;
+    return type_id == wk.never or (type_id == wk.order and kind == .compare);
+}
+
 /// The module-local index of type `type_id`, if it is this module's.
 pub fn local(c: *const Contexts, type_id: Types.TypeId) ?u32 {
     if (type_id == .none) return null;
@@ -807,7 +828,7 @@ pub fn peek(c: *Contexts, s: *const Solve, type_id: Types.TypeId, kind: Kind) Er
     const t = c.local(type_id) orelse return .{ .status = .absent_other };
     const u = c.unit_of[t];
     if (u == none) return .{ .status = .absent_other };
-    if (c.module_has[@intFromEnum(kind)]) return .{ .status = .own_method };
+    if (c.moduleRuleAnswers(type_id, kind)) return .{ .status = .own_method };
     if (c.readable(s, u)) |ri| {
         const slot = c.member_of[t] * 2 + @intFromEnum(kind);
         try c.noteApprox(s, ri, slot);
@@ -1049,7 +1070,7 @@ fn run(s: *Solve, u: u32) Error!void {
         while (slot > 0) {
             slot -= 1;
             const kind: Kind = @enumFromInt(slot % 2);
-            if (c.module_has[@intFromEnum(kind)]) {
+            if (c.moduleRuleAnswers(c.id(members[slot / 2]), kind)) {
                 r.approx[slot] = .{ .status = .own_method };
                 continue;
             }

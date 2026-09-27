@@ -146,10 +146,10 @@ pub const Common = struct {
     /// module, `core` and the platform included, sorted by that key.
     iface_hash: bool = false,
     /// `--checker=v1|v2` — **hidden**, for `--roundtrip-interfaces`' reasons,
-    /// and temporary: which type checker checks the root package
+    /// and temporary: which type checker checks the modules
     /// (`docs/design/checker-v2.md` §20.1, §22.1). `v1`, the default, checks
-    /// every package; `v2` checks the root package and leaves `core` and the
-    /// platform to v1 until R9. The value is a term of every cache key (§14.3).
+    /// every package, and so does `v2` (from R9; until R9 it left `core` and
+    /// the platform to v1). The value is a term of every cache key (§14.3).
     /// On `Common`, like the round-trip flags, because `dump` runs the checker
     /// too. Exists R4–R11 and is deleted at R12.
     checker: Checker = .v1,

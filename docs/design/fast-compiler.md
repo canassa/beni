@@ -1120,6 +1120,11 @@ component gains the checker id right after the build id — `checker_len: u32, c
 or `v2` of the hidden `--checker` flag — in every module's key, core's included, so an entry one
 checker wrote is never read by the other. R12 removes the term with the flag.
 
+*Amended by R9 (2026-09-27, `checker-v2.md` §14.3, R9 note):* `key_version` 4. From R9 `v2` checks
+every package, `core` included, where it had meant "v2 checks the root package, v1 checks `core`";
+the text stays `v2`, so the version moves instead, and no `core` entry v1 wrote under `v2` is read
+by a v2 that checks `core` — not even across a `--cache-build-id` that pins the build id.
+
 **`core_surface` is `core_epoch` with its term changed and nothing else.** `core_epoch` hashed core's
 KEYS, so a comment in `core/Dict.beni` under `--core-root` moved every module in the project.
 Hashing core's `(interface hash, digest)` pairs instead costs the same one term and gives the

@@ -232,15 +232,23 @@ pub fn verifyReads(d: *Driver, m: Graph.Index, recorder: *const reads.Recorder) 
 /// A HIT: install the entry instead of checking the module
 /// (`fast-compiler.md` §8's *What a hit skips, and what still runs*).
 ///
-/// `constrain`, `solve`, `exhaustive`, `deriveDeclaredTypes`, the binding
-/// groups, `fillInterface`, `fillCtorTerms`, `Schemes.Writer.attach`,
-/// `dispatch.finish` and `Cycles.run` never run for this module. What
-/// does run is exactly four things, and this function is all four.
+/// Nothing of the check runs for this module: no constraint generation,
+/// solving, exhaustiveness, binding groups, publication, elaboration or
+/// `Cycles.run`. What does run is exactly these five steps, in this order,
+/// and this function is all five (CK-15: the header used to promise four
+/// and the body did six):
+///
+///   1. the record replaces the shell;
+///   2. the dispatch table and the schema plan replace theirs;
+///   3. `Types.ref_ids` is recomputed against the installed record;
+///   4. under `--checker=v1` only, v1's session capability bits are rebuilt
+///      from the same record and table (v2 reads the published rows);
+///   5. the diagnostics are replayed.
 ///
 /// It runs on the DAG, on whichever worker claimed the module, for one
-/// reason: `Types` is built by then, and every capability write is to
-/// this module's own dense range before dependents are released. That
-/// is what makes installation as safe here as a check is.
+/// reason: `Types` is built by then, and every write is to this module's
+/// own slots and dense range before dependents are released. That is what
+/// makes installation as safe here as a check is.
 pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!void {
     const gpa = d.gpa;
 
@@ -253,7 +261,7 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     loaded.record = .empty;
 
     // 2. The dispatch table, once its two reference tables are this
-    //    session's ids.
+    //    session's ids, and the schema plan.
     dispatch_bytes.resolve(&loaded.sidecar, d.graph, d.types);
     d.dispatch[m.int()].deinit(gpa);
     d.dispatch[m.int()] = loaded.sidecar.table;
@@ -262,22 +270,24 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     d.plans[m.int()] = loaded.plan;
     loaded.plan = .empty;
 
-    // Translate type references before v1's capability bits are rebuilt
-    // below (a module the old checker checked); every imported term reader
-    // indexes this table.
+    // 3. `Types.ref_ids`, which is not part of the record and is recomputed
+    //    once per module per build — here for the same reason publication
+    //    does it for a miss, and against whichever record ended up in the
+    //    slot. Before step 4: every imported term reader indexes it.
     const ref_ids = &d.types.ref_ids[m.int()];
     gpa.free(ref_ids.*);
     ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
 
-    // A module the NEW checker checked publishes its derived contexts in its
-    // interface (checker-v2.md §14.2 *as amended by R8a*), which the record
-    // just installed carries: a dependent reads them there, and nothing is
-    // recomputed (I10, CK-26). A module the OLD checker checked keeps its
-    // session capability bits, which its own dependents read: v1 rebuilds
-    // them from the same record and table a cold check would.
-    if (!d.options.usesV2(d.graph, m)) try d.v1CapabilitiesOnHit(m);
+    // 4. A module v2 checked publishes its derived contexts in its
+    //    interface (checker-v2.md §14.2 *as amended by R8a*), which the
+    //    record just installed carries: a dependent reads them there, and
+    //    nothing is recomputed (I10, CK-26). Under `--checker=v1` every
+    //    module keeps its session capability bits, which its dependents
+    //    read: v1 rebuilds them from the same record and table a cold check
+    //    would. From R9 the two never mix in one build (§22.1).
+    if (!d.options.usesV2()) try d.v1CapabilitiesOnHit(m);
 
-    // 3. The diagnostics, replayed. The message is the prose the
+    // 5. The diagnostics, replayed. The message is the prose the
     //    checker rendered when it wrote the entry; the SPAN is not
     //    stored and is recomputed from this build's `SourceStore`, so a
     //    module that moved without changing its name still points at
@@ -296,10 +306,4 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
             .message = message,
         });
     }
-
-    // 4. `Types.ref_ids`, which is not part of the record and is
-    //    recomputed once per module per build — here for the same
-    //    reason `fillInterface` does it for a miss, and against
-    //    whichever record ended up in the slot.
-    // `ref_ids` was filled above before schema endpoint restoration.
 }

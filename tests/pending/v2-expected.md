@@ -3,27 +3,15 @@
 `zig build test-v2` runs the whole of `tests/corpus/` under `--checker=v2`
 ([`plans/checker-rewrite.md`](../../plans/checker-rewrite.md) §2.4,
 [`checker-v2.md`](../../docs/design/checker-v2.md) §22.2). Every fixture covered by an entry
-below is **skipped and printed** (`REPORT  SKIP`), in report mode (R4a–R8b) and in strict mode
-(R9–R11) alike. Nothing else is exempt.
+below is **skipped**, in report mode (R4a–R8b, where it was printed) and in strict mode (R9–R11)
+alike. Nothing else is exempt: from R9 `test-v2` fails on any other red fixture.
 
 An entry is a list item that starts with a back-quoted repo-relative path: one fixture (a `.beni`
-file or a project directory directly under a kind directory, written without a trailing `/`), or a
-whole `<kind>/core/` directory, written with one. The walker refuses anything else: a path that
-does not exist, a golden or a file inside a project, a directory entry wider than `core/`, an
-entry the walk of its kind never runs, and a fixture also listed in `v2-green.txt`. Every entry
+file or a project directory directly under a kind directory, written without a trailing `/`). The
+walker refuses anything else: a path that does not exist, a golden or a file inside a project, a
+path ending in `/`, and an entry the walk of its kind never runs. (Until R9 an entry could also be a whole
+`<kind>/core/` directory, for the `--core` fixtures v2 did not check yet, N13.) Every entry
 says why, and which slice removes it.
-
-## Not yet v2 (N13): `--core` fixtures, until R9
-
-A fixture under a `core/` subdirectory runs with `--core`, which makes its own module part of
-`core`. Until R9, `--checker=v2` checks the root package only and leaves `core` to v1
-(`checker-v2.md` §22.1), so these still run v1 under `BENI_CHECKER=v2`: a PASS would count v1's
-work as v2's. R9 deletes this section.
-
-- `tests/corpus/bir/core/` — `dump --stage=bir`, which checks nothing; listed for the rule's sake
-- `tests/corpus/dispatch/core/` — v1's dispatch tables
-- `tests/corpus/check/bad/core/` — v1's diagnostics
-- `tests/corpus/check/good/core/` — v1's interfaces
 
 ## Expected differences (`checker-v2.md` §20.4), re-blessed at the slice named
 
@@ -83,3 +71,12 @@ the method of every type the module declares.
   record says so (`private_method`, §14.2 *as amended by R8b*). The fixture's comment defends v1's
   row against the dependent that D1 now refuses; at R11 it is re-blessed under v2 and its comment
   rewritten
+
+## Expected differences R9 introduced (re-blessed at R11)
+
+R9 made v2 check `core` and the `--core` fixtures (`checker-v2.md` §22.1), which until then ran v1
+under `BENI_CHECKER=v2`. Two of them differ from v1's golden, each by a rule v2 already applied to
+the root package.
+
+- `tests/corpus/check/bad/core/PrivateForeignCompare` — D1 (§11.3, R8b): `Handles`' private `compare` is the `compare` of every type `Handles` declares, so `Main`'s `a < b` on a `Wraps` holding a `Handle` reaches it and is `private_method` at 17:7 ("`Handles.compare` is not `pub`"), where v1's golden pins `no_methods_on_shape` at the same place; the fixture's comment (a private value "cannot be reached from here") is v2's reading, and the refusal is the same program's
+- `tests/corpus/dispatch/core/NoForeignDerivedRow.beni` — §12.2 and `Elaborate.undetermined` (R6b, CK-103): the `equatable` nullary `foreign type`'s `eq` inside `Hidden`'s derived `eq` is written as the `undetermined` leaf, which `Lower` reads off the derived ancestor as `Basics.eq`; v1's golden writes `ext Basics eq`. The emitted JavaScript is byte-identical under both checkers (`const NoForeignDerivedRow$Hidden$$eq = ($x, $y) => Basics$eq($x.a, $y.a)`), and the row the golden exists to forbid, `derived eq M.Key`, is absent under both

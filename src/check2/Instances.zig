@@ -410,10 +410,9 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     if (entry.module.int() >= cx.interfaces.len) return Resolve.reject(s, id, true);
     const iface = cx.iface(entry.module);
     const facts = iface.typeFacts(cx.interner, entry.name) orelse {
-        // A record the old checker wrote, for a private type: v1's ABI, one
-        // entry per parameter naming the derived method (§14.2 *as amended
-        // by R8a*). A record v2 wrote has a row for every type it can reach.
-        if (cx.oldCheckerWrote(entry.module)) return derivedPositions(s, id, root, a.type, args);
+        // A record v2 wrote has a row for every type it can reach, and from
+        // R9 every record a v2 build reads is v2's (§22.1): v1's ABI for a
+        // row-less private type is gone from this checker.
         try s.report.internal(s.evidence.get(id).origin, "another module of this package published no derived row for a type its record reaches (checker-v2.md §14.2)");
         return Resolve.reject(s, id, true);
     };

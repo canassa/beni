@@ -15,8 +15,8 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf; §2.5)
-//!   zig build test-v2             the corpus under --checker=v2, report mode
-//!                                 with the v2-green.txt ratchet (R4a–R8b)
+//!   zig build test-v2             the corpus and the determinism scenarios
+//!                                 under --checker=v2, strict (R9–R11)
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
@@ -230,13 +230,25 @@ pub fn build(b: *std.Build) void {
 
     // `test-v2` (`plans/checker-rewrite.md` §2.4, `checker-v2.md` §22.2): the
     // whole corpus under `--checker=v2`, part by part as `test-blackbox` runs
-    // it. REPORT mode until R9: PASS/FAIL per fixture, the fixtures of
-    // `tests/pending/v2-expected.md` skipped, and a failure only for a
-    // fixture listed in `tests/pending/v2-green.txt` (the ratchet, S12).
-    // Strict from R9, deleted at R12. Not a gate.
-    const v2_step = b.step("test-v2", "Run the corpus under --checker=v2 in report mode, with the v2-green.txt ratchet (plans/checker-rewrite.md §2.4)");
+    // it. STRICT from R9: every fixture must pass except those
+    // `tests/pending/v2-expected.md` lists, which are skipped. (R4a–R8b ran
+    // it in a report mode with the `v2-green.txt` ratchet, S12.) Beside the
+    // corpus, the determinism scenarios (`checker-v2.md` §17): the `--jobs`
+    // tests of `blackbox_test.zig`, `build_test.zig` and `abuse_test.zig`
+    // (the 600-module one among them), selected by name and run with
+    // `BENI_CHECKER=v2`, which `world.zig`'s `checkerFlag` turns into
+    // `--checker=v2` on every `build`, `check` and `dump`. Deleted at R12.
+    // Not a gate.
+    const v2_step = b.step("test-v2", "Run the corpus and the determinism scenarios under --checker=v2, strict but for tests/pending/v2-expected.md (plans/checker-rewrite.md §2.4)");
     for (std.enums.values(corpus_parts.Part)) |part| {
-        v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .mode = "report", .checker = "v2", .part = @tagName(part) }).step);
+        v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .checker = "v2", .part = @tagName(part) }).step);
+    }
+    for ([_]struct { root: []const u8, filters: []const []const u8 }{
+        .{ .root = "tests/blackbox/blackbox_test.zig", .filters = &.{"--jobs=1 and --jobs=8"} },
+        .{ .root = "tests/blackbox/build_test.zig", .filters = &.{"byte-identical at every --jobs"} },
+        .{ .root = "tests/blackbox/abuse_test.zig", .filters = &.{ "600 modules check identically", "empty modules produce identical output" } },
+    }) |d| {
+        v2_step.dependOn(&bb.run(bb.filtered(d.root, d.filters), .{ .root = "tests/corpus", .checker = "v2" }).step);
     }
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
@@ -606,6 +618,20 @@ const Blackbox = struct {
 
     fn artifact(bb: Blackbox, root: []const u8) *std.Build.Step.Compile {
         return bb.b.addTest(.{
+            .root_module = bb.b.createModule(.{
+                .root_source_file = bb.b.path(root),
+                .target = bb.target,
+                .optimize = bb.optimize,
+                .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
+            }),
+        });
+    }
+
+    /// `artifact` compiled with only the tests whose names contain one of
+    /// `filters` (`test-v2`'s determinism scenarios).
+    fn filtered(bb: Blackbox, root: []const u8, filters: []const []const u8) *std.Build.Step.Compile {
+        return bb.b.addTest(.{
+            .filters = filters,
             .root_module = bb.b.createModule(.{
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,

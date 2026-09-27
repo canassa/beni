@@ -391,8 +391,8 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         }
     }
     // The one place the two checkers part (checker-v2.md §22.1): under
-    // `--checker=v2` the root package is v2's, everything else stays v1's.
-    if (d.options.usesV2(d.graph, m)) {
+    // `--checker=v2` every module is v2's (R9), else every module is v1's.
+    if (d.options.usesV2()) {
         d.counters[m.int()] = try V2.check(.{
             .gpa = d.gpa,
             .scratch = scratch,

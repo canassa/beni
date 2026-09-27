@@ -45,6 +45,20 @@ pub fn exePath(arena: Allocator) []const u8 {
     return if (value.len == 0) exe_relative else value;
 }
 
+/// The checker every `build`, `check` and `dump` a `World` runs is given:
+/// `BENI_CHECKER` when it is set and not empty, else null (the default
+/// checker). It is how `test-v2` runs the determinism scenarios of
+/// `blackbox_test.zig`, `build_test.zig` and `abuse_test.zig` under
+/// `--checker=v2` (`checker-v2.md` §17, `plans/checker-rewrite.md` R9);
+/// `build.zig` pins it EMPTY on every other run, so a variable exported in a
+/// shell cannot switch a gate's checker (S11). A run whose argv already names
+/// a `--checker` keeps its own. Deleted with the flag at R12.
+pub fn checkerFlag(arena: Allocator) ?[]const u8 {
+    const value = std.testing.environ.getAlloc(arena, "BENI_CHECKER") catch return null;
+    if (value.len == 0) return null;
+    return std.fmt.allocPrint(arena, "--checker={s}", .{value}) catch null;
+}
+
 /// Where the emitted JavaScript goes when a scenario does not say. Relative
 /// to the world's project directory.
 pub const default_out = "out";
@@ -135,6 +149,8 @@ pub const World = struct {
     /// Null when nothing on `PATH` is called `node`, which a scenario
     /// reports rather than silently skipping.
     node_exe: ?[]const u8,
+    /// `checkerFlag`: `--checker=<value>` from `BENI_CHECKER`, or null.
+    checker: ?[]const u8 = null,
 
     pub fn init(gpa: Allocator, io: Io) !World {
         var tmp = std.testing.tmpDir(.{});
@@ -154,6 +170,7 @@ pub const World = struct {
             .node_exe = null,
         };
         world.node_exe = findOnPath(world.arena.allocator(), io, "node");
+        world.checker = checkerFlag(world.arena.allocator());
         return world;
     }
 
@@ -430,6 +447,11 @@ pub const World = struct {
             (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or
                 std.mem.eql(u8, args[0], "fmt") or std.mem.eql(u8, args[0], "dump"));
         if (wants_json) try argv.append(arena, "--diagnostics=json");
+        if (world.checker) |flag| if (args.len > 0 and !namesChecker(args) and
+            (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "dump")))
+        {
+            try argv.append(arena, flag);
+        };
 
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
         var result = try spawnAndCapture(arena, world.gpa, world.io, argv.items, cwd, options.timeout_ms);
@@ -716,31 +738,11 @@ pub const pending = struct {
         return out.items;
     }
 
-    /// `<root>/v2-green.txt` (`plans/checker-rewrite.md` §2.4, S12): the
-    /// corpus fixtures a landed slice made green under `--checker=v2`, one
-    /// repo-relative path per line; `#` lines and blank lines are ignored.
-    /// `test-v2`'s ratchet fails when one of them is red.
-    pub fn readV2Green(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
-        var out: std.ArrayList([]const u8) = .empty;
-        var it = try lines(arena, io, root, "v2-green.txt");
-        while (it.next()) |raw| {
-            const line = std.mem.trim(u8, raw, " \t\r");
-            if (line.len == 0 or line[0] == '#') continue;
-            const path = std.mem.trimEnd(u8, line, "/");
-            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
-                std.debug.print("{s}/v2-green.txt lists {s} twice\n", .{ root, path });
-                return error.DuplicateGreen;
-            };
-            try out.append(arena, path);
-        }
-        return out.items;
-    }
-
     /// `<root>/v2-expected.md` (`plans/checker-rewrite.md` §2.4,
     /// `checker-v2.md` §22.1): the corpus fixtures `test-v2` skips. Every
     /// list item whose text starts with a back-quoted path — "- `<path>` …"
-    /// — is an entry; a path ending in `/` names every fixture under that
-    /// directory. Everything else in the file is prose.
+    /// — is an entry, one fixture (until R9 a path ending in `/` could name a
+    /// whole `<kind>/core/` directory). Everything else in the file is prose.
     pub fn readV2Expected(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
         var out: std.ArrayList([]const u8) = .empty;
         var it = try lines(arena, io, root, "v2-expected.md");
@@ -760,13 +762,10 @@ pub const pending = struct {
         return out.items;
     }
 
-    /// Whether `v2-expected.md`'s `entries` cover the fixture at `path`: the
-    /// same path, or a directory entry (ending in `/`) above it.
+    /// Whether `v2-expected.md`'s `entries` cover the fixture at `path`.
     pub fn expectedCovers(entries: []const []const u8, path: []const u8) bool {
         for (entries) |entry| {
-            if (std.mem.endsWith(u8, entry, "/")) {
-                if (std.mem.startsWith(u8, path, entry)) return true;
-            } else if (std.mem.eql(u8, entry, std.mem.trimEnd(u8, path, "/"))) return true;
+            if (std.mem.eql(u8, entry, std.mem.trimEnd(u8, path, "/"))) return true;
         }
         return false;
     }
@@ -788,3 +787,9 @@ pub const pending = struct {
         return s[0..end];
     }
 };
+
+/// Whether `args` already names a checker (`World.checker` then adds none).
+fn namesChecker(args: []const []const u8) bool {
+    for (args) |a| if (std.mem.startsWith(u8, a, "--checker")) return true;
+    return false;
+}

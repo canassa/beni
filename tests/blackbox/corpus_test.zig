@@ -50,14 +50,14 @@
 //! are empty except for their READMEs until then.
 //!
 //! The same walker runs `tests/pending/` (`plans/checker-rewrite.md` §2):
-//! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending|report`
-//! reports RED/GREEN or PASS/FAIL per fixture instead of failing on it,
-//! `BENI_CHECKER` adds `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds
-//! each run. Report mode is `zig build test-v2`'s: it skips the fixtures
-//! of `tests/pending/v2-expected.md` and fails only for a red fixture of
-//! `tests/pending/v2-green.txt`, the ratchet. Unset (or empty), each is
-//! today's strict corpus run; see `Config`, and `tests/pending/README.md`
-//! for `.codes`, `RED` and `CLAIMED`.
+//! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending` reports
+//! RED/GREEN per fixture instead of failing on it, `BENI_CHECKER` adds
+//! `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds each run. `zig build
+//! test-v2` is the strict corpus run under `BENI_CHECKER=v2` (strict from R9;
+//! a `report` mode with a `v2-green.txt` ratchet until then): it skips the
+//! fixtures of `tests/pending/v2-expected.md` and fails on any other. Unset
+//! (or empty), each is today's strict corpus run; see `Config`, and
+//! `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
 //! `test-blackbox` spreads the corpus over parallel processes.
 
@@ -347,61 +347,36 @@ fn walk(kind: Kind) !void {
     defer w.deinit();
 
     var failures: usize = 0;
-    var tally: struct { pass: usize = 0, fail: usize = 0, skip: usize = 0 } = .{};
+    var skipped: usize = 0;
     for (fixtures.items) |fixture| {
         const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
         const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
         const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this, .cfg = &cfg };
         switch (cfg.mode) {
-            .strict => case.run() catch |err| {
-                std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
-                failures += 1;
-            },
-            .report => {
-                // `v2-expected.md` (§2.4): skipped and printed, never run.
-                if (world.pending.expectedCovers(cfg.v2_expected, path)) {
-                    std.debug.print("REPORT  SKIP  {s}  {s}  (tests/pending/v2-expected.md)\n", .{ cfg.checkerName(), path });
-                    tally.skip += 1;
+            .strict => {
+                // `test-v2` from R9 (§2.4): a fixture `v2-expected.md`
+                // covers is skipped, never run; every other one must pass.
+                if (cfg.holds_expected and world.pending.expectedCovers(cfg.v2_expected, path)) {
+                    skipped += 1;
                     continue;
                 }
-                reason_len = 0;
-                if (case.run()) |_| {
-                    std.debug.print("REPORT  PASS  {s}  {s}\n", .{ cfg.checkerName(), path });
-                    tally.pass += 1;
-                } else |err| {
-                    const reason = reasonFor(err, &cfg);
-                    std.debug.print("REPORT  FAIL  {s}  {s}  {s}\n", .{ cfg.checkerName(), path, reason });
-                    tally.fail += 1;
-                    // The subset cross-check (R4b's review, S8): v2 either
-                    // refuses a fixture — `not_implemented`, naming the slice
-                    // it needs — or passes it. A fixture v2 checks and gets
-                    // wrong is listed in v2-expected.md or is a v2 bug, so
-                    // `js/Emit.zig`'s refusals and `tests/pending/v2-subset.sh` cannot
-                    // drift apart unnoticed.
-                    const refused = std.mem.indexOf(u8, reason, "not_implemented") != null or
-                        std.mem.indexOf(u8, reason, "NOT IMPLEMENTED") != null;
-                    if (!refused) {
-                        std.debug.print("REPORT  DRIFT  {s}  {s} is red without a `not_implemented`: v2 checked it and got it wrong; fix v2, or list it in tests/pending/v2-expected.md\n", .{ cfg.checkerName(), path });
-                        failures += 1;
-                    }
-                    // The ratchet (S12): a fixture a landed slice made green
-                    // under v2 may not turn red again.
-                    if (cfg.isGreenUnderV2(path)) {
-                        std.debug.print("REPORT  RATCHET  {s}  {s} is listed in tests/pending/v2-green.txt and is RED\n", .{ cfg.checkerName(), path });
-                        failures += 1;
-                    }
-                }
+                case.run() catch |err| {
+                    std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                    failures += 1;
+                };
             },
             .pending => if (!try case.pending(path)) {
                 failures += 1;
             },
         }
     }
-    if (cfg.mode == .report) {
+    if (cfg.holds_expected) {
         var visited: std.ArrayList([]const u8) = .empty;
         for (fixtures.items) |fixture| try visited.append(arena, try std.fs.path.join(arena, &.{ fixture.dir, fixture.name }));
         if (!try cfg.expectVisited(arena, kind, visited.items)) failures += 1;
-        std.debug.print("REPORT  TOTAL  {s}  {s}: {d} pass, {d} fail, {d} skipped\n", .{ cfg.checkerName(), kind_dir, tally.pass, tally.fail, tally.skip });
+    }
+    if (failures != 0 and skipped != 0) {
+        std.debug.print("corpus {s}: {d} fixtures skipped (tests/pending/v2-expected.md)\n", .{ kind_dir, skipped });
     }
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
@@ -429,7 +404,7 @@ const Config = struct {
     /// defaults to 20 s so a hang is a fast RED(timeout).
     timeout_ms: i64,
     /// `BENI_PENDING_VERBOSE`: keep each failing case's full detail in
-    /// pending and report modes, where by default only its one-line reason
+    /// pending mode, where by default only its one-line reason
     /// is printed.
     verbose: bool,
     /// `BENI_CORPUS_PART`: the one part (`corpus_parts.zig`) this process
@@ -441,23 +416,21 @@ const Config = struct {
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture under each checker, pending mode only.
     red: []const world.pending.RedLine,
-    /// `tests/pending/v2-green.txt` (§2.4, S12): report mode only. A listed
-    /// fixture that is red fails the step — the ratchet.
-    v2_green: []const []const u8 = &.{},
-    /// `tests/pending/v2-expected.md` (§2.4, checker-v2.md §22.1): report
-    /// mode only. A covered fixture is skipped and printed, never run.
+    /// `tests/pending/v2-expected.md` (§2.4, checker-v2.md §22.1): read by a
+    /// strict run of the default root under `BENI_CHECKER=v2` — `test-v2`,
+    /// strict from R9 (`holds_expected`). A covered fixture is skipped,
+    /// never run. (R4a–R8b ran `test-v2` in a `report` mode with a
+    /// `v2-green.txt` ratchet; strict mode made both redundant.)
     v2_expected: []const []const u8 = &.{},
+    holds_expected: bool = false,
 
     const Mode = enum {
-        /// Unset: every fixture must pass (today's behaviour).
+        /// Unset: every fixture must pass (today's behaviour), except, under
+        /// `BENI_CHECKER=v2`, the fixtures `v2-expected.md` covers.
         strict,
         /// `pending`: every fixture is reported RED or GREEN, and the step
         /// fails only for rules (a)–(d).
         pending,
-        /// `report` (`test-v2`, R4a–R8b): PASS/FAIL per fixture; the fixtures
-        /// of `tests/pending/v2-expected.md` are skipped, and the step fails
-        /// only for a RED fixture listed in `tests/pending/v2-green.txt`.
-        report,
     };
 
     fn read(arena: std.mem.Allocator) !Config {
@@ -467,10 +440,8 @@ const Config = struct {
             .strict
         else if (std.mem.eql(u8, mode_text.?, "pending"))
             .pending
-        else if (std.mem.eql(u8, mode_text.?, "report"))
-            .report
         else {
-            std.debug.print("BENI_CORPUS_MODE must be `pending` or `report`, not `{s}`\n", .{mode_text.?});
+            std.debug.print("BENI_CORPUS_MODE must be `pending` (or unset), not `{s}`\n", .{mode_text.?});
             return error.BadCorpusMode;
         };
         const timeout_ms: i64 = if (envOr(arena, "BENI_CASE_TIMEOUT_MS")) |text|
@@ -509,33 +480,18 @@ const Config = struct {
             cfg.claimed = try world.pending.readClaimed(arena, testing.io, cfg.root);
             cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
         }
-        if (mode == .report) {
-            cfg.v2_green = try world.pending.readV2Green(arena, testing.io, pending_root);
+        if (mode == .strict and cfg.is_default_root and cfg.checker != null and std.mem.eql(u8, cfg.checker.?, "v2")) {
+            cfg.holds_expected = true;
             cfg.v2_expected = try world.pending.readV2Expected(arena, testing.io, pending_root);
-            // The escape hatch first: an entry names one existing fixture,
-            // or a whole `<kind>/core/` directory (N13) and nothing wider.
+            // The escape hatch is checked first: an entry names one existing
+            // fixture. (Until R9 an entry could also be a whole
+            // `<kind>/core/` directory, N13: v2 did not check `core` yet.)
+            // After the walk, every entry in a kind this process ran must
+            // also have been VISITED (`expectVisited`).
             for (cfg.v2_expected) |entry| {
-                const ok = if (std.mem.endsWith(u8, entry, "/"))
-                    try cfg.isCoreDir(arena, std.mem.trimEnd(u8, entry, "/"))
-                else
-                    try cfg.isFixturePath(arena, entry);
-                if (!ok) {
-                    std.debug.print("{s}/v2-expected.md lists {s}, which is neither an existing fixture nor an existing `<kind>/core/` directory of {s}\n", .{ pending_root, entry, cfg.root });
+                if (!try cfg.isFixturePath(arena, entry)) {
+                    std.debug.print("{s}/v2-expected.md lists {s}, which is not a fixture: a `.beni` file or a project directory directly under a kind directory of {s}\n", .{ pending_root, entry, cfg.root });
                     return error.StaleExpected;
-                }
-            }
-            // A ratchet line that names no fixture, or a fixture the run
-            // skips, would hold nothing: a malformed file, refused up front.
-            // After the walk, every line of either file in a kind this
-            // process ran must also have been VISITED (`expectVisited`).
-            for (cfg.v2_green) |path| {
-                if (!try cfg.isFixturePath(arena, path)) {
-                    std.debug.print("{s}/v2-green.txt lists {s}, which is not a fixture: a `.beni` file or a project directory directly under a kind directory of {s}\n", .{ pending_root, path, cfg.root });
-                    return error.StaleGreen;
-                }
-                if (world.pending.expectedCovers(cfg.v2_expected, path)) {
-                    std.debug.print("{s}/v2-green.txt lists {s}, which v2-expected.md skips\n", .{ pending_root, path });
-                    return error.StaleGreen;
                 }
             }
         }
@@ -572,31 +528,13 @@ const Config = struct {
         return stat.kind == .directory or (stat.kind == .file and std.mem.endsWith(u8, path, ".beni"));
     }
 
-    /// Whether `path` is an existing `<kind>/core` directory of the root.
-    fn isCoreDir(cfg: *const Config, arena: std.mem.Allocator, path: []const u8) !bool {
-        var named = false;
-        for (std.enums.values(Kind)) |kind| {
-            const core_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub(), "core" });
-            if (std.mem.eql(u8, core_dir, path)) named = true;
-        }
-        if (!named) return false;
-        const stat = Io.Dir.cwd().statFile(testing.io, path, .{}) catch return false;
-        return stat.kind == .directory;
-    }
-
-    /// Report mode, after `kind`'s walk: every `v2-green.txt` line and every
-    /// single-fixture `v2-expected.md` entry that sits in one of this kind's
-    /// directories must be among the fixtures the walk collected — so a line
-    /// can only ever name something the ratchet actually runs.
+    /// `test-v2`, after `kind`'s walk: every `v2-expected.md` entry that sits
+    /// in one of this kind's directories must be among the fixtures the walk
+    /// collected — so an entry can only ever name something the walk runs.
     fn expectVisited(cfg: *const Config, arena: std.mem.Allocator, kind: Kind, visited: []const []const u8) !bool {
         const dirs = try cfg.fixtureDirs(arena, kind);
         var ok = true;
-        const lists = [_]struct { name: []const u8, paths: []const []const u8 }{
-            .{ .name = "v2-green.txt", .paths = cfg.v2_green },
-            .{ .name = "v2-expected.md", .paths = cfg.v2_expected },
-        };
-        for (lists) |list| for (list.paths) |path| {
-            if (std.mem.endsWith(u8, path, "/")) continue;
+        for (cfg.v2_expected) |path| {
             const parent = std.fs.path.dirname(path) orelse continue;
             var mine = false;
             for (dirs) |dir| {
@@ -605,13 +543,13 @@ const Config = struct {
             if (!mine) continue;
             var seen = false;
             for (visited) |v| {
-                if (std.mem.eql(u8, v, std.mem.trimEnd(u8, path, "/"))) seen = true;
+                if (std.mem.eql(u8, v, path)) seen = true;
             }
             if (!seen) {
-                std.debug.print("REPORT  STALE  {s}/{s} lists {s}, which the walk of {s} never ran\n", .{ pending_root, list.name, path, kind.sub() });
+                std.debug.print("STALE  {s}/v2-expected.md lists {s}, which the walk of {s} never ran\n", .{ pending_root, path, kind.sub() });
                 ok = false;
             }
-        };
+        }
         return ok;
     }
 
@@ -641,11 +579,6 @@ const Config = struct {
         return cfg.checker == null;
     }
 
-    fn isGreenUnderV2(cfg: *const Config, repo_path: []const u8) bool {
-        for (cfg.v2_green) |p| if (std.mem.eql(u8, p, std.mem.trimEnd(u8, repo_path, "/"))) return true;
-        return false;
-    }
-
     fn isClaimed(cfg: *const Config, repo_path: []const u8) bool {
         for (cfg.claimed) |p| if (std.mem.eql(u8, p, repo_path)) return true;
         return false;
@@ -658,7 +591,7 @@ fn envOr(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
     return if (value.len == 0) null else value;
 }
 
-/// Pending and report modes print one line per fixture and keep the detail
+/// Pending mode prints one line per fixture and keep the detail
 /// of each failure to themselves, so `Case` writes its detail through
 /// `detail` and records a one-line reason through `because`.
 var quiet: bool = false;
@@ -803,7 +736,7 @@ fn summarize(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
     return trimmed[0 .. std.mem.indexOfScalar(u8, trimmed, '\n') orelse trimmed.len];
 }
 
-/// The first diagnostic's message, first line only: what a report-mode FAIL
+/// The first diagnostic's message, first line only: what a pending-mode RED
 /// line adds to `summarize`'s codes, so a failed build says WHY without a
 /// re-run by hand (R4a review, N1). Empty when there is none.
 fn messageHead(arena: std.mem.Allocator, stderr: []const u8) []const u8 {

@@ -1,0 +1,77 @@
+-- CK-130: `Order`'s `compare` and both of `Never`'s methods are §3.2's
+-- `derived` rows, and they must stay derived when v2 checks `core`
+-- (`static-dispatch-spike.md` §3.2, `checker-v2.md` §22.1, R9).
+--
+-- `core/Basics.beni` declares `Order` and `Never` beside `pub compare :
+-- number, number -> Order` and `pub foreign eq`, so the module rule alone
+-- would make those values their methods. The table is consulted first. When
+-- R9 made v2 check `core`, v2's derived-context fixpoint and its
+-- publication read the module rule only, so `Basics`' record said
+-- `own_method` for `Order`'s `compare` and for `Never`'s `eq` and
+-- `compare`: `LT < GT` in any other module was `no_methods_on_shape`
+-- ("This type has no `compare`: Order"). Under v1, and under v2 before R9
+-- (v1 wrote `core`'s record), each line below printed what it prints now.
+--
+-- Every use is outside `Basics` and reaches the rows through the record:
+-- `Order` directly, as a derived position (a `Maybe`, a tuple, a record, a
+-- list, a type of this module) and through a `where` clause; `Never` as the
+-- parameter of a `Maybe` and of a type of this module, where only
+-- `Nothing` and `Empty` can be built.
+import Node exposing (Program)
+
+
+type Graded
+    = Graded Order String
+
+
+type Maybe2 a
+    = Empty
+    | Full a
+
+
+smallest : a, a -> a where a.compare : a, a -> Order
+smallest x y =
+    if x < y then
+        x
+
+    else
+        y
+
+
+nothing : Maybe Never
+nothing =
+    Nothing
+
+
+empty : Maybe2 Never
+empty =
+    Empty
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (LT < GT)
+        , show (GT < EQ)
+        , show (EQ >= GT)
+        , show (Just LT < Just EQ)
+        , show (( EQ, 1 ) < ( EQ, 2 ))
+        , show ({ o = GT } > { o = EQ })
+        , show ([ LT, GT ] < [ LT, EQ ])
+        , show (Graded LT "b" < Graded EQ "a")
+        , Debug.toString (smallest GT EQ)
+        , Debug.toString (List.sort [ GT, LT, EQ ])
+        , show (nothing == Nothing)
+        , show (nothing <= nothing)
+        , show (empty == Empty)
+        , show (empty >= empty)
+        ]

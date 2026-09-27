@@ -4,10 +4,10 @@
 //!
 //! ```
 //! "BENIKEY\x00"           8       magic
-//! key_version: u32                3 — the checker id (2: the firewall cutoff)
+//! key_version: u32                4 — `v2` checks core (3: the checker id; 2: the cutoff)
 //! build_id: [16]u8                the compiler build id (`src/build_id.zig`)
-//! checker_len: u32, checker       `v1` or `v2`: the checker that checks the
-//!                                 root package (`--checker`, checker-v2.md
+//! checker_len: u32, checker       `v1` or `v2`: the checker that checks every
+//!                                 package (`--checker`, checker-v2.md
 //!                                 §14.3, S22); with the build id, the
 //!                                 compiler-identity component. R12 removes it
 //! package: u8                     SourceStore.Package — app, core or platform
@@ -92,7 +92,12 @@ pub const magic = "BENIKEY\x00";
 /// — the firewall cutoff (`fast-compiler.md` §8).
 /// **3 since R4a**: the checker id follows the build id (`checker-v2.md` §14.3,
 /// S22), so an entry one checker wrote is never read by the other.
-pub const key_version: u32 = 3;
+/// **4 since R9** (`checker-v2.md` §14.3, *R9 note*): the text `v2` changed
+/// meaning, from "v2 checks the root package, v1 checks `core`" to "v2
+/// checks every package", and a `--cache-build-id` pins the build id across
+/// that change — so a `core` entry v1 wrote under `v2` must not be read by a
+/// v2 that checks `core`.
+pub const key_version: u32 = 4;
 
 /// The recipe M4-1 and M4-2 used: an import contributes its own KEY, and the
 /// core term is `core_epoch` over core's keys. **Nothing is stored under it.**

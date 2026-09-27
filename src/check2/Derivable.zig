@@ -164,8 +164,8 @@ fn headNeedsRun(s: *Solve, root: Var, kind: Kind) Error!?u32 {
     };
     const c = &s.contexts;
     const t = c.local(a.type) orelse return null;
-    if (c.unit_of[t] == Contexts.none or c.module_has[@intFromEnum(kind)]) return null;
-    if (s.ownValue(Contexts.methodName(kind)) != null) return null;
+    if (c.unit_of[t] == Contexts.none or c.moduleRuleAnswers(a.type, kind)) return null;
+    if (!Contexts.tableDerives(s.cx.types, a.type, kind) and s.ownValue(Contexts.methodName(kind)) != null) return null;
     if (try c.peek(s, a.type, kind) != null) return null;
     return c.unit_of[t];
 }
@@ -205,6 +205,69 @@ const Walker = struct {
     volatile_read: bool = false,
 };
 
+/// The walk's colour per pair. The first `inline_len` pairs are kept inline
+/// and searched linearly, so the common walk — one use's tuple, record or
+/// list, a handful of nodes — never hashes; past them, a hash map (R9: the
+/// map's hashing was about a twentieth of the check of 6 000 tuple
+/// comparisons, `checker-v2.md` §18 *as measured by R9*).
+const Colours = struct {
+    const inline_len = 16;
+
+    keys: [inline_len]PairKey = undefined,
+    values: [inline_len]Colour = undefined,
+    /// Inline pairs, or `inline_len + 1` once they moved into `map`.
+    len: u32 = 0,
+    map: std.AutoHashMapUnmanaged(PairKey, Colour) = .empty,
+
+    fn get(c: *const Colours, key: PairKey) ?Colour {
+        if (c.len > inline_len) return c.map.get(key);
+        for (c.keys[0..c.len], c.values[0..c.len]) |k, v| {
+            if (k.root == key.root and k.kind == key.kind) return v;
+        }
+        return null;
+    }
+
+    fn put(c: *Colours, a: std.mem.Allocator, key: PairKey, colour: Colour) Error!void {
+        if (c.len <= inline_len) {
+            for (c.keys[0..c.len], c.values[0..c.len]) |k, *v| {
+                if (k.root == key.root and k.kind == key.kind) {
+                    v.* = colour;
+                    return;
+                }
+            }
+            if (c.len < inline_len) {
+                c.keys[c.len] = key;
+                c.values[c.len] = colour;
+                c.len += 1;
+                return;
+            }
+            try c.map.ensureTotalCapacity(a, inline_len * 2);
+            for (c.keys, c.values) |k, v| c.map.putAssumeCapacity(k, v);
+            c.len = inline_len + 1;
+        }
+        try c.map.put(a, key, colour);
+    }
+
+    fn deinit(c: *Colours, a: std.mem.Allocator) void {
+        c.map.deinit(a);
+    }
+};
+
+/// Whether frame `f` has no successor: a nominal head that asks nothing of
+/// its arguments (`Int`, a type whose context is empty), or a structure
+/// with no `structural` child (`()`, `{}`). Such a node cannot be on a
+/// cycle and holds no variable, so the walk neither colours nor memoises
+/// it: it is ground, and asking again is one `open`.
+fn isLeaf(s: *Solve, f: Frame) bool {
+    const st = s.store();
+    switch (st.content(f.key.root)) {
+        .alias => return false,
+        else => {},
+    }
+    if (f.nominal) return f.steps.len == 0;
+    return Walk.child(st, f.key.root, 0, .structural) == null;
+}
+
 /// THE answer to "can `start` derive `kind`?" (I10), which every derivation
 /// reads. `forced` are the heads `derivable` computed for this walk.
 pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) Error!Verdict {
@@ -223,7 +286,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
     }
     const open_memo = forced.len == 0;
     if (open_memo and r.derivable_open.contains(first)) return .ok;
-    var colours: std.AutoHashMapUnmanaged(PairKey, Colour) = .empty;
+    var colours: Colours = .{};
     defer colours.deinit(scratch);
     var frames: std.ArrayList(Frame) = .empty;
     defer frames.deinit(scratch);
@@ -277,6 +340,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
         }
         switch (try open(s, &walker, key, map, forced)) {
             .frame => |f| {
+                if (isLeaf(s, f)) continue;
                 try colours.put(scratch, key, .grey);
                 try frames.append(scratch, f);
             },
@@ -380,14 +444,10 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
     }
     if (entry.module.int() >= cx.interfaces.len) return null;
     const iface = cx.iface(entry.module);
-    const facts = iface.typeFacts(cx.interner, entry.name) orelse {
-        // A record the old checker wrote, for a private type: v1's ABI. A
-        // record v2 wrote has a row for every type it can reach: resolution
-        // says `internal` (`Instances.derivedNominal`).
-        if (!cx.oldCheckerWrote(entry.module)) return null;
-        for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
-        return null;
-    };
+    // A record v2 wrote has a row for every type it can reach, and from R9
+    // every record a v2 build reads is v2's (§22.1): with none, resolution
+    // says `internal` (`Instances.derivedNominal`).
+    const facts = iface.typeFacts(cx.interner, entry.name) orelse return null;
     const row = facts.derived(if (key.kind == .eq) .eq else .compare);
     switch (row.status) {
         .present => {

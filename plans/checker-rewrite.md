@@ -58,7 +58,7 @@ Every slice's reviewer fills in the row of a cause the slice touches: `closed`, 
 | 1 | Evidence computed in many places | One evidence tree per site (§13.1), recorded when each requirement is created (§12.1); `Lower` stops counting (R2a); one calling convention (R2b); one elaboration pass, P6 (R6b) | R2a–R2b the backend's half; closed in v2 by R6b |
 | 2 | Constraints repaired by side tables | Obligations and wanteds ride on their variables (§4.5, I15); unify joins and readies, never resolves (§7.1) | R4b–R5 obligations; closed by R6a (wanteds) |
 | 3 | Own-method ordering | Nesting at demand, back-edge merges (§10.2–§10.4); `scenario/PERM` | closed by R7; held by R8a. R8b's first review round left two order dependences PERM did not see — the marker gate read an unchecked schema's `via` target (CK-120) and a derived context took its asker's step budget (CK-125) — both fixed in its round 2, with PERM counting every refusal |
-| 4 | Capability computed several ways | One verdict (`Derivable`, R6a), one derived-context fixpoint (`Contexts`, R8a), published rows, no settle | R6a one verdict (its review caught two ways creeping back); R8a closed nominal `type`s; R8b closed schema endpoints and D1's rows; R8b's review rounds closed the marker gate (CK-120: it demands the schemas it walks and defers one in flight to P5) and made the fixpoint's graph exact and incremental (CK-119). Residue: a record the OLD checker wrote (another package's module) is read through v1's ABI and table bits, until R9 |
+| 4 | Capability computed several ways | One verdict (`Derivable`, R6a), one derived-context fixpoint (`Contexts`, R8a), published rows, no settle | R6a one verdict (its review caught two ways creeping back); R8a closed nominal `type`s; R8b closed schema endpoints and D1's rows; R8b's review rounds closed the marker gate (CK-120: it demands the schemas it walks and defers one in flight to P5) and made the fixpoint's graph exact and incremental (CK-119). The residue — a record the OLD checker wrote (another package's module) read through v1's ABI and table bits — is gone at R9: every record a v2 build reads is v2's, and the fallbacks are deleted. R9 found and fixed CK-130 (the table's derived rows of `Order` and `Never`, read past by the module rule) |
 | 5 | Generalisation ignoring constraints | Ranked boundaries that decide obligations and promote requirements (§8.1, §8.5); the fixpoint frame discarded whole (§11.2, CK-117's assert since R8b) | closed for top-level groups by R4b–R6a; open for constrained `let` helpers (D5): R14 |
 | 6 | Backend answering holes | The checker answers every wanted or says `internal` (I6–I8); `Lower` reads the record, fills nothing (§13.3); `refuseV2LibraryTypes` deleted (R8a) | closed in v2 by R6b and R8a; v1's path deleted at R12 |
 
@@ -221,7 +221,11 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
 - **A ratchet** (S12). `tests/pending/v2-green.txt` lists the corpus fixtures a landed slice has made
   green under v2. Report mode **fails** when a listed fixture is red. Each slice appends what it
   turned green, in the same commit, so a v2 regression is caught at the next commit, not at R9.
-- **From R9, strict** (mode unset).
+- **From R9, strict** (mode unset). *As built by R9:* the fixtures of `v2-expected.md` are still
+  skipped (silently; the count is printed on a failure), every other red fixture fails the step, and
+  the step also runs the `--jobs` determinism scenarios under v2 (`checker-v2.md` §17 *as built by
+  R9*). Report mode, the ratchet and `v2-green.txt` are deleted: strict holds every fixture the
+  ratchet held, and more.
 - **Deleted at R12.**
 
 ### 2.5 Performance and permutation scenarios
@@ -2221,6 +2225,58 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - Byte-compare every `core` interface (`raw`).
   - Run `bench/corpus` under both checkers and diff the emitted JavaScript. The diff must be empty
     except D4's listed functions.
+- **As built (2026-09-27).** Spec notes first: `checker-v2.md` §11.5, §14.3, §17, §18, §20.3, §22.1,
+  §22.2 and §23 item 4 *as built / measured by R9*; `fast-compiler.md` §8 (`key_version` 4).
+  - **v2 checks every package.** `Options.usesV2` is `checker == .v2`; `root_is_core` is gone, so
+    `core`, the platforms and the `--core` fixtures are v2's. Every record a v2 build reads is then
+    v2-written, and the fallbacks for one the old checker wrote are deleted with
+    `Context.oldCheckerWrote`: v1's ABI for a row-less type (`Instances.derivedNominal`,
+    `Derivable.head`) and v1's table bit in `Marker`'s imported gate. `Incremental.install` keeps
+    v1's capability rebuild for `--checker=v1` only; its header now lists the five steps its body
+    does (CK-15's rest). The cache key's `key_version` is 4 (the §14.3 R9 note).
+  - **CK-130, found and fixed.** With `Basics` checked by v2, `Order` had no `compare` and
+    `Never` no `eq` or `compare` anywhere else: the module rule (`Contexts.module_has`) answered
+    them from `Basics`' `compare`/`eq` values at four places where resolution asks §3.2's table
+    first. `Contexts.moduleRuleAnswers` asks the table (`tableDerives`). Fixture
+    `run/NeverAndOrderDerived.beni`; `run/OrderValues.beni` and `dispatch/Primitives.beni` were red
+    under `test-v2` before it too.
+  - **`test-v2` is strict**, and the ratchet, report mode and `v2-green.txt` are deleted
+    (§2.4 *as built by R9*). It also runs the `--jobs` determinism scenarios under v2: the `--jobs`
+    tests of `blackbox_test.zig`, `build_test.zig`'s two "byte-identical at every --jobs" and
+    `abuse_test.zig`'s 600- and 5 000-module ones, compiled with a name filter and run with
+    `BENI_CHECKER=v2`, which `world.zig` (`checkerFlag`) adds to every `build`, `check` and `dump`
+    a `World` runs; `build.zig` pins it empty everywhere else. A planted broken golden fails the
+    step. `v2-expected.md` loses its `--core` section and gains R9's two expected differences
+    (`check/bad/core/PrivateForeignCompare`, D1; `dispatch/core/NoForeignDerivedRow`, the
+    `undetermined` leaf where v1 writes `ext Basics eq`, emitted JavaScript byte-identical).
+  - **Parity.** `core`'s records under v2 are v1's byte for byte (`dump --stage=raw`, `interface`,
+    `types` of every `core` module) except the `no_function` bit (§14.2 *as amended by R8b*, which
+    v1 never writes) on 15 types; no context row differs. `core`'s tables differ in one body:
+    `Dict.Tree`'s `eq` compares its `NColor` with `===` (A.18 at a derived position), where v1
+    calls `NColor`'s derived `eq`. `bench/corpus` under both checkers, `--library`, dev and
+    `--release`: that line and the same rule's `ExprParser` and `Router` lines (there before R9),
+    and `--release`'s renaming after the one function v2 no longer reaches; no D4 function.
+    `bench/corpus/DictExtra.beni`'s `any` compared a `Maybe ( String, v )` with `v` rigid, which v2
+    refuses (CK-20's rule) and v1 answered with structural equality: it is a `case` now.
+  - **Performance** (§18 *as measured by R9*). v2 reserves three store variables per instruction
+    and keeps the derivability walk's colours inline for small walks, skipping leaves. Whole
+    process 1.036–1.040× (plain) and 1.055–1.058× (dispatch) v1's cycles; the bench's check
+    phase 1.05× and 1.10×; `s_int6000` 1.07×; **`s_tup6000` 1.58×** (1.89× before), over the
+    rule: CK-131, found, unassigned. `zig build bench` gained `--checker=v1|v2`.
+
+### R9b — CK-131 and R9's review leftovers (added by the manager, 2026-09-27)
+
+- **Why.** R9 met every exit criterion but one: `s_tup6000`'s check median is ~1.6× v1 against
+  the 1.10× budget (CK-131). The manager accepted deferring it out of R9; it must land before R11.
+- **Scope.** CK-131, cheapest first per R9's review: answer a derived position that is a known
+  primitive directly; a `plainMethodMask`-style fast path that skips instantiating an imported
+  plain method's scheme (resolution order and every diagnostic unchanged); a per-module memo of
+  derivability keyed by type structure. Plus R9's review: assert each filtered determinism
+  binary runs its expected test count; a `v2-expected.md` fixture that now passes fails the step
+  (like pending rule (b)); `tableDerives` covering every §3.2 row; the two stale comments; the
+  findings totals.
+- **Exit.** `s_tup6000`, `s_int6000` and the dispatch corpus's bench check phase ≤ 1.10× v1
+  (medians of 7, plus whole-process perf stat); a `test-perf` scenario for CK-131; all steps green.
 
 ### R10 — Incrementality under v2
 
@@ -2353,7 +2409,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R8c | CK-122 (fixed in shared code, both checkers: `check/good/SchemaEndpointAlias*`, `check/bad/SchemaEndpointAliasKeepsItsType`); CK-114 (`abuse_test.zig`) | — | CK-93, 111, 112 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-42's v2 twin resized; CK-126 (found, pending, red under both), CK-127 (found, frontend) and CK-128 (found; R8d) |
 | R8d | CK-128 (`run/DerivedDeepData`, `…Paths`, `…Order/`, `…AcrossModules/`; three `abuse_test.zig` scenarios, one pinning the stated exclusion) | — | CK-129 (found, frontend) |
 | R8e | — (CK-128's cost: loops, forwarders, one runtime; two `abuse_test.zig` scenarios) | — | — |
-| R9 | — | — | CK-15 (rest) |
+| R9 | CK-130 (found and fixed: `run/NeverAndOrderDerived.beni`) | — | CK-15 (rest, closed for v2); CK-131 (found: §18's `s_tup6000` median at 1.58×, unassigned) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |
@@ -2361,7 +2417,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 129 entries appears in this table (CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 131 entries appears in this table (CK-130 and CK-131 added by R9, CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

@@ -99,7 +99,12 @@ pub fn check(in: Input) Error!Check.Counters {
     var owned_store: TypeStore = .init(std.heap.page_allocator);
     const store = if (in.keep) |k| &k.store else &owned_store;
     defer if (in.keep == null) owned_store.deinit();
-    try store.reserve(bir.insts.len + 64, bir.insts.len * 2 + 64);
+    // v2 makes two to three variables per instruction (R9 measured 2.1× on
+    // the generated corpora, 3× on a module of 6 000 tuple comparisons, and
+    // at most 4.1× in one module): reserving one per instruction, as v1
+    // does, grew the store two or three times, each a copy of every
+    // descriptor. The tail a module never touches costs no page.
+    try store.reserve(bir.insts.len * 3 + 64, bir.insts.len * 2 + 64);
     // The acyclicity proofs (§8.2 *as restated by R8c's review rounds*).
     store.tracks_proofs = true;
     const scratch = in.scratch.allocator();
