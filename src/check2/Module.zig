@@ -283,6 +283,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .unifications = solver.unifier.unifications,
         .generalisations = solver.generalisations,
         .instantiations = solver.instantiate.instantiations,
+        .derived_context_runs = solver.contexts.runs_total,
     };
 }
 

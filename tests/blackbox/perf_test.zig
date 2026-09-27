@@ -234,6 +234,28 @@ test "CK-75: checking is linear in the number of declarations (checker v2)" {
     try s.finish("CK-75", verdict);
 }
 
+// CK-107, fixed by R10 (2026-09-27): writing a module's cache entry searched
+// the dispatch sidecar's `type_refs` table linearly once per derived row's
+// shape (`dispatch_bytes.Writer.typeRef`), so a module of n types wrote its
+// entry in O(n²), under both checkers. The two reference tables are indexed
+// by a hash map now, first-occurrence order kept, so no byte moved. CK-75's
+// program, with a fresh cache directory per run, timing the `cache_store`
+// event. Calibration (ReleaseFast, wall time of the event, R10): before, 20 /
+// 72 ms at 6 000 / 12 000 under both checkers (ratio 3.6); after, 4.4 / 8.1
+// ms (1.8). n = 12 000, so the event is long enough to time.
+test "CK-107: writing a module's cache entry is linear in its types (both checkers)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
+    try s.w.write("X.beni", try generate(s.arena(), 12_000, control, 4));
+    try s.w.write("X2.beni", try generate(s.arena(), 24_000, control, 4));
+    const v1 = try s.storeRatio("X.beni", "X2.beni", 12_000, "--checker=v1");
+    const v2 = try s.storeRatio("X.beni", "X2.beni", 12_000, "--checker=v2");
+    std.debug.print("PERF  {s}  CK-107  v1 {s}\n", .{ if (v1.green) "GREEN" else "RED  ", v1.detail });
+    try s.finish("CK-107", v2);
+    if (!v1.green) return error.PerfRegression;
+}
+
 // CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n
 // deep — must cost its n distinct nodes, not its 2^n leaves. v2's
 // derivability verdict walks each `(node, method)` pair once, and a wanted on
@@ -509,6 +531,40 @@ const Perf = struct {
         return .{
             .green = r <= 2.5,
             .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `{s}` event", .{ n, ms[0], ms[1], r, event }),
+        };
+    }
+
+    /// `eventRatio` on the `cache_store` event (CK-107): a `--jobs=1` check
+    /// into a FRESH cache directory every run, so every run writes the
+    /// module's entry. The event is the whole serial store pass, not one
+    /// file's. Each point the best of 3, wall time of the event.
+    fn storeRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, checker: []const u8) !Verdict {
+        var ms: [2]f64 = undefined;
+        var fresh: usize = 0;
+        for ([_][]const u8{ small, large }, &ms) |file, *slot| {
+            var best: f64 = std.math.inf(f64);
+            for (0..3) |_| {
+                fresh += 1;
+                const dir = try std.fmt.allocPrint(s.arena(), "--cache-dir=store-{d}", .{fresh});
+                const args = [_][]const u8{ "check", dir, "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", checker, file };
+                const run = try s.timed(&args, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+                try expectClean(run.result);
+                const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0 };
+                const text = try s.w.read("trace.json");
+                const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, s.arena(), text, .{ .ignore_unknown_fields = true });
+                var total: ?f64 = null;
+                for (parsed.traceEvents) |e| {
+                    if (!std.mem.eql(u8, e.ph, "X") or !std.mem.eql(u8, e.name, "cache_store")) continue;
+                    total = (total orelse 0) + e.dur / 1000.0;
+                }
+                best = @min(best, total orelse return error.PerfEventMissing);
+            }
+            slot.* = best;
+        }
+        const r = ms[1] / @max(ms[0], 0.001);
+        return .{
+            .green = r <= 2.5,
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `cache_store` event, {s}", .{ n, ms[0], ms[1], r, checker }),
         };
     }
 

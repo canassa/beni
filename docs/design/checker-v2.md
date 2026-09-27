@@ -3435,6 +3435,36 @@ there). The raw interface dump prints ` no_function` when it is set.
   with its two-word culprit; tagged schema endpoints have hidden rows: §14.2 *as amended by R8b*).
   The schema plan stays 1: its property bytes keep their layout and meaning, read off the derived
   contexts under the new checker (§11.5 *as built by R8b*).
+- *As built by R10 (2026-09-27).* No format moves: `iface_bytes`, `dispatch_bytes`,
+  `entry_bytes`, the schema plan, the dependency digest and `key_version` are as R9 left them.
+  - **Every incrementality scenario runs under v2.** `zig build test-v2` runs `cache_test.zig`,
+    `cutoff_test.zig`, `digest_test.zig` and `matrix_test.zig` whole with `BENI_CHECKER=v2`; a
+    scenario that compares the checkers names each run's checker, and one whose expectation is a
+    legitimate v2 difference asks `World.underV2`. Those differences, all of this section's
+    making: `digest_test.zig`'s row 10 (a private type's payload becomes a function) moves
+    `Leaf`'s interface HASH under v2, where v1 moves only its digest — the type is reached by
+    `make`'s scheme, so it has a `hidden_types` row whose derived rows go `present` → `function`;
+    and `cache_test.zig`'s private-`eq` scenario says `private_method` (D1, §11.3) where v1 says
+    `not_equatable`. The cutoff table (`cutoff_test.zig`, now pinned) re-checks exactly what v1's
+    does on every one of its 18 rows; a 19th, "add a private eq", runs under v2 only, because
+    v1's key cannot see it (CK-132, v1 only, frozen): v2 moves the module's hash through the
+    `private_method` rows and re-checks the same four modules any interface edit does.
+  - **Evidence, not only types.** A dependency's derived context changing — a function payload
+    added, a payload's parameter dropped, a payload's `eq` changing its `where` clause, a method
+    flipped `pub` ↔ private, a schema `via` target gaining a function or a private `eq` — moves
+    the dependency's record, so every dependent is re-checked and re-elaborated; a warm build
+    after each such edit writes byte for byte what a cold build writes (`cache_test.zig`,
+    "checker v2: an edit that moves a dependency's derived context …", and the adversarial
+    review's `k1`–`k8` under both checkers).
+  - **I10 on the hit path, as a counter.** `derived_context_runs` (`Check.Counters`, the trace's
+    counter of the same name) is the number of unit fixpoints `Contexts.run` ran, summed over the
+    modules v2 CHECKED. A hit runs none: `Incremental.install` replaces the record, the table
+    and the plan and recomputes nothing. A warm build of a clean project reports 0
+    (`matrix_test.zig` asserts it on every warm run of every clean fixture), and so does a warm
+    build that re-checks only a module declaring no type while it compares imported ones — the
+    rows it reads are the installed records' (`cache_test.zig`, "… runs no fixpoint (I10)").
+  - **CK-107** was the dispatch sidecar's writer: `type_refs` and `module_refs` searched
+    linearly per row. Both are indexed now; `test-perf` holds it.
 
 ---
 
@@ -3557,6 +3587,11 @@ resolution, the graph dump, an unreadable file), `build_test.zig` ("byte-identic
 --jobs", with and without cross-module evidence) and `abuse_test.zig` (the 600-module and the
 5 000-module scenarios); `world.zig`'s `checkerFlag` adds `--checker=v2` to each `build`, `check`
 and `dump`. All pass with `core` under v2. The matrix test is R10's.
+
+*As built by R10 (2026-09-27):* `test-v2` also runs the four incrementality files whole —
+`cache_test.zig`, `cutoff_test.zig`, `digest_test.zig` and `matrix_test.zig` (§14.3 *as built by
+R10*). The matrix's cold-with-cache and warm runs, at `--jobs=1` and `--jobs=8`, are byte-identical
+to the plain run for every checker-driven fixture under v2.
 
 ---
 

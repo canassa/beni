@@ -3096,9 +3096,17 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   (v1): a ratio of 3.7, where the module's `check` event is linear under v2 (44 / 87 ms). The
   entry is 4.7 / 9.1 MB, linear, so the time is not the bytes.
 - **Expected** Linear. Budget: `fast-compiler.md` §2 and §8.
-- **Root cause** not isolated (the writer's per-type or per-symbol work, or the digest it hashes).
-- **Fixture** none yet: a timing scenario with a cache directory, calibrated when the slice takes it.
-- **Slice** R10 (incrementality), unassigned until the manager decides.
+- **Root cause** isolated by R10: `dispatch_bytes.Writer.typeRef` searched the sidecar's
+  `type_refs` table linearly for every derived row's `nominal` shape (and `moduleRef` its
+  `module_refs` for every `ext` term), so a module of n types wrote n rows against a table of up
+  to n entries: O(n²). Nothing else in the entry's writers scans.
+- **Fixture** `tests/blackbox/perf_test.zig`'s `CK-107` scenario (`zig build test-perf`): the
+  program at 12 000 / 24 000 into a fresh cache directory every run, the `cache_store` event,
+  best of 3, ratio ≤ 2.5, under both checkers. Red on `6097799`, green on R10.
+- **Slice** R10 (incrementality).
+- **Status** fixed by R10 (2026-09-27): both reference tables are indexed by a hash map from the
+  row to its index; the rows keep their first-occurrence order, so no entry's bytes move.
+  `cache_store` at 6 000 / 12 000: 20 / 72 ms → 4.4 / 8.1 ms (ReleaseFast), both checkers.
 
 ### CK-108 — A derived context drops a payload's `equatable` requirement: v2 compared functions
 
@@ -3623,6 +3631,36 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   over the corpus, `tests/pending/`, `core` and `bench/` against `919f8be` found no byte of
   difference.
 
+### CK-132 — v1's cutoff key cannot see a private `eq` or `compare`: a warm check accepts what a cold one refuses
+
+- **Severity** nondeterminism (the answer depends on the cache's history). **Area** v1's
+  interface record and dependency digest (`cache/Digest.zig`, v1's settled bits), v1 only.
+  **Class** K7. **Sources** R10, running the reviewer-focus scenarios under both checkers
+  (2026-09-27).
+- **Program** `Leaf.beni` of `cutoff_test.zig`'s project (a private `type Hidden` a `pub make`
+  returns; `Mid` compares `Leaf.make x == Leaf.make y`) gains a private
+  `eq : Hidden, Hidden -> Bool`. Or: `M.beni` holds `pub schema S tagged "kind" of V as "v"`
+  with `payload : Int via conv` into a private `type Target = Target Int`, `N.beni` compares two
+  `M.S.Type`s, and `M` gains a private `eq : Target, Target -> Bool`.
+- **Command** `B check --checker=v1 --cache-dir=c src` before the edit, then again after it, then
+  `B check --checker=v1 --no-cache src`.
+- **Observed** the cold check reports `private_method` at the importer's `==` (D1, §11.3) and
+  exits 1; the warm one exits 0. Under v1 the edit moves neither `M`'s interface hash nor its
+  dependency digest (`--iface-hash`, `--dep-digest`: both byte-identical), so the importer's key
+  does not move and its clean entry is read back.
+- **Expected** Warm and cold agree (`fast-compiler.md` §8's acceptance). Under v2 they do: the
+  module rule makes `Hidden`'s and the endpoint's derived rows `private_method` (§14.2 *as amended
+  by R8b*), so `M`'s interface hash moves and the importer is re-checked.
+- **Root cause** v1 publishes no derived row that states the module rule, and its digest carries
+  the `equatable`/`comparable`/`has_function` bits, not "the module declares a private method of
+  this name". The rows exist for v1 too (R3) but v1 writes `present` for them.
+- **Fixture** v2's side, which is the checker that stays: `cutoff_test.zig`'s "add a private eq
+  (§11.3, D1)" row, run under v2 only, and `cache_test.zig`'s schema case of "checker v2: an edit
+  that moves a dependency's derived context …". Both are red under v1 (shown by R10; the row
+  fails `ExitCodeDiffers`, exit 1 cold and 0 warm).
+- **Slice** none: v1 is frozen (`checker-rewrite.md` §1). Closed when v1 is deleted (R12); from
+  R11 no build reaches v1's path by default.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3737,7 +3775,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-104 | unsound-runtime | K14 | `run/DerivedRowBodyEmissionOrder/`, `run/DerivedContextClosedOwnMethodPermuted/` | R6b (fixed) |
 | CK-105 | valid-program-rejected (order-dependent) | K6 | `run/FieldCallThroughMember.beni` and five more | R7 (claimed) |
 | CK-106 | compiler-crash-or-hang | K4 | `check/bad/NumberReceiverMethodInGroup.beni`, `…Dispatch.beni` | R7 (claimed) |
-| CK-107 | performance | K11 | — (a scenario when taken) | unassigned — R10 proposed (found by R8a) |
+| CK-107 | performance | K11 | `perf_test.zig` (`test-perf`, CK-107) | R10 (fixed; found by R8a) |
 | CK-108 | unsound-runtime | K7 | promoted: `check/bad/DerivedContextEquatableFlag*` (v1's text) + `blackbox_test.zig` "CK-108: …" (v2) | R8a (fixed; found by its review) |
 | CK-109 | compiler-crash-or-hang | K10 | promoted: `abuse_wide_test.zig` "CK-109: …" (v2); `scenario/CK-82` at 65 537 | R8a (fixed; found by its review) |
 | CK-110 | latent | K10 | promoted: `blackbox_test.zig` "a private type reached only through a pub alias body …" | R8a (fixed; found by its review) |
@@ -3762,13 +3800,14 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-129 | diagnostic-quality | K13 | — | unassigned (frontend; found by R8d) |
 | CK-130 | valid-program-rejected (v2 only) | K7 | promoted: `run/NeverAndOrderDerived.beni` | R9 (fixed) |
 | CK-131 | performance (v2 only) | K11 | `perf_test.zig` (`test-perf`, CK-131) | R9b (fixed; found by R9) |
+| CK-132 | nondeterminism (v1 only) | K7 | v2 side: `cutoff_test.zig` "add a private eq" row, `cache_test.zig` schema case | none (v1 frozen; gone at R12; found by R10) |
 
 Totals:
-- 131 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 132 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 29 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 15 (CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 24 (CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
-- nondeterminism: 2.
+- nondeterminism: 3 (CK-132 among them, v1 only).
 - performance: 20 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127 and CK-131 among them).
 - diagnostic-quality: 27 (CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).

@@ -1165,6 +1165,13 @@ nowhere in the record; renaming a field of it leaves the declaring module's hash
 turns an importer's clean build into `missing_field`. An interface-hash-only firewall answers exit 0
 to both, which is the one failure mode `checker.md` §7 says a compiler may not have.
 
+*Amended by R10 (2026-09-27), for the new checker only.* Under `--checker=v2` the first fact's
+hash is no longer byte-identical: a private type a `pub` scheme reaches has a `hidden_types` row in
+the record with its derived `eq` and `compare` (`checker-v2.md` §14.2 *as amended by R8a*), and
+those rows go from `present` to `function`. The digest still moves as well, and the importer is
+re-checked either way; the second fact (the alias no scheme mentions) is unchanged under both
+checkers. `checker-v2.md` §14.3 *as built by R10* lists every such difference.
+
 **`TypeId` values are not a dependency, and that is why a private type is free.** A `TypeId` is a
 whole-program dense index, so adding a private type anywhere renumbers most of the table — but
 nothing a dependent emits or reports carries one: the record spends `app`/`alias` on `type_refs`

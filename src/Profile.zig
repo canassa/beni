@@ -171,6 +171,10 @@ pub const Counter = enum {
     constraints_deferred,
     constraints_discharged,
     constraints_promoted,
+    /// v2's derived-context fixpoints over the modules it checked
+    /// (`Check.Counters.derived_context_runs`): 0 on a fully warm run, the
+    /// I10 witness (checker-v2.md §14.3 *as built by R10*).
+    derived_context_runs,
     /// The persistent cache (`fast-compiler.md` §8). Modules whose entry was
     /// loaded and installed, modules whose entry was absent or unusable, and
     /// modules whose own check actually ran — which is what a warm-rebuild

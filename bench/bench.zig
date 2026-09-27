@@ -582,6 +582,12 @@ const CheckMeasurement = struct {
     constraints_deferred: u64 = 0,
     constraints_discharged: u64 = 0,
     constraints_promoted: u64 = 0,
+    /// The derived-context fixpoints v2 ran (`Contexts.run`, checker-v2.md
+    /// §11.2), summed over the modules it CHECKED. A module installed from
+    /// the cache runs none: its rows are read off its record (I10, §14.3 *as
+    /// built by R10*), which is what a warm run's 0 here says. v1 has no
+    /// fixpoint and reports 0.
+    derived_context_runs: u64 = 0,
     diagnostics: u64 = 0,
     /// The check step alone.
     ns: u64 = 0,

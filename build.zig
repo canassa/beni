@@ -254,6 +254,18 @@ pub fn build(b: *std.Build) void {
     }) |d| {
         v2_step.dependOn(&bb.run(bb.filtered(d.root, d.filters), .{ .root = "tests/corpus", .checker = "v2", .expected_tests = d.tests }).step);
     }
+    // The incrementality scenarios (`plans/checker-rewrite.md` R10): every
+    // cache, cutoff, matrix and digest scenario, whole, under
+    // `BENI_CHECKER=v2`. A scenario that compares the two checkers names
+    // each run's checker itself, and `world.zig` then adds none.
+    for ([_][]const u8{
+        "tests/blackbox/cache_test.zig",
+        "tests/blackbox/cutoff_test.zig",
+        "tests/blackbox/digest_test.zig",
+        "tests/blackbox/matrix_test.zig",
+    }) |root| {
+        v2_step.dependOn(&bb.run(bb.artifact(root), .{ .root = "tests/corpus", .checker = "v2" }).step);
+    }
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
     const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });

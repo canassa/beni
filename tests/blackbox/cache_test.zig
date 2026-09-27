@@ -694,6 +694,9 @@ test "row 10b: --checker=v2 moves every module's key, core included, and v1 is t
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    // The scenario is about the DEFAULT, so its baseline runs with no
+    // `--checker` at all, whatever `BENI_CHECKER` says (`test-v2`).
+    w.checker = null;
     try writeProject(&w);
 
     // ┌─────────────────────────────────────────┐
@@ -955,6 +958,9 @@ const Counters = struct {
     files: u64 = 0,
     frontend_hits: u64 = 0,
     frontend_bytes: u64 = 0,
+    /// v2's derived-context fixpoints (`derived_context_runs`): the I10
+    /// witness, 0 when every module was installed from the cache.
+    derived: u64 = 0,
 };
 
 const Run = struct {
@@ -983,6 +989,7 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
             files: ?u64 = null,
             frontend_hits: ?u64 = null,
             frontend_bytes: ?u64 = null,
+            derived_context_runs: ?u64 = null,
         } = .{},
     };
     const text = try w.read(trace);
@@ -1006,6 +1013,7 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
         if (e.args.files) |v| counters.files = v;
         if (e.args.frontend_hits) |v| counters.frontend_hits = v;
         if (e.args.frontend_bytes) |v| counters.frontend_bytes = v;
+        if (e.args.derived_context_runs) |v| counters.derived = v;
     }
     return .{ .result = r, .counters = counters };
 }
@@ -1592,7 +1600,15 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
         \\[{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"},{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"}]
         \\
     ;
-    try testing.expectEqualStrings(expected_hidden, hidden.result.stderr);
+    // Under v2 the same two comparisons are `private_method` (D1,
+    // checker-v2.md §11.3): `Inner`'s `eq` is private, so `Outer`'s derived
+    // `eq` cannot use it — the reason v1 hides behind `not_equatable`. The
+    // warm build still says exactly what the cold one says (above).
+    const expected_hidden_v2 =
+        \\[{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"},{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"}]
+        \\
+    ;
+    try testing.expectEqualStrings(if (w.underV2()) expected_hidden_v2 else expected_hidden, hidden.result.stderr);
     try testing.expect(!w.exists("hidden"));
     try testing.expect(!w.exists("hidden-oracle"));
 }
@@ -2190,7 +2206,9 @@ test "a cache written under one checker is never read under the other" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeProject(&w);
-    const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "src" };
+    // Each run names its checker: under `test-v2` (`BENI_CHECKER=v2`) a run
+    // without the flag would be v2's too (`world.zig`'s `checkerFlag`).
+    const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v1", "src" };
     const v2_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v2", "src" };
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -2237,7 +2255,7 @@ test "a cache written under one checker is never read under the other" {
     // A cache v2 wrote first, then v1 over it.
     const v2_cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v2", "src" }, "v2-cold.json");
     const v2_written = (try entriesOnly(arena, try w.listFiles("b"))).len;
-    const v1_after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "src" }, "v1-after.json");
+    const v1_after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v1", "src" }, "v1-after.json");
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -3689,3 +3707,873 @@ test "checker v2: a warm build after an edit that moves a derived context writes
     try expectSameTree(&w, arena, "cold", "warm");
     try expectSameTree(&w, arena, "cold", "comment");
 }
+
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ R10: a warm rebuild after every edit of a dependency is a cold build    │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// `plans/checker-rewrite.md` R10. Three modules — `M`, `N` importing it, and
+// `Main` importing both (none for a `check`-only case) — and a sequence of
+// versions of `M`. The first is built cold into a cache; then every later
+// version, and the first again, is built WARM over that same cache at
+// `--jobs=8` and cold with `--no-cache` at `--jobs=1`, and the two must agree
+// on the exit code, stdout, stderr and every byte written. What each version
+// must do is pinned too, so a case cannot pass by failing the same way twice.
+// A last warm build over the settled cache re-checks nothing and, under v2,
+// runs no derived-context fixpoint (I10).
+
+const EditCase = struct {
+    name: []const u8,
+    n: []const u8,
+    /// Null for a case only `check` can run (a schema: `build` refuses one
+    /// before emit, schema.md S4).
+    main: ?[]const u8 = null,
+    /// `M`'s versions, the first built cold.
+    states: []const State,
+
+    const State = struct { m: []const u8, expect: Expect };
+    const Expect = union(enum) {
+        /// The build succeeds and the program prints this.
+        prints: []const u8,
+        /// The command fails (exits 0 when empty) with these codes, in order.
+        codes: []const []const u8,
+    };
+};
+
+fn editArgs(arena: std.mem.Allocator, case: EditCase, checker: ?[]const u8, cache: ?[]const u8, jobs: []const u8, out: []const u8) ![]const []const u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.append(arena, if (case.main != null) "build" else "check");
+    if (checker) |c| try argv.append(arena, c);
+    if (case.main != null) {
+        try argv.append(arena, "--platform=node");
+        try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{out}));
+    }
+    try argv.append(arena, jobs);
+    try argv.append(arena, "--diagnostics=json");
+    try argv.append(arena, if (cache) |dir| try std.fmt.allocPrint(arena, "--cache-dir={s}", .{dir}) else "--no-cache");
+    try argv.append(arena, "src");
+    return argv.items;
+}
+
+/// The codes of a `--diagnostics=json` stderr, in order.
+fn codesOf(arena: std.mem.Allocator, stderr: []const u8) ![]const []const u8 {
+    const trimmed = std.mem.trim(u8, stderr, " \r\n");
+    if (trimmed.len == 0) return &.{};
+    const Row = struct { code: []const u8 };
+    const rows = try std.json.parseFromSliceLeaky([]Row, arena, trimmed, .{ .ignore_unknown_fields = true });
+    const out = try arena.alloc([]const u8, rows.len);
+    for (rows, out) |r, *o| o.* = r.code;
+    return out;
+}
+
+fn expectOutcome(w: *World, arena: std.mem.Allocator, case: EditCase, state: usize, r: Run, out: []const u8) !void {
+    errdefer std.debug.print("{s}: version {d} of M\n", .{ case.name, state });
+    switch (case.states[state].expect) {
+        .prints => |text| {
+            try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+            const program = try w.node(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}));
+            try testing.expectEqual(@as(u8, 0), program.exit_code);
+            try testing.expectEqualStrings(text, program.stdout);
+        },
+        .codes => |codes| {
+            try testing.expectEqual(@as(u8, if (codes.len == 0) 0 else 1), r.result.exit_code);
+            const got = try codesOf(arena, r.result.stderr);
+            try testing.expectEqual(codes.len, got.len);
+            for (codes, got) |want, have| try testing.expectEqualStrings(want, have);
+            if (case.main != null) try testing.expect(!w.exists(out));
+        },
+    }
+}
+
+/// `case`, under `checker` (null: the world's own, `BENI_CHECKER`).
+fn runEditCase(case: EditCase, checker: ?[]const u8) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const v2 = if (checker) |c| std.mem.eql(u8, c, "--checker=v2") else w.underV2();
+    try w.write("src/N.beni", case.n);
+    if (case.main) |text| try w.write("src/Main.beni", text);
+    try w.write("src/M.beni", case.states[0].m);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: cold                  │
+    // └─────────────────────────────────────────┘
+    const first = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=1", "first"), "first.json");
+    try expectOutcome(&w, arena, case, 0, first, "first");
+    try testing.expectEqual(@as(u64, 0), first.counters.hits);
+    // v2 derived the types of `M` and `N` itself: that is what a hit must
+    // not do again.
+    if (v2) try testing.expect(first.counters.derived > 0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: each edit, warm = cold │
+    // └─────────────────────────────────────────┘
+    var revert_checked: u64 = 0;
+    for (1..case.states.len + 1) |step| {
+        const state = step % case.states.len;
+        errdefer std.debug.print("{s}: step {d}, version {d} of M\n", .{ case.name, step, state });
+        try w.write("src/M.beni", case.states[state].m);
+        const warm_out = try std.fmt.allocPrint(arena, "warm{d}", .{step});
+        const cold_out = try std.fmt.allocPrint(arena, "cold{d}", .{step});
+        const warm = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=8", warm_out), try std.fmt.allocPrint(arena, "warm{d}.json", .{step}));
+        const cold = try runCounted(&w, arena, try editArgs(arena, case, checker, null, "--jobs=1", cold_out), try std.fmt.allocPrint(arena, "cold{d}.json", .{step}));
+        try testing.expectEqual(cold.result.exit_code, warm.result.exit_code);
+        try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+        try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
+        // A version not built before re-checks at least `M`; the revert to
+        // the first finds `M`'s entry again when that version checked clean.
+        // Something is always a hit (core).
+        if (step < case.states.len) try testing.expect(warm.counters.checked >= 1);
+        try testing.expect(warm.counters.hits > 0);
+        if (step == case.states.len) revert_checked = warm.counters.checked;
+        try expectOutcome(&w, arena, case, state, warm, warm_out);
+        if (case.main != null and warm.result.exit_code == 0) try expectSameTree(&w, arena, cold_out, warm_out);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS: settled            │
+    // └─────────────────────────────────────────┘
+    // Back at the first version, whose entries the cache still holds: a
+    // warm build checks nothing, derives nothing and writes what `first`
+    // wrote.
+    const settled = try runCounted(&w, arena, try editArgs(arena, case, checker, "cache", "--jobs=1", "settled"), "settled.json");
+    try testing.expectEqualStrings(first.result.stderr, settled.result.stderr);
+    // A module whose check reported an error has no entry (fast-compiler.md
+    // §8), so a version that fails re-checks those modules every time —
+    // exactly as many as the revert did.
+    try testing.expectEqual(revert_checked, settled.counters.checked);
+    if (first.result.exit_code == 0) {
+        try testing.expectEqual(@as(u64, 0), settled.counters.checked);
+        try testing.expectEqual(@as(u64, 0), settled.counters.derived);
+    }
+    if (case.main != null and settled.result.exit_code == 0) try expectSameTree(&w, arena, "first", "settled");
+}
+
+test "adv's k1–k8: a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
+    // The adversarial review's cache probes (`plans/checker-rewrite.md` R10's
+    // exit): under the world's checker, so `test-blackbox` runs them under
+    // v1 and `test-v2` under v2, with the same expectations — no probe's
+    // outcome differs between the two.
+    for (k_cases) |case| try runEditCase(case, null);
+}
+
+test "checker v2: an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build" {
+    // R10's reviewer focus: a dependency whose derived context changes must
+    // invalidate its dependents' EVIDENCE — the dispatch tables and the
+    // JavaScript they emit — not only their types. Four ways to move one:
+    // a function payload (the context goes `absent`, then `present` with
+    // no entry, then absent through the parameter); a payload's own `eq`
+    // changing its `where` clause (the entry's method moves, CK-25's shape)
+    // and dropping it; the payload's method made private (D1: `private_method`,
+    // §11.3), removed, and a private `compare`; and a schema whose `via`
+    // target — a type in no record — gains a function and then a private `eq`
+    // (§11.5, the endpoint's `no_function` and derived rows). Named `v2`
+    // explicitly: v1 answers the `where` and `private` cases differently
+    // (D1, D4), and its warm check of the last edit of the schema case exits
+    // 0 where a cold one refuses the program (CK-132, v1 only, frozen).
+    for (evidence_cases) |case| try runEditCase(case, "--checker=v2");
+}
+
+test "checker v2: a cache hit installs the published derived contexts and runs no fixpoint (I10)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // checker-v2.md I10: "a cache hit installs the published answer" — the
+    // derived rows are read off the record, never recomputed. The witness is
+    // `derived_context_runs`, the fixpoints v2 ran: every module that
+    // declares a type runs at least one when it is checked, none when it is
+    // installed. `Main` declares no type and compares `Outer`s, whose
+    // context runs through `H` and `Keyed`: re-checking it alone must read
+    // every one of those rows and derive nothing.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDerivedProject(&w, holder_by_key);
+    const build = [_][]const u8{ "build", "--checker=v2", "--platform=node", "--diagnostics=json" };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--jobs=1", "--cache-dir=c", "--out=cold", "src" }), "cold.json");
+    const warm = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--jobs=8", "--cache-dir=c", "--out=warm", "src" }), "warm.json");
+    const main_source = try arena.dupe(u8, try w.read("src/Main.beni"));
+    try w.write("src/Main.beni", try std.mem.replaceOwned(u8, arena, main_source, "Keyed.Keyed 2 \"b\"", "Keyed.Keyed 3 \"b\""));
+    const body = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--jobs=1", "--cache-dir=c", "--out=body", "src" }), "body.json");
+    const oracle = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--jobs=1", "--no-cache", "--out=oracle", "src" }), "oracle.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ cold, warm, body, oracle }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+    }
+    // Cold: `H`, `Keyed`, `Outer` and core's types were derived here.
+    try testing.expect(cold.counters.derived > 0);
+    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+    // Warm: every module installed, nothing derived.
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expectEqual(@as(u64, 0), warm.counters.derived);
+    // `Main` alone re-checked: its comparisons resolved against the rows
+    // the three installed records carry, and no fixpoint ran for them.
+    try testing.expectEqual(@as(u64, 1), body.counters.checked);
+    try testing.expectEqual(@as(u64, 0), body.counters.derived);
+    // A cold build derives them all again (the counter counts).
+    try testing.expectEqual(cold.counters.derived, oracle.counters.derived);
+    try testing.expectEqualStrings("True\nFalse\n", (try w.node("body/_main.mjs")).stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectSameTree(&w, arena, "cold", "warm");
+    try expectSameTree(&w, arena, "oracle", "body");
+}
+
+const k_cases = [_]EditCase{
+    .{
+        .name = "k1: a custom eq and compare added to a dependency",
+        .n =
+        \\import M exposing (T)
+        \\
+        \\pub type W = W T
+        \\
+        \\pub same : T, T -> Bool
+        \\same a b = W a == W b
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import M exposing (T)
+        \\import N exposing (W)
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then "T" else "F"
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (M.T 1 == M.T 11), show (M.T 1 < M.T 11), show ([ N.W (M.T 2) ] == [ N.W (M.T 12) ]), show (N.same (M.T 3) (M.T 13)) ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type T = T Int
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\nF\nF\n" },
+            },
+            .{
+                .m =
+                \\pub type T = T Int
+                \\
+                \\pub eq : T, T -> Bool
+                \\eq a b =
+                \\    case ( a, b ) of
+                \\        ( T x, T y ) -> modBy x 10 == modBy y 10
+                \\
+                \\pub compare : T, T -> Order
+                \\compare a b = EQ
+                \\
+                ,
+                .expect = .{ .prints = "T\nF\nT\nT\n" },
+            },
+        },
+    },
+    .{
+        .name = "k2: the custom eq and compare removed again",
+        .n =
+        \\import M exposing (T)
+        \\
+        \\pub type W = W T
+        \\
+        \\pub same : T, T -> Bool
+        \\same a b = W a == W b
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import M exposing (T)
+        \\import N exposing (W)
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then "T" else "F"
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (M.T 1 == M.T 11), show (M.T 1 < M.T 11), show ([ N.W (M.T 2) ] == [ N.W (M.T 12) ]), show (N.same (M.T 3) (M.T 13)) ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type T = T Int
+                \\
+                \\pub eq : T, T -> Bool
+                \\eq a b =
+                \\    case ( a, b ) of
+                \\        ( T x, T y ) -> modBy x 10 == modBy y 10
+                \\
+                \\pub compare : T, T -> Order
+                \\compare a b = EQ
+                \\
+                ,
+                .expect = .{ .prints = "T\nF\nT\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type T = T Int
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\nF\nF\n" },
+            },
+        },
+    },
+    .{
+        .name = "k3: a dependency's function becomes constrained",
+        .n =
+        \\import M
+        \\
+        \\pub go x y = M.pick x y
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ String.fromInt (N.go 3 9), N.go "b" "a" ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub pick x y = x
+                \\
+                ,
+                .expect = .{ .prints = "3\nb\n" },
+            },
+            .{
+                .m =
+                \\pub pick x y =
+                \\    if x < y then y else x
+                \\
+                ,
+                .expect = .{ .prints = "9\nb\n" },
+            },
+        },
+    },
+    .{
+        .name = "k4: constructors reordered, which reorders the derived compare",
+        .n =
+        \\import M exposing (C, Red, Blue)
+        \\
+        \\pub cmp : String
+        \\cmp =
+        \\    if Red < Blue then "red<blue" else "red>=blue"
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ N.cmp ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type C = Red | Blue
+                \\
+                ,
+                .expect = .{ .prints = "red<blue\n" },
+            },
+            .{
+                .m =
+                \\pub type C = Blue | Red
+                \\
+                ,
+                .expect = .{ .prints = "red>=blue\n" },
+            },
+        },
+    },
+    .{
+        .name = "k5: a function payload makes the type non-equatable",
+        .n =
+        \\import M exposing (C)
+        \\
+        \\pub cmp : String
+        \\cmp =
+        \\    if M.C 1 == M.C 1 then "eq" else "ne"
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ N.cmp ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type C = C Int
+                \\
+                ,
+                .expect = .{ .prints = "eq\n" },
+            },
+            .{
+                .m =
+                \\pub type C = C Int | F (Int -> Int)
+                \\
+                ,
+                .expect = .{ .codes = &.{"not_equatable"} },
+            },
+        },
+    },
+    .{
+        .name = "k6: a field added to a record alias",
+        .n =
+        \\import M
+        \\
+        \\pub go : String
+        \\go =
+        \\    M.describe { name = "z", n = 3 }
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ N.go ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type alias R = { name : String, n : Int }
+                \\
+                \\pub describe : R -> String
+                \\describe r = r.name
+                \\
+                ,
+                .expect = .{ .prints = "z\n" },
+            },
+            .{
+                .m =
+                \\pub type alias R = { name : String, n : Int, extra : Bool }
+                \\
+                \\pub describe : R -> String
+                \\describe r = if r.extra then r.name else "no"
+                \\
+                ,
+                .expect = .{ .codes = &.{"missing_field"} },
+            },
+        },
+    },
+    .{
+        .name = "k7: an alias's expansion changed",
+        .n =
+        \\import M exposing (Key)
+        \\
+        \\pub go : String
+        \\go =
+        \\    if M.k1 < M.k2 then "lt" else "ge"
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ N.go ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type alias Key = Int
+                \\
+                \\pub k1 : Key
+                \\k1 = 10
+                \\
+                \\pub k2 : Key
+                \\k2 = 9
+                \\
+                ,
+                .expect = .{ .prints = "ge\n" },
+            },
+            .{
+                .m =
+                \\pub type alias Key = String
+                \\
+                \\pub k1 : Key
+                \\k1 = "10"
+                \\
+                \\pub k2 : Key
+                \\k2 = "9"
+                \\
+                ,
+                .expect = .{ .prints = "lt\n" },
+            },
+        },
+    },
+    .{
+        .name = "k8: an error in a dependency fixed",
+        .n =
+        \\import M
+        \\
+        \\pub go : String
+        \\go =
+        \\    M.label 3
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import N
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ N.go ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub label : String -> String
+                \\label s = s
+                \\
+                ,
+                .expect = .{ .codes = &.{"kind_mismatch"} },
+            },
+            .{
+                .m =
+                \\pub label : Int -> String
+                \\label s = String.fromInt s
+                \\
+                ,
+                .expect = .{ .prints = "3\n" },
+            },
+        },
+    },
+};
+
+const evidence_cases = [_]EditCase{
+    .{
+        .name = "a function payload added; a parameter dropped from every payload; a function over the parameter",
+        .n =
+        \\import M
+        \\
+        \\
+        \\pub type W a
+        \\    = W (M.Box a)
+        \\
+        \\
+        \\pub same : W Int, W Int -> Bool
+        \\same x y =
+        \\    x == y
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import M
+        \\import N
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then "T" else "F"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (N.same (N.W (M.Box 1)) (N.W (M.Box 2))), show (M.Box 3 == M.Box 3), show ([ N.W (M.Box 4) ] == [ N.W (M.Box 4) ]) ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type Box a
+                \\    = Box a
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type Box a
+                \\    = Box a
+                \\    | Fn (Int -> Int)
+                \\
+                ,
+                .expect = .{ .codes = &.{ "not_equatable", "not_equatable", "not_equatable" } },
+            },
+            .{
+                .m =
+                \\pub type Box a
+                \\    = Box Int
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type Box a
+                \\    = Box a
+                \\    | Fn (a -> Int)
+                \\
+                ,
+                .expect = .{ .codes = &.{ "not_equatable", "not_equatable", "not_equatable" } },
+            },
+        },
+    },
+    .{
+        .name = "a payload's eq changes its where clause, then drops it",
+        .n =
+        \\import M
+        \\
+        \\
+        \\pub type W a
+        \\    = W (M.Holder a)
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import M
+        \\import N
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then "T" else "F"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (N.W (M.Holder 1) == N.W (M.Holder 2)), show (N.W (M.Holder 5) == N.W (M.Holder 5)) ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type Holder a
+                \\    = Holder a
+                \\
+                \\
+                \\pub eq : Holder a, Holder a -> Bool
+                \\    where a.eq : a, a -> Bool
+                \\eq (Holder x) (Holder y) =
+                \\    x == y
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type Holder a
+                \\    = Holder a
+                \\
+                \\
+                \\pub eq : Holder a, Holder a -> Bool
+                \\    where a.compare : a, a -> Order
+                \\eq (Holder x) (Holder y) =
+                \\    x < y
+                \\
+                ,
+                .expect = .{ .prints = "T\nF\n" },
+            },
+            .{
+                .m =
+                \\pub type Holder a
+                \\    = Holder a
+                \\
+                \\
+                \\pub eq : Holder a, Holder a -> Bool
+                \\eq x y =
+                \\    True
+                \\
+                ,
+                .expect = .{ .prints = "T\nT\n" },
+            },
+        },
+    },
+    .{
+        .name = "a payload's eq flipped pub to private; removed; a private compare",
+        .n =
+        \\import M
+        \\
+        \\
+        \\pub type W
+        \\    = W M.T
+        \\
+        ,
+        .main =
+        \\import Node exposing (Program)
+        \\import M
+        \\import N
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then "T" else "F"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (N.W (M.T 1) == N.W (M.T 11)), show (N.W (M.T 1) < N.W (M.T 11)) ]
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\pub type T
+                \\    = T Int
+                \\
+                \\
+                \\pub eq : T, T -> Bool
+                \\eq a b =
+                \\    case ( a, b ) of
+                \\        ( T x, T y ) ->
+                \\            modBy 10 x == modBy 10 y
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type T
+                \\    = T Int
+                \\
+                \\
+                \\eq : T, T -> Bool
+                \\eq a b =
+                \\    case ( a, b ) of
+                \\        ( T x, T y ) ->
+                \\            modBy 10 x == modBy 10 y
+                \\
+                ,
+                .expect = .{ .codes = &.{"private_method"} },
+            },
+            .{
+                .m =
+                \\pub type T
+                \\    = T Int
+                \\
+                ,
+                .expect = .{ .prints = "F\nT\n" },
+            },
+            .{
+                .m =
+                \\pub type T
+                \\    = T Int
+                \\
+                \\
+                \\compare : T, T -> Order
+                \\compare a b =
+                \\    EQ
+                \\
+                ,
+                .expect = .{ .codes = &.{"private_method"} },
+            },
+        },
+    },
+    .{
+        .name = "a schema's via target gains a function; then a private eq",
+        .n =
+        \\import M
+        \\
+        \\
+        \\pub same : M.S.Type, M.S.Type -> Bool
+        \\same a b =
+        \\    a == b
+        \\
+        ,
+        .states = &.{
+            .{
+                .m =
+                \\import Schema exposing (Conversion)
+                \\
+                \\
+                \\conv : Conversion Int Target
+                \\conv =
+                \\    Debug.todo "c"
+                \\
+                \\
+                \\type Target
+                \\    = Target Int
+                \\
+                \\
+                \\pub schema S tagged "kind" of
+                \\    V as "v"
+                \\        payload : Int via conv
+                \\
+                ,
+                .expect = .{ .codes = &.{} },
+            },
+            .{
+                .m =
+                \\import Schema exposing (Conversion)
+                \\
+                \\
+                \\conv : Conversion Int Target
+                \\conv =
+                \\    Debug.todo "c"
+                \\
+                \\
+                \\type Target
+                \\    = Target Int
+                \\    | Fn (Int -> Int)
+                \\
+                \\
+                \\pub schema S tagged "kind" of
+                \\    V as "v"
+                \\        payload : Int via conv
+                \\
+                ,
+                .expect = .{ .codes = &.{"not_equatable"} },
+            },
+            .{
+                .m =
+                \\import Schema exposing (Conversion)
+                \\
+                \\
+                \\conv : Conversion Int Target
+                \\conv =
+                \\    Debug.todo "c"
+                \\
+                \\
+                \\type Target
+                \\    = Target Int
+                \\
+                \\
+                \\eq : Target, Target -> Bool
+                \\eq a b =
+                \\    True
+                \\
+                \\
+                \\pub schema S tagged "kind" of
+                \\    V as "v"
+                \\        payload : Int via conv
+                \\
+                ,
+                .expect = .{ .codes = &.{"private_method"} },
+            },
+        },
+    },
+};

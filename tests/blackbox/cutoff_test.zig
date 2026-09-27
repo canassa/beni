@@ -286,6 +286,16 @@ const Edit = struct {
     /// The file to rewrite and its new contents.
     path: []const u8 = "src/Leaf.beni",
     source: []const u8,
+    /// The skip decision, pinned (R10): modules re-checked by the warm build
+    /// after the edit, and modules cut off. `--cache-keys` already predicts
+    /// the first; pinning it too is what makes "v2 re-checks exactly what v1
+    /// re-checks" a fact, since both checkers run this table with these
+    /// numbers (`test-blackbox`, `test-v2`).
+    rechecked: u64,
+    cut_off: u64,
+    /// Run under v2 only: v1's key cannot see the edit and its warm check
+    /// disagrees with its cold one (CK-132, v1 frozen; deleted with v1).
+    v2_only: bool = false,
 };
 
 /// **Every edit class of `plans/m4-3.md` §10.2, and at least one instance of
@@ -298,15 +308,15 @@ const Edit = struct {
 /// type an importer matches exhaustively, change a `where` clause, add a `pub
 /// compare`, touch a sibling `.js`, reorder declarations, reorder imports.
 const edits = [_]Edit{
-    .{ .what = "comment only", .source = "-- a new comment\n" ++ leaf_source },
-    .{ .what = "whitespace only", .source = leaf_source ++ "\n\n" },
-    .{ .what = "annotated body", .source = replace(leaf_source, "pub one : Int\none =\n    1", "pub one : Int\none =\n    2") },
-    .{ .what = "add a private value", .source = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n" },
-    .{ .what = "add a private type", .source = leaf_source ++ "\n\ntype Unmentioned\n    = U Int\n" },
+    .{ .what = "comment only", .rechecked = 1, .cut_off = 14, .source = "-- a new comment\n" ++ leaf_source },
+    .{ .what = "whitespace only", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\n" },
+    .{ .what = "annotated body", .rechecked = 1, .cut_off = 14, .source = replace(leaf_source, "pub one : Int\none =\n    1", "pub one : Int\none =\n    2") },
+    .{ .what = "add a private value", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n" },
+    .{ .what = "add a private type", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\ntype Unmentioned\n    = U Int\n" },
     // Written out rather than built by two nested `replace`s: a nested call
     // is not reliably folded at comptime, and a row whose edit silently did
     // nothing would pass for the wrong reason.
-    .{ .what = "rename a private type a pub signature names", .source =
+    .{ .what = "rename a private type a pub signature names", .rechecked = 4, .cut_off = 11, .source =
     \\pub foreign twice : Int -> Int
     \\
     \\
@@ -336,29 +346,39 @@ const edits = [_]Edit{
     },
     .{
         .what = "rename a private type's constructor",
+        .rechecked = 1,
+        .cut_off = 14,
         .source = replace(leaf_source, "    | Extra Int", "    | Additional Int"),
     },
     .{
         .what = "a private type's payload becomes a function (§6.1)",
+        .rechecked = 4,
+        .cut_off = 11,
         .source = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
     },
-    .{ .what = "make a private type pub", .source = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },
-    .{ .what = "add a pub value", .source = leaf_source ++ "\n\npub extra : Int\nextra =\n    2\n" },
-    .{ .what = "change a pub signature", .source = replace(leaf_source, "pub one : Int", "pub one : Float") },
+    .{ .what = "make a private type pub", .rechecked = 4, .cut_off = 11, .source = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },
+    .{ .what = "add a pub value", .rechecked = 4, .cut_off = 11, .source = leaf_source ++ "\n\npub extra : Int\nextra =\n    2\n" },
+    .{ .what = "change a pub signature", .rechecked = 4, .cut_off = 11, .source = replace(leaf_source, "pub one : Int", "pub one : Float") },
     .{
         .what = "change an alias body no scheme names (§6.2)",
+        .rechecked = 4,
+        .cut_off = 11,
         .source = replace(leaf_source, "pub type alias Pair =\n    { a : Int }", "pub type alias Pair =\n    { z : Int }"),
     },
     .{
         .what = "add a constructor to a pub type an importer matches",
+        .rechecked = 4,
+        .cut_off = 11,
         .source = replace(leaf_source, "pub type Tag\n    = Red\n    | Blue", "pub type Tag\n    = Red\n    | Blue\n    | Green"),
     },
     .{
         .what = "add a pub compare",
+        .rechecked = 4,
+        .cut_off = 11,
         .source = leaf_source ++ "\n\npub compare : Hidden, Hidden -> Order\ncompare a b =\n    case ( a, b ) of\n        _ ->\n            EQ\n",
     },
-    .{ .what = "touch a sibling .js", .path = "src/Leaf.js", .source = "export const twice = (n) => n + n;\n" },
-    .{ .what = "reorder declarations", .source =
+    .{ .what = "touch a sibling .js", .rechecked = 1, .cut_off = 14, .path = "src/Leaf.js", .source = "export const twice = (n) => n + n;\n" },
+    .{ .what = "reorder declarations", .rechecked = 4, .cut_off = 11, .source =
     \\pub foreign twice : Int -> Int
     \\
     \\
@@ -388,13 +408,24 @@ const edits = [_]Edit{
     },
     .{
         .what = "reorder imports",
+        .rechecked = 3,
+        .cut_off = 9,
         .path = "src/Mid.beni",
         .source = replace(mid_source, "import Leaf exposing (Blue, Pair, Red, Tag)", "import Leaf exposing (Blue, Pair, Red, Tag)\nimport Top"),
     },
     .{
         .what = "an UNANNOTATED body whose inferred scheme moves",
+        .rechecked = 3,
+        .cut_off = 12,
         .path = "src/Mid.beni",
         .source = mid_source ++ "\n\npub inferred x =\n    x + 1\n",
+    },
+    .{
+        .what = "add a private eq (§11.3, D1)",
+        .rechecked = 4,
+        .cut_off = 11,
+        .v2_only = true,
+        .source = leaf_source ++ "\n\neq : Hidden, Hidden -> Bool\neq a b =\n    True\n",
     },
 };
 
@@ -412,6 +443,7 @@ test "the differential harness: every edit class, byte-identical AND cut off exa
         const arena = arena_state.allocator();
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
+        if (edit.v2_only and !w.underV2()) continue;
         try writeProject(&w);
 
         // ┌─────────────────────────────────────────┐
@@ -457,6 +489,13 @@ test "the differential harness: every edit class, byte-identical AND cut off exa
             warm1.counters.checked,
             total - warm1.counters.checked,
         });
+        if (warm1.counters.checked != edit.rechecked or total - warm1.counters.checked != edit.cut_off) {
+            std.debug.print(
+                "{s}: re-checked {d}, cut off {d}; the table says {d} and {d}\n",
+                .{ edit.what, warm1.counters.checked, total - warm1.counters.checked, edit.rechecked, edit.cut_off },
+            );
+            return error.SkipDecisionMoved;
+        }
 
         // ┌─────────────────────────────────────────┐
         // │ revert, warm2 back to cold              │

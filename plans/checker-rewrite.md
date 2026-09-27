@@ -2326,6 +2326,48 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - adv's `k1`–`k8` cache probes are identical under v2, warm and cold.
 - **Reviewer focus.** A dependency whose derived context changes (a function payload added) must
   invalidate dependents' evidence, not only their types.
+- **As built** (2026-09-27; `checker-v2.md` §14.3 and §17 *as built by R10*, `fast-compiler.md`
+  §8 *amended by R10*). No format, key or version moved; `check2/Incremental.zig` needed no change.
+  - **Wiring.** `test-v2` runs `cache_test.zig`, `cutoff_test.zig`, `digest_test.zig` and
+    `matrix_test.zig` whole under `BENI_CHECKER=v2` (no name filter, so no count to guard).
+    Four scenarios had assumed "no flag = v1": the two checker-crossing ones now name every
+    run's checker, and two expectations that are v2's legitimate differences ask
+    `World.underV2` — `digest_test.zig` row 10 (a private type's payload becomes a function:
+    v2's `hidden_types` row moves `Leaf`'s hash, `hashes_v2`) and `cache_test.zig`'s private
+    `eq` (`private_method`, D1, where v1 says `not_equatable`).
+  - **The cutoff table is pinned** (`Edit.rechecked`, `.cut_off`) and both checkers run it with
+    the same numbers: **no row's counts change under v2**. The derived, hidden and `no_function`
+    rows ride on edits that already move the record (the payload-function row moves `Leaf`'s
+    hash under v2 but its digest wave already re-checked the same four modules). A new row,
+    "add a private eq (§11.3, D1)", re-checks 4 and cuts off 11 under v2 and runs under v2 only:
+    v1's key cannot see a private `eq`, and its warm check exits 0 where its cold one refuses —
+    **CK-132** (found, v1 only, frozen; gone at R12).
+  - **adv's `k1`–`k8`** are `cache_test.zig`'s "adv's k1–k8 …", under the world's checker (so
+    both steps run them): cold into a cache, each edit and its revert warm at `--jobs=8` against
+    a `--no-cache` build at `--jobs=1`, exit, streams and every file byte-identical, and each
+    version's output pinned. Identical under v1 and v2.
+  - **The reviewer focus as scenarios**: "checker v2: an edit that moves a dependency's derived
+    context rebuilds its dependents' evidence exactly as a cold build" — a function payload
+    added, a parameter dropped from every payload (the context loses its entry, the importer's
+    call its evidence argument), a function over the parameter; a payload's `eq` moving its
+    `where` from `a.eq` to `a.compare`, then dropping it; a payload's `eq` flipped `pub` →
+    private, removed, a private `compare`; a schema's `via` target gaining a function, then a
+    private `eq` (`check` only: `build` refuses schemas). All green on `6097799` already. A
+    mutation (every interface hash made constant) turns the `where` case red, so the scenario
+    sees what only the record carries.
+  - **I10 on the hit path**: a new counter, `derived_context_runs` (`Check.Counters`, `Profile`,
+    `bench`'s check line): the unit fixpoints v2 ran over the modules it checked. 0 on every warm
+    run of every clean matrix fixture; 0 when only a module declaring no type is re-checked
+    while comparing imported types (`cache_test.zig`, "… runs no fixpoint (I10)"); 34 on
+    `bench/corpus` cold. v1 reports 0.
+  - **CK-107 fixed**: `dispatch_bytes.Writer`'s `typeRef`/`moduleRef` scanned their tables per
+    row; a hash map from row to index, first-occurrence order kept, so no byte moved.
+    `cache_store` 20 / 72 ms → 4.4 / 8.1 ms at 6 000 / 12 000 (ReleaseFast). `perf_test.zig`'s
+    CK-107 scenario (both checkers, the event at 12 000 / 24 000): ratios 3.96 / 3.90 on
+    `6097799`'s binary, 1.92 / 1.85 on R10.
+  - **Bench** (`zig build bench`, ReleaseFast, ABBA, three rounds): the check phase 5.98 / 6.22 /
+    6.02 ms against 6.17 / 6.38 / 6.11 on `6097799` (v1); under `--checker=v2` 6.18 / 6.38 /
+    5.90 against 6.35 / 6.18 / 6.42. Unchanged.
 
 ### R11 — Cut-over
 
@@ -2445,6 +2487,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R8e | — (CK-128's cost: loops, forwarders, one runtime; two `abuse_test.zig` scenarios) | — | — |
 | R9 | CK-130 (found and fixed: `run/NeverAndOrderDerived.beni`) | — | CK-15 (rest, closed for v2); CK-131 (found: §18's `s_tup6000` median at 1.58×) |
 | R9b | CK-131 (fixed; `perf_test.zig`, `test-perf`) | — | — |
+| R10 | CK-107 (fixed; `perf_test.zig`, `test-perf`) | — | CK-132 (found: v1 only, frozen; its v2 side in `cutoff_test.zig` and `cache_test.zig`; gone at R12) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |
@@ -2452,7 +2495,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 131 entries appears in this table (CK-130 and CK-131 added by R9, CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 132 entries appears in this table (CK-132 added by R10, CK-130 and CK-131 added by R9, CK-129 added by R8d, CK-126 to CK-128 added by R8c, CK-118 added by R8b, CK-119 to CK-124 by its review round, CK-125 by its round-2 review, CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

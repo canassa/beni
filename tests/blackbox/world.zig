@@ -194,6 +194,16 @@ pub const World = struct {
         return world;
     }
 
+    /// Whether this world's runs are checked by the new checker, v2
+    /// (`BENI_CHECKER=v2`, `test-v2`). A scenario whose expectation is one
+    /// of v2's legitimate differences (`tests/pending/v2-expected.md`'s
+    /// reasons: D1, the published derived rows) asks this, and says why at
+    /// the use. Deleted with the flag at R12.
+    pub fn underV2(world: *const World) bool {
+        const flag = world.checker orelse return false;
+        return std.mem.eql(u8, flag, "--checker=v2");
+    }
+
     pub const BuildAndRun = struct {
         build: Result,
         /// Null when the build failed, so nothing was run.

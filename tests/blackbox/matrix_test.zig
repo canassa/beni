@@ -208,6 +208,9 @@ const Counters = struct {
     parsed: u64 = 0,
     lowered: u64 = 0,
     frontend_hits: u64 = 0,
+    /// v2's derived-context fixpoints (`derived_context_runs`, I10): a
+    /// warm run that checks no module derives nothing (R10).
+    derived: u64 = 0,
 };
 
 fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
@@ -221,6 +224,7 @@ fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
             files_parsed: ?u64 = null,
             files_lowered: ?u64 = null,
             frontend_hits: ?u64 = null,
+            derived_context_runs: ?u64 = null,
         } = .{},
     };
     const text = try Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
@@ -240,6 +244,7 @@ fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
         if (e.args.files_parsed) |v| out.parsed = v;
         if (e.args.files_lowered) |v| out.lowered = v;
         if (e.args.frontend_hits) |v| out.frontend_hits = v;
+        if (e.args.derived_context_runs) |v| out.derived = v;
     }
     return out;
 }
@@ -304,10 +309,10 @@ fn expectCacheCounters(f: Fixture, v: Variant, variant: usize, baseline_exit: u8
     }
 
     if (baseline_exit != 0 and !f.kind.checksClean()) return;
-    if (c.checked != 0 or c.hits == 0) {
+    if (c.checked != 0 or c.hits == 0 or c.derived != 0) {
         std.debug.print(
-            "{s}/{s}: {s} re-checked {d} modules and hit {d}; a warm run of a clean fixture must check none\n",
-            .{ f.dir, f.name, v.label, c.checked, c.hits },
+            "{s}/{s}: {s} re-checked {d} modules, hit {d} and ran {d} derived-context fixpoints; a warm run of a clean fixture must check and derive none\n",
+            .{ f.dir, f.name, v.label, c.checked, c.hits, c.derived },
         );
         return error.MatrixDiffers;
     }

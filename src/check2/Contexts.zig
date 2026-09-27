@@ -201,6 +201,10 @@ replays: std.ArrayList(Replay) = .empty,
 params: []Range = &.{},
 param_vars: std.ArrayList(Var) = .empty,
 runs: std.ArrayList(Run) = .empty,
+/// How many unit fixpoints this module ran (`run`), for the
+/// `derived_context_runs` counter: the I10 witness (checker-v2.md §14.3 *as
+/// built by R10*). A cache hit runs none, because nothing of the check runs.
+runs_total: u64 = 0,
 /// Bumped whenever a group completes (§11.2, *Memo generations*).
 generation: u32 = 0,
 /// The module declares a value named `eq` / `compare`, `pub` or not: the
@@ -1074,6 +1078,7 @@ fn run(s: *Solve, u: u32) Error!void {
     const real = s.report;
     s.report = try quietReport(s);
     s.nest_units += Groups.nest_cost;
+    c.runs_total += 1;
     const ri: u32 = @intCast(c.runs.items.len);
     try c.runs.append(scratch, .{
         .unit = u,

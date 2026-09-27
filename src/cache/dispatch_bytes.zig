@@ -342,14 +342,26 @@ const Writer = struct {
     /// Text → offset, so two slots holding the same name share one record
     /// and the blob is a function of the table rather than of its order.
     seen: std.StringHashMapUnmanaged(u32) = .empty,
-    module_refs: std.ArrayList(struct { package: SourceStore.Package, name_offset: u32 }) = .empty,
-    type_refs: std.ArrayList(struct { package: SourceStore.Package, module_offset: u32, name_offset: u32 }) = .empty,
+    module_refs: std.ArrayList(ModuleRow) = .empty,
+    type_refs: std.ArrayList(TypeRow) = .empty,
+    /// Row → its index in `module_refs` / `type_refs`. The tables were
+    /// searched linearly, once per term and per derived row's shape, which
+    /// made writing a module of n types' dispatch table O(n²): CK-107,
+    /// `cache_store` at 20 / 72 ms for 6 000 / 12 000 types. The rows keep
+    /// their first-occurrence order, so the bytes do not move.
+    module_index: std.AutoHashMapUnmanaged(ModuleRow, u32) = .empty,
+    type_index: std.AutoHashMapUnmanaged(TypeRow, u32) = .empty,
+
+    const ModuleRow = struct { package: SourceStore.Package, name_offset: u32 };
+    const TypeRow = struct { package: SourceStore.Package, module_offset: u32, name_offset: u32 };
 
     fn deinit(w: *Writer) void {
         w.strings.deinit(w.gpa);
         w.seen.deinit(w.gpa);
         w.module_refs.deinit(w.gpa);
         w.type_refs.deinit(w.gpa);
+        w.module_index.deinit(w.gpa);
+        w.type_index.deinit(w.gpa);
     }
 
     /// `s`'s text as a byte offset into `strings`, appending it if it is
@@ -375,28 +387,24 @@ const Writer = struct {
         if (m.int() >= w.graph.count()) return no_ref;
         const package = w.graph.module(m).package;
         const name_offset = try w.string(w.graph.moduleName(m));
-        for (w.module_refs.items, 0..) |r, i| {
-            if (r.package == package and r.name_offset == name_offset) return @intCast(i);
-        }
-        try w.module_refs.append(w.gpa, .{ .package = package, .name_offset = name_offset });
-        return @intCast(w.module_refs.items.len - 1);
+        const row: ModuleRow = .{ .package = package, .name_offset = name_offset };
+        const gop = try w.module_index.getOrPut(w.gpa, row);
+        if (gop.found_existing) return gop.value_ptr.*;
+        gop.value_ptr.* = @intCast(w.module_refs.items.len);
+        try w.module_refs.append(w.gpa, row);
+        return gop.value_ptr.*;
     }
 
     fn typeRef(w: *Writer, id: Types.TypeId) Allocator.Error!u32 {
         const named = w.types.named(id) orelse return no_ref;
         const module_offset = try w.string(named.module);
         const name_offset = try w.string(named.name);
-        for (w.type_refs.items, 0..) |r, i| {
-            if (r.package == named.package and r.module_offset == module_offset and r.name_offset == name_offset) {
-                return @intCast(i);
-            }
-        }
-        try w.type_refs.append(w.gpa, .{
-            .package = named.package,
-            .module_offset = module_offset,
-            .name_offset = name_offset,
-        });
-        return @intCast(w.type_refs.items.len - 1);
+        const row: TypeRow = .{ .package = named.package, .module_offset = module_offset, .name_offset = name_offset };
+        const gop = try w.type_index.getOrPut(w.gpa, row);
+        if (gop.found_existing) return gop.value_ptr.*;
+        gop.value_ptr.* = @intCast(w.type_refs.items.len);
+        try w.type_refs.append(w.gpa, row);
+        return gop.value_ptr.*;
     }
 
     fn writeTerm(w: *Writer, row: *[term_bytes]u8, t: Dispatch.Term) Allocator.Error!void {
