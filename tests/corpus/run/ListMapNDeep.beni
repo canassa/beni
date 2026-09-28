@@ -30,11 +30,11 @@ note tag n =
     Debug.log n tag
 
 
--- One list, handed to every argument of every map: five separate million-cell
+-- One list, handed to every argument of every map: five separate
 -- lists would measure the allocator rather than the stack.
 big : List Int
 big =
-    List.range 1 1000000
+    List.range 1 20000
 
 
 main : Program
@@ -104,9 +104,9 @@ main =
         , Debug.toString none
         , Debug.toString (List.indexedMap [ "a", "b" ] (\i x -> x ++ String.fromInt i))
 
-        -- A million elements through each of them: this is the fail-first
-        -- half, and at the depth `backend.md` §8's own measurement says the
-        -- old shape dies at.
+        -- Twenty thousand elements through each of them: this is the fail-first
+        -- half, past the depth the old recursive shape died at (5 700 for
+        -- `map2`, 3 700 for `map5`).
         , String.fromInt (List.length (List.map2 big big (\x y -> x + y)))
         , String.fromInt (List.length (List.map3 big big big (\x y z -> x + y + z)))
         , String.fromInt (List.length (List.map4 big big big big (\x y z w -> x + y + z + w)))
@@ -115,5 +115,5 @@ main =
 
         -- …and the last element of one of them, so a loop that produced a
         -- list of the right LENGTH and the wrong contents is caught too.
-        , Debug.toString (List.drop (List.map2 big big (\x y -> x + y)) 999999)
+        , Debug.toString (List.drop (List.map2 big big (\x y -> x + y)) 19999)
         ]

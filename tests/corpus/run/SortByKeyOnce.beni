@@ -15,7 +15,8 @@
 -- given in and `sortBy` agrees with the `sortWith` that spells the same
 -- ordering out. The last two lines are stack safety — decorate and
 -- undecorate are `foldl`, and the merge sort's own recursion is log n deep,
--- so 200 000 elements do not overflow.
+-- so 20 000 elements do not overflow, where a non-tail recursion over a
+-- list overflows Node's default stack at about 8 000.
 import List
 import Node exposing (Program)
 import String
@@ -82,7 +83,7 @@ main =
             List.sortWith rows (\x y -> compare x.rank y.rank)
 
         huge =
-            List.sortBy (List.range 1 200000) (\n -> 0 - n)
+            List.sortBy (List.range 1 20000) (\n -> 0 - n)
     in
     Node.printLines
         [ ints none

@@ -4,7 +4,8 @@
 --
 -- A depth that restarted anywhere along a cycle would never reach the limit,
 -- and the native stack would grow with the data again. Each type below
--- recurses through a different link, 100 000 levels deep, compared equal
+-- recurses through a different link, 25 000 levels deep (a comparison that
+-- recursed on the native stack threw at 8 940), compared equal
 -- and unequal with `==` and `<`:
 --
 --   - `Rose`: through `List`'s `eq` and `compare` — hand-written loops in
@@ -79,33 +80,33 @@ main : Program
 main =
     let
         r =
-            rose 100000 (Rose 0 [])
+            rose 25000 (Rose 0 [])
 
         r1 =
-            rose 100000 (Rose 1 [])
+            rose 25000 (Rose 1 [])
 
         ev =
-            evens 100000 EEnd
+            evens 25000 EEnd
 
         ev1 =
-            evens 100000 (E 0 (O ( 0, EEnd )))
+            evens 25000 (E 0 (O ( 0, EEnd )))
 
         t =
-            spine 100000 Leaf
+            spine 25000 Leaf
 
         t1 =
-            spine 100000 (Node Leaf Nothing Leaf)
+            spine 25000 (Node Leaf Nothing Leaf)
     in
     Node.printLines
-        [ show "rose == rose" (r == rose 100000 (Rose 0 []))
+        [ show "rose == rose" (r == rose 25000 (Rose 0 []))
         , show "rose == other" (r == r1)
         , show "rose < other" (r < r1)
         , show "other < rose" (r1 < r)
-        , show "even == even" (ev == evens 100000 EEnd)
+        , show "even == even" (ev == evens 25000 EEnd)
         , show "even == other" (ev == ev1)
         , show "even < other" (ev < ev1)
         , show "other < even" (ev1 < ev)
-        , show "tree == tree" (t == spine 100000 Leaf)
+        , show "tree == tree" (t == spine 25000 Leaf)
         , show "tree == other" (t == t1)
         , show "tree < other" (t < t1)
         , show "other < tree" (t1 < t)

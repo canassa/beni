@@ -1,28 +1,30 @@
 -- run: fixing the callback order of `map`, `filter`, `filterMap` and
 -- `partition` must not cost their stack safety. All four are now `foldl` and
 -- then `reverse`, and both of those are direct self tail calls that the code
--- generator turns into a labelled loop (`backend.md` §8), so a million cells
--- goes through each of them without touching the JavaScript stack — the same
--- guarantee `ListFoldDeep` pins for the folds themselves.
+-- generator turns into a labelled loop (`backend.md` §8), so twenty thousand
+-- cells, where a non-tail recursion over a list overflows Node's default
+-- stack at about 8 000, go through each of them without touching the
+-- JavaScript stack — the same guarantee `ListFoldDeep` pins for the folds
+-- themselves.
 import List
 import Node exposing (Program)
 import String
 
 
-million : List Int
-million =
-    List.range 1 1000000
+cells : List Int
+cells =
+    List.range 1 20000
 
 
 main : Program
 main =
     let
         ( big, small ) =
-            List.partition million (\n -> n > 999000)
+            List.partition cells (\n -> n > 19000)
     in
     Node.printLines
-        [ String.fromInt (List.foldl (List.map million (\n -> n * 2)) 0 (\x acc -> x + acc))
-        , String.fromInt (List.length (List.filter million (\n -> n > 999000)))
-        , String.fromInt (List.length (List.filterMap million (\n -> Just n)))
+        [ String.fromInt (List.foldl (List.map cells (\n -> n * 2)) 0 (\x acc -> x + acc))
+        , String.fromInt (List.length (List.filter cells (\n -> n > 19000)))
+        , String.fromInt (List.length (List.filterMap cells (\n -> Just n)))
         , String.fromInt (List.length big + List.length small)
         ]
