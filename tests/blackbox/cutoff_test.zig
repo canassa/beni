@@ -428,11 +428,31 @@ const edits = [_]Edit{
 // The loop
 // ---------------------------------------------------------------------------
 
-test "the differential harness: every edit class, byte-identical AND cut off exactly" {
+// The edit classes are split over four tests, each taking every fourth one,
+// so that a sharded run of this binary spreads them over processes.
+test "the differential harness: every edit class, byte-identical AND cut off exactly, first quarter" {
+    try differentialQuarter(0);
+}
+
+test "the differential harness: every edit class, byte-identical AND cut off exactly, second quarter" {
+    try differentialQuarter(1);
+}
+
+test "the differential harness: every edit class, byte-identical AND cut off exactly, third quarter" {
+    try differentialQuarter(2);
+}
+
+test "the differential harness: every edit class, byte-identical AND cut off exactly, fourth quarter" {
+    try differentialQuarter(3);
+}
+
+/// The edit classes of `edits` whose index is `quarter` modulo four.
+fn differentialQuarter(quarter: usize) !void {
     var table: std.ArrayList(u8) = .empty;
     defer table.deinit(testing.allocator);
 
-    for (edits) |edit| {
+    for (edits, 0..) |edit, index| {
+        if (index % 4 != quarter) continue;
         var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
         defer arena_state.deinit();
         const arena = arena_state.allocator();
@@ -509,5 +529,5 @@ test "the differential harness: every edit class, byte-identical AND cut off exa
         _ = warm1_dumps;
     }
 
-    std.debug.print("\nthe skip-decision table (edit class × modules):\n{s}\n", .{table.items});
+    std.debug.print("\nthe skip-decision table (edit class × modules), edit classes {d} mod 4:\n{s}\n", .{ quarter, table.items });
 }

@@ -34,6 +34,10 @@ const safe_bin_dir = "safe/bin";
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
 
+/// How many processes `test` runs the library's unit tests in. Past about
+/// this many, the slowest single test is the whole step.
+const unit_shards = 12;
+
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
 /// in core names `core/Basics.beni` whether it came from the embedded copy
@@ -116,7 +120,7 @@ pub fn build(b: *std.Build) void {
     beni_mod.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
     beni_mod.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
 
-    const beni_tests = b.addTest(.{ .root_module = beni_mod });
+    const beni_tests = b.addTest(.{ .root_module = beni_mod, .test_runner = testRunner(b) });
     const diagnostic_tests = b.addTest(.{ .root_module = diagnostic_mod });
     const gen_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -126,7 +130,15 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const test_step = b.step("test", "Run the hermetic unit tests");
-    test_step.dependOn(&b.addRunArtifact(beni_tests).step);
+    // One binary, `unit_shards` processes: the test runner runs a test in
+    // the process whose number is its index modulo the count, so the suite
+    // takes about as long as its slowest test instead of the sum of all.
+    for (0..unit_shards) |k| {
+        const run = b.addRunArtifact(beni_tests);
+        run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
+        run.setName(b.fmt("run beni tests shard {d}/{d}", .{ k, unit_shards }));
+        test_step.dependOn(&run.step);
+    }
     test_step.dependOn(&b.addRunArtifact(diagnostic_tests).step);
     test_step.dependOn(&b.addRunArtifact(gen_tests).step);
 
@@ -157,9 +169,11 @@ pub fn build(b: *std.Build) void {
     // code-review finding.
     //
     // Every test binary is its own process, and the build runner runs them
-    // in parallel; the corpus walker is further split into the parts of
-    // `tests/blackbox/corpus_parts.zig`, one process each, so the step's wall
-    // time is no longer one binary walking every fixture twice.
+    // in parallel. A binary whose tests add up to more than a few seconds
+    // runs as several processes, each running every n-th test
+    // (`tests/test_runner.zig`); the counts are sized so that no process
+    // runs much longer than the binary's slowest test. The corpus walker is
+    // split into the parts of `tests/blackbox/corpus_parts.zig` instead.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
     const bb: Blackbox = .{
         .b = b,
@@ -169,25 +183,25 @@ pub fn build(b: *std.Build) void {
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
     };
-    for ([_][]const u8{
-        "tests/blackbox/blackbox_test.zig",
-        "tests/blackbox/abuse_test.zig",
-        "tests/blackbox/abuse_wide_test.zig",
-        "tests/blackbox/build_test.zig",
-        "tests/blackbox/cache_test.zig",
-        "tests/blackbox/check_test.zig",
-        "tests/blackbox/cutoff_test.zig",
-        "tests/blackbox/digest_test.zig",
-        "tests/blackbox/docs_test.zig",
-        "tests/blackbox/frontend_test.zig",
-        "tests/blackbox/iface_test.zig",
-        "tests/blackbox/matrix_test.zig",
-        "tests/blackbox/ordering_test.zig",
-    }) |root| {
+    for ([_]struct { []const u8, u32 }{
+        .{ "tests/blackbox/blackbox_test.zig", 6 },
+        .{ "tests/blackbox/abuse_test.zig", 6 },
+        .{ "tests/blackbox/abuse_wide_test.zig", 3 },
+        .{ "tests/blackbox/build_test.zig", 3 },
+        .{ "tests/blackbox/cache_test.zig", 4 },
+        .{ "tests/blackbox/check_test.zig", 1 },
+        .{ "tests/blackbox/cutoff_test.zig", 4 },
+        .{ "tests/blackbox/digest_test.zig", 3 },
+        .{ "tests/blackbox/docs_test.zig", 1 },
+        .{ "tests/blackbox/frontend_test.zig", 1 },
+        .{ "tests/blackbox/iface_test.zig", 1 },
+        .{ "tests/blackbox/matrix_test.zig", 1 },
+        .{ "tests/blackbox/ordering_test.zig", 4 },
+    }) |suite| {
         // The walker's knobs are pinned on every binary, not only the
         // walker: `run.setEnvironmentVariable` is the one place a test's
         // environment is decided.
-        blackbox_step.dependOn(&bb.run(bb.artifact(root), .{ .root = "tests/corpus" }).step);
+        bb.runSharded(blackbox_step, bb.artifact(suite[0]), .{ .root = "tests/corpus" }, suite[1]);
     }
     // The corpus's knobs (`plans/checker-rewrite.md` §2.4), pinned EMPTY —
     // which the walker reads as unset — so a variable exported in the
@@ -318,6 +332,12 @@ pub fn build(b: *std.Build) void {
         .exclude_paths = &.{"bench/compare/work"},
         .check = true,
     }).step);
+}
+
+/// `tests/test_runner.zig`: std's runner plus `BENI_TEST_SHARD`, which lets
+/// one test binary run as several processes.
+fn testRunner(b: *std.Build) std.Build.Step.Compile.TestRunner {
+    return .{ .path = b.path("tests/test_runner.zig"), .mode = .server };
 }
 
 /// The compiler at a fixed optimize mode, whatever `-Doptimize` says: its
@@ -669,6 +689,9 @@ const HarnessEnvironment = struct {
     /// `perf_test.zig`'s `BENI_PERF_SHARD`: which of its scenarios this
     /// process runs.
     perf_shard: []const u8 = "",
+    /// `tests/test_runner.zig`'s `BENI_TEST_SHARD` (`k/n`): which of the
+    /// binary's tests this process runs.
+    shard: []const u8 = "",
     /// Relative to the install prefix: the ReleaseSafe compiler unless a
     /// timing step names the ReleaseFast one.
     exe: []const u8 = safe_bin_dir ++ "/beni",
@@ -692,6 +715,10 @@ const Blackbox = struct {
     /// `artifact` with the harness itself built at `mode`.
     fn artifactAt(bb: Blackbox, root: []const u8, mode: std.builtin.OptimizeMode) *std.Build.Step.Compile {
         return bb.b.addTest(.{
+            // `blackbox_test`, not `test`: the step names in a build
+            // summary say which suite a run is.
+            .name = std.fs.path.stem(root),
+            .test_runner = testRunner(bb.b),
             .root_module = bb.b.createModule(.{
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,
@@ -718,8 +745,29 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
+        r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
         r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, env.exe));
+        r.setName(bb.b.fmt("run {s}{s}{s}{s}{s}{s}{s}", .{
+            t.name,
+            if (env.part.len != 0) " part " else "",
+            env.part,
+            if (env.perf_shard.len != 0) " perf " else "",
+            env.perf_shard,
+            if (env.shard.len != 0) " shard " else "",
+            env.shard,
+        }));
         return r;
+    }
+
+    /// `run` as `shards` processes, each running every `shards`-th test of
+    /// `t`, all of them dependencies of `step`.
+    fn runSharded(bb: Blackbox, step: *std.Build.Step, t: *std.Build.Step.Compile, env: HarnessEnvironment, shards: u32) void {
+        if (shards == 1) return step.dependOn(&bb.run(t, env).step);
+        for (0..shards) |k| {
+            var e = env;
+            e.shard = bb.b.fmt("{d}/{d}", .{ k, shards });
+            step.dependOn(&bb.run(t, e).step);
+        }
     }
 };
 

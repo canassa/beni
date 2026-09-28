@@ -222,7 +222,16 @@ test "a record literal nested to the parser's limit checks and compares, one pas
     }
 }
 
-test "a record literal nested to the parser's limit compares and RUNS, dev and release" {
+test "a record literal nested to the parser's limit compares and RUNS, development build" {
+    try deepRecordRuns(&.{ "--no-cache", "Main.beni" });
+}
+
+test "a record literal nested to the parser's limit compares and RUNS, release build" {
+    try deepRecordRuns(&.{ "--release", "--no-cache", "Main.beni" });
+}
+
+/// Build the program below with `args` and run it.
+fn deepRecordRuns(args: []const []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -267,31 +276,31 @@ test "a record literal nested to the parser's limit compares and RUNS, dev and r
     );
     try w.write("Main.beni", source.items);
 
-    {
-        for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-            // ┌─────────────────────────────────────┐
-            // │ EXECUTE                             │
-            // └─────────────────────────────────────┘
-            // `--release` builds with no cache either: a second
-            // `--no-cache` would be a repeated flag.
-            const r = if (std.mem.eql(u8, flag, "--release"))
-                try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
-            else
-                try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(args);
 
-            // ┌─────────────────────────────────────┐
-            // │ VERIFY OUTPUT                       │
-            // └─────────────────────────────────────┘
-            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-            try testing.expectEqualStrings("", r.build.stderr);
-            try testing.expectEqualStrings("True\nFalse\nTrue\nFalse\n", r.program.?.stdout);
-            try testing.expectEqualStrings("", r.program.?.stderr);
-            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-        }
-    }
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+    try testing.expectEqualStrings("", r.build.stderr);
+    try testing.expectEqualStrings("True\nFalse\nTrue\nFalse\n", r.program.?.stdout);
+    try testing.expectEqualStrings("", r.program.?.stderr);
+    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
 }
 
-test "a recursive type of 4 096 and 4 097 parameters compares past the derived depth limit, positional and wide" {
+test "a recursive type of 4 096 parameters compares past the derived depth limit, positional" {
+    try wideRecursiveTypeCompares(4096, "20");
+}
+
+test "a recursive type of 4 097 parameters compares past the derived depth limit, wide" {
+    try wideRecursiveTypeCompares(4097, "450");
+}
+
+/// A recursive type of `n` parameters, `levels` deep, compared.
+fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -307,74 +316,72 @@ test "a recursive type of 4 096 and 4 097 parameters compares past the derived d
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
-    for ([_]usize{ 4096, 4097 }, [_][]const u8{ "20", "450" }) |n, levels| {
-        var source: std.ArrayList(u8) = .empty;
-        defer source.deinit(gpa);
-        try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W");
-        try params(gpa, &source, n, " p{d}");
-        try source.appendSlice(gpa, "\n    = Cell");
-        try params(gpa, &source, n, " p{d}");
-        try source.appendSlice(gpa, " (W");
-        try params(gpa, &source, n, " p{d}");
-        try source.appendSlice(gpa, ")\n    | End\n\n\ncell : Int, W");
-        try params(gpa, &source, n, " Int");
-        try source.appendSlice(gpa, " -> W");
-        try params(gpa, &source, n, " Int");
-        try source.appendSlice(gpa, "\ncell k rest =\n    Cell k");
-        try params(gpa, &source, n - 1, " 0");
-        try source.appendSlice(gpa, " rest\n\n\nbuild : Int, Int, W");
-        try params(gpa, &source, n, " Int");
-        try source.appendSlice(gpa, " -> W");
-        try params(gpa, &source, n, " Int");
-        const tail = try std.mem.replaceOwned(u8, gpa,
-            \\
-            \\build n last acc =
-            \\    if n == 0 then
-            \\        acc
-            \\
-            \\    else
-            \\        build (n - 1) last (cell (if n == 1000 then last else n) acc)
-            \\
-            \\
-            \\show : Bool -> String
-            \\show b =
-            \\    if b then
-            \\        "True"
-            \\
-            \\    else
-            \\        "False"
-            \\
-            \\
-            \\main : Program
-            \\main =
-            \\    Node.printLines
-            \\        [ show (build 1000 1 End == build 1000 1 End)
-            \\        , show (build 1000 1 End == build 1000 2 End)
-            \\        , show (build 1000 1 End < build 1000 2 End)
-            \\        ]
-            \\
-        , "1000", levels);
-        defer gpa.free(tail);
-        try source.appendSlice(gpa, tail);
-        try w.write("Main.beni", source.items);
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(gpa);
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W");
+    try params(gpa, &source, n, " p{d}");
+    try source.appendSlice(gpa, "\n    = Cell");
+    try params(gpa, &source, n, " p{d}");
+    try source.appendSlice(gpa, " (W");
+    try params(gpa, &source, n, " p{d}");
+    try source.appendSlice(gpa, ")\n    | End\n\n\ncell : Int, W");
+    try params(gpa, &source, n, " Int");
+    try source.appendSlice(gpa, " -> W");
+    try params(gpa, &source, n, " Int");
+    try source.appendSlice(gpa, "\ncell k rest =\n    Cell k");
+    try params(gpa, &source, n - 1, " 0");
+    try source.appendSlice(gpa, " rest\n\n\nbuild : Int, Int, W");
+    try params(gpa, &source, n, " Int");
+    try source.appendSlice(gpa, " -> W");
+    try params(gpa, &source, n, " Int");
+    const tail = try std.mem.replaceOwned(u8, gpa,
+        \\
+        \\build n last acc =
+        \\    if n == 0 then
+        \\        acc
+        \\
+        \\    else
+        \\        build (n - 1) last (cell (if n == 1000 then last else n) acc)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show (build 1000 1 End == build 1000 1 End)
+        \\        , show (build 1000 1 End == build 1000 2 End)
+        \\        , show (build 1000 1 End < build 1000 2 End)
+        \\        ]
+        \\
+    , "1000", levels);
+    defer gpa.free(tail);
+    try source.appendSlice(gpa, tail);
+    try w.write("Main.beni", source.items);
 
-        {
-            // ┌─────────────────────────────────────┐
-            // │ EXECUTE                             │
-            // └─────────────────────────────────────┘
-            const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+    {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
 
-            // ┌─────────────────────────────────────┐
-            // │ VERIFY OUTPUT                       │
-            // └─────────────────────────────────────┘
-            // The cell that differs is the innermost one (`n == levels` is
-            // built first), so every comparison walks every level.
-            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-            try testing.expectEqualStrings("", r.build.stderr);
-            try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
-            try testing.expectEqualStrings("", r.program.?.stderr);
-            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-        }
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        // The cell that differs is the innermost one (`n == levels` is
+        // built first), so every comparison walks every level.
+        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
+        try testing.expectEqualStrings("", r.program.?.stderr);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
     }
 }
 

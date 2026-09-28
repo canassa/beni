@@ -168,18 +168,40 @@ const perm_programs = [_]PermProgram{
     .{ .name = "a dot-call helper answered by derived methods", .path = "tests/corpus/run/DotCallDerivedThroughHelper.beni", .expect = .{ .prints = "tests/corpus/run/DotCallDerivedThroughHelper.expected" } },
 };
 
-test "every order-dependence regression program does what its twin says in a fixed set of orders" {
+// The programs are split over four tests, each taking every fourth one, so
+// that a sharded run of this binary spreads them over processes.
+test "every order-dependence regression program does what its twin says in a fixed set of orders, first quarter" {
+    try permuteQuarter(0);
+}
+
+test "every order-dependence regression program does what its twin says in a fixed set of orders, second quarter" {
+    try permuteQuarter(1);
+}
+
+test "every order-dependence regression program does what its twin says in a fixed set of orders, third quarter" {
+    try permuteQuarter(2);
+}
+
+test "every order-dependence regression program does what its twin says in a fixed set of orders, fourth quarter" {
+    try permuteQuarter(3);
+}
+
+/// The programs of `perm_programs` whose index is `quarter` modulo four.
+fn permuteQuarter(quarter: usize) !void {
     var s = try Scenario.init("declaration orders");
     defer s.deinit();
+    var programs: usize = 0;
     var orders: usize = 0;
     for (perm_programs, 0..) |p, i| {
+        if (i % 4 != quarter) continue;
+        programs += 1;
         const outcome = try permuteProgram(&s, p, i);
         switch (outcome) {
             .orders => |n| orders += n,
             .red => |v| return s.finish(v),
         }
     }
-    try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} programs, {d} orders", .{ perm_programs.len, orders }) });
+    try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} programs, {d} orders", .{ programs, orders }) });
 }
 
 const PermProgram = struct {
