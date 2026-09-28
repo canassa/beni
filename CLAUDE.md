@@ -277,6 +277,14 @@ put on it (load average 20–80), each number edit-to-green with one file under
 (39 against 12 CPU-minutes), which is one more reason to reach it only once
 Tier 0 is green.
 
+Why the LLVM compile cannot be made cheaper: about 95% of it is LLVM's O3
+passes and machine-code generation, and Zig 0.16 runs them on one thread for
+the whole program, with no flag to split or parallelise them; incremental
+compilation does not shorten them either. Two things do help, and are set up:
+every git worktree shares the main checkout's Zig cache (the dev shell sets
+`ZIG_LOCAL_CACHE_DIR`), so a worktree whose sources match an earlier build
+reuses it in seconds; and `-Dquick` skips LLVM entirely while iterating.
+
 Only when relevant:
 
 - `zig build test-perf` (21 s, ReleaseFast) when the change can move
