@@ -107,7 +107,7 @@ Full table:
 | `expected_declaration` | parse | parse/bad/ExpectedDeclaration.diag<br>parse/bad/ExpectedDeclarationContinuation.diag<br>parse/bad/LoneMultilineMarkerAtEof.diag<br>…(5 total) | abuse_test.zig | corpus |
 | `expected_token` | parse | parse/bad/BindOutsideLet.diag<br>parse/bad/ExpectedToken.diag<br>parse/bad/ExpectedTokenTypeAlias.diag<br>…(6 total) | abuse_test.zig, blackbox_test.zig | corpus |
 | `unexpected_token` | parse | parse/bad/BindOutsideLet.diag<br>parse/bad/ComposeOperatorsRemoved.diag<br>parse/bad/SyntaxAndLoweringErrors.diag<br>…(6 total) | abuse_test.zig, blackbox_test.zig | corpus |
-| `unclosed_delimiter` | parse | parse/bad/DeepParens2000.diag<br>parse/bad/OneMegabyteLine.diag<br>parse/bad/TwoErrorsRecovery.diag<br>…(7 total) | abuse_test.zig, blackbox_test.zig | corpus |
+| `unclosed_delimiter` | parse | parse/bad/DeepParens2000.diag<br>parse/bad/LongLine.diag<br>parse/bad/TwoErrorsRecovery.diag<br>…(7 total) | abuse_test.zig, blackbox_test.zig | corpus |
 | `annotation_without_definition` | parse | parse/bad/AnnotationWithoutDefinition.diag<br>parse/bad/BindWithAnnotation.diag | — | corpus |
 | `pub_on_definition` | parse | parse/bad/PubOnBoth.diag<br>parse/bad/PubOnDefinition.diag | — | corpus |
 | `opaque_not_on_type` | parse | parse/bad/OpaqueNotOnType.diag | — | corpus |

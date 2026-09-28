@@ -196,8 +196,8 @@ fn window(line: []const u8, col: usize, width: usize) Window {
 }
 
 test "a long line is windowed around the span instead of dumped whole" {
-    // One diagnostic used to put the whole line on stderr — 1.49 MB for
-    // `tests/corpus/parse/bad/OneMegabyteLine.beni` — plus `col - 1`
+    // One diagnostic used to put the whole line on stderr — 1.49 MB for a
+    // list left open on a line of a megabyte and a half — plus `col - 1`
     // spaces of caret padding under it.
     const gpa = std.testing.allocator;
     const line = try gpa.alloc(u8, 100_000);
