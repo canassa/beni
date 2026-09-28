@@ -38,6 +38,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
+const fs_read = @import("../fs_read.zig");
 
 const Manifest = @This();
 
@@ -92,7 +93,7 @@ pub const ReadError = ParseError || error{ReadFailed};
 pub fn read(arena: Allocator, io: Io, dir: []const u8) ReadError!?Manifest {
     var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
     const path = std.fmt.bufPrint(&path_buffer, "{s}/{s}", .{ dir, file_name }) catch return error.ReadFailed;
-    const bytes = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_bytes)) catch |err| switch (err) {
+    const bytes = fs_read.readFileAlloc(io, Io.Dir.cwd(), path, arena, .limited(max_bytes)) catch |err| switch (err) {
         error.FileNotFound, error.NotDir => return null,
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.ReadFailed,

@@ -75,6 +75,7 @@ const Graph = @import("../resolve/Graph.zig");
 const InternPool = @import("../InternPool.zig");
 const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
+const fs_read = @import("../fs_read.zig");
 const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
@@ -1572,7 +1573,7 @@ const Emitter = struct {
         for (e.options.embedded) |asset| {
             if (std.mem.eql(u8, asset.path, path)) return asset.bytes;
         }
-        return Io.Dir.cwd().readFileAlloc(e.session.io, path, e.scratch, .limited(max_asset_bytes)) catch null;
+        return fs_read.readFileAlloc(e.session.io, Io.Dir.cwd(), path, e.scratch, .limited(max_asset_bytes)) catch null;
     }
 
     /// Record one output file. `bytes` is copied into the scratch arena

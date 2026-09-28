@@ -79,6 +79,7 @@ const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Graph = @import("../resolve/Graph.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
+const fs_read = @import("../fs_read.zig");
 
 /// First eight bytes of every key's byte string.
 pub const magic = "BENIKEY\x00";
@@ -581,11 +582,17 @@ fn siblingHash(
     const stem = source_path[0 .. source_path.len - SourceStore.extension.len];
     const sibling_path = try std.fmt.allocPrint(scratch, "{s}.js", .{stem});
     defer scratch.free(sibling_path);
+    return siblingFileHash(scratch, options.io, options.embedded, sibling_path);
+}
 
-    for (options.embedded) |asset| {
+/// The content hash of the sibling at `sibling_path`: the embedded copy
+/// when the compiler carries one, else the file on disk, else the empty
+/// string.
+fn siblingFileHash(scratch: Allocator, io: Io, embedded: []const Asset, sibling_path: []const u8) Allocator.Error!Key {
+    for (embedded) |asset| {
         if (std.mem.eql(u8, asset.path, sibling_path)) return iface_bytes.hash(asset.bytes);
     }
-    const bytes = Io.Dir.cwd().readFileAlloc(options.io, sibling_path, scratch, .limited(max_sibling_bytes)) catch
+    const bytes = fs_read.readFileAlloc(io, Io.Dir.cwd(), sibling_path, scratch, .limited(max_sibling_bytes)) catch
         return iface_bytes.hash("");
     defer scratch.free(bytes);
     return iface_bytes.hash(bytes);
@@ -862,4 +869,22 @@ test "the core epoch is a function of the sorted list, and empty core is `none`"
         .{ .name = "Set", .key = @splat(2) },
     });
     try testing.expect(!std.mem.eql(u8, &first, &grown));
+}
+
+test "a sibling that grows or shrinks while it is read hashes as its whole contents" {
+    // An editor or a formatter can rewrite a sibling `.js` file while a
+    // build hashes it, so the size a `stat` reports may be smaller or larger
+    // than what the reads return. The hash is of what the file holds, and
+    // the build does not crash.
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var bytes: [4096]u8 = undefined;
+    try fs_read.StaleStat.writeSample(tmp.dir, "Mod.js", &bytes);
+    const sibling_path = ".zig-cache/tmp/" ++ tmp.sub_path ++ "/Mod.js";
+    const want = iface_bytes.hash(&bytes);
+    const io = fs_read.StaleStat.io();
+    for (fs_read.StaleStat.sizes(bytes.len)) |size| {
+        fs_read.StaleStat.reported = size;
+        try testing.expectEqual(want, try siblingFileHash(testing.allocator, io, &.{}, sibling_path));
+    }
 }

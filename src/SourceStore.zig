@@ -34,6 +34,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
+const fs_read = @import("fs_read.zig");
 
 const SourceStore = @This();
 
@@ -461,14 +462,19 @@ pub fn isRead(store: *const SourceStore, index: Index) bool {
         store.files.items(.bytes)[index.int()].ptr != empty_source.ptr;
 }
 
-pub const ReadError = Io.Dir.ReadFileAllocError;
+pub const ReadError = fs_read.ReadError;
 
 /// Read one file's bytes. Safe to call from a worker for its own index.
 /// An embedded file already has its bytes and is not touched.
+///
+/// The file may be rewritten while it is read — by the user, an editor or a
+/// formatter — so the read never trusts its `stat`: it reads to the end,
+/// and reads once more when the file visibly changed during the first read
+/// (`fs_read.readFile`). Whatever bytes come back, the lexer accepts them.
 pub fn read(store: *SourceStore, gpa: Allocator, io: Io, index: Index) ReadError!void {
     if (store.files.items(.embedded)[index.int()]) return;
     const p = store.path(index);
-    const data = try Io.Dir.cwd().readFileAllocOptions(io, p, gpa, .limited(std.math.maxInt(u32)), .of(u8), 0);
+    const data = try fs_read.readFileSentinel(io, Io.Dir.cwd(), p, gpa, .limited(std.math.maxInt(u32)));
     const slot = &store.files.items(.bytes)[index.int()];
     freeBytes(gpa, slot.*);
     slot.* = data;
@@ -579,5 +585,27 @@ test "joinEntry writes no `./` prefix when the walk is rooted at `.`" {
         const got = try joinEntry(testing.allocator, case.dir, case.name);
         defer testing.allocator.free(got);
         try testing.expectEqualStrings(case.want, got);
+    }
+}
+
+test "a source that grows or shrinks while it is read is read whole, never a trap" {
+    // The user, an editor or a formatter can rewrite a source while a build
+    // reads it, so the size a `stat` reports may be smaller or larger than
+    // what the reads return. What is read is the file's contents, and the
+    // build does not crash.
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var source: [4096]u8 = undefined;
+    try fs_read.StaleStat.writeSample(tmp.dir, "Main.beni", &source);
+    var store: SourceStore = .{};
+    defer store.deinit(testing.allocator);
+    try store.addPending(testing.allocator, ".zig-cache/tmp/" ++ tmp.sub_path ++ "/Main.beni", null, .app);
+    try store.finish(testing.allocator);
+    const io = fs_read.StaleStat.io();
+    for (fs_read.StaleStat.sizes(source.len)) |size| {
+        fs_read.StaleStat.reported = size;
+        try store.read(testing.allocator, io, @enumFromInt(0));
+        try testing.expectEqualSlices(u8, &source, store.bytes(@enumFromInt(0)));
+        try testing.expectEqual(@as(u8, 0), store.bytes(@enumFromInt(0))[source.len]);
     }
 }

@@ -15,6 +15,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
+const fs_read = @import("../fs_read.zig");
 
 /// The record's name, relative to `--out`. Reserved by §2's rule 1: it
 /// begins with `_`, which no module path can, and it does not end in
@@ -60,7 +61,7 @@ pub const Previous = union(enum) {
 /// edited by somebody, and acting on it is the one thing that is ruled out.
 pub fn read(arena: Allocator, io: Io, out_dir: []const u8) Allocator.Error!Previous {
     const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, file_name });
-    const text = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
+    const text = fs_read.readFileAlloc(io, Io.Dir.cwd(), path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.FileNotFound, error.NotDir => return .none,
         else => return .unrecognised,
@@ -187,7 +188,7 @@ pub fn removeStale(arena: Allocator, io: Io, out_dir: []const u8, old: []const E
                 if (a.inode == b.inode) continue;
             },
         }
-        const bytes = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
+        const bytes = fs_read.readFileAlloc(io, Io.Dir.cwd(), path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => continue,
         };

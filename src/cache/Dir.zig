@@ -62,6 +62,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Cli = @import("../Cli.zig");
 const Key = @import("Key.zig");
+const fs_read = @import("../fs_read.zig");
 
 const Dir = @This();
 
@@ -270,11 +271,10 @@ pub fn loadFrontend(d: *const Dir, gpa: Allocator, scratch: *std.ArrayList(u8), 
 /// concurrent writer truncates it to nothing and then extends it with the
 /// same bytes, so the size `stat` reports can be smaller or larger than what
 /// the reads then return. The read is bounded by the size seen once and a
-/// short read ends it, so what comes back is always a prefix of the file's
-/// one true contents, and a prefix is a MISS through each format's length
-/// check or section bounds. Nothing here subtracts a later position from an
-/// earlier size: `readFileAlloc` does, and trapped with an integer overflow
-/// on a file that grew between its `stat` and its reads.
+/// short read ends it (`fs_read.readAtMost`), so what comes back is always a
+/// prefix of the file's one true contents, and a prefix is a MISS through
+/// each format's length check or section bounds. Stopping at the size seen
+/// also spares the one read more that finding the end would cost.
 fn readRacing(d: *const Dir, kind: Kind, key: Key.Key, gpa: Allocator, out: *std.ArrayList(u8)) ?[]u8 {
     var buffer: [name_len]u8 = undefined;
     const p = filePath(&buffer, kind, key);
@@ -285,18 +285,7 @@ fn readRacing(d: *const Dir, kind: Kind, key: Key.Key, gpa: Allocator, out: *std
     const size: usize = @intCast(info.size);
     out.clearRetainingCapacity();
     out.ensureTotalCapacityPrecise(gpa, size) catch return null;
-    out.items.len = size;
-    var filled: usize = 0;
-    while (filled < size) {
-        // A short read is not a failure — it is what a reader racing a
-        // writer sees — so the loop keeps going until the file is exhausted,
-        // and a file that ended early is a miss for the format's reader to
-        // declare rather than an error here.
-        const n = file.readStreaming(d.io, &.{out.items[filled..]}) catch break;
-        if (n == 0) break;
-        filled += n;
-    }
-    out.items.len = filled;
+    out.items.len = fs_read.readAtMost(d.io, file, out.allocatedSlice()[0..size]);
     return out.items;
 }
 
@@ -327,25 +316,7 @@ test "a key of all zeroes and a key of all ones both name a file" {
     try testing.expectEqualStrings("v1/ff/" ++ "f" ** 30 ++ ".bec", entryPath(&buffer, @splat(0xFF)));
 }
 
-/// An `Io` that reports every file's size as `reported`: the size a `stat`
-/// sees when it lands at a different moment of a concurrent writer's work
-/// than the reads that follow it.
-const StaleStat = struct {
-    var reported: u64 = 0;
-    var vtable: Io.VTable = undefined;
-
-    fn io() Io {
-        vtable = testing.io.vtable.*;
-        vtable.fileStat = fileStat;
-        return .{ .userdata = testing.io.userdata, .vtable = &vtable };
-    }
-
-    fn fileStat(userdata: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
-        var info = try testing.io.vtable.fileStat(userdata, file);
-        info.size = reported;
-        return info;
-    }
-};
+const StaleStat = fs_read.StaleStat;
 
 test "a file that grows or shrinks while it is read comes back as a prefix, never a trap" {
     // A writer truncates the file to nothing and extends it again, so a
