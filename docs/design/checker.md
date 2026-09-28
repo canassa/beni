@@ -114,7 +114,7 @@ tests/corpus/
   check/depth/<Name>Deep.beni + .diag         one level OVER it, and says so
 ```
 
-*Amended by R12 (2026-09-27, `../../plans/checker-rewrite.md` R12).* The `check/` rows above are M2's.
+*Amended 2026-09-27, when checker v1 was deleted.* The `check/` rows above are M2's.
 `Constrain.zig` and `Solve.zig` were checker v1's generator and solver and were deleted with it,
 together with v1's `Check.zig`; the rewrite's `src/check2/` took the directory's name, and the
 files kept from before the rewrite stayed where they were. `src/check/` is now, by role:
@@ -138,12 +138,12 @@ src/check/
   reads.zig  Command.zig  InterfaceTerms.zig
                                             kept from before the rewrite (checker-v2.md §19)
   checker_test.zig                          the pipeline tests v1's `Check.zig` held, which ran
-                                            under v2 from R11
+                                            under v2 from the cut-over
   rules_test.zig                            the structural fences (I2, the table's bits, size)
 ```
 
 `checker-v2.md` §19.1 is the file-by-file record. No file is over 1 500 lines, which
-`rules_test.zig` enforces: R12 split `Diagnostics.zig` (`DispatchTexts.zig`), `Exhaustive.zig`
+`rules_test.zig` enforces: the deletion of v1 split `Diagnostics.zig` (`DispatchTexts.zig`), `Exhaustive.zig`
 (`PatternStore.zig`) and `Contexts.zig` (`ContextUnits.zig`), each re-exporting what it moved.
 
 The depth sweep is a kind of its own because its assertion is a PAIR rather than a file. Every
@@ -203,7 +203,7 @@ until M4 caches it. `--core-root` reads the directory instead.
    parallelism last, but the data must be laid out for it from the start: a module's check
    reads only its own Bir, the interfaces of its imports, and the `TypeStore` it owns.
 
-   M2c's scheduler (`check/Check.zig`'s `Driver`, moved to `check2/Driver.zig` by R4a, `check/Driver.zig` since R12) is a ready queue over that order: a module
+   The scheduler (`check/Driver.zig`) is a ready queue over that order: a module
    is ready when every dependency of it that comes EARLIER in the order has finished, results
    land in the slot of a module index assigned before any thread started, diagnostics are
    collected per module and concatenated in the graph's order afterwards, and the counters are
@@ -229,7 +229,7 @@ plan data, not a TypeStore. Open questions there precede dependent implementatio
 
 ## 5. The type store
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 Elm's `Type.Variable` + Roc's `types/store.zig`, in the design's data rules:
 
@@ -351,7 +351,7 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 
 ### 6.2 Solving
 
-> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 Elm's `Type/Solve.hs` on the store above: walk the tree; `equal` calls `unify`; `let`
 introduces a new rank, solves the headers, **generalises** by scanning only the pool of
@@ -392,7 +392,7 @@ which is what turns a constraint into a call target and an evidence slot.
 
 ### 6.3 Generalisation and the ad-hoc kinds
 
-> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). **Superseded by R14 (2026-09-27):** D5 is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4 *As built by R14*). Rule (a) below is history, not the rule.
+> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by the owner's decision that a constrained `let` function generalises ([`checker-v2.md`](checker-v2.md) §8.4). **Superseded 2026-09-27:** the decision is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4). Rule (a) below is history, not the rule.
 
 A generalised scheme records, per quantified variable, its kind and equatable flag. That is
 the entire mechanism of §3.1: `number` and `appendable` are closed sets tested by a flat
@@ -411,7 +411,7 @@ obvious: a constrained `let` binding is **not** generalised — it is held at th
 a constrained helper used at two types is a `type_mismatch` at the second use — and a constrained
 variable that survives onto a `pub` declaration with **no parameters** and a **non-function type** is
 `constrained_constant`, because a constant with an evidence parameter would be a function across the
-module boundary (narrowed 2026-09-24 by R2b's review: one whose type IS a function is defined and
+module boundary (narrowed 2026-09-24: one whose type IS a function is defined and
 called as that function, `checker-v2.md` §12.5, `static-dispatch-spike.md` §10.10).
 → `static-dispatch-spike.md` §6.4.
 
@@ -420,7 +420,7 @@ M3 decides how a literal of type `number` is emitted.
 
 ### 6.4 Obligations, discharged post-solve
 
-> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 Each obligation is `(kind, var, region)` in a per-rank list. At generalisation time, for each
 obligation whose variable's root is:
@@ -443,7 +443,7 @@ guard that poisons must report first", applied here. → `static-dispatch-spike.
 
 ### 6.5 `?`
 
-> **Checker v2 (2026-09-24), owner decision D2 — effective since R11 (2026-09-27).** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11): D2 replaced it, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24), the owner's decision that `?` is a deferred obligation — effective since the cut-over (2026-09-27).** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since 2026-09-25. **Superseded** since the cut-over: that decision replaced it, and this section describes checker v1 only, which was deleted on 2026-09-27: it is kept as the record of what v1 did.
 
 `try(e, target)` where the enclosing function's declared or inferred result type is `r`:
 speculatively unify `e` with `Result x a` and `r` with `Result x b` (journal mark); if that
@@ -464,7 +464,7 @@ bug, and the backend says so (`internal`) rather than guessing.
 
 ### 6.6 Exhaustiveness
 
-> **Checker v2 (2026-09-24).** The per-declaration gate becomes a failure bit set only by **error** diagnostics, shared by every member of a binding group ([`checker-v2.md`](checker-v2.md) §15.2, CK-11). The sentence below used to say the algorithm runs "over the *solved* types", which was drift (CK-61); slice R2a corrected it to the per-declaration gate `Exhaustive.zig`'s header argues for.
+> **Checker v2 (2026-09-24).** The per-declaration gate becomes a failure bit set only by **error** diagnostics, shared by every member of a binding group ([`checker-v2.md`](checker-v2.md) §15.2). The sentence below used to say the algorithm runs "over the *solved* types", which was drift; it was corrected on 2026-09-24 to the per-declaration gate `Exhaustive.zig`'s header argues for.
 
 After a module is solved, every `case` (including the ones `if` lowered to) is checked with
 Maranget's usefulness algorithm over its **patterns alone**, and only in a declaration that
@@ -511,7 +511,7 @@ compiler, and it was reachable at the DEFAULT budget with no flag: a `case` over
 literals, or about 310 constructors of one type, cost more than the 200 000 steps that were the
 default then, because the per-branch work of `isUseful` against the matrix above it is quadratic in
 the branch count long before the exponent of Maranget §3.3 appears. §5's rule — every guard that
-gives up reports first — now holds here too, and it is the same rule slice 5 applied to `<error>`
+gives up reports first — now holds here too, and it is the same rule that applies to `<error>`
 in an interface. **Those two shapes no longer cost that**, and the next paragraph but three is why.
 
 **Neither half reports a partial result.** Redundancy and exhaustiveness share the budget and share
@@ -528,7 +528,7 @@ that may well be correct, and it needs a checker→backend side channel saying w
 never decided — a new artifact out of a pass whose whole design (§6.6, `backend.md` §7) is that it
 leaves nothing behind.
 
-What M2c built (`check/Exhaustive.zig`), and where it reads this paragraph more narrowly than
+What was built (`check/Exhaustive.zig`), and where it reads this paragraph more narrowly than
 it is written:
 
 - The gate is per **declaration**, not per module: a module with one bad function still has
@@ -556,7 +556,7 @@ it is written:
   price is now a message rather than a hole. `Session.Options.pattern_budget` and
   `--pattern-budget=<n>` set it, so the bound has a test rather than an absence of one, and an
   author who meets it has a way through.
-- **A LOOKUP TABLE skips both relations**, which is queue slices 22 and 25 of 2026-09-18 and the
+- **A LOOKUP TABLE skips both relations**, added on 2026-09-18, and the
   reason the paragraph above is past tense. A `case` whose every branch is a **key** — `_`, a
   literal, a nullary constructor, or a tuple or single-constructor wrapper of those, unwrapped
   (`as` is transparent already) — is a lookup table, and for one of those "is row k useful?" is set
@@ -579,7 +579,7 @@ it is written:
   literals with constructors is the general path's `error.Malformed` to keep. The budget is charged
   1 per node the walk visits, which is what building and probing the key costs, so
   `--pattern-budget=1` still refuses a `case`'s first branch.
-- **What the default buys, re-measured 2026-09-18 (queue slices 22 and 25)** by turning it down
+- **What the default buys, re-measured 2026-09-18** by turning it down
   until the answers change. Per branch, a one-column table costs **2** and a pair **6**, where
   both used to cost a multiple of n² in TOTAL:
 
@@ -608,8 +608,8 @@ it is written:
   `tests/corpus` **529** (`check/depth/PatternNestOk`, 511 levels of `Just`, which exists to sit
   one under the depth guard); `parse/good/ManyBranches.beni`, the old champion at ~10 500, spends
   **202**. The two tables themselves are `check/good/LookupTable.beni` at **922** and
-  `check/good/PairLookupTable.beni` — 1 800 pair rows that the default REFUSED before slice 25 at
-  6 587 936 — at **10 802**. Each tree's maximum is one step above what slice 22 measured, because
+  `check/good/PairLookupTable.beni` — 1 800 pair rows that the default REFUSED before pair tables became keys, at
+  6 587 936 — at **10 802**. Each tree's maximum is one step above what the first lookup-table measurement read, because
   the key path now charges for the node it looks at before it finds it cannot read the shape; it
   used to peek for free.
 
@@ -625,16 +625,16 @@ it is written:
 
 ### 6.7 Top-level value cycles
 
-> **Checker v2 (2026-09-24).** The "what defers" paragraph below was corrected on 2026-09-24 (CK-34):
+> **Checker v2 (2026-09-24).** The "what defers" paragraph below was corrected on 2026-09-24:
 > a zero-parameter declaration with evidence and no `lambda` body RUNS, at each read or call. One
-> `Convention` decides it for `Cycles` and `Lower` since slice R2b
+> `Convention` decides it for `Cycles` and `Lower`
 > ([`checker-v2.md`](checker-v2.md) §12.5; `Edges` and `Reach` do not depend on it).
 
 `language.md` §7's initialisation rule, top-level half: a top-level **value** may not be reachable
 from its own initialiser. The code is `cyclic_value` (§8.1) and the pass is `check/Cycles.zig`.
 
 **Why it is the checker's and not lowering's.** The `let` half of the same rule is lowering's
-(`let_forward_reference`, queue slice 21), because a `let`'s references are all local and BIR knows
+(`let_forward_reference`), because a `let`'s references are all local and BIR knows
 them. This half needs two graphs: `Bir.refs`, and the checker's **dispatch table** — a `method_call`
 adds no `refs` edge at all, because which function it calls is not known until the checker has run
 (`static-dispatch-spike.md` §1.4), so `bumped = (Counter 1).bump 2` with a `bump` that reads
@@ -658,14 +658,14 @@ that it is free.
 
 **What is a node, and what defers.** A declaration is a node when it is a value with a body. It
 **defers** — nothing of it runs at module load — when it has parameters, or when its entire body is a
-`lambda`. **Evidence parameters alone do not defer** (corrected 2026-09-24, CK-34): since queue row 57
+`lambda`. **Evidence parameters alone do not defer** (corrected 2026-09-24): since 2026-09-22
 a zero-parameter declaration with evidence is CALLED at every read, so its body runs then, and a
-self-reference recurses. Since R2b a zero-parameter value of **function** type with evidence
+self-reference recurses. A zero-parameter value of **function** type with evidence
 (`h = compose h g` under a `where`) is DEFINED as a function of its evidence and its type's
-parameters, but it is still a value for this rule and RUNS (R2b review, B1): `language.md` §7 states
+parameters, but it is still a value for this rule and RUNS: `language.md` §7 states
 the rule over the source, where it is written as a value, and a `where` must not change which
 programs are accepted — its twin without the `where` is refused. Only parameters or a `lambda` body
-make a declaration defer. `js/Lower.declaration` splits on the same readings, and since slice R2b of the
+make a declaration defer. `js/Lower.declaration` splits on the same readings, and since the
 checker rewrite one `check/Convention.zig` decides them for both (`checker-v2.md` §12.5). A strongly connected component with at least
 one node that RUNS is refused; one made only of deferring nodes is mutual recursion between
 functions and is fine. The analysis is conservative in exactly the shape §7 describes: mentioning
@@ -822,7 +822,7 @@ record M4 caches.
 
 ### The serialized form
 
-*Specified 2026-09-18 for M4 slice zero (`plans/m4-slice-zero.md`); the hash over these bytes and
+*Specified 2026-09-18 for the first incrementality work (`plans/m4-slice-zero.md`); the hash over these bytes and
 the acceptance test are `fast-compiler.md` §8.*
 
 The record's bytes **are** its contract — §8.1's firewall compares them — so the on-disk form is
@@ -852,10 +852,10 @@ what §8.3 wants to map. `len` is the element count except for `strings`, where 
 
 Padding exists because alignment demands it, is written as zeros and is hashed like everything else.
 It is **not** a reserved field: an interface change is a `format_version` bump and a cache discard,
-never a migration into spare bytes (`plans/m4-plan.md` D4).
+never a migration into spare bytes (`plans/m4-plan.md`).
 
-**`format_version` 3 is interface v3** (slice R3, 2026-09-25; `checker-v2.md` §14.2 is the
-contract and says why each change exists). The type row's `arity` is a `u16` (CK-38; lowering
+**`format_version` 3 is interface v3** (2026-09-25; `checker-v2.md` §14.2 is the
+contract and says why each change exists). The type row's `arity` is a `u16` (lowering
 refuses a 65 536th parameter with `too_many_type_parameters`, so nothing saturates). A constructor
 row says what it builds: `result` 0 `nominal`, 1 `record_alias`, and a `record_alias` row's `fields`
 is an `extra` range of one `SymbolIndex` per argument, the alias's field names in declaration order
@@ -881,7 +881,7 @@ session interner whose numbering depends on which worker interned which file (`I
 `Session.zig:16-22`). On disk `symbols[i]` is instead a byte offset into `strings`, and loading
 re-interns each string — through the non-mutating `InternPool.Global.find` when a record is round-tripped
 inside a session (it runs on a worker and `Global` is thread-confined; every string was interned by that
-session, so a miss is `internal`), and through `getOrPut` only on M4-1's serial load, before workers start. The column keeps its length and its
+session, so a miss is `internal`), and through `getOrPut` only on the cache's serial load, before workers start. The column keeps its length and its
 order — every `SymbolIndex` in every other column means what it meant — and only its *contents* are
 translated, which is `Global.merge` run backwards. Two slots holding the same text may share one
 `strings` record; the blob is built in first-occurrence order over the column, so sharing does not
@@ -902,7 +902,7 @@ type slot → own declaration ordinal map `Types.build` reaches through `Provena
 so both are pure — and both must still stay **out of the hashed bytes**, because adding a private
 type to a module shifts its own declaration ordinals while changing nothing a dependent can see, and
 a hash that moved for that would defeat the firewall exactly as the `TypeId` leak did. They are a
-sidecar of the cache entry, not part of the record. Slice zero does not write one: its acceptance
+sidecar of the cache entry, not part of the record. The first incrementality work did not write one: its acceptance
 test round-trips the record with every Bir still in memory. → `plans/m4-slice-zero.md` §4.
 
 **Loading validates, and a bad record is a MISS, never a message.** A wrong magic, an unknown
@@ -913,7 +913,7 @@ is an exit code. Past the header the record is taken as-is and every index is bo
 use**, which is the posture `range`, `typeRef`, `quantified`, `quantifiedConstraint`,
 `ctorQuantified` and `quantifiedSymbol` already take (`src/resolve/Interface.zig:411-467`) and
 `Schemes.Reader` mirrors (`src/check/Schemes.zig:769`, `:818`, `:836`). Four accessors did not and
-now do (`506f596`), because a loaded record reaches them: `term` (`Interface.zig:419`), `scheme` (`:432`) with
+now do, because a loaded record reaches them: `term` (`Interface.zig:419`), `scheme` (`:432`) with
 `valueScheme` (`:471`), and `symbol` (`:477`). A loaded record never reports: the module that wrote
 it reported when it wrote it (`Schemes.zig:763-768`). A record that is structurally valid and
 nevertheless *wrong* — written by a different compiler build, or edited — is the cache key's
@@ -928,7 +928,7 @@ can see a byte difference the two pretty printers hide.
 
 ### The cache entry, and the sidecar beside the record
 
-*Specified 2026-09-19 for M4-1 (`plans/m4-1.md`); the key over these bytes, the directory and the
+*Specified 2026-09-19 for the on-disk cache (`plans/m4-1.md`); the key over these bytes, the directory and the
 acceptance test are `fast-compiler.md` §8.*
 
 One file per module, named by its cache key, holding the record verbatim and the two things a hit
@@ -944,7 +944,7 @@ sections  in table order, each 4-byte aligned
 ```
 
 **This container is the compiler's, not this entry's.** The record uses it (above), the entry uses
-it here, and M4-2's front-end artifact uses it a third time with its own magic, its own key and its
+it here, and the front-end artifact uses it a third time with its own magic, its own key and its
 own section list (`fast-compiler.md` §8, *The front-end artifacts, and the file key*) — magic,
 `format_version`, the key repeated in the header, a `{offset, len}` table from byte 0, 4-byte
 alignment, zero-filled gaps, little-endian scalars, and a bad file a MISS. Three formats and one
@@ -953,7 +953,7 @@ posture below is stated once.
 
 Three sections, in this order and no other: `interface`, `dispatch`, `diagnostics`. **`interface` is
 the bytes `iface_bytes.write` produced, verbatim**, so `iface_bytes.hash` over that section IS the
-interface hash §8.1's firewall compares and M4-3 re-derives nothing. The entry repeats its key in the
+interface hash §8.1's firewall compares and the firewall re-derives nothing. The entry repeats its key in the
 header because the file NAME is the key: a mismatch is the "wrong build id" case, and it must be
 detectable without trusting a directory entry.
 
@@ -1003,27 +1003,27 @@ by design at the end of its check (`src/check/Check.zig:593-595`), and no depend
 build, which is where `Check.zig:1127-1129` already does it. `Provenance` — above. And the declared-
 type table with its settled `equatable`/`comparable`/`has_function` bits, `declaresPubCompare` and
 the interface-slot → declaration-ordinal map that *The serialized form* names as owing a sidecar:
-**their disposition stands and their due date is not M4-1, and it splits in two.** Every one of them
-is a function of the declaring module's `Bir`, and M4-1, M4-2 and M4-3 all keep every module's `Bir`
-present — M4-2 loads it from disk instead of rebuilding it, and `Types.build` walks all of them
-either way (`src/check/Types.zig:364`, `:477`). So **M4-3 needs their DEFINITION and their HASH** —
+**their disposition stands, they are not due with the cache entry, and it splits in two.** Every one of them
+is a function of the declaring module's `Bir`, and the cache entry, the front-end artifact and the firewall all keep every module's `Bir`
+present — the front-end artifact loads it from disk instead of rebuilding it, and `Types.build` walks all of them
+either way (`src/check/Types.zig:364`, `:477`). So **the firewall needs their DEFINITION and their HASH** —
 it keys an importer on its imports' records, the records do not carry these facts, and a hash it
-recomputes from the `Bir` and compares is what closes that gap — and **M4-4 needs their BYTES**, when
-`Types` goes incremental and a module's `Bir` may be absent for the first time. Writing them in M4-1
+recomputes from the `Bir` and compares is what closes that gap — and **an incremental `Types` needs their BYTES**, when
+a module's `Bir` may be absent for the first time. Writing them with the cache entry
 would be bytes nobody reads.
 
 ### The dependency digest
 
-*Specified 2026-09-19 for M4-3 (`plans/m4-3.md`); the key over it, the ordering and the acceptance
+*Specified 2026-09-19 for the interface firewall (`plans/m4-3.md`); the key over it, the ordering and the acceptance
 test are `fast-compiler.md` §8. It is the sidecar the paragraph above has been promising, and it is a
-HASH in M4-3 and bytes on disk in M4-4.*
+HASH today and bytes on disk once `Types` goes incremental.*
 
 **One sentence: the record is what a module PUBLISHES, the digest is what a module's dependents
 READ.** The two are different sets, and the gap between them is where a firewall keyed on the record
 alone answers exit 0 to a program the compiler rejects. Two such gaps are demonstrated rather than
 argued (`plans/m4-3.md` §6): a private type whose payload becomes a function stops being `equatable`
 without moving one byte of its module's record, and a `pub type alias` whose body no scheme of its
-own module mentions has its expansion nowhere in the record at all. *(Since interface v3, R3: a
+own module mentions has its expansion nowhere in the record at all. *(Since interface v3: a
 RECORD alias is not that case — it declares a constructor, whose argument types were already in the
 record and whose field names now are. `digest_test.zig`'s row 13 therefore uses a tuple alias.)*
 
@@ -1037,7 +1037,7 @@ module    package: u8   name_len: u32, name          the DOTTED module name
 types     type_count: u32, then per type NAMED BY THIS MODULE'S RECORD,
           sorted by name TEXT:
             name_len: u32, name
-            arity: u16               (a `u8` until `digest_version` 2, R3: CK-38)
+            arity: u16               (a `u8` until `digest_version` 2)
             kind: u8                 adt | alias | foreign
             flags: u8                bit 0 opaque, bit 1 equatable,
                                      bit 2 comparable, bit 3 has_function
@@ -1104,16 +1104,16 @@ in every `type_refs` row.
 (`:354-360`) read the target module's `Bir` to tell `private_method` from `unknown_method` and
 `private_name` from `unknown_import_name`. All three produce `error`-severity diagnostics, and
 `fast-compiler.md` §8's clean-check rule refuses to write an entry for a module whose own check
-produced one — so a stale choice between those messages can never be replayed. **In M4-3 nothing
-degrades for a second reason as well**: M4-2 loads every module's `Bir` from disk, so a dependency's
-`Bir` is present on every run, hit or miss. **M4-4 and M4-5 inherit both**: the moment `Types` goes
+produced one — so a stale choice between those messages can never be replayed. **Today nothing
+degrades for a second reason as well**: the front-end artifact loads every module's `Bir` from disk, so a dependency's
+`Bir` is present on every run, hit or miss. **Later incremental work inherits both**: the moment `Types` goes
 incremental and a `Bir` may be absent, these three sites need the degradation their own comments
 already specify, and the digest grows the private VALUE names the first of them reads.
 
 **`alias_body` in the `Interface` layout above is withdrawn in favour of this.** It was declared and
 never implemented, and the digest is the better home: a PRIVATE alias is reachable by name and has no
 `types` row to carry one, so the record could not have covered the case at all; and keeping the
-expansion out of the record means this slice bumps no `format_version`, re-blesses no `.iface` golden
+expansion out of the record means the digest bumps no `format_version`, re-blesses no `.iface` golden
 and moves no `--stage=raw` byte.
 
 **`--dep-digest` is the instrument**, `--iface-hash`'s twin: hidden, `check`-only, one
@@ -1138,7 +1138,7 @@ hint is true of the `number` kind while the message's own opening line, *"(<) ne
 argument to be `String`"*, carries the real cause. `<` on a type with no `compare` is
 `no_methods_on_shape` (spike §10.3) and never reaches here.
 
-*Amended by R13 (2026-09-27, CK-50).* The numbers-only hint is now printed **only where an
+*Amended 2026-09-27.* The numbers-only hint is now printed **only where an
 arithmetic operator's operand is the mismatch** (§8.7): `"a" < 1` is not arithmetic, so it gets the
 conversion hint Elm gives for `number` against `String`, and the sentence above about a comparison
 reaching the hint is history.
@@ -1179,15 +1179,15 @@ otherwise accumulate. `ambiguous_method_receiver` is the one `warning` of the se
 default and only for a module of the root package.
 → `static-dispatch-spike.md` §10.
 
-`pattern_budget_exhausted` was appended the same day (queue slice 14), after the static-dispatch
+`pattern_budget_exhausted` was appended the same day, after the static-dispatch
 set and after `foreign_arity_mismatch`, so again no line above it moved. It is the third code of
 §6.6's set and the only one that is about the CHECKER rather than about the program: the analysis
 could not decide this `case` inside `--pattern-budget`, so it refuses it rather than passing an
 unproven `case` to a decision tree that carries no default arm (`backend.md` §7).
 
-`method_needs_annotation` was appended on 2026-09-23 (queue row 75), after `cyclic_value` here and after the schema codes in `language.md` §10, so no line moved: a use of a module's own type reached that module's unannotated method before its group was checked (`static-dispatch-spike.md` §10.12).
+`method_needs_annotation` was appended on 2026-09-23, after `cyclic_value` here and after the schema codes in `language.md` §10, so no line moved: a use of a module's own type reached that module's unannotated method before its group was checked (`static-dispatch-spike.md` §10.12).
 
-`cyclic_value` was appended on 2026-09-18 (queue slice 23), last, so again no line above it moved.
+`cyclic_value` was appended on 2026-09-18, last, so again no line above it moved.
 It is §6.7's one code and the only one of this list that is about **when a value is computed**
 rather than about its type: a top-level value reachable from its own initialiser, which
 `backend.md` §5's dependency order cannot order and which therefore loaded and threw at run time
@@ -1235,12 +1235,12 @@ open one — it refuses the extra fields the open one accepts, so the reader was
 the program does not have, and a `--stage=interface` dump said so as an artifact. `… | ` is the
 defined form for "open, and there is more here"; `check/depth/RecordExtTruncatedDeep` and
 `check/good/RecordExtChain` pinned it in a diagnostic and in an interface respectively.
-*Since the cut-over (R11, 2026-09-27)* those two print the whole 65-field record, open
-(`{ r | … }`): checker v2 keeps a record as one node (`checker-v2.md` §4.1, CK-08), so no chain
+*Since the cut-over (2026-09-27)* those two print the whole 65-field record, open
+(`{ r | … }`): checker v2 keeps a record as one node (`checker-v2.md` §4.1), so no chain
 reaches `max_ext_links`, and no fixture reaches the `… | ` form any more. The bound and its rule
 stand for any chain a later store can build.
 
-*A third bound, added 2026-09-25 by R4b's review (CK-92).* A type is printed as a TREE, so a shared
+*A third bound, added 2026-09-25.* A type is printed as a TREE, so a shared
 or cyclic graph — `x = ( x, x )`, a doubling `let` — printed 2^24 leaves under `max_depth` alone:
 300 MB of stderr from a two-line program, on both checkers. `Render.Namer.budget` bounds the nodes
 one message prints (`message_budget`, 4 096); past it a node prints `…`, the same truncation as
@@ -1275,7 +1275,7 @@ produces their message, and `ComposeMissingArg` goes with `>>` and `<<`.
 
 ### 8.4 The 80-column rule, enforced after interpolation
 
-Added 2026-09-19 (queue slice 45). **A diagnostic's prose is 80 columns wide, and the width is
+Added 2026-09-19. **A diagnostic's prose is 80 columns wide, and the width is
 measured on the message the reader gets, not on the format string the author wrote.** Every message
 in the compiler is a multi-line string literal wrapped by hand around `{s}` holes, and the width of
 what goes into a hole — a type, a path, a module, a name — is not known where the wrapping was
@@ -1304,11 +1304,11 @@ properties make it safe to run over prose nobody re-read:
 
 ### 8.5 Checker v2's texts: the annotation escape and the infinite type
 
-Added 2026-09-25 by R4b (`checker-v2.md` §15.3, S20), **before** the code that prints them. They
-are what checker v2 prints; the old checker kept its own texts until the cut-over (R11), since
+Added 2026-09-25 (`checker-v2.md` §15.3), **before** the code that prints them. They
+are what checker v2 prints; the old checker kept its own texts until the cut-over, since
 which these are the default checker's. Everything else below is unchanged.
 
-**The annotation escape (CK-01, `checker-v2.md` §8.3, D7).** Code `rigid_mismatch`, title
+**The annotation escape (`checker-v2.md` §8.3).** Code `rigid_mismatch`, title
 `TYPE MISMATCH`. An annotated `let` binding whose rigid variable the body tied to a type of the
 enclosing definition:
 
@@ -1335,7 +1335,7 @@ or remove the annotation and let the type be inferred.
 - The binding's scheme is then poisoned, so its callers are not checked against the promise and
   add no second message.
 
-**The infinite type (CK-04, CK-57, `checker-v2.md` §8.2).** Code `infinite_type`, title
+**The infinite type (`checker-v2.md` §8.2).** Code `infinite_type`, title
 `INFINITE TYPE`. The structure is written down, with the repeated node named:
 
 ```
@@ -1364,8 +1364,8 @@ many, somewhere inside itself.
 
 ### 8.6 Checker v2's texts: which leg of a `?` failed
 
-Added 2026-09-25 by R5 (`checker-v2.md` §8.6, §15.3; CK-51), **before** the code that prints
-them. They are what checker v2 prints; v1 kept §6.5's one text until the cut-over (R11). Code
+Added 2026-09-25 (`checker-v2.md` §8.6, §15.3), **before** the code that prints
+them. They are what checker v2 prints; v1 kept §6.5's one text until the cut-over. Code
 `try_shape`, title `BAD QUESTION MARK`, region the `?` expression, in all three.
 
 Deciding a `?` is three unifications (§6.5): the subject `e ~ Shape x a`, the enclosing result
@@ -1421,15 +1421,15 @@ the enclosing definition returns.
 - `Int` is the subject's error type and `String` the enclosing result's, and the indented line is
   the subject, all three printed with one namer.
 
-### 8.7 R13's texts: context, hints, articles and names
+### 8.7 Checker v2's texts: context, hints, articles and names
 
-Added 2026-09-27 by R13 (`checker-v2.md` §15.3, §15.4; `plans/checker-rewrite.md` R13), **before**
-the code that prints them. The dispatch texts of the same slice are `static-dispatch-spike.md` §10's
+Added 2026-09-27 (`checker-v2.md` §15.3, §15.4), **before**
+the code that prints them. The dispatch texts added the same day are `static-dispatch-spike.md` §10's
 (§10.3, §10.4, §10.11, §10.13). Everything not named here keeps its text. Elm is the bar
 (`references/elm/compiler/src/Reporting/Error/Type.hs`, `Pattern.hs`); each item says what Elm
 prints for the same mistake.
 
-**A list's 1st element against its context (CK-49).** Elements are checked left to right against
+**A list's 1st element against its context.** Elements are checked left to right against
 one element type that the context (an annotation, a parameter) may already have fixed, so the 1st
 element can only fail against the context: there are no previous elements. Category `list_entry`
 at index 1 reads:
@@ -1451,7 +1451,7 @@ constrains a list's entries before the list meets its context, so it reports the
 instead: *"The body is a list of type: `List number` But the type annotation on `xs` says it
 should be: `List String`"*.
 
-**The numbers-only hint needs an arithmetic operator (CK-50).** *"`+`, `-`, `*` and `/` work on
+**The numbers-only hint needs an arithmetic operator.** *"`+`, `-`, `*` and `/` work on
 numbers only"* is printed only when the mismatch is an argument of `+`, `-`, `*`, `/`, `//` or `^`
 (category `call_arg`, callee the operator). Elsewhere a `number` or `Int` against a `String` gets
 the conversion in the direction the value has to go, as Elm's `badFlexSuper` and `problemToHint`
@@ -1471,7 +1471,7 @@ The first when the `String` is what was needed, the second when the `String` is 
 `number` against anything else keeps *"One of those has to be a number — an `Int` or a `Float` —
 and it is not."* with no hint, where Elm says *"Only `Int` and `Float` values work as numbers."*
 
-**An Elm-style curried annotation (CK-56).** An annotated definition with *n* ≥ 2 parameters whose
+**An Elm-style curried annotation.** An annotated definition with *n* ≥ 2 parameters whose
 annotation is *n* nested 1-ary functions (`Int -> Int -> Int` over `add a b`) is one mistake. The
 mismatch keeps its layout and its place (the body) and replaces the arity hint with:
 
@@ -1489,7 +1489,7 @@ scheme is poisoned there**: a caller written `add 1 2`, beni's way, is not check
 promise the author did not mean, and adds no TOO MANY ARGS. Elm accepts the program — currying is
 Elm's — so there is no Elm text; its nearest is the arity note of `Type.hs`'s `toFunctionReport`.
 
-**A function where the subject goes (CK-56).** A call's argument that is a function, where the
+**A function where the subject goes.** A call's argument that is a function, where the
 parameter is not one and another parameter of the callee is a function of as many arguments, is
 Elm's argument order (`List.map String.fromInt [ 1, 2 ]`); it replaces *"this is a function, so it
 may be missing an argument"*:
@@ -1502,19 +1502,19 @@ Elm writes `List.map f list` — so the arguments may be the wrong way round.
 
 `2nd` is the first such parameter. Elm has no subject-first convention and no such hint.
 
-**Articles (CK-59).** A backticked name after *a* takes *an* when it starts with a vowel letter:
+**Articles.** A backticked name after *a* takes *an* when it starts with a vowel letter:
 *"This record does not have an `extra` field"*, *"This record has an `id` field I did not
 expect"*, *"This is not a record with an `age` field"*, *"a `let` binding whose type needs an `eq`
 method"*. The rule is the letter, not the sound, so it can misjudge a name like `url`; a name is
 not a word, and the letter is what the reader sees. Elm prints *"a"* every time (`Type.hs` line
 846: *"does not have a `extra` field"*).
 
-**A cons pattern inside a constructor (CK-60).** `missing_patterns` prints a constructor with
+**A cons pattern inside a constructor.** `missing_patterns` prints a constructor with
 arguments in parentheses only in ARGUMENT position (`Just (Node a b)`), never at the head of a
 `::`: `Group (Circle _ :: _)`, not `Group ((Circle _) :: _)`. This is Elm's `patternToDoc`, whose
 `Head` context adds no parentheses to a constructor (`Pattern.hs` lines 139–165).
 
-**A constructor with its type's name (CK-86, CK-129).** The `exposing (T(..))` hint of CK-47 lists
+**A constructor with its type's name.** The `exposing (T(..))` hint lists
 the type and then every constructor the imported module exposes — except one that shares the
 type's name, which naming the type already exposes (`language.md` §5.2). When that leaves none:
 
@@ -1530,17 +1530,17 @@ Naming `Box` exposes the type and its constructor `Box` both.
 The last sentence is printed whenever a constructor was left out for sharing the name. Elm accepts
 `(..)`; there is no Elm text.
 
-**A kinded variable prints as its kind (CK-94).** A flex or rigid variable of kind `number` or
+**A kinded variable prints as its kind.** A flex or rigid variable of kind `number` or
 `appendable` prints as the kind (`number`, `number2`, …) unless its name already starts with the
 kind's text; a name inherited through unification — `cons`'s `a` merged with a literal's unnamed
 `number` — is dropped. So `1 :: []` is `List number` in a message and in `--stage=interface`, and
 a message never says *"This argument is: `List a` … One of those has to be a number"*. The
 interface's quantifier name hint follows the same rule (`Schemes.Writer` writes no name for such a
 variable), which also makes its bytes independent of the order a recursive group's members are
-written in (CK-94's F8). Elm's variables carry their kind in their name (`number`, `comparable`),
+written in. Elm's variables carry their kind in their name (`number`, `comparable`),
 so it never has the case.
 
-**A record a deferred requirement refused is printed as P4 left it (R11's note).** A requirement
+**A record a deferred requirement refused is printed as P4 left it.** A requirement
 an instantiated scheme made on an argument (`f`'s `where a.combine`, readied when `{ combine = \z
 -> z + 1 }` reaches `x`) is refused under eager draining (`checker-v2.md` §9.1) before the rest of
 the argument is solved, so `no_methods_on_shape` printed the record as it met the receiver, `{
@@ -1548,9 +1548,9 @@ combine : a -> b }`. Its code, region and failure bit are still decided there; i
 again when P4 ends, from the store as the whole module left it: `{ combine : number -> number }`,
 what v1 printed. Elm has no methods; its messages are likewise written after solving.
 
-**An argument after a failed one asks nothing (CK-115).** R8a's review saw an UNKNOWN METHOD
+**An argument after a failed one asks nothing.** A review saw an UNKNOWN METHOD
 (*"I cannot tell which type `key` is being asked of"*) beside a TYPE MISMATCH at one call, and
-`3ff3ac5` no longer prints it for any shape tried; `check/bad/CallArgMismatchNoUnknownMethod` pins
+the checker no longer prints it for any shape tried; `check/bad/CallArgMismatchNoUnknownMethod` pins
 the one message. The rule it pins is `checker-v2.md` §7.1's: a call stops at its first reported
 argument, and a requirement of the callee whose receiver no argument determined fails in silence.
 

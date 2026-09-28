@@ -3,7 +3,7 @@
 **Status:** normative. **Adopted whole on 2026-09-18** — option (b) of
 [`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md) §15:
 `where` constraints, dot-call, well-known `eq` and `compare` with derivation, return-type dispatch
-and the C1 core rewrite are the language. It was written 2026-09-17 as slice S0 of
+and the C1 core rewrite are the language. It was written 2026-09-17 as the first step of
 [`../../plans/static-dispatch-spike.md`](../../plans/static-dispatch-spike.md), when it was
 normative for the branch `spike/static-dispatch` alone. **The file name is historical** and is kept
 deliberately: roughly a hundred Zig comments, corpus fixture headers and bench programs cite this
@@ -45,7 +45,7 @@ walks Roc's Zig implementation of all of this and its §9 maps every mechanism t
 where this document cites `references/roc/…` it is following that report's evidence. Appendix A.30
 onward records the amendments it produced.
 
-**Plan section → spec section**, so the slice table in `plans/static-dispatch-spike.md` §8 stays
+**Plan section → spec section**, so the work table in `plans/static-dispatch-spike.md` §8 stays
 usable: plan §3.1 → §1; §3.2 → §2; §3.3 → §3; §3.4 → §4; §3.5 → §5; §4.1 → §6.1; §4.2 → §6.2;
 §4.3 → §6.3; §4.4 → §6.4–§6.6; §4.5 → §6.7; §4.6 → §7; §4.7 → §10; §4.8 → §6.8; §5.1–§5.2 → §1.4,
 §2.5, §8.0; §5.3 → §8; §6 → §9; §9 → §11.
@@ -436,7 +436,7 @@ then fail to unify.
 |---|---|---|
 | `Int` | `primitive strict_eq` — `x === y` | `primitive num_compare` — `x < y ? "LT" : x > y ? "GT" : "EQ"` |
 | `Float` | `primitive strict_eq`. **NaN**: `NaN === NaN` is `false`, so `nan == nan` is `False` and `nan /= nan` is `True`, which is today's behaviour and IEEE's | `primitive num_compare`. **NaN**: both `<` and `>` are false for any pair involving NaN, so `compare` returns `EQ`. A total order this is not; §11 records it |
-| `Char` | `primitive strict_eq` — a `Char` is a one-scalar JavaScript string (`backend.md` §4, "Corrections from M3a") | `primitive char_compare` — a **code-point** comparison, `x.codePointAt(0) < y.codePointAt(0) ? "LT" : …`, never `<` on the strings: an astral `Char` is a surrogate pair and UTF-16 code-unit order puts it below U+E000 |
+| `Char` | `primitive strict_eq` — a `Char` is a one-scalar JavaScript string (`backend.md` §4, "Corrections to the representation") | `primitive char_compare` — a **code-point** comparison, `x.codePointAt(0) < y.codePointAt(0) ? "LT" : …`, never `<` on the strings: an astral `Char` is a surrogate pair and UTF-16 code-unit order puts it below U+E000 |
 | `String` | `primitive strict_eq` | `primitive string_compare` — **a call to `String$compare`**, not `<`. `core/String.js:40-57` compares Unicode scalar values and says in its own comment that this is what `<` on JavaScript strings is *not*; `"a" < "b"` and `String.compare a b` must agree, so the operator takes the function's answer (§9.1, and §11 on what it costs) |
 | `Bool` | `primitive strict_eq` — `true`/`false` are JavaScript booleans (`backend.md` §4 correction 1) | `primitive num_compare`, which on booleans is `False < True`. Note that this is **not** the constructor declaration order of `type Bool = True \| False`; see Appendix A.4 |
 | `Order` | `primitive strict_eq` — an all-nullary type is a bare tag string | `derived compare` over the all-nullary shape, i.e. the order table `LT < EQ < GT` (§9.4). Alphabetic order on the tag strings would be wrong, which is why this row is not `strict_eq`'s partner |
@@ -449,7 +449,7 @@ falls through to the module rule and finds `Basics.toString` or fails there.
 
 ### 3.3 Derivation, and who wins
 
-> **Checker v2 (2026-09-24), owner decision D1 (amended the same day).** A private method answers dispatch only for uses inside its module, including structural shapes (records, tuples, lists) derived there. It is still the module's method for every type the module declares, under the module rule: step 1 below is unchanged by privacy; from any other module, reaching it directly or through derivation is `private_method`. A.63's "a private `eq` still lets every other module derive" is superseded ([`checker-v2.md`](checker-v2.md) §11.3). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24), the owner's decision that a private method answers only its own module (amended the same day).** A private method answers dispatch only for uses inside its module, including structural shapes (records, tuples, lists) derived there. It is still the module's method for every type the module declares, under the module rule: step 1 below is unchanged by privacy; from any other module, reaching it directly or through derivation is `private_method`. A.63's "a private `eq` still lets every other module derive" is superseded ([`checker-v2.md`](checker-v2.md) §11.3). **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 For a name that is not in the table, resolution of `(T, name)` is:
 
@@ -465,7 +465,7 @@ that reaches the table. A function type never does (`not_equatable` for `eq`,
 `no_methods_on_shape` for `compare`), and a `foreign type` that is neither in the table nor given a
 `pub eq` by its module does not either — `unknown_method`.
 
-**One exception, and it expired with S6** (A.50). A `foreign type` marked `equatable` answers `eq`
+**One exception, and it expired with the `core/` rewrite** (A.50). A `foreign type` marked `equatable` answers `eq`
 through the marker, which §3.4 says means exactly "has an `eq`": `xs == ys` on a `List a` resolved
 while `core/List.beni` still had no `pub foreign eq`. `compare` got no such bridge — there is no
 marker for it — so `xs < ys` was `unknown_method` until §5.2 landed. §5.2 has landed, `List` answers
@@ -484,7 +484,7 @@ name by the same three rules, so a record of `Maybe (List Point)` derives down t
 The `equatable` marker (`language.md` §3, `checker.md` Appendix A and B) stays core-only
 and retains its structural guarantee: the value contains no function to compare.
 It is distinct from an `eq` method constraint when a nominal type supplies custom
-equality over a function-containing representation (row 72 clarification,
+equality over a function-containing representation (clarified
 2026-09-22). Explicit `Basics.eq` and `Basics.neq` still use structural equality;
 the marker must reject such a representation even though `==` can call its public
 custom `eq`. The dispatch capability may therefore be true while `has_function`
@@ -570,7 +570,7 @@ alike.** An *annotation* on the caller is the first, and the only one report 18 
 second is a **later use**: nothing says the flex has to be made concrete by the expression that
 created it, and `let t = decodeInto "zz" in label t` is pinned by `label`, one line down, because
 §6.4 rule (a) holds a constrained `let` binding at the enclosing rank instead of generalising it (since
-R14, the value restriction does, `checker-v2.md` §8.4 *As built by R14*: `t` is a value binding) —
+2026-09-27 the value restriction does, `checker-v2.md` §8.4: `t` is a value binding) —
 the succeeding half of the rule that `check/bad/LetConstrainedTwice` shows the failing half of.
 Underneath both sits the third: a caller that is *itself* constrained on the same variable
 **forwards** its evidence rather than choosing, so `decodeTwo : String, String -> ( a, a ) where
@@ -592,7 +592,7 @@ is the only place a type is named in an expression, and it is weaker than the ab
 ## 5. Core package changes
 
 This section **replaces** the `Dict`, `Set`, `List` and `Basics` rows of `checker.md` Appendix B;
-that appendix points here. Line numbers in the `master` column below are `master` at `f466aac`. The rewrite itself is slice S6 and its
+that appendix points here. Line numbers in the `master` column below are those of `master` before the rewrite. The rewrite's
 site-by-site plan is [`../../plans/static-dispatch-c1-rewrite.md`](../../plans/static-dispatch-c1-rewrite.md).
 
 **One constraint governs every edit below, and it is new with §6.8.** The checker mints a type for
@@ -603,7 +603,7 @@ each of those into a graph edge into `core`. Outside `core` that can never make 
 on `String`, which already depends on `Basics`, and the author would get an `import_cycle` for
 writing `"…"`. No core module mints a type from a module that names it back today
 (`tests/corpus/check/good/TypeOwnerEdges/_expected.graph` shows `core:Basics` with no outgoing edge
-at all). **S6 must keep it that way**: no literal of a kind whose owning module depends, directly or
+at all). **The rewrite must keep it that way**: no literal of a kind whose owning module depends, directly or
 transitively, on the module being edited. If a rewrite genuinely needs one, §6.8 needs a stated
 exemption **before** the rewrite lands, not after. §11 carries the row.
 
@@ -733,11 +733,11 @@ There are no `Set.String` / `Set.Int` modules to delete.
 
 ## 6. The checker
 
-> **Checker v2 (2026-09-24).** §6.1–§6.4 and §6.3.1's capability paragraphs are replaced by [`checker-v2.md`](checker-v2.md) §4 and §7–§11: wanteds with evidence variables instead of constraint sets carrying sites, resolution outside `unify`, instance lookup by matching a method's head, one derived-context fixpoint instead of capability settling, deferral instead of priority groups. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> **Checker v2 (2026-09-24).** §6.1–§6.4 and §6.3.1's capability paragraphs are replaced by [`checker-v2.md`](checker-v2.md) §4 and §7–§11: wanteds with evidence variables instead of constraint sets carrying sites, resolution outside `unify`, instance lookup by matching a method's head, one derived-context fixpoint instead of capability settling, deferral instead of priority groups. **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 This section extends `checker.md` §5 (the type store), §6.2 (solving), §6.3 (generalisation), §6.4
 (obligations) and §7 (the interface record). It is written as **rules**: an implementer building
-slice S3 should need nothing else.
+the checker half should need nothing else.
 
 ### 6.1 Representation
 
@@ -1064,7 +1064,7 @@ must report first". `tests/corpus/check/depth/ConstraintChain{Ok,Deep}.beni` is 
 
 ### 6.4 Generalisation and promotion
 
-> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. **Superseded by R14 (2026-09-27):** D5 is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4 *As built by R14*). Rule (a) below is history, not the rule.
+> **Checker v2 (2026-09-24), the owner's decision that a constrained `let` generalises.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4). Rule (b)'s assert is subsumed by I2. **Superseded 2026-09-27:** the decision is built and the `let_constrained_monomorphic` switch deleted. A `let` function binding generalises over what its requirements reach of its own and takes evidence parameters `$l<inst>$<k>`; a variable carrying only dot-calls' own requirements, and one a `let` value or pattern binding reaches, is still held at the enclosing rank ([`checker-v2.md`](checker-v2.md) §8.4). Rule (a) below is history, not the rule.
 
 Constraints ride on `Flags`, so `generalize` and `makeCopy` carry them within a module for free,
 with one addition: **`copyHelp` must copy each constraint's `fn_var` through the same memo** as the
@@ -1282,7 +1282,7 @@ declaration is the *rigid* reading of the annotation and not the generalised sch
 different variables. So the suffix there is built from the **rigid variables' own constraint sets**
 (§2.4: exactly what the `where` clause declared), not from the scheme's `Quantified` blocks. For an
 unannotated declaration `decl_display` is the scheme and the two agree by construction. Getting this
-wrong prints an empty `where` on every annotated declaration, which is the most likely S3 golden
+wrong prints an empty `where` on every annotated declaration, which is the most likely checker golden
 failure after §7.2's ordering.
 
 ```
@@ -1371,7 +1371,7 @@ now depends on `Dict`, `String` and `Basics`"; that was always an edge — writi
 is an `import_type` ref — and the claim was over-stated. M1 still reports the number, but it is not
 one of the costs the spike was commissioned to weigh.
 
-**Inside `core` this rule bites, and S6 must keep it from biting.** A minted edge always points into
+**Inside `core` this rule bites, and the `core/` rewrite must keep it from biting.** A minted edge always points into
 `core`, so a user project can never be made cyclic by one. Inside `core` it can: a string literal in
 `core/Basics.beni` would make `Basics` depend on `String`, which already depends on `Basics`, and
 the author would get an `import_cycle` for writing `"…"`. No core module mints a type from a module
@@ -1398,14 +1398,14 @@ of the sources alone.
 
 ## 7. The dispatch table
 
-> **Checker v2 (2026-09-24). EFFECTIVE since slice R2a.** The table the backend reads is evidence TREES with no `err` term and an argument-count assert (I7): [`checker-v2.md`](checker-v2.md) §13 is the contract, and §7.1–§7.3 below describe only what the v1 checker still ACCUMULATES. `Dispatch.finish` converts it — each site's flat pre-order into one tree per root, reading a target's evidence count exactly as `Lower` used to; an `err` part becomes the `undetermined` leaf, an `err` site no term — and asserts I7, reporting `internal` and never panicking. `Site.parent`, the pre-order of A.68 and `evidence_index` survive only inside the builder; the dump is §13.2's format v2, the sidecar `dispatch_bytes` v2.
+> **Checker v2 (2026-09-24), effective.** The table the backend reads is evidence TREES with no `err` term and an argument-count assert (I7): [`checker-v2.md`](checker-v2.md) §13 is the contract, and §7.1–§7.3 below describe only what the v1 checker still ACCUMULATES. `Dispatch.finish` converts it — each site's flat pre-order into one tree per root, reading a target's evidence count exactly as `Lower` used to; an `err` part becomes the `undetermined` leaf, an `err` site no term — and asserts I7, reporting `internal` and never panicking. `Site.parent`, the pre-order of A.68 and `evidence_index` survive only inside the builder; the dump is §13.2's format v2, the sidecar `dispatch_bytes` v2.
 
 The backend sees no types (`backend.md` §3; `Lower.Input` carries interfaces and a graph, never a
 store). Everything the checker decided about a method call therefore has to cross as data. The
 dispatch table is that data: one per module, flat, index-based, immutable once built, in the shape
 of `Bir.refs`.
 
-**It carries one decision that is not about a method call**, added when M3b emitted `?`: which of
+**It carries one decision that is not about a method call**, added when the backend first emitted `?`: which of
 `language.md` §6.6's two shapes each `?` turned out to be. `checker.md` §6.5 settles it by
 speculation, the emitted failure test is the `Nothing` tag for one shape and the `Err` tag for the
 other, and there is no pattern at a `?` to read either off — so it is exactly the kind of decision
@@ -1414,7 +1414,7 @@ sorted, roll back and dump.
 
 ### 7.1 The record
 
-> **R2a (effective).** This record is now the v1 checker's BUILDER vocabulary (`Dispatch.Target`, `Dispatch.FlatSite`, `Dispatch.FlatDerived`). What crosses to the backend is [`checker-v2.md`](checker-v2.md) §13.1's tree record, built from it by `Dispatch.finish`.
+> **Checker v2 (effective).** This record is now the v1 checker's BUILDER vocabulary (`Dispatch.Target`, `Dispatch.FlatSite`, `Dispatch.FlatDerived`). What crosses to the backend is [`checker-v2.md`](checker-v2.md) §13.1's tree record, built from it by `Dispatch.finish`.
 
 ```zig
 pub const Dispatch = struct {
@@ -1450,7 +1450,7 @@ pub const Dispatch = struct {
         target: Target,
     };
     pub const Evidence = struct { quantified: u16, var_name: SymbolIndex, method: SymbolIndex };
-    pub const Try = struct {                                      // one per `?` (ADDED with M3b's
+    pub const Try = struct {                                      // one per `?` (ADDED with the backend's
         inst: Bir.Inst.Index,                                     // `?` codegen: `backend.md` §4,
         shape: enum(u8) { maybe, result },                        // `checker.md` §6.5)
     };
@@ -1519,7 +1519,7 @@ store is still alive, kept regardless of `keep_stores`, and handed to `Lower.Inp
 
 ### 7.2 What a site is, and canonical order
 
-> **R2a (effective).** The flat numbering below is interpreted in exactly one place, `Dispatch.finish`'s converter; the backend reads one `Site` per instruction with a callee term and one evidence root per requirement ([`checker-v2.md`](checker-v2.md) §13.1). The canonical order itself is unchanged and is now `DeclInfo.requirements`.
+> **Checker v2 (effective).** The flat numbering below is interpreted in exactly one place, `Dispatch.finish`'s converter; the backend reads one `Site` per instruction with a callee term and one evidence root per requirement ([`checker-v2.md`](checker-v2.md) §13.1). The canonical order itself is unchanged and is now `DeclInfo.requirements`.
 
 | Instruction | Sites |
 |---|---|
@@ -1581,7 +1581,7 @@ name it and so a mismatch is a caught bug rather than a silent miscompile.
 
 ### 7.3 `dump --stage=dispatch`
 
-> **R2a (effective).** The format below is v1's. The dump prints [`checker-v2.md`](checker-v2.md) §13.2's format v2 — trees printed as trees — and every `tests/corpus/dispatch/` golden was re-blessed once in it.
+> **Checker v2 (effective).** The format below is v1's. The dump prints [`checker-v2.md`](checker-v2.md) §13.2's format v2 — trees printed as trees — and every `tests/corpus/dispatch/` golden was re-blessed once in it.
 
 `Cli.Stage` gains `dispatch`, and §6.8 adds `graph`, so the CLI reads
 `tokens, ast, bir, interface, raw, types, graph, dispatch` (`src/Cli.zig:66`). Like
@@ -1708,7 +1708,7 @@ module Shapes
 
 ## 8. The backend
 
-> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence — EFFECTIVE since slice R2a: §8.1–§8.2's hidden arguments are the terms of the site's evidence tree, a declaration's count is `DeclInfo.requirements`, and a callee's count is only asserted (I7, [`checker-v2.md`](checker-v2.md) §13.3). One `Convention` decides a constrained value's definition, calls and eta-expansion — EFFECTIVE since slice R2b ([`checker-v2.md`](checker-v2.md) §12.5): a zero-parameter value of FUNCTION type is a function of its evidence and its type's parameters, `h = ($m$0, $p$1, $p$2) => maxOf($m$0, $p$1, $p$2)`, called flat like any other (CK-33); only one of NON-function type is the `($m$0) => value` of §8.1 below, read by applying its evidence.
+> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence — EFFECTIVE since 2026-09-24: §8.1–§8.2's hidden arguments are the terms of the site's evidence tree, a declaration's count is `DeclInfo.requirements`, and a callee's count is only asserted (I7, [`checker-v2.md`](checker-v2.md) §13.3). One `Convention` decides a constrained value's definition, calls and eta-expansion — EFFECTIVE since 2026-09-24 ([`checker-v2.md`](checker-v2.md) §12.5): a zero-parameter value of FUNCTION type is a function of its evidence and its type's parameters, `h = ($m$0, $p$1, $p$2) => maxOf($m$0, $p$1, $p$2)`, called flat like any other; only one of NON-function type is the `($m$0) => value` of §8.1 below, read by applying its evidence.
 
 Extends `backend.md` §4 (codegen), §5 (module output) and §6 (the calling convention). §6's
 "there isn't one" still holds for beni-level arity: what follows adds **hidden leading parameters**,
@@ -1721,7 +1721,7 @@ backend's ignorance of types changes: it reads targets, never types.
 
 ### 8.1 Evidence parameters
 
-> **R2a (effective).** The count is `DeclInfo.requirements` of [`checker-v2.md`](checker-v2.md) §13.1, which replaced `decl_evidence`; the naming is unchanged.
+> **Checker v2 (effective).** The count is `DeclInfo.requirements` of [`checker-v2.md`](checker-v2.md) §13.1, which replaced `decl_evidence`; the naming is unchanged.
 
 `Lower.functionOf` — the one place parameter lists are built — prepends one parameter per entry of
 `dispatch.decl_evidence[decl]`, **before** the declaration's own parameters, in canonical order
@@ -1741,7 +1741,7 @@ author **annotated** it, `pub blank : List a where a.eq : a, a -> Bool`, nothing
 `where` clause is written down, and §10.10 scopes `constrained_constant` to inferred schemes
 precisely so that this case is not caught by it.
 
-*Corrected 2026-09-22 (queue row 57, A.85): this paragraph used to end "so the backend never meets
+*Corrected 2026-09-22 (A.85): this paragraph used to end "so the backend never meets
 one", and the backend did meet one.* A reference to such a value in value position was
 eta-expanded like any other constrained reference, and at arity 0 an eta-expansion degenerates into
 a **thunk** — `Main$blankInts = () => Blank$blank(Main$eq$prim)` — while every consumer reads the
@@ -1749,13 +1749,13 @@ name as the value it is annotated to be. The program built with exit 0 and threw
 load. The rule is §8.2's, below: at arity 0 the reference is the evidence **applied**, not a
 closure over it.
 
-*Narrowed 2026-09-24 (R2b, CK-33, [`checker-v2.md`](checker-v2.md) §12.5): the first paragraph above holds for a
+*Narrowed 2026-09-24 ([`checker-v2.md`](checker-v2.md) §12.5): the first paragraph above holds for a
 value whose TYPE is not a function. One whose type is a function — `h = maxOf` under a `where` —
 takes its evidence and then its type's parameters, `($m$0, $p$1, $p$2) => …`, exactly as if it had
 been written with them, so that a call, a reference and an importer all agree.*
 
-> **Amended by R14 (2026-09-27, owner decision D5; [`checker-v2.md`](checker-v2.md) §8.4 *As built
-> by R14*, §13.1).** A generalised `let` **function** binding has evidence parameters too, one per
+> **Amended 2026-09-27 (the owner's decision that a constrained `let` function generalises;
+> [`checker-v2.md`](checker-v2.md) §8.4, §13.1).** A generalised `let` **function** binding has evidence parameters too, one per
 > requirement of its own scheme in canonical order, **before** its own parameters, named
 > `$l<inst>$<k>` where `<inst>` is its `let_def` instruction — so an inner binding never shadows an
 > outer `$m$k` or `$l…` it also captures. Each use passes them first, `inner($m$0, x, y)` or
@@ -1763,7 +1763,7 @@ been written with them, so that a call, a reference and an importer all agree.*
 > binding's arity. A `let` value binding, a `let` pattern and a variable carrying only dot-calls'
 > own requirements are still held at the enclosing rank, so they take none. Everything below about
 > lexical capture holds unchanged for `$l…`: a lambda two closures down reads it by capture
-> (`run/LetEvidenceCapture.beni`). The paragraph below is the pre-R14 text.
+> (`run/LetEvidenceCapture.beni`). The paragraph below is the text before that amendment.
 
 **Only a top-level declaration has evidence parameters**, and a lambda never does. §6.4 rule (a)
 keeps a `let` binding from being generalised over a constrained variable, so no nested binding
@@ -1795,7 +1795,7 @@ Two consequences worth stating, because they are what M4 and M5 measure:
 
 ### 8.2 Call sites
 
-> **R2a (effective).** `Lower` reads the site's evidence ROOTS, each a term with its own arguments; nothing is recounted and there is no cursor. The table below still says what each term lowers to (`top`/`ext` for `top d`/`ext`, `param` for `evidence k`, `undetermined` for a legacy `err` part) ([`checker-v2.md`](checker-v2.md) §13.3).
+> **Checker v2 (effective).** `Lower` reads the site's evidence ROOTS, each a term with its own arguments; nothing is recounted and there is no cursor. The table below still says what each term lowers to (`top`/`ext` for `top d`/`ext`, `param` for `evidence k`, `undetermined` for a legacy `err` part) ([`checker-v2.md`](checker-v2.md) §13.3).
 
 `Lower.callExpr` — the one call-site lowering — looks the instruction up in `dispatch.sites` and
 prepends one argument per site with `evidence_index > 0` for a `method_call`, or per site at all
@@ -1968,7 +1968,7 @@ above, the row above is the contract.
 
 ## 9. Derived `eq` and `compare`, in full
 
-> **R8d and R8e (CK-128, 2026-09-27): a derived comparison never grows the native stack with the
+> **Amended 2026-09-27: a derived comparison never grows the native stack with the
 > data.** The listings below are the bodies, and they stay normative for what is compared and in
 > what order. A position that is the last of its constructor and compares the function's own type
 > with its own evidence loops (`$x = $x.b; $y = $y.b; continue;`) instead of calling. A derived
@@ -1983,7 +1983,7 @@ above, the row above is the contract.
 > the measurements are [`backend.md`](backend.md) §4, *Derived comparisons do not grow the native
 > stack*.
 
-Written against the representation of `backend.md` §4 and its "Corrections from M3a": records are
+Written against the representation of `backend.md` §4 and its "Corrections to the representation": records are
 objects with keys sorted by **name text**; a type with any argument-taking constructor pads every
 constructor to `{$: "Tag", a, b, …}`; a type whose constructors are all nullary is a bare tag
 string; `Basics.Bool` is `true`/`false`; a tuple is `{a, b, …}`; a list is `{$:1, a, b}` /
@@ -2077,7 +2077,7 @@ one function whatever the two fields hold, and the two arguments it is handed co
 `Derived` row carries `evidence_count` and, for a nominal shape, the body's positions — never a
 use's arguments.
 
-**The wide form** (CK-81, 2026-09-24, A.87). **Every** derived function — of any shape, record,
+**The wide form** (2026-09-24, A.87). **Every** derived function — of any shape, record,
 tuple or nominal — with **more than 4 096** evidence parameters takes them as ONE parameter, the
 array `$m`, and reads position *k* as `$m[k]`; every call of it passes the same evidence as an array
 literal, and an eta-expansion wraps that call:
@@ -2087,37 +2087,37 @@ const Main$eq$r$f1$f10$f100$… = ($m, $x, $y) => $m[0]($x.f1, $y.f1) && $m[1]($
 const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$prim, …], $x.a, $y.a);
 ```
 
-- **4 096 is an ABI number of the backend's** (`Convention.max_positional_evidence` since R2b), not a checker
-  limit. It equals CK-79's cap on a record `==` today, which is why no emitted output 4 096 wide or
-  narrower changed; lifting that cap (R8a) must not move it.
+- **4 096 is an ABI number of the backend's** (`Convention.max_positional_evidence`), not a checker
+  limit. It equals the checker's cap on the width of a record `==` today, which is why no emitted
+  output 4 096 wide or narrower changed; lifting that cap must not move it.
 - **Why.** The positional form is legal JavaScript but not loadable at that width: under Node 24 a
   call of 60 002 arguments from inside another function overflows the default stack (`RangeError`
   at run time), and V8 refuses a function of more than 65 535 parameters (`SyntaxError` at load). An
-  array has neither limit. **Measured in browsers by R2c** (`backend.md` §4, *Emitted JavaScript nests
+  array has neither limit. **Measured in browsers** (`backend.md` §4, *Emitted JavaScript nests
   only as deep as the source*): a function of *n* parameters called with *n* arguments loads and runs
   up to 59 610 in Chrome 153 and Node 24, 65 078 in Firefox 144 and the SpiderMonkey 140 shell, and
   past 70 000 in WebKit and Bun; 4 096 is fourteen times under the scarcest and stays. **That is
-  one call.** Under recursion the frames add up (review of R2c, Node, default stack, a
+  one call.** Under recursion the frames add up (Node, default stack, a
   self-recursive arrow with *n* extra parameters): 16 recurse 2 928 deep, 256 recurse 237, 1 024
   recurse 59, 4 096 only 13 — so a recursive nominal type with a 4 096-field payload overflows `==`
   about 13 levels down, where 4 097 fields (the array form) does not. Nothing known is near it; a
-  lower threshold would cost nothing measurable, and is left for whoever meets it. *Since R8d
-  (CK-128) neither overflows at any depth: a derived function charges its callers' depth by its
+  lower threshold would cost nothing measurable, and is left for whoever meets it. *Since
+  2026-09-27 neither overflows at any depth: a derived function charges its callers' depth by its
   frame's size and continues from an explicit stack past the limit ([`backend.md`](backend.md) §4,
   *Derived comparisons do not grow the native stack*; `abuse_test.zig`, 1 000 levels of both).*
 - **Who reaches it.** A record payload of a nominal type past 4 096 fields (a use's record `==` is
-  refused by CK-79 first), and a nominal type whose own context passes 4 096 entries (a type of
+  refused by the record-width cap first), and a nominal type whose own context passes 4 096 entries (a type of
   5 000 parameters, in one module).
 - **Agreement.** The function and every caller decide by the same **count** — the row's context
   length, which is also the number of arguments each use passes — so no table, dump or interface
   carries a flag. A cross-module nominal row (`ext_derived`) agrees with its importers by
   construction — the importer counts from the imported type's arity, and interface v3 carries it
-  as a `u16` (CK-38). *Exercised since R3 (2026-09-25):* `cache_test.zig`'s "an imported type of
+  as a `u16`. *Exercised since 2026-09-25:* `cache_test.zig`'s "an imported type of
   4 097 parameters compares across modules in the wide form…" builds `==` and `<` on an imported
-  4 097-parameter type cold, warm and partly warm, dev and `--release`, and runs it; on 3487c12 the
+  4 097-parameter type cold, warm and partly warm, dev and `--release`, and runs it; before that the
   importer read a saturated arity, called the wide function positionally, exited 0 and threw
-  `TypeError` at run time (and at 256 parameters already, `run/WideTypeArityEq/`). R2b moves the
-  decision into `Convention` (checker-v2.md §12.5).
+  `TypeError` at run time (and at 256 parameters already, `run/WideTypeArityEq/`). `Convention` now owns the
+  decision (checker-v2.md §12.5).
 
 ### 9.3 Tuples and unit
 
@@ -2143,7 +2143,7 @@ const Main$compare$unit = (x, y) => "EQ";
 
 ### 9.4 Nominal types
 
-> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did. *Built by R8a (2026-09-26) for `--checker=v2`: the context is inferred per type by `check2/Contexts.zig` and published in interface v3 (checker-v2.md §14.2 as amended by R8a); every type the corpus emits compares each parameter with the derived method, so its function is unchanged byte for byte.*
+> **Checker v2 (2026-09-24), the owner's decision that a derived function takes its inferred context.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2). The emitted shapes are unchanged. **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did. *Built 2026-09-26 for `--checker=v2`: the context is inferred per type by `check2/Contexts.zig` and published in interface v3 (checker-v2.md §14.2 as amended 2026-09-26); every type the corpus emits compares each parameter with the derived method, so its function is unchanged byte for byte.*
 
 > **The wide form** (§9.2, A.87) applies here too: a nominal derived function with more than 4 096 evidence parameters takes them as one array `$m`, and its callers pass one array literal.
 
@@ -2245,7 +2245,7 @@ export const Result$Result$compare = ($m$0, $m$1, x, y) => {
 
 `Result x a` quantifies `x` then `a` (declaration order), so `$m$0` is `x`'s and `$m$1` is `a`'s,
 and `Ok a` — which is declared first, hence `order.Ok = 0` — uses `$m$1`. Getting that pairing
-wrong is the single most likely bug in S5, which is why the dump prints `part` lines.
+wrong is the single most likely bug in derived emission, which is why the dump prints `part` lines.
 
 **`Basics.Bool`** never reaches derivation: §3.2 gives it `primitive strict_eq` and
 `primitive num_compare`, both of which are correct on JavaScript booleans, and `num_compare` orders
@@ -2447,8 +2447,8 @@ the size cost M4 reports.
 
 ## 10. Diagnostics
 
-Ten codes join the catalogue of `language.md` §10 and `checker.md` §8.1, appended **after** the M3a
-lines and before nothing — appended, never inserted, so no existing line moves. Every one gets a
+Ten codes join the catalogue of `language.md` §10 and `checker.md` §8.1, appended **after** the
+existing lines and before nothing — appended, never inserted, so no existing line moves. Every one gets a
 fixture: **eight** under `tests/corpus/check/bad/`, and the two that lowering reports —
 `where_variable_unbound` and `duplicate_where_constraint` — under `tests/corpus/parse/bad/`.
 
@@ -2465,7 +2465,7 @@ this section as §10.11, and at the end of both catalogues, so nothing above it 
 too_many_inferred_constraints
 ```
 
-A **twelfth** was appended on 2026-09-23 (queue row 75), as §10.12, after the schema codes in both
+A **twelfth** was appended on 2026-09-23, as §10.12, after the schema codes in both
 catalogues (A.86):
 
 ```
@@ -2609,7 +2609,7 @@ later f g =
     f < g
 ```
 
-*Amended by R13 (2026-09-27, CK-54), before the code.* The record hint is a **dot-call's**: it is
+*Amended 2026-09-27, before the code.* The record hint is a **dot-call's**: it is
 printed only when the requirement came from `x.m` (origin `dot_call`), never for `==` or `<`. A
 well-known method on an **open** record — the A.28 refusal — gets a text of its own, which says
 why, since the author wrote an operator and not a method name:
@@ -2667,7 +2667,7 @@ calls it from an annotated function with no constraint. The assertion is that th
 is in `Main.beni`, at the call, and the secondary is in `Lib.beni`. Reversing them is the Roc bug,
 so the fixture asserts the order and not merely the set.
 
-*Amended by R13 (2026-09-27, CK-53), before the code.* A `let` annotation takes no `where`
+*Amended 2026-09-27, before the code.* A `let` annotation takes no `where`
 (`language.md` §3), so when `<v>` is a variable of a `let` binding's annotation the hint does not
 suggest writing one there — which the parser refuses as UNEXPECTED TOKEN — and says instead:
 
@@ -2868,7 +2868,7 @@ empty constraint set, so the body's `compare` requirement is `missing_where_cons
 instead, and the fixture would assert the wrong code. `constrained_constant` is about a constraint
 that survived generalisation of an *inferred* scheme (§6.4).
 
-**The third spelling is legal, and this code does not apply to it** (2026-09-22, queue row 57,
+**The third spelling is legal, and this code does not apply to it** (2026-09-22,
 A.85). `pub blank : Dict k v where k.compare : k, k -> Order` is a constant whose requirement the
 author WROTE, so none of this code's reasoning reaches it: nothing is silent, nothing changes type
 behind anyone's back, and the `where` suffix is in the interface where a caller can read it. It
@@ -2878,10 +2878,10 @@ rejected under CLAUDE.md rule 7: both fixes close the same exit-0 hole, so the r
 bought no guarantee and cost `Dict.empty`, which is the shape of the value anyone would want.
 
 **A value whose TYPE is a function is not a constant, and this code does not apply to it either**
-(2026-09-24, R2b review S3, [`checker-v2.md`](checker-v2.md) §12.5). Unannotated
-`pub equals = (==)` and `pub eqs = \a b -> a == b` used to be refused here: before R2b the
+(2026-09-24, [`checker-v2.md`](checker-v2.md) §12.5). Unannotated
+`pub equals = (==)` and `pub eqs = \a b -> a == b` used to be refused here: before then the
 emitter would have made them a function of their evidence RETURNING the function, a shape their type
-did not say. Since R2b one `Convention` defines, calls and imports them as the function they are,
+did not say. Now one `Convention` defines, calls and imports them as the function they are,
 `($m$0, $p$1, $p$2) => …` — nothing is silent and nothing changes type — so under CLAUDE.md rule
 7 the refusal buys no guarantee and is narrowed to a zero-parameter `pub` value of NON-function type
 (a thunk, `pub blank = Dict.fromList []`). The hint also names the third spelling, the annotated
@@ -2950,7 +2950,7 @@ unannotated declaration), `tests/corpus/check/good/SixtyFourConstraints.beni` (6
 `tests/corpus/check/good/AnnotatedManyConstraints.beni` (the annotated 65-constraint twin, clean),
 plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 
-*Amended by R13 (2026-09-27, CK-58), before the code.* Each of the first five is written with its
+*Amended 2026-09-27, before the code.* Each of the first five is written with its
 receiver, as a `where` clause names it: *"The first 5 are `a.eq`, `b.eq`, `c.eq`, `d.eq` and
 `e.eq`."* — so seventy parameters compared once each read as seventy variables, not as one method
 repeated. The receivers are named by one namer in the canonical order of §7.2, as §8.2's printer
@@ -2958,11 +2958,10 @@ names them (a variable's own name, else its kind, else `a`, `b`, …). Elm has n
 
 ### 10.12 `method_needs_annotation`
 
-> **Checker v2 (2026-09-24), owner decision D3 (amended the same day).** Retired as an ordering
+> **Checker v2 (2026-09-24), the owner's decision that an own untyped method is checked at its use (amended the same day).** Retired as an ordering
 > refusal. A use of a module's own untyped method checks that method's group nested **at the
-> moment of the use** ([`checker-v2.md`](checker-v2.md) §10,
-> slice R7). The code survives for one non-ordering case: a derived context entry indexed by a type
-> parameter that depends on an in-flight inferred method (`checker-v2.md` §11.2). **Superseded** since the cut-over (`../../plans/checker-rewrite.md` R11, 2026-09-27): v2 is the default checker, and this section describes checker v1 only, which R12 deleted (2026-09-27): it is kept as the record of what v1 did.
+> moment of the use** ([`checker-v2.md`](checker-v2.md) §10). The code survives for one non-ordering case: a derived context entry indexed by a type
+> parameter that depends on an in-flight inferred method (`checker-v2.md` §11.2). **Superseded** since the cut-over (2026-09-27): v2 is the default checker, and this section describes checker v1 only, which was deleted the same day: it is kept as the record of what v1 did.
 
 Appended 2026-09-23, after §10.11, so no number above it moves (A.86).
 
@@ -2989,15 +2988,15 @@ no-silent-wrong-answer. *Alternative*, and the proper fix: order such a method's
 group that uses it, or defer the use until the method is solved. Uses are only known once types
 are, so neither is a syntactic edge, and a method and its user can be mutually recursive.
 
-Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form), until the cut-over (R11): under D3 the program is valid, and it is `tests/corpus/run/OwnEqCheckedAfterItsUse/`, which prints both answers.
+Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form), until the cut-over (2026-09-27): once an own untyped method is checked at its use the program is valid, and it is `tests/corpus/run/OwnEqCheckedAfterItsUse/`, which prints both answers.
 
-### 10.13 Checker v2's dispatch texts (R13)
+### 10.13 Checker v2's dispatch texts
 
-Added 2026-09-27 by R13 (`checker-v2.md` §15.3, §15.4), **before** the code. Three messages whose
+Added 2026-09-27 (`checker-v2.md` §15.3, §15.4), **before** the code. Three messages whose
 code is not one of §10's, but whose cause is dispatch. Elm has no methods, so none has an Elm twin;
 each keeps `checker.md` §8's register — the sentence, the two types, the hint.
 
-**A method whose type does not fit, with no clash (CK-52).** `type_mismatch` at the call. The
+**A method whose type does not fit, with no clash.** `type_mismatch` at the call. The
 module-rule clash paragraph and hint are printed only when the method's first parameter is another
 type **its module declares** — the only case in which §11's clash is what happened. Otherwise:
 
@@ -3017,7 +3016,7 @@ Hint: give `eq` that type, or rename it if it is not meant to be a method
 of `Mod`.
 ```
 
-**A `where` clause against the method it resolved to (CK-55).** `type_mismatch`, category
+**A `where` clause against the method it resolved to.** `type_mismatch`, category
 `.where_clause` (`checker-v2.md` §15.4), at the call that instantiated the clause (the wanted's
 `origin`). The clause is named by its variable — the instantiated quantifier keeps the annotation's
 name (§8.2) — and its method; the roles are the clause (what was asked) against the method (what
@@ -3045,7 +3044,7 @@ for:"*, which is also what a use says when the variable is printed as the receiv
 to a `number`). When the variable has no name (a quantifier nothing named), the clause is *"The `where`
 clause of `f` that asks for `compare`"*. `eq`'s hint says `a, a -> Bool`.
 
-**`==` refused because a requirement inside failed (CK-116).** `not_equatable` (for `compare`,
+**`==` refused because a requirement inside failed.** `not_equatable` (for `compare`,
 `no_methods_on_shape`), at the use, for the value the author compared. A derived `==` resolves a
 method for what the value holds: a payload's own `eq`, or a requirement a payload's method carries
 in its `where` clause (`Holder.eq … where a.key`). When that method exists and has the wrong type
@@ -3072,11 +3071,11 @@ Hint: give `Key.key` that type, or compare the values another way.
 type has no `compare`:"* and the sentence says *ordering* for *comparing*.
 
 When the method's first parameter is another type of its module, the hint is §11's clash hint, as
-for CK-52 (read off the method's declared type — this module's scheme or its interface's — when
+for a method whose type does not fit (read off the method's declared type — this module's scheme or its interface's — when
 the reason came from an answer or a row). The reason rides on the answer: a derived context whose
 pass failed on such a requirement is `absent_requirement` (`checker-v2.md` §11.2) with the type and
 the method, and it is published as the row status **`requirement`**, `(type_ref, method)` like
-`private_method`'s (§14.2 *as amended by R13*). A use that reads the reason from an answer or a row
+`private_method`'s (§14.2 *as amended 2026-09-27*). A use that reads the reason from an answer or a row
 knows the method and the type but not the two types, and says:
 
 ```
@@ -3092,14 +3091,14 @@ way.
 ```
 
 Fixture: `tests/corpus/check/bad/RequirementFailedInsideEq/` — the use-site form, the answer's, a
-published row's, and R8b's review F6 (a module whose `pub eq` is for `Int`, reached through
+published row's, and a module-wrapper case (a module whose `pub eq` is for `Int`, reached through
 another module's wrapper).
 
 ---
 
 ## 11. Known limits, and where the design may change
 
-> **Checker v2 (2026-09-24).** Two limits below are lifted by owner decisions: "a constrained `let` binding is monomorphic" (D5, [`checker-v2.md`](checker-v2.md) §8.4, slice R14) and, in §10.12, the annotation an own untyped method needed (D3, §10, slice R7). Both slices have landed: R7 lifted the second (2026-09-26), and R14 the first for `let` function bindings (2026-09-27; the row below says what stays).
+> **Checker v2 (2026-09-24).** Two limits below are lifted by owner decisions: "a constrained `let` binding is monomorphic" ([`checker-v2.md`](checker-v2.md) §8.4) and, in §10.12, the annotation an own untyped method needed (§10). Both have landed: the second was lifted on 2026-09-26, and the first for `let` function bindings on 2026-09-27 (the row below says what stays).
 
 Everything here is a limit the design **accepts on purpose**. None of it is a bug to be filed; each
 was either measured (§7 of the plan) or recorded in report 19, and the 2026-09-18 adoption took them
@@ -3128,13 +3127,13 @@ so a method whose only parameter is the receiver — `t.toString`, `s.length` �
 `M.toString t`. This is the price of keeping `language.md` §6.3 unchanged, and it is why §5 adds no
 zero-argument methods to core.
 
-**A constrained `let` binding is monomorphic.** *Lifted by R14 (2026-09-27, D5) for a `let`
+**A constrained `let` binding is monomorphic.** *Lifted on 2026-09-27 by the owner's decision for a `let`
 **function** binding whose requirements are not only dot-calls' own: it generalises and takes
-evidence (§8.1 as amended), so the row-76 helper and a helper used at two types each check and run
+evidence (§8.1 as amended), so A.86's cyclic-receiver helper and a helper used at two types each check and run
 (`run/LetConstrainedHelperPolymorphic.beni`). What stays is narrower and deliberate: a variable
-carrying only dot-calls' own requirements (the owner's D5 row of 2026-09-26: the call may still be
+carrying only dot-calls' own requirements (the owner's decision of 2026-09-26: the call may still be
 a field call), and a `let` value or pattern binding (the value restriction, `checker-v2.md` §21.1).
-`LetConstrainedTwice` is the first of those. The text below is the pre-R14 limit.* §6.4 rule (a) refuses to generalise a `let` over a
+`LetConstrainedTwice` is the first of those. The text below is the limit before that change.* §6.4 rule (a) refuses to generalise a `let` over a
 variable carrying a method constraint, which is how the spike avoids Roc's promoted-requirements
 side table (`references/roc/design.md:5461-5468`, report 20 §9 row S3-4). The price is that a helper
 defined in a `let` and used at two types is a `type_mismatch` at the second use
@@ -3157,7 +3156,7 @@ call, so `\r -> r.f 1` where `r` turns out to be a record is `no_methods_on_shap
 write `(r.f) 1`. This is the ambiguity report 18 §2.1 names and the one Roc's `->` operator lives
 with; M6 shows the message.
 
-*Amended 2026-09-26 (checker v2, slice R7, at the manager's request after R7's review): **the choice is
+*Amended 2026-09-26 (checker v2, after a review): **the choice is
 made when the receiver becomes known, not when the call is first seen.*** A dot-call's own
 requirement — the wanted its `method_call` raises, not one a scheme's `where` clause makes at an
 instantiation — whose receiver is still a variable at the call rides on it as a method constraint,
@@ -3169,12 +3168,12 @@ constraint already generalised into a scheme — a caller passing a record to `g
 calling convention does not have. *Why:* "known at the call" reads the solving order, and inside a
 recursive binding group the solving order is the declaration order: a member's parameter typed by
 another member's in-flight call is known at `x.combine 1` in one order and not in the other, so
-the program was accepted in one order and refused in the other (`checker-v2.md` I9; R7's
-adversarial review, F1). Every member's facts arrive before the group is generalised, in every
+the program was accepted in one order and refused in the other (`checker-v2.md` I9: declaration order never
+changes the result). Every member's facts arrive before the group is generalised, in every
 order, so a decision taken when the receiver becomes known is the same in every order. Within a
 single non-recursive declaration the solving order is fixed by its own text, so the only programs
 whose meaning changes are ones the old rule refused: `(\r -> r.f 1) { f = g }` is now `g 1`.
-*Added the same day (R7's round-2 review, X1):* a dot-call whose requirement was joined (§6.1
+*Added the same day:* a dot-call whose requirement was joined (§6.1
 invariant 3, one constraint per variable and name) with a scheme's requirement — an instantiated
 `where a.f`, or a sub-requirement — is not a field call: that requirement has no field accessor to
 be, so the joined constraint meeting a record is `no_methods_on_shape`, reported at the scheme's
@@ -3223,7 +3222,7 @@ for a list literal, `core:String` for a string, `core:Char` for a char, both `co
 cyclic by one; inside `core` there is nothing below to point at, and a string literal in
 `core/Basics.beni` would make `Basics` depend on `String`, which depends on `Basics`. The author's
 diagnostic would be `import_cycle`, for writing `"…"`. No core module does this today, and §5's
-preamble makes keeping it so a condition on the S6 rewrite. The alternatives, if one is ever
+preamble makes keeping it so a condition on the `core/` rewrite. The alternatives, if one is ever
 genuinely needed, are an exemption stated in §6.8 (a named list of literal kinds that mint no edge
 inside `core`, at the cost of the invariant holding only outside it), or moving the offending
 declaration into a module lower in the core graph. Neither is taken now.
@@ -3275,7 +3274,7 @@ wants 65 inferred constraints, the number is one constant. A.83.
 **Interface hashing does not exist**, so plan §7's M3 measures interface *bytes changed* through
 `dump --stage=raw`, which is exactly what M4's hash will be taken over.
 
-**`equatable` and `eq` overlap** after S5. Left in place, recorded (§3.4).
+**`equatable` and `eq` overlap** since derived emission landed. Left in place, recorded (§3.4).
 
 **A part is written when the RECEIVER is resolved, not when both operands are.** `Ok 1 == Err "a"`
 is a `Result String Int`, so the `x` position is `String` and not a variable at all — and the table
@@ -3283,7 +3282,7 @@ records `err` for it. The reason is §6.2's Rule U0: the constraint is discharge
 unification that made the receiver concrete, and the receiver (`Ok 1`) pins only `a`; the `String`
 arrives from the argument afterwards, by which time `nominalTarget` has already written the range.
 Fixing it means resolving a target's parts in a second pass at the end of the declaration rather
-than at discharge, which is a change to §6.3 and §7.1 together and not a local one, so S6a left it.
+than at discharge, which is a change to §6.3 and §7.1 together and not a local one, so it was left.
 It is harmless for the same reason an unconstrained position is: the receiver always pins the
 position its OWN constructor carries, so the position left `err` is the one the tag test rejects
 before either side is read. `dispatch/ErrParts` is the pin, and A.67 is what the backend does with
@@ -3309,7 +3308,7 @@ nested = size (put (put (Box "z") "a") "b")     -- two sites per instruction, on
 ```
 
 Pinning the outer result with an annotation (`annotated : Box String`) hid it, because each
-constraint was discharged and marked before the join happened. It was pre-existing on `8081b5f`,
+constraint was discharged and marked before the join happened. It was pre-existing,
 reproduced with no core change, and `tests/corpus/run/Dictionaries.beni` is the program that found
 it. The fix is A.75: a rebuild REDIRECTS every index it superseded to the constraint that replaced
 it, and everything keyed on a constraint index reads through the redirect, so the replacement is
@@ -3337,11 +3336,11 @@ eager rule of §8.5 meeting the "no DCE yet" row, it is the sharpest single numb
 **`==` on a `Dict` is a comparison of red-black trees.** Module `Dict` declares no `pub eq`, so
 §3.3 falls through to derivation over the shape, and two dictionaries holding the same four pairs
 answer `False` to `==` while their `toList`s answer `True`. Giving `Dict` and `Set` methods of
-their own is out of the spike's scope (S6 decision O-5); `tests/corpus/run/DictStructuralEquality.beni`
+their own is out of the spike's scope (the `core/` rewrite's decision O-5); `tests/corpus/run/DictStructuralEquality.beni`
 prints the answer so that the finding is a fact rather than an argument, and report 19 is where it
 goes.
 
-### Stretch, only after S8
+### Stretch, only after the measurement
 
 1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not
    the "keep several constraints per name" the Zulip thread described (report 18 §2.2, corrected by
@@ -3375,7 +3374,7 @@ goes.
 ## Appendix A. Decisions made while writing
 
 The plan left each of these open or under-specified. Each row is reversible by editing this
-document; the alternative is recorded so the manager can take it.
+document; the alternative is recorded so the owner can take it.
 
 **A.1 — `where` is a top-level-only clause.** A `let` annotation takes none, and a `where` after one
 is `unexpected_token` rather than a code of its own. *Why:* evidence parameters are a property of a
@@ -3499,7 +3498,7 @@ The rows below were added on 2026-09-17, after a read-only review of the first d
 M-numbers in brackets are that review's.
 
 **A.21 — a `where` constraint's type may mention only variables of the annotated type** (§2.4,
-§10.6 trigger (b)) [B4]. *Why:* a scheme's quantifiers are discovered by walking its **body**, so a
+§10.6 trigger (b)). *Why:* a scheme's quantifiers are discovered by walking its **body**, so a
 variable occurring only inside a constraint has no index in §7.2's canonical evidence order, and
 caller and callee would disagree about the evidence list with no diagnostic anywhere.
 *Alternative:* quantify constraint-only variables too, which means the evidence order depends on
@@ -3507,7 +3506,7 @@ constraint text as well as body text and makes every interface wider; or allow t
 program later at the first call, which is the error-location failure report 18 §2.4 already
 complains about.
 
-**A.22 — the operator-as-function form dispatches** (§3.1) [M1]. `(==)`, `(/=)`, `(<)`, `(<=)`,
+**A.22 — the operator-as-function form dispatches** (§3.1). `(==)`, `(/=)`, `(<)`, `(<=)`,
 `(>)`, `(>=)` lower to a lambda over the corresponding `method_call`, so they carry the same
 constraint the operator does. *Why:* the live fixture
 `tests/corpus/parse/good/OperatorsAll.beni:30` builds a list of all six, and the only two other
@@ -3515,10 +3514,10 @@ readings are worse — a reference to `Basics.eq` would silently be structural e
 the form would delete a documented part of `language.md` §6.5. *Alternative:* refuse the six
 comparison operators in parenthesised form (`operator_not_a_function`), which is a language change.
 
-**A.23 — derivation for a nominal type is eager** (§6.3.1 step 4, §8.5, §9.4) [B2]. Every declared
+**A.23 — derivation for a nominal type is eager** (§6.3.1 step 4, §8.5, §9.4). Every declared
 nominal type gets `eq` and `compare` derived in its declaring module, used or not, subject to
 §6.3.1's method-specific exclusion: a public payload method stops structural descent
-for that method (row 72 clarification, 2026-09-22). *Why:* `Dispatch` is per module and built at the end
+for that method (clarified 2026-09-22). *Why:* `Dispatch` is per module and built at the end
 of that module's own check, and the declaring module is checked and lowered first, so a use site
 cannot request anything from it; deriving on demand would make the declaring module's bytes depend
 on which other module asked first, which varies with `--jobs` (CLAUDE.md rule 5). *Alternative:*
@@ -3529,14 +3528,14 @@ inherit. *Cost:* every type ships two functions until DCE exists — which is wh
 number exact (§11).
 
 **A.24 — canonical evidence order follows `Schemes.Writer`'s recorded order, not the annotation's
-source order** (§7.2) [B4]. *Why:* the writer sorts a record's fields by name text before descending
+source order** (§7.2). *Why:* the writer sorts a record's fields by name text before descending
 (`src/check/Schemes.zig:295`), so discovery order and source order differ for any scheme with a
 record in it; both sides must compute the order from the same artifact, and the scheme record is the
 only artifact both sides have. *Alternative:* record an explicit evidence order in the interface as
 its own list, which is more bytes in the record M4 hashes and one more thing to keep in sync.
 
 **A.25 — a constrained value used as a value is its eta-expansion, unless it takes no parameters**
-(§8.2) [B1]. Evidence whose target itself takes evidence — a constrained `pub` value, a derived
+(§8.2). Evidence whose target itself takes evidence — a constrained `pub` value, a derived
 function for a parametric or structural type — is emitted as `(l, r) => <name>(<its evidence…>, l,
 r)`, and so is a bare reference to a constrained value. **At beni arity 0 the eta-expansion is the
 call itself** — `<name>(<its evidence…>)` and never `() => <name>(<its evidence…>)` — because a
@@ -3547,7 +3546,7 @@ a call in that position passes a result, not a function. *Alternative:* a runtim
 helper, which is exactly the adapter `backend.md` §6 deleted and the one helper `boundary.md`'s wall
 would have to readmit.
 
-**A.26 — `String` and `Char` ordering is a call, not `<`** (§3.2, §9.1) [B5]. `primitive
+**A.26 — `String` and `Char` ordering is a call, not `<`** (§3.2, §9.1). `primitive
 string_compare` emits `String$compare` and `primitive char_compare` a code-point comparison.
 *Why:* `core/String.js:40-57` orders by Unicode scalar value and says in its own comment that this
 is what `<` on JavaScript strings is not; `"a" < "b"` and `String.compare a b` must agree.
@@ -3591,7 +3590,7 @@ assert fires. *Cost:* a constrained `let` helper used at two types is refused ra
 instantiated twice; §11 carries the row and
 `tests/corpus/check/bad/LetConstrainedTwice.beni` the fixture. **Amended by A.49**: the refusal is a
 `type_mismatch` at the second use with a hint of its own, not `method_constraint_mismatch`.
-**Superseded by D5 (R14, 2026-09-27):** a `let` function binding generalises and promotes its own
+**Superseded 2026-09-27 by the owner's decision that a constrained `let` function generalises:** a `let` function binding generalises and promotes its own
 requirements; I15 keeps an outer receiver's method-type variables outer, which is the case the side
 table existed for, so there is still no side table (`checker-v2.md` §8.4). A.31's single level is
 superseded with it: `param let <inst> k` names an enclosing `let`'s parameter (§8.1 as amended).
@@ -3662,8 +3661,8 @@ one number, which would charge dispatch for the cost of dropping `comparable` an
 
 ---
 
-The rows below were added on 2026-09-17, after the read-only review of S2 (the front end). Each is a
-**text correction**: the code S2 landed is what the row now describes, and the earlier wording was
+The rows below were added on 2026-09-17, after the read-only review of the front end. Each is a
+**text correction**: the code that landed is what the row now describes, and the earlier wording was
 written before the code existed. Nothing here changes a decision.
 
 **A.39 — `dump --stage=bir` prints `method_call %2 .eq [%3] (==)`** (§1.4) [m13]. The method name
@@ -3722,11 +3721,11 @@ over-stated. *Alternative:* have `Lower` record the six-bit set per file during 
 and hand it to `Graph.build`, which removes the serial scan entirely — worth doing if that scan ever
 shows in a profile, and not worth the extra field in `Bir` before it does. *New obligation:* a
 minted edge inside `core` can create an `import_cycle` from a literal, which §5's preamble makes a
-condition on the S6 rewrite and §11 records.
+condition on the `core/` rewrite and §11 records.
 
 ---
 
-The rows below were added on 2026-09-17, after the read-only review of S3 (the checker). Three of
+The rows below were added on 2026-09-17, after the read-only review of the checker. Three of
 them fix a miscompile the first implementation shipped; the rest are decisions the review asked to
 be written down rather than left in the code.
 
@@ -3744,13 +3743,13 @@ types into a name; or key the function on `(shape, element targets)`, which is t
 another name and makes M4's shape count meaningless.
 
 **A.47 — another module's nominal method is `Target.ext_derived`, not a row in this module's
-`derived` table** (§7.1, §7.3) [M11]. *Why:* derivation for a nominal type is eager and happens in
-the DECLARING module (A.23), so `derived` means exactly "the functions this module emits" and S5 can
+`derived` table** (§7.1, §7.3). *Why:* derivation for a nominal type is eager and happens in
+the DECLARING module (A.23), so `derived` means exactly "the functions this module emits" and the emitter can
 walk it without asking which rows are really references. The name is `<Module>$<Type>$<kind>` by
 §8.5, which the `TypeId` and its `Types.Entry.module` already determine; the variant carries the
 module explicitly so the table stays self-describing for a backend that holds no type store.
 *Alternative:* a `derived` row with an `owner` flag, which makes `derived <i>` mean two things and
-puts rows S5 must skip in the middle of the list it emits.
+puts rows the emitter must skip in the middle of the list it emits.
 
 **A.48 — a cross-module alias is TRANSPARENT** (§1.2, §6.3, §11). The earlier rows said it was
 `no_methods_on_shape` "because looking it through needs `Interface.alias_body`, which is not
@@ -3762,7 +3761,7 @@ the behaviour is strictly better and matches §1.2's own rule that an alias is t
 `check/bad/MethodThroughImportedAlias/`, was never written and is not needed.
 
 **A.49 — §6.4 rule (a)'s boundary surfaces as `type_mismatch`, with a hint of its own** (§10.5,
-§11, A.30) [M7]. A `let` binding that is not generalised over a constrained variable has its type
+§11, A.30). A `let` binding that is not generalised over a constrained variable has its type
 fixed by its first use, so the second use is an ordinary argument mismatch and never reaches
 `method_constraint_mismatch`. *Why not make it reach that code:* by then the constraint has been
 discharged against the first use's type, and re-raising it would mean keeping a second, parallel
@@ -3772,32 +3771,32 @@ method, and the fix. *Alternative:* leave the generic hint, which told the autho
 arithmetic operators work on numbers only.
 
 **A.50 — `compare` on a `foreign type` with no `pub compare` is `unknown_method`; `eq` on an
-`equatable` one is not** (§3.3) [M1]. Derivation needs constructors to walk and a `foreign type`
+`equatable` one is not** (§3.3). Derivation needs constructors to walk and a `foreign type`
 has none, so §3.3's last clause applies — except that §3.4 makes the `equatable` marker mean
 exactly "has an `eq`", which is the bridge `core/List.beni` leans on until §5.2 gives it a
 `pub foreign eq`. *Why:* without the bridge every program comparing a list stops compiling, and
-§5.2 is S6; with it applied to `compare` as well, `xs < ys` would derive over a representation the
-compiler cannot see. *Alternative:* land §5.2 in S3, which is a `core/` signature change and a
-different slice. §11 carries it as S6's obligation.
+§5.2 is the `core/` rewrite; with it applied to `compare` as well, `xs < ys` would derive over a representation the
+compiler cannot see. *Alternative:* land §5.2 with the checker, which is a `core/` signature change and a
+different piece of work. §11 carries it as the `core/` rewrite's obligation.
 
-**A.51 — the S4 shim REFUSES what it cannot honour** (§8) [B2]. `Lower.Input` gains
+**A.51 — the interim backend shim REFUSES what it cannot honour** (§8). `Lower.Input` gains
 `dispatch`, and the shim reports `not_implemented` for any site it cannot emit correctly: it keeps
 `field`, `==`/`/=` against a structural answer (`primitive strict_eq`, a derived function, or
 `Basics.eq` through the `equatable` bridge — `core/Basics.js`'s `eq` IS that structural walk), and
 `<` and friends against `primitive num_compare`. Everything else — `char_compare`,
 `string_compare`, a derived `compare`, a user `pub eq`, and every evidence site — refuses. *Why:*
-S3 made `T 1 < T 2`, `( a, b ) < ( c, d )` and `"a" < "b"` CHECK, and the shim emitted `Basics$lt`
+the checker made `T 1 < T 2`, `( a, b ) < ( c, d )` and `"a" < "b"` CHECK, and the shim emitted `Basics$lt`
 on objects and strings for all three; `master` rejected them and printing a wrong answer is worse
 than either. `backend.md` §1 ships the language in two halves and the missing half must say so.
 *Alternative:* the reviewer's narrower list (`field`, `strict_eq`, `num_compare` only), which also
 refuses `==` on records, ADTs and lists — programs `master` compiled correctly through the same
 `Basics$eq`.
 
-**A.52 — there is no `check/depth/ConstraintChain` pair** (§6.3) [M10]. The derivation recursion is
+**A.52 — there is no `check/depth/ConstraintChain` pair** (§6.3). The derivation recursion is
 guarded, but every route to that guard is cut off at `Types.Builder.max_depth` (512) first, which
 `AnnotationOk`/`AnnotationDeep` already pin — and §6.3's guard is written at `Parse.max_depth + 104`
 for the same reason `Constrain`'s and `Solve`'s are: the parser refuses the file before the checker
-can reach it, which `generate.sh` has recorded since M2b. *Why:* a pair named for the 4200 guard
+can reach it, which `generate.sh` records. *Why:* a pair named for the 4200 guard
 that actually measured the 512 one is worse than none. *Alternative:* lower the derivation guard to
 something reachable, which would refuse programs for being deep rather than for being wrong.
 
@@ -3806,13 +3805,13 @@ clause** (§6.2, §6.3). Not a `where` clause and not the table: a third row on 
 arms. *Why:* `number` is `Int` or `Float` and §3.2 gives both the same answer, and §3.4 says
 `equatable` means exactly "has an `eq`" — and without it `core/Basics.beni`'s `compare`, `max`,
 `min` and `clamp` and `core/List.beni`'s `member` stop checking the moment `<` and `==` become
-methods, while their rewrite is §5 and slice S6. The constraint is DETACHED when the bridge answers
+methods, while their rewrite is §5. The constraint is DETACHED when the bridge answers
 it, so `isEven n = n < 1` still publishes `number -> Bool` and not
-`number -> Bool where number.compare : …`. *Alternative:* rewrite those five declarations in S3,
-which is the `core/` signature change S6 owns.
+`number -> Bool where number.compare : …`. *Alternative:* rewrite those five declarations with the checker,
+which is the `core/` signature change the rewrite owns.
 
 **A.54 — `compare` has a transitive gate of its own, and a `foreign type` passes it only on a
-`pub compare` of its own whose FIRST PARAMETER is that type** (§3.3, §6.3, A.50) [S3]. `Types.Entry`
+`pub compare` of its own whose FIRST PARAMETER is that type** (§3.3, §6.3, A.50). `Types.Entry`
 grows a `comparable` bit beside `equatable`, settled by the same fixpoint over the same edges: an
 `adt` or `alias` is comparable when every named type its body reaches is, and a `foreign type` is
 comparable when §3.2's table answers for it or its module declares that `pub compare`. The gate is
@@ -3830,24 +3829,24 @@ read from everywhere, and a per-module answer is a different data structure. *Kn
 change:* a same-module `<` that reached a private `compare` on a `foreign type` is now refused, and
 `type W = W Fn` whose `Fn` holds a function but whose module supplies a `pub compare` is refused
 too (HEAD accepted it with `part 0 ext Fns compare`) — consistent with `equatable`, and a change.
-The latter refusal is superseded by the row 72 correction (2026-09-22): §3.3's
+The latter refusal is superseded by the correction of 2026-09-22: §3.3's
 recursive method lookup honors the payload's public method independently for
 `eq` and `compare`; structural `has_function` remains diagnostic information.
 Fixtures: `check/bad/core/CompareOnWrappedForeign`, `check/bad/core/CompareOnForeignWithUnrelatedCompare`,
 `check/bad/PrivateForeignCompare/`, and the positive `dispatch/core/ForeignPubCompare`.
 
-**A.55 — a NULLARY `foreign type` never gets a derived row** (§6.3, §8.5, A.50, A.60) [S3]. Neither
+**A.55 — a NULLARY `foreign type` never gets a derived row** (§6.3, §8.5, A.50, A.60). Neither
 the eager pass nor a use mints `derived <i> eq|compare <Foreign>` for one: there are no constructors
-to walk and nothing underneath it, so the row would name a function S5 has nothing to emit for. A
+to walk and nothing underneath it, so the row would name a function the emitter has nothing to emit for. A
 parametric one is A.60 and keeps its row. What answers `eq` on an `equatable` one is
 `core/Basics.beni`'s `eq`, the one structural walk, which is what the `equatable`-rigid bridge
-already uses and what the S4 shim emits for every `==` (A.53). *Why:* a table that names a function
+already uses and what the interim shim emits for every `==` (A.53). *Why:* a table that names a function
 nobody writes is worse than one that says `err`, and §3.4's marker is a promise about a
 representation the compiler cannot see. *Alternative:* emit a stub that throws, which trades a
 build-time hole for a runtime one. Fixture: `dispatch/core/NoForeignDerivedRow`.
 
 **A.56 — a constraint derives by its NAME, not by the surface it came from** (§3.3 step 2, §1.3
-rule 2) [S3]. `isWellKnown` is `name ∈ { eq, compare }` and `origin != .dot_call`: an operator, a
+rule 2). `isWellKnown` is `name ∈ { eq, compare }` and `origin != .dot_call`: an operator, a
 `where` clause and a return-type dispatch are all declarative — the author asked for the method by
 the name the compiler owns — and all three derive, while a hand-written `x.eq y` stays
 `unknown_method`, which is the one exclusion §1.3 rule 2 makes. *Why:* testing `origin ==
@@ -3866,7 +3865,7 @@ and a module that declares its own `eq` still wins (§3.3 step 1). A dot-call on
 the field call. Fixtures: `run/DotCallCompareDerivedUnannotated.beni` and its siblings.
 
 **A.57 — every instantiation's constraints get an obligation, and a constraint is answered exactly
-once** (§6.2, §6.3) [S3]. Both halves are one decision. **Every instantiation**: a local copy
+once** (§6.2, §6.3). Both halves are one decision. **Every instantiation**: a local copy
 (`tagInstantiated`) and an imported scheme (`Schemes.instantiate`, through `importedValue`) each
 register one obligation per constraint they create, instead of waiting for Rule U3 to carry one in
 when the variable meets a structure. **Exactly once**: the solver records which constraints have
@@ -3882,7 +3881,7 @@ collapsed were a symptom. Fixtures: `dispatch/LiteralEvidence`,
 `dispatch/LiteralEvidenceAcrossModules/`, `check/bad/WhereCallOnUnorderableType`.
 
 **A.58 — `has_function` is a third bit, because §10.3 has two sentences and the gates have one
-answer** (§10.3, A.23) [S3]. `Types.Entry` carries "a function is reachable inside this type",
+answer** (§10.3, A.23). `Types.Entry` carries "a function is reachable inside this type",
 settled by the same fixpoint the other two use and spreading the other way: false by default, true
 along the edges from any type whose own body holds a function. `equatable` and `comparable` each
 fold several causes into one bit and cannot say which fired; this one can, so §10.3 keeps its
@@ -3899,7 +3898,7 @@ the walk report which type failed and re-derive the reason at the message, which
 again at every use instead of once per session. Fixtures: `check/bad/CompareOnTypeHoldingFunction`,
 `check/bad/IndirectFunctionPayload`, `check/bad/IndirectFunctionAcrossModules/`.
 
-**A.59 — the A.53 bridge reaches inside a derived shape** (§6.3, A.53) [S3]. `targetFor`'s `.flex`
+**A.59 — the A.53 bridge reaches inside a derived shape** (§6.3, A.53). `targetFor`'s `.flex`
 arm asks `builtinRigidTarget` before it falls back to a fresh constraint, so a `number` position of
 a derived tuple or record answers `num_compare` and a `equatable`-marked one answers `Basics.eq` —
 the same two answers §3.2 and §3.4 give at the top level. *Why:* without it every literal position
@@ -3910,7 +3909,7 @@ no business making inside a shape it derived. Fixture: `dispatch/LiteralEvidence
 derived 0`, parts `num_compare`).
 
 **A.60 — a PARAMETRIC `foreign type` keeps its derived row; A.55's bridge is for the nullary ones**
-(§6.3, §8.5, A.51, A.55) [S3]. `List a` gets `ext_derived List.List eq` with one part per argument,
+(§6.3, §8.5, A.51, A.55). `List a` gets `ext_derived List.List eq` with one part per argument,
 exactly as it did before A.55; only a `foreign type` with no arguments answers `eq` through
 `Basics.eq` directly. *Why:* the row is the only place an argument's method is NAMED, and an
 argument may be a type with a user `pub eq`. Sending `List Id` to the structural walk compared
@@ -3924,7 +3923,7 @@ the checker and duplicates it. Fixture: `dispatch/UserEqInsideParametric` (and `
 `dispatch/WhereClauseDerives`, which moved back to the row shape `master` had).
 
 **A.61 — the synthesised nominal base takes a DOUBLE separator: `<T>$$eq`, `<T>$$compare`,
-`<T>$$order`** (§8.5) [S5 fix]. A printed name is the module path with its dots turned into `$`,
+`<T>$$order`** (§8.5). A printed name is the module path with its dots turned into `$`,
 then `$`, then the base, so `<T>$eq` puts the synthesised names and the module's own values in one
 flat namespace. Module `Shapes` with a `pub type Box` and the submodule `Shapes.Box` with a
 `pub eq` then both spell `Shapes$Box$eq`, and a consumer importing both emits two `import`s of one
@@ -3940,7 +3939,7 @@ does not collide with its values". Every `emit/*.js` golden was re-blessed for i
 the names moved.
 
 **A.62 — `Lower.Input.types` is a name, declaration AND derivability service** (§8.0, §8.5, A.51,
-A.55) [S5 fix]. §8.0 says the lowerer reads targets and never types, and that remains true of every
+A.55). §8.0 says the lowerer reads targets and never types, and that remains true of every
 DECISION about which function a call runs. But `Lower.derivedBodyExists` reads `Types.Entry.kind`
 and `Types.Entry.equatable` to answer whether the module owning an `ext_derived` target actually
 wrote a body for it — a `foreign type` has no constructors, so no module did — and that is the
@@ -3952,7 +3951,7 @@ is A.60's rejected alternative under a different name — the question is about 
 backend is where it is asked.
 
 **A.63 — the eager pass's step-1 exclusion requires `pub`, and §3.2's table is consulted before it**
-(§3.2, §3.3, §8.5, A.23, A.47) [S5 fix]. Two corrections to `Solve.deriveOne`, both of them the
+(§3.2, §3.3, §8.5, A.23, A.47). Two corrections to `Solve.deriveOne`, both of them the
 same mistake: it asked a narrower question than a USE asks.
 
 A use in another module resolves `(T, name)` through `Interface.findValue`, which maps only the
@@ -3980,7 +3979,7 @@ nothing to do with derivation. Fixtures: `dispatch/PrivateEqStillDerives`, and i
 carries the derived rows §3.2's table asks it for".
 
 **A.64 — `Target.top` and `Target.ext` carry a `parts` range, EMPTY at a call site** (§7.1, §7.3,
-§8.2) [S6a]. A constrained value named from inside a `parts` tree has nowhere to put its own
+§8.2). A constrained value named from inside a `parts` tree has nowhere to put its own
 evidence: §7.2 numbers evidence slots against an INSTRUCTION, and a part position has none.
 `{ p : { x : Int }, q : List Int } == …` wrote `part 1 ext List eq` with nothing under it, and once
 §5.2 gave `List` a `pub foreign eq … where a.eq` the emitted call to `List$eq` was one argument
@@ -3997,7 +3996,7 @@ wrong parameter. Fixtures: `dispatch/ExtWithParts`, `run/ConstrainedPartEvidence
 own evidence".
 
 **A.65 — the intermediate `Order` of a lexicographic body is numbered per FUNCTION, not per block**
-(§9.2, §9.3, §9.4) [S6a]. §9's listings write `const o0` in each `switch` arm and brace the arms;
+(§9.2, §9.3, §9.4). §9's listings write `const o0` in each `switch` arm and brace the arms;
 the printer gives a `switch` arm no braces (`js/Print.zig`'s `switch_case`), so two arms of one
 `switch` are one block scope in JavaScript and `const $o$0` in each is
 `SyntaxError: Identifier '$o$0' has already been declared` — after a build that exited 0. A counter
@@ -4007,7 +4006,7 @@ teach the printer to brace a `switch` arm whose body declares anything, which is
 `run/DerivedOrdering`.
 
 **A.66 — an evidence slot whose receiver type nothing ever determines is answered by the A.53
-bridge** (§6.4, §7.2, §8.2) [S6a]. `[] == []` is the whole of it. Once `List` declares
+bridge** (§6.4, §7.2, §8.2). `[] == []` is the whole of it. Once `List` declares
 `pub foreign eq … where a.eq`, §7.2 numbers a site for the element's `eq` — and the element type of
 two empty lists is a variable no use constrains, so the constraint is neither DISCHARGED, there
 being no type to discharge it against, nor PROMOTED, the declaration's own type not mentioning it.
@@ -4020,7 +4019,7 @@ handed over can only be called on a value of that type, and no such value exists
 that gets there. *Alternative:* report the program as ambiguous, which would reject `[] == []`.
 *Not done for a name that is not well known:* a user's own `where` clause on an undetermined
 receiver gets nothing, because inventing a function for it would be inventing a meaning. Fixtures:
-`run/ListElementEq` (the `[] == []` line), `dispatch/ErrParts`. **It gets a MESSAGE, though** [S6b]:
+`run/ListElementEq` (the `[] == []` line), `dispatch/ErrParts`. **It gets a MESSAGE, though**:
 "nothing" was a silent `null`, so `pub eq : Box a, Box a -> Bool where a.describe : a, Int -> String`
 applied at `Box 1 2` checked clean and emitted a call one argument short, and the only wall left was
 `Lower.evidenceShapeOk`'s `internal` — a compiler bug reported about a program whose only fault is
@@ -4028,7 +4027,7 @@ that it never says which type it means. It is now §10.1's undetermined-receiver
 `check/bad/WhereNonWellKnownAtLiteral`.
 
 **A.67 — an `err` part is answered by KIND, and `compare` has no structural walk to fall back on**
-(§9, A.51, A.53, A.59) [S6a]. `err` means a position nothing ever inhabits, and S5 answered one
+(§9, A.51, A.53, A.59). `err` means a position nothing ever inhabits, and the first emitter answered one
 with `Basics.eq` everywhere — a `Bool` where a `compare` body promised an `Order`, and a function
 of the wrong result type in an evidence slot. Inside a `compare` body an `err` position is the
 string `"EQ"`, which is what leaves a lexicographic sequence reading the position after it; in
@@ -4040,7 +4039,7 @@ structurally. So the `compare` arm refuses outright. Fixture: `run/DerivedOrderi
 lines, whose `x` slot is an `err` the program never reaches.
 
 **A.68 — one instruction's evidence slots are numbered by a running cursor, never restarted**
-(§7.2, §7.3) [S6a]. A nested instantiation used to begin again at a hard-coded 1, so
+(§7.2, §7.3). A nested instantiation used to begin again at a hard-coded 1, so
 `[ [ [ Box "a" "b" ] ] ] == …` wrote five `site N 1` rows on one instruction. The EMISSION was
 right: `Lower.evidenceArguments` walks the sorted list as a pre-order tree and reads no index but
 the callee's 0, and the sort is stable over an insertion order that happened to be pre-order. What
@@ -4050,7 +4049,7 @@ second when a mutually recursive group forwards its shared constraint — so eit
 dropped a DIFFERENT slot's site as a repeat of this one and emitted a call an argument short.
 `Schemes.Site` therefore carries the instruction's cursor rather than a base, and
 `Solve.evidence_next` owns one per instruction. *Why record it:* the defect was invisible in every
-`run/` and `emit/` golden and pre-existing on `cb63a46`; what made it worth fixing now is that
+`run/` and `emit/` golden and pre-existing; what made it worth fixing now is that
 §5.2's `pub foreign eq … where a.eq` on `List` made it reachable from every list equality with a
 constrained element, which is most of them. *Owed, and NOT fixed here:* the numbering is a running
 cursor and therefore ALLOCATION order, which is breadth-first — an instruction with two top-level
@@ -4059,7 +4058,7 @@ slots that each nest, `pair [ [ 1 ] ] [ [ 2 ] ]` under
 `b` instead of between `a` and `b`, and the pre-order walk then reads them as `a`'s grandchildren.
 Distinct indices make that visible in `--stage=dispatch` where the repeated `1`s hid it; the fix is
 a depth-first discharge, which is a change to the obligation drain and not to the numbering.
-Fixture: `dispatch/NestedEvidenceIndices`. **Now fixed, and not by the drain** [S6b]: the drain is
+Fixture: `dispatch/NestedEvidenceIndices`. **Now fixed, and not by the drain**: the drain is
 pre-order where it counts — each site records its PARENT slot and `Dispatch.finish` orders one
 instruction's run by the path from its root, so the flat list is the pre-order §8.2 reads however
 the cursor numbered it (§7.1, §7.2). A depth-first discharge would NOT have been enough on its own,
@@ -4076,7 +4075,7 @@ number, `TypeError: Cannot read properties of undefined` from inside `core/List.
 `dispatch/TwoSlotsNested`, `run/TwoSlotsNested`.
 
 **A.69 — `List`'s `compare` is a hand-written loop in `core/List.js`, and its sibling takes
-evidence count + declared arity** (§5.2, §9.5) [S6b]. *Why:* `List a` is a `foreign type` with no
+evidence count + declared arity** (§5.2, §9.5). *Why:* `List a` is a `foreign type` with no
 constructors, so there is nothing to derive a body from, and the shape of a cons cell is the
 emitter's. The loop rather than recursion is `foldr`'s reason: a list long enough to be interesting
 is longer than the JavaScript stack. *The risk this row stated because nothing checked it* — the
@@ -4086,14 +4085,14 @@ a function against a list — **is checked since 2026-09-18** (`boundary.md` §4
 for `eq`, and the build now refuses it first. *Alternative rejected:* deriving `compare` for `List` from a synthetic two-constructor shape,
 which would put the emitter's cons-cell layout into the checker's table.
 
-**A.70 — `Dict.empty` is a constant and `Dict.singleton` is unconstrained** (§5.3, O-1) [S6b].
+**A.70 — `Dict.empty` is a constant and `Dict.singleton` is unconstrained** (§5.3, O-1).
 *Why:* neither compares anything, so neither raises `k.compare`, and §6.4's `constrained_constant`
 — which is what the plan's `Dict.empty : () -> Dict k v` was a precaution against — never applies.
 The same holds for `Set.empty` and `Set.singleton`. *What it buys:* `Dict.empty` reads as a value
 in a `foldl` seed, which is where the corpus uses it eight times over.
 
 **A.71 — `Dict`'s private helpers keep their annotations and spell the `where` clause out**
-(§5.3, O-3) [S6b]. `getHelp`, `insertHelp`, `removeHelp` and `removeHelpEQGT` could have dropped
+(§5.3, O-3). `getHelp`, `insertHelp`, `removeHelp` and `removeHelpEQGT` could have dropped
 their annotations and let the constraint arrive by inference, as §5.3's prose suggests. They keep
 them. *Why:* `removeHelp` and `removeHelpEQGT` are mutually recursive and both constrained, which
 is the case `run/ConstrainedMutualRecursion.beni` exists for — an inferred `where` on a binding
@@ -4101,7 +4100,7 @@ group is the least-tested path in §6.4, and core is not where to exercise it. A
 also what a reader needs: the four helpers are where the comparator argument used to be threaded,
 and the clause is what replaced it.
 
-**A.72 — the backend's derived-method refusals and A.51's bridge are deleted** (§8, O-8) [S6b].
+**A.72 — the backend's derived-method refusals and A.51's bridge are deleted** (§8, O-8).
 `Lower.refuseDerived`, `Lower.structuralEq` and their two `not_implemented` messages are gone, and
 every site that called them reports `internal` with one message instead. *Why:* both existed for a
 derived target no module writes a function for, and after §5.2 there is none. Every shape §9
@@ -4114,7 +4113,7 @@ only to decide that question. The one position still answered by that walk is `p
 the slot nothing ever inhabits (A.66), and the `--core-root` scenario in `blackbox_test.zig` reaches
 it through `None == None` now rather than through a list.
 
-**A.73 — the nested-module build assertion moved into the test's own world** (O-12) [S6b].
+**A.73 — the nested-module build assertion moved into the test's own world** (O-12).
 `build_test.zig` asserted `out/core/Dict/Int.mjs` to prove that a module in a subdirectory comes out
 in a subdirectory of `out/`; §5.7 deletes that module. *Why a new test rather than a new path in the
 old one:* the claim is about the emitter and not about core, and the old assertion never had a
@@ -4125,7 +4124,7 @@ specifier the importer reaches it by. `build.zig`'s comment about why embedded c
 subdirectories is left standing and made hypothetical: the mechanism outlives the modules that used
 it.
 
-**A.74 — `Dict` and `Set` get no `eq` and no `compare` of their own** (§11, O-5) [S6b]. *Why:* a
+**A.74 — `Dict` and `Set` get no `eq` and no `compare` of their own** (§11, O-5). *Why:* a
 `pub eq` comparing `toList` would be correct and is two lines, but it is a change to what the
 language's standard library promises rather than to static dispatch, and the spike is measuring the
 latter. The derived answer — a walk of the red-black tree, insertion order and all — is left in
@@ -4133,7 +4132,7 @@ place and printed by `tests/corpus/run/DictStructuralEquality.beni`, so the adop
 made against a number rather than against a guess. §11 carries the row and report 19 is where it
 goes.
 
-**A.75 — a rebuilt constraint set REDIRECTS the indices it superseded** (§6.2, §6.3, A.57) [S6b].
+**A.75 — a rebuilt constraint set REDIRECTS the indices it superseded** (§6.2, §6.3, A.57).
 A set is a half-open range of an append-only table and is never edited (§6.1 invariant 2), so Rule
 U1's union, an attach that joins two constraints of one name, and an extend that cannot append in
 place all COPY their inputs onto a fresh range. Everything that answers a constraint is keyed on
@@ -4153,7 +4152,7 @@ as dangerous as a join — `put`'s `k.compare` and `tag`'s `k.eq` are different 
 variables, so nothing is joined, and the union that copies both onto one range stranded both
 inputs just the same. *Alternative rejected:* collapsing duplicate rows at `emitSites` or in
 `Dispatch.finish`, which hides a disagreement as readily as a repetition — the same alternative
-A.57 rejected and the same dedup S3 removed. *One more defect it closed:* the obligation a `method`
+A.57 rejected and the same dedup the checker work removed. *One more defect it closed:* the obligation a `method`
 node registers named `lastConstraintIndex`, the last constraint of the rebuilt SET, which is the
 one just attached only when its name happens to sort last; `attachConstraint` now returns the index
 its constraint's sites live at and the obligation names that. Fixtures:
@@ -4165,7 +4164,7 @@ and `detachConstraint` redirects what it KEEPS, because dropping one constraint 
 and copies the others exactly as a join does.
 
 **A.76 — a resolution instantiates the callee's `where` clause once per INSTRUCTION the constraint
-answers** (§6.3.1, §7.2, A.68, A.75) [S6b]. `methodOnApp`'s two instantiating arms — the module
+answers** (§6.3.1, §7.2, A.68, A.75). `methodOnApp`'s two instantiating arms — the module
 rule's `top` and the interface's `ext` — used to take the single `origin` the obligation was
 registered at and number one set of evidence slots against it. That was right while a constraint
 answered one instruction, and A.75 is exactly the change that made one constraint answer several:
@@ -4185,7 +4184,7 @@ fixture carries `annotatedDict` beside `nestedDict`: pinning `k` discharges each
 any join happens. Fixtures: `dispatch/JoinedConstraintNested`, `run/NestedConstrainedListKeys`.
 
 **A.77 — the A.53 bridge is tested BEFORE §10.8, so a `number` variable dispatches with no `where`
-clause** (§4.1, §6.3, §8.4, A.53) [S7]. The rigid arm of `resolveMethod` runs `findConstraint`,
+clause** (§4.1, §6.3, §8.4, A.53). The rigid arm of `resolveMethod` runs `findConstraint`,
 then `builtinRigidTarget`, then the `.type_dispatch` check, so `pub sameNum : number, number ->
 Bool` with body `number.eq x y` and no clause at all resolves to `primitive strict_eq` and
 `evidence=0` — it does **not** take §4.1's third table row to `type_dispatch_needs_annotation`.
@@ -4200,7 +4199,7 @@ program to do it. Fixtures: `run/DecodeInto`'s `sameNum` line and `dispatch/Deco
 the `primitive strict_eq` site beside the `evidence 0` ones.
 
 **A.78 — `run/` is single-file, so `run/DecodeInto`'s second dispatch target is a core type** (§4,
-§11, §7.3) [S7]. The corpus walker gives projects to `check/good`, `check/bad` and `dispatch` only
+§11, §7.3). The corpus walker gives projects to `check/good`, `check/bad` and `dispatch` only
 (`Kind.hasProjects`), and §11's module rule forbids two types in one module from both declaring a
 `fromList`, so a single-file fixture cannot hold two user targets for one method. The second target
 is `core/String.beni`'s `fromList : List Char -> String`, against the fixture's own
@@ -4211,10 +4210,10 @@ no dispatch content, or split the second target into a `dispatch/` project and l
 of the second arm. `dispatch/DecodeIntoAcrossModules` is that project, and it is a complement rather
 than a replacement: it sees the interface round trip, it does not see the answer come out.
 
-**A.79 — `typeDispatchExpr` keeps five arms no beni program can reach** (§8.4, §6.7) [S7]. The
+**A.79 — `typeDispatchExpr` keeps five arms no beni program can reach** (§8.4, §6.7). The
 constraint root of a `type_dispatch` is always a rigid, so the solver can only ever hand it
 `evidence k`, a `primitive` (A.77) or `err`; the lowerer nevertheless has `top`, `ext`, `derived`,
-`ext_derived` and `field` as well. S7 read them rather than exercising them, because there is no
+`ext_derived` and `field` as well. They were read rather than exercised, because there is no
 program that gets there — the only way in is a table that disagrees with the solver. *Why keep
 them:* `top` and `ext` are free, on the same path as `evidence`; `field` is a wall that names the
 bug (`field_without_receiver`) where a narrowed `switch` would have to crash without a region; and
@@ -4227,7 +4226,7 @@ spike's rule is that every defect gets a fixture, and this is the complement —
 why an absence of fixtures is correct.
 
 **A.80 — the `.any` arm of §10.1's undetermined-receiver message belongs to return-position
-dispatch** (§10.1, §6.4, A.66) [S7]. `undeterminedMethodReceiver` names the receiver's flex `kind`,
+dispatch** (§10.1, §6.4, A.66). `undeterminedMethodReceiver` names the receiver's flex `kind`,
 and the three arms have very different reach: `.number` is a literal (`WhereNonWellKnownAtLiteral`),
 `.appendable` is a `String`-or-`List`, and `.any` is "a type variable no use of this value
 determines" — which an ARGUMENT-position constraint can hardly produce, because passing a value is
@@ -4240,7 +4239,7 @@ what is left to answer. *Why it is an error and not an invented answer:* A.66's 
 Fixture: `check/bad/TypeDispatchUnpinnedResult`.
 
 **A.81 — folding a constraint back onto the set it is already in costs nothing** (§6.3, §7 M2,
-A.57, A.75) [S8-fix]. §6.3's `flex` row ends every method obligation whose receiver is still a
+A.57, A.75). §6.3's `flex` row ends every method obligation whose receiver is still a
 variable by re-attaching its constraint to that variable, and `attachConstraint` saw a name its set
 already carried and took the JOIN path: the whole set copied onto a fresh range, `joinConstraint`
 merging a site list with itself, and `adopt` redirecting every index to the copy of itself. The
@@ -4252,12 +4251,12 @@ chain of §7 M2 is the input built to walk into it — link k defers k constrain
 is three comparisons at the top of `attachConstraint` — the caller's index lies inside the root's
 current range and carries `c`'s name — and it returns that index untouched. *Why the quadratic
 UNDER it is not a defect:* link k of an unannotated chain genuinely accumulates k constraints, so
-the chain carries n(n+1)/2 of them and `constraints_promoted` has read n(n+1)/2 since S3; the fix
-takes n = 1000 from killed to 440 ms and n = 2000 to 1.96 s, which is at or under the S3 row
-(483 ms and 2 061 ms) for the first time. *Where the bisect points and why it is not the whole
-story:* `git bisect` lands on S6b (`5dfc082`) because A.75's redirect map made each of those futile
-rebuilds ~3.3x more expensive, but the same three n at `8081b5f` — the commit before it — read
-21 / 132 / 935 ms, which is already cubic. **S6b multiplied the constant; it did not introduce the
+the chain carries n(n+1)/2 of them and `constraints_promoted` has always read n(n+1)/2; the fix
+takes n = 1000 from killed to 440 ms and n = 2000 to 1.96 s, at or under the checker's first
+reading (483 ms and 2 061 ms). *Where the bisect points and why it is not the whole
+story:* `git bisect` lands on A.75's change because its redirect map made each of those futile
+rebuilds ~3.3x more expensive, but the same three n on the commit before it read
+21 / 132 / 935 ms, which is already cubic. **A.75 multiplied the constant; it did not introduce the
 exponent**, and A.75 is not the cause and is not weakened: nothing moves, so nothing needs
 redirecting, and the `answered` bookkeeping `adopt` carries across a rebuild is carried across
 nothing. A.76 is untouched — the loop it added is in `methodOnApp`, which a chain never reaches
@@ -4296,7 +4295,7 @@ it a mechanical rewrite of ~100 files for no change in what any document says. I
 nothing in this document depends on living in one file.
 
 **A.83 — the inferred-interface warning is on by default, and an inferred set is capped at 64**
-(§6.4, §10 preamble, §10.9, new §10.11, §11) [queue slice 3, 2026-09-18]. Report 19 §14 items 4 and
+(§6.4, §10 preamble, §10.9, new §10.11, §11) [2026-09-18]. Report 19 §14 items 4 and
 5 left two questions open — nothing bounds what one unannotated declaration writes into its
 interface (a 6.4 kB entry is reachable, §3.1), and nothing takes a position on the n² obligation
 count of an unannotated chain (§3). **Manager decisions of 2026-09-18**, taken on the owner's behalf
@@ -4331,7 +4330,7 @@ adoption, and unconditionally after it. Fixture: the `blackbox_test.zig` scenari
 warns and then fails in the emit phase prints one diagnostics array, not two".
 
 **A.84 — the `foreign` + `where` arity rule becomes `boundary.md` §4's check 4** (§5.2, §11, A.7)
-[queue slice 4, 2026-09-18]. Report 19 §14 item 2 left the rule of §5.2 documented and unenforced:
+[2026-09-18]. Report 19 §14 item 2 left the rule of §5.2 documented and unenforced:
 a sibling whose `eq` forgot its leading evidence parameter built cleanly, exited 0, and compared
 the evidence function against a list at run time. A.7 named two alternatives, both unattractive —
 withdraw `where` on `foreign`, or write an arity check that "needs a JavaScript parser to do
@@ -4359,7 +4358,7 @@ must not answer for the `eq` the module exports — and that is a deliberate exc
 file was edited to land this.
 
 **A.85 — an annotated constrained CONSTANT is legal, and its reference is the evidence applied**
-(§8.1, §8.2, §10.10, A.25) [queue row 57, 2026-09-22]. `pub blank : List a where a.eq : a, a ->
+(§8.1, §8.2, §10.10, A.25) [2026-09-22]. `pub blank : List a where a.eq : a, a ->
 Bool` / `blank = []` built with exit 0 and threw `TypeError: Cannot read properties of undefined`
 at load: `Lower.etaExpand` wrapped the reference in a closure, and at beni arity 0 that closure is
 a thunk rather than a function of the right arity, so `Main$blankInts = () => Blank$blank(ev)` was
@@ -4373,17 +4372,16 @@ what the annotated case does.
 | 2 | at beni arity 0 `etaExpand` emits the **call**, not a closure over it | A.25's reason — `backend.md` §6 wants a function-typed value in flight to be a closure of known arity — is a statement about FUNCTION-typed values. A constant is not one, so the closure is not an arity fix, it is a type error the emitter writes itself | special-case the consumer instead, which would mean every reader of a name knowing whether its producer was constrained |
 | 3 | the evidence is applied **where the reference stands**, so a top-level constant evaluates once at load like any other | it is the same expression in the same position; §7's initialisation rule and `cyclic_value` already order top-level constants and refuse circles, and `boundary.md` §4 confines a `foreign` to a total pure function, so re-evaluation in a lambda body cannot be observed | hoist it to a module-level cache, which buys nothing a `const` does not already buy |
 
-*Corrected 2026-09-24 (R2b review S1; CK-85).* Decision 3's "re-evaluation in a lambda body
+*Corrected 2026-09-24.* Decision 3's "re-evaluation in a lambda body
 cannot be observed" is false. A thunk's body runs at EACH read — once at load for a top-level
-reference, but once per call for a reference inside a function body — and since R2b an `applied`
+reference, but once per call for a reference inside a function body — and since 2026-09-24 an `applied`
 value (no parameters, a function TYPE, a `where`: [`checker-v2.md`](checker-v2.md) §12.5) runs its
 body at each CALL. `Debug.log` observes both in a development build, and cost observes them always:
 a table, a regex or a `Dict` such a body precomputes is rebuilt per read or call, where the same
 value without the `where` computes it once. The behaviour is kept for now and documented in
-`language.md` §6 *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count, and
-hoisting once per call site is CK-85.
+`language.md` §6 *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count.
 
-*Amended by R8a (2026-09-26; CK-85, scheduled by the owner).* The body now runs **once per
+*Amended 2026-09-26 (scheduled by the owner).* The body now runs **once per
 evidence**, not per read or call, and not hoisted per call site either. A `thunk` and an `applied`
 value whose body is not a bare reference to a constrained function are defined over two
 module-level `let`s, the last evidence and the value it gave:
@@ -4399,7 +4397,7 @@ const M$lookup = ($m$0, $p$1) => {
 The value is a function of its evidence alone, and evidence is always a function (never
 `undefined`), so the first use computes. One instantiation — the case a module whose evidence
 arguments are all module-level names always has — runs the body once, at its first use; a use
-with other evidence computes again, which every use did before. Why not the hoist CK-85 proposed:
+with other evidence computes again, which every use did before. Why not a hoist per call site:
 a module-level `const M$lookup$ev0 = M$lookup$make(ev…)` runs the body at load, at a point the
 emission order (`Lower.emissionOrder`) cannot always put after everything the body reads — a use
 inside a declaration that is a dependency cycle with the value's own is a temporal-dead-zone throw
@@ -4409,18 +4407,18 @@ it ran before (at a use), and nothing an importer reads changes. Memoising per e
 a `WeakMap` was not taken: JsIr has no `new`, and a single entry already answers the common case.
 `run/EvidenceFunctionBodyPerCall.beni` now prints one `table (where)` line;
 `run/EvidenceThunkOncePerEvidence.beni` shows the recompute when the evidence changes.
-*Narrowed by R8a's review round (2026-09-26, CK-113):* "the same evidence" is the same JavaScript
+*Narrowed 2026-09-26:* "the same evidence" is the same JavaScript
 IDENTITY. Evidence built at the use — a structural type's (`List Int`, a record, a tuple), or a
 nominal type's whose derived context is not empty — is a fresh arrow at each read, so such a use
 recomputes at each read, as before; so does one instantiation read from two modules, each with its
-own `$eq$prim`. Once per instantiation needs closed evidence hoisted to module level (CK-113).
+own `$eq$prim`. Once per instantiation needs closed evidence hoisted to module level.
 
 **A.86 — a derived part whose type is decided later is a part site; an untyped own method is
-refused** (§6.3.1 step 4, §10.12, queue row 75, 2026-09-23). `targetFor` writes `err` for a part
+refused** (§6.3.1 step 4, §10.12, 2026-09-23). `targetFor` writes `err` for a part
 whose position is a flex variable, and `Lower` answers an `err` part structurally (`Basics.eq`,
 `num_compare`); that is right for a position nothing inhabits and wrong for one that later becomes a
-type with its own `eq`. Row 72 made the wrong case reachable for types holding functions, which
-875f623 refused. The fix: the constraint the flex arm attaches carries a `TypeStore.ConstraintSite`
+type with its own `eq`. The correction of 2026-09-22 made the wrong case reachable for types holding functions, which
+were refused until then. The fix: the constraint the flex arm attaches carries a `TypeStore.ConstraintSite`
 whose `parent` is `Solver.part_site_parent` and whose `evidence_index` indexes `Solver.part_slots`,
 the absolute dispatch part it fills. `emitSites` writes a part site's answer into that part
 (`answerPartSite`) instead of adding an instruction site, re-resolving a named method with
@@ -4430,10 +4428,10 @@ too. A use that reaches the module's own untyped method is `method_needs_annotat
 an `err` site that reaches the emitter is `internal`. *Why not the alternative* — deferring the whole
 comparison until every part is pinned — a part can stay a flex through generalisation, and then its
 answer is evidence the comparison could not name before the promotion. Fixtures:
-`tests/corpus/run/DerivedPartTypedLater/`, `tests/corpus/check/bad/MethodNeedsAnnotation/` (since R11 `tests/corpus/run/OwnEqCheckedAfterItsUse/`, D3), and the
+`tests/corpus/run/DerivedPartTypedLater/`, `tests/corpus/check/bad/MethodNeedsAnnotation/` (since the cut-over `tests/corpus/run/OwnEqCheckedAfterItsUse/`), and the
 changed `crossed` line of `tests/corpus/dispatch/ErrParts.dispatch`.
 
-A part site made one old non-termination visible as a hang (queue row 76): a monomorphic constrained
+A part site made one old non-termination visible as a hang: a monomorphic constrained
 `let` helper used at `a` and at `List a` makes the cyclic receiver `a ~ List a`, which the deferred
 occurs check has not rejected yet, and `List.eq`'s `where a.eq` raised the element's obligation
 without end. Obligations now carry the depth of the discharge chain that raised them, and every
@@ -4444,16 +4442,16 @@ finite chain that long, and then the check is one occurs walk that answers no. F
 `tests/blackbox/abuse_test.zig`.
 
 **A.87 — past 4 096 evidence parameters a derived function takes one array** (§9.2 *The wide
-form*, §9.4, CK-81, R2a stage 2, 2026-09-24). A derived function of any shape whose context has more
+form*, §9.4, 2026-09-24). A derived function of any shape whose context has more
 than 4 096 entries is written `($m, $x, $y) => …$m[k]…`, and every call and eta-expansion of it
 passes `[e0, e1, …]` in place of the positional evidence; at 4 096 or fewer nothing changes. The
 reason is the engine, not the language: a 60 000-field nominal payload built, then threw
 `RangeError` in Node 24 at the 60 002-argument call, and V8 refuses more than 65 535 parameters.
-The number is the backend's ABI constant and not the checker's CK-79 cap it equals today, so
-lifting the cap cannot silently restore the positional form; since R2b it is
+The number is the backend's ABI constant and not the checker's record-width cap it equals today, so
+lifting the cap cannot silently restore the positional form; it is
 `Convention.max_positional_evidence`, and `Convention.derivedEvidence` is the one place the
 definition and every caller decide the form ([`checker-v2.md`](checker-v2.md) §12.5). Only Node was
-measured then; R2c measured the browsers (§9.2: 59 610 in Chrome, 65 078 in Firefox, past 70 000
+measured then; the browsers were measured later (§9.2: 59 610 in Chrome, 65 078 in Firefox, past 70 000
 in WebKit), and 4 096 stays — for one call; under recursion a 4 096-wide positional call overflows
 about 13 levels deep in Node, which §9.2 records. *Why not the alternative* — a named refusal of the wide payload —
 rule 7: the program is valid and an array runs it; *or inlining the comparison into the nominal's

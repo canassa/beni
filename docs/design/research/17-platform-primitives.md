@@ -298,7 +298,7 @@ waiting on:
 
 **Conclusion for P2 §10 item 0's first half: the two higher-order foreigns in the repository do not
 force the bits into the type language.** They force an ordering constraint on milestones, stated in
-§0 finding 2, and they should be deleted from `core/List.beni` the moment M3b lands, because leaving
+§0 finding 2, and they should be deleted from `core/List.beni` the moment the tail-call loop lands, because leaving
 them is a live miscompile the day effects arrive.
 
 ### 3.4 Is anything else in the repo this shape?

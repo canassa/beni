@@ -777,8 +777,8 @@ A deliverable, not a risk. CPS moves a recursive tail call inside a continuation
 has no tail-call elimination: `core/List.beni` says `foldl` is `foreign` because "written in beni it
 is a self tail call, which the code generator is not yet required to turn into a loop".
 
-**Corrected 2026-09-18 — the loop landed and the folds left `foreign` with it** (`bbfc869`;
-`backend.md` §8). Direct self-recursion lowers to `label: while (true)` with carried parameters in
+**Corrected 2026-09-18 — the loop landed and the folds left `foreign` with it** (`backend.md`
+§8). Direct self-recursion lowers to `label: while (true)` with carried parameters in
 `$in$<i>` slots and a per-iteration `const` prologue; `core/List.beni:68` and `:86` are ordinary beni
 and there is no `foreign` value left in the repository with a function type in its signature. The
 sentence above is kept because it was the argument for scheduling the loop first. What it costs the
@@ -1068,7 +1068,7 @@ higher-order question item 0 asks about platform primitives now has an affirmati
 has meanwhile acquired a second unenforced rule of its own — a `foreign` with a `where` clause —
 which any rewrite of shape (b) has to account for.
 
-**Updated 2026-09-18.** That rule is now enforced, as `boundary.md` §4's **check 4** (`16b1c0d`):
+**Updated 2026-09-18.** That rule is now enforced, as `boundary.md` §4's **check 4**:
 a sibling export takes evidence count + declared arity parameters. The check counts parameters; it
 cannot see what the sibling *does* with them, and `core/List.js`'s `eq` and `compare` call `m0` from
 inside a JavaScript `while` loop. That is report 17 §1's kind (i) — a host-called beni callback — in

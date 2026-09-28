@@ -80,8 +80,8 @@ The machine is an Apple M2 Pro, 12 CPU cores, 16 GiB RAM, macOS arm64. Node
 on AC power with AC low-power mode disabled, under `caffeinate -i`. We did not
 change persistent power settings. macOS does not expose a supported per-process
 P-core affinity or fixed CPU-frequency control here; frequency, thermal state,
-OS activity and core scheduling were **not controlled**. Queue row 59 is the
-reason for repeated processes, not proof that every fluctuation is E-core
+OS activity and core scheduling were **not controlled**. A timing flake seen on Apple
+Silicon is the reason for repeated processes, not proof that every fluctuation is E-core
 scheduling. Source builds and the project gates completed before timing.
 
 Gross and net-of-JSON costs are both reported. Net is a **difference of measured

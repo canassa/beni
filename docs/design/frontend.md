@@ -28,7 +28,7 @@ today**: the one diagnostic it gated, `ambiguous_method_receiver`, is emitted by
 still parsed and accepted, so nothing that passes it starts failing, and it is where the next
 informational diagnostic goes. A warning cannot change an exit code (below) either way.
 
-`build` arrived with M3a and its flags are `backend.md` §2's; the rest of this document is M0/M1's
+`build` arrived with the backend and its flags are `backend.md` §2's; the rest of this document is M0/M1's
 and the common options below apply to it too. Its product on stdout is one summary line naming what
 was written; everything else it has to say is a diagnostic.
 
@@ -109,12 +109,12 @@ Streams: `stdout` carries the product (dump text, `fmt --stdout` output, nothing
 `stderr` carries diagnostics and nothing else. Diagnostics are sorted by file path, then start
 position, then code — regardless of `--jobs`.
 
-**The persistent cache** (M4-1; [`fast-compiler.md`](fast-compiler.md) §8 has the key and the
+**The persistent cache** ([`fast-compiler.md`](fast-compiler.md) §8 has the key and the
 layout). Two flags, on `check` and `build` only:
 
 | Flag | Meaning | Default |
 |---|---|---|
-| `--cache-dir=<path>` | keep checked modules between runs in this directory | **`.beni-cache/` in the working directory, since M4-3** |
+| `--cache-dir=<path>` | keep checked modules between runs in this directory | **`.beni-cache/` in the working directory, since the firewall cutoff** |
 | `--no-cache` | read and write no cache at all | off |
 
 They are `check`'s and `build`'s and not common options, because `fmt` resolves nothing and `dump`
@@ -124,16 +124,16 @@ and `dump --cache-dir=x` are the ordinary `unknown option` and exit `2`, and nei
 a cache directory either. `--no-cache` existed before there was a default so that a script written
 then keeps working now.
 
-*Corrected 2026-09-19 for M4-3: the cache is ON by default.* The condition
+*Corrected 2026-09-19 with the firewall cutoff: the cache is ON by default.* The condition
 [`fast-compiler.md`](fast-compiler.md) §8 set was that a cache on by default must be right about
 every input and that the harness is what establishes it, and that harness is
 `tests/blackbox/cutoff_test.zig` plus `bench/cutoff.sh`. **Where:** `.beni-cache/` in the working
 directory, created on demand. *Rejected: XDG* — a user-wide directory needs a garbage collector and
-a size cap, and M4-3 has neither. *Rejected: beside `beni.json`* — `check` may run with no manifest,
+a size cap, and there is neither yet. *Rejected: beside `beni.json`* — `check` may run with no manifest,
 so the rule would have two cases. The key holds no path, so one project checked from two working
 directories gets two directories of identical entries: correct, duplicated, and the cheap failure.
 **How a user clears it:** `rm -rf .beni-cache`, which is always safe because every entry is
-content-addressed; there is no `beni clean` and no garbage collection (both M4-5's, with the size
+content-addressed; there is no `beni clean` and no garbage collection (both the daemon's, with the size
 cap). **`.gitignore` it** — a cache is machine-local by policy and is never committed.
 
 **A cache never changes an answer and never fails a build.** A directory the user NAMED is created
@@ -156,7 +156,7 @@ that a compiler change discards the cache. `--cache-keys` makes `check` print on
 change reached, with no cache directory involved. `--roundtrip-dispatch` is `--roundtrip-interfaces`'
 twin for the dispatch sidecar: every module's table is written, read and re-resolved in place the
 moment its check finishes, so every emitted file downstream is built from a table that has been
-through the format. **`--roundtrip-frontend`** (M4-2) is the third of that family and the first that
+through the format. **`--roundtrip-frontend`** is the third of that family and the first that
 is not the checker's: every file's `Bir`, token spans, line-start table and front-end diagnostics are
 written to bytes and read back in place the moment its per-file phase ends and **before anything
 downstream reads them**, so every dump, every diagnostic, every dispatch table and every emitted byte
@@ -286,10 +286,10 @@ IR, offsets not slices, arena per phase per worker, no `HashMap` keyed by a dens
 `[:0]const u8` (sentinel so the tokenizer needs no bounds check at EOF), and `line_starts:
 []u32` filled in by the tokenizer. Column of offset `o` on line `l` is `o - line_starts[l] + 1`.
 
-`line_starts` is the only thing the lexer leaves in the store, and **it is a cached artifact** (M4-2,
-`fast-compiler.md` §8): four reporters turn an offset into a `diagnostic.Position` through it, so a
-file whose lexer did not run still needs one. There is no size, mtime or inode column and M4-2 does
-not add one — a `stat` fast path is M4-5's, and §8 says why.
+`line_starts` is the only thing the lexer leaves in the store, and **it is a cached artifact**
+(`fast-compiler.md` §8): four reporters turn an offset into a `diagnostic.Position` through it, so a
+file whose lexer did not run still needs one. There is no size, mtime or inode column and the front-end cache does
+not add one — a `stat` fast path is the daemon's, and §8 says why.
 
 ### 3.2 Tokens
 
@@ -309,8 +309,8 @@ more than the column) and `payload` (identifiers are interned while scanning, §
 doc). Length is re-derived from `tag` + `start` by a `slice(source, index)` helper; for
 identifiers and qualified names the tokenizer's scanner is re-run from `start`.
 
-**Two of the four columns survive `lower`, and only those two are cached** (M4-2,
-`fast-compiler.md` §8). `line` is the parser's — layout is decided per token — and `payload` is the
+**Two of the four columns survive `lower`, and only those two are cached**
+(`fast-compiler.md` §8). `line` is the parser's — layout is decided per token — and `payload` is the
 parser's and lowering's; nothing reads either again. `tag` and `start` are read by four sites after
 the front end, all of them turning an instruction's `main_token` back into bytes: `Session.tokenSpan`
 and `moduleNameOfImport`, `Emit.tokenPosition`, and `js/Lower`'s `token_starts`. So the cached form
@@ -358,7 +358,7 @@ source order.
 Every node kind has a typed accessor (`ast.fullIf(index)`, `ast.fullCase(index)` …) mirroring
 `std.zig.Ast.full*` so consumers never decode `Data` by hand.
 
-**The `Ast` is not cached, and that is a decision and not an omission** (M4-2, `fast-compiler.md`
+**The `Ast` is not cached, and that is a decision and not an omission** (`fast-compiler.md`
 §8). It is the easiest artifact in the compiler to cache — three flat arrays, no `Symbol`, no fixup
 pass (`src/parse/Ast.zig:8-9`) — and **nothing on a `check` or a `build` path reads one after
 `lower` returns**. Its three readers are the formatter, `dump --stage=ast`, and the parse phase that
@@ -380,13 +380,13 @@ holds a slice into the source; strings and identifiers are `Symbol`s.
 Lowering is one pass over the AST with an explicit scope stack (a flat array of `(symbol,
 local_index)` pairs with per-scope marks; lookups scan backwards — scopes are small and this
 beats a hash map on every measurement Zig and Roc made).
-*Amended by R12 (2026-09-27, CK-95, CK-127):* a `let` binds all its names before any body is
+*Amended 2026-09-27:* a `let` binds all its names before any body is
 lowered, so a block of n bindings made every lookup and every shadowing check a scan of n, and
 lowering it quadratic (0.45 s at 20 000 chained bindings, ReleaseFast; 1.9 s at 40 000). Past 64
 entries the stack is indexed by name (`Lower.scope_index`, each entry chained to the one of its
 name it shadows) until it shrinks back to 32; below that it is still scanned. §7's initialisation
 check reads each binding's own edges and resets only what it set, and a `let_def`'s local is
-recorded where phase 1 binds it. The Bir is byte-identical; `perf_test.zig`'s CK-95 holds it
+recorded where phase 1 binds it. The Bir is byte-identical; a `perf_test.zig` scenario holds it
 linear.
 
 **Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
@@ -409,7 +409,7 @@ nullary value, and the backend eta-expanded a constrained `foreign` used in valu
 its own module to `() => List$eq(m0)` — a nullary closure where a binary method was promised
 ([`static-dispatch-spike.md`](static-dispatch-spike.md) §8.2).
 
-**The Bir has two states and only the first is cacheable** (M4-2, `fast-compiler.md` §8;
+**The Bir has two states and only the first is cacheable** (`fast-compiler.md` §8;
 `plans/m4-plan.md` §2.3). `Resolve` rewrites every `import_value`/`import_ctor`/`qualified`/
 `qualified_ctor`/`type_import`/`type_qualified` instruction **in place** into `ext_value`/`ext_ctor`/
 `ext_type`/`top`/`ctor`/`type_top`/`error`, so one array is a function of one file's text before it
@@ -455,7 +455,7 @@ byte-identical AST/BIR dumps; formatting always selects layout where available.
    plain atomic counter; nothing observable depends on which worker took which file.
 3. Sync point: merge interners in **file order** — each file's tokens, then its Bir's symbols,
    interned into the global pool on first sight, and whatever no file references after them by
-   text — then remap. A symbol's global id is therefore a function of the input alone (CK-71,
+   text — then remap. A symbol's global id is therefore a function of the input alone (since
    2026-09-24; it was worker index order, which let the `next_file` race number symbols).
 4. Collect diagnostics, sort, render. Write outputs.
 
@@ -463,7 +463,7 @@ byte-identical AST/BIR dumps; formatting always selects layout where available.
 runs the corpus at `--jobs=1` and `--jobs=8`, twice each, and byte-compares every stream and
 output file.
 
-**Step 2 gains a hit path with M4-2** (`fast-compiler.md` §8), and it is the whole of the slice's
+**Step 2 gains a hit path with the front-end artifacts** (`fast-compiler.md` §8), and it is the whole of their
 shape: the worker reads the file's bytes, hashes them into the file key, and — if the artifact is on
 disk and validates — installs the loaded `Bir`, token spans, line-start table and rendered front-end
 diagnostics instead of lexing, parsing and lowering; otherwise it does what it does today and
@@ -473,7 +473,7 @@ may NOT stay there is the string table's re-interning, because `InternPool.Globa
 (`src/InternPool.zig:24-26`). So a hit interns into the **worker's own `Local` pool**, and step 3's
 existing merge carries it to the global one — the load produces exactly the kind of local numbering
 `Global.merge` was written to reconcile, so no rule changes and no new synchronisation appears.
-*Rejected: a serial pre-pass that loads every artifact before the workers start, as M4-1's entry
+*Rejected: a serial pre-pass that loads every artifact before the workers start, as the persistent cache's entry
 reads do — that pass exists because the entry's re-intern must `getOrPut` into `Global`, and a
 per-file artifact has a `Local` to hand where the entry does not.* Step 4 is unchanged: a replayed
 diagnostic is appended to the worker's list in file order like any other, so the collect-and-sort is
@@ -508,7 +508,7 @@ Counters are what the incrementality tests will assert in M4 ("dependents were n
 re-checked"), so they exist now. Recording is per-thread into a preallocated buffer; the
 serial write happens once at exit. With the flag off, the recording call is a branch on a bool.
 
-M4-2 adds two `X` rows and three counters, and the counters are the load-bearing half. The rows are
+The front-end artifacts add two `X` rows and three counters, and the counters are the load-bearing half. The rows are
 `frontend_load` and `frontend_store`, per file, on the worker, so a trace shows the hit path where
 the `lex`/`parse`/`lower` rows used to be. The counters are **`files_lexed`, `files_parsed` and
 `files_lowered`**, and the acceptance test of the whole slice is that a warm run reports **0** for

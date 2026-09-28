@@ -1,25 +1,21 @@
 # Checker v2 — the architecture of the rewritten type checker
 
-**Status.** Normative in three stages, set by the slices of
-[`plans/checker-rewrite.md`](../../plans/checker-rewrite.md):
+**Status.** Normative for `src/check/`. The checker was built in stages, following
+[`plans/checker-rewrite.md`](../../plans/checker-rewrite.md): the shared parts — §13 (the
+evidence-tree contract), §12.5 (`Convention`), §14.2 (interface v3) and §15.1's `Session` quiet
+rule — landed first, for both checkers; the new checker, then `src/check2/`, ran behind a flag and
+replaced the old one at the cut-over.
 
-- **Shared code, from the slice that lands each part, for both checkers.**
-  - §13 (the evidence-tree contract) from R2a, and §12.5 (`Convention`) from R2b.
-  - §14.2 (interface v3) from R3.
-  - §15.1's `Session` quiet rule from R1.
-- **`src/check2/`**, the new checker, for everything else from R4b. The flag and harness exist from R4a.
-- **`src/check/`**, the whole document, at the cut-over (R11).
-- *R12 (2026-09-27):* v1 is deleted, with `--checker`, `BENI_CHECKER` and the checker id in the
-  cache key, and `src/check2/` took the name `src/check/` (§19.1 *As built by R12*). A path
+- *2026-09-27:* v1 is deleted, with `--checker`, `BENI_CHECKER` and the checker id in the
+  cache key, and `src/check2/` took the name `src/check/` (§19.1). A path
   `check2/X.zig` below is `check/X.zig` now; each note keeps the name it was written with.
 
-Written 2026-09-24 at `master` = `7427828`. **Slice references.** Round 3 split four slices. A bare "R2" below means R2a, the tree contract, except where it names `Convention` (R2b). "R4" means R4a for the flag, harness and cache key, and R4b for the foundation. "R6" means R6a for resolution and `check`, and R6b for elaboration and `build`. "R8" means R8a for the fixpoint, D4 and install, and R8b for D1 privacy and schema endpoints. `checker-rewrite.md` §4 is authoritative. Revised the same day after a read-only design review
-(`review-design.md`, items B1–B7, S1–S22 and N1–N13; the revision is traced in §24). Every owner
-decision it depends on was **taken by the owner on 2026-09-24** (§21), and the amendments the
-review required are dated in §21.
+Written 2026-09-24, and revised the same day after a read-only design review (the revision is
+traced in §24). Every owner decision it depends on was **taken by the owner on 2026-09-24** (§21),
+and the amendments the review required are dated in §21.
 
-**Why this document exists.** Five reviews of the checker at `7427828` found 61 defects,
-catalogued as CK-01 … CK-61 in [`plans/checker-findings.md`](../../plans/checker-findings.md).
+**Why this document exists.** Five reviews of the old checker found 61 defects, catalogued in
+[`plans/checker-findings.md`](../../plans/checker-findings.md).
 About half compile a program and then give a wrong answer at run time. They fall into fourteen
 root-cause classes, K1 … K14. The owner decided to rewrite the checker from the ground up, so that
 **its structure makes each class impossible, or checked**, rather than patching each finding.
@@ -52,22 +48,22 @@ No section of either document is renumbered (CLAUDE.md rule 2).
 
 ## 1. The fourteen classes, and the mechanism that closes each
 
-| Class | Findings | Mechanism | § |
-|---|---|---|---|
-| **K1** Annotation generality unchecked | CK-01, CK-10 | **I1.** Every annotated binding is read once, as rigid variables at its own rank. After generalisation, every rigid must still be a distinct rigid root at the generalised rank; otherwise `rigid_mismatch` at the recorded capture site | §8.3 |
-| **K2** Constraints and obligations outside the graph | CK-02, CK-05, CK-06, CK-18, CK-29 | **I2.** Every walk takes its successors from one of two `Walk` functions and declares which. `owned` includes a variable's wanteds' method types and serves rank adjustment, copy, the error scan, publication and the merge's rank lowering. `structural` excludes them and serves occurs, the marker walk and the resolver walks. **I15.** A wanted's method-type variables never outrank its receiver: attaching lowers them. **I3.** Obligations ride on their variables, like wanteds, and share one rank (§4.5), so one whose variable escaped travels with it | §4.1, §7.1, §8 |
-| **K3** Walks that are not total | CK-03, CK-04, CK-08, CK-10, CK-37 | **I4.** No walk has a fixed-size stack, and none answers when it gives up. Every walk that can meet a cycle uses the epoch colour of §4.1 over `structural` successors and reports `infinite_type` when it does. A lambda's and a case branch's binders are occurs-checked when the lambda or branch ends. Every boundary occurs-checks after its last unification. Records are normalised on merge, and closedness reads the whole chain | §4.1, §7.3, §8.2 |
-| **K4** Evidence computed in many places | CK-25, CK-27, CK-28, CK-30, CK-31, CK-32, CK-33, CK-34, CK-35 | **I5–I7.** An evidence slot is a *wanted* created by instantiating a scheme, so the number of slots comes from the callee's requirement list by construction. One elaboration pass writes trees. `Lower` never counts. One `Convention` function decides how a value with evidence is defined and called | §9, §12, §13 |
-| **K5** Default answers | CK-16, CK-17, CK-20, CK-21 | **I8.** "Unknown" is never "yes". A rigid without the method is reported at the wanted's origin. A shortcut (the `number` bridge) unifies the declared method type before it answers. The contract has no `err` term, and a missing answer is `internal` | §9.3, §13 |
-| **K6** Own-method ordering | CK-36 | **I9.** A use of a module's own method that has no scheme yet demands that method's group, which is checked nested **at that moment** (§10.2). A dispatch or value back-edge merges groups. There are no priority groups, and `method_needs_annotation` survives only for §11.2's non-ordering case | §10 |
-| **K7** Capability computed several ways | CK-19, CK-22, CK-23, CK-24, CK-26 | **I10.** "Can `T` answer `m`?" *is* instance resolution. Derived instance contexts come from one memoised fixpoint that the module worker owns. They are published in the interface and read back on a cache hit, never recomputed | §11 |
-| **K8** Stale generation context | CK-09 | **I11.** Constraint generation resolves a `.local` reference to its `Var` when it builds the node. The solver never reads `env.local_var` | §6.2 |
-| **K9** Intra-module pipeline | CK-11–CK-15 | **I12.** Named sequential phases. Failure is a per-declaration bit set by the reporter on *errors*. `quiet` is enforced once, in the one emit path. There is one scheme-publication routine | §5, §14, §15 |
-| **K10** Interface representation gaps | CK-38, CK-39 | interface v3: `u16` arity, record-alias constructor rows, derived contexts | §14.2 |
-| **K11** Super-linear bookkeeping | CK-40, CK-41, CK-42 | epoch marks instead of store-sized memsets; an own-name index built once; the fixpoint is lazy and memoised; no per-group settling | §4.1, §18 |
-| **K12** Id-order dependence | CK-07 | **I13.** Every choice among several diagnostics is made in name-text order | §7.2 |
-| **K13** Diagnostic selection | CK-48–CK-61 | the resolver reports at `origin`; mismatch *categories* for method clauses and `?` legs; the cycle path is rendered | §15.4 |
-| **K14** Outside the checker | CK-43–CK-47 | fixed in shared code before the rewrite | `checker-rewrite.md` R1 |
+| Class | Mechanism | § |
+|---|---|---|
+| **K1** Annotation generality unchecked | **I1.** Every annotated binding is read once, as rigid variables at its own rank. After generalisation, every rigid must still be a distinct rigid root at the generalised rank; otherwise `rigid_mismatch` at the recorded capture site | §8.3 |
+| **K2** Constraints and obligations outside the graph | **I2.** Every walk takes its successors from one of two `Walk` functions and declares which. `owned` includes a variable's wanteds' method types and serves rank adjustment, copy, the error scan, publication and the merge's rank lowering. `structural` excludes them and serves occurs, the marker walk and the resolver walks. **I15.** A wanted's method-type variables never outrank its receiver: attaching lowers them. **I3.** Obligations ride on their variables, like wanteds, and share one rank (§4.5), so one whose variable escaped travels with it | §4.1, §7.1, §8 |
+| **K3** Walks that are not total | **I4.** No walk has a fixed-size stack, and none answers when it gives up. Every walk that can meet a cycle uses the epoch colour of §4.1 over `structural` successors and reports `infinite_type` when it does. A lambda's and a case branch's binders are occurs-checked when the lambda or branch ends. Every boundary occurs-checks after its last unification. Records are normalised on merge, and closedness reads the whole chain | §4.1, §7.3, §8.2 |
+| **K4** Evidence computed in many places | **I5–I7.** An evidence slot is a *wanted* created by instantiating a scheme, so the number of slots comes from the callee's requirement list by construction. One elaboration pass writes trees. `Lower` never counts. One `Convention` function decides how a value with evidence is defined and called | §9, §12, §13 |
+| **K5** Default answers | **I8.** "Unknown" is never "yes". A rigid without the method is reported at the wanted's origin. A shortcut (the `number` bridge) unifies the declared method type before it answers. The contract has no `err` term, and a missing answer is `internal` | §9.3, §13 |
+| **K6** Own-method ordering | **I9.** A use of a module's own method that has no scheme yet demands that method's group, which is checked nested **at that moment** (§10.2). A dispatch or value back-edge merges groups. There are no priority groups, and `method_needs_annotation` survives only for §11.2's non-ordering case | §10 |
+| **K7** Capability computed several ways | **I10.** "Can `T` answer `m`?" *is* instance resolution. Derived instance contexts come from one memoised fixpoint that the module worker owns. They are published in the interface and read back on a cache hit, never recomputed | §11 |
+| **K8** Stale generation context | **I11.** Constraint generation resolves a `.local` reference to its `Var` when it builds the node. The solver never reads `env.local_var` | §6.2 |
+| **K9** Intra-module pipeline | **I12.** Named sequential phases. Failure is a per-declaration bit set by the reporter on *errors*. `quiet` is enforced once, in the one emit path. There is one scheme-publication routine | §5, §14, §15 |
+| **K10** Interface representation gaps | interface v3: `u16` arity, record-alias constructor rows, derived contexts | §14.2 |
+| **K11** Super-linear bookkeeping | epoch marks instead of store-sized memsets; an own-name index built once; the fixpoint is lazy and memoised; no per-group settling | §4.1, §18 |
+| **K12** Id-order dependence | **I13.** Every choice among several diagnostics is made in name-text order | §7.2 |
+| **K13** Diagnostic selection | the resolver reports at `origin`; mismatch *categories* for method clauses and `?` legs; the cycle path is rendered | §15.4 |
+| **K14** Outside the checker | fixed in shared code before the rewrite | — |
 
 ---
 
@@ -75,26 +71,26 @@ No section of either document is renumbered (CLAUDE.md rule 2).
 
 Each invariant is enforced **by construction**: no code path can violate it. Where construction
 alone is not enough, it is also checked by an **assert**, a debug assertion plus `internal` in a
-release build. The fixtures of the CK entries in §1 are the black-box evidence.
+release build. The corpus fixtures of the defects behind §1's classes are the black-box evidence.
 
 | # | Invariant | Enforced by |
 |---|---|---|
-| **I1** | After a binding with an annotation is generalised, each rigid variable its annotation introduced is still a rigid root with that name, is not merged with another of its rigids, and has rank `generalized` | construction (§8.3); CK-01 |
-| **I2** | Every walk over the type graph takes its successors from `Walk.structural` or `Walk.owned` (§4.1), and the choice is part of the walk's declaration | construction: `TypeStore` exposes no raw payload accessor outside `Walk.zig`. Review rule: a new walk that names neither is refused, and so is one whose choice contradicts §4.1's table. *Revised 2026-09-24 (B1): a single successor function that yielded method types made every constrained variable look cyclic to occurs.* |
-| **I3** | An open obligation or wanted rides on its variables. It is decided when a variable is bound (readied), or closed when a variable is quantified. One whose variable escaped is still attached to it, so it is decided by whichever boundary quantifies or binds it | construction (§4.5). *Revised 2026-09-24 (round 2, N1): buckets removed.* |
+| **I1** | After a binding with an annotation is generalised, each rigid variable its annotation introduced is still a rigid root with that name, is not merged with another of its rigids, and has rank `generalized` | construction (§8.3) |
+| **I2** | Every walk over the type graph takes its successors from `Walk.structural` or `Walk.owned` (§4.1), and the choice is part of the walk's declaration | construction: `TypeStore` exposes no raw payload accessor outside `Walk.zig`. Review rule: a new walk that names neither is refused, and so is one whose choice contradicts §4.1's table. *Revised 2026-09-24: a single successor function that yielded method types made every constrained variable look cyclic to occurs.* |
+| **I3** | An open obligation or wanted rides on its variables. It is decided when a variable is bound (readied), or closed when a variable is quantified. One whose variable escaped is still attached to it, so it is decided by whichever boundary quantifies or binds it | construction (§4.5). *Revised 2026-09-24: buckets removed.* |
 | **I4** | No walk stops at a fixed depth or stack size without reporting. A walk that can meet a cycle detects it by colour and reports `infinite_type` | construction (`Walk.zig` is the only DFS); `check/depth/` pairs for the reported guards |
 | **I5** | The evidence of an instruction that instantiates a scheme is exactly one wanted per requirement of that scheme, in the scheme's canonical order (§12.1) | construction (`Instantiate.zig` creates them); assert in `Dispatch.finish` |
 | **I6** | Every wanted is answered exactly once, by one of: a given, an instance term, a promotion to a parameter, or a proven-undetermined default. An open wanted at elaboration is `internal` | construction (§12.2); assert |
 | **I7** | For every term with arguments, `args.len == evidenceCount(callee)`, where the count is read from the callee's `DeclInfo`, interface entry or derived row | assert in `Dispatch.finish` and again in `Lower` (cheap) |
 | **I8** | No failure to decide is answered as success. The walk, resolver and elaborator results are `yes`, `no (reason)` or `blocked (on what)`, and `blocked` is never read as `yes` | construction (the result types have no "unknown → accept" arm) |
-| **I9** | Whether a program checks, and what it computes, does not depend on the order of top-level declarations | construction, by three rules. (1) Every nesting is demanded by the frame directly below it, through per-frame `ready` queues drained after every constraint node (§9.1). (2) A re-entrant derived-context query runs a fresh fixpoint (§11.2). (3) Inside a recursive group, D14 lowers the method type of **every wanted** (a method callee, instantiation evidence or a sub-wanted) that is resolved or attached while its receiver is group-level, and every variable of an obligation that has a group-level deciding variable, in `Resolve`'s single resolution function (§10.7). **One stated exception:** the nesting budget (§10.2) can refuse very deep generated code in one order only. Tested by R7's permutation scenario and `test-v2`. *Restated 2026-09-24 (round 3: B-1, B-2, B-3; round 4: R7-1, R7-3).* |
+| **I9** | Whether a program checks, and what it computes, does not depend on the order of top-level declarations | construction, by three rules. (1) Every nesting is demanded by the frame directly below it, through per-frame `ready` queues drained after every constraint node (§9.1). (2) A re-entrant derived-context query runs a fresh fixpoint (§11.2). (3) Inside a recursive group, D14 lowers the method type of **every wanted** (a method callee, instantiation evidence or a sub-wanted) that is resolved or attached while its receiver is group-level, and every variable of an obligation that has a group-level deciding variable, in `Resolve`'s single resolution function (§10.7). **One stated exception:** the nesting budget (§10.2) can refuse very deep generated code in one order only. Tested by the declaration-permutation scenarios of `ordering_test.zig`. *Restated 2026-09-24, and again after later design reviews.* |
 | **I10** | Whether `T` answers `m` has one answer per module, computed by one function, and a cache hit installs the published answer | construction (§11) |
 | **I11** | The solver reads no generation-time context | construction: `Solve` has no `Env.local_var` |
 | **I12** | A declaration's failure bit is set iff an **error** diagnostic was attributed to it or to a member of its binding group. Every consumer that must skip failed declarations reads the bit | construction (§15.2) |
 | **I13** | When several independent failures could be reported and only one is, the one reported is the first in name-text or source order, never in id order | construction (§7.2) |
-| **I14** | Nothing written during speculation survives a rollback. Every write a probe can make, including the in-place `Wanted.state` and `answers` writes of `unify`, is either an append truncated by rollback or a journalled in-place write. A probe never calls `Resolve`, `Instances`, `Groups`, the obligation deciders or `Report` | construction (§7.5); a debug assertion that those entry points are not reached while `journal.depth > 0`. *Revised 2026-09-24 (B5).* Consequence: a probe never nests a group check, because only resolution nests and a probe never resolves (round 3, N-1). |
-| **I15** | For every wanted `w` whose receiver is **not generalised**, every variable reachable from `w.method_type` by `Walk.owned` has rank ≤ `rank(find(w.receiver))`. All variables of one open obligation have one rank | construction: attaching, and re-attaching on merge, lowers them (§7.1, §4.5), OCaml's `update_level` on binding. A debug assert checks the wanteds and obligations met during each boundary's own generalisation walk, which is linear (S-new-6). A promoted wanted on a generalised receiver is exempt: its method type may mention outer variables free, the HM(X) reading of §8.4 (S-new-4). *Added 2026-09-24 (B2); restricted and extended in round 2 (N1, S-new-4, S-new-6). Amended by R5's review (2026-09-25): the obligation half is directional — no dependant of an open obligation outranks its owner (§4.5, *Amended by R5's review*); "one rank" over-lowered a `?` target (CK-99).* |
-| **I16** | A boundary generalises only after nothing it runs can unify any more, and it occurs-checks after the last unification | construction: §8.1's fixpoint loop precedes occurs and generalisation. *Added 2026-09-24 (B3).* |
+| **I14** | Nothing written during speculation survives a rollback. Every write a probe can make, including the in-place `Wanted.state` and `answers` writes of `unify`, is either an append truncated by rollback or a journalled in-place write. A probe never calls `Resolve`, `Instances`, `Groups`, the obligation deciders or `Report` | construction (§7.5); a debug assertion that those entry points are not reached while `journal.depth > 0`. *Revised 2026-09-24.* Consequence: a probe never nests a group check, because only resolution nests and a probe never resolves. |
+| **I15** | For every wanted `w` whose receiver is **not generalised**, every variable reachable from `w.method_type` by `Walk.owned` has rank ≤ `rank(find(w.receiver))`. All variables of one open obligation have one rank | construction: attaching, and re-attaching on merge, lowers them (§7.1, §4.5), OCaml's `update_level` on binding. A debug assert checks the wanteds and obligations met during each boundary's own generalisation walk, which is linear. A promoted wanted on a generalised receiver is exempt: its method type may mention outer variables free, the HM(X) reading of §8.4. *Added 2026-09-24; restricted and extended the same day. Amended 2026-09-25: the obligation half is directional — no dependant of an open obligation outranks its owner (§4.5, *Amended 2026-09-25*); "one rank" over-lowered a `?` target, making it monomorphic in its own success type.* |
+| **I16** | A boundary generalises only after nothing it runs can unify any more, and it occurs-checks after the last unification | construction: §8.1's fixpoint loop precedes occurs and generalisation. *Added 2026-09-24.* |
 
 ---
 
@@ -125,7 +121,7 @@ ancestor.
 
   Roc keeps outer-receiver requirements in a side table instead (`design.md:5461-5540`). v2 splits
   the two successor functions, so occurs follows Roc and level adjustment follows HM(X).
-  *Citation corrected 2026-09-24 (B1): the first draft called this "the same idea in code".*
+  *Citation corrected 2026-09-24: the first draft called this "the same idea in code".*
 - **Rigid escape.** Elm checks the `let`'s rigids with `isGeneric` after solving `CLet`. OCaml
   reports "the type constructor … would escape its scope" by a level test. I1 is the level test
   applied after generalisation.
@@ -147,14 +143,14 @@ ancestor.
 - **Deferral of a dispatch into an unchecked, untyped local method.** Roc
   `Check.zig:31704-31762` and `:13978-14045` (`resolveGroupPendingDispatchTargets`), and
   `design.md:2197-2231` ("group suspension and merge need no dedicated machinery"). Roc accepts
-  exactly the program row 75 refuses (`scheme_use_evidence_test.zig:96-122`). §10.
+  exactly the program the old checker refused with `method_needs_annotation` (`scheme_use_evidence_test.zig:96-122`). §10.
 - **Rejection as a class flag, not poison.** Roc `store.zig:756-771` and `design.md:8860-8880`
-  (CK-37).
+  (§9.5).
 - **Migration behind a flag, with the old implementation as the oracle.** rustc's next-generation
   trait solver shipped behind `-Znext-solver` and ran the test suite and crater under both before
   switching (§22).
 
-**What is not copied from Roc**, per `review-roc.md` §6:
+**What is not copied from Roc**, per a review of Roc's checker:
 - the promoted-requirements side table for outer-rank receivers (`design.md:5461-5760`, the most
   bug-dense part of Roc). I2 makes it unnecessary: a requirement on an outer receiver lives at the
   outer rank;
@@ -213,18 +209,21 @@ pub const Flags = struct {            // flex and rigid payload
   A self-reference through `owned` is expected and harmless. `owned` walks are rank or memo walks
   that stop at a visited node (epoch mark). They are not colour walks and never report a cycle.
 
-  `owned` alone does not close CK-02. Elm's `adjustRank` descends only from young-pool entries, and
-  CK-02's receiver `x` is not young. So I15 **lowers** a method type's variables when the wanted is
-  attached (§7.1). With both, CK-02 and CK-29 are closed by construction.
-  *Revised 2026-09-24 (B1, B2).*
+  `owned` alone does not generalise a variable reachable only through a method constraint on an
+  outer-rank receiver: Elm's `adjustRank` descends only from young-pool entries, and such a
+  receiver is not young. So I15 **lowers** a method type's variables when the wanted is attached
+  (§7.1). With both, that variable is generalised correctly and a joined method constraint's type
+  is generalised with it, by construction.
+  *Revised 2026-09-24.*
 - **Epoch marks, not memsets.** `mark` holds the epoch of the walk that last visited the node. A walk
   takes `epoch = store.nextEpoch()` and tests `mark == epoch`, so there is no clearing pass and no
   store-sized allocation per walk. A three-colour walk (occurs, cycle-safe resolution) takes two
   consecutive epochs, one for grey and one for black. This also fixes `Schemes.Writer.resetMemo`
-  (CK-41) and `schemaPropertiesWithDeps`' `seen` (CK-40).
+  (which made interface writing quadratic in constructors) and `schemaPropertiesWithDeps`' `seen`
+  (which made schema property settling cubic).
 - **Growable DFS stacks only** (I4). `Walk.zig` owns one reusable `std.ArrayList` stack per walk
   kind on the module's scratch arena. There are no fixed arrays.
-- **Records are normalised on merge** (CK-08). When `unifyRecord` merges two records, the surviving
+- **Records are normalised on merge**, so a closed record whose field was read stays closed for `==`. When `unifyRecord` merges two records, the surviving
   root's content is the *flattened* record: the union of the fields, sorted by symbol for the
   merge-join, plus the final extension. So a closed record stays one node with `ext =
   empty_record`. `Walk.recordRow(v)` follows an extension chain to its end and is the only
@@ -232,46 +231,33 @@ pub const Flags = struct {            // flex and rigid payload
 
   Symbol order is internal to the merge-join. **Everything that shows or chooses among fields orders
   them by name text:** `Render`, `Schemes.Writer`, the failure choice of §7.2 and the derived
-  `Shape.record` key. This is already true of `Render` and the writer today, and it keeps CK-07's
-  class out of messages (N5).
+  `Shape.record` key. This is already true of `Render` and the writer today, and it keeps interner-id order
+  out of messages.
 
-*As built by R4b (2026-09-25): the store is the shared type, and `Flags` is unchanged.* v2's store
-**is** `src/check/TypeStore.zig`'s type, unmodified, and R4b writes no `check2/TypeStore.zig`:
+*As built (2026-09-25): the store is the shared type.* The checker's store **is**
+`src/check/TypeStore.zig`'s type; there is no second store type:
 
 - Every piece §19 keeps shared reads that type — `Render` (every message), `Schemes` (the
   interface writer and reader), `Types.Builder` (every annotation), `Schema.State`,
   `SchemaPlanBuild`, `Exhaustive`'s context and `dump --stage=types` — so a second store type would
   have meant copying all of them, which §19.1 forbids ("imports the shared files … and does not
-  copy them").
-- R4b needs none of the additions above. The union-find, ranks, epoch marks (`nextMark`), `copy`
-  memo and journal are already the store's. `wants` and `obls` carry nothing in R4b's subset (§5,
-  *As built by R4b*): no module v2 checks ever attaches a method constraint or an obligation.
-- **Owed by R5/R6a (a design gap, not decided here):** `Flags.wants`/`obls` cannot be added to the
-  shared `Flags` without changing v1, which is frozen (§22). The likely form is a v2-owned
-  `check2/TypeStore.zig` that wraps the shared store and keeps `wants`/`obls` as **side columns
-  indexed by root**, merged on union and truncated on rollback like `extra`, so the shared readers
-  keep working. R5 decides and amends this paragraph. *(Decided by R5 below.)*
-
-*Decided by R5 (2026-09-25), before any obligation code: `obls` is one new field of the shared
-`Flags`, and `wants` is the shared `Flags.constraints` that already exists.* Three options were on
-the table (`plans/checker-rewrite.md` R5): fork the store type with its writer and printer; extend
-the shared `Flags`; or v2 side columns indexed by root, with hooks into the writer and printer.
-
-- **`obls: ObligationSet.Optional`** is added to `src/check/TypeStore.zig`'s `Flags`. It is an
-  opaque `u32` naming a set in v2's own table (`check2/Obligations.zig`: the obligation rows, the
-  sets and their links, §4.5). The store knows nothing about what it names. v1 never writes it and
-  never reads it: every `Flags` v1 builds is a literal that leaves it at its default `.none`, and
-  v1's one rebuild of a `Flags` from parts (CK-18's `dischargeEquatable`) drops it exactly as it
-  drops `constraints`, on a variable that never has one. `Flags` grows from 12 to 16 bytes and
-  `Content` does not grow: its largest payloads, `Structure` and `Alias`, are already 16 bytes (a
-  comptime assert in `TypeStore.zig` holds it at 20). **v1's behaviour is byte-identical**, proved
-  by the whole corpus under v1 and the dumps of every fixture, before and after (R5 *As built*).
+  copy them"). The union-find, ranks, epoch marks (`nextMark`), `copy` memo and journal are the
+  store's.
+- **`obls: ObligationSet.Optional`** is a field of the shared `Flags`. It is an opaque `u32` naming
+  a set in the checker's own table (`check2/Obligations.zig`: the obligation rows, the sets and
+  their links, §4.5). The store knows nothing about what it names. `Flags` is 16 bytes and
+  `Content` did not grow: its largest payloads, `Structure` and `Alias`, are already 16 bytes (a
+  comptime assert in `TypeStore.zig` holds it at 20). While the old checker still shared the store,
+  adding the field left its behaviour byte-identical, proved by the whole corpus and the dumps of
+  every fixture, before and after.
 - **`wants` is `Flags.constraints`.** The method requirements riding on a variable are what the
-  shared `Schemes.Writer` publishes and `Render` prints, and both read `Flags.constraints` today.
-  Keeping `wants` there means neither is forked or hooked. R6a pairs each `MethodConstraint` entry
-  with its `WantedId` in a v2 column indexed by the entry's position (the entries are append-only,
-  so a position never changes meaning). How it pairs them is R6a's to write down here.
-- **Why not side columns.** A column indexed by variable would be a second owner of "what rides
+  shared `Schemes.Writer` publishes and `Render` prints, and both read `Flags.constraints`.
+  Keeping `wants` there means neither is forked or hooked. Each `MethodConstraint` entry is paired
+  with its `WantedId` in a column indexed by the entry's position (the entries are append-only,
+  so a position never changes meaning).
+- **Why not side columns.** Three options were weighed: fork the store type with its writer and
+  printer; extend the shared `Flags`; or side columns indexed by root, with hooks into the writer
+  and printer. A column indexed by variable would be a second owner of "what rides
   on this variable": it must grow with every `store.fresh` (shared code that cannot know it), be
   kept in step with every merge, and be rolled back beside the journal rather than by it, and the
   shared writer and printer could not see it without a hook each. In the descriptor, the fact moves
@@ -280,16 +266,16 @@ the shared `Flags`; or v2 side columns indexed by root, with hooks into the writ
   all of them (`Render`, `Schemes`, `Types.Builder`, `Schema.State`, `Exhaustive`'s context).
 - **One owner per fact.** The link "this obligation rides here" is the descriptor's; the
   obligation itself (kind, variables, region, state) is `Obligations.zig`'s row; every merge of two
-  `Flags` is `Unify.zig`'s, `obls` included (CK-18's class: v2 never rebuilds a `Flags` field by
-  field — it copies the struct and changes one field).
-- **I2 as enforced in R4b** (restated by R4b's review, S6): **a type's children are read only
+  `Flags` is `Unify.zig`'s, `obls` included (a `Flags` is never rebuilt field by field, which is how
+  a variable's method constraints were once dropped — it copies the struct and changes one field).
+- **I2 as enforced:** **a type's children are read only
   through `Walk`** — every traversal takes its successors from `Walk.child(…, .structural |
   .owned | .payload)`, and a function's parameters, a record's field in a range just built and a
   variable's constraints have one accessor each there (`Walk.function`, `Walk.fieldIn`,
   `Walk.constraints`). `Unify.zig` and `Instantiate.zig` also read children, to pair two
   structures and to copy one. Anyone may read a node's tag and flags. `src/check2/rules_test.zig`
-  enforces it by reading the sources, since the shared store cannot (and refuses an import of v1's
-  `Constrain.zig` or `Solve.zig`). The shared readers above keep their own walks (v1 code, kept).
+  enforces it by reading the sources, since the shared store cannot. The shared readers above keep
+  their own walks.
 
 ### 4.2 Wanteds, givens and evidence
 
@@ -343,8 +329,8 @@ inst_callee: []WantedId.Optional        // per `method_call`/`type_dispatch`: th
 - **A join is an alias.** When two variables that both carry a wanted named `m` merge (Rule U1), the
   two `method_type`s are unified and the younger wanted is answered `alias(older)`. There is no
   `resolved_methods`, no `superseded` redirect, no `adopt` and no `committed_copy`: an alias is the
-  whole mechanism (disp R2).
-- **In-place writes are journalled** (I14, B5). `Wanted.state` and `answers[id]` can be written for
+  whole mechanism.
+- **In-place writes are journalled** (I14). `Wanted.state` and `answers[id]` can be written for
   a wanted created before a speculation's snapshot:
   - the alias of a join;
   - `open → ready` when a flex is bound;
@@ -355,8 +341,8 @@ inst_callee: []WantedId.Optional        // per `method_call`/`type_dispatch`: th
   elaboration write the same fields, but they never run inside a probe (I14), so they need no
   journal.
 
-*As built by R6a (2026-09-25): how a `Flags.constraints` entry is paired with its wanted, and what
-R6a records.* `check2/Evidence.zig` holds the tables; §4.1's *Decided by R5* left the pairing to R6a.
+*As built (2026-09-25): how a `Flags.constraints` entry is paired with its wanted.*
+`check2/Evidence.zig` holds the tables.
 
 - **By position.** `Evidence.slots[p]` names what sits at position `p` of the store's append-only
   `constraints` table: a wanted, a given (a rigid's entry, tagged), or nothing. An OPEN wanted on a
@@ -370,31 +356,31 @@ R6a records.* `check2/Evidence.zig` holds the tables; §4.1's *Decided by R5* le
 - **`Given`** is `{ rigid, method, method_type, decl, k }`: registered when a top-level annotated
   declaration's rigid reading is made (`Evidence.registerGivens`), `k` its index in
   `Evidence.requirements` of that reading. A `let` annotation has no `where` clause
-  (`language.md`), so every binder is `decl` until D5 (R14). *R14 (2026-09-27):* still true of
-  givens; a `let` binding's promoted wanted is answered `promoted`, and P6 names its parameter
-  `param let <inst> k` (§12.3 *as built by R14*).
-- **`Wanted`** is §4.2's row less `owner` and `frame` (one top-level frame at a time until R7:
-  every wanted joins `Solve.ready`) and plus `parent` (the lineage of §9.5) and `kind` (the surface:
-  dot-call, operator, `where` clause, `type_dispatch` — which decides derivation and the texts).
-  `seq` is the one counter obligations use (`Obligations.seq`), so the queue drains both in creation
-  order. *Revised by R6a's review (2026-09-25, B1):* the `walked` bit is gone — it let a position
-  skip the derivability verdict, and a flex position bound later was then never asked (§9 *As
-  built by R6a*).
+  (`language.md`), so every given's binder is `decl`. A `let` binding's promoted wanted (D5) is
+  answered `promoted`, and P6 names its parameter `param let <inst> k` (§12.3, *As built
+  2026-09-27*).
+- **`Wanted`** is §4.2's row less `owner` and `frame` (as first built, one top-level frame at a
+  time: every wanted joined `Solve.ready`; §10.8 has the frames) and plus `parent` (the lineage of
+  §9.5) and `kind` (the surface: dot-call, operator, `where` clause, `type_dispatch` — which
+  decides derivation and the texts). `seq` is the one counter obligations use (`Obligations.seq`),
+  so the queue drains both in creation order. *Revised 2026-09-25:* the `walked` bit is gone — it
+  let a position skip the derivability verdict, and a flex position bound later was then never
+  asked (§9, *As built 2026-09-25*).
 - **`Answer`** is recorded for every answered wanted: `param { decl, k }` for a GIVEN (the
   declaration's `where` clause, `k` its index in the clause's canonical order), `promoted { root,
   method }` for a requirement promotion kept, `alias`, `top`/`ext` with their instantiation's
   wanteds as `args`, `derived` with its positions, `primitive`, `undetermined`, `field`,
-  `group_call`; P6 (R6b) elaborates them. *Revised by R6a's review (S1):* a promoted wanted
+  `group_call`; P6 elaborates them. *Revised 2026-09-25:* a promoted wanted
   records its REQUIREMENT, never an index — the index is the member's at the site, which P6
   computes by §12.3 (a recursive group's members share quantifiers, so one wanted can be a
   different member's `k` at each site).
-- **`inst_evidence`** *(revised by R6a's review, B4)* is recorded where the wanteds are CREATED: a
+- **`inst_evidence`** *(revised 2026-09-25)* is recorded where the wanteds are CREATED: a
   copy (`Instantiate.copy`) and an imported scheme (`Instantiate.wantImported`) make their
   requirements' wanteds in `Evidence.requirements` order of the scheme — §12.1's canonical order,
   the one function the writer and promotion read — and `Solve.instantiated` records them as the
   instruction's row. A `top`/`ext` answer's `args` are the same list. Nothing downstream reorders
   evidence: I5 holds by construction.
-- **Every entry is paired, or the compiler says so** *(revised by R6a's review, S2)*. A flex's
+- **Every entry is paired, or the compiler says so** *(revised 2026-09-25)*. A flex's
   entry with no wanted — in `Unify`'s release and union, `Solve.poison`, `Resolve.attach`, promotion,
   the cap, an instantiation's copy — is `internal`: `Solve.expect` (a debug build stops, a release
   build reports and takes the safe path) or, inside `Unify`, which never reports, `Unify.invariant`,
@@ -428,12 +414,12 @@ merged_into: ?GroupId, // union-find parent after a back-edge (§10.4); none = i
 
 The **effective status** of a group is the status of `root(g)`, following `merged_into` to the
 root, as in union-find. A group merged into a root that is now `done` reads as `done`, and a
-back-edge to a merged group merges from its root (S-new-3).
+back-edge to a merged group merges from its root .
 
-*Simplified 2026-09-24 (review round 2, N3).* The `parked` lists, the `value_deps` prefix lists and
+*Simplified 2026-09-24.* The `parked` lists, the `value_deps` prefix lists and
 the `merged` status are deleted. Nesting happens at demand (§10.2), so nothing waits in a group.
 
-*As built by R7 (2026-09-26):* `Groups.zig`; `frame_of[g]` is `frame`, the SCCs are
+*As built (2026-09-26):* `Groups.zig`; `frame_of[g]` is `frame`, the SCCs are
 read from `Module.bindingGroups`; a group is `checking` from its generation on (§10.8).
 
 ### 4.5 Obligations ride on their variables
@@ -450,14 +436,13 @@ the append-only `obl_links`, which merges like `wants`.
   root's rank can only be lower.
   - What is lowered is the closure of the **result** variables (the `tuple_index` result, the `try`
     instruction result). The **deciding** variables, the tuple and the `try` subject and target, are
-    flex roots for as long as the obligation is open, so their closure is just themselves and their
-    own requirements. Nothing else, such as a subject's success type, is over-lowered. R5's reviewer
-    tests a `let`-local `?` whose target escapes and whose subject is otherwise young (round 3, N-3).
-  - In N1's program, `a = p.0` has its result `r` lowered to `p`'s outer rank, so `a` is not
-    generalised to `∀r. r`, and `( a + snd p, String.length a )` is the `type_mismatch` it should
-    be.
+    own requirements. Nothing else, such as a subject's success type, is over-lowered. A
+    `let`-local `?` whose target escapes and whose subject is otherwise young tests exactly this.
+  - In a program where `a = p.0` reads an outer pair `p`, the result `r` is lowered to `p`'s outer
+    rank, so `a` is not generalised to `∀r. r`, and `( a + snd p, String.length a )` is the
+    `type_mismatch` it should be.
 - **Readied through their variable**, as wanteds are. When a flex carrying it is bound to a
-  structure or a rigid, the obligation goes on **its creation frame's** `ready` queue (§9.1; row field `frame`, round 4 R4-1). It is decided in the
+  structure or a rigid, the obligation goes on **its creation frame's** `ready` queue (§9.1; the row's `frame` field). It is decided in the
   settle loop of the frame that drains it (§8.1).
 - **Decided at quantification.** When generalisation quantifies a variable that still carries open
   obligations, the boundary's close step reports or folds them, per §8.5. That is where v1 already
@@ -465,13 +450,12 @@ the append-only `obl_links`, which merges like `wants`.
 - **Carried by escape.** An obligation whose variable escaped is simply still attached to it. There
   are no buckets and nothing to re-bucket (I3).
 
-The cost is linear: each obligation is attached once, readied at most once and closed at most once
-(S-new-2). *Revised 2026-09-24 (review round 2, N1 and S-new-2): per-rank buckets, and extras
-"treated as children" without any lowering, let an outer variable's obligation extras be
-generalised.*
+The cost is linear: each obligation is attached once, readied at most once and closed at most once.
+*Revised 2026-09-24: per-rank buckets, and extras "treated as children" without any lowering, let
+an outer variable's obligation extras be generalised.*
 
-*Amended by R5's review (2026-09-25): every obligation has an **owner**, and rank sharing runs
-from the owner to its dependants, never back.* The round-2 text above ("all variables of one
+*Amended 2026-09-25: every obligation has an **owner**, and rank sharing runs
+from the owner to its dependants, never back.* The text above ("all variables of one
 obligation share one rank") over-constrains a `?`. In
 
 ```elm
@@ -485,8 +469,8 @@ f u =
 
 the subject `u` is `f`'s and the target is `g`'s own result. Sharing one rank lowered the target
 to `u`'s rank, so `g` stopped being polymorphic in its result — including the result's *success*
-type, which a `?` never constrains — and v2 refused a program v1 builds and runs
-(`tests/corpus/run/TryTargetKeepsItsSuccessType.beni`, CK-99). What a decision couples is: the
+type, which a `?` never constrains — and the checker refused a program v1 built and ran
+(`tests/corpus/run/TryTargetKeepsItsSuccessType.beni`). What a decision couples is: the
 subject and the target share a head and an error type, and the value is the subject's payload.
 The target's own success type is free. D2 as amended (§21.1) already names the owner: the
 boundary that decides a `?` by default is **the target's own generalisation boundary**. So:
@@ -498,28 +482,28 @@ boundary that decides a `?` by default is **the target's own generalisation boun
 | `equatable` | the variable | — |
 | `try` | the **target's** result | the subject and the value |
 
-- Lowering the dependants keeps N1 and N2: in CK-68's program the `.0` result drops to `p`'s rank,
-  and in N2's (`g u = k (u?)`, target outer through `k`) the subject `u` drops to the target's
+- Lowering the dependants keeps both earlier cases: in `a = p.0` the `.0` result drops to `p`'s
+  rank, and in `g u = k (u?)` (target outer through `k`) the subject `u` drops to the target's
   rank, so `g` is not generalised over it.
 - A `?` whose subject is outer and whose target is young (the program above) is owned by the
   target's frame. If nothing decided it by that frame's step 3, it is defaulted there, to
   `Result`, as v1 decides it. A fact about the subject that comes later, in the outer frame, is
   too late for it. That is D2 as amended ("the target's own generalisation boundary"), and v1
   refuses the same programs.
-- **I15, as enforced from R5:** for every open obligation, no dependant outranks its owner. Every
+- **I15, as enforced:** for every open obligation, no dependant outranks its owner. Every
   obligation variable is a flex root while the row is open, except a result, which may be bound
   to a structure; `lowerTo` then lowers that structure's closure, like any variable bound to an
-  outer one. So the round-2 sentence is replaced by the table above. `Walk.owned` yields a row's
+  outer one. So the one-rank sentence is replaced by the table above. `Walk.owned` yields a row's
   dependants from its owner only.
 
-*As built by R5, after its review (2026-09-25).* `check2/Obligations.zig` holds the rows and the
-sets, and `Flags.obls` (§4.1, *Decided by R5*) is the link.
+*As built (2026-09-25).* `check2/Obligations.zig` holds the rows and the
+sets, and `Flags.obls` (§4.1) is the link.
 
 - **A row** is `{ kind, state, region, seq, origin, reported, vars[3], index }`. `vars` holds the
   deciding variables first (the tuple; the part; the `try` subject and target), then the results
   (the `tuple_index` result, the `try` value), padded with the first. `origin` and `reported`
-  serve the `equatable` marker (§11.4 *As built by R5*). `seq` is the table's counter until R6a
-  shares it with wanteds, and the drain sorts by it.
+  serve the `equatable` marker (§11.4, *As built 2026-09-25*). `seq` is the counter shared with
+  wanteds, and the drain sorts by it.
 - **A set** is a growable list of row ids, one per variable that carries rows, mutated in place.
   Attaching a row appends to the owner's set. A merge of two flexes moves the smaller set's open
   rows into the larger one (union by size). Neither is persistent: no speculation exists yet
@@ -532,7 +516,7 @@ sets, and `Flags.obls` (§4.1, *Decided by R5*) is the link.
   strictly dropped. The rows at the surviving rank already hold I15.
 - **Readied**: `Unify.bind`, a merge with `err` and `Solve.poison` ready a flex's open rows onto
   the top-level frame's queue. `Solve` owns that queue, and `Unify` holds one pointer to it (§9.1:
-  every `let` frame routes there; R7 makes the queue per frame). A row readied onto a variable
+  as first built every `let` frame routed there; §10.8 makes the queue per frame). A row readied onto a variable
   that is still a flex is re-attached, not decided: a bind to an alias whose expansion is a flex.
 - **Cost (the §4.5 claim, stated precisely).** Let R be the rows, M the flex merges and D the
   deepest nesting of frames. Then:
@@ -543,8 +527,9 @@ sets, and `Flags.obls` (§4.1, *Decided by R5*) is the link.
   - Readying and closing touch each row once.
   - Step 3 looks at a `try` row once per frame it passes through on its way out: O(tries · D).
 
-  CK-96, CK-97 and CK-98 time the three shapes that were quadratic before
-  (`tests/blackbox/perf_test.zig`, `zig build test-perf`).
+  `tests/blackbox/perf_test.zig` (`zig build test-perf`) times the three shapes that would be
+  quadratic otherwise: many rows on one variable, merges of variables carrying rows, and the `?`
+  default step.
 - No row or set write is journalled (§7.5, I14): see above.
 
 ---
@@ -558,18 +543,17 @@ phase reads and writes only what its row says.
 |---|---|---|---|
 | P1 | `setup` | Bir, interfaces of imports | store, the tables of §4, schema state (`Schema.State.buildAll`) |
 | P2 | `annotations` | every annotated value and its `where` | each annotated declaration's **published scheme**, read at rank `generalized` (§6.6); `DeclInfo.requirements` for bodiless `foreign … where`. No rigid of P2 is ever unified |
-| P3 | `index` | the declaration table | own-name index `Symbol → DeclIndex` (all values; `pub` bit), own nominal types; replaces the linear `ownDeclNamed` scans (CK-42) |
-| P4 | `groups` | everything above | per group in SCC order, **skipping groups whose effective status is already `done`** because a nesting checked them (round 3, S-7), through `checkGroup` (§10.2): constrain, solve, resolve (nesting other groups at demand), occurs, generalise, check generality, promote |
+| P3 | `index` | the declaration table | own-name index `Symbol → DeclIndex` (all values; `pub` bit), own nominal types; replaces the linear `ownDeclNamed` scans |
+| P4 | `groups` | everything above | per group in SCC order, **skipping groups whose effective status is already `done`** because a nesting checked them, through `checkGroup` (§10.2): constrain, solve, resolve (nesting other groups at demand), occurs, generalise, check generality, promote |
 | P5 | `derived` | the fixpoint of §11 (already memoised during P4) | the eager derived rows for every own nominal type (A.23) |
 | P6 | `elaborate` | answers, `inst_evidence`, `inst_callee`, group-call records | the dispatch table's trees (§12.2, §13) |
 | P7 | `exhaustive` | failure bits (§15.2), Bir | `missing_patterns`, `redundant_pattern`, refutable-pattern diagnostics |
 | P8 | `publish` | schemes, derived contexts | the interface record through the one routine (§14.1) |
-| P9 | `finish` | the dispatch table | `Dispatch.finish` (sort, assert I5–I7), `--roundtrip-dispatch`, `Cycles.run`, then the schema plan, gated on the module having **no error after cycles** (CK-15) |
+| P9 | `finish` | the dispatch table | `Dispatch.finish` (sort, assert I5–I7), `--roundtrip-dispatch`, `Cycles.run`, then the schema plan, gated on the module having **no error after cycles** |
 
 - The profile events `constrain`, `solve`, `resolve`, `derived`, `elaborate`, `exhaustive` and
-  `publish` nest inside `check`, one per phase. Nothing super-linear can then hide *between* events
-  (orch F3).
-  *As built by R8c (2026-09-26):* `derived` (P5), `elaborate` (P6), `publish` (P8) and `finish`
+  `publish` nest inside `check`, one per phase. Nothing super-linear can then hide *between* events.
+  *As built (2026-09-26):* `derived` (P5), `elaborate` (P6), `publish` (P8) and `finish`
   (P9) are `Profile.Phase`s, one event each per module under `--checker=v2`, nested in `check`
   (`blackbox_test.zig`, "--self-profile under --checker=v2 …"). `resolve` stays inside `solve`: the
   name is the frontend's resolution event.
@@ -578,103 +562,22 @@ phase reads and writes only what its row says.
   protocol and cache install. It moves out of `Check.zig` into `Driver.zig` and `Incremental.zig`,
   and calls `Module.check(m)` or `Module.install(m, entry)`.
 
-*As built by R4b (2026-09-25).* R4b runs P1, P2, P4, P7, P8 and P9, and only on a module in its
-**subset**:
+*As built (2026-09-25).* The checker first ran on a subset of the language behind a gate that
+refused, with `not_implemented`, whatever had not been built yet; the gate and every refusal it fed
+are gone, and every phase above runs. What those first builds settled, and still holds:
 
-- **The gate (P0).** Before P1, `Subset.zig` scans the module's Bir once and names the first slice
-  the module needs, or none:
-  - **R6a** — a `method_call` or `type_dispatch` (every `x.m`, `==`, `<`, operator section), a
-    declaration with a `where` clause, or a reference to an imported value, schema member or
-    schema constructor whose scheme carries a method constraint;
-  - **R5** — a `tuple_index`, `interp` or `try` instruction, an annotation variable written
-    `equatable`, or a reference to an imported scheme with an `equatable` quantifier
-    (`Basics.eq`/`neq`).
-
-  A module that needs any of them reports ONE `not_implemented` at its first offending
-  instruction, naming the latest slice it needs, and publishes nothing (the shell, as R4a's stub
-  did), through `Report.appendTo`, the one emit path's list half (§15.1). A module an earlier
-  phase reported on, or the graph poisoned, reports nothing, as before.
-
-  *Revised by R4b's review (2026-09-25; S8, the manager's decision).* The gate first had a third
-  slice, **R8a**, for a module that declares a `type` or a tagged schema (P5's eager derived rows).
-  It no longer does: such a module is **checked**. Its interface's `eq`/`compare` rows say
-  `unchecked` until R8a, and nothing reads them before then. Only a `--library` build needs the
-  rows — it exports every nominal one (`Reach.collectRoots`) — so `js/Emit.zig` refuses a
-  `--library` build under `--checker=v2` whose root package declares a `type`, with
-  `not_implemented` naming R8a, before any output exists, the way it refuses schemas.
-  `tests/pending/v2-subset.sh` reads the same rule off v1's dumps: no `site`, only `evidence=0`,
-  none of the R5 or R6a forms, no `derived` row in a `dispatch/` fixture (v2's table has none),
-  and no `type` in an `emit/` or `emit/release/` fixture (a library). `test-v2` cross-checks the
-  two: a fixture v2 does not refuse either passes or is listed in `v2-expected.md`
-  (`REPORT DRIFT` otherwise).
-- **P3** is not needed: the own-name index serves resolution (R6a). **P5 and P6** are R8a's and
-  R6b's; P9's table is one `DeclInfo` per declaration (`value_arity` from the scheme, convention
-  `plain`), no site, no term.
+- **P3** is the own-name index: a sorted `(name, decl)` array searched by `Solve.ownValue`, so no
+  resolution scans the declaration table.
 - **P9's order**: the table, `--roundtrip-dispatch` on the table, `Cycles.run`, then the schema
-  plan — gated on no error in the module, so after `Cycles` (CK-15) — and then the plan's own
-  canonical round trip under the same flag. v1 round-trips the plan together with the table, which
-  it can because it builds the plan first; built after `Cycles`, the plan cannot be in the table's
-  round trip.
-- The profile events are `check`, `constrain`, `solve` and `exhaustive`; `resolve`, `derived`,
-  `elaborate` and `publish` arrive with the phases that have work (no `Profile.Phase` exists for
-  them yet).
-
-*Widened by R5 (2026-09-25).* The gate's R5 row is gone: a `tuple_index`, `interp` or `try`
-instruction, an annotation variable written `equatable` and an imported `equatable` quantifier
-(`Basics.eq`/`neq`) are checked. The one refusal left is **R6a**'s (dispatch); the eager derived
-rows stay R8a's, refused only for a `--library` build. `tests/pending/v2-subset.sh` drops the same
-forms, and `test-v2`'s drift check (`REPORT DRIFT`) holds the two together: on R5's corpus every
-one of the 355 fixtures the script names passes, and no fixture v2 does not refuse is red outside
-`v2-expected.md`. P9's table gains the `tries` rows (§8.6 *As built by R5*).
-
-*Widened by R6a (2026-09-25).* The gate is gone: v2 **checks every construct**, dispatch included,
-and P3 runs (the own-name index, a sorted `(name, decl)` array searched by `Solve.ownValue`: CK-42).
-What remains outside it is refused where it arises, never by a pre-scan:
-
-- **P6 is R6b's.** A root module whose own code needs evidence elaborated (`check2/Subset.zig`'s
-  `needsElaboration`: a `method_call` or `type_dispatch`, a `where` clause, or a reference to an
-  imported scheme with a requirement) is checked, but `js/Emit.zig` refuses to **build** it
-  (`not_implemented`, R6b, before any output) and `main.zig` refuses its `dump --stage=dispatch`.
-  `check` needs no elaboration. P9's table holds each declaration's requirement list (canonical
-  order, §12.1) and its convention with that count, and one `callee` term per `method_call` or
-  `type_dispatch` whose callee resolved to a value (`top` or `ext`) — the edge `Cycles` reads
-  (`Edges.declEdges`' third leg), so a value cycle through a method is still `cyclic_value`. The
-  refusal is by the Bir and the imports' interfaces only, so a cache hit answers the same.
-- **An unannotated own method used before its group** (§10, R7) is `not_implemented` at the use —
-  in the module rule, and in a derivability walk that meets an own type whose method of that name
-  has no scheme yet. A module that reports one keeps only its refusals (`Report.keepOnlyRefusals`):
-  what a use v2 could not type implies is noise.
-- **Derived contexts** (§11.2, R8a) are v1's one-entry-per-parameter rule: a nominal type's derived
-  `eq`/`compare` asks each type argument for the same method, and whether the type derives at all
-  is the session's capability bit, which v2 settles for its own module with the shared
-  `Types.settleDispatchCapabilities` (the scheme-driven settle v1 runs first) at P4's start and
-  after a group that publishes an unannotated `pub eq` or `compare`. Where v1's second,
-  probe-driven settle answers differently, v2 differs (listed in `tests/pending/v2-expected.md`,
-  R8a). A cache hit runs the same settle and skips v1's derived-row restore
-  (`Incremental.install`): v2 writes no derived row before R8a.
-
-*Widened by R6b (2026-09-25).* P5 and P6 run, so v2 **builds** what it checks; `Subset.zig` and the
-two refusals it fed (`js/Emit.zig`'s build, `main.zig`'s `dump --stage=dispatch`) are gone. What
-remains refused is refused where it arises:
-
-- **P5 is v1's rows under v1's rule until R8a** (`check2/Eager.zig`). Every own nominal type gets
-  an `eq` and a `compare` row unless the module has a `pub` value of that name or the capability bit
-  says the type cannot answer it; the context is one entry per type parameter; the body is ONE
-  wanted per constructor argument, on the argument's type read with the parameters bound to fresh
-  flex markers, resolved in a frame of its own with a quiet report. A position left open on a
-  marker for the row's own method is that marker's context entry (`param derived i k`); anything
-  else — a position the resolver refused, a payload asking the parameter for another method — means
-  the row is not written, nor any row whose body names it. A USE whose answer is such a row is
-  `not_implemented` (R8a) at the use, from P6.
-- **The capability bits a dependent reads are the rows'.** After P9 a module's own ADTs derive
-  exactly when it wrote a row (`Types.restoreDerivedCapabilities`, which `Incremental.install` now
-  runs for v2 too), so a dependent never names a row that was not written, and a cache hit and a
-  cold check agree by construction. Where a type answered the settle but P5 wrote no row, the
-  dependent's comparison is refused (`not_equatable`), as v1's second settle refuses it.
-- **P6** runs after P5, before P7 (`check2/Elaborate.zig`, §12.2 *As built by R6b*). The I7 assert
-  runs last in P9, after `Cycles`, on a module that reported nothing (§13.1).
-- A `--library` build whose root package declares a `type` is still refused (R8a): it exports every
-  row, and R8a's contexts change them.
+  plan — gated on no error in the module, so after `Cycles` — and then the plan's own canonical
+  round trip under the same flag. Built after `Cycles`, the plan cannot be in the table's round
+  trip.
+- **P9's table** holds each declaration's requirement list (canonical order, §12.1) and its
+  convention with that count, one `callee` term per `method_call` or `type_dispatch` whose callee
+  resolved to a value (`top` or `ext`) — the edge `Cycles` reads (`Edges.declEdges`' third leg), so
+  a value cycle through a method is still `cyclic_value` — and the `tries` rows (§8.6).
+- **P6** runs after P5, before P7 (`check2/Elaborate.zig`, §12.2). The I7 assert runs last in P9,
+  after `Cycles`, on a module that reported nothing (§13.1).
 
 ---
 
@@ -689,14 +592,14 @@ Unchanged in shape: Elm's `Constrain` over a binding group, producing `equal`, `
 pattern constraints, obligations, and the `method` node of `static-dispatch-spike.md` §6.2 Rule U0.
 The tree is solved left to right.
 
-### 6.2 `.local` resolved at generation (I11, CK-09)
+### 6.2 `.local` resolved at generation (I11)
 
 The generator resolves a `.local` reference to its `Var` while it builds the node. It reads the
 member's own `local_type` slice, which it holds at that point, and emits `instantiate(var)` for a
 generalised local or `equal(var)` for a monomorphic one. The solver's `schemeOf` has no `.local`
 arm. `Env.local_var` is not visible to `Solve`.
 
-*As built by R4b (2026-09-25).* Resolving at generation needs every binder's variable to exist
+*As built (2026-09-25).* Resolving at generation needs every binder's variable to exist
 before any reference to it is generated, which v1's order did not give (it generated a `let`'s body
 first and its groups last to first, and looked locals up at solve time):
 
@@ -728,23 +631,22 @@ branch's pattern variables at that point in the tree, before any enclosing const
 This is Elm's placement, where each lambda and branch is a `CLet` header.
 
 So `(\y -> y y) "s"` reports `infinite_type` at `y` before `"s"` is unified against the unrolled
-arrow. `y` is then poisoned, and the application adds no second diagnostic. *Added 2026-09-24
-(S4).*
+arrow. `y` is then poisoned, and the application adds no second diagnostic. *Added 2026-09-24.*
 
-### 6.4 Operator sections (CK-32)
+### 6.4 Operator sections
 
-`(==)` lowers to `lambda [%a, %b] -> method_call %a .eq [%b]` (BIR is unchanged). The "S3 shim"
-(`Constrain.zig:910-914`) is deleted. A call of an operator section is an ordinary call of the
+`(==)` lowers to `lambda [%a, %b] -> method_call %a .eq [%b]` (BIR is unchanged). v1's special case for
+an applied section (`Constrain.zig:910-914`) is deleted. A call of an operator section is an ordinary call of the
 lambda, and the `method_call` inside it gets its callee wanted like any other. The evidence then
 lives on the instruction `Lower` reads it from.
 
-### 6.5 Records are constrained before they meet the expectation (CK-59)
+### 6.5 Records are constrained before they meet the expectation
 
 A record literal's fields are constrained first. The literal's type is then unified with the
 expected type, so a mismatch renders the literal's field types (`{ n : number, name : String }`)
 and not fresh variables.
 
-*Amended by R5 (2026-09-25): the solver chooses the order, per literal.* Constraining every
+*Amended 2026-09-25: the solver chooses the order, per literal.* Constraining every
 literal's fields first, as written above, also throws away the expected type a field is checked
 against: `{ main = "not an Int", other = 1 }` against `Model` stopped being *"The `main` field of
 this record is not what I expect"* at the field and became a mismatch of the whole record at the
@@ -757,27 +659,26 @@ when it meets it:
   is closed and has exactly the literal's field names — the meeting then cannot fail on a name or
   on closedness;
 - the **fields first** otherwise, so a missing or unexpected field, or an open record the literal
-  cannot stand in for, shows the literal's own field types (CK-59).
+  cannot stand in for, shows the literal's own field types.
 
 It is a solving-order choice read off the expectation at that node, never a speculation (§7.5).
-Three v1 goldens pin the old rendering and are listed in `tests/pending/v2-expected.md`
-(`MissingField`, `UnknownField`, `RecordNotClosed`); CK-59's own fixture is red under v2 only for
-its article, which is R13's.
+Three v1 goldens pinned the old rendering (`MissingField`, `UnknownField`, `RecordNotClosed`) and
+were re-blessed.
 
-*Refined by R5's review (2026-09-25).*
+*Refined 2026-09-25.*
 - **An unkinded variable** takes the literal expectation-first. A `number` or `appendable` one does
   not: it fails on the kind, so the fields go first (`Basics.add x { a = 1, b = "s" }` shows `{ a :
-  number, b : String }`; structural review S1, `tests/corpus/check/bad/KindedExpectationShowsLiteral`).
+  number, b : String }`; `tests/corpus/check/bad/KindedExpectationShowsLiteral`).
 - **A record open on a flex whose field names are all the literal's** also takes it expectation
   first, since the meeting cannot fail on a name. So a flagged field of a comparing function's
   parameter meets the literal's field before the lambda does, and the lambda is where
-  `not_equatable` points, as in v1 (adversarial review F7).
+  `not_equatable` points, as in v1.
 - The row is read into `Walk.Stacks`' scratch list, not a fresh allocation per literal.
 
 ### 6.6 Annotations: one scheme, one checked instance
 
-*Revised 2026-09-24. Round 1 (S16): the rank of P2's rigids had been unspecified. Round 2 (N8):
-recursive uses must see the scheme, not the rigid instance.*
+*Revised 2026-09-24: the rank of P2's rigids had been unspecified, and recursive uses must see
+the scheme, not the rigid instance.*
 
 - **Every annotation has a scheme before anything uses it.**
   - A top-level annotation's scheme is built in P2 at rank `generalized`.
@@ -793,12 +694,13 @@ recursive uses must see the scheme, not the rigid instance.*
 
   So polymorphic recursion through an annotation works. v1 accepts
   `depth : List a -> Int` with a recursive `depth [ 1 ]`, and the same shape in a `let`, and so does
-  v2 (round 2, N8).
+  v2.
 - **Only the body check uses a rigid instantiation** of the scheme. It is made in the checking frame
   at that frame's rank, with its rigids pooled there and its `where` clause turned into givens. At
   the frame's boundary the rigids are quantified with the frame, and I1 checks them (§8.3).
 
-This is not CK-01's "two readings". The defect there was that the checked copy was never validated.
+This is not v1's "two readings", whose defect was that the checked copy was never validated, so
+a `let` binding's rigid could escape and callers trusted the false annotation.
 Here the checked copy is an instance of the published scheme, and I1 validates it. A failure is an
 error (`rigid_mismatch`), so a false annotation never compiles, even though dependents checked
 earlier had already instantiated its scheme.
@@ -820,29 +722,29 @@ with its category (Elm's split). Inside `unify`:
   origin)`. It then answers the younger wanted `alias(older)` (§4.2).
 - **flex ⊓ structure, alias or rigid** binds the flex, and moves each of its wanteds and open
   obligations to the `ready` queue (a journalled write, §4.2). Nothing is resolved.
-- **Every bind appends the bound variable to `touched`** (§8.1, N6). A merge also moves `obls`
+- **Every bind appends the bound variable to `touched`** (§8.1). A merge also moves `obls`
   and runs §4.5's shared-rank lowering.
 - **Attaching a wanted keeps I15.** Three things attach a wanted to a receiver: a `method` node on a
   flex, an instantiation creating one, and a merge moving `wants` onto the surviving root. Each then
   runs `lowerTo(w.method_type, rank(find(w.receiver)))`. This is an `owned` walk that lowers every
   variable it reaches to at most that rank, like `adjustRank` but downward only, stopping at nodes
   already at or below it.
-  - In CK-02, `x.combine y` attaches to the outer `x`, so `y`'s type drops to `f`'s rank and `g` is
+  - In `f x = let g y = x.combine y in …`, `x.combine y` attaches to the outer `x`, so `y`'s type drops to `f`'s rank and `g` is
     not generalised over it.
   - A young receiver merged later with an outer variable is covered by the pool table: the young
     receiver's pool entry now reads the outer root's rank and `adjustRank` descends its `owned`
     successors.
 
   The cost is one walk of the method type per attachment. A method type is a function of two or
-  three nodes. *Added 2026-09-24 (B2).*
+  three nodes. *Added 2026-09-24.*
 - **flex ⊓ err** marks each wanted `failed` silently: poisoned, and never reported.
 - **rigid ⊓ non-identical** is `mismatch(.rigid)`, as today.
 - **rigid capture.** When a rigid is merged with a flex whose rank is lower than the rigid's, `unify`
   appends `Capture { rigid, region }` to the boundary's capture list. §8.3 reads it for the region of
   an escape.
-  - *As built by R4b (2026-09-25), two changes.* (1) A capture is also recorded when a flex binds a
-    **structure or alias of higher rank**: that is how a rigid **row** variable escapes (CK-01's
-    `sk7`, `g y = o` with `g : { r | x : Int } -> …`) — `o`'s outer flex is bound to the young record
+  - *As built (2026-09-25), two changes.* (1) A capture is also recorded when a flex binds a
+    **structure or alias of higher rank**: that is how a rigid **row** variable escapes
+    (`g y = o` with `g : { r | x : Int } -> …`) — `o`'s outer flex is bound to the young record
     holding `r`, and `r` itself is never merged with anything. (2) The list is **per module**, not
     per boundary, and a frame records its length when it is pushed: the rigid's frame need not be
     the current one (`g y = let k = x in k` captures inside `k`'s frame), and §8.3 reads only the
@@ -851,19 +753,19 @@ with its category (Elm's split). Inside `unify`:
     capture, on the error path only.
 - **records** use the four-way merge-join of today, producing a normalised record (§4.1).
 
-*Amended by R15-fix-C (2026-09-28, CK-169, CK-172, CK-173, CK-174): an alias is a name, and
+*Amended 2026-09-28: an alias is a name, and
 `unify` never closes a cycle through an alias's `actual`.* Every unification with an alias on
 either side goes through one row (`Unify.throughAlias`), which first resolves each alias side to
 the end of its chain:
 
 - **Two sides whose chains end at one variable are one type**, and nothing is written. Before,
   `x ⊓ Id x` bound `x` to the alias whose expansion is `x` — a cycle through `actual`, which the
-  binder's occurs check then called an INFINITE TYPE `a = Id a` (CK-172) — and two aliases of one
+  binder's occurs check then called an INFINITE TYPE `a = Id a` — and two aliases of one
   name, one the other's argument, merged into a node whose `actual` reached itself.
 - **A variable meets the expansion when the expansion is a variable.** `rigid ⊓ alias` answered
-  "no" without looking through (`unwrapId : Id a -> a` was a rigid mismatch, CK-173), and a
+  "no" without looking through (`unwrapId : Id a -> a` was a rigid mismatch), and a
   `number` flex tested its kind against an alias of the literal's own flex and failed
-  (`wrap 1 == wrap 1` was a kind mismatch, CK-174). Only a **flex ⊓ alias of a structure or `err`**
+  (`wrap 1 == wrap 1` was a kind mismatch). Only a **flex ⊓ alias of a structure or `err`**
   binds the flex to the alias by name, so a message still prints `Id Int` where the program wrote
   it.
 - **Two aliases of one name** unify their arguments pairwise and merge, keeping the name, unless the
@@ -873,13 +775,13 @@ the end of its chain:
 With this row no write makes an alias reach itself through `actual` (every other writer of an
 `alias` — the builder, instantiation, the interface readers — copies an acyclic one), and
 `TypeStore.resolved` walks a chain with **no bound**: its 1 024-link guard answered `err` past it,
-silently (CK-169, CK-170; §12.2 *amended by R15-fix-C*). A chain longer than the store has
+silently, and let a long chain unify with anything (§12.2, *amended 2026-09-28*). A chain longer than the store has
 variables would be this invariant broken, and panics. `resolved` **compresses** as `find` does:
 each alias on the walked path gets `actual` = the chain's end, journalled like any content write,
 so a chain is walked in full once. An alias's name and arguments, all `Render` prints, are
 untouched.
 
-*Amended by R15-fix-G (2026-09-28, CK-175, CK-176): arguments only for an injective alias, and a
+*Amended again 2026-09-28: arguments only for an injective alias, and a
 plain flex keeps the name.* Two corrections to the rows above:
 
 - **Two aliases of one name unify their arguments only when the alias is INJECTIVE** — every
@@ -889,21 +791,21 @@ plain flex keeps the name.* Two corrections to the rows above:
   do equal expansions mean equal arguments. `type alias Tagged t = Int` is not injective:
   `Tagged String` and `Tagged Bool` are both `Int`, and unifying their arguments refused `[ a, b
   ]`, `retag : Tagged x -> Tagged y`, and — in a recursive group — accepted or refused a program by
-  whichever of two uses the group met first (CK-175, an I9 violation). A non-injective pair meets
+  whichever of two uses the group met first (an I9 violation). A non-injective pair meets
   by expansion, and the two nodes stay apart, each printing what its source wrote. `false` is the
   sound default (a schema endpoint, a recursive alias): it costs only the fast path.
 - **A flex nothing rides on absorbs an alias of a VARIABLE by name** too — kind `any`, no marker,
-  no obligation, no wanted — so `bad : a -> Id b` says "should be: `Id b`" again (CK-176, a
-  regression from the second bullet above). Binding it writes no cycle: the expansion is not the
+  no obligation, no wanted — so `bad : a -> Id b` says "should be: `Id b`", which the second
+  bullet above alone would print as `b`. Binding it writes no cycle: the expansion is not the
   flex (the first row caught that), and a later meeting of the two is the first row. A flex that
-  carries anything still meets the expansion, whose flags must join its own (CK-174). The rigid
+  carries anything still meets the expansion, whose flags must join its own. The rigid
   hint looks for its rigid through an alias (`Solve.rigidOf`), so it names `b`.
 
 Which name an INFERRED type shows when it meets two names for one type — `Name` and `String`, or
-`Tagged String` and `Int` — is still whichever it met first, and inside a recursive group that
-follows declaration order: CK-179, pending, the owner's to decide (I9's scope promises an accepted
-program's types). `PERM`'s CK-175 program (`run/PhantomAliasMutualGroup.beni`) is chosen so that
-no member can meet two names.
+`Tagged String` and `Int` — was whichever it met first, and inside a recursive group that
+followed declaration order (I9's scope promises an accepted program's types); the amendment below
+settles it. `PERM`'s non-injective alias program (`run/PhantomAliasMutualGroup.beni`) is chosen so
+that no member can meet two names.
 
 *Amended 2026-09-28: agree or expand (the owner's decision, §21.1).* An inferred type keeps an
 alias name only while every name it meets agrees, and otherwise shows the expansion:
@@ -935,13 +837,13 @@ expansion in a later message and in the dump of its locals. `ordering_test.zig` 
 recursive-group program in both orders, and `PERM` now runs `run/PhantomAliasUnifiesByExpansion`
 too.
 
-### 7.2 Choice among failures is by text (I13, CK-07)
+### 7.2 Choice among failures is by text (I13)
 
 `unifyRecord` unifies every shared field and collects the failures. The one returned is the
 smallest by field **name text**, not by symbol id. For the one-failure case, which is the common
 one, the cost is zero.
 
-*Amended by R15-fix-D (2026-09-28, CK-145).* Choosing the reported failure by text was not
+*Amended 2026-09-28.* Choosing the reported failure by text was not
 enough: the fields are **unified** in an order too, and unifying one binds variables the next is
 judged against. `{ zp = y, zq = y }` against `{ zp : Int, zq : String }` fails at `zq` if `zp` went
 first (`y` is `Int` by then) and at `zp` otherwise, and the merge-join walked shared fields in
@@ -959,13 +861,13 @@ is reachable two ways:
 
 - through a cyclic graph, which §8.2 and §9.5 keep short-lived;
 - through a **legitimately deep acyclic** type. A chain of `let`s can build an inferred type deeper
-  than `Parse.max_depth`, as CK-13's 600-deep tuple does.
+  than `Parse.max_depth`, as a 600-deep tuple built through `let`s does.
 
 Past the guard, `unify` returns `mismatch(.too_deep)`, which the caller reports as
-`nesting_too_deep`, the same code and cure as the other depth guards. It never returns "ok" (CK-10
-item 3). *Wording corrected 2026-09-24 (N3).*
+`nesting_too_deep`, the same code and cure as the other depth guards. It never returns "ok".
+*Wording corrected 2026-09-24.*
 
-*As built by R4b's review (2026-09-25): `unify` is coinductive, and a cycle is never "too deep".*
+*As built (2026-09-25): `unify` is coinductive, and a cycle is never "too deep".*
 The first bullet above was false once §8.2 checks binders only: a cycle made mid-group (a `case`
 subject, `[ r, { a = r } ]`) lives until the boundary, and two isomorphic cycles unified there
 (`[ r, s ]`, `( x x, y y, [ x, y ] )`) recursed to the guard — exponentially through a record
@@ -976,7 +878,7 @@ that keeps unifying after a failed field — and were reported as `nesting_too_d
 - **Coinduction.** `unify` keeps the pairs of non-variables it is unifying (`Unify.active`, a
   stack), and a pair met again on that stack is assumed equal. So a cyclic graph, or two isomorphic
   ones, unifies in time linear in its nodes, and on a finite graph nothing changes (no pair is its
-  own descendant). **Link-first**, the OCaml/HM(X) textbook alternative the review offered, was
+  own descendant). **Link-first**, the OCaml/HM(X) textbook alternative, was
   not taken: it merges the two roots before their children, so a failing unification prints the
   same (merged) type as both "expected" and "found" — Elm's reason for children-first (v1's
   comment at `unifyFlat`) — and undoing the link on failure needs a journal around every
@@ -990,20 +892,19 @@ that keeps unifying after a failed field — and were reported as `nesting_too_d
 Fixtures: `tests/corpus/check/bad/InfiniteTypeCaseSubject*.beni`,
 `…/InfiniteTypeTwoCyclesUnified.beni` and `tests/corpus/check/good/CyclicArgumentsUnify.beni`.
 
-*Amended by R8c (2026-09-26): the pair stack's scan is bounded.* The scan per pair of
-non-variables was R8a's profile's largest unify cost and quadratic in depth on a deep acyclic
-unification (CK-93's note). Below 8 pairs on the stack nothing is scanned — a cycle is then met
+*Amended 2026-09-26: the pair stack's scan is bounded.* The scan per pair of
+non-variables was the largest unify cost in a profile of the checker, and quadratic in depth on a
+deep acyclic unification. Below 8 pairs on the stack nothing is scanned — a cycle is then met
 again at most 8 levels further down, where the scan finds it; the first 64 pairs are scanned by
 their current roots; deeper pairs are also kept in an array hash map keyed by their roots when
 pushed, and popped in stack order (a plain hash map's tombstones made each probe longer on a deep
-unification, CK-111's scenario). A deep pair whose root a merge below it has since changed is
+unification of a deeply nested record). A deep pair whose root a merge below it has since changed is
 missed and unrolled once more; merges only reduce the roots, so that happens boundedly often.
 Two structures with no children (`Int`, `()`, `{}`) are merged without a pair on the stack: they
-recurse into nothing, so they cannot meet a pair again (R8c's review round 2, −0.5 % of
-instructions).
+recurse into nothing, so they cannot meet a pair again (−0.5 % of instructions).
 
-*Amended by R15-fix-G (2026-09-28, CK-177): every failure looks for a cycle first.* The third
-bullet of R4b's review above ran the occurs check only on `too_deep`. A cycle made earlier in the
+*Amended 2026-09-28: every failure looks for a cycle first.* The third
+bullet above ran the occurs check only on `too_deep`. A cycle made earlier in the
 group — unification does not occurs-check a binding (§8.2) — then failed against a record as a
 TYPE MISMATCH that printed the cycle unrolled to the namer's 4 096-node budget: 37 KB for `[ x, (
 x, x ), { zb = x, za = "s" } ]`. Now `Solve.reportFailureText` runs the occurs check from both
@@ -1029,9 +930,10 @@ chain checks in time linear in its length (`perf_test.zig`). A `let` chain is no
 ### 7.4 Kinds
 
 The kind lattice is unchanged: `any ⊒ number`, `any ⊒ appendable`, `number ⊓ appendable = ⊥`.
-Numeric literals through primitive aliases keep queue row 67's rule.
+Numeric literals through primitive aliases keep their rule: a literal meeting an alias of `Int` or
+`Float` is typed through the alias.
 
-*Amended by R15-fix-A (2026-09-28, CK-139, CK-140): a written type that resolution refused is
+*Amended 2026-09-28: a written type that resolution refused is
 `err` in the store, never a malformed node.* `Types.Builder` is the one place a written type
 becomes store variables, and two refusals of resolution (`resolve/Resolve.zig`) used to reach it
 as structure anyway. (1) **Arity.** An application whose argument count is not its type's arity
@@ -1043,7 +945,7 @@ inside its own expansion is `err` (`recursive_alias`, reported; a cycle across m
 `import_cycle`). The depth bound alone did not stop `type alias A = ( A, A )`, which doubles per
 level: 2^512 reads before the bound.
 
-*Amended by R15-fix-C (2026-09-28, CK-171): an alias applied to the same arguments is expanded
+*Amended 2026-09-28: an alias applied to the same arguments is expanded
 once per read.* The aliases a written type names are a DAG even when the type is a tree —
 `A{i} = ( A{i-1}, A{i-1} )` — and `Builder.aliasBody` expanded each USE, so `f : A18 -> A18` was
 2^18 bodies (18 s in Debug). The builder of a read keeps `aliases`, `(alias, argument roots) →
@@ -1054,10 +956,10 @@ of its arguments, and one type named twice is one type. An entry is made only wh
 is finished, so an alias inside its own expansion still reaches the `expanding` test above. The
 memo is per read, never per store: two annotations get separate variables (their ranks and modes
 differ, and a poison of one must not reach the other). `==` over the depth-64 DAG builds in
-0.2 s (Debug). CK-144 (the same chain's interface terms, quadratic in bytes) is a different
-place — the interface writer — and is not changed by this.
+0.2 s (Debug). The same chain's interface terms, which expand every alias body, are a different
+place — the interface writer — and are not changed by this.
 
-### 7.5 Speculation (I14, CK-35)
+### 7.5 Speculation (I14)
 
 `TypeStore.Snapshot` is `{ journal_len, vars, extra, want_links, obl_links, wanteds, obligations,
 answers, binders, captures, seq, frames: []FrameLengths }`.
@@ -1067,17 +969,15 @@ answers, binders, captures, seq, frames: []FrameLengths }`.
 - `rollback` truncates all of them, then replays the journal backwards. That restores descriptors
   and the in-place wanted and obligation writes of §4.2 (I14).
 
-*Revised 2026-09-24, round 4 (R4-1). The round-3 Snapshot still listed one `ready` queue and no
-`touched`.* A probe's `unify` can bind a variable of **any** open frame. So it can append to any
+*Revised 2026-09-24: an earlier Snapshot listed one `ready` queue and no `touched`.* A probe's `unify` can bind a variable of **any** open frame. So it can append to any
 open frame's `touched` list, and ready an item onto any open frame's queue. Every one of those lists
 must therefore be restored.
 
 **Why per-frame lists with all open frames' lengths**, rather than one tagged table per kind with a
 cursor per frame:
-- **Per-frame lists keep each frame's entries contiguous.** §8.1's occurs pass, S-3's linear bound
+- **Per-frame lists keep each frame's entries contiguous.** §8.1's occurs pass, its linear bound
   and the hand-down on merge all walk one frame's list and nothing else. A tagged shared table would
-  interleave nested frames' entries, and every walk would have to skip them. That is the O(n²) S-3
-  removed.
+  interleave nested frames' entries, and every walk would have to skip them: O(n²).
 - **The price is O(open frames) per snapshot.** That is paid only by the diagnostic probe, which
   runs only after a failure, and the open-frame count is bounded by the nesting budget (§10.2).
 
@@ -1085,7 +985,7 @@ cursor per frame:
 after a failure to choose a message.
 
 `?` is **not** speculative in v2. §8.6 decides it from a concrete head, or by default, and then
-unifies and reports. *Revised 2026-09-24 (S21): the first draft listed "`?` shape trials" here and
+unifies and reports. *Revised 2026-09-24: the first draft listed "`?` shape trials" here and
 said the opposite in §8.6.*
 
 A probe unifies and nothing else. It never calls `Resolve`, `Instances`, `Groups`, an obligation
@@ -1111,7 +1011,7 @@ groups. At the boundary of frame `F`, with young rank `r` (I16):
 2. **Adjust ranks without quantifying.** Run Elm's `poolToRankTable` + `adjustRank` over `F`'s
    young pool, by `Walk.owned` successors. After this pass, a variable's rank says whether it
    escapes `F`. Every later step reads adjusted ranks only.
-3. **Defaults.** Skip this step if `F` is a top-level frame merged into another (§10.4, N4).
+3. **Defaults.** Skip this step if `F` is a top-level frame merged into another (§10.4).
    - Collect, in obligation-id order, the undecided `try` obligations attached to variables of `F`'s
      pool whose variables **all still have rank `r`**.
    - Apply every one of them, which defaults it to `Result` (§8.6).
@@ -1119,8 +1019,8 @@ groups. At the boundary of frame `F`, with young rank `r` (I16):
 
    Applying all at once is equivalent to applying them one at a time: a default only makes
    `Result`s, so it can only turn another undecided `?` into a `Result` decision.
-4. **Occurs** over `F`'s `binders`, and over `F`'s `touched` list (§8.2, N6; per frame since round 3), by
-   `Walk.structural`. *(As built by R4b: over the binders only — §18's fallback, §8.2's
+4. **Occurs** over `F`'s `binders`, and over `F`'s `touched` list (§8.2; one list per frame), by
+   `Walk.structural`. *(As built: over the binders only — §18's fallback, §8.2's
    As built.)*
 5. **Quantify** the rank-`r` variables of the pool (§8.4).
 6. **Generality check** for the annotated bindings of `F` (§8.3).
@@ -1135,8 +1035,8 @@ groups. At the boundary of frame `F`, with young rank `r` (I16):
 `binders` and `touched` segment to the merge root's frame, and pops. It runs no default, no occurs
 check and no quantification: those happen once, at the root.
 
-**`touched`** (N6) records the variables `unify` binds. The undo journal cannot serve here, because
-it records nothing outside speculation. It is **one list per frame** (round 3, S-3): `unify` appends
+**`touched`** records the variables `unify` binds. The undo journal cannot serve here, because
+it records nothing outside speculation. It is **one list per frame**: `unify` appends
 to the current frame's list, and a merged frame hands its list down with its pool.
 
 A nested frame's entries are therefore never in its demander's list. Those variables were already
@@ -1152,13 +1052,11 @@ quantified, which no open constraint can reach any more, so it can neither ready
 form a cycle through a structure that step 4 cleared. A debug-only occurs re-run over what step 7
 touched asserts this.
 
-*Revised 2026-09-24.*
-- *Round 1, B3:* occurs had run before the unifying steps.
-- *Round 2, N2:* defaults had read stale ranks.
-- *Round 2, N4:* a merged frame had defaulted before the root's facts arrived.
-- *Round 2, N6:* the "journal segment" does not exist.
+*Revised 2026-09-24.* Earlier drafts ran occurs before the unifying steps, read stale ranks in the
+defaults, let a merged frame default before the root's facts arrived, and relied on a "journal
+segment" that does not exist.
 
-*As built by R5, after its review (2026-09-25): steps 1, 3 and 7 have work.* `Solve.boundary`,
+*As built (2026-09-25): steps 1, 3 and 7.* `Solve.boundary`,
 with the deciders in `Decide.zig`.
 - **Step 1** drains the top-level frame's queue in `seq` order. `Solve` owns that queue and `Unify`
   holds one pointer to it; every `let` frame routes there (§9.1). The same drain runs after every
@@ -1167,81 +1065,78 @@ with the deciders in `Decide.zig`.
   variables, and a flag matters to nothing before quantification. So the walk runs over the type
   as it then stands, and the message shows the solved type (`number -> number`, not `a -> b`).
 - **Step 3** (`Decide.defaults`) reads **the current frame's own open-`?` list**. A row joins the
-  list of the frame at its target's rank when it is attached (§4.5 *As built by R5, after its
-  review*).
+  list of the frame at its target's rank when it is attached (§4.5, *As built 2026-09-25*).
   - For each open row, the dependants are lowered to the target's rank again (rank adjustment
     folds a variable's rank from its own position).
   - A row whose target still sits at the frame's young rank is due. A row whose target escaped
     moves to the list of the frame at the target's rank.
   - Every due row is decided as `Result`, oldest first. The loop goes back to step 1 when one was,
     or when anything was readied.
-  - So a row is looked at once per frame it passes through (CK-98), not at every boundary of its
+  - So a row is looked at once per frame it passes through, not at every boundary of its
     group.
 - **Step 7** (`Decide.close`) reads the quantified variables that still carry a set. `quantify`
   collects them in the same pass.
   - The `tuple_index` rows go first: `ambiguous_tuple`, with the result poisoned.
   - Then an `interpolatable` row is `ambiguous_interpolation` unless the variable is a `number`,
-    or is the result a tuple's message just poisoned (I12: no cascade; adversarial review F6).
+    or is the result a tuple's message just poisoned (I12: no cascade).
   - An `equatable` row is the flag the variable already carries into its scheme.
   - A `try` row cannot be there (step 3 defaulted it at its target's boundary) and would be
     `internal`.
 - **Poison settles.** `Solve.poison` on a flex that carries rows closes each of them as a decision
   on `err` would: its results poisoned, without a trip through the queue. So nothing is readied
-  during steps 4 and 6, and the top-level frame asserts an empty queue when it is popped (review
-  S7).
-- **Merged frames** do not exist before R7; the "skip step 3 when merged" rule arrives with them.
-- **N9 (for R6a).** "Applying every default at once is equivalent to one at a time" holds for R5's
-  kinds, because no default readies a row that binds another `?` to `Maybe`. R6a's wanteds break
-  that premise: R6a drains between defaults, or argues the claim again.
+  during steps 4 and 6, and the top-level frame asserts an empty queue when it is popped.
+- "Applying every default at once is equivalent to one at a time" holds for obligations alone,
+  because no default readies a row that binds another `?` to `Maybe`. Wanteds break that premise;
+  see below.
 
-*As built by R6a (2026-09-25): wanteds at the boundary.*
+*As built (2026-09-25): wanteds at the boundary.*
 - **Steps 1 and the eager drain** take wanteds from the same `Solve.ready` queue as obligations
   (a wanted id is tagged with `Evidence.queued_wanted`), in one `seq` order (§9.1).
-- **Step 3 (N9).** A default can ready a wanted whose resolution decides another `?`, so
+- **Step 3.** A default can ready a wanted whose resolution decides another `?`, so
   `Decide.defaults` drains after each default it applies rather than arguing the all-at-once
   equivalence again.
 - **Step 4** also occurs-checks, with the same epochs, the method type of every wanted and every
-  variable of every open obligation riding on a root of the frame's pool (R4b's review, S4): a
+  variable of every open obligation riding on a root of the frame's pool: a
   cycle is `infinite_type` at the wanted's origin (the obligation's region), drawn and poisoned.
   An open wanted's receiver is the pool root it rides on, a flex, which no cycle passes through;
   a receiver that was bound was readied, and the resolver's walk met it (§9.5).
-- **Step 5, at a `let` frame: rule (a)** (§8.4's `let_constrained_monomorphic` switch, until
-  R14). A young root that carries a wanted is lowered, with its method types (`Walk.lowerTo`,
+- **Step 5, at a `let` frame: rule (a)** (§8.4's `let_constrained_monomorphic` switch, since
+  deleted). A young root that carries a wanted is lowered, with its method types (`Walk.lowerTo`,
   `owned`), to the enclosing rank before quantification, so the enclosing frame receives it, and
   the binding is recorded for `type_mismatch`'s hint (`Env.monomorphic`). Lowering the method types
   too is what keeps the binding's result tied to the receiver: v1 held back only the receiver.
-  So every promotion is a top-level declaration's. *Superseded by R14 (2026-09-27):* the switch is
-  deleted, and step 5 at a `let` frame holds only what §8.4 *As built by R14* holds.
+  So every promotion is a top-level declaration's. *Superseded 2026-09-27:* the switch is
+  deleted, and step 5 at a `let` frame holds only what §8.4's *As built (2026-09-27)* holds.
 - **Step 7, at a top-level frame** (`Resolve.close`): promotion, the cap, `constrained_constant`,
-  `ambiguous_method_receiver`, then the proven-undetermined default (§9.4 *As built by R6a*).
+  `ambiguous_method_receiver`, then the proven-undetermined default (§9.4, *As built 2026-09-25*).
   Quantify collects the quantified flexes that carry wanteds (`Resolve.State.wanters`) as it collects
   obligation carriers.
-- **Step 7's assert, restated** over the receivers it defaults: in R6a a default answers
+- **Step 7's assert, restated** over the receivers it defaults: as first built a default answers
   `undetermined` and a promotion answers `promoted` without unifying anything, so the assert is
   that step 7 made no unification at all (`Unify.unifications` unchanged), which is stronger than
-  a re-run of the occurs check over what it touched. A structural default that unifies (R8a's
-  shapes) must restate it again. *Revised by R6a's review (S8):* it is `Solve.expect`, so a
+  a re-run of the occurs check over what it touched. A structural default that unifies (a derived
+  shape) must restate it again. *Revised 2026-09-25:* it is `Solve.expect`, so a
   release build reports `internal` too, as an assert must (§15).
 
-*As built by R7 (2026-09-26): frames nested and merged* (§10.8). Step 1 drains the frame's own
+*As built (2026-09-26): frames nested and merged* (§10.8). Step 1 drains the frame's own
 queue (a `let` frame's is its top-level-kind frame's); a merged top-level-kind frame runs steps 1
 and 2 and hands down (`Groups.handDown`), and its root's boundary runs step 4 over the handed-down
 binders too. Step 2's counting sort by rank is replaced by a sort when the frame's rank is far
 above its pool's size, which a frame nested at demand is (a chain of n nested groups was O(n²)).
 
-### 8.2 Occurs at every binder (CK-04, CK-03)
+### 8.2 Occurs at every binder
 
 The occurs check runs in two places:
 - at each `binders_end` node, over that lambda's or branch's binders (§6.3);
 - at step 4 of every boundary, over the boundary's `binders` and the frame's `touched` segment (§8.1).
 
-Each is one walk. The walk is three-colour over **`Walk.structural`** successors (I2, B1), with the
+Each is one walk. The walk is three-colour over **`Walk.structural`** successors (I2), with the
 two epochs of §4.1 and a growable stack. A variable whose only self-reference is through its own
 requirement (`x.eq : x, x -> Bool`) is not a cycle.
 
 A cycle is `infinite_type` at the binder, or at the first unified variable on the cycle for one
 made in the settle loop. The walk returns the cycle's path, and `Render` prints the structure with
-the repeated variable (CK-57): `a = { a | x : a }`, not `a = … a …`. The variable is then poisoned
+the repeated variable: `a = { a | x : a }`, not `a = … a …`. The variable is then poisoned
 (`err`). Elm pays the same cost for the same guarantee. §18 has the measurement obligation,
 including the nested-`let` case.
 
@@ -1249,12 +1144,13 @@ including the nested-`let` case.
 receiver or in the settle loop, can still meet a graph made cyclic since the last check. So §9.5
 also makes every resolver walk cycle-safe. Neither defence alone is enough, and both are cheap.
 
-*As built by R4b (2026-09-25): §18's fallback, Elm's placement.* §18's measurement (its *As built*
+*As built (2026-09-25): §18's fallback, Elm's placement.* §18's measurement (its *As built*
 paragraph) put the walk over the `touched` segment at about 4 % of the check phase on a
-dispatch-free 131 000-line corpus, over §18's 3 % line, so R4b took §18's stated fallback: **the
-boundary occurs-checks its binders only**, and the frames keep no `touched` list (§8.1 step 4,
-N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a merge needs them).
-- `binders_end` follows a **lambda's** body and a **`case` branch's** body — the placement S4 needs
+dispatch-free 131 000-line corpus, over §18's 3 % line, so the checker takes §18's stated fallback:
+**the boundary occurs-checks its binders only**, and the frames keep no `touched` list (§8.1 step
+4's `touched` half and §7.5's `touched_len` are retired; a merge that needs them re-opens the
+question).
+- `binders_end` follows a **lambda's** body and a **`case` branch's** body — the placement §6.3 needs
   (`(\y -> y y) "s"` is `infinite_type` at `y`, before `"s"` meets it).
 - A declaration's and a `let` definition's parameters are checked at their group's boundary, which
   follows their body directly; a `binders_end` of their own walked the same types twice.
@@ -1264,28 +1160,27 @@ N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a 
 - A walk never pushes a node with no `structural` successor (a variable, `Int`, `()`, `{}`):
   none can be on a cycle.
 - **What is given up** is detection of a cycle no binder's type reaches — a type an expression
-  builds and discards, such as a lambda argument bound to `_`. Nothing reads such a type in R4b:
+  builds and discards, such as a lambda argument bound to `_`. Nothing reads such a type:
   publication reaches only headers' types, and every walk that could meet the type (the writer,
   `adjustRank`, `copy`, `Render`) is colour- or depth-safe and reports. Elm gives up the same.
-  §9.5's resolver walks (R6a) are cycle-safe in their own right.
+  §9.5's resolver walks are cycle-safe in their own right.
 
-*Corrected by R4b's review (2026-09-25).* Three things the paragraph above left out or got wrong:
+*Corrected 2026-09-25.* Three things the paragraph above left out or got wrong:
 
 - **Also given up: EARLY detection.** A cycle made mid-group lives until the boundary even when
   a binder reaches it. The walk that meets it first is then `unify`, which the list above omitted;
-  §7.3 *As built by R4b's review* makes `unify` coinductive, and a `too_deep` from it looks for a
+  §7.3's *As built (2026-09-25)* makes `unify` coinductive, and a `too_deep` from it looks for a
   cycle before it reports, so it terminates and says `infinite_type`.
 - **"Why both defences"** above assumed the `touched` walk. Under binders only, the defences are:
-  the binder checks, a cycle-safe `unify` (§7.3) and, from R6a, the cycle-safe resolver walks
+  the binder checks, a cycle-safe `unify` (§7.3) and the cycle-safe resolver walks
   (§9.5). §8.1 step 7's "debug-only occurs re-run over what step 7 touched" and §7.5's
-  `touched_len` have nothing to read in R4b and are retired with the list; R6a re-states step 7's
-  assert over the receivers it defaults.
-- **Owed by R6a** (`plans/checker-rewrite.md` R6a's brief): step 4 also occurs-checks the receiver
-  of every wanted riding on `F`'s pool and, from R5, every variable of every obligation. That is the
-  CK-03 / row 76 coverage `touched` was for, at no cost in dispatch-free code.
-  Discharged by R6a (2026-09-25): see §8.1, *As built by R6a*, step 4.
+  `touched_len` have nothing to read and are retired with the list; step 7's assert is restated
+  over the receivers it defaults.
+- Step 4 also occurs-checks the receiver of every wanted riding on `F`'s pool and every variable
+  of every open obligation (§8.1, *As built 2026-09-25*, step 4). That is the coverage `touched`
+  was for — a method obligation on a cyclic receiver must stop — at no cost in dispatch-free code.
 
-**How a cycle is reported** (the review's F3, F4 and S5). From a binder, or from a `too_deep`:
+**How a cycle is reported.** From a binder, or from a `too_deep`:
 
 - the cycle drawn is the first a search meets **with record fields in name-text order**
   (`Walk.firstCycle`), so which of two cycles is named cannot depend on symbol ids (I13);
@@ -1294,11 +1189,10 @@ N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a 
 - then **every** cycle reachable from the binder is poisoned, so no use of it meets another and
   reports again.
 
-An `infinite_type` sets its declaration's failure bit but does not gate exhaustiveness (§15.2 *As
-built by R4b's review*).
+An `infinite_type` sets its declaration's failure bit but does not gate exhaustiveness (§15.2, *As
+built 2026-09-25*).
 
-*Amended by R8c (2026-09-26, CK-93, CK-111; restated by R8c's two review rounds): proofs that
-outlive a walk.* A `let` chain whose types grow (`x1 = [ x0 ] … xN = [ xN-1 ]`) occurs-checked the
+*Amended 2026-09-26, and restated after two reviews: proofs that outlive a walk.* A `let` chain whose types grow (`x1 = [ x0 ] … xN = [ xN-1 ]`) occurs-checked the
 whole chain at every link: O(N²). And `==` on a record nested *d* deep ran the §9.5 cycle test on
 each of its *d* nested positions, each over its subtree: O(*d*²). Both now keep a proof past its
 walk, and a proof never changes a verdict.
@@ -1320,16 +1214,16 @@ walk, and a proof never changes a verdict.
     survivor is `err`, a poison), which leaves a leaf nobody recorded inside any proved graph that
     held the node and lets a record merge carry extra fields absorbed into an `err` row end on
     unwalked; and an `err` given structure, proved or not. It happens only on a program with an
-    error. *Why the broad form* (the manager, 2026-09-26): Inv alone would allow the narrower "a
+    error. *Why the broad form* (decided 2026-09-26): Inv alone would allow the narrower "a
     node with successors turned `err`", since an unrecorded `err` given structure lies in no proved
     graph; but two holes in this section came from arguments that a narrower condition sufficed,
-    and the broad rule is the one R8c's second review verified. It costs a content read per merge,
+    and the broad rule is the one the second review verified. It costs a content read per merge,
     about 0.8 % of instructions on the dispatch corpus (§18).
 
   Binding a fresh, unproved variable — each link of the chain does — keeps them. A merge carries a
   proof either side had to the survivor unless it voided them. Out of memory voids them, and so
   does a rollback (v2 never speculates, §7.5).
-- **Why Inv holds** (the second review round's argument). A proved leaf gaining successors voids.
+- **Why Inv holds.** A proved leaf gaining successors voids.
   A `func`, `app` or `tuple` merge unifies every child pair first, so the survivor's children are
   the proved side's child classes whichever side's content it keeps (a coinductive skip needs a
   pair that recurs, which in an acyclic proved graph needs an earlier merge that made it cyclic,
@@ -1339,11 +1233,11 @@ walk, and a proof never changes a verdict.
   them: the `err` rule. A structure turned `err` adds no edge but makes an unrecorded leaf: the
   `err` rule again, which also voids on any `err` given structure. No other write adds an edge: flag-only rewrites of a flex, fresh copies,
   and `Messages`' temporary flex (whose restore voids conservatively).
-- **How it got here.** R8c first kept the stamps beside the walks, voided them only in
+- **How it got here.** The first form kept the stamps beside the walks, voided them only in
   `Unify.bind` (a flex given structure) and stamped only flexes, and claimed "only a bind adds an
-  edge": false. Its first review found an `err` class given structure by `Unify.flat` (which merges
+  edge": false. A review found an `err` class given structure by `Unify.flat` (which merges
   with content read before the children were unified) — one INFINITE TYPE of two lost, and with
-  CK-126's `err` an infinite type accepted — and a position's proof "inherited" across a Rule U1
+  an `err` endpoint an infinite type accepted — and a position's proof "inherited" across a Rule U1
   join and a user instance's unification that closed `x = List x`. The first fix moved the proofs
   into the store and voided on a proved leaf gaining successors, and claimed "an edge is added in
   exactly one way" and "`merge` only redirects a class to a survivor whose children were unified
@@ -1351,18 +1245,18 @@ walk, and a proof never changes a verdict.
   past a proved `err` row end (an infinite type accepted again) and an unproved interior node
   turned `err` and then given structure (a cyclic scheme); the `err` rule closes both, since both
   begin with a node with successors turned `err`.
-  `blackbox_test.zig` holds all five programs ("R8c review …"). `Unify.flat` keeps writing the
-  structure, as v1 and `5f18e23` do: the write is seen, not forbidden, so no golden moved.
+  `blackbox_test.zig` holds all five programs. `Unify.flat` keeps writing the
+  structure, as v1 did: the write is seen, not forbidden, so no golden moved.
 - **Checked in Debug** wherever a walk stops at a proved node (`Walk.assertProved`): a walk of its
   own that trusts no proof and touches no mark, over at most 1 024 nodes, panics if the node
   reaches a cycle. With the `err` rule switched off it panics on both second-round programs.
   `Resolve.step` also re-walks every proved receiver fewer than 64 positions deep.
-- The derivability walk's verdict over a graph with variables below (`Resolve.State.derivable_open`,
-  CK-111) is kept while no proof has been voided (`TypeStore.proof_voids`, a count that does not
+- The derivability walk's verdict over a graph with variables below (`Resolve.State.derivable_open`)
+  is kept while no proof has been voided (`TypeStore.proof_voids`, a count that does not
   wrap as the epoch does): the walk records every leaf it meets, so any leaf given successors, an
   `err` included, drops the memo.
 
-### 8.3 Annotation generality (I1, CK-01)
+### 8.3 Annotation generality (I1)
 
 For each binding of the boundary that has an annotation, and for each rigid of its checked instance
 (§6.6), after step 5 all three of these must hold:
@@ -1382,9 +1276,9 @@ annotation.
 **Top-level declarations.** The check runs there too, because their rigid instance lives in the
 frame's pool (§6.6). A top-level rigid has no enclosing binder to escape into except a suspended
 frame's live variables through a dispatch back-edge, and §10.4 merges those frames first. So a
-failure there is `internal`, never a user error. *Revised 2026-09-24 (S16).*
+failure there is `internal`, never a user error. *Revised 2026-09-24.*
 
-*Amended by R15-fix-E (2026-09-28, CK-154).* **What rides on an escaping rigid waits for this
+*Amended 2026-09-28.* **What rides on an escaping rigid waits for this
 check.** Binding an outer flex to an inner rigid readies the flex's rows, and an `interpolatable`
 row decided at once against a non-`number` rigid said AMBIGUOUS INTERPOLATION before step 6 said
 the escape — two messages for one mistake. Such a row is now held on the rigid while the rigid is
@@ -1403,23 +1297,22 @@ levels.
   carry wanteds. `adjustRank` computes a structure's rank as the maximum of its children, as in
   Elm.
 - **A wanted on an outer-rank receiver** keeps its method type's variables at the outer rank (I15),
-  so none of them is quantified. That is the answer to CK-02's `g y = x.combine y`: `y`'s type sits
+  so none of them is quantified. That is the answer to `g y = x.combine y` on an outer `x`: `y`'s type sits
   in the method type of a wanted on the outer `x`, so `g` is monomorphic in `y`.
 - **A wanted on a young receiver** whose method type mentions an outer variable is still
   quantified, with the outer variable **free** in the promoted requirement. That is sound HM(X):
   `g y = y.combine x` gives `g : ∀b. b -> r where b.combine : b, X -> r`, with `X` being `x`'s outer
-  type, shared by every instantiation. I15 does not apply once the receiver is generalised
-  (S-new-4).
+  type, shared by every instantiation. I15 does not apply once the receiver is generalised.
 - **The `let` binding's open wanteds on its own quantified variables are promoted** to the binding
   (`Binder.let_def`, §9.4). Uses instantiate them as they would a top-level scheme's (I5).
 
-*Restated 2026-09-24 (round 2, S-new-4). "Provided everything reachable through `owned` is young"
+*Restated 2026-09-24. "Provided everything reachable through `owned` is young"
 was not what `adjustRank` computes.*
 
-Slices R4–R13 ship with a **`let_constrained_monomorphic` switch** that keeps rule (a)'s behaviour,
-so the pre-cut-over corpus compares like with like. R14 deletes the switch (`checker-rewrite.md`).
+Until 2026-09-27 a **`let_constrained_monomorphic` switch** kept rule (a)'s behaviour, so the
+pre-cut-over corpus compared like with like.
 
-*As built by R14 (2026-09-27), written before its code.* The switch is deleted
+*As built (2026-09-27), written before its code.* The switch is deleted
 (`Solve.holdConstrained` with it). Step 5 at a `let` frame (`Resolve.holdLet`, then `quantify`,
 then `Resolve.closeLet` in step 7):
 
@@ -1446,11 +1339,11 @@ then `Resolve.closeLet` in step 7):
   stays monomorphic, and `static-dispatch-spike.md` §6.2's `let t = decodeInto "zz" in label t`
   is still pinned by its later use. A pattern binding is held for the same reason. Rule 3 and the
   value restriction are the two places a `let` is not HM(X), with the cap below; `type_mismatch`'s A.30 hint names
-  which one held the binding (`Env.monomorphic` gains the reason). *R14's review (B1):* a header
+  which one held the binding (`Env.monomorphic` gains the reason). A header
   is a header wherever its `let` stands — inside a lambda or a `case`/`if` branch the generator
   marks its binder `.ended` once its occurs check is placed, and `Generalize.Binder.header` keeps
   the fact (`run/LetHelperBelowLambdaOrBranch`).
-- **The cap** (`holdLet`, R14's review B2). A function binding whose own requirements, counted
+- **The cap** (`holdLet`). A function binding whose own requirements, counted
   as `closeLet` would list them, number more than `max_inferred_constraints` (64, spike §10.11)
   is **held whole**, as every constrained `let` was before D5, with no diagnostic: at the top
   level an annotation lifts the cap, and a `let` annotation cannot carry a `where` clause, so a
@@ -1458,12 +1351,12 @@ then `Resolve.closeLet` in step 7):
   with the cap's reason (`run/LetHelperOverTheCap`, `check/bad/LetHelperOverTheCapTwice`).
 - **Promotion** (`Resolve.closeLet`, step 7). For each unannotated function binding, its
   requirement list is `Evidence.requirements` of its generalised header, restricted to the roots
-  this `let` quantified (a requirement on an outer root is not the binding's own: I15, CK-02). The
+  this `let` quantified (a requirement on an outer root is not the binding's own: I15). The
   open wanteds on those roots are answered `promoted { root, method }`, as at the top level; their
   index is computed by P6 per site (§12.3, case 2). A quantified root carrying an open wanted that no
   binding's list holds cannot arise by rule 1, because `holdLet` decides "reached" by the same
   `Schemes.quantifierOrder` walk `Evidence.requirements` lists by; in a module that has reported
-  no error it is `internal` (`Solve.expect`), and otherwise it is not asked (review S2).
+  no error it is `internal` (`Solve.expect`), and otherwise it is not asked.
 - **The record.** Each promoting binding is one `LetInfo { inst = its let_def, requirements }`
   (§13.1), its rows appended to `requirements` after every declaration's, sorted by `inst`; its
   quantifier roots are kept beside them for P6 as a declaration's are.
@@ -1472,7 +1365,7 @@ then `Resolve.closeLet` in step 7):
   that applies it. A use inside the group (a recursive `let`) instantiates nothing and is a group
   call, P6's §12.3 cases with the callee's final list.
 
-### 8.5 Obligations at a boundary (I3, CK-05)
+### 8.5 Obligations at a boundary (I3)
 
 Obligations ride on their variables (§4.5). By kind:
 
@@ -1485,7 +1378,7 @@ Obligations ride on their variables (§4.5). By kind:
 
 At the **module's last boundary**, the top-level group, nothing escapes.
 
-### 8.6 `?` as a deferred obligation (D2, CK-06, CK-51)
+### 8.6 `?` as a deferred obligation (D2)
 
 `try(e, target_result, region)` is an obligation on both of its variables. `target_result` is the
 result variable of the `?`'s **target**: the declaration or the `let_def` named by the instruction
@@ -1496,15 +1389,15 @@ result variable of the `?`'s **target**: the declaration or the `let_def` named 
 - **(b)** Otherwise, **by default to `Result`**, in step 3 of the boundary of the frame at whose
   rank its variables still sit after that frame's rank adjustment. That is the frame that owns them,
   normally the target's own generalisation boundary.
-  - An obligation whose variables escaped, as in round 2's N2 program, is defaulted, or decided by a
+  - An obligation whose variables escaped, as in the program below, is defaulted, or decided by a
     later fact, further out.
 
-  In N2's program, `f h = let g u = h (u?) in ( g (Just 1), Maybe.withDefault (h 5) 0 )`, the
+  In `f h = let g u = h (u?) in ( g (Just 1), Maybe.withDefault (h 5) 0 )`, the
   target result escapes `g` to `f` through `h`. It is decided as `Maybe` when `f`'s body meets
   `Maybe.withDefault`, and the program checks.
 
-*Clarified 2026-09-24 (round 1, S3): the target may be a `let_def`, and deciding its `?` after that
-`let` generalised would unify generalised variables. Revised (round 2, N2): ownership is read on
+*Clarified 2026-09-24: the target may be a `let_def`, and deciding its `?` after that
+`let` generalised would unify generalised variables. Revised the same day: ownership is read on
 adjusted ranks.*
 
 Deciding is today's three unifications (`checker.md` §6.5): `e ~ Shape x a`,
@@ -1520,14 +1413,14 @@ error)`, and the message names it:
 When both sides are concrete and disagree in head, the subject's head chooses the shape, and the
 enclosing leg then fails with the message above.
 
-*As built by R5, after its review (2026-09-25).* `Decide.tryShape`.
+*As built (2026-09-25).* `Decide.tryShape`.
 - **The target.** The generator keeps two things:
   - the result variable of the declaration it is in, when that declaration has parameters;
   - a stack of the `let` definitions with parameters it is inside.
 
   The `try` node names the one the instruction's `rhs` does (`Generator.targetResult`), resolved
   at generation (I11).
-- **The owner is the target** (§4.5 *Amended by R5's review*, D2 as amended in §21.1). The subject
+- **The owner is the target** (§4.5, *Amended 2026-09-25*; D2 as amended in §21.1). The subject
   and the value are lowered to the target's rank, never the reverse. The row joins the open-`?`
   list of the frame at the target's rank, whose step 3 defaults it.
 - **Deciding.**
@@ -1535,7 +1428,7 @@ enclosing leg then fails with the message above.
   - A subject that is any other non-variable is the `neither` leg.
   - With a variable subject, the target's head decides. A target that is any other non-variable is
     the `neither` leg too: nothing says the subject is a `Maybe` or a `Result`, so the `enclosing`
-    text, which names the subject's shape, would be false there (adversarial review F5).
+    text, which names the subject's shape, would be false there.
   - With both variables the row is attached, unless §8.1 step 3 is deciding it, which says
     `Result`.
 - **The three unifications** are then made, each reported by its leg with `checker.md` §8.6's
@@ -1549,12 +1442,12 @@ enclosing leg then fails with the message above.
 - **The dispatch table's `tries` row** (`checker.md` §6.5) is written when the subject and target
   legs succeed. P9 sorts the rows by instruction.
 - **Fixtures.**
-  - `tests/corpus/run/TryEscapesToLaterFact.beni` is N2's program (claimed, CK-62): `g u = k
+  - `tests/corpus/run/TryEscapesToLaterFact.beni` is the program above: `g u = k
     (u?)` escapes to `f` through `k`, is not defaulted at `g`'s boundary, and is decided `Maybe`
     by `Maybe.withDefault (k 5) 0`.
   - `tests/corpus/run/TryDefaultAtLetBoundary.beni`: `unwrap u = u?` defaults at `unwrap`'s own
     boundary and is used at two error types.
-  - `tests/corpus/run/TryTargetKeepsItsSuccessType.beni` (CK-99): an outer subject and a young
+  - `tests/corpus/run/TryTargetKeepsItsSuccessType.beni`: an outer subject and a young
     target; the target keeps its own success type.
 
 ---
@@ -1571,11 +1464,11 @@ every wanted from the moment it is `ready` until it is answered.
   drain uses, and it keeps the message quality of `static-dispatch-spike.md` §6.2.
 - **At every boundary**, in step 1's settle loop (§8.1), the resolver drains the frame's queue until
   it is empty.
-- **Drain order** (round 4, S4-4). Wanteds and obligations share **one creation sequence number**,
+- **Drain order.** Wanteds and obligations share **one creation sequence number**,
   `seq`, stamped on both tables from one module counter at creation. A queue is drained in ascending
   `seq`, which is creation order and a function of the source (I9).
-- **One `ready` queue per top-level frame, and one per fixpoint frame** (round 3, B-1).
-  - **Routing is by the frame id recorded when the item is created** (round 4, R4-1), not by
+- **One `ready` queue per top-level frame, and one per fixpoint frame.**
+  - **Routing is by the frame id recorded when the item is created**, not by
     `origin_decl`.
     - Every wanted and obligation row carries `frame: FrameId`: the frame that was current when it
       was created.
@@ -1592,16 +1485,16 @@ every wanted from the moment it is `ready` until it is answered.
     nest from) a wanted of the frame below it.
   - The frame stack therefore stays a true **demand chain**: every nested frame was demanded by the
     frame directly beneath it.
-- **Eager draining** (round 3, B-1). The solver drains the current frame's queue **after every
+- **Eager draining.** The solver drains the current frame's queue **after every
   constraint node**, outside `unify`, so I14 is untouched.
   - A wanted is resolved as soon as its receiver is bound, at the same solving step at which a group
     checked first would have given its answer. That is v1's "resolve when the receiver is bound".
-  - Round 3's `rq1` and `rq2`, a `case` scrutinee whose method is written after its use, and before
-    it, both check.
+  - A `case` scrutinee whose method is written after its use, and one written before it, both
+    check.
   - The boundary settle step (§8.1 step 1) is then only the last drain.
-- *S-new-5's round-2 text ("one queue per module; answers never depend on which frame drains") was
+- *An earlier text ("one queue per module; answers never depend on which frame drains") was
   wrong once draining can nest groups.*
-- *As built by R7 (2026-09-26):* as specified; the routing field is the queue's index, the
+- *As built (2026-09-26):* as specified; the routing field is the queue's index, the
   current queue's list is held in `Solve.ready`, and a release build reuses a popped queue (never
   a Debug build) (§10.8).
 
@@ -1613,19 +1506,19 @@ every wanted from the moment it is `ready` until it is answered.
 |---|---|
 | `flex` of kind `number`, method `eq` or `compare` | **the `number` bridge** (D9): unify `w.method_type` with `t, t -> Bool\|Order` (category `.where_clause` when the wanted came from a clause), then answer `primitive strict_eq\|num_compare`. This runs when the wanted is first drained, with no waiting, as v1 does. Every `number` is `Int` or `Float`, and both answer the same primitive |
 | any other `flex` | leave `open` (re-queued when bound, §7.1). At the boundary that quantifies it, §9.4 |
-| `rigid` | 1. a given `(rigid, w.method)`: unify the method types (category `.where_clause`, CK-55), answer `param(binder, k)`; 2. else, a rigid of kind `number` with `eq`/`compare`: the `number` bridge, as for a flex; 3. else `missing_where_constraint` at **`w.origin`** (CK-48), and the wanted is `failed` |
+| `rigid` | 1. a given `(rigid, w.method)`: unify the method types (category `.where_clause`, so the message names the clause and the method), answer `param(binder, k)`; 2. else, a rigid of kind `number` with `eq`/`compare`: the `number` bridge, as for a flex; 3. else `missing_where_constraint` at **`w.origin`** (the use, not an unrelated span), and the wanted is `failed` |
 | `err` | `failed`, silently |
 | `app T args` / `alias` / record / tuple / unit / `func` | `Instances.lookup(w)` (§9.3) |
 
-*Revised 2026-09-24 (B4, S5).* The first draft put the bridge inside `lookup`, which §9.2 reaches
+*Revised 2026-09-24.* The first draft put the bridge inside `lookup`, which §9.2 reaches
 only for concrete roots, and had no bridge for rigids. `core/Basics.beni:319`'s
 `abs : number -> number` with `n < 0`, `max`/`min`, and `tests/corpus/run/DecodeInto.beni:86`'s
 `number.eq x y` would have been `missing_where_constraint`, so `core` could not check under v2. v1
 has the rigid bridge at `Solve.zig:2750-2753`. D9 is amended accordingly (§21).
 
-*Amended by R15-fix-A (2026-09-28, CK-141).* The `err` row answers **`poisoned`**, not
+*Amended 2026-09-28.* The `err` row answers **`poisoned`**, not
 `failed`: the poison's message may be a dependency's, so the state must not claim this module
-reported anything (§12.2 *amended by R15-fix-A*).
+reported anything (§12.2, *amended 2026-09-28*).
 
 ### 9.3 Instance lookup: matching a head, with the context as sub-wanteds
 
@@ -1634,24 +1527,24 @@ returns "unknown, accept" (I8).
 
 1. **Well-known table** (`static-dispatch-spike.md` §3.2), for `eq` and `compare` on a core
    primitive: `primitive p`. First, `w.method_type` is unified with the well-known signature
-   `t, t -> Bool|Order` (CK-21).
-   *Amended by R9b (CK-131).* A method type that already IS that signature — both parameters
+   `t, t -> Bool|Order`, so a `where` clause's method type is checked even on a `number` receiver.
+   *Amended 2026-09-27.* A method type that already IS that signature — both parameters
    the receiver's root itself, the result the well-known type (`Resolve.hasWellKnownType`) — is
    not unified again: the unification could only succeed, and would report nothing. This is a
    test of the type's shape, never a unification used as a test (§9.5). `Resolve.step` answers
    such a wanted on a `primitive` row before the cycle test and the sharing memo, neither of
    which can apply to a nullary application (a table primitive is never remembered). The table's
-   rows are stated once, `Contexts.tableRow` (R9's review, nit 1).
-   *Memos keyed by a variable id (R9b).* `Resolve.State.derivable` (a dense column) and
+   rows are stated once, `Contexts.tableRow`.
+   *Memos keyed by a variable id.* `Resolve.State.derivable` (a dense column) and
    `Derivable.Shapes.last` (the last ground encoding) key on a variable's id, which is sound
    only while no id is reused for another type — true because v2 never speculates and so never
    rolls the store back (§7.5). The store counts its rollbacks (`TypeStore.rollbacks`); each memo
    records the count when it is first written, and a read or write after it moved is a panic in a
    safe build (and empties the memo, or misses, in a release one), so a future rollback while they
    are live cannot silently answer from a stale id.
-2. *(Moved on 2026-09-24, B4/S5.)* The `number` bridge is now a row of §9.2's receiver table, for
+2. *(Moved on 2026-09-24.)* The `number` bridge is now a row of §9.2's receiver table, for
    flex and rigid roots. It creates no evidence parameter, the same ABI as today, and it checks the
-   declared type first (CK-21). There is no `appendable` bridge. The step numbers are kept, so
+   declared type first. There is no `appendable` bridge. The step numbers are kept, so
    references to steps 3–6 stay valid.
 3. **The module rule.** `T`'s declaring module:
    - **This module.** The P3 index gives declaration `d`:
@@ -1666,10 +1559,9 @@ returns "unknown, accept" (I8).
      order.
    - The answer is `top(d, args)` or `ext(m, v, args)`.
    - Because the requirements come from the instantiated scheme, their receivers are whatever
-     unification made them. That is the fix for CK-27 and CK-28: `Holder (List a)`'s `a.eq` gets
-     the element's `eq`, not the list's.
-   - *Amended by R9b (CK-131): the plain-method fast path* (v1's `plainMethodMask`, diary
-     2026-09-24 00:17). Another module's method whose interface scheme is PLAIN —
+     unification made them, never quantifier *i* paired with type argument *i*: `Holder (List
+     a)`'s `a.eq` gets the element's `eq`, not the list's.
+   - *Amended 2026-09-27: the plain-method fast path* (v1's `plainMethodMask`). Another module's method whose interface scheme is PLAIN —
      `T q₁ … qₙ, T q₁ … qₙ -> Bool|Order` over distinct quantifiers of kind `any`, not
      `equatable`, each asked for nothing but the method's own name at `qᵢ, qᵢ -> Bool|Order`
      (`List.compare … where a.compare`) — asked on `T t₁ … tₙ` at a method type that already is
@@ -1681,7 +1573,7 @@ returns "unknown, accept" (I8).
      readied at once — as binding `qᵢ` to `tᵢ` readies it (`Instances.plainImported`). The
      resolution order and every diagnostic are the instantiation's. Plainness is read off the
      interface once per module check (`Resolve.State.plain`).
-   - *Amended by R15-fix-A (2026-09-28, CK-137, unsound): a memo is keyed by every input of
+   - *Amended 2026-09-28 (an unsound case): a memo is keyed by every input of
      the verdict it remembers.* Plainness depends on the receiver's type `T` as well as the
      value — by the module rule one value is the method of every type its module declares, and
      `eq : A, A -> Bool` is plain on `A` and not on its sibling `B` — but the memo was keyed
@@ -1701,16 +1593,16 @@ returns "unknown, accept" (I8).
      - `blocked(group)`: §10.
    - **closed record, tuple, unit**: `derived(shape)` with one sub-wanted per field or element
      (`static-dispatch-spike.md` §9.2 and §9.3, unchanged). A record's closedness is
-     `Walk.recordRow` (CK-08).
-   - **open record**: `fail(no_methods_on_shape, .open_record)` (CK-54).
+     `Walk.recordRow`.
+   - **open record**: `fail(no_methods_on_shape, .open_record)`, never a field-call suggestion.
    - **`func`**: `fail(not_equatable)` for `eq`, `fail(no_methods_on_shape)` otherwise.
 6. **Not found**: `unknown_method` with the edit-distance suggestions.
 
-Sub-wanteds are resolved in the same drain. A rigid inside a derived shape (CK-20) is a sub-wanted
+Sub-wanteds are resolved in the same drain. A rigid inside a derived shape is a sub-wanted
 on a rigid, so it reaches the `rigid` row of §9.2, which gives a missing-constraint error at the
 comparison, not a structural answer.
 
-*Amended by R15-fix-E (2026-09-28, CK-168, CK-161).* **An own method no use can call is said once,
+*Amended 2026-09-28.* **An own method no use can call is said once,
 at its declaration.** Step 3's module-rule match failing for a use that asks the well-known `T …,
 T … -> Bool|Order` of an OWN method (this module's) whose type fits no use of `T` — not two
 parameters each a variable or an application of `T`, or a result not a variable, `Bool` or
@@ -1723,7 +1615,8 @@ use is rejected with it. A method that fits some use (a specialised `Holder Int,
 rule 2, A.56: a dot-call never derives, directly or through a requirement it promoted), and its
 text says so: a derived method is reached by an operator or a `where` clause, and the hint
 writes the operator or the annotation, naming the unannotated function when the refusal comes
-through its call. Whether a dot-call should derive is the owner's (CK-161).
+through its call. Whether a dot-call should derive was left to the owner; the next amendment
+records the decision.
 
 *Amended 2026-09-28: a dot-call derives, and an own method's signature is said once per method.*
 
@@ -1759,18 +1652,18 @@ At the boundary that quantifies a flex receiver:
 | Situation | Answer |
 |---|---|
 | the binder is annotated | a wanted not covered by a given was already `missing_where_constraint` (Rule U2) |
-| unannotated top-level declaration, or a `let` binding (D5) | **promote**. The requirement lists of a binding group are computed per member from each member's own scheme (§12.3). A wanted raised in member `m`'s body is answered `param(m, k)`, where `k` is `(q, method)`'s index in **`m`'s** list. If `q` is not in `m`'s list, §12.3's cases 2 and 3 apply. Several wanteds of one name on one variable are already aliases (§4.2). *Revised 2026-09-24 (round 2, N7): "promote to the binder" was ambiguous for a group.* |
-| over `max_inferred_constraints` (64) | `too_many_inferred_constraints`, with each receiver named (CK-58). The binder promotes nothing, as today (spike §10.11) |
+| unannotated top-level declaration, or a `let` binding (D5) | **promote**. The requirement lists of a binding group are computed per member from each member's own scheme (§12.3). A wanted raised in member `m`'s body is answered `param(m, k)`, where `k` is `(q, method)`'s index in **`m`'s** list. If `q` is not in `m`'s list, §12.3's cases 2 and 3 apply. Several wanteds of one name on one variable are already aliases (§4.2). *Revised 2026-09-24: "promote to the binder" was ambiguous for a group.* |
+| over `max_inferred_constraints` (64) | `too_many_inferred_constraints`, with each receiver named beside its method. The binder promotes nothing, as today (spike §10.11) |
 | `pub`, unannotated, with ≥ 1 requirement | `ambiguous_method_receiver` warning, unchanged |
 | `pub`, zero parameters, inferred requirements | `constrained_constant`, unchanged. Its scope is decided by §12.5 |
 | the receiver is **not reachable** from the binder's scheme type, and is not quantified by any enclosing binder (proven undetermined) | the §7.2 default. On a shape, `eq`/`compare` resolve by that shape's structural `derived` function, as `settleUndetermined` does today. On a bare variable they get the `undetermined` leaf (§13.1). For any other method, `missing_where_constraint`-class ambiguity at `origin`. This is the only structural answer the resolver gives, and only on proof |
 
-### 9.5 Termination and cycles (CK-03, CK-37)
+### 9.5 Termination and cycles
 
 - **Cycle-safe walks, and one report per cycle.** Every resolver walk over a receiver (instance
   lookup, derived-context queries, `recordRow`) goes through `Walk.zig` with colours, over
   `structural` successors (I2).
-  - **Which defence fires first is fixed** (pinned 2026-09-24 for CK-37). A cycle is closed by a
+  - **Which defence fires first is fixed** (pinned 2026-09-24). A cycle is closed by a
     unification in some constraint node. Eager draining (§9.1) runs right after that node, before
     any later node, `binders_end` or boundary. So when a wanted on the cyclic receiver exists, the
     **resolver walk** meets the cycle first.
@@ -1784,9 +1677,10 @@ At the boundary that quantifies a flex receiver:
     `not_equatable`, `missing_where_constraint`) does **not** poison the receiver. The wanted is
     `failed`, and a `dispatch_rejected` flag is set on its receiver's class, OR-merged on union as
     Roc does (`store.zig:756-771`). It silences only later wanteds *of the same method* on that
-    class, so unrelated uses of the receiver still report (CK-37).
-  - *Both behaviours are what `7427828` already does* (round 4 probes `cyc1`, `indep`), so CK-37's
-    fixtures are regression guards.
+    class, so unrelated uses of the receiver still report.
+  - *Both behaviours are what v1 already did*, so their fixtures
+    (`check/bad/CyclicReceiverReportedOnce`, `…/RejectedReceiverDoesNotSilence`) are regression
+    guards.
 - **A lineage rule replaces `cycle_check_depth`.**
   - Each sub-wanted records its parent.
   - Resolving a wanted whose `(method, target)` equals an ancestor's **and whose receiver root is
@@ -1801,7 +1695,7 @@ At the boundary that quantifies a flex receiver:
   - sub-wanted receivers are images of a scheme's quantifiers, strictly inside the parent receiver;
   - nominal recursion goes through the §11.2 fixpoint, not through resolution.
 
-  *Withdrawn by R6a's round-2 review (2026-09-25, N1): the premise above is false.* A `where`
+  *Withdrawn 2026-09-25: the premise above is false.* A `where`
   clause may constrain a quantifier of ANOTHER parameter, so a sub-wanted's receiver is whatever the
   caller passes there — the parent's receiver itself, or a type that holds it — on a receiver with
   no cycle at all. `describe : Box a, b -> String where b.describe : b, K -> String` called as
@@ -1816,45 +1710,44 @@ At the boundary that quantifies a flex receiver:
   Termination therefore rests on the budget, not on the lineage.
   So the rule only ever fires on the cyclic case. The drain backstop `1 << 20` stays as a reported
   backstop (`nesting_too_deep` plus poison), as `static-dispatch-spike.md` §6.3 requires. It counts
-  **resolution steps per module, cumulatively** across every eager drain, frame and fixpoint (round
-  4, S4-3).
-  *Revised by R6a's review (2026-09-25, F1):* **per top-level group**. A module-cumulative count
+  **resolution steps per module, cumulatively** across every eager drain, frame and fixpoint.
+  *Revised 2026-09-25:* **per top-level group**. A module-cumulative count
   scales with the module, not with a pathology: 4 000 annotated `a == b` over a 100-field record
   spent it and a valid program was refused. A runaway resolution is one group's, so the budget is
   reset at every group (`Solve.group`) and its message says what happened
   (`Messages.resolutionBudget`, still `nesting_too_deep`) rather than naming a type nesting depth.
-  *Revised 2026-09-24 (S14): the first draft let an equal repeat be "answered by the ancestor".*
+  *Revised 2026-09-24: the first draft let an equal repeat be "answered by the ancestor".*
 
-*As built by R6a (2026-09-25).* `check2/Resolve.zig` (the step, attach, promotion, the lineage
+*As built (2026-09-25).* `check2/Resolve.zig` (the step, attach, promotion, the lineage
 rule) and `check2/Instances.zig`'s second half (lookup and the derivability walk); the texts are
 v1's, through `Report`.
 
 - **The step** is §9.2's table. A `method` node creates the callee's wanted and steps it at once
   (Rule U0: a record known at the call is a field call); an instantiation's wanteds ride on their
   fresh receivers until `unify` readies them. The bridge unifies the method type with the
-  well-known signature for a flex AND a rigid `number` (CK-21), under the category
-  `.where_clause` when the wanted came from a clause (CK-55's half; its text is R13's). A given
+  well-known signature for a flex AND a rigid `number`, under the category
+  `.where_clause` when the wanted came from a clause (the text naming the clause is §15.4's). A given
   unifies its method type with the wanted's, and a mismatch is v1's
   `method_constraint_mismatch`.
 - **Lookup** is §9.3 in v1's order and with v1's texts: the table; the module rule (P3's index for
-  this module — an in-flight member is the §10.3 link, an unchecked one R7's refusal; another
+  this module — an in-flight member is the §10.3 link, an unchecked one nested at demand (§10.2); another
   module's `pub` value, else `private_method`); matching, which instantiates the scheme with
   `parent` set, so its requirements are the sub-wanteds, and unifies it with the method type — a
   failure is the module-rule clash, v1's `type_mismatch` naming the method's type — at a use AND for
-  a requirement of a method's context (review F2: a sub-wanted whose method exists at the wrong type
+  a requirement of a method's context (a sub-wanted whose method exists at the wrong type
   is that, never a derivation's refusal) — and only at a DERIVED shape's position the shape's
-  refusal, reported once for the lineage root's receiver (row 72's `SpecializedEqWrongReceiver`,
+  refusal, reported once for the lineage root's receiver (`SpecializedEqWrongReceiver`,
   v1's rule); derivation (below); `unknown_method`. A receiver already on a cycle *when its
   wanted is resolved* is one `infinite_type` at the use, poisoned, and nothing is looked up on
-  its head (review F5). A wanted resolved while the cycle is still open — `( x.foo (), x ==
+  its head. A wanted resolved while the cycle is still open — `( x.foo (), x ==
   Just x )`, drained on `Maybe a'` before `a'` is `x` — meets an honest `unknown_method` first,
-  and the cycle is reported when it closes: two messages, as v1 gives (round-2 review, nit 1).
+  and the cycle is reported when it closes: two messages, as v1 gives.
 - **Derivation** reads the derived shape's positions — a nominal type's arguments (one per
-  parameter, R8a replaces it), a closed record's fields in name-text order, a tuple's elements —
+  parameter, which §11.2's contexts replace), a closed record's fields in name-text order, a tuple's elements —
   and answers `derived` with one sub-wanted per position, each stepped at once: a flex position
   rides on its variable, a rigid one needs a given and is otherwise `missing_where_constraint` at
-  the use (CK-20), a concrete one is resolved in turn.
-- **THE derivability verdict** *(rebuilt by R6a's review, 2026-09-25, B1 and B2)* is
+  the use, a concrete one is resolved in turn.
+- **THE derivability verdict** *(rebuilt 2026-09-25)* is
   `Instances.derivability(root, kind)`, and every derivation reads it — no shortcut, no second
   opinion: the first round's `walked` bit let a position that was a flex when its shape was walked
   skip the verdict once it was bound (`( h, 1 ) == ( h, 1 )` with `h` a `Handler (Int -> Int)` later
@@ -1864,7 +1757,7 @@ v1's, through `Report`.
     pair coloured grey/black in the walk's own map: a pair met grey again is a cycle —
     `infinite_type` at the use, poisoned — whichever method the boundaries alternate through (an
     `eq` asking its payload for `compare`, whose `compare` asks for `eq`: v1 recursed through
-    that and overflowed its stack, CK-101);
+    that and overflowed its stack);
   - successors: an ALIAS node's expansion; a node with a `pub` method of the kind (a method
     boundary) its arguments, each for the kinds its requirement bits name — its own kind, `eq`,
     `compare` — as pairs of their own kind on the same stack (v1's remapping kept: a failure under
@@ -1872,69 +1765,69 @@ v1's, through `Report`.
     other node its `structural` successors for the same kind;
   - a node's own verdict (`gate`): a function; a record wider than the cap; a nominal type whose
     head does not answer the kind — `contains_function` if it holds a function, else
-    `opaque_type`; an own type whose method of that name has no scheme yet is R7's refusal;
+    `opaque_type`; an own type whose method of that name has no scheme yet is nested at demand (§10.2);
   - a variable is not a verdict: it rides, and its sub-wanted is asked again when it is bound;
   - linear on a DAG: a pair is walked once per walk, and a pair whose whole subgraph is ground
     (no variable below) is kept in `Resolve.State.derivable` and never walked again in the module.
-    *Amended by R9b (CK-131):* that memo is a dense column indexed by the root (one bit per
+    *Amended 2026-09-27:* that memo is a dense column indexed by the root (one bit per
     kind), not a hash map; and a ground receiver of at most 64 words whose every nominal head is
     §3.2's or another module's is kept by its STRUCTURE (`Derivable.Shapes`, the encoding
     `Walk.encodeGround` makes): its verdict reads nothing but the structure, the table and
     interfaces that cannot change during the module's check, so 6 000 declarations comparing
     `( Int, List Int )` walk it once. The dense column and the shape memo's last-encoding cache
-    are keyed by variable ids; §9.3 step 1's *amended by R9b* note says what guards them.
-- **Sharing (CK-80)** *(narrowed by R6a's review, B3)*: only an answer that depends on the receiver
+    are keyed by variable ids; §9.3 step 1's *Amended 2026-09-27* note says what guards them.
+- **Sharing** *(narrowed 2026-09-25)*, so `==` on a doubling DAG is not exponential in its depth: only an answer that depends on the receiver
   alone is shared — a DERIVED one (`Resolve.State.derived`, keyed by the receiver's root and the
   method). A later well-known wanted there has its own method type checked against
   `root, root -> Bool|Order` by a unification that reports (never one used as a test) and is
   answered `alias`. A method the module rule finds is instantiated per use, never shared: the
   first round shared one instantiation of `m : T, a -> a` across uses at `Int` and `String`.
-- **The cycle test** *(replaces the lineage rule; round-2 review, N1)*: before anything is shared
+- **The cycle test** *(replaces the lineage rule)*: before anything is shared
   or looked up, a wanted on a structure whose receiver root lies on a cycle (`Instances.cyclic`) is
   one `infinite_type` at its origin, the cycle poisoned. The first round's lineage rule — an
   ancestor's `(method, receiver root)` repeated, or the lineage root's receiver reached — fired on
   valid programs whose `where` clause constrains another parameter (§9.5's withdrawn premise). The
   lineage (`parent`) remains for failure propagation and the one-message-per-rigid key.
-- **The step budget** (`1 << 20` steps per top-level group, review F1) reports
+- **The step budget** (`1 << 20` steps per top-level group) reports
   `nesting_too_deep` once, in its own words, and fails the group's later wanteds.
 - **Promotion** (`Resolve.close`) walks each unannotated member's scheme with
   `Evidence.requirements` and answers each wanted it reaches `promoted(root, method)` — the
-  requirement, whose index P6 computes per site (§12.3; review S1); over 64 it is
+  requirement, whose index P6 computes per site (§12.3); over 64 it is
   `too_many_inferred_constraints` and the sets are emptied (§10.11). The default answers an
   unreached well-known wanted `undetermined`; any other method is v1's
   `undeterminedMethodReceiver` (`unknown_method`).
-- **CK-37**: a rejection poisons the method type (v1's, so what the call returns is silent) and
+- **A rejection** poisons the method type (v1's, so what the call returns is silent) and
   never the receiver, so another method on it still reports. The class flag is
   `Evidence.rejected`, per concrete receiver root, method and surface: a later wanted of the same
-  method there fails in silence. *Revised by R6a's review (S3, F3):* it is **OR-merged on every
+  method there fails in silence. *Revised 2026-09-25:* it is **OR-merged on every
   union** — `Unify.merge` is the one place `unify` merges, and it moves the dropped root's flags to
   the survivor — so the diagnostics no longer depend on which side of `[ x, y ]` became the root.
   A rejected sub-wanted fails its parent and the whole lineage (a parent is never answered over a
   failed argument).
-- **One message per rigid and method at a use** *(review F4)*: a rigid met more than once inside a
+- **One message per rigid and method at a use**: a rigid met more than once inside a
   derived shape is one `missing_where_constraint` (`Resolve.State.missing`, keyed by the lineage
   root's origin, the rigid and the method).
-- **A lying clause on a `number` rigid** *(review S6)* is checked where it is written: at the
+- **A lying clause on a `number` rigid** is checked where it is written: at the
   declaration's `member` node, a given for `eq`/`compare` on a `number` rigid is unified with the
   well-known signature under `.where_clause` (`Resolve.checkGivens`), so the declaration is
   reported at its clause, not only at its callers.
-- **No cascades** *(review F6)*: a scheme that failed publishes `<error>` (§14.1) and no
+- **No cascades**: a scheme that failed publishes `<error>` (§14.1) and no
   `ambiguous_method_receiver` (the first round printed `where a.get : ?`); a call whose result
   meets its expectation with a message fails, in silence (`Solve.failInstantiation`), those
   requirements of its callee's instantiation whose method type reaches a variable of the callee's
   result — they were read off the same wrong result — and what the arguments readied is drained
-  before the result is unified. *Narrowed by the round-2 review (S1):* the callee's row is taken
+  before the result is unified. *Narrowed 2026-09-25:* the callee's row is taken
   at the call node, a requirement that shares nothing with the result still reports (v1's two
   messages), and a failed wanted is never an alias target — in `Resolve.attach` and
   `Unify.unionWants` a live wanted of the same name takes its place in the set, so a flex's set
   stays its open wanteds (§4.2).
-- **Invariants report** *(review S8)*: step 7's "promotion unified nothing" and "no speculation is
+- **Invariants report**: step 7's "promotion unified nothing" and "no speculation is
   open" are `Solve.expect` — a debug build stops, a release build reports `internal` — never a
   debug-only assert.
 
 ---
 
-## 10. Own methods without a scheme: deferral, nesting and merging (D3, CK-36)
+## 10. Own methods without a scheme: deferral, nesting and merging (D3)
 
 This replaces priority groups (`Check.zig:1254-1308`), the capability re-settles between them, and
 `method_needs_annotation`.
@@ -1945,7 +1838,7 @@ Resolution, a derived-context query, or a **value** reference reaches a declarat
 module. `d` is **unannotated** (§6.6: an annotated `d` is always instantiated from its scheme), and
 the effective status of its group `G_d` (§4.4) is not `done`.
 
-*Rewritten 2026-09-24, review round 2 (N3). The round-1 design parked such a use until the frame's
+*Rewritten 2026-09-24. An earlier design parked such a use until the frame's
 boundary, and that was still order-dependent: the parked result stayed a flex for the rest of the
 body, where the other declaration order would have made it concrete at once. Nesting **at demand**
 removes that difference, and it deletes parking, park lists, settle-time nesting, pinning and the
@@ -1966,12 +1859,12 @@ There are two cases, by `G_d`'s effective status.
     first.
   - When it returns **merged** into a frame below (its check found a back-edge), `d` has no scheme
     yet. The demanding site takes the in-flight path instead: §10.3, or for a fixpoint payload
-    §11.2's in-flight branch. *(Round 3, S-1.)*
-  - **Nesting depth is bounded, and reported** (round 3 S-4; revised in round 4, R7-3).
+    §11.2's in-flight branch.
+  - **Nesting depth is bounded, and reported.**
     - **One budget.** The recursion guards of `Constrain` and `Solve` (`checker.md` §5) become one
       budget for the whole stack of frames, rather than one per walk. The budget is **2 × (one
       declaration's worth, `Parse.max_depth + 104`)**. `check_stack_size` (64 MiB) is already twice
-      the 32 MiB that M2b measured for one declaration (`Check.zig:412-421`), so the existing
+      the 32 MiB measured for one declaration (`Check.zig:412-421`), so the existing
       argument covers it.
     - **Admission.** Every nested `checkGroup`, and every fixpoint frame (§11.2), charges `nest_cost`
       units. A frame is **admitted only if the remaining budget is at least one full declaration's
@@ -1990,14 +1883,14 @@ There are two cases, by `G_d`'s effective status.
         other order. That is generated code in practice.
       - The limit is **order-dependent at that extreme**, and this is stated, not hidden (I9's one
         exception).
-      - *Corrected by R7 (2026-09-26):* the pair as described is admitted by the rule above; two
+      - *Corrected 2026-09-26:* the pair as described is admitted by the rule above; two
         demands in a row, each about 2 150 levels deep, reach it (§10.8, `scenario/NEST-DEEP`).
       - Rule 7 holds. It bounds a real blow-up, a native stack overflow on valid input, and an
         annotation or a reordering lifts it, as with the 64-constraint cap.
     - *Rejected alternative:* an explicit continuation stack. It would have to turn `constrain`,
       `solve` and `resolve`, three mutually recursive tree walks, into a state machine. That is the
       largest complexity cost in the design, paid for input no person writes.
-    - **Tested** by generated scenarios (`checker-rewrite.md` R7):
+    - **Tested** by generated scenarios (`ordering_test.zig`):
       - a reverse-ordered method chain, under the budget and over it;
       - a pair of deep declarations.
 
@@ -2023,7 +1916,7 @@ checkGroup(G):
   came first. So every later constraint of the site's body (a U0 resolution, a `let` generalisation)
   meets the same types in both orders.
 
-Round 2's N3 program is the witness. With the `makeBox` use written before `makeBox`, the scrutinee
+A program that scrutinises a `makeBox` result is the witness. With the `makeBox` use written before `makeBox`, the scrutinee
 is resolved inline to `Box Int`, `g : ∀b. (Int -> b) -> Box b` generalises, and the program checks,
 as it does with the declarations reversed.
 
@@ -2045,37 +1938,37 @@ recursion:
 - a value reference is `d`'s header variable, and is recorded as `group_call(d)` for evidence.
 
 §12.3 fills the arguments from the per-member requirement lists after the group's promotion. **A
-reference to an annotated `d` never takes this path** (§6.6, round 2 N8).
+reference to an annotated `d` never takes this path** (§6.6).
 
 ### 10.4 A back-edge merges top-level groups (D11)
 
 A back-edge from the current nested chain reaches `d`, unannotated, in a group whose root frame is
 `j`, lower on the stack. Because each frame drains only its own `ready` queue (§9.1), the stack is
 a **demand chain**: frame `j` demanded the next top-level frame, and so on up to the top, and the
-top now demands `j`. *(Round 3, B-1: with one shared queue this premise was false, and an unrelated
+top now demands `j`. *(With one shared queue this premise was false, and an unrelated
 group could be merged.)* So the groups of the **top-level-kind** frames from `j` up form a cycle
 through value or dispatch edges, which makes them mutually recursive.
 
-- **Only top-level-kind frames merge** (round 2, N5). Their groups get `merged_into = root(j)`, as a
+- **Only top-level-kind frames merge.** Their groups get `merged_into = root(j)`, as a
   union-find union.
 - **`let` frames never merge.** Each generalises at its own boundary. Ranks already keep it from
   quantifying anything that reached a merged frame, because such variables took the lower rank.
-  Round 2's N5 program is the witness: `g` inside `weight` generalises `y` whichever of `size` and
+  For example, `g` inside `weight` generalises `y` whichever of `size` and
   `weight` comes first.
 - **A merged top-level frame runs only steps 1 and 2 of §8.1 at its end.** It hands its pool,
   `binders` and `touched` segment to `root(j)`'s frame, lowering their ranks to that frame's, and
-  pops. It applies **no `?` default** (round 2, N4). Defaults, occurs, quantification, the
+  pops. It applies **no `?` default**. Defaults, occurs, quantification, the
   generality check and promotion happen once, at the root's boundary, when every member's facts
   are in.
-  - Round 2's N4 program checks in both orders: `bm`'s `m?` waits for `am`'s `Box (Just n)`.
+  - So `bm`'s `m?` waits for `am`'s `Box (Just n)`, and the pair checks in both orders.
   - Debug assert: no group is nested after a frame has applied its first default, whether the
-    frame is a top-level root or a `let` frame (round 3, N-2). A default only makes a `Result`, whose
+    frame is a top-level root or a `let` frame. A default only makes a `Result`, whose
     methods are `core`'s and already `done`.
-  - *Corrected by R7 (2026-09-26):* the premise is false. A derived `Result` asks its positions'
+  - *Corrected 2026-09-26:* the premise is false. A derived `Result` asks its positions'
     methods, which may be this module's and `unchecked`, and the assert is not added (§10.8).
 - **All members of a merged group share one failure bit** (§15.2) and are generalised **together**.
   Their calls to each other are group calls (§12.3).
-- **A back-edge to a group already merged into a root merges from that root** (S-new-3).
+- **A back-edge to a group already merged into a root merges from that root.**
 
 This is how `eq a b = compare a b == EQ` together with a `compare` that uses `==` on its own type
 checks, whatever order they are written in.
@@ -2085,7 +1978,7 @@ checks, whatever order they are written in.
 - **Terminates.** A group enters `checking` once. Nesting follows demands, and a demand on a
   `checking` group is a back-edge, not a nesting, so the nesting depth is at most the number of
   groups.
-- **Order-independent (I9)**, by the three rules I9 names. *(Restated 2026-09-24, round 3.)*
+- **Order-independent (I9)**, by the three rules I9 names. *(Restated 2026-09-24.)*
   - **Outside a recursive group.** A group's scheme is determined by its members and by the schemes
     of the groups it depends on, by value or by dispatch. Every such group is `done` when the scheme
     is needed: checked earlier at top level, or nested at the demand.
@@ -2103,11 +1996,10 @@ checks, whatever order they are written in.
   - Merging depends only on which top-level groups form a cycle through value or dispatch edges to
     unannotated declarations. That is a function of the program.
   - The remaining choices are made in id order.
-  - R7's permutation scenario tests this over every counterexample of review rounds 1–3
-    (`checker-rewrite.md`).
+  - The permutation scenarios of `ordering_test.zig` test this over every counterexample the
+    design reviews found.
   - **One stated exception:** the nesting budget of §10.2. A generated pair of very deep
-    declarations, or a long reverse-ordered chain, can reach it in one order and not the other
-    (round 4, R7-3).
+    declarations, or a long reverse-ordered chain, can reach it in one order and not the other.
 - **Deterministic (rule 5).** Everything above is per module, single-threaded, and ordered by
   source-derived indices.
 - **What still needs an annotation:** nothing, for ordering reasons (D3). Two things need one for
@@ -2126,11 +2018,11 @@ checks, whatever order they are written in.
 
 ### 10.6 Worked examples
 
-Every program below is a planned fixture (`checker-rewrite.md` R7). All are written in valid beni: a
+Every program below is a fixture (`tests/corpus/run/`, `ordering_test.zig`). All are written in valid beni: a
 method needs at least one argument besides its receiver, because `x.m` alone is a field access
-(`static-dispatch-spike.md` §11). Round 2's programs are corrected accordingly, as `.size ()`.
+(`static-dispatch-spike.md` §11), so they call `.size ()`.
 
-**Nesting inside a `let`** (round 1, B6):
+**Nesting inside a `let`:**
 
 ```elm
 type Box a = Box a
@@ -2141,9 +2033,9 @@ pub size (Box _) u = 1          -- unannotated, written after f
 `(Box x).size ()` demands `size`'s group while `g`'s body is being solved. `size` is checked nested
 (`Box a, b -> Int`), the wanted resolves, and `g` generalises. The program checks, as it does with
 `size` written first. The same holds for `g : a -> Int; g y = (Box y).size ()`, which must not report
-a spurious escape. v1 refuses the unannotated order with `method_needs_annotation` (CK-63).
+a spurious escape. v1 refused the unannotated order with `method_needs_annotation`.
 
-**Order-dependent refusal made strict: D11 is stricter than Roc** (round 1, S17). Take a module with:
+**Order-dependent refusal made strict: D11 is stricter than Roc.** Take a module with:
 - `type K = K Int` and `type Box a = Box a`;
 - an unannotated `pub show (K n) u` that compares `Box 1 == Box 2` and `Box "x" == Box "y"`;
 - an unannotated `pub eq (Box a) (Box b)` whose body mentions `\w -> (K 0).show ()`.
@@ -2161,20 +2053,20 @@ message says:
 - plus the hint "`eq` is used at two types inside a group that is recursive through method calls
   (`eq` → `show` → `eq`); an annotation on `eq` lets each use instantiate it".
 - The printed cycle starts at the member whose name is smallest by text, so the message is
-  byte-identical in every declaration order (round 2 nit).
+  byte-identical in every declaration order.
 
 Rule 7 is kept: the refusal stands only where the alternative is order-dependent, and it names its
-escape hatch. v1 refuses it with `method_needs_annotation`, so the fixture is pending (CK-70).
+escape hatch. v1 refused it with `method_needs_annotation`, in one order only.
 
 ### 10.7 Recursive groups: canonical pessimism (D14)
 
-*Added 2026-09-24, round 3 (B-3). This is decision D14, taken under the owner's standing
+*Added 2026-09-24. This is decision D14, taken under the owner's standing
 instruction to take the reviewers' recommendations, and flagged to the owner.*
 
 **The problem.** Inside a recursive group, members are solved in an order: source order for a value
 SCC, demand order for a merge. A `let` helper that makes a method call on a **group-level**
 receiver, meaning a variable whose rank is the group's top-level rank, such as another member's
-result, sees different facts in different orders. Round 3's `sccA`/`sccB` shows it:
+result, sees different facts in different orders. The `sccA`/`sccB` pair shows it:
 
 ```elm
 pub combine (Box a) z = Box a
@@ -2189,9 +2081,9 @@ g n = if n > 100 then Box n else let _ = f (n + 1) in Box n
 - **`f` written first:** `r` is `g`'s unsolved result. The call attaches to a flex, I15 lowers `z`,
   and `( q 1, q "s" )` is a `type_mismatch`.
 - **v1:** `check` accepts both orders. `build` then stops with two *different* internal errors, one
-  per order (CK-72).
+  per order.
 
-**The rule, over wanteds** (restated 2026-09-24, round 4, R7-1). The round-3 rule looked only at a
+**The rule, over wanteds** (restated 2026-09-24). An earlier rule looked only at a
 method-call node's receiver. Two kinds of wanted slipped past it:
 - **instantiation evidence**: `useMix r z` with `useMix : a, b -> a where a.mix : …` (`evA`/`evB`);
 - **sub-wanteds of an inline resolution on a young receiver**: `(Box r).combine z` with
@@ -2210,7 +2102,7 @@ with the attach path of §7.1.
 >
 > `R` is the rank of the top-level-kind frame of the member whose body contains the wanted's
 > creating node. That is the member's own frame rank, even inside a merged group before hand-down,
-> where members sit at different ranks with `let` ranks in between (S4-1).
+> where members sit at different ranks with `let` ranks in between.
 
 - **Why this is order-independent.** In the order where the receiver is still a flex, the same
   wanted is attached to the same group-level root, and I15 lowers the same closure. In the other
@@ -2219,9 +2111,9 @@ with the attach path of §7.1.
   group yet?" answer is the same.
 - **The result.** In every order the answer is the pessimistic one: `q` is monomorphic, and
   `sccA`/`sccB`, `evA`/`evB` and `subA`/`subB` all report the `type_mismatch`.
-- **Single-member groups are untouched.** Round 3's `capt`, which v1 accepts, stays accepted: its
+- **Single-member groups are untouched.** A single-member group that v1 accepts stays accepted: its
   receiver's facts come only from its own body, so their order is fixed.
-- **Where it is built.** An R7 hook in R6a's `Resolve` resolution function. It is local and
+- **Where it is built.** A hook in `Resolve`'s resolution function. It is local and
   additive.
 
 **Why the rule is order-independent.**
@@ -2231,13 +2123,13 @@ with the attach path of §7.1.
   in every order. Before that node, a member's body sees no other member's facts, in any order; after
   it, it is inside the merged group, in every order.
   - So "is this node inside a recursive group" is a function of the member's own body prefix.
-  - This is argued, not proven. §23 carries it, and R7's permutation scenario tests
+  - This is argued, not proven. §23 carries it, and the permutation scenarios test
     it on 3-cycles.
 
 **The message.** The `type_mismatch` D14 causes carries a hint:
 - "`r` comes from `g`, which is in a recursive group with `f`, so its type is not known here yet.
   Annotate `g` and each use can instantiate it".
-- **The named member is chosen syntactically** (round 4, R7-2), so the diagnostic is byte-identical
+- **The named member is chosen syntactically**, so the diagnostic is byte-identical
   in every declaration order.
   - The constraint generator records, for each variable a `let` binding or a parameter introduces,
     the group member whose **reference** produced its value in the current member's body:
@@ -2246,25 +2138,25 @@ with the attach path of §7.1.
     reference.
   - Otherwise it names **every unannotated member of the group, sorted by text**. The group is the
     value SCC, or the members merged so far, which is prefix-determined per the argument below.
-  - The round-3 rule, "the member whose header variable the receiver's root came from", depended on
+  - An earlier rule, "the member whose header variable the receiver's root came from", depended on
     union-find class membership, which depends on order. Annotating the member it named could even
     leave the receiver group-level.
 - Solving records which variables D14 lowered, so the reporter knows when to add the hint.
 
 **Rule 7.** The refusal buys a guarantee, I9's order-independence. Without it, a program's
-acceptance would depend on declaration order, which is exactly what CK-36 and its family exist to
+acceptance would depend on declaration order, which is exactly what nesting at demand exists to
 remove. The escape hatch is always available: annotating the member instantiates its scheme (§6.6),
 so the receiver is no longer group-level. The annotated `sccA`/`sccB` is accepted in both orders, as
 it is by v1. It is the same kind of limit as monomorphic recursion in Elm.
 
 **Alternatives considered**, from the review:
 - **HM(X) for outer receivers.** Principal, but it is Roc's side table, which §3 rejects, and it
-  reverses CK-02's expectation.
+  reverses the expectation that a method type on an outer receiver stays outer (§8.4).
 - **Restating I9 with an exception.** It gives up the guarantee.
 
-### 10.8 As built by R7 (2026-09-26)
+### 10.8 As built (2026-09-26)
 
-*Added by R7, and revised by R7's reviews the same day. The sections above stand; this records
+*Added 2026-09-26, and revised after review the same day. The sections above stand; this records
 how they were built, and the places where building or reviewing them showed the text wrong or
 silent (each marked **Correction**).*
 
@@ -2331,22 +2223,21 @@ cycle does not depend on which member was the root; promotion over every member
 (`Resolve.close`); one failure bit (`Report.failGroup`). P6 reads each declaration's group as its
 merge root, so §12.3's cases treat a merged group as one. An annotated declaration is a singleton
 SCC, never nested or merged, so a merged frame has no generality check to hand down (asserted).
-There is no `touched` list to hand down (§8.1's fallback, R4b).
+There is no `touched` list to hand down (§8.1's fallback).
 
-**A merge during a boundary.** *Correction (round 3, N-2's debug assert, and R7's first text
-here).* "No group is nested after a frame has applied its first default: a default only makes a
+**A merge during a boundary.** *Correction (§10.4's debug assert, and the first text here).* "No group is nested after a frame has applied its first default: a default only makes a
 `Result`, whose methods are core's" is false. A default readies a wanted on the `Result`, whose
 derived answer asks each POSITION's method — an own unannotated `eq`, say, whose group is
-`unchecked` and is nested there (`tests/corpus/check/good/NestAfterDefault.beni`). R7 does not
-add the assert. And R7's first reason — "the nested group shares no variable with the defaulted
+`unchecked` and is nested there (`tests/corpus/check/good/NestAfterDefault.beni`). The assert is
+not added. And the first reason given here — "the nested group shares no variable with the defaulted
 frame" — is false once the nested group back-edges into the frame that is running its boundary
-(R7's structural review, B1; `tests/corpus/run/MergeAtBoundary`). As built:
+(`tests/corpus/run/MergeAtBoundary`). As built:
 - Steps 1–3 run first (`Solve.settle`), and the members, the binders and the pool a boundary
   reads are read after them, so a group that joined during them is promoted, failed and settled
   with the rest; before this, its requirements were never promoted and P6 reported `internal`.
 - A frame merged into one below it DURING its own steps 1–3 stops there: it applies no more
   defaults, hands the rest of its open-`?` list down with its pool, and its root defaults them
-  (§10.4's N4).
+  (§10.4).
 - **Why the result is still order-independent.** The joining group is demanded only because of a
   default already applied, so no order sees its facts before that default: the default is
   decided by the facts before it, in every order, and every later fact of every member arrives
@@ -2354,7 +2245,7 @@ frame" — is false once the nested group back-edges into the frame that is runn
   frame that defaulted is the root (it was checked first) or a member that merges into the
   joiner's frame (the joiner was checked first and nested it), the same defaults are applied on
   the same facts and the class is generalised once.
-- **Default order is confluent** (round-2 review, S4). After such a merge the joined class's
+- **Default order is confluent.** After such a merge the joined class's
   defaults are applied in an order that varies — the root's own `?` rows then the handed-down ones
   in one declaration order, the reverse in another — with a drain between two. The result does not
   depend on it: a `?` default only ever decides its own target as `Result`, so what it readies can
@@ -2371,7 +2262,7 @@ lives in `Solve.ready` while its frame is current (swapped by push and pop), and
 reuses a popped queue, since nothing routes to it again; a Debug build never does, so
 `Unify.enqueue`'s check that an item's queue is live keeps its full strength. The reuse path is
 therefore exercised only by release builds: the ReleaseFast steps (`test-pending-perf`,
-`test-perf`), and the permutation scenario run once under ReleaseSafe in R7's round-2 evidence.
+`test-perf`), and a run of the permutation scenario under ReleaseSafe.
 
 **D14 (§10.7).** The hooks are `Recursion.wanted`, at the top of `Resolve.step` (inline and drain
 alike, before the attach path), and `Recursion.row`, where an obligation is attached (before its
@@ -2385,11 +2276,10 @@ hooks free where no frame is recursive.
   is at rank ≤ `R`, and whose method type (variables) reaches either side. That covers the order
   where the wanted rode on a group-level flex unresolved and I15 lowered it when the flex met
   another, where no hook runs. A receiver rule (a) held back at a `let` (§8.4's switch) is not
-  D14's, and its mismatch gets no hint (R7's adversarial review, F4).
+  D14's, and its mismatch gets no hint.
 - **The hint is written when the class is final** (`Recursion.finish`, at the root's boundary),
-  from the program's text and the final class only — R7's first cut wrote it at the mismatch, from
-  whichever lowered item met it and the members merged so far, and both depended on the order
-  (R7's adversarial review, F2 and F3; structural S1). The mismatch's declaration is the one whose
+  from the program's text and the final class only — writing it at the mismatch, from
+  whichever lowered item met it and the members merged so far, depended on the order. The mismatch's declaration is the one whose
   instructions hold its region. Its context is the body of the `let` function the refused call
   calls, when the mismatch is a call argument (`q "s"` names `q`'s body), else the innermost `let`
   function around the region, else the region. The members of the class referenced there — by
@@ -2398,20 +2288,20 @@ hooks free where no frame is recursive.
   destructures; followed transitively) are its producers. Exactly one: "`r` comes from `g`, which
   is in a recursive group with `f` … Annotate `g`", naming the local when the member came through
   exactly one. Otherwise every unannotated member of the final class, sorted by text.
-- **Codes.** In the round 3 and round 4 programs the refused use is `q "s"` after `q 1`, and a
-  number literal meeting `String` is `kind_mismatch` by v1's rule; the pending fixtures' `.codes`
+- **Codes.** In the `sccA`/`sccB`, `evA`/`evB` and `subA`/`subB` programs the refused use is `q "s"` after `q 1`, and a
+  number literal meeting `String` is `kind_mismatch` by v1's rule; the fixtures' `.codes`
   were amended from `type_mismatch` accordingly.
 
-**A dot-call's field-or-method choice (CK-105).** *Correction.* static-dispatch-spike.md §1.2 and
+**A dot-call's field-or-method choice.** *Correction.* static-dispatch-spike.md §1.2 and
 §11 made `x.m a` a field call when `x` was known to be a record at the call and a method
 constraint otherwise, fixed at first sight. Inside a recursive group the first sight is the
 declaration order: a member's parameter typed by another member's in-flight call is known in one
-order and not the other, so the program was accepted in one and refused in the other (R7's
-adversarial review, F1; by value recursion too, predating R7). The *Deferred receiver* rule is
+order and not the other, so the program was accepted in one and refused in the other (by value
+recursion too, predating nesting). The *Deferred receiver* rule is
 amended (static-dispatch-spike.md §11, 2026-09-26): a dot-call's own requirement whose receiver
 becomes a record before the constraint is generalised is the field call (`Instances.onRecord`).
 Every member's facts arrive before the class is generalised, in every order.
-- *Revised by the round-2 review (X1).* A dot-call joined by Rule U1 with a scheme's requirement
+- *Revised 2026-09-26.* A dot-call joined by Rule U1 with a scheme's requirement
   on the same variable is not a field call (the requirement has no field accessor to be): a bit
   on the older wanted of a join, `Wanted.field_ok`, is set only for a dot-call's own wanted and
   cleared by any join with another (`Evidence.joinField`, written where `Unify` and `Resolve.attach`
@@ -2421,11 +2311,11 @@ Every member's facts arrive before the class is generalised, in every order.
   group — is pinned by `check/bad/DeferredReceiverGeneralised`, and its recursive twin, accepted,
   by `tests/corpus/run/DeferredReceiverRecursiveTwin` (a caller in the same group decides what
   `x.m a` means, as it decides a parameter's type under monomorphic recursion). v1 miscompiles the
-  twin (it passes `f` evidence `f` does not take, and prints `EQ`), so it is a claimed pending
-  fixture; v2's message for the refusing half renders the record before the lambda's body is
-  constrained (§9.1), an expected difference until R11, which re-blessed the golden.
+  twin (it passes `f` evidence `f` does not take, and prints `EQ`); v2's message for the refusing
+  half renders the record before the lambda's body is constrained (§9.1), and the cut-over
+  re-blessed that golden.
 
-**A `number` receiver's method in a group (CK-106).** A requirement on a `number`-kinded
+**A `number` receiver's method in a group.** A requirement on a `number`-kinded
 variable whose method is not `eq`/`compare`, which some member's type does not reach (that member
 fixed it with a literal), has no answer: outside a group the caller reports `unknown_method` at
 the instantiation (§9.4); inside one the call is a group call and §12.3's case 3 has no
@@ -2441,36 +2331,38 @@ edges read off the members' Bir (value references and method calls by a member's
 the same in every declaration order. A value SCC that did not merge keeps v1's
 `methodSignatureMismatch`.
 
-**I9's scope, stated** (approved by the owner 2026-09-26; R7's adversarial review, F5; I9's own words are "whether a program
+**I9's scope, stated** (approved by the owner 2026-09-26; I9's own words are "whether a program
 checks, and what it computes"). Order-independent: whether each declaration order is accepted;
 for an accepted program its types, its interface and its output; for a refused one, that it is
 refused, and — for any given diagnostic — the text this section appends to it (D14's hint, from
 its region and the final class; §10.6's; the nesting refusal's). NOT promised: which FURTHER
 diagnostics a refused recursive group reports (a first error poisons the variables it met, and
 later errors meeting them are silent; which error is found first inside a recursive group depends
-on the order — the call-graph fuzz of R7's review round found programs reporting one
-`kind_mismatch` in some orders and two in others, on the reviewed tree and after), and a
+on the order — a call-graph fuzz found programs reporting one
+`kind_mismatch` in some orders and two in others), and a
 refused program's message text where it renders a TYPE (v1's shared texts render a type as it stands when the
 refusal is found, and inside a recursive group how far another member had got depends on the
 order: `not_equatable` shows `a -> a` in one order and `a -> b` in another), and a refused
 program's `dump --stage=types`. Nor, for a refused recursive group, WHICH error it reports first: its
-one error may be a different code in a different declaration depending on the order (the round-2
+one error may be a different code in a different declaration depending on the order (an
 in-flight fuzz, seed 28: `not_a_function` at `x 1` in `ma` in 30 orders, `type_mismatch` at the
 call in `mc` in 90), because which side of a conflict is met first sets both, as in any HM checker
 — Elm hides it behind a fixed source order, and v1 behaves the same. PERM holds its own programs to
 more than this. Rendering those after the class is generalised would show the
 poisoned types (`?`) the refusal left, and a canonical renaming cannot recover facts that arrived
-later; R13 owns diagnostic quality. The one other exception is §10.2's budget.
+later; diagnostic quality is §15's. The one other exception is §10.2's budget.
 
-**Evidence.** `scenario/PERM` (claimed): 41 programs, 2 752 declaration orders — every order up
+**Evidence.** `scenario/PERM`: 41 programs, 2 752 declaration orders — every order up
 to 120, else 120 spread evenly over the whole permutation space by rank — each built and run
 against its oracle twin's output, or checked, or refused with one diagnostic whose message and
 spanned source text are byte-identical in every order (one program, `t102`, is held to its code
 and spanned text only, per I9's scope above); for the programs that check, `dump --stage=types`
-of six orders compared declaration by declaration. It covers every program R7's brief lists,
-round 3's and round 4's (CK-70, CK-72, CK-73, CK-76), 3- and 4-cycles, a member that demands its
+of six orders compared declaration by declaration. It covers every program this section and
+§10.6–§10.7 name, the design reviews' order-dependence counterexamples (a method used at two
+types inside a dispatch cycle, a method call on another member's result, a method in a `case`
+scrutinee before its definition, evidence on another member's result), 3- and 4-cycles, a member that demands its
 cycle at two nodes, a value back-edge, a group nested two `let`s deep, one nested after a default
-and one merged during its root's boundary, CK-105's field calls, and D14's hints. §23 items 1, 7
+and one merged during its root's boundary, the dot-call field calls above, and D14's hints. §23 items 1, 7
 and 8 are carried by it.
 
 ---
@@ -2479,7 +2371,7 @@ and 8 are carried by it.
 
 `check2/Instances.zig`.
 
-### 11.1 One question, one answer (I10, CK-26)
+### 11.1 One question, one answer (I10)
 
 "Can `T args` answer `m`?" is `Instances.lookup` succeeding. There is no separate capability table:
 
@@ -2491,22 +2383,22 @@ and 8 are carried by it.
 The session `Types` table becomes `*const` everywhere, with no `@constCast`. Each module's derived
 contexts live in the module worker's own state, and are **published** in the interface (§14.2).
 
-*As built by R8a (2026-09-26).* Nothing in `src/check2/` reads or settles v1's capability API
-(`check2/rules_test.zig`'s S4 fence, its reader list now empty). The `Types.Entry` fields and the
+*As built (2026-09-26).* Nothing in `src/check2/` reads or settles v1's capability API
+(`check2/rules_test.zig`'s capability fence, its reader list now empty). The `Types.Entry` fields and the
 settle stay while v1 does: a cache HIT of a module the OLD checker checked still rebuilds v1's
 bits, now on v1's side of the switch (`Check.restoreCapabilitiesOnHit`, called through
 `Driver.v1CapabilitiesOnHit`), because v1 dependents read them; a module v2 checked installs its
 record and nothing else. `Types` is not yet `*const` in v2: `Groups` and `Solve.settleSchemas`
-still write a schema endpoint's properties through it (R8b, §11.5), and `Publish` its `ref_ids`.
+still write a schema endpoint's properties through it (§11.5), and `Publish` its `ref_ids`.
 `js/Lower` and `Dispatch.requirementCount` read an `ext_derived` target's published row
 (`Dispatch.publishedContext`), whichever checker wrote it; only a record with no row (the old
 checker's, for a private type) falls back to v1's bits and arity.
 
-*Amended by R8b (2026-09-26).* Nothing writes a schema endpoint's properties through `Types` any
-more (§11.5 *as built by R8b*): `Publish`'s `ref_ids` is the one write left before `Types` can be
+*Amended 2026-09-26.* Nothing writes a schema endpoint's properties through `Types` any
+more (§11.5, *As built 2026-09-26*): `Publish`'s `ref_ids` is the one write left before `Types` can be
 `*const` in v2.
 
-### 11.2 Derived contexts by fixpoint (D4, CK-25, CK-23)
+### 11.2 Derived contexts by fixpoint (D4)
 
 For an own nominal type `T` with parameters `p₀ … pₙ₋₁` and a well-known method `m` that `T` does
 not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer `m` on `T args`,
@@ -2516,7 +2408,7 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
   where each `pᵢ` is a rigid carrying one given per method name. A given `(pᵢ, m')` that gets used
   adds `(i, m')` to the context. Resolution of the payloads uses §9.3 in full. A payload's custom
   method, `Holder.eq where a.key`, contributes its instantiated requirements: `(0, key)`.
-- **The unit is (type-level SCC) × {`eq`, `compare`}** (round 4, R8-2). One fixpoint computes
+- **The unit is (type-level SCC) × {`eq`, `compare`}.** One fixpoint computes
   `ctx(X, m)` **jointly** for every own nominal type `X` in one strongly connected component of the
   "payload mentions" graph, and for both methods.
   - Each entry lives in the lattice `present(∅) ⊂ present(larger sets) ⊂ absent(reason)`. Every
@@ -2528,8 +2420,8 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
     wrapper of `H.Holder T` need `T`'s `compare`. A per-`(T, m)` fixpoint would memoise
     `ctx(T, compare) = present` permanently after reading a partial `(T, eq)` approximation. It
     would then answer `a < a` with a derived `compare` whose payload needs an `eq` that turns out
-    absent (round 4's `xm`/`xm2`).
-- **Reading the approximation, or running fresh** (round 4, R8-1). Let `F` be the fixpoint frame of
+    absent (a program such as `xm`/`xm2`, where a wrapper's `eq` needs its payload's `compare`).
+- **Reading the approximation, or running fresh.** Let `F` be the fixpoint frame of
   unit `U`. A query for `(X, m)` with `X` in `U`:
   - **reads `F`'s current approximation** when no top-level-kind group frame lies above `F` on the
     stack. That is always true of `F`'s own payload resolution, and of any query made directly by
@@ -2538,7 +2430,7 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
     top-level-kind group frame **was pushed above `F`**, because `F`'s resolution nested a group
     whose body asks again.
 
-  *The round-3 text said "fresh on re-entry". Read literally, that made `F`'s own payload queries
+  *An earlier text said "fresh on re-entry". Read literally, that made `F`'s own payload queries
   re-enter `U` fresh forever: `xm` recursed without bound.*
 - **Well-foundedness.** Take any stack of frames.
   - **Between two fixpoint frames of the same unit** there is always a group frame, by the rule
@@ -2551,11 +2443,11 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
     mentions graph), so such a chain is at most the number of units long.
   - **So the stack depth is bounded** by (units × (groups + 1)) plus groups. In practice the budget
     of §10.2, which fixpoint frames also charge (`nest_cost`), bounds it far sooner and reports.
-  - This replaces round 3's argument, which was false for the literal reading.
+  - This replaces an earlier argument, which was false for the literal reading.
 - **Absent.** If any payload wanted **fails**, the instance is `absent(reason)`:
   - a function with no method boundary: `not_equatable` / `no_methods_on_shape`;
   - a private method of another module: `private_method`, per §11.3;
-  - a schema endpoint's exclusion: the endpoint's own reason (CK-24).
+  - a schema endpoint's exclusion: the endpoint's own reason, which a wrapper inherits.
 
   The reason is kept for the use-site message.
 - **Blocked.** A payload can need an own unannotated method, or a schema endpoint whose conversion
@@ -2568,15 +2460,15 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
     - **It mentions no parameter of `T`.** It is closed, as in `type W = W (H.Holder T)` with
       `H.eq where a.key`, where the in-flight method is `T`'s `key`. Then it contributes **no
       context entry**, whatever `d` infers.
-      - **The method-type check is an ordinary wanted in the asking frame** (round 4, R8-3). The
+      - **The method-type check is an ordinary wanted in the asking frame.** The
         receiver type is instantiated in the frame of the wanted that asked the query (its creation
         frame, §9.1), not in the fixpoint frame, whose variables are discarded. A `(receiver, key)`
         wanted is created there and **resolved by the ordinary resolver**.
         - `d`'s group is `checking`, so that resolution takes §10.3's in-flight link **and §10.4's
-          merge** whenever the asking frame belongs to a different top-level group. The round-3 text
-          "unified with `d`'s header" skipped the merge, and broke §10.2's premise that a nested
+          merge** whenever the asking frame belongs to a different top-level group. An earlier text,
+          "unified with `d`'s header", skipped the merge, and broke §10.2's premise that a nested
           group shares variables only through a back-edge.
-        - Round 4's `cbA`/`cbB` show it: `pick` compares `W`s, and `key` uses `pick 1` and
+        - The `cbA`/`cbB` programs show it: `pick` compares `W`s, and `key` uses `pick 1` and
           `pick "s"`. `pick` and `key` now merge in both orders, and `pick "s"` is a
           `type_mismatch` in both. Annotating `pick` or `key` lifts it.
       - The derived body's term for that position is `top(d, args)`, with `args` filled from `d`'s
@@ -2591,7 +2483,7 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
         lifts it.
       - The refusal is order-independent: whichever declaration comes first, the cycle is the same.
 
-  *Added 2026-09-24 (round 1, S1). Narrowed in round 2 (S-new-1). The round-1 example,
+  *Added 2026-09-24, and narrowed the same day. The first example,
   `type U a = U (T a)` beside an unannotated `T.eq`, cannot occur under the module rule: `U`'s `eq`
   would be that same `eq`.*
 - **Frame and rank.** The fixpoint runs in its **own frame**, pushed on top of the stack at rank
@@ -2604,9 +2496,9 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
   - A debug assert walks the frame's pool and checks that no variable of it is reachable, by
     `owned`, from any variable older than the frame.
 
-  So the fixpoint cannot run at `generalized` or leak variables into an inner `let`, which is
-  CK-10 item 2's trap. *Added 2026-09-24 (S1).*
-- **Fresh fixpoints, and the result for CK-74** (round 3 B-2, amended in round 4). Round 3's
+  So the fixpoint cannot run at `generalized` or leak variables into an inner `let`.
+  *Added 2026-09-24.*
+- **Fresh fixpoints, and a derived query made from inside the method it depends on.** The
   program (`key` compares `W`s, `same` compares `W`s, `other = (T 1).key "s"`) gives the same
   result in both orders:
   - with `same` first, `W`'s fixpoint `F` nests `key`, whose query runs fresh (a group frame is now
@@ -2615,44 +2507,44 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
   - either way, `key`'s query reaches the in-flight `key` through the closed branch. That creates an
     ordinary wanted in `key`'s own frame, which is the in-flight link within one group, so no merge
     is needed;
-  - so `key : T, () -> Int`, and `other` is a `type_mismatch` in both orders. CK-69's refusal fires
-    in both orders too.
-- **Memo generations and replay** (round 3 S-6, amended in round 4 R8-3).
+  - so `key : T, () -> Int`, and `other` is a `type_mismatch` in both orders. The parametric
+    case's `method_needs_annotation` fires in both orders too.
+- **Memo generations and replay.**
   - A **unit** result computed from `done` inputs only is memoised permanently.
   - One computed while an input was in flight is memoised under the current **generation**, a
     counter bumped whenever any group completes, and a lookup hits only in the same generation.
     Such an entry also **stores the list of in-flight methods its closed branches reached**.
   - A hit **replays**, for its asker, one ordinary method-type wanted per listed method, in the
-    asker's frame. So every asker in the generation merges exactly as the first did (R8-3), and
+    asker's frame. So every asker in the generation merges exactly as the first did, and
     whether a second asker merges does not depend on who asked first.
   - A result that read a partial approximation of **another** unit is never memoised: that other
     unit was on the stack below, so its reader is inside it, and it is recomputed with it.
-- **Explicit ranks** (round 3, S-2). `Instantiate` and every function that creates variables take
+- **Explicit ranks.** `Instantiate` and every function that creates variables take
   an explicit rank and pool, and none uses "the top frame" implicitly. The closed in-flight branch
   creates its method-type wanted with the **asking** frame's rank, pool and queue, even though the
   fixpoint frame is on top.
-- **Worklist** (N12). The fixpoint keeps, per own type in the unit, the set of types whose payloads
+- **Worklist.** The fixpoint keeps, per own type in the unit, the set of types whose payloads
   mention it. When `ctx(X, m)` grows, only the `(type, method)` entries that read it are re-resolved. It iterates until the
   worklist is empty.
 - **Memoised** per **unit** for the module once computed from `done` inputs only (above). P5 reads
-  the memo for the eager rows. Nothing is ever re-settled (CK-40).
+  the memo for the eager rows. Nothing is ever re-settled, so schema properties are not cubic.
 - **ABI (D4).** The derived function takes **one evidence parameter per context entry**, in
   `(i, m'-text)` order. `static-dispatch-spike.md` §9.4's "one per type parameter, used or not" and
   A.20 are superseded.
   - `type Outer a = Outer (Holder a)` with `Holder.eq where a.key` gives
     `Outer$eq = ($m$0 /* a.key */, x, y) => Holder$eq($m$0, x.a, y.a)`.
-  - A phantom parameter contributes nothing, so `Tag (Int -> Int)` is comparable (CK-23).
+  - A phantom parameter contributes nothing, so `Tag (Int -> Int)` is comparable.
   - Types whose every parameter is compared with the method being derived, which is nearly all of
     them (`Maybe a`, `Result x a`, `List`), get exactly today's parameter list. So their emitted
     JavaScript does not change (§20.3).
   - **The calling convention past 4 096 entries** is one array `$m`, for every shape (spike §9.2
-    *The wide form*, A.87, CK-81): the context is the same, only its JavaScript spelling changes,
-    decided by the entry count in `Convention` (R2b).
+    *The wide form*, A.87): the context is the same, only its JavaScript spelling changes,
+    decided by the entry count in `Convention` (§12.5).
 - **Structural shapes** (record, tuple, unit) keep "one parameter per field or element, same
   method" (spike §9.2 and §9.3). Their context is positional and trivially known. Past 4 096
   positions they take one array, as every shape does (the D4 bullet above).
 
-*As built by R8a (2026-09-26).* `check2/Contexts.zig` (the units, the memo, the fixpoint, replay)
+*As built (2026-09-26).* `check2/Contexts.zig` (the units, the memo, the fixpoint, replay)
 and `check2/Derivable.zig` (the one verdict, reading it). The points the text above leaves open,
 and where the build departs from it:
 
@@ -2661,8 +2553,8 @@ and where the build departs from it:
   TYPE at the argument, or an importer could pass a `key` of any type. `τ` is the open wanted's
   method type, frozen over the type's own template parameters (`Instantiate.freeze`: the whole
   graph copied at rank `generalized`, the markers replaced by the parameters) and instantiated at
-  a use with its arguments (`Instantiate.substitute`). Published as a scheme (§14.2 *as amended by
-  R8a*). For `eq` and `compare` `τ` is the well-known type and nothing is kept.
+  a use with its arguments (`Instantiate.substitute`). Published as a scheme (§14.2, *as amended
+  2026-09-26*). For `eq` and `compare` `τ` is the well-known type and nothing is kept.
 - **A pass reads the answer off the resolver's own state.** Markers are FLEX variables, not the
   rigids-with-givens of the first bullet: what a payload asks of parameter `i` rides open on marker
   `i`, and Rule U1 joins two asks of one name (their types unified). A marker that becomes
@@ -2672,14 +2564,14 @@ and where the build departs from it:
   `not_equatable`'s "a function in there" and `compare`'s `contains_function`), another module's
   private method (`absent_private`: `private_method` at the use, the reason §11.3 wants), the
   parametric in-flight case (`needs_annotation`), or anything else (`absent_other`).
-  *Amended by R13 (2026-09-27, CK-116):* a payload's method that exists and has the wrong type
+  *Amended 2026-09-27:* a payload's method that exists and has the wrong type
   for what the pass asks of it — a payload's own `eq`, or a requirement its method's `where`
   clause makes — is `absent_requirement`, with the `TypeId` whose method it is and the method's
   name, so the use says which method failed (`static-dispatch-spike.md` §10.13) instead of
   `absent_other`'s *"a function anywhere inside it"*. A private method met first keeps
   `absent_private`. A use that decides the same failure itself (a present context's entry at a
   concrete argument) names the method and both types.
-  *Amended by R15-fix-E (2026-09-28, CK-159):* a marker bound to a **ground** type (no variable
+  *Amended 2026-09-28:* a marker bound to a **ground** type (no variable
   below it) — by a payload's specialised method, `H.eq : Holder Int, …` on `Holder a` — is not
   `absent` but a **pin** `(i, τ)` of the present answer (`Contexts.Pin`): `T` derives exactly
   where `args[i]` is `τ`. D10's promise is kept to the letter — `W Int` holds a `Holder Int` and
@@ -2698,7 +2590,7 @@ and where the build departs from it:
   still said. A run charges `nest_cost` (§10.2) while it is open but is never refused: the chain a
   run can recurse through is bounded by the unit DAG, and dependency units are run first, in order
   (`ensure`), so a chain of `n` types does not recurse `n` deep natively.
-- **Which frame reads F's approximation.** Exactly as the round-4 bullet says: the innermost run of
+- **Which frame reads F's approximation.** Exactly as the bullet above says: the innermost run of
   the unit, when no top-level-kind frame lies above its frame. A read by a pass of the same run
   records a dependency (the worklist); a read by any other run marks that run `partial` (never
   memoised). A memo read (not an approximation) replays.
@@ -2720,7 +2612,7 @@ and where the build departs from it:
   whose context is not computed yet stops the walk (`query`); `derivable` runs it and walks again
   (and computes the receiver's own head before the first walk, the common case). A ground verdict
   is kept past its walk only when it read nothing volatile (an approximation, or a result not
-  memoised permanently). A record past 4 096 fields is no longer refused (CK-79): D4 and the wide
+  memoised permanently). A record past 4 096 fields is no longer refused: D4 and the wide
   form of `static-dispatch-spike.md` §9.2 carry any width.
 - **P5** (`Eager`) settles every unit not memoised permanently (`settleAll`, dependencies first),
   and a type gets a row exactly when its context is `present`. A permanent run's last passes ARE
@@ -2730,27 +2622,28 @@ and where the build departs from it:
   rule: `Eager.marker` maps an open wanted on marker `i` for method `m'` to the entry's index `k`,
   `param derived row k`.
 - **`own_method`** stays "a `pub` value of the method's name" (§14.2 as amended): a private `eq`
-  still derives rows, which D1 (R8b) decides.
-- **Schema endpoints** (§11.5) are R8b's: their verdict still reads the schema's settled
+  still derives rows, which D1 (§11.3) decides.
+- **Schema endpoints** (§11.5), as first built: their verdict still reads the schema's settled
   properties (`Types.schemaPropertyBits`) and a derived answer on one is `undetermined` (`build`
-  refuses a schema before anything is emitted). What R8a changed is WHEN the properties are
-  settled (CK-40): after a schema group completes they are marked stale, and settled at the next
+  refuses a schema before anything is emitted). What changed is WHEN the properties are
+  settled, so settling is no longer cubic in the number of schemas: after a schema group completes they are marked stale, and settled at the next
   read by the verdict or the `equatable` marker walk, and once after P4 (`Solve.settleSchemas`) —
   never after every group.
 - **Not built:** the debug assert of the Frame-and-rank bullet (a walk of every older variable per
   run is quadratic even in Debug). What holds the property instead is construction: payloads are
   read fresh at the frame's rank, and every type that leaves the frame is `freeze`d.
-  *See R8a's review round, below: a linear form was tried and fails on a real channel (CK-117).*
+  *See the amendment below: a linear form was tried and fails on a real channel.*
 
-*Amended by R8a's review round (2026-09-26).*
+*Amended 2026-09-26, after review.*
 
-- **A marker's `equatable` flag is an entry (CK-108).** Flex markers are not rigids-with-givens
+- **A marker's `equatable` flag is an entry**, so a derived context never drops a payload's
+  `equatable` requirement and compares functions. Flex markers are not rigids-with-givens
   for anything that rides on a flex other than a wanted: a payload method whose scheme asks
   `equatable` of `a` as a FLAG (an unannotated `eq` calling `Basics.eq x y`) leaves the flag, or
   an open equatable obligation row, on the marker and no `eq` wanted. `collect` makes such a
   distinct marker the entry `(i, eq)` unless an `eq` wanted already is. `number` and `appendable`
   kinds make the marker non-plain, so `absent`, as before.
-- **One template per answer (CK-109).** An answer keeps ONE frozen tuple of the method types of
+- **One template per answer**, so a row of more than 65 535 entries is carried. An answer keeps ONE frozen tuple of the method types of
   its non-well-known entries (`Answer.template`), and an entry its index in it (`slot`), instead
   of one frozen `τ` per entry; a use substitutes the tuple once. The published form follows
   (§14.2, *amended again*). Marker distinctness is one mark pass, not pairwise.
@@ -2758,35 +2651,36 @@ and where the build departs from it:
   wanted's `(receiver root, method)` to its entry index `k`; `Eager.marker` reads it. The index
   `k` is a `u32` end to end (`Dispatch.Param.k`, Lower's evidence indices): D4 lets entries
   outrun parameters.
-- **Bodies are the run's (S4).** A pass writes its positions to its RUN (`Run.bodies`); `run`
+- **Bodies are the run's.** A pass writes its positions to its RUN (`Run.bodies`); `run`
   commits them with the answers, and only when the result is memoised permanently. A fresh
-  nested run of the same unit (R8-1) no longer leaves its bodies beside the outer run's answers.
+  nested run of the same unit no longer leaves its bodies beside the outer run's answers.
   A kept body was resolved in P4 under P4's derived memo: sound because `Builder.read` gives every
   pass fresh variables, so no root of a kept body is one the memo holds.
-- **A template changes only with its entry set (S5).** `same` compares status, culprit and the
+- **A template changes only with its entry set.** `same` compares status, culprit and the
   `(param, method)` set, not templates. The argument: every leaf of a template is one of the
   type's parameters (a marker, frozen) or ground; a marker that is bound is `absent`; and an
   annotation cannot hold a free variable (`UNKNOWN CONSTRAINED VARIABLE`). So a pass whose set
   did not change has an isomorphic template. Debug asserts it (`Walk.sameShape`, O(size)).
-- **The frame assert, tried and withdrawn (CK-117).** The review proposed a linear assert: at
+- **The frame assert, tried and withdrawn.** A review proposed a linear assert: at
   `popFrame` of a `.fixpoint` frame, every variable of its young pool has its class at the frame's
-  rank or deeper, or generalized. Built, it fails on three CLAIMED fixtures
+  rank or deeper, or generalized. Built, it failed on three fixtures
   (`check/bad/DerivedContextMergesAsker`, `…ReentrantSameFirst`,
   `run/DerivedContextClosedOwnMethodPermuted`) and in `scenario/PERM`: a pass that demands an
   unchecked method group (not in flight, so not the in-flight branch) checks it nested, that group
   links to the asker's and merges down (§10.4), and the pass's variables join classes at the
   asker's rank. "Nothing escapes by construction" is therefore false for that channel. The
   fixtures' outputs are right today; whether such a pass is sound, or must be `partial` or
-  answer through replay, is recorded as CK-117 and not decided here, and the assert is not
+  answer through replay, was left open here, and the assert was not
   shipped.
 
-*Amended by R8b (2026-09-26): CK-117 decided, the frame assert shipped.*
+*Amended again 2026-09-26: the channel decided, the frame assert shipped.*
 
-- **What R8a's review saw was two things.** The pool-rank assert failed on three fixtures and in
+- **What the review saw was two things.** The pool-rank assert failed on three fixtures and in
   `scenario/PERM` because a pass that instantiates a *done* method's scheme shares its ground
   structure: `Instantiate.copy` copies only what is generalised, and the generaliser can leave a
   ground node (a `T`) at rank 1, so a pass variable unified with it lands in a rank-1 class that
-  holds no variable. That is sound. The channel CK-117 names is real too, but none of those
+  holds no variable. That is sound. The channel named above (a fixpoint pass's variables joining a
+  merged group below its frame) is real too, but none of those
   fixtures reached it: a pass demands an *unchecked* method group, the group is checked nested,
   links to the asker's and merges down (§10.4), and the demand then returns the member **in
   flight** — which `Instances.ownMethod` unified with the pass's method type, binding a variable
@@ -2808,12 +2702,12 @@ and where the build departs from it:
   it runs again — re-running the partial runs — when that slot grows. The unit graph is a superset
   of the true mentions for `type`s; for a schema endpoint a `via` target's mentions are known only
   once its group is done, and this makes the fixpoint over them joint all the same.
-- **`own_method` is D1's now** (§11.3 *as built by R8b*): a module's value of the method's name,
+- **`own_method` is D1's now** (§11.3, *As built 2026-09-26*): a module's value of the method's name,
   `pub` or not.
 
-### 11.3 Private methods (D1, CK-22)
+### 11.3 Private methods (D1)
 
-*Amended 2026-09-24 (R0's finding on CK-22). The first text claimed "`M`'s derived `Holder` eq uses
+*Amended 2026-09-24, after a probe of the old checker. The first text claimed "`M`'s derived `Holder` eq uses
 `M`'s private `eq`". Under the module rule no such derived function exists.*
 
 **The module rule is unchanged by privacy** (`static-dispatch-spike.md` §3.3 step 1). A module's
@@ -2822,7 +2716,7 @@ type `M` declares.
 - `M`'s other nominal types get no derived `eq`. Inside `M`, `Holder (T 1) == Holder (T 11)` is the
   module-rule clash: a `type_mismatch`, because `eq : T, T -> Bool`.
 - From another module, `M.Holder … == …` reaches `M`'s private `eq`, so it is `private_method`.
-- `7427828` already does both, so neither is a finding.
+- v1 already did both, so neither was a defect.
 
 **Inside `M`**, the private `eq` answers every wanted whose `origin` is in `M`. That covers:
 - direct `T` comparisons;
@@ -2832,19 +2726,20 @@ type `M` declares.
 **Outside `M`**, any wanted that reaches `(T, eq)` is `fail(private_method)`: directly, or through a
 derived context computed in that other module (a `W M.T`, a tuple, a record, a list). So no
 comparison anywhere gives an answer that differs from `M`'s. Where one would differ, it is refused.
-That is D1's coherence guarantee, and the part `7427828` gets wrong (CK-22).
+That is D1's coherence guarantee, and the part v1 got wrong: a private `eq` was used or
+ignored depending on the module and the nesting.
 
 `static-dispatch-spike.md` §3.3 and A.63 ("a private `eq` still lets every other module derive")
 are superseded.
 
-*As built by R8b (2026-09-26).*
+*As built (2026-09-26).*
 
 - **The module rule counts a private value.** `Contexts.module_has` is "a value of the name, `pub`
   or not" (`module_pub` says which): no type of `M` derives the method, and P5 writes no row for
-  it. `dispatch/PrivateEqStillDerives` loses its `derived … eq` row (`v2-expected.md`).
+  it. `dispatch/PrivateEqStillDerives` loses its `derived … eq` row.
 - **Inside `M`** nothing changes: the private method answers every wanted of `M`'s, structural
   shapes' positions included (`run/PrivateEqInsideModule`, permuted in `scenario/PERM`).
-- **The record says so** (§14.2 *as amended by R8b*): the row of a type of `M` is
+- **The record says so** (§14.2, *as amended 2026-09-26*): the row of a type of `M` is
   `private_method` naming that type, and the row of a type whose context reached another module's
   private method is `private_method` naming the type that module declares (`absent_private`'s
   culprit is a `TypeId`, published as a `type_refs` row). So `C` comparing `B.Wrap`, where `B`
@@ -2858,14 +2753,16 @@ are superseded.
   (a tuple's element, a list's) reports once, at the use, for the lineage root's receiver
   (`Instances.refusePrivate`), as `refuseDerived` does.
 
-### 11.4 The `equatable` marker (CK-16, CK-17, CK-19)
+### 11.4 The `equatable` marker
 
 The marker stays what `static-dispatch-spike.md` §3.4 says: a structural guarantee for explicit
 `Basics.eq` and `Basics.neq`, and **never** an `eq` method. The resolver never consults it, which
-deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
+deletes `builtinRigidTarget`'s arm, whose answer ignored the type's `eq`. The `equatable`
+obligation's walk:
 
-- uses `Walk.zig` over `structural` successors: growable and cycle-safe (CK-17). A flex that carries
-  an `eq` wanted is therefore not "a function" through its own method type (B1);
+- uses `Walk.zig` over `structural` successors: growable and cycle-safe, never giving up at a
+  fixed size. A flex that carries an `eq` wanted is therefore not "a function" through its own
+  method type;
 - descends, at a nominal `T args`, only into the arguments whose parameter **occurs in a
   constructor payload** (D10). That is `payload_params(T)`, a bitset per type:
   - an own type computes it from its constructors;
@@ -2873,27 +2770,27 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
     not be read;
   - a `foreign type` has every parameter set, which is today's behaviour.
 
-  So a phantom function argument is fine (CK-23, for the marker). Through payloads that mention
+  So a phantom function argument is fine. Through payloads that mention
   another nominal type, the walk continues with that type's own `payload_params`. *Revised
-  2026-09-24 (S15): "descend into payloads" could not be done for an imported opaque type.*
+  2026-09-24: "descend into payloads" could not be done for an imported opaque type.*
 - **propagates the flag** to a flex it meets inside a structure. It **requires** the flag of a rigid
-  it meets, and without it reports `not_equatable` at the obligation's region (CK-16);
+  it meets, and without it reports `not_equatable` at the obligation's region;
 - answers `no(function at …)` or `yes`. It has no `unknown`.
 
-*As built by R5, after its review (2026-09-25): `check2/Instances.zig`, the marker walk only.*
+*As built (2026-09-25): `check2/Instances.zig`, the marker walk only.*
 - **Where a question is asked, and so where it reports.** The flag is the marker. A question about
   a flagged variable is an `equatable` row, which is created in one of three places:
   - **At the comparison.** A flag from a scheme's quantifier (`Basics.eq : ∀(a: equatable)`)
     that meets a call's argument at the top of the unification makes a row at that argument. So
-    `Basics.eq r r` answers at `r`, not where `r` later becomes a record (adversarial review F7).
+    `Basics.eq r r` answers at `r`, not where `r` later becomes a record.
   - **Where it meets a structure.** A flag with no row that meets a structure makes a row there,
     readied. This is v1's region, which v1's goldens pin; the function passed in a record's field
     to a comparing function is reported at the lambda (`check/bad/EqFunctionFieldThroughCall`).
   - **By the walk.** A flex the walk flags gets a row that continues the walk's own question.
 
   A row carries its `origin`, the row that asked the question first.
-- **When it runs.** A readied `equatable` row is decided at the next boundary's step 1 (§8.1 *As
-  built by R5, after its review*). The walk runs over the type the flagged variable then is, at
+- **When it runs.** A readied `equatable` row is decided at the next boundary's step 1 (§8.1, *As
+  built 2026-09-25*). The walk runs over the type the flagged variable then is, at
   the row's region.
 - **One question, one message.**
   - The walk writes nothing until its answer is `yes`. Only then does every flex it met get the
@@ -2902,8 +2799,7 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
   - A "no" marks the origin `reported`, and no row of that origin reports again. So one comparison
     whose argument holds two bad parts, or whose flags were merged, says `not_equatable` once.
   - Fixtures: `tests/corpus/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite`, and the
-    symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` (structural
-    review B1).
+    symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst`.
 - **Nominal types.** At `T args` the walk first asks the session's gate for `T` itself,
   `Types.isEquatable`: no function anywhere in `T`'s declaration, and a `foreign type` declared
   `equatable`. When the gate says no, it refuses with `opaque_type`, v1's one sentence for both.
@@ -2918,18 +2814,18 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
   symbol order. When the walk finds a failure, a second, read-only walk visits every record's
   fields in name-text order to choose the failure it reports.
 - **Rigid.** A rigid without the flag is `rigid`: `not_equatable` with v1's "ANY type" sentence
-  (CK-16's `same`, at `[ x ]`). A flex whose row is open may meet such a rigid: `unify` binds it,
+  (`same x = Basics.eq [ x ] [ x ]` on an unconstrained `x`, at `[ x ]`). A flex whose row is open may meet such a rigid: `unify` binds it,
   and the row reports. A flag with no row meeting such a rigid is `unify`'s own
   `not_equatable_rigid`, at the unification (the direct control `Basics.eq x y`).
-- v1's `.equatable` constraint node, dead in v1 (CK-18), has no v2 counterpart.
+- v1's `.equatable` constraint node, dead in v1, has no v2 counterpart.
 
-*Amended by R8b (2026-09-26).*
+*Amended 2026-09-26.*
 
 - **A tagged schema endpoint's gate** is not a declaration's (it has none): for one of this
   module, no function is reachable from its schema's payloads (`Schema.State`'s, a `via` payload
   being its conversion's target as inferred so far), through every other type's own gate and every
   other endpoint's payloads (`Marker.endpointEquatable`), memoised per generation (§11.2); for
-  another module's, its hidden row's `is_equatable` (§14.2 *as amended by R8b*), which that module
+  another module's, its hidden row's `is_equatable` (§14.2, *as amended 2026-09-26*), which that module
   wrote with the same function; for an endpoint of a record the old checker wrote, which has no
   hidden row, that checker's own bit (`Types.isEquatable`, v1's settled property — the one read
   of it, and only for the old checker's module, as its ABI is read for its other types).
@@ -2938,18 +2834,18 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
   set to every bit: a private type reached through a published scheme with a phantom parameter is
   walked only where a payload can hold a value. An exported opaque type's row was read already.
 
-*Amended by R8b's review round (2026-09-26), CK-120.* The gate of an `adt` is not the table-build
+*Amended again 2026-09-26.* The gate of an `adt` is not the table-build
 bit any more: it is "no function reachable from its payloads" (`Marker.functionFree`), walked
 through this module's `type`s and schema endpoints (their `via` targets as inferred so far) and
-the gate of every other module's type — its record's `no_function` (§14.2 *amended by R8b's
-review round*), or the old checker's table bit for a record it wrote. Memoised per local type in
+the gate of every other module's type — its record's `no_function` (§14.2, *amended
+2026-09-26*), or the old checker's table bit for a record it wrote. Memoised per local type in
 `Contexts` per generation (for good in a module without schemas); a walk that finds no function
 proves it of every type it met. The table-build bit could not see a `via` target, so `==` on a type
 wrapping such an endpoint was refused and `Basics.eq` on it accepted. The gate is the same fact the
 derived contexts read for `==` (a function reachable), asked structurally; the marker walk has no
 second opinion.
 
-*Amended by R8b's round-2 review (2026-09-26), CK-120.* "No second opinion" held only for
+*Amended a third time 2026-09-26.* "No second opinion" held only for
 schemas already done: `functionFree` did not demand the schemas it walked, so an unchecked
 schema's unfilled `via` target read as "no function" and was memoised — `Basics.eq` on a type
 holding it was accepted or refused by declaration order, and one in flight was accepted where `==`
@@ -2960,7 +2856,7 @@ the type in P5, when every group is done (`Contexts.deferred_gates`, `checkDefer
 then is `not_equatable` at the obligation's region, once per question. After P4 (publication)
 every group is done and the graph complete, so the gate is always known there.
 
-### 11.5 Schema endpoints (CK-24)
+### 11.5 Schema endpoints
 
 A schema endpoint type is a nominal type whose payloads come from the plan. Its derived context is
 computed by the same §11.2 function, and its exclusions are that function's `absent`. A wrapper
@@ -2968,7 +2864,7 @@ around it asks the same memoised question, so it inherits the answer. `Schema.se
 and its per-group calls are deleted. The schema **plan**, which needs the endpoints' properties,
 reads them from the memo in P9.
 
-*As built by R8b (2026-09-26).*
+*As built (2026-09-26).*
 
 - **A tagged endpoint is a unit member** of `Contexts` like a `type` (`derives`): the program and
   the encoded endpoint are two nominal types. A record endpoint is an alias; its expansion answers
@@ -2979,7 +2875,7 @@ reads them from the memo in P9.
   target.
 - **Mentions.** A schema's references are its payloads': another tagged schema's two endpoints, a
   record schema's own references. What a `via` target mentions is known only once its group is
-  done, so it is no edge; the lazy join of §11.2 *as amended by R8b* makes the fixpoint over it
+  done, so it is no edge; the lazy join of §11.2's amendment makes the fixpoint over it
   joint (`check/good/SchemaViaMutualOwnType`, `check/bad/SchemaWrapperExclusionThroughOwnType`).
 - **Its schema's group is done before a pass reads it.** `Contexts.ensure` demands, from the frame
   that asked and before the unit's frame is pushed, every schema the unit's declarations read
@@ -2996,24 +2892,23 @@ reads them from the memo in P9.
   inferred stays linked to it.
 - **Derivation** of an endpoint is ordinary: `Instances.derivedNominal` reads its context (or the
   published row), P5 writes its rows (`Eager`), P8 publishes a hidden row for every endpoint a
-  published term names (§14.2 *as amended by R8b*). `build` still refuses a schema before anything
+  published term names (§14.2, *as amended 2026-09-26*). `build` still refuses a schema before anything
   is emitted.
 - **The plan's property bytes** (`schema.md` A.6) are read in P9 off the one verdict
   (`Derivable.propertyBits` over each endpoint, after P5 settled every unit): bit 0 when `eq`
   derives, bit 1 when `compare` does, bit 2 when either is refused for a function. Nothing writes
   the session table's schema bits for a module the new checker checks — not the settle, not a
   cache hit (`Incremental.install` restores them for a module the old checker checked only, on its
-  side: `Check.restoreSchemaPropertiesOnHit`). `rules_test.zig`'s S4 fence lists the settle, the
+  side: `Check.restoreSchemaPropertiesOnHit`). `rules_test.zig`'s capability fence lists the settle, the
   bits' readers and writers and `settleSchemas`; nothing in `src/check2/` names them.
 - **An endpoint of a record the old checker wrote** has no hidden row: the importer reads v1's ABI
-  for it (derives, one entry per parameter), as for any type of such a record (§14.2 *as amended by
-  R8a*). Under `--checker=v2` that is a module of another package, until R9. *R9 (2026-09-27):*
-  gone — every record a v2 build reads is v2's, so another package's endpoint has its hidden row
-  like any other, and the fallback is deleted (§22.1 *as built by R9*).
+  for it (derives, one entry per parameter), as for any type of such a record (§14.2, *as amended
+  2026-09-26*). *2026-09-27:* gone — every record a v2 build reads is v2's, so another package's
+  endpoint has its hidden row like any other, and the fallback is deleted (§22.1).
 
-*Amended by R8b's review round (2026-09-26).* The two reviews found the lazy `via` join
-exponential (CK-119) and three rules to change; each change below replaces the bullet of *as
-built by R8b* it names.
+*Amended 2026-09-26, after review.* A ring of types closed through a `via` made the lazy join
+exponential, and three rules had to change; each change below replaces the bullet of the *As
+built* note above that it names.
 
 - **The unit graph is exact before a unit runs** (replaces *Mentions* and §11.2's lazy join).
   A type that reads a schema with a `via` — an endpoint its own schema, a type a record schema it
@@ -3044,7 +2939,7 @@ built by R8b* it names.
 - **Internals of a nested run are said once**, by the outermost run (`sayInternals` of a run
   inside another's pass reported into the same quiet list it read, losing them).
 
-*Amended by R8b's round-2 review (2026-09-26).* Two claims above were wrong, and are corrected:
+*Amended again 2026-09-26.* Two claims above were wrong, and are corrected:
 
 - **"Linear" was not.** Each `complete` that met a new schema rebuilt every unit, so a module of
   n schemas each compared by its own function was O(n²) in time and memory (8 000: 10.7 s, 11.6
@@ -3055,19 +2950,20 @@ built by R8b* it names.
   one new unit, the old ones retired. Unit ids are never renumbered; `ensure` walks the members'
   edges, not a precomputed dependency list; P5 invalidates every result not memoised permanently
   and `ensure`s each unit. Each type is walked, and each `via` target read, once in the module.
-  `test-perf` "CK-119 many" holds it (the comparisons' cost over a control without them).
-- **Only what a query reaches is demanded.** The review proposed completing from every local type
+  `test-perf`'s many-schemas scenario holds it (the comparisons' cost over a control without
+  them).
+- **Only what a query reaches is demanded.** A review proposed completing from every local type
   at the first `ensure`. Not done, and recorded: demanding every schema from whichever group first
   compares anything would nest a schema whose `via` depends on that group, merging them (§10.4),
   where another declaration order — the schema checked first — would not; that is an order
   dependence in acceptance (I9). A demand that follows what the comparison reaches is made in
   every order where that comparison is checked.
-- **A run has a step budget of its own** (S1): what a type derives is the type's, not whoever
+- **A run has a step budget of its own**: what a type derives is the type's, not whoever
   asked first. `run` saves the resolver's count, runs from zero, and restores it. A result with an
   `absent_budget` entry is never memoised (P5 computes it again), and one that survives to P8 is
-  `internal`, not a published `unanswerable` (CK-125).
+  `internal`, not a published `unanswerable`.
 
-*Amended by R8c (2026-09-26, CK-122).* **An alias of an endpoint is the endpoint.** "Its expansion
+*Amended 2026-09-26.* **An alias of an endpoint is the endpoint.** "Its expansion
 answers wherever it is met" held for a record endpoint written directly, but not for a `type
 alias` whose body names an endpoint (`type alias RW = R.Type`, `List R.Type`, a record of
 endpoints): the alias body is read by a reader of its own (`Types.Builder.aliasBody`), and that
@@ -3083,13 +2979,12 @@ the shared reader and so for both checkers:
 - a **private** schema is in no interface. Its tagged endpoints are nominal, whole in their
   `TypeId`, and read as such. A private **record** schema's endpoint has no shape outside its
   module — the interface carries no alias bodies (`checker.md` §7's `alias_body`) and no private
-  schema — and is still a silent `err` in an importer: CK-126, pending, whose fix is an interface
-  row, not a reader rule.
+  schema — and was still a silent `err` in an importer (see the amendment below).
 
 The interface is unchanged: an alias row never prints a body (`alias RW`, like `alias Q` for
 `type alias Q = P`); a record alias's row prints only its constructor.
 
-*Amended by R15-fix-D (2026-09-28, CK-126).* **A private record schema's endpoint is read from
+*Amended 2026-09-28.* **A private record schema's endpoint is read from
 its module's schema plan**, not from an interface row, and the interface is still unchanged. The
 plan (`SchemaPlan`, `schema.md` A.6) already holds every schema of the module, private ones
 included, with each endpoint written in interface terms (`program_term`, `encoded_term`); it is
@@ -3100,16 +2995,16 @@ nominal type; a private **record** endpoint is instantiated from the plan
 member scheme — `PrivRecW` is `{ z : Int }` in the importer as in its module, and `r + 1` is a
 TYPE MISMATCH. When the declaring module has no plan it had an error, and the importer's `err`
 is downstream of that message (§12.2's table). *Rejected:* an interface row for private endpoints
-a `pub` alias names (CK-126's first proposal) — an interface version bump to carry what the plan
+a `pub` alias names (the first proposal) — an interface version bump to carry what the plan
 already carries; and refusing the alias — a valid program rejected, which buys no guarantee
 (rule 7).
 
-The read is `types_alias_body` (`reads.zig`, `plans/m4-3.md` §3.2 row 12), and the digest covers
+The read is `types_alias_body` (`reads.zig`), and the digest covers
 it: `type_body` now spells a schema endpoint head as the named type it is and collects a local
 one into the digest's type set, whose worklist already writes an endpoint's expansion from the
 plan (`Digest.schemaEndpointExpansion`). Before, the alias body digested the endpoint as `err`,
 so editing the private schema's field moved no digest and a cached importer kept its old verdict
-(`digest_test.zig`, "row 13 for a schema"). The digest's bytes change only for a module whose
+(`digest_test.zig`). The digest's bytes change only for a module whose
 alias body names a schema — a key that moves, never a stale hit — so `digest_version` stays 2.
 
 ---
@@ -3131,17 +3026,17 @@ discovery order, then method name text. It is **the same function** for:
 An importer reads the list in stored order. Because exporter and importer derive it the same way,
 they agree (Roc's property 1).
 
-**Quantifier discovery order is v1's** (N10). The writer discovers quantifiers by a
+**Quantifier discovery order is v1's.** The writer discovers quantifiers by a
 `Walk.structural` walk of the scheme's body, in v1's order: fields by text, parameters left to
 right. Only then does it write each quantifier's constraint types. A variable reached only through a
 constraint's method type is not a quantifier. §2.4 of the spike (A.21) requires every variable of a
 constraint type to occur in the annotated type, and the same holds for an inferred scheme, whose
 constraints ride on its own quantifiers.
 
-The `owned` edges therefore cannot reorder the list. R6's exit criteria include a byte comparison of
-every `core` and corpus interface's `where` blocks under both checkers.  *Added 2026-09-24.*
+The `owned` edges therefore cannot reorder the list; before the cut-over, every `core` and corpus
+interface's `where` blocks were byte-compared under both checkers. *Added 2026-09-24.*
 
-*Amended by R15-fix-A (2026-09-28, CK-135, I4).* The walk behind the list
+*Amended 2026-09-28 (I4).* The walk behind the list
 (`Schemes.quantifierOrder`'s `orderWalk`) recursed and stopped **in silence** at the writer's
 depth, 512: a variable 2^10 tuple levels down was left out of the order while `Instantiate`
 counted its requirement, and an instantiation's requirement was paired with no wanted. It is an
@@ -3164,7 +3059,7 @@ through `alias` chains, and writes a `Dispatch.Term` tree (§13):
 A `failed` wanted means an error was reported, so the module has errors, the backend never runs,
 and P6 writes nothing for that instruction.
 
-*Amended by R15-fix-A (2026-09-28, CK-141).* "An error was reported" did not mean "this module
+*Amended 2026-09-28.* "An error was reported" did not mean "this module
 reported one". A dependency's `<error>` value (a type error or a NAMING ERROR in `A`, the
 ordinary state of a project being edited) is `err` in its importer, and a wanted on it failed in
 silence (§9.2's `err` row) in a module that reported nothing — so P6's `internal` and the I7
@@ -3172,21 +3067,22 @@ assert, both gated on "no error in this module", fired: a Debug panic, INTERNAL 
 release. A wanted rejected against `err` is therefore its own state, **`poisoned`**
 (`Evidence.State`), distinct from `failed` (rejected with this module's message, or as its
 consequence). It is set by §9.2's `err` row, by `Solve.poison` for the open wanteds riding on a
-variable it poisons, when a published derived row's scheme is `<error>` (§14.1 *amended by
-R15-fix-A*), and for a dependency's `unchecked` row; its lineage is poisoned with it, and an
+variable it poisons, when a published derived row's scheme is `<error>` (§14.1, *amended
+2026-09-28*), and for a dependency's `unchecked` row; its lineage is poisoned with it, and an
 ancestor already rejected keeps its own state. Every reader that asked "rejected?" asks
 `State.rejected()` (either state). P6 writes no site for a poisoned wanted, reports nothing, and
 returns the instruction (`Elaborate.Output.poisoned`); `Module.assertEvidence` does not hold
 those instructions to I7. This is sound because the `err` has a message wherever it was made,
 so the build that would lower the module stops at that error and never reaches the backend —
 and `Lower` still refuses a missing site, the backstop if an `<error>` were ever published
-without a message (CK-142 was such a path).
+without a message (derived-row templates that bypassed the one publication routine were such a
+path).
 
-*Amended by R15-fix-C (2026-09-28, CK-169, CK-170): "the `err` has a message wherever it was
+*Amended again 2026-09-28: "the `err` has a message wherever it was
 made" is made true, and checked.* It was false in one place: `TypeStore.resolved` answered `err`
 for an alias chain past 1 024 links — no message, and `err` unifies with anything — so `p == p`
 over a 1 200-link chain checked clean and `build` said INTERNAL ERROR, and `String.isEmpty p.0`
-over a number built. `resolved` now has no bound (§7.1 *amended by R15-fix-C*). Every producer of
+over a number built. `resolved` now has no bound (§7.1, *amended 2026-09-28*). Every producer of
 `err` in `src/check` was then audited, and each either reports where it makes the `err` or is
 downstream of a message already written:
 
@@ -3195,10 +3091,10 @@ downstream of a message already written:
 | `TypeStore.resolved`'s guard | **removed** (it was the silent one) |
 | `Builder.read` past `max_depth` | sets `too_deep`; `readAnnotation` reports `nesting_too_deep`, and so do `Publish`'s constructor reading, `Contexts` (`null` → at the use) and `Instantiate.ownCtor`; `Marker`'s and `Publish`'s second reading of the same constructor arguments are covered by the first |
 | `Builder.read`'s other tags, `named` with no type, `apply` at a wrong arity or inside its own expansion, `aliasBody` with no body | an earlier phase reported (unresolved name, parser placeholder, `wrong_type_arity`, `recursive_alias`, `import_cycle`, a parse error): the module is quiet, or the alias's module is a dependency with an error |
-| `Builder.named`, a private record schema's endpoint through another module's alias | **not covered**: CK-126, still pending; the check below catches it in Debug (its red is now `crash=ABRT`). *Covered since R15-fix-D:* the endpoint is read from the declaring module's plan (§11.5 *amended by R15-fix-D*); `err` only when that module has no plan, which is when it had an error |
-| `Builder.schemaMember`, `InterfaceTerms`/`Schemes` readers (`.err` term, a scheme `none`, a depth past the writer's bound) | the dependency's message: its publisher reported the `<error>` (§14.1 *amended by R15-fix-A*) or the depth (`nesting_too_deep` at the same bound); an index out of range is a malformed record, which no compiler-written interface is |
-| P2 and a `let`'s Elm-curried annotation (`Module`, `constrain/Decl`) | reported at the body (CK-56) |
-| `Schema.State` placeholders and malformed-plan rows | never read (a declaration that is not a schema), or the parser/resolution reported; `copyHelp` past 512 levels is the publisher's `nesting_too_deep` for a published endpoint (CK-13) — a private one deeper is a residual for the schema slices, with no runtime path |
+| `Builder.named`, a private record schema's endpoint through another module's alias | the endpoint is read from the declaring module's plan (§11.5, *amended 2026-09-28*); `err` only when that module has no plan, which is when it had an error |
+| `Builder.schemaMember`, `InterfaceTerms`/`Schemes` readers (`.err` term, a scheme `none`, a depth past the writer's bound) | the dependency's message: its publisher reported the `<error>` (§14.1, *amended 2026-09-28*) or the depth (`nesting_too_deep` at the same bound); an index out of range is a malformed record, which no compiler-written interface is |
+| P2 and a `let`'s Elm-curried annotation (`Module`, `constrain/Decl`) | reported at the body, with the curried-annotation hint |
+| `Schema.State` placeholders and malformed-plan rows | never read (a declaration that is not a schema), or the parser/resolution reported; `copyHelp` past 512 levels is the publisher's `nesting_too_deep` for a published endpoint — a private one deeper is a residual left to schema code generation, with no runtime path |
 | `Solve.poison` | after the report at the same site (mismatch, arity, not-a-function, occurs, escape, `internal`), or on a reference whose scheme is refused (this module's failed declaration, reported) or missing (a dependency's) |
 | `Decide`, `Resolve.reject`, `Instances` | after a rejection reported here, or as a `poisoned` lineage (above); inside a derived-context pass (§11.2) a rejection is an answer ("not derivable") on the pass's own variables, which it discards |
 | `Unify` (`merge(…, .err)`), `Instantiate` (copy of `.err`) | propagation: one side was `err` already |
@@ -3207,11 +3103,11 @@ downstream of a message already written:
 no error, and whose dependencies — transitively — reported none (`Driver.tainted`, `Input.
 dependency_errors`: an earlier phase's error, a poisoned graph node, or a checker error), must end
 with no `poisoned` wanted and no `err` reachable from any declaration's or local's type. One walk
-over those types. It runs over every gate; on `346268b`'s `resolved` it fires on CK-169's
-fixtures. (The whole store is not walked: a derived-context pass leaves `err`s on the variables of
+over those types. It runs over every gate; on the bounded `resolved` it fired on the long alias
+chain fixtures. (The whole store is not walked: a derived-context pass leaves `err`s on the variables of
 its discarded frames, which are answers, not holes.)
 
-*Amended by R15-fix-G (2026-09-28, CK-178): a derived context over a poisoned payload is
+*Amended a third time 2026-09-28: a derived context over a poisoned payload is
 `poisoned`, not absent.* A derived-context pass (§11.2) read a payload wanted that was
 `poisoned` — its payload's type `err`, with its message where it was made — as a failed one, and
 answered `absent_other`, which the use reported as NOT EQUATABLE "a function anywhere inside it":
@@ -3221,7 +3117,7 @@ requirement, a function), answers `Contexts.Status.poisoned`: the use's wanted i
 silence (`Derivable`, `Instances.derivedNominal`), and the published row is `unchecked`, which
 an importer also poisons in silence.
 
-### 12.3 Calls inside a binding group (CK-30, CK-31)
+### 12.3 Calls inside a binding group
 
 A reference from one member of a group to another, or from a member to itself, or through an
 in-flight link (§10.3), does not instantiate a scheme, because the callee is monomorphic in flight.
@@ -3232,10 +3128,10 @@ after the group's generalisation from the member's **own** generalised type, rea
 the quantified variables that type reaches. It does not depend on which member's body *raised* the
 wanted.
 
-In CK-30's `m1b` (`f x y = if x == y then True else g x y`, `g x y = f y x`), `g` raises no wanted
+In `f x y = if x == y then True else g x y`, `g x y = f y x`), `g` raises no wanted
 of its own. But its type `a, a -> Bool` reaches the shared `a`, which carries `f`'s `eq`, so both
 lists are `[a.eq]`. Several wanteds of one name on one variable are aliases (§4.2), so they give one
-entry. *Clarified 2026-09-24 (S2).*
+entry. *Clarified 2026-09-24.*
 
 For each requirement `(q, m)` of the callee's **final** list, the argument is found by these cases,
 in order:
@@ -3253,22 +3149,22 @@ in order:
    This is sound by parametricity. The site's member cannot produce or consume a value of `q`'s
    type except through the callee, and the callee is polymorphic in `q`.
 
-   Round 2's N7 program shows the case: in `f u = if g [] then 1 else 0` with
+   This program shows the case: in `f u = if g [] then 1 else 0` with
    `g xs = case xs of [] -> f 0 == 0; a :: _ -> a == a`, `g`'s `a` is quantified by the group
    but is not in `f`'s type. So `f`'s call `g []` passes `undetermined` for `a.eq`, and the list is
    empty.
 
 The case "in the member's type, but not in its list" cannot arise, because of how the lists are
-computed above. The elaborator asserts it (`internal`). *Revised 2026-09-24 (round 2, N7): the
-first revision sent the N7 program to that assert.*
+computed above. The elaborator asserts it (`internal`). *Revised 2026-09-24: the
+first revision sent the program above to that assert.*
 
 The number of arguments is the callee's requirement count by construction, and the index is the
-**caller's** (CK-31). A requirement answered concretely, such as the `number` bridge or a type found
-later, is never promoted. So neither the callee nor the call carries it (CK-30a). A requirement
-promoted after the reference was solved is covered too, because nothing is emitted at reference
-time (CK-30b).
+**caller's**, never the group's first member's. A requirement answered concretely, such as the
+`number` bridge or a type found later, is never promoted. So neither the callee nor the call
+carries it. A requirement promoted after the reference was solved is covered too, because nothing
+is emitted at reference time.
 
-*As built by R6b (2026-09-25):*
+*As built (2026-09-25):*
 
 - **What records a group call.** An in-flight member's reference instantiates nothing, so it has no
   `inst_evidence` row; P6 finds it as a `top` reference to a declaration with requirements and no
@@ -3280,8 +3176,8 @@ time (CK-30b).
   are its givens' rigids, the variables its body was checked against (§6.6), not the P2 scheme's.
   A `promoted` answer is matched the same way, per site. Case 3 answers `undetermined` for `eq` and
   `compare` — at a site root, the structural function itself (§13.1) — and `internal` for any other
-  method, which no structural answer can stand for. Case 2 is R14's.
-  *As built by R14 (2026-09-27):* a site's binders are its declaration and the promoting `let`
+  method, which no structural answer can stand for.
+  *As built (2026-09-27):* a site's binders are its declaration and the promoting `let`
   bindings whose `let_def` subtree holds it (`Elaborate.LetScopes`, from the Bir by
   `constrain/Decl.pushChildren`), innermost first. A `promoted` answer and cases 1 and 2 search
   them innermost first and name the first list that holds `(root, method)`: `param let <inst> k`
@@ -3289,19 +3185,18 @@ time (CK-30b).
   binder's type (the `let`'s header, else the declaration's scheme). A reference to a `let`
   function binding from inside its own group instantiated nothing and is a group call, found as a
   `local` naming a `let_def` with requirements and no `inst_evidence` row.
-- **Failure (§12.2 as built).** A wanted whose alias chain ends in a `failed` one is failed (R6a's
-  round-2 nit): the site keeps its callee term only, when that is a value (`top`, `ext`), so
+- **Failure (§12.2 as built).** A wanted whose alias chain ends in a `failed` one is failed: the site keeps its callee term only, when that is a value (`top`, `ext`), so
   `Cycles` still sees the edge, and in a module that reported nothing it is `internal`. P6 never
   writes a partial tree.
-- *Revised by R6b's reviews.* Case 3 is taken only when the site's declaration's type does not reach
+- *Revised 2026-09-25.* Case 3 is taken only when the site's declaration's type does not reach
   the requirement's variable (`Walk.reaches` over its scheme); if it does, the lists disagree with
-  the types and it is `internal` (S1). A `promoted` answer is used only inside the group that
+  the types and it is `internal`. A `promoted` answer is used only inside the group that
   promoted it, else `internal`. P6's `internal`s are reported with the I7 assert, after the last
-  pass that can report an error (S4); an R8a refusal is said at once.
-- The CK-30 and CK-31 `run/` fixtures, and CK-66's `GroupVariableOutsideCaller` (case 3), pass
-  under v2 with it and are claimed by R6b; R7 keeps the demand-driven half of §10.
+  pass that can report an error; a derived-context refusal is said at once.
+- `run/RecursionWithComparison`, `run/DeadMiscount`, `run/MutualGroupEvidenceOrder` and
+  `run/GroupVariableOutsideCaller` (case 3) hold these rules.
 
-*As built by R7 (2026-09-26):* a merged group is one group here: P6 reads each declaration's group
+*As built (2026-09-26):* a merged group is one group here: P6 reads each declaration's group
 as its merge root (`Module.groupOf`), so a promoted answer and case 1 work across the members of a
 merge, and an in-flight member's call is a group call whichever member nested which (§10.8).
 
@@ -3312,15 +3207,15 @@ is resolved in §11.2's context, and `param(derived i, k)` names the context ent
 `static-dispatch-spike.md` §9.4's emitted shapes (tag switch, padding, order tables, recursion by
 name) are unchanged. Only the parameter list follows D4.
 
-### 12.5 One calling convention (CK-33, CK-34)
+### 12.5 One calling convention
 
-`check/Convention.zig` is shared by `Cycles`, `Edges`, `js/Reach` and `js/Lower`. It lands in **R2b**
-on the old checker, together with the tree record, and is kept.
+`check/Convention.zig` is shared by `Cycles`, `Edges`, `js/Reach` and `js/Lower`. It landed on the
+old checker, together with the tree record, before the rewrite, and is kept.
 
 It needs `value_arity` and `evidence` per declaration in the checker→backend record. Today's
-`Dispatch` has no such column, so it rides on R2a's `DeclInfo` record, with its own `dispatch_bytes` bump in R2b (round 3 split). *Moved from R1
-2026-09-24 (S8): R1 would have needed its own record change and format bump, and it touches the
-same four files as R2.*
+`Dispatch` had no such column, so it rides on the tree record's `DeclInfo`, with its own
+`dispatch_bytes` bump. *Moved 2026-09-24: landing it earlier would have needed its own record
+change and format bump, in the same four files.*
 
 ```zig
 pub const Convention = union(enum) {
@@ -3336,12 +3231,13 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
 
 - The checker writes `value_arity` (the type's arity, 0 for a non-function) and `evidence` into
   `DeclInfo`. Every consumer calls `of`.
-- `Cycles` treats `thunk` as **running**, not deferring (CK-34), and `function` as deferring.
-- `Lower` defines and calls through the same answer, so the definition and the call agree (CK-33).
+- `Cycles` treats `thunk` as **running**, not deferring, and `function` as deferring.
+- `Lower` defines and calls through the same answer, so the definition and the call agree: a
+  constrained zero-parameter value of function type is never defined curried and called flat.
 - `constrained_constant` keeps its scope, unannotated `pub` zero-parameter values, because the
   convention now makes every other form correct.
 
-*Amended 2026-09-24 by R2b, which found these points the text above leaves open (the code is
+*Amended 2026-09-24, when it was built; these points the text above leaves open (the code is
 `src/check/Convention.zig`):*
 
 - **The column is the tag alone.** `DeclInfo.convention` is `enum(u8) { plain, function, thunk }`
@@ -3352,7 +3248,7 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   parameters, a `lambda` body or a non-zero `value_arity` is `function`; otherwise `thunk`.
 - **An import has no `DeclInfo`**, so `Convention.ofImport` computes the answer with the same `of`
   from what the interface publishes: `Dispatch.extRequirementCount` and the arity of the scheme's
-  body, **looking through `alias` terms** as `TypeStore.paramCount` does for the exporter (CK-84:
+  body, **looking through `alias` terms** as `TypeStore.paramCount` does for the exporter (so
   `pub same : Pred a` with `type alias Pred a = a -> Bool` has arity 1 on both sides). It passes 0
   parameters and no lambda, and gets the exporter's answer, because a checked value's parameter
   count, and a lambda body's, is its type's arity. So the interface needs no convention column.
@@ -3368,7 +3264,7 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
     call. When the body is a reference to a constrained function of that arity (`h = maxOf`) the call
     goes straight to it, `maxOf($m$0, $p$1, $p$2)`, not through its eta-expansion.
   - `defers(definition)` for `Cycles`: only `params` and `lambda` defer. `constant` runs at load,
-    `thunk` at every read (CK-34), and `applied` is a node that RUNS too (see the review amendment
+    `thunk` at every read, and `applied` is a node that RUNS too (see the review amendment
     below).
   - `call(convention)`: `flat`, `f(ev…, args…)`, for `plain` and `function`; `applied`,
     `f(ev…)(args…)`, for a `thunk`. A thunk's type is not a function, so no checked program calls
@@ -3378,16 +3274,16 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
     eta-expansion over the arity (`function`, A.25).
 - **`Edges` and `js/Reach` read none of these.** An edge is a reference whatever the callee's
   convention, and reachability does not depend on when a body runs, so neither needed a change;
-  they are listed above because the brief assumed they did.
+  they are listed above because an earlier text assumed they did.
 - **The wide form is a fifth reading** (spike §9.2, A.87): `derivedEvidence(count)` answers
   `positional` or `array`, and `max_positional_evidence` (4 096) lives in `Convention.zig`.
   `Lower.derivedArrow` and every caller that packs a derived function's evidence ask it; `Lower`
   keeps only the mechanics (the `$m` parameter and the array literal).
 
-*Amended 2026-09-24 by the manager on R2b's review, before the code changed:*
+*Amended 2026-09-24, after review, before the code changed:*
 
 - **`applied` RUNS for `Cycles`; the bullet above that makes `function` deferring is withdrawn for
-  it** (review B1). `language.md` §7 states the initialisation rule over the SOURCE: a value
+  it**. `language.md` §7 states the initialisation rule over the SOURCE: a value
   written without parameters and without a `lambda` body is a VALUE, and may not be reachable from
   its own initialiser. A `where` is a type annotation; it must not change which programs are
   accepted. With `applied` deferring, `h = compose h g` under a `where` was accepted and overflowed
@@ -3402,27 +3298,27 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   the module is loaded" is false for a `thunk` and an `applied` value, which are computed at each
   read or call; when the circle holds one, the message says so and names it. Other circles keep the
   old text byte for byte.
-- **An `applied` body is evaluated at EACH CALL, and that is observable** (review S1): a
+- **An `applied` body is evaluated at EACH CALL, and that is observable**: a
   `Debug.log` in it prints per call, and a table it precomputes is rebuilt per call, where the same
   value without the `where` computes it once. Kept for now and documented in `language.md` §6
-  *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count. Hoisting it once per
-  call site is CK-85 (unassigned). *R8a (2026-09-26):* CK-85 is fixed differently — the body runs
-  once per EVIDENCE, the last evidence and its value kept in two module-level `let`s
-  (`static-dispatch-spike.md` A.85 *as amended by R8a*; `language.md` §6).
-- **`constrained_constant` is narrowed to NON-function types** (review S3, rule 7). The bullet
+  *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count. *Amended
+  2026-09-26:* a constrained value with no parameters no longer recomputes its body at every
+  read or call — the body runs once per EVIDENCE, the last evidence and its value kept in two
+  module-level `let`s (`static-dispatch-spike.md` A.85, as amended; `language.md` §6).
+- **`constrained_constant` is narrowed to NON-function types** (rule 7). The bullet
   above keeping its scope assumed only unannotated `pub` values were at risk; an unannotated `pub`
   of function type (`pub equals = (==)`, `pub eqs = \a b -> a == b`, `pub bigger = maxOf`) is
   defined, called and imported as the function it is, so the refusal bought no guarantee. It now
   refuses only a zero-parameter unannotated `pub` whose type is not a function (a thunk). Spike
   §10.10 and the message's hint are amended with it.
-- **`boundary.md` §4 check 4 reads `Convention`** (review S2): a `foreign`'s expected parameter
+- **`boundary.md` §4 check 4 reads `Convention`**: a `foreign`'s expected parameter
   count is `use.evidence + use.arity`, and "not a function" is `use.arity == 0`, so an alias-typed
   `foreign` is counted as its calls are made.
 - **"Is the body a lambda" is asked in one place**, `Convention.bodyIsLambda`, and
-  `Convention.definitionOf(dispatch, bir, decl)` is what `Cycles` and `Lower` read (review N2).
-  `dispatch_bytes` also refuses a `thunk` row with a non-zero arity (N1), and the flat call sites
+  `Convention.definitionOf(dispatch, bir, decl)` is what `Cycles` and `Lower` read.
+  `dispatch_bytes` also refuses a `thunk` row with a non-zero arity, and the flat call sites
   that never meet a thunk (`receiverCall`, `typeDispatchExpr`, `applyEvidence`, `namedPartCall`)
-  assert `Convention.call` is `flat` (N3).
+  assert `Convention.call` is `flat`.
 
 ---
 
@@ -3444,7 +3340,7 @@ pub const Term = union(enum(u8)) {
     undetermined,                                              // §9.4's proven-undetermined default, lowered as
                                                                // today's structural answer (`Basics$eq`, or
                                                                // `num_compare` for compare). v2 writes it only on
-                                                               // proof; v1's converter (R2) maps a legacy `err`
+                                                               // proof; v1's converter mapped a legacy `err`
                                                                // PART to it, preserving today's bytes
     field,                                                     // a callee only
 };
@@ -3463,7 +3359,7 @@ pub const Derived = struct {
     body: Range,                    // NOMINAL: one term per constructor argument position; else empty
 };
 terms: []Term, args: []TermIndex, sites: []Site (ascending inst), decls: []DeclInfo,
-lets: []LetInfo (present and EMPTY from R2, so R14 owes no format bump — N6), requirements: []Requirement, contexts: []ContextEntry,
+lets: []LetInfo (present from the first v2 format, so filling it needed no bump), requirements: []Requirement, contexts: []ContextEntry,
 derived: []Derived (sorted by emitted name text, §8.5 of the spike), tries: []Try, symbols: []Symbol
 ```
 
@@ -3475,11 +3371,11 @@ has every wanted answered (I6).
 no value of that type can reach the comparison except through a crash (`Debug.todo`, the payload of
 an empty list).
 
-During R2–R10, v1 still produces flat sites, and `Dispatch.finish`'s converter maps v1's `err`
-**part** to `undetermined`. That is exactly how `Lower` answers such a part today, so emitted
-JavaScript does not move in R2. It also keeps CK-20's wrong answer on v1 until v2 replaces v1. That
-is deliberate: R2 changes the contract, not behaviour. v1's `err` **site** (not part) maps to no
-term, and `Lower` refuses it as `internal`, as it does since row 75.
+While v1 still ran, it produced flat sites, and `Dispatch.finish`'s converter mapped v1's `err`
+**part** to `undetermined`. That was exactly how `Lower` answered such a part, so emitted
+JavaScript did not move when the contract changed. It also kept v1's structural answer for a rigid
+inside a derived shape until v2 replaced v1. That was deliberate: the contract changed, not
+behaviour. v1's `err` **site** (not part) mapped to no term, and `Lower` refuses it as `internal`.
 
 **`Dispatch.finish`** sorts `derived` and remaps indices, as today. It then walks every term and
 asserts I7:
@@ -3490,12 +3386,12 @@ asserts I7:
 
 A violation is `internal` at the site.
 
-*Amended 2026-09-24 by R2a, which found these points the text above leaves open:*
+*Amended 2026-09-24, when it was built; these points the text above leaves open:*
 
-- **`DeclInfo` in R2a is `{ requirements, value_arity }`.** `convention` joins it in R2b with
-  `Convention.zig` (§12.5), which is also when `dispatch_bytes` goes 2 → 3 (§14.3). `value_arity` is
+- **`DeclInfo` was first `{ requirements, value_arity }`.** `convention` joined it with
+  `Convention.zig` (§12.5), which is also when `dispatch_bytes` went 2 → 3 (§14.3). `value_arity` is
   the parameter count of the declaration's solved type (`TypeStore.paramCount`), 0 for a
-  non-function, filled by v1 and read by nobody until R2b.
+  non-function.
 - **`Binder` is `decl | let(inst) | derived(i)`.** `decl` carries no index: a site belongs to exactly
   one declaration, the one whose instruction range holds it, and a `param` term inside it names that
   declaration's `k`th requirement. `derived(i)` indexes the SORTED `derived` table.
@@ -3512,42 +3408,41 @@ A violation is `internal` at the site.
   (a `method_call` or `type_dispatch` with none, a `call` of a constrained callee with none) are
   violations too — the answer `Lower` gives, one phase earlier. **It is not "what `build` would
   say" everywhere:** `Lower` only meets the code DCE (`backend.md` §9) keeps, and the assert walks
-  every declaration. So a v1 miscount (CK-30, CK-72, CK-76) in a declaration nothing reaches, which
-  built and ran before R2a, is refused by `check` since R2a — `tests/corpus/run/DeadMiscount.beni`
-  is that program. The manager kept this on purpose (review of R2a, S1): the table is wrong whether
+  every declaration. So a v1 miscount in a declaration nothing reaches, which
+  built and ran before, was refused by `check` from then on — `tests/corpus/run/DeadMiscount.beni`
+  is that program. This is on purpose: the table is wrong whether
   or not it is emitted, and v2 removes the miscount itself.
 - **The assert runs only on a module that reported no error.** A module with errors never reaches
   the backend, and v1 still leaves `err` sites in one; asserting there would add an `internal` to
   every `check/bad` golden that has a dispatch-bearing error. It therefore runs LAST in the
   module's check — after `fillInterface`, `reportTooDeep`, `Cycles` and the dispatch round trip —
-  so an error any of those reports gates it too (review of R2a, S2; `check/bad/CycleNoEvidenceNoise`).
+  so an error any of those reports gates it too (`check/bad/CycleNoEvidenceNoise`).
 - **Which method an `undetermined` leaf answers** is the kind of the nearest enclosing `derived` or
   `ext_derived` term (or row, for a body position) — exactly the `kind` `Lower` threaded through
-  `partValues` before R2a. An `undetermined` with no such ancestor is `internal` in `Lower`: v1's
+  `partValues` before. An `undetermined` with no such ancestor is `internal` in `Lower`: v1's
   converter never writes one, because an `err` SITE becomes no term.
 - **`Lower` asserts I7 again**, cheaply, with the same counting function (`Dispatch.requirementCount`),
   and its message is the old "hidden arguments do not add up".
 
-- **During R2–R10 it is `internal` in every build, never a panic.** v1 has known miscounts that
-  `check` accepts today: CK-30 is caught only by `build`. A Debug panic in `Dispatch.finish` would
-  turn `check` of such a fixture into exit 134 and change the red reasons R0 recorded. R2 greps the
-  corpus with the assert on before landing.
-- **From R11 (v2 only)** a debug build panics, because a violation is then a v2 bug with no known
+- **While v1 ran it was `internal` in every build, never a panic.** v1 had known miscounts that
+  `check` accepted (ordinary recursion with `==` was caught only by `build`), and a Debug panic in
+  `Dispatch.finish` would have turned `check` of such a fixture into exit 134.
+- **With v2 alone** a debug build panics, because a violation is then a v2 bug with no known
   exception.
-  *As built by R11 (2026-09-27):* `check2/Module.zig`'s `assertEvidence` panics when
+  *As built (2026-09-27):* `check2/Module.zig`'s `assertEvidence` panics when
   `std.debug.runtime_safety` holds and `Dispatch.checkI7` names an instruction; a release build
   still reports the `internal` and writes nothing. Nothing in `tests/corpus/` or `tests/pending/`
-  reaches it under v2 (every fixture that did under v1 was promoted green), and v1's own assert is
-  unchanged (`internal`, never a panic) until R12 deleted it (2026-09-27).
+  reaches it under v2, and v1's own assert stayed `internal`, never a panic, until v1 was deleted
+  (2026-09-27).
 
-*Revised 2026-09-24 (S10).*
+*Revised 2026-09-24.*
 
-*Amended 2026-09-25 by R6b (spec first, before P6's code):*
+*Amended 2026-09-25 (spec first, before P6's code):*
 
 - **A term may be SHARED.** The table is a DAG, not only a tree: v2 writes one term per distinct
   answer of a site (the resolver's memo of §9.5 makes a receiver's derived answer ONE wanted that
   later wanteds alias), so `==` on a type that is a doubling DAG — `f x = ( x, [ x ] )` applied
-  n deep, CK-80 — is linear in its distinct nodes in `check`. The acyclicity rule is unchanged and
+  n deep — is linear in its distinct nodes in `check`. The acyclicity rule is unchanged and
   is still what `dispatch_bytes` verifies: every argument's index is greater than EVERY owner's.
   v2 gets it by writing each unit (a site's callee and roots, or a derived row's body) in reverse
   post-order; a unit without sharing reads in pre-order, as v1's converter writes every table.
@@ -3557,41 +3452,41 @@ A violation is `internal` at the site.
   `Edges.termsEdges` walks the terms below a declaration's sites, or a derived row's body, with a
   seen set: on a tree both answer exactly as the recursive walks did. `Lower` and the dump still
   EXPAND a shared term at each use: the emitted JavaScript of such a program is as large as v1's
-  (exponential in the DAG's depth), which is `build`'s half of CK-80 and unassigned.
+  (exponential in the DAG's depth); the next amendment makes `build` linear too.
 - **Where a reference's evidence rides.** A site's instruction is the `call` that applies a
-  reference when there is one, else the reference itself (R2a's reading, now stated): P6 moves an
+  reference when there is one, else the reference itself (the first reading, now stated): P6 moves an
   instantiation's row, recorded at the reference, to its call.
 
-*Revised by R6b's reviews (2026-09-25), before the code changed:*
+*Revised 2026-09-25, after review, before the code changed:*
 
 - **Where an `undetermined` leaf may stand.** `Lower` reads the leaf's method off its nearest
   `derived`/`ext_derived` ancestor (or row, for a body position), so the leaf is legal only below
   such an ancestor, and only in a slot that asks for that ancestor's method. Everywhere else — a
-  site root, an argument of a value's evidence (`List.eq`'s element: `[ [] ] == [ [] ]`, B1), or a
-  `compare` slot under an `eq` ancestor (CK-103) — the table names the structural function for the
+  site root, an argument of a value's evidence (`List.eq`'s element: `[ [] ] == [ [] ]`), or a
+  `compare` slot under an `eq` ancestor — the table names the structural function for the
   slot's own method: `ext Basics eq` or `primitive num_compare`. P6 carries each node's nearest
   derived kind (`Unit.Ctx`) and writes the leaf only where it matches the wanted's method. The I7
   assert checks the rule (`Dispatch.checkI7`'s placement pass, each `(term, ancestor kind, slot
   method)` once): a slot's method is its owner's `k`th requirement — a declaration's list, an
   imported scheme's constraints in canonical order, a derived row's context — so `check` refuses
-  what `Lower` would. v1 never wrote a leaf without a derived ancestor; it did write CK-103's, and
-  its `check` now refuses that program (`internal`), which is harmless at run time (no value of the
+  what `Lower` would. v1 never wrote a leaf without a derived ancestor; it did write one in a
+  `compare` slot under `eq`, and its `check` then refused that program (`internal`), which is harmless at run time (no value of the
   slot's type exists) but a table wrong by its own contract.
 - **`Lower` binds a shared evidence closure once.** A term named by more than one owner is lowered
   once per statement list and bound to a `const` (`Lower.termValues`, `hoistEvidence`'s rule: only
   an `arrow` moves), and `Lower.termShapeOk` judges each term once. So `build` of a doubling DAG is
-  linear too (CK-80's `build` half; `perf_test.zig` "CK-80 build"). v1's tables share nothing and
-  no byte of theirs moves. The dump still prints a shared term at each use.
-- **A declaration's edges go through the rows it names** (CK-104). `Edges.declEdges` walks the
+  linear too (`perf_test.zig` times the doubling DAG's `build`). v1's tables shared nothing and
+  no byte of theirs moved. The dump still prints a shared term at each use.
+- **A declaration's edges go through the rows it names.** `Edges.declEdges` walks the
   body of every derived row of this module a site names, so emission order (`Lower.siteTops`) and
   the value-cycle check see that a constant calling `Main$W$$eq` depends on the `Main$key` its body
   reads (`backend.md` §5). Both checkers built such a program and it threw at load.
 
-*Amended 2026-09-27 by R14 (D5), before its code:*
+*Amended 2026-09-27 (D5), before its code:*
 
-- **`lets` is filled**, one row per promoting `let` function binding (§8.4 *As built by R14*),
+- **`lets` is filled**, one row per promoting `let` function binding (§8.4, *As built 2026-09-27*),
   sorted by `inst`, each a range of `requirements` placed after every declaration's rows. No format
-  bump: the column and its bytes existed since R2a (N6), and `dispatch_bytes` already verifies its
+  bump: the column and its bytes existed from the first v2 format, and `dispatch_bytes` already verifies its
   ranges.
 - **A `local` naming such a binding counts its requirements.** `Dispatch.referenceCount` reads the
   reference's declaration (a `local`'s index is the declaration's), and the local's `let_def`; the
@@ -3624,25 +3519,25 @@ Terms print as:
 - `primitive <p>`, `undetermined`, `field`.
 
 A tree is printed as a tree, so the pre-order-versus-index discussion of A.68 is gone. The existing
-`tests/corpus/dispatch/` goldens are re-blessed **once**, in R2, when the format changes, and
+`tests/corpus/dispatch/` goldens were re-blessed **once**, when the format changed, and
 reviewed against the old goldens one by one.
 
-*Amended 2026-09-24 by R2a.* In R2a the `decl` line is `decl <name> evidence=<n> arity=<a>`, where
-`arity` is `DeclInfo.value_arity`; R2b appends ` convention=<…>` when `Convention` exists, and
-re-blesses the `decl` lines then. Every value declaration prints a `decl` line, in source order, as
+*Amended 2026-09-24.* The `decl` line was first `decl <name> evidence=<n> arity=<a>`, where
+`arity` is `DeclInfo.value_arity`; ` convention=<…>` was appended when `Convention` existed, and
+the `decl` lines re-blessed then. Every value declaration prints a `decl` line, in source order, as
 in format v1, and a module whose table is entirely empty prints its `module` line alone. A term's
 arguments print one per line, two spaces deeper than the line holding the term. A callee's OWN
 arguments (a derived callee's evidence) print under the `site` line as `arg <term>` lines, before
-the first `evidence <term>` line, so the two keywords keep them apart (review of R2a, N6); below
+the first `evidence <term>` line, so the two keywords keep them apart; below
 them, arguments are bare terms.
 
-*Amended 2026-09-24 by R2b.* The `decl` line is now
+*Amended again 2026-09-24.* The `decl` line is now
 `decl <name> evidence=<n> arity=<a> convention=<plain|function|thunk>`; every `tests/corpus/dispatch/`
 golden moved in its `decl` lines and nowhere else, and `dispatch/Conventions.beni` shows all three.
 
-*Amended 2026-09-28 by R15-fix-B (CK-136).* A table SHARES terms (§13.1 as amended by R6b), and a
+*Amended 2026-09-28.* A table SHARES terms (§13.1, as amended 2026-09-25), and a
 tree printed as a tree is exponential in a doubling DAG: `==` on a type 32 levels deep never
-finished, and depth 7 of CK-135's program wrote about 2 GB. A term that more than one owner names
+finished, and depth 7 of a doubling tuple wrote about 2 GB. A term that more than one owner names
 (an argument, an evidence root, a body position or a site's callee, counted as `js/Lower.zig`'s
 `readTable` counts them) AND that prints arguments under it is printed in full the first time the
 dump reaches it, as `<term> #<n>`, and every later occurrence is `<term> = #<n>` with nothing under
@@ -3652,7 +3547,7 @@ written before the amendment moved. `dispatch/SharedEvidenceDag.beni` shows the 
 
 ### 13.3 What `Lower` changes
 
-| Today (`js/Lower.zig`) | After R2 |
+| Before (`js/Lower.zig`) | After the tree record |
 |---|---|
 | `siteRangeOf`, pre-order reading with a cursor, `Site.parent` | `sites[inst]` gives the callee term and the evidence roots |
 | `targetEvidence`, `externalEvidence`, `ownEvidence`, `valueEvidence`: recounting | deleted. A term's argument count is in the table; the callee's count is only asserted |
@@ -3674,7 +3569,7 @@ The primitive table (spike §8.3), the naming and emission order (§8.5), every 
 
 ## 14. Publication
 
-### 14.1 One routine (CK-13)
+### 14.1 One routine
 
 `check2/Publish.zig`: `publishScheme(root) → SchemeIndex` is the only way a solved type enters an
 interface. In order it runs `hasError` (three-valued, budgeted, kept verbatim), `writer.add`, the
@@ -3683,8 +3578,8 @@ interface. In order it runs `hasError` (three-valued, budgeted, kept verbatim), 
 It serves value schemes, schema member types, schema constructor types and constructor terms
 (`fillCtorTerms`). Its callers pass a region and a name, and nothing else.
 
-*Amended by R15-fix-A (2026-09-28, CK-142).* A fifth path bypassed it: a derived row's template
-scheme (§14.2 *as amended by R8a*) was written with a bare `writer.add`, with no scan and, on
+*Amended 2026-09-28.* A fifth path bypassed it: a derived row's template
+scheme (§14.2, *as amended 2026-09-26*) was written with a bare `writer.add`, with no scan and, on
 `too_deep`, an `<error>` with no report — so a row too deep to write was published silently, and
 an importer comparing through it met an `err` no module had reported. As built, the routine is
 `Publish.Publisher`: `scheme(root, decl)` is `clean` (the `hasError` scan; `unknown` is
@@ -3695,10 +3590,10 @@ and constructor terms, which write with `addCtor` between the same `clean` and `
 *Decided:* `ctorTerms` scans. A constructor whose argument reads as `err` (a type that did not
 resolve, a wrong arity, a recursive alias: each reported) keeps `no_terms`, so an importer's use
 poisons as a whole, and no `<error>` term is ever published inside a constructor's type. An
-importer that instantiates a row whose scheme is `<error>` answers the wanted `poisoned` (§12.2
-*amended by R15-fix-A*), in silence: its publisher said why.
+importer that instantiates a row whose scheme is `<error>` answers the wanted `poisoned` (§12.2,
+*amended 2026-09-28*), in silence: its publisher said why.
 
-*Amended by R15-fix-D (2026-09-28, CK-147, CK-148).* **What a declaration publishes is a function
+*Amended again 2026-09-28.* **What a declaration publishes is a function
 of the declaration alone** (I9). `fill` published every `decl_scheme` that was not `err`, failure
 bit or not, and an unannotated declaration's scheme is whatever the solver had reached when its
 error stopped it — which depends on the order its group met the module's other declarations. In
@@ -3709,12 +3604,12 @@ dependent's verdict followed. As built (`Publish.publishedRoot`), before the rou
   it always did (a body's parse error or type error leaves its callers held to the promise);
 - an **unannotated** value whose failure bit is set (I12: `Report.failed`, which a group's
   failure sets for every member, §15.2) publishes **`<error>`**. The message is this module's, so
-  a dependent's use is `poisoned`, silent (§12.2 *amended by R15-fix-A*). This gives
-  `Report.failed` the reader CK-146 (1) found missing.
+  a dependent's use is `poisoned`, silent (§12.2, *amended 2026-09-28*). This gives
+  `Report.failed` the reader it was missing.
 
 A written type the parser could not read publishes `<error>` the same way, because its reader
 builds `err` from the placeholder (§12.2's table, "parser placeholder"): `f : Int -> ) Int`
-publishes `f : <error>`. CK-148 was the one declaration kind whose parse error left **no**
+publishes `f : <error>`. A schema field was the one declaration kind whose parse error left **no**
 placeholder: a schema field whose value did not end where a field ends (`y : Int -> Int`, in the
 layout or the brace form) kept the prefix that parsed (`y : Int`), and that schema was published
 and checked against — one mistake, two messages, the second about a type nobody wrote. The parser
@@ -3726,27 +3621,27 @@ users' mismatches are their own.
 
 ### 14.2 Interface v3
 
-`iface_bytes.format_version` 2 → 3, `Digest.digest_version` 1 → 2 (R3). The changes:
+`iface_bytes.format_version` 2 → 3, `Digest.digest_version` 1 → 2. The changes:
 
 | Change | Why |
 |---|---|
-| `Type.arity: u16` (and `Types.Entry.arity`) | CK-38. A saturating `u8` cast becomes an error at 65 535 |
-| constructor rows gain `result: enum { nominal, record_alias }`, and a `record_alias` row carries its **field names in declaration order** (a `SymbolIndex` range, argument `i` is field `i`) | CK-39. `Schemes.instantiateCtor` builds the record alias for the second. The names are what the backend needs to emit an imported alias's constructor as the record and to read its pattern's arguments (`backend.md` §4, D12); the alias body's record term cannot give them, because its fields are canonicalised and the constructor's argument order is the declaration's. *Amended 2026-09-24 by R1's review (S6).* |
-| per exported nominal type, per `eq`/`compare`: `derived: { present, context: [](param u16, method SymbolIndex) sorted by (param, text) }`, or `absent: reason` *(R8a: every nominal type an importer can reach, and a third word per entry: see the amendment below the table's notes)* | D4, I10: importers resolve `ext_derived` against the published context, and a cache hit installs it without recomputing |
-| per exported nominal type: `payload_params: bitset over its parameters` (the parameters that occur in a constructor payload; all set for a `foreign type`) | D10 and S15: the marker walk descends only where a payload can hold a value, without reading an opaque type's constructors  Accepted consequence: a change in which parameters an opaque type's payloads use changes its interface digest (round 2 nit) |
+| `Type.arity: u16` (and `Types.Entry.arity`) | An imported type silently lost arity above 255. A saturating `u8` cast becomes an error at 65 535 |
+| constructor rows gain `result: enum { nominal, record_alias }`, and a `record_alias` row carries its **field names in declaration order** (a `SymbolIndex` range, argument `i` is field `i`) | An imported record-alias constructor was typed as an opaque nominal. `Schemes.instantiateCtor` builds the record alias for the second. The names are what the backend needs to emit an imported alias's constructor as the record and to read its pattern's arguments (`backend.md` §4, D12); the alias body's record term cannot give them, because its fields are canonicalised and the constructor's argument order is the declaration's. *Amended 2026-09-24.* |
+| per exported nominal type, per `eq`/`compare`: `derived: { present, context: [](param u16, method SymbolIndex) sorted by (param, text) }`, or `absent: reason` *(amended 2026-09-26: every nominal type an importer can reach, and a third word per entry: see the amendment below the table's notes)* | D4, I10: importers resolve `ext_derived` against the published context, and a cache hit installs it without recomputing |
+| per exported nominal type: `payload_params: bitset over its parameters` (the parameters that occur in a constructor payload; all set for a `foreign type`) | D10: the marker walk descends only where a payload can hold a value, without reading an opaque type's constructors. Accepted consequence: a change in which parameters an opaque type's payloads use changes its interface digest |
 | value `where` blocks | unchanged in bytes. `Evidence.requirements` writes them in the same order as today | (§12.1) |
 
-R3 lands on the old checker, which writes contexts as "one entry per type parameter, method = the
-derived method". That is exactly its ABI, so the format is shared by both checkers.
+This landed on the old checker, which wrote contexts as "one entry per type parameter, method =
+the derived method". That was exactly its ABI, so the format was shared by both checkers.
 
-*As built by R3 (2026-09-25).* The points the table left open:
+*As built (2026-09-25).* The points the table left open:
 
 - **Where the rows live.** The per-type facts widen the `types` row (16 → 32 bytes: `arity: u16`,
   then `payload_params`, `eq` and `compare` as `extra` ranges and two status bytes) rather than
   adding a column: one row per exported type, sorted with it. They exist for every exported type;
   an alias's say `alias` and have no bitset. The constructor row grows 20 → 28 bytes (`fields`,
   `result`). `checker.md` §7's serialized-form table has the layout.
-- **"Absent: reason"** is a status byte, one vocabulary (settled by R3's review, N1), decided in
+- **"Absent: reason"** is a status byte, one vocabulary, decided in
   the order v1's eager pass decides (`Solve.deriveOneParts`), the first that applies:
   - `unchecked` — the module was never checked; `alias` — a type alias, not nominal;
   - `present` — the module emits the derived function;
@@ -3762,7 +3657,7 @@ derived method". That is exactly its ABI, so the format is shared by both checke
 
   v1 writes `present` exactly when its eager pass (A.23) put the row in
   its dispatch table, with that row's evidence count as the context, so the record states the ABI
-  every `ext_derived` is already written against. Nothing in v1 READS the rows yet; R8a's importer
+  every `ext_derived` is already written against. v1 never READ the rows; v2's importer
   does, and D4's inferred contexts change the entries, not the format.
 - **`payload_params`** is computed from every constructor of the declaration through the
   annotation reader, so a parameter an ALIAS's expansion drops (`type alias Ph a = Int`) is not in
@@ -3772,19 +3667,18 @@ derived method". That is exactly its ABI, so the format is shared by both checke
   65 536th parameter (`language.md` §10). The declaration keeps its first 65 535, so no `u16` below
   it ever saturates. Lowering's duplicate-parameter check was pairwise, 35 s of a Debug build at
   that width; it sorts now.
-- **`Schemes.Writer` on epoch marks** (CK-41): a slot of the memo is live while its stamp is the
-  current epoch, a new scheme is one increment, and the arrays grow at least ×2. The CK-41 scenario
-  is the first promoted into `test-perf` (`plans/checker-rewrite.md` §2.5).
-- **A gap this table does not close — CK-89.** The rows exist per EXPORTED type, but `==` in an
+- **`Schemes.Writer` on epoch marks**: a slot of the memo is live while its stamp is the
+  current epoch, a new scheme is one increment, and the arrays grow at least ×2, so interface
+  writing is linear in the number of constructors (`test-perf` holds it).
+- **A gap this table did not close.** The rows exist per EXPORTED type, but `==` in an
   importer can reach a PRIVATE type through a `pub` scheme (`pub make : a -> Hidden a`, then
   `A.make 1 == A.make 1` in another module — v1 answers it with `ext_derived` to `A`'s own derived
   function). "Importers resolve `ext_derived` against the published context" has nothing to
-  resolve against there. R8a must publish a context for every type a `type_refs` row of the record
-  names (the set the dependency digest already uses), or decide otherwise, before v2 reads the
-  rows. *The manager assigned it to R8a (2026-09-25): this section is amended first, so the rows
-  cover every nominal type reachable from a published scheme, before R8a reads them.*
+  resolve against there. A context must be published for every type a `type_refs` row of the
+  record names (the set the dependency digest already uses) before v2 reads the rows; the
+  amendment below does so.
 
-*Amended by R8a (2026-09-26), before v2 reads the rows (CK-89, D4).* Three changes, and
+*Amended 2026-09-26, before v2 reads the rows (D4).* Three changes, and
 `iface_bytes.format_version` 3 → 4:
 
 - **Rows cover every nominal type an importer can reach.** An exported type keeps its row on the
@@ -3798,29 +3692,30 @@ derived method". That is exactly its ABI, so the format is shared by both checke
   - A module the OLD checker published has no `hidden_types` rows. An importer that finds no row
     reads v1's ABI for that type: `present`, one entry per parameter naming the derived method
     (v1 derives every declared type eagerly). This is the fallback of the importer only, and it
-    disappears with v1 (R12).
-    *As built by R12 (2026-09-27):* gone. A missing row counts no evidence
+    disappears with v1.
+    *As built (2026-09-27):* gone. A missing row counts no evidence
     (`Dispatch.publishedCount` is 0, `publishedMethod` null), which the I7 assert refuses as
     `internal`, and `Lower.derivedBodyExists` answers `false`, which is its dispatch-bug wall;
-    `Instances.derivedNominal` already said `internal` from R9. No record a build reads can lack
+    `Instances.derivedNominal` already said `internal`. No record a build reads can lack
     the row, so nothing in the corpus moved.
-  - *Amended by R8a's review round (2026-09-26, CK-110).* An alias body is in no record, so a
+  - *Amended 2026-09-26, after review.* An alias body is in no record, so a
     private type reached only through a `pub type alias`'s body was named by no `type_refs` row
     and had no row. The hidden set is closed over this module's own alias bodies (the exported
     aliases, and every alias the writer names), as `cache/Digest.zig` closes its type set. And the
     fallback reads v1's ABI only for a record the old checker wrote: under `--checker=v2` that is
     a module of another package (`Options.usesV2` is a function of the package), so v2 asks
-    `Context.oldCheckerWrote`. A record v2 wrote with no row for a type it reaches is `internal`.
+    `Context.oldCheckerWrote`, so v2 never reads the v1 fallback for a record it wrote. A record v2
+    wrote with no row for a type it reaches is `internal`.
 - **A context entry is three words: `(param, method, type)`.** `type` is `none` for `eq` and
   `compare`, whose method type is the well-known `a, a -> Bool | Order` of the argument. For any
-  other method — the `a.key` a payload's custom method asks for, CK-25 — it is a `SchemeIndex`
+  other method — the `a.key` a payload's custom method asks for — it is a `SchemeIndex`
   whose body is the tuple `( p₀, …, pₙ₋₁, τ )`: the type's parameters, in order, then the method
   type `τ` the entry requires of parameter `param`. Writing the parameters first fixes their
   quantifier numbers (`Schemes.Writer` numbers by first appearance). An importer instantiates the
   scheme, unifies element `i` with the use's argument `i`, and gives the sub-wanted element `n`
   as its method type — without it, an importer could pass a `key` of any type (a runtime error,
   which the guarantee forbids).
-  - *Amended again by R8a's review round (2026-09-26, CK-109).* One scheme per entry repeats the
+  - *Amended again 2026-09-26, after review.* One scheme per entry repeats the
     n parameters in every entry: a row of n parameters and m methods is n × m entries and
     n² × m scheme words (656 × 100 took 74 s and 3.1 GB). The row carries ONE scheme instead: its
     context range is a leading **row scheme word**, `none` when every entry is `eq` or `compare`,
@@ -3830,17 +3725,17 @@ derived method". That is exactly its ABI, so the format is shared by both checke
     index in that tuple. An importer instantiates the row's scheme once per use. `verify` refuses
     a range whose length is not 1 + 3k, a row scheme out of range, and a slot in a row with no
     scheme.
-- **`own_method` keeps R3's meaning**, "the type's module declares a `pub` value of the method's
+- **`own_method` keeps its first meaning**, "the type's module declares a `pub` value of the method's
   name". A module with a PRIVATE `eq` still derives and publishes its types' `eq` rows, as v1 does
   (`dispatch/PrivateEqStillDerives`): an importer never reaches them (the module rule makes every
-  comparison from outside `private_method`, §11.3), and whether they are written at all is D1's,
-  so R8b's.
+  comparison from outside `private_method`, §11.3), and whether they are written at all is D1's
+  (§11.3).
 
 The old checker writes three-word entries with `type = none` (its contexts only ever name the
-derived method), so the format is still shared. *(R8a's review round: a row scheme word of
+derived method), so the format is still shared. *(Since the row scheme: a row scheme word of
 `none`, then entries with `slot = none`.)*
 
-*Amended by R8b (2026-09-26); `iface_bytes.format_version` 4 → 5.*
+*Amended 2026-09-26; `iface_bytes.format_version` 4 → 5.*
 
 - **A derived row may be `private_method`** (D1, §11.3): the method is a private method of some
   module, which no other module may use. Its `context` is a range of two words `(type_ref,
@@ -3849,19 +3744,19 @@ derived method), so the format is still shared. *(R8a's review round: a row sche
   context reached otherwise), and the method's `SymbolIndex` (`Interface.privateCulprit`).
   `verify` refuses any other shape. A row of a module whose value of the name is `pub` keeps
   `own_method`.
-- **Tagged schema endpoints get hidden rows** when a published term names them (§11.5 *as built
-  by R8b*): name `Schema.Type` or `Schema.Encoded`, kind `adt`, every `payload_params` bit, the
+- **Tagged schema endpoints get hidden rows** when a published term names them (§11.5, *As built
+  2026-09-26*): name `Schema.Type` or `Schema.Encoded`, kind `adt`, every `payload_params` bit, the
   two derived rows, and `is_equatable` = the endpoint's §11.4 gate (`Marker.endpointEquatable`).
   `Interface.TypeFacts` carries `is_equatable` for the marker walk.
 
-*Amended by R8b's review round (2026-09-26).* A `types` or `hidden_types` row carries
+*Amended again 2026-09-26.* A `types` or `hidden_types` row carries
 `no_function` (bit 2 of the type row's flag byte, bit 1 of the hidden row's): §11.4's gate for an
 `adt`, which an importer cannot compute because a `via` target is in no record. The new checker
 writes it; the old one writes `false`, and an importer of its record reads its table bit.
-`is_equatable` is again a `foreign type`'s declared bit only (R8b had put an endpoint's gate
-there). The raw interface dump prints ` no_function` when it is set.
+`is_equatable` is again a `foreign type`'s declared bit only (the previous amendment had put an
+endpoint's gate there). The raw interface dump prints ` no_function` when it is set.
 
-*Amended by R13 (2026-09-27, CK-116); `iface_bytes.format_version` 5 → 6.* A derived row may be
+*Amended 2026-09-27; `iface_bytes.format_version` 5 → 6.* A derived row may be
 **`requirement`**: a payload's method exists and has the wrong type for what the context asks of
 it (§11.2's `absent_requirement`). Its `context` is `private_method`'s two words, `(type_ref,
 method)` — the type whose method it is, and the method (`Interface.privateCulprit` reads both) —
@@ -3869,8 +3764,8 @@ so an importer's message names it (`static-dispatch-spike.md` §10.13); `verify`
 shape, and the raw interface dump prints `requirement <kind> type_ref=… method=…`. Before, such a
 row was `unanswerable`.
 
-*Amended by R15-fix-E (2026-09-28, CK-159); no format change.* A present row whose context
-**pins** a parameter (§11.2 *amended by R15-fix-E*) writes that parameter in its scheme's
+*Amended 2026-09-28; no format change.* A present row whose context
+**pins** a parameter (§11.2, *amended 2026-09-28*) writes that parameter in its scheme's
 `( p₀, …, pₙ₋₁, ( τ… ) )` as the pinned ground type instead of a quantifier. An importer already
 unifies the scheme's parameters with the use's arguments (`Instances.publishedMethodTypes`), so
 that unification is the pin's check; its failure is the pinned `not_equatable` with no method
@@ -3879,83 +3774,81 @@ of its template. Before, such a row was `unanswerable`.
 
 ### 14.3 Cache and table versions
 
-- `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,
-  `Convention`). *Amended by R2a: `value_arity` rides with the tree record, as §12.5 and the R2a brief
-  say; only `convention` is left for R2b.*
-- `entry_bytes` 2 → 3 (R2a).
+- `dispatch_bytes` 1 → 2 (the tree record with `DeclInfo.value_arity`), then 2 → 3
+  (`Convention`).
+- `entry_bytes` 2 → 3 (with the tree record).
 - The schema plan stays 1.
 - A version mismatch is a miss, as today (`fast-compiler.md` §8.3).
-- **The checker is part of the cache key, R4–R11** (S22). v1 and v2 write the same entry format
-  into the same `.beni-cache`. After R8, D4 gives a derived function a different evidence ABI
-  under v2, so a warm cache must never mix one checker's output with the other's callers.
-  - From R4a, the compiler-identity component of the cutoff key (`cache/Key.zig`) includes the
-    checker id, `v1` or `v2`.
-  - R12 removes the component together with the flag. A single checker needs none, and the build
-    id already changes with the binary.
-    *As built by R12 (2026-09-27):* `key_version` 5, the own-terms blob back to the build id alone
-    (`cache/Key.zig`, `fast-compiler.md` §8). `cache_test.zig`'s row 10b now holds that
-    `--checker` is refused (exit 2, nothing written), and the checker-crossing scenario is gone
-    with the second checker.
-  - A "warm under v2" result in R10 is therefore written by v2 by construction.
-  - *As built by R4a:* the id is the text `v1` or `v2`, written as `checker_len: u32, checker`
+- **The checker was part of the cache key while two checkers existed.** v1 and v2 wrote the same
+  entry format into the same `.beni-cache`, and D4 gives a derived function a different evidence
+  ABI under v2, so a warm cache must never mix one checker's output with the other's callers.
+  - The compiler-identity component of the cutoff key (`cache/Key.zig`) included the checker id,
+    `v1` or `v2`.
+  - It was removed together with the flag. A single checker needs none, and the build id already
+    changes with the binary.
+    *As built (2026-09-27):* `key_version` 5, the own-terms blob back to the build id alone
+    (`cache/Key.zig`, `fast-compiler.md` §8). `cache_test.zig` now holds that `--checker` is
+    refused (exit 2, nothing written), and the checker-crossing scenario is gone with the second
+    checker.
+  - A "warm under v2" result was therefore written by v2 by construction.
+  - *As built (2026-09-25):* the id was the text `v1` or `v2`, written as `checker_len: u32, checker`
     right after the build id in every module's own-terms blob, core's included, and `key_version`
     is 3 (`fast-compiler.md` §8). `--cutoff-compare`'s transitive key shares the blob, so it moves
     with the flag too.
-  - *R9 note (R4a review, N5):* the text `v2` means "v2 checks the root package, v1 checks `core`"
-    from R4a to R8, and "v2 checks everything" from R9. A `--cache-build-id` pins the build id
-    across that change, so R9 must also change the id text (say `v2c`) or bump `key_version`.
-    Otherwise a `core` entry v1 wrote under `v2` could be read by a v2 that checks `core`.
-    *As built by R9 (2026-09-27):* `key_version` 4 (`cache/Key.zig`, `fast-compiler.md` §8); the
+  - The text `v2` first meant "v2 checks the root package, v1 checks `core`", and later "v2
+    checks everything". A `--cache-build-id` pins the build id across that change, so the change
+    also had to change the id text or bump `key_version`; otherwise a `core` entry v1 wrote under
+    `v2` could be read by a v2 that checks `core`.
+    *As built (2026-09-27):* `key_version` 4 (`cache/Key.zig`, `fast-compiler.md` §8); the
     id text stays `v1`/`v2`.
-- *R8a (2026-09-26):* `iface_bytes.format_version` 3 → 4 (the `hidden_types` column and the
-  three-word context entry, §14.2 *as amended by R8a*) and `dispatch_bytes` 3 → 4 (a context
-  entry's `param` is a `u32`, CK-82; and, from R8a's review round, a `param` term's entry index
-  `k`, in bytes 8–12 of its row, CK-109). Both are misses of every older entry, as any bump is. A
+- *2026-09-26:* `iface_bytes.format_version` 3 → 4 (the `hidden_types` column and the
+  three-word context entry, §14.2, *as amended 2026-09-26*) and `dispatch_bytes` 3 → 4 (a context
+  entry's `param` is a `u32`, so a nominal payload record wider than 65 535 fields is carried; and
+  a `param` term's entry index `k`, in bytes 8–12 of its row). Both are misses of every older entry, as any bump is. A
   warm build after an edit that moves a payload's method rebuilds exactly what a cold build
-  writes (`cache_test.zig`, "checker v2: a warm build after an edit that moves a derived
-  context …"), and one that moves no interface re-checks the edited module alone.
-- *R8b (2026-09-26):* `iface_bytes.format_version` 4 → 5 (a derived row may be `private_method`,
-  with its two-word culprit; tagged schema endpoints have hidden rows: §14.2 *as amended by R8b*).
+  writes (`cache_test.zig`), and one that moves no interface re-checks the edited module alone.
+- *2026-09-26:* `iface_bytes.format_version` 4 → 5 (a derived row may be `private_method`,
+  with its two-word culprit; tagged schema endpoints have hidden rows: §14.2).
   The schema plan stays 1: its property bytes keep their layout and meaning, read off the derived
-  contexts under the new checker (§11.5 *as built by R8b*).
-- *R13 (2026-09-27):* `iface_bytes.format_version` 5 → 6 (a derived row may be `requirement`,
-  §14.2 *as amended by R13*). Every older record is a miss.
-- *As built by R10 (2026-09-27).* No format moves: `iface_bytes`, `dispatch_bytes`,
-  `entry_bytes`, the schema plan, the dependency digest and `key_version` are as R9 left them.
+  contexts under the new checker (§11.5).
+- *2026-09-27:* `iface_bytes.format_version` 5 → 6 (a derived row may be `requirement`,
+  §14.2). Every older record is a miss.
+- *As built (2026-09-27): incrementality under v2.* No format moved: `iface_bytes`,
+  `dispatch_bytes`, `entry_bytes`, the schema plan, the dependency digest and `key_version` are
+  as above.
   - **Every incrementality scenario runs under v2.** `zig build test-v2` runs `cache_test.zig`,
     `cutoff_test.zig`, `digest_test.zig` and `matrix_test.zig` whole with `BENI_CHECKER=v2`; a
     scenario that compares the checkers names each run's checker, and one whose expectation is a
     legitimate v2 difference asks `World.underV2`. Those differences, all of this section's
-    making: `digest_test.zig`'s row 10 (a private type's payload becomes a function) moves
+    making: in `digest_test.zig`, a private type's payload becoming a function moves
     `Leaf`'s interface HASH under v2, where v1 moves only its digest — the type is reached by
     `make`'s scheme, so it has a `hidden_types` row whose derived rows go `present` → `function`;
     and `cache_test.zig`'s private-`eq` scenario says `private_method` (D1, §11.3) where v1 says
     `not_equatable`. The cutoff table (`cutoff_test.zig`, now pinned) re-checks exactly what v1's
-    does on every one of its 18 rows; a 19th, "add a private eq", runs under v2 only, because
-    v1's key cannot see it (CK-132, v1 only, frozen): v2 moves the module's hash through the
+    did on every one of its 18 rows; a 19th, "add a private eq", ran under v2 only, because
+    v1's key could not see a private `eq` or `compare`: v2 moves the module's hash through the
     `private_method` rows and re-checks the same four modules any interface edit does.
   - **Evidence, not only types.** A dependency's derived context changing — a function payload
     added, a payload's parameter dropped, a payload's `eq` changing its `where` clause, a method
     flipped `pub` ↔ private, a schema `via` target gaining a function or a private `eq` — moves
     the dependency's record, so every dependent is re-checked and re-elaborated; a warm build
-    after each such edit writes byte for byte what a cold build writes (`cache_test.zig`,
-    "checker v2: an edit that moves a dependency's derived context …", and the adversarial
-    review's `k1`–`k8` under both checkers).
+    after each such edit writes byte for byte what a cold build writes (`cache_test.zig`).
   - **I10 on the hit path, as a counter.** `derived_context_runs` (`Check.Counters`, the trace's
     counter of the same name) is the number of unit fixpoints `Contexts.run` ran, summed over the
     modules v2 CHECKED. A hit runs none: `Incremental.install` replaces the record, the table
     and the plan and recomputes nothing. A warm build of a clean project reports 0
     (`matrix_test.zig` asserts it on every warm run of every clean fixture), and so does a warm
     build that re-checks only a module declaring no type while it compares imported ones — the
-    rows it reads are the installed records' (`cache_test.zig`, "… runs no fixpoint (I10)").
-  - **CK-107** was the dispatch sidecar's writer: `type_refs` and `module_refs` searched
-    linearly per row. Both are indexed now; `test-perf` holds it.
+    rows it reads are the installed records' (`cache_test.zig`).
+  - **Writing a module's cache entry is linear in its types.** The dispatch sidecar's writer
+    searched `type_refs` and `module_refs` linearly per row; both are indexed now, and
+    `test-perf` holds it.
 
 ---
 
 ## 15. Diagnostics and recovery
 
-### 15.1 One emit path, `quiet` once (CK-14)
+### 15.1 One emit path, `quiet` once
 
 `Report.emit(diagnostic)` is the only way to append to a module's diagnostics. It:
 
@@ -3964,9 +3857,10 @@ of its template. Before, such a row was `unanswerable`.
 - sets the failure bit (§15.2) if the severity is `error`.
 
 Schema errors, `verifyReads` and `internalAlways` go through it. The 37 hand-written guards are
-gone. `Session`'s `quiet[m]` counts errors only (CK-12, R1).
+gone. `Session`'s `quiet[m]` counts errors only, so an earlier phase's *warning* never silences a
+module.
 
-*As built by R4b (2026-09-25): the texts are v1's functions, staged.* §19 keeps `Diagnostics.zig`'s
+*As built (2026-09-25): the texts are v1's functions, staged.* §19 keeps `Diagnostics.zig`'s
 texts verbatim, and they live in `Diagnostics.Reporter`'s methods, which append to a list and read
 their context (store, Bir, a declaration's locals for a callee's name) from a
 `Constrain.Env`. `check2/Report.zig` therefore owns a **staging** `Reporter` that is never quiet,
@@ -3976,29 +3870,26 @@ message is about, and with it the locals the texts name a callee by). Every mess
 path to the module's list. The texts §15.3 lets v2 change (§8.2's infinite type, §8.3's escape)
 are written in `Report.zig` itself, per `checker.md` §8.5, and v1 keeps its own.
 
-*Revised by R4b's review (2026-09-25, S2, S7).* The shared texts no longer depend on v1's
+*Revised 2026-09-25.* The shared texts no longer depend on v1's
 `Constrain.zig`: `Category` moved to `check/Category.zig`, `Env`, `PlainMethod` and `Monomorphic`
 to `check/Env.zig`, and the Tarjan pass (`sccGroups`, `IndexGroups`) to `check/Scc.zig`, all pure
 moves that `Constrain.zig` re-exports so v1 reads as before; `Counters` moved from v1's `Solve.zig`
 to `check2/Check.zig`. v2 imports neither `Constrain.zig` nor `Solve.zig`
-(`check2/rules_test.zig` refuses it). P0's refusal, which runs before P1 builds a `Report`, goes
-through `Report.appendTo`, the one path's list half. **Owed by R13:** `Diagnostics.Reporter.env`
-narrows from a whole `Env` (whose `dispatch`, `plain_methods` and `monomorphic` v2 leaves empty)
-to the fields the texts read. *Done (R12, R13):* R12 deleted `dispatch` and `plain_methods` with
-v1, and R13 `artifacts` and `schemas`, which no text reads; `monomorphic` stays, because v2
-fills it (§8.4's switch, `Solve.holdConstrained`) and A.30's hint reads it.
+(`check2/rules_test.zig` refuses it). `Diagnostics.Reporter.env` holds only the fields the
+texts read: `dispatch` and `plain_methods` went with v1, and `artifacts` and `schemas`, which no
+text reads, after it; `monomorphic` stays, because v2 fills it (§8.4) and A.30's hint reads it.
 
-### 15.2 Failure is state (I12, CK-11)
+### 15.2 Failure is state (I12)
 
 `decl_failed: DynamicBitSet` over declarations. The reporter sets the bit of the declaration being
 solved, which is the frame's current member, or the wanted's `origin` declaration for resolver
 errors. At the group's boundary, if any member failed, **every member** of the group is marked,
 because they share variables. **Groups merged by §10.4 are one group for this rule:** a failure
-anywhere in the merge marks every member of every merged group (N11). P7 exhaustiveness and the P9
+anywhere in the merge marks every member of every merged group. P7 exhaustiveness and the P9
 plan gate read the bits. Nothing tests
 a diagnostic's region against an instruction range.
 
-*As built by R4b's review (2026-09-25).*
+*As built (2026-09-25).*
 - **Attribution.** A boundary's `infinite_type` goes to its binder's declaration, and an escape to
   the annotated binding's declaration (each `Binder` and annotated binding records it), not to
   whichever member came last. A type too deep to read (`Types.Builder`, the generator's guards,
@@ -4006,45 +3897,46 @@ a diagnostic's region against an instruction range.
   end of P4, so the bit is set before P7 reads it; publication's own notes are reported after P8.
   The group rule is `Report.failGroup`, the bits' one owner.
 - **What P7 skips** is a second bitset, `failed_patterns`: the same, except that an
-  `infinite_type` does not set it. Exhaustiveness reads no solved type (CK-61), and an infinite
-  type says nothing about a pattern, so a `case` beside one is still checked (the review's F9:
-  `tests/corpus/check/bad/InfiniteTypeKeepsUsefulness.beni`). Every other error sets both.
+  `infinite_type` does not set it. Exhaustiveness reads no solved type, and an infinite
+  type says nothing about a pattern, so a `case` beside one is still checked
+  (`tests/corpus/check/bad/InfiniteTypeKeepsUsefulness.beni`). Every other error sets both.
 
 ### 15.3 Stable texts
 
 Every diagnostic code keeps its code and its text, except:
-- the CK entries whose fix is the text: CK-48 to CK-59;
+- the diagnostic-quality defects whose fix is the text (a missing-constraint span, a list element
+  blamed first, stray hints, a mismatch that does not name its clause, a curried annotation, the
+  infinite type's print, the cap's receivers, a missing field's literal types);
 - `rigid_mismatch`'s escape variant (§8.3);
 - `try_shape`'s legs (§8.6);
 - `infinite_type`'s rendering (§8.2).
-- the D14 hint on its `type_mismatch` (§10.7), written in R7;
-- the nesting-budget hint on `nesting_too_deep` (§10.2), written in R7;
-- a derived-context variant of `private_method`, written in R8b. Spike §10.2's text says "`x.<m>` cannot reach it", but `[ M.t1 ] == [ M.t2 ]` in another module names no `.m`, so the variant names the type and the derived shape that reached it. *(Round 4, S4-2.)*
+- the D14 hint on its `type_mismatch` (§10.7);
+- the nesting-budget hint on `nesting_too_deep` (§10.2);
+- a derived-context variant of `private_method`. Spike §10.2's text says "`x.<m>` cannot reach it", but `[ M.t1 ] == [ M.t2 ]` in another module names no `.m`, so the variant names the type and the derived shape that reached it.
 
-`method_needs_annotation` is retired except for §11.2's one case (§10.5). Exact wordings are written in
-the slice that changes them, blessed there, and reviewed:
-- **R4**: the escape and cycle rendering, CK-01 and CK-57 (S20);
-- **R5**: `?` legs;
-- **R6**: `.where_clause` and `.method_signature`;
-- **R7**: the recursive-dispatch hint;
-- **R13**: the rest.
+`method_needs_annotation` is retired except for §11.2's one case (§10.5). Exact wordings were
+written with the change that needed them, blessed there, and reviewed: the escape and cycle
+rendering first, then the `?` legs, `.where_clause` and `.method_signature`, the
+recursive-dispatch hint, and the rest last.
 
 ### 15.4 Regions and categories
 
 - The resolver reports at `w.origin`, the instruction in this module (spike §6.2's promise).
-  `s.region` is gone (CK-48).
+  `s.region` is gone, so `missing_where_constraint` never underlines an unrelated span.
 - Unification categories gain `.where_clause`, `.method_signature` and `.try_leg(enclosing |
-  subject | error)`. Their messages name the clause or leg (CK-55, CK-51).
+  subject | error)`. Their messages name the clause or leg.
 - The module-rule clash hint is printed only when the module declares at least two types and the
-  method's first parameter names a different one (CK-52). CK-49, CK-50, CK-53, CK-54, CK-56, CK-58,
-  CK-59 and CK-60 are R13's, written against this reporter.
+  method's first parameter names a different one. The other message fixes (a list element blamed
+  for the context's type, the arithmetic hint, a `where` suggested on a `let` annotation, `==` on
+  an open record, a curried annotation, the cap's receivers, a missing field's literal types, a
+  cons pattern's parentheses) are written against this reporter.
 
 ---
 
 ## 16. Exhaustiveness, cycles and the schema plan
 
-- **`Exhaustive.zig` is kept verbatim.** Only its gate input changes, to failure bits. CK-61
-  corrects `checker.md` §6.6's sentence about solved types.
+- **`Exhaustive.zig` is kept verbatim.** Only its gate input changes, to failure bits.
+  `checker.md` §6.6's sentence about solved types is corrected: it reads none.
 - **`Cycles.zig`** is adapted to `Convention` and the tree walk. Its algorithm and messages are
   unchanged.
 - **The schema plan** is built in P9 after `Cycles`, gated on "no error in the module", and reads
@@ -4064,30 +3956,29 @@ Within a module, every order the checker chooses is one of these:
   of the source;
 - name text for fields, requirements and contexts (I13).
 
-The `--jobs=1` versus `--jobs=8` determinism test and the matrix test run under `--checker=v2` from
-R9 (§22).
+The `--jobs=1` versus `--jobs=8` determinism test and the matrix test ran under `--checker=v2`
+once v2 checked `core` too (§22).
 
-*As built by R9 (2026-09-27):* `zig build test-v2` runs, beside the corpus, the `--jobs`
+*As built (2026-09-27):* `zig build test-v2` runs, beside the corpus, the `--jobs`
 determinism scenarios with `BENI_CHECKER=v2`, selected by name from `blackbox_test.zig` (every
 test named "… --jobs=1 and --jobs=8": the streams, the interface record, the dispatch table,
 resolution, the graph dump, an unreadable file), `build_test.zig` ("byte-identical at every
 --jobs", with and without cross-module evidence) and `abuse_test.zig` (the 600-module and the
 5 000-module scenarios); `world.zig`'s `checkerFlag` adds `--checker=v2` to each `build`, `check`
-and `dump`. All pass with `core` under v2. The matrix test is R10's.
+and `dump`. All pass with `core` under v2.
 
-*As built by R10 (2026-09-27):* `test-v2` also runs the four incrementality files whole —
-`cache_test.zig`, `cutoff_test.zig`, `digest_test.zig` and `matrix_test.zig` (§14.3 *as built by
-R10*). The matrix's cold-with-cache and warm runs, at `--jobs=1` and `--jobs=8`, are byte-identical
+*As built (2026-09-27):* `test-v2` also runs the four incrementality files whole —
+`cache_test.zig`, `cutoff_test.zig`, `digest_test.zig` and `matrix_test.zig` (§14.3). The matrix's cold-with-cache and warm runs, at `--jobs=1` and `--jobs=8`, are byte-identical
 to the plain run for every checker-driven fixture under v2.
 
 ---
 
 ## 18. Performance
 
-**Budget.** `fast-compiler.md` §2 asks for more than 250k LOC/s per core for checking. At
-`7427828` the check phase of `zig build bench -- --generate=100000` runs **55.2 ms**, about 1.8 M
-LOC/s. The diary's last entry (2026-09-24 00:17) records the dispatch-heavy medians the rewrite is
-held to, ReleaseFast, `--self-profile`, median of 7:
+**Budget.** `fast-compiler.md` §2 asks for more than 250k LOC/s per core for checking. When the
+rewrite began, the old checker's check phase of `zig build bench -- --generate=100000` ran
+**55.2 ms**, about 1.8 M LOC/s. The dispatch-heavy medians the rewrite is held to, measured then
+(ReleaseFast, `--self-profile`, median of 7):
 
 | Program | ms |
 |---|---|
@@ -4095,9 +3986,9 @@ held to, ReleaseFast, `--self-profile`, median of 7:
 | `s_int6000` | 15.7 |
 | `gen` | 76.0 |
 
-**Rule.** v2 must be ≤ 1.10× each of those at R9 (the `test-v2` parity slice) and at the cut-over
-(R11). It must be linear on the three perf scenarios (CK-40, CK-41, CK-42). R12 re-measures after
-v1 is deleted.
+**Rule.** v2 must be ≤ 1.10× each of those once it checks `core`, and at the cut-over. It must be
+linear on the three perf scenarios (schema property settling, interface writing, and dispatch
+resolution's scans). It is re-measured after v1 is deleted.
 
 **What gets cheaper**
 
@@ -4114,18 +4005,17 @@ v1 is deleted.
 - **Occurs at every binder** (§8.2). One walk per `binders_end` node or boundary, over the binders'
   reachable graph (`structural`), with a shared epoch, so each node is visited once per walk. Nested
   `let`s and nested lambdas revisit outer structure once per nesting level, the same cost Elm pays.
-  R4 measures three things:
+  Three things are measured:
   - `bench`;
   - a 5 000-lambda flat scenario;
   - **a nested scenario**, 200 `let`s deep, each binding a 50-field record type built from the one
-    above it. This is the quadratic case (S4). If it exceeds 3 % of the check phase, the fallback is Elm's exact placement, occurs only
+    above it. This is the quadratic case. If it exceeds 3 % of the check phase, the fallback is Elm's exact placement, occurs only
   on binders whose variable was unified since the last boundary, which the journal can tell.
 
-  *As built by R4b (2026-09-25): measured, and the fallback taken.* Method: two ReleaseFast
+  *As built (2026-09-25): measured, and the fallback taken.* Method: two ReleaseFast
   compilers from the same tree, one with every v2 occurs walk switched off, `check --checker=v2
   --no-cache --jobs=1 --self-profile`, the sum of the root package's `check` events (core is v1's in
-  both), runs interleaved, median. Three programs, generated by the R4b slice's scratch scripts and
-  described in `plans/checker-rewrite.md` R4b *As built*: **bench** (a dispatch-free 131 127-line
+  both), runs interleaved, median. Three programs, generated by scratch scripts: **bench** (a dispatch-free 131 127-line
   corpus of 90 modules), **flat** (5 000 declarations, each a lambda over a `case`, 55 000 lines) and
   **nested** (one declaration 200 `let`s deep, level *i* binding a 50-field record whose field `p`
   is level *i − 1*'s, so each level's type holds every level above it).
@@ -4137,22 +4027,22 @@ v1 is deleted.
   | **as built** — binders only (§8.2's fallback), 15 runs | 94.2 vs 91.7 ms, **+2.8 %** | 22.4 vs 21.5 ms, +4.5 % | 163.9 vs 159.6 ms, +2.7 % |
 
   The `touched` walk was the larger part (about 4 % of bench on its own), so it went (§8.2, *As
-  built by R4b*). What is left on **flat**, just over the line, is `binders_end`'s own walk of each
-  lambda's and branch's binders — the placement CK-04's expected output needs — on a program that
+  built 2026-09-25*). What is left on **flat**, just over the line, is `binders_end`'s own walk of
+  each lambda's and branch's binders — the placement §6.3 needs — on a program that
   is nothing but lambdas. The nested case is not quadratic in the occurs walk: one boundary walks
   its header's type once (a shared epoch), so 200 levels cost 200 walks of a type growing by 50
   fields a level, 2.7 % of a check the copying of those same types dominates.
 
-  *Re-measured after R4b's review (2026-09-25), and the flat case accepted (S9).* After the review's
+  *Re-measured 2026-09-25, and the flat case accepted.* After the later
   changes (coinductive `unify`, the error path's cycle search), same method, medians of 15 and 21
   runs: bench **+0.3 % and +4.8 %**, flat **+6.0 % and +5.6 %**, nested **+5.4 % and +4.1 %**. Two
   byte-identical binaries measured the same way differ by up to **3.4 %** (flat) and 1.5 % (nested),
   so the line is inside this machine's noise, and the walks that remain start at binders whose
   types are almost all leaves (a leaf costs a `find` and a tag test). The flat case is **accepted
   over the line** rather than reduced: what it measures is `binders_end` after every lambda and
-  `case` branch, the placement CK-04's expected output needs (`(\y -> y y) "s"` is
+  `case` branch, the placement §6.3 needs (`(\y -> y y) "s"` is
   `infinite_type` at `y` before `"s"` meets it), on a program that is nothing but lambdas and
-  branches; the only reduction left is to drop that placement. The manager may overrule.
+  branches; the only reduction left is to drop that placement.
 - **`Walk.owned` yields constraint method types, and attaching lowers them (I15).** A variable's
   `wants` is almost always empty, so the cost is one branch. An attachment walks a two- or
   three-node method type.
@@ -4165,27 +4055,26 @@ v1 is deleted.
   after a default, and there is at most one round of defaults per `?`. In practice there are at most
   two iterations.
 - **The I15 debug assert** checks only what the boundary's own generalisation walk meets, so it is
-  linear even in Debug, and cannot flake the performance ratios (S-new-6).
+  linear even in Debug, and cannot flake the performance ratios.
 - **Elaboration (P6)** is linear in sites plus terms.
 - **The derived-context fixpoint** iterates at most (#params × #methods) times per type-level SCC,
   and the typical SCC has one type and one iteration.
-- **The resolver's cycle checks** *(noted by R6a's review, 2026-09-25)*. Two walks guard
-  §9.5, and none is free. (The first round's `repeatsAncestor` and its `Walk.reaches` are gone:
-  round-2 review, N1.) `Instances.cyclic` runs one occurs walk from every structure receiver
+- **The resolver's cycle checks** *(noted 2026-09-25)*. Two walks guard
+  §9.5, and none is free. (The first `repeatsAncestor` and its `Walk.reaches` are gone with the
+  lineage rule.) `Instances.cyclic` runs one occurs walk from every structure receiver
   resolved; `Instances.derivability` walks a receiver's pairs once per derivation, and a ground
   pair once per module. On a DAG each is linear in the distinct nodes it reaches, but they are run
   per wanted, so a derived chain of depth *d* costs O(*d*²) node visits — the parser bounds *d*,
-  and a type's distinct nodes are few in practice (CK-80's depth-24 doubling DAG and the
+  and a type's distinct nodes are few in practice (a depth-24 doubling DAG and the
   alternating-boundary DAG of `perf_test.zig` stay flat). If a profile ever shows them, the
   first fix is to run `cyclic` only for a readied wanted (an immediate one's receiver was checked
   when it was bound).
 
-*As built by R8c (2026-09-26): the per-operation overhead, and the last bullet above.* R8a's
-structural review profiled v2 at 1.15× v1's cycles on the generated corpora — the same work done
-dearer — and R8b's tree read 1.07–1.08× in whole-process cycles. Each change below was measured
-on its own (ReleaseFast, `perf stat -r 11`, whole process, `check --no-cache --jobs=1`, both
-`zig build bench -- --generate=100000` corpora, two interleaved rounds; the table per change is
-`plans/checker-rewrite.md` R8c's *As built*):
+*As built (2026-09-26): the per-operation overhead, and the last bullet above.* A profile put v2 at
+1.15× v1's cycles on the generated corpora — the same work done dearer — and later 1.07–1.08× in
+whole-process cycles. Each change below was measured on its own (ReleaseFast, `perf stat -r 11`,
+whole process, `check --no-cache --jobs=1`, both `zig build bench -- --generate=100000` corpora,
+two interleaved rounds):
 
 - **Rank adjustment** (§8.1 step 2), the largest. A node's `owned` successors are read in one
   decode (`Walk.eachOwned`) and pushed on a stack, not re-decoded once per successor through a
@@ -4195,100 +4084,102 @@ on its own (ReleaseFast, `perf stat -r 11`, whole process, `check --no-cache --j
   of one rank skips the counting sort; and step 2 leaves only roots in the pool (`adjustRanks`'
   `compact`), so steps 4–5 do not `find` merged-away variables again (a frame handed down keeps
   its pool whole). About −37M instructions and −15M cycles on the dispatch corpus.
-- **Unify**: the pair stack's bounded scan (§7.3 *amended by R8c*), a flex-flex join with nothing
+- **Unify**: the pair stack's bounded scan (§7.3, *amended 2026-09-26*), a flex-flex join with nothing
   on either side merged directly, `reportJoins` skipped when there is nothing to report. About
   −5M instructions.
 - **P6** builds no call map in a module with no evidence rows and no group call, and a dense one
   otherwise (it hashed every `call` of every module). About −6M instructions.
-- **§18's last bullet came true** as CK-111: a record nested *d* deep compared once was O(*d*²) in
-  the derivability walk and in the cycle test; both are linear now (§8.2 *amended by R8c*,
-  `Resolve.State.derivable_open`). CK-93's `let` chain is linear to check (§8.2). The proofs
+- **§18's last bullet came true**: a record nested *d* deep compared once was O(*d*²) in
+  the derivability walk and in the cycle test; both are linear now (§8.2, *amended 2026-09-26*,
+  `Resolve.State.derivable_open`). A `let` chain whose types grow is linear to check (§8.2). The proofs
   both need cost about 1 % of instructions on the corpora against a build that keeps none (after
-  the review round's fix, §8.2 *as restated*).
-- **Not done**: per-group memoisation of imported schemes (the review's 1 %): an instantiation
+  the fix after review, §8.2 *as restated*).
+- **Not done**: per-group memoisation of imported schemes (worth 1 % at most): an instantiation
   makes fresh variables per use, which a memo would copy anyway, and the profile puts v2's
   instantiation within 1 % of v1's.
 
-Result, R8c's tree after its two review rounds, v1 from the same binary, two rounds: the plain
+Result, after two review rounds, v1 from the same binary, two rounds: the plain
 corpus 1.031–1.033× v1 in cycles (493 / 478M) and 1.03× in task-clock; the dispatch corpus
-1.054–1.058× in cycles (542–543 / 513–514M) and 1.056–1.058× in task-clock — over R8c's 1.05×
-target by choice: the broad `err` rule (§8.2) costs 0.8 % of instructions, and R9's budget is
-1.10×. The parent read 1.05–1.06× and 1.08× in cycles. The four phases after
-P4 have events of their own (§5 *as built by R8c*): on the dispatch corpus `derived`, `elaborate`,
+1.054–1.058× in cycles (542–543 / 513–514M) and 1.056–1.058× in task-clock — over the 1.05×
+target by choice: the broad `err` rule (§8.2) costs 0.8 % of instructions, and the rule's budget
+is 1.10×. The build before these changes read 1.05–1.06× and 1.08× in cycles. The four phases after
+P4 have events of their own (§5, *As built 2026-09-26*): on the dispatch corpus `derived`, `elaborate`,
 `publish` and `finish` take about 2, 4, 8 and 4 ms of v2's 100 ms of `check` (wall, the root
 package's modules).
 
-*As measured by R9 (2026-09-27), with `core` under v2.* ReleaseFast, one binary, v1 and v2 by
-`--checker`. Two changes of R9's, both in v2 only: the store reserves three variables per
+*As measured 2026-09-27, with `core` under v2.* ReleaseFast, one binary, v1 and v2 by
+`--checker`. Two changes, both in v2 only: the store reserves three variables per
 instruction (it reserved one, and grew two or three times, a copy each; `Module.zig` P1), and the
 derivability walk keeps its first 16 colours inline and neither colours nor memoises a node with no
 successor (`Derivable.Colours`, `isLeaf`).
 
-| Measure | v1 | v2, `core` under v2, before the two changes | v2, R9 | R9 / v1 |
+| Measure | v1 | v2, `core` under v2, before the two changes | v2, after | after / v1 |
 |---|---|---|---|---|
 | plain corpus, whole process, `perf stat -r 11` cycles, two rounds | 475–478M | 494–496M | 494M | 1.036–1.040 |
-| dispatch corpus, the same | 510–511M | 545M (core under v2; 542–543M under v1 at R8c) | 538–540M | 1.055–1.058 |
+| dispatch corpus, the same | 510–511M | 545M (core under v2; 542–543M under v1 before) | 538–540M | 1.055–1.058 |
 | plain corpus, `zig build bench … --checker=` check phase, three rounds, median | 93.2 ms | 101.2 ms | 97.9 ms | 1.05 |
 | dispatch corpus, the same | 101.3 ms | 111.9 ms | 111.0 ms | 1.10 (rounds 1.06–1.12) |
 | `s_int6000`, sum of `check` events, median of 7 | 16.9 ms | 19.3 ms | 18.0 ms | 1.07 |
 | `s_tup6000`, the same | 29.7 ms | 55.6 ms | 47.0 ms | **1.58** |
 
-`s_int6000` and `s_tup6000` are the diary's programs rebuilt (6 000 declarations of `a < b`, and
-of `( a, [ b ] ) < ( b, [ a ] )`, over `Int`); the dispatch corpus stands for `gen`. `s_tup6000` is over
-the rule, and was before R9 (1.89×; `ed61b07`'s binary, `core` under v1, read 1.54× in whole-process
-cycles): no slice had measured it since the diary's entry. It is
-CK-131, recorded with its profile; the bench's own figures (whole process and check phase) are
-within 1.10×. `zig build bench` gained `--checker=v1|v2` for the check line (R9).
+`s_int6000` and `s_tup6000` are the baseline's programs rebuilt (6 000 declarations of `a < b`,
+and of `( a, [ b ] ) < ( b, [ a ] )`, over `Int`); the dispatch corpus stands for `gen`.
+`s_tup6000` was over the rule (1.89× before these two changes, with `core` under v1 1.54× in
+whole-process cycles): a derived comparison at a use cost about 1.6× v1's. The bench's own figures
+(whole process and check phase) are within 1.10×. `zig build bench` gained `--checker=v1|v2` for
+the check line.
 
 
-*As measured by R9b (2026-09-27): CK-131 fixed.* The same method as R9's: ReleaseFast, v1 and v2
-by `--checker` on one binary (v1 is frozen, so v1 is `919f8be`'s), `check --no-cache --jobs=1
---self-profile`, the sum of the `check` events, median of 7, all binaries interleaved; the whole
-process by `perf stat -r 11`. The programs are R9's, and `perf_test.zig`'s `CK-131` scenario now
-keeps their generator: `s_tup6000` (6 000 of `( a, [ b ] ) < ( b, [ a ] )` over `Int`),
-`s_int6000` (`a < b`) and, from R9's review, the tuple of two `Int`s (`( a, b ) < ( b, a )`).
+*As measured 2026-09-27: the derived comparison at a use brought within the rule.* The same
+method: ReleaseFast, v1 and v2 by `--checker` on one binary (v1 frozen), `check --no-cache
+--jobs=1 --self-profile`, the sum of the `check` events, median of 7, all binaries interleaved;
+the whole process by `perf stat -r 11`. The programs are those above, and `perf_test.zig` keeps
+their generator: `s_tup6000` (6 000 of `( a, [ b ] ) < ( b, [ a ] )` over `Int`), `s_int6000`
+(`a < b`) and the tuple of two `Int`s (`( a, b ) < ( b, a )`).
 Each change was measured on its own and kept only if it paid; each row adds one to the row above.
 
 | Change | `s_tup6000` ms (× v1) | pair ms (× v1) | `s_int6000` ms (× v1) | `s_tup6000` cycles / instructions, M |
 |---|---|---|---|---|
 | v1 | 29.7 | 25.7 | 17.6 | 146.7 / 408.5 |
-| v2 at `919f8be` | 47.6 (1.60) | 33.6 (1.31) | 18.5 (1.05) | 209.1 / 565.6 |
-| (a) a table primitive whose method type already is `root, root -> Bool\|Order` answered in `Resolve.step` (§9.3 step 1 *amended by R9b*) | 45.3 | 30.9 | 17.2 | 200.8 / 542.2 |
-| (b) the plain-method fast path (§9.3 step 4 *amended by R9b*) | 37.8 | 31.2 | 17.5 | 178.1 / 482.3 |
-| the ground derivability memo a dense column (§9.5 *amended by R9b*) | 36.7 | 29.6 | 16.9 | 171.1 / 475.3 |
+| v2 before | 47.6 (1.60) | 33.6 (1.31) | 18.5 (1.05) | 209.1 / 565.6 |
+| (a) a table primitive whose method type already is `root, root -> Bool\|Order` answered in `Resolve.step` (§9.3 step 1, *amended 2026-09-27*) | 45.3 | 30.9 | 17.2 | 200.8 / 542.2 |
+| (b) the plain-method fast path (§9.3 step 4, *amended 2026-09-27*) | 37.8 | 31.2 | 17.5 | 178.1 / 482.3 |
+| the ground derivability memo a dense column (§9.5, *amended 2026-09-27*) | 36.7 | 29.6 | 16.9 | 171.1 / 475.3 |
 | `unifyWellKnown` skips a method type of that shape (a use's operands) | 36.1 | 28.4 | 17.2 | 168.3 / 464.9 |
 | (c) derivability kept by ground shape, per module (`Derivable.Shapes`) | 33.5 | 27.8 | 17.2 | 162.5 / 455.2 |
 | P6's unit memo searched inline below 16 keys (`Unit.wanted`) — **as kept** | 32.5 (1.09) | 28.1 (1.09) | 16.5 (0.94) | 161.4 / 453.7 (1.10 / 1.11) |
 
 Not kept, for paying nothing measurable: a multiplicative hash for `Resolve.State.derived`, and
 that memo as a dense column (its map's cost is the misses of a 60 000-entry table, not the hash).
-**Measured and declined** (the manager, 2026-09-27): skipping §9.5's cycle test for a receiver
+**Measured and declined** (2026-09-27): skipping §9.5's cycle test for a receiver
 whose ground encoding is bounded and met no alias. It measured 32.7 ms (cycles 159.9M, about
 −1 %), and it rested on an argument — a bounded preorder expansion over exactly the `structural`
-successors cannot reach a cycle — rather than on the walk. R8c's review rounds showed where a
+successors cannot reach a cycle — rather than on the walk. §8.2's proofs showed where a
 proof that is only an argument for a narrower condition leads (three holes), so the walk stays
 and the 1 % is paid.
 The final tree (the rows above as kept, the rollback guard of §9.3 added), rounds of the three
-programs alone (v1, `919f8be`, R9b), two rounds of medians of 7: `s_tup6000` **1.058× and
+programs alone (v1, v2 before, v2 after), two rounds of medians of 7: `s_tup6000` **1.058× and
 1.103×**, the pair 1.093× and 1.047×, `s_int6000` 0.955× and 0.954×; whole process on
 `s_tup6000` 160.8M / 146.3M cycles, 1.10×. The median of `s_tup6000` moves by ±4 % between
 rounds on this machine, so it sits on the 1.10× line rather than clearly under it. What is left over v1 on it is no longer the resolver — whose share of the
 profile is below v1's — but the constant factor of v2's unification, rank adjustment and P6 on
 every declaration, spread thin.
 
-| Measure (R9b measured before the declined cycle-test skip was reverted) | v1 | v2, R9 | v2, R9b | R9b / v1 |
+| Measure (taken before the declined cycle-test skip was reverted) | v1 | v2 before | v2 after | after / v1 |
 |---|---|---|---|---|
 | plain corpus, whole process, `perf stat -r 11` cycles, two rounds | 475–478M | 494–496M | 487–488M | 1.02–1.03 |
 | dispatch corpus, the same | 508–509M | 538M | 532–533M | 1.05 |
 | plain corpus, `zig build bench … --checker=` check phase, three rounds, median | 93.8 ms | 97.9 ms | 99.8 ms | 1.06 (rounds 1.03–1.07) |
 | dispatch corpus, the same | 102.5 ms | 111.0 ms | 107.7 ms | 1.05 (rounds 1.03–1.06) |
 
-The scenario (`zig build test-perf`, CK-131) is v2 against v1 on the module's own `check`
-event, best of 5, bound 1.25×: red at `919f8be` (167 %), green on R9b (107 %).
+The scenario (`zig build test-perf`) was v2 against v1 on the module's own `check` event, best of
+5, bound 1.25×: red before (167 %), green after (107 %). With v1 deleted it is the same program
+against its `a < b` control on one checker.
 
-*As measured by R14b (2026-09-27): CK-134 closed.* R12 found the check phase of `zig build bench
--- --generate=100000` at 1.087× (plain) and 1.122× (`--dispatch`) the `7427828` figure. Method:
-ReleaseFast binaries of `7427828`, `881e23d` (R14) and R14b; the whole process by user cycles,
+*As measured 2026-09-27: the check phase back under the baseline.* After v1 was deleted, the check
+phase of `zig build bench -- --generate=100000` read 1.087× (plain) and 1.122× (`--dispatch`) the
+old checker's baseline. Method: ReleaseFast binaries of the baseline, of the tree before this
+work, and after it; the whole process by user cycles,
 `check --no-cache --jobs=1` of the two generated trees, pinned to one core, the **minimum** of 11 to
 21 interleaved runs (on this machine the mean of `perf stat -r` moved by up to 7 % between two
 copies of one binary; the minimum by under 1 %); the bench's check line, medians of 7 interleaved
@@ -4299,7 +4190,7 @@ What the profile said. v2 did the same work as v1 (unifications, generalisations
 within 2 %) with 5 % more instructions and 24 % more branch misses, spread thin: unification,
 rank adjustment, P6 and I7's scans each a few per cent over v1, none of them the gap alone. And a
 cost no profile of user cycles had shown: every module's type store mapped its own pages
-(`std.heap.page_allocator`) and unmapped them at the end — v1's too, but R9's reservation of
+(`std.heap.page_allocator`) and unmapped them at the end — v1's too, but the reservation of
 three variables per instruction (a capacity of 4.5 after `MultiArrayList`'s growth factor) tripled
 it — a fault and a zeroed page for most of what a store touched. Taking it away took a run's
 system time on the dispatch corpus from about 44 ms to 24 ms, which the bench's wall-clock
@@ -4330,10 +4221,10 @@ it skips would write nothing; the memos are keyed and cleared exactly).
 Output: a differential over all of `tests/corpus/` and `tests/pending/` (1 124 files and 273
 directories, each checked with and without `--platform=node`, each file's `dump --stage=types`,
 `interface` and `dispatch`, and dev, `--release`, `--library` and `--library --release` builds;
-plus `bench/corpus`) against `881e23d`'s binary: 56 365 output files, **zero bytes changed**; the
+plus `bench/corpus`) against the binary before this work: 56 365 output files, **zero bytes changed**; the
 two generated trees built `--library` at `--jobs=8` likewise. Peak RSS unchanged (47 MB).
 
-| Measure | `7427828` | `881e23d` | R14b | R14b / `7427828` |
+| Measure | baseline (v1) | before | after | after / baseline |
 |---|---|---|---|---|
 | bench check line, dispatch, median of 7 rounds | 100.0 ms | 110.1 ms (1.10) | 76.0 ms | **0.76** |
 | bench check line, plain, the same | 93.7 ms | 99.5 ms (1.06) | 67.1 ms | **0.72** |
@@ -4342,11 +4233,11 @@ two generated trees built `--library` at `--jobs=8` likewise. Peak RSS unchanged
 | whole process, `--jobs=8`, dispatch, wall, mean of 20, two rounds | 53–64 ms | 62–64 ms | 51 ms | — |
 
 The whole process keeps what v2 costs outside the check line (its `resolve` phase read slower
-under `perf` than `7427828`'s, with `Graph.lookup`'s hash no longer inlined; the bench's own
-`resolve` line did not show it, so no finding is filed). The ablation column was measured before
+under `perf` than the baseline's, with `Graph.lookup`'s hash no longer inlined; the bench's own
+`resolve` line did not show it, so nothing was changed for it). The ablation column was measured before
 the two changes not kept were taken out.
 
-*Amended by R15-fix-D (2026-09-28, CK-143).* **No name lookup on the type table is a scan.**
+*Amended 2026-09-28.* **No name lookup on the type table is a scan.**
 `Types.find` — the one name lookup, which resolves a `type_refs` row (`resolveRefs`, once per row
 at P8 and at a cache hit's install) and the dependency digest's type set (`Digest.collect`, once
 per exported type) — scanned the declaring module's types, so publication and the digest were
@@ -4355,7 +4246,7 @@ quadratic in a module's types. `Types.by_name` is each module's range of the tab
 dense id indexes an array, and this is the sorted index of one; no map). The digest's set
 membership is a bit per type of the module (`Digest.IdSet`), not a linear `contains`. ReleaseFast:
 `dep_digest` over 8 000 / 16 000 independent types 38 / 149 ms → 5.1 / 10.1 ms; `publish` of a
-16 000 / 32 000 chain 53 / 183 ms → 15.0 / 31.4 ms (`test-perf` "CK-143", "CK-143-publish"). The
+16 000 / 32 000 chain 53 / 183 ms → 15.0 / 31.4 ms (`test-perf` holds both). The
 duplicate name of a refused redeclaration still finds the first declaration, as the scan did.
 
 ---
@@ -4367,7 +4258,7 @@ duplicate name of a refused redeclaration still finds the first declaration, as 
 | `TypeStore.zig`: union-find, Rémy rank, journal, `extra`, roots-only access | **adapted** | `Flags.wants`; epoch marks; `Snapshot` per §7.5 |
 | `Solve.unifyFlat`, `unifyRecord` (four-way merge-join), `unifyAlias`, kind lattice | **adapted** | dispatch arms removed; `Result` returned; normalised records; text-ordered failure |
 | `Solve.call` and the arity suite (`checker.md` §8.3) | **verbatim** | |
-| `Solve.generalize`, `adjustRank`, pools | **adapted** | `Walk.owned`; §8.3 check; switch for rule (a) until R14 |
+| `Solve.generalize`, `adjustRank`, pools | **adapted** | `Walk.owned`; §8.3 check; rule (a)'s switch, since deleted (§8.4) |
 | `makeCopy` / `copyHelp` | **adapted** | constraint method types through the same memo (they are children); wanteds created by I5 |
 | `occurs` (iterative three-colour) | **adapted** | `Walk.structural`, epochs, returns the cycle path |
 | `Constrain.zig` per-form rules | **rewritten**, rules verbatim | split into three files; §6.2–§6.5 changes |
@@ -4388,11 +4279,11 @@ duplicate name of a refused redeclaration still finds the first declaration, as 
 
 ### 19.1 The target layout of `src/check2/`
 
-Renamed to `src/check/` at R12. No file over about 1 500 lines.
+Renamed to `src/check/` when v1 was deleted. No file over about 1 500 lines.
 
-*As built by R12 (2026-09-27):* renamed; the v2 files and the shared ones are one flat
-directory (and `constrain/`), so an import is `"X.zig"` again. `checker.md` §3 *as amended by
-R12* lists it by role. Three files were over 1 500 lines and were split, each re-exporting what
+*As built (2026-09-27):* renamed; the v2 files and the shared ones are one flat
+directory (and `constrain/`), so an import is `"X.zig"` again. `checker.md` §3, as amended
+2026-09-27, lists it by role. Three files were over 1 500 lines and were split, each re-exporting what
 it moved so no caller changed: `Diagnostics.zig` 2 174 → 1 431 (`DispatchTexts.zig` 793: the
 §10 and obligation texts and the cyclic value), `Exhaustive.zig` 1 590 → 1 453
 (`PatternStore.zig` 159: the simplified pattern language) and `Contexts.zig` 1 620 → 1 318
@@ -4400,8 +4291,9 @@ it moved so no caller changed: `Diagnostics.zig` 2 174 → 1 431 (`DispatchTexts
 1 453, `Diagnostics` 1 431, `Schemes` 1 397, `Contexts` 1 318, `checker_test` 1 294, `Types`
 1 257 (from 1 835), `TypeStore` 1 047; `Dispatch` 907 (from 1 747). 30 551 lines in all, tests
 included. `rules_test.zig` fences I2 (with the kept files that own, serialise or print a type
-listed), the type table's structural bits' readers (S4's fence, its capability half deleted with
-the API), and the 1 500-line cap; S2's fence went with v1.
+listed), the type table's structural bits' readers (the capability fence, its capability half
+deleted with the API), and the 1 500-line cap; the fence against importing v1's files went with
+v1.
 
 ```
 check2/
@@ -4427,120 +4319,34 @@ check2/
   Schema*, reads, Command, InterfaceTerms, Dispatch, Convention
 ```
 
-Until R12, `check2` imports the shared files from `src/check/` and does not copy them. (R12: one
-directory.)
+While v1 existed, `check2` imported the shared files from `src/check/` and did not copy them; they
+are one directory now.
 
-*As built by R4b (2026-09-25; counts after its review):* `Context` 87 lines (the per-module read
-context, no generation state), `Subset` 117 (P0), `Walk` 497, `Unify` 554, `Generalize` 288
-(frames, rank adjustment, quantification), `Instantiate` 334, `Solve` 470 (the walk, calls,
-boundaries, the generality check), `Report` 367, `Publish` 285, `Module` 421, `constrain/Tree` 341
-(the tree and the generator's state), `constrain/Expr` 248, `constrain/Pattern` 133,
-`constrain/Decl` 526, and `rules_test.zig` 131. No
-`TypeStore.zig` (§4.1 *As built*), no `Groups.zig` yet (R7: the SCC is the shared
-`check/Scc.zig`, called from `Module` and `constrain/Decl`).
+*As built:* the layout above grew files the table did not foresee, each split off to keep a file
+within its budget or to give one concern a file of its own:
 
-*Imports from `src/check/` after R4b's review (S2):* `TypeStore`, `Types`, `Schemes`, `Render`,
-`Diagnostics`, `Dispatch`, `Convention`, `Cycles`, `Exhaustive`, `reads`, `Schema`, `SchemaPlan`,
-`SchemaPlanBuild` (all on §19's KEPT list), the three pure moves `Category`, `Env` and `Scc`
-(kept with the texts), and v1's `Check.zig` from `Driver.zig` alone — the checker switch, gone
-at R11. Nothing imports `Constrain.zig` or `Solve.zig`, so R12 can delete both with `Check.zig`
-(`check2/rules_test.zig` holds the line).
-
-*As built by R5 (2026-09-25):* two new files, `Obligations` 283 lines (§4.5's table) and
-`Instances` 221 (§11.4's marker walk only; lookup and matching are R6a's). `Solve` grew to 878
-(obligations, the default step, `?`, the record node), `Unify` 617, `Walk` 528, `Report` 488,
-`Subset` 108, `Generalize` 297, `Module` 429, `constrain/Tree` 389, `constrain/Expr` 295,
-`constrain/Decl` 532: 7 254 lines with the driver. The shared change is `Flags.obls` (§4.1,
-*Decided by R5*); `Publish.payloadParams` is public for the marker walk.
-
-*As built by R5's review (2026-09-25):* `Solve.zig` split, as §19.1 expects of a file past its
-budget. The obligation deciders moved to **`Decide.zig`** (359 lines: the first step, the drain,
-the four deciders, step 3's defaults, step 7's close and poison's settling), which leaves
-`Solve` 621 lines: the walk, unification and its report, calls, and the boundary's step order.
-v2's own texts moved from `Report.zig` to **`Messages.zig`** (198), which leaves `Report` 302
-lines: the emit path, `quiet`, the failure bits and v1's staged texts. Now `Obligations` 294,
-`Instances` 242, `Unify` 648, `Walk` 532: 7 442 lines in all.
-
-*As built by R6a (2026-09-25):* two new files, **`Evidence`** 357 lines (§4.2's tables: wanteds,
-answers, givens, the position pairing, and `requirements`, §12.1's one canonical order) and
-**`Resolve`** 502 (the step, attach and Rule U1's re-attach, the bridge, the `rigid` row, sharing,
-the lineage rule, promotion and the default). Lookup and the derivability walk joined the marker
-walk in **`Instances`**, now 864 lines — past its ~800, and R8a's fixpoint belongs there too, so
-R8a splits it (the marker walk is the separable half). `Solve` 795, `Unify` 776, `Walk` 546,
-`Instantiate` 400, `Decide` 374, `Report` 388, `Module` 501, `Subset` 81 (now the elaboration scan
-`build` and `dump --stage=dispatch` refuse by), `constrain/Expr` 445, `constrain/Decl` 606,
-`constrain/Tree` 416: 9 709 lines in all. No `Groups.zig` yet (R7). Shared: `Category.zig` gains
-`.where_clause` and `Diagnostics.categoryLines` gives it the general lines until R13 (v1 never makes
-one); `js/Emit.zig` and `main.zig` ask `Subset.needsElaboration`.
-
-*Revised by R6a's review (2026-09-25):* the marker walk left `Instances` for its own
-**`Marker`** (241 lines), so `Instances` (675) holds lookup and THE derivability verdict; the
-resolver's tables moved out of `Solve` into `Resolve.State` (S7). `Resolve` 608, `Evidence` 425,
-`Solve` 865, `Unify` 816, `Instantiate` 435, `Messages` 219, `rules_test` 173 (its S4 fence):
-10 151 lines in all, every file under its §19.1 figure.
-
-*As built by R6b (2026-09-25):* two new files, **`Elaborate`** 942 lines (P6: §12.2's units, §12.3's
-group calls, the derived table and its sort, and P5's rows' bodies with their propagation) and
-**`Eager`** 185 (P5 under v1's one-entry-per-parameter context: which rows, and each body's
-wanteds, resolved in a frame of their own). Elaboration is its own file rather than a part of
-`Evidence` (~500 above), as the marker walk left `Instances`: `Evidence` stays the tables and the
-canonical order (425). `Subset` is gone (nothing refuses elaboration now). `Module` 544, `Solve` 911
-(P5's frame), `Resolve` 598, `Report` 396, `Instances` 670: 11 303 lines in all. `Elaborate` is past
-the ~500 the table gives elaboration and under the 1 500 cap; R8a's contexts replace most of P5's
-half. Shared: `Dispatch.checkI7` judges each term once, bottom-up, and `Edges.termsEdges` walks each
-term once (§13.1 *Amended by R6b*).
-
-*Revised by R6b's reviews (2026-09-25):* `Elaborate` split (N5): the unit's DAG and its
-topological writer are **`Unit`** (179 lines), P5's rows' bodies, their probe and propagation and
-P5's frame moved beside the row choice in **`Eager`** (329), and `Elaborate` (781) keeps the sites,
-§12.3, the derived table and its sort. `Solve` 893 (its P5 frame helpers left with P5), `Module`
-567: 11 499 lines in all.
-
-*As built by R7 (2026-09-26):* two new files, **`Groups`** 545 lines (the groups and their status,
-the top-level-kind frame's life, nesting at demand and the `demand` node, the merge and the
-hand-down, the budget and its calibration) and **`Recursion`** 466 (D14's two hooks, the hint and
-its syntactic reading of the Bir, §10.6's cycle). `Groups` is over the ~450 above because the
-frames of §10 live there, as the table says they should; `Recursion` is §10.7's and §10.6's, which
-the table did not foresee as a file. `Solve` 951 (the top-level group loop moved to `Groups`, the
-frame stack stays), `Generalize` 378 (`Queue`, `route`, the frame fields), `Module` 518 (P4 is
-`Groups.checkAll`), `Decide` 386, `Unify` 853, `Instances` 691, `Report` 383 (the R7 refusal is
-gone), `Messages` 268: 12 727 lines in all.
-
-*Revised by R7's reviews (2026-09-26):* `Recursion` split (S4): D14's hooks and when a mismatch is
-D14's stay (157 lines), and the Bir reading its hint and §10.6's cycle print is **`Producers`**
-(393). The frame stack's primitives and step 6's generality check moved from `Solve` (860) to
-`Generalize` (534), as the table above assigns them. `Groups` 592.
-
-*As built by R8a (2026-09-26):* two new files, **`Contexts`** 848 lines (§11.2: the units over the
-payload-mentions graph, the memo and its generations, the joint fixpoint and its passes, the
-in-flight branch and replay, P5's settle) and **`Derivable`** 492 (the one verdict, moved out of
-`Instances` and reading the contexts, the boundary requirements off a method's scheme). The
-fixpoint lives beside `Instances` rather than in it, as the marker walk did (`Instances` 704 →
-584). `Eager` 330 → 220 (the probe, the propagation and the row choice are gone), `Elaborate` 794,
-`Publish` 407 (the rows and the hidden rows), `Instantiate` 494 (`freeze`, `substitute`),
-`Incremental` 315 (v1's hit settle moved to v1), `rules_test` 182 (the S3 fence gone with the
-stopgap it fenced): 14 327 lines in all, every file under 900.
-*After R8a's review round (2026-09-26):* `Contexts` 936 (the marker's `equatable` entry, one
-template per answer, bodies per run, the template assert), `Derivable` 504 (`foreignDerives`), `Instances` 615,
-`Eager` 237 (`markerKeys`), `Elaborate` 800, `Publish` 451 (the alias-body closure), `Walk` 626
-(`sameShape`), `Generalize` 538, `rules_test` 190 (`isEquatable(` fenced to
-`Marker`): 14 603 lines in all, every file under §19.1's ~1 500.
-
-*After R8c (2026-09-26):* `Generalize` 630 (rank adjustment's successor stack and inline
-answers, the pool's compaction), `Walk` 688 (`eachOwned`, proving runs), `Unify` 932 (the bounded pair
-scan, the flex-flex fast path), `Resolve` 689 (the open derivability memo, the Debug check of a
-proof), `Derivable` 581, `Solve` 882 (`solveFields`), `Elaborate` 813, `Module` 539 (the P5–P9
-events), `Groups` 565, `Instances` 648: 15 905 lines in all (after the review round; the proofs
-themselves live in the shared `TypeStore`). `Contexts`
-is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
-
-*As built by R15-fix-F (2026-09-28):* one new file, **`ColumnIndex`** (column zero of a pattern
-matrix by the alternative heading each row: `collect`'s bitset, `split`'s counting sort, and the
-per-branch `Heads` index — CK-167), which keeps `Exhaustive` under the cap (1 490).
-
-*As built by R15-fix-G (2026-09-28):* one new file, **`Injective`** (which aliases keep every
-parameter through their full expansion, settled once per session into `Types.Entry.injective` —
-§7.1 *amended by R15-fix-G*, CK-175), which keeps `Types` under the cap.
+- `Context` (the per-module read context, no generation state) and `constrain/Tree` (the tree and
+  the generator's state);
+- `Category`, `Env` and `Scc`: pure moves out of v1's `Constrain.zig`, kept with the texts;
+- `Obligations` (§4.5's table) and `Decide` (the obligation deciders: the first step, the drain,
+  the four deciders, step 3's defaults, step 7's close and poison's settling);
+- `Messages` (v2's own texts), which leaves `Report` the emit path, `quiet`, the failure bits and
+  the staged texts;
+- `Evidence` (§4.2's tables and §12.1's canonical order) and `Resolve` (the step, attach and Rule
+  U1's re-attach, the bridge, the `rigid` row, sharing, promotion and the default);
+- `Marker` (§11.4's marker walk), which leaves `Instances` lookup;
+- `Elaborate` (P6: the sites, §12.3, the derived table and its sort), `Unit` (a unit's DAG and its
+  topological writer) and `Eager` (P5's rows);
+- `Groups` (§10's groups, their status, the frames, nesting at demand, the merge and the budget),
+  `Recursion` (D14's hooks, and when a mismatch is D14's) and `Producers` (the syntactic reading of
+  the Bir for D14's hint and §10.6's cycle);
+- `Contexts` (§11.2's units, memo, fixpoint and replay) and `Derivable` (the one derivability
+  verdict);
+- `ColumnIndex` (column zero of a pattern matrix by the alternative heading each row: `collect`'s
+  bitset, `split`'s counting sort, and the per-branch `Heads` index, so a flat `case` over
+  thousands of constructors is checked), which keeps `Exhaustive` under the cap, and `Injective`
+  (which aliases keep every parameter through their full expansion, settled once per session into
+  `Types.Entry.injective`, §7.1), which keeps `Types` under it.
 
 ---
 
@@ -4548,9 +4354,9 @@ parameter through their full expansion, settled once per session into `Types.Ent
 
 ### 20.1 Stable (the corpus is the oracle)
 
-- **CLI.** Every command and flag. The one addition is the hidden, test-only `--checker=v1|v2`,
-  which exists R4–R11 and is deleted at R12.
-  *As built by R12 (2026-09-27):* deleted. `--checker` is an ordinary unknown option (usage,
+- **CLI.** Every command and flag. The one addition was the hidden, test-only `--checker=v1|v2`,
+  which existed only while two checkers did.
+  *As built (2026-09-27):* deleted. `--checker` is an ordinary unknown option (usage,
   exit 2), and `--self-profile` no longer writes `obligations` or the five `constraints_*`
   counters, which only v1 filled (always 0 under v2).
 - **Dump stages.** `tokens`, `ast`, `bir`, `types`, `interface` and `graph` keep their text
@@ -4560,30 +4366,30 @@ parameter through their full expansion, settled once per session into `Types.Ent
 
 ### 20.2 Changed on purpose
 
-| What | When | Version |
-|---|---|---|
-| `dump --stage=dispatch` format (§13.2) | R2a | — |
-| the `Convention` column (§12.5) | R2b | `dispatch_bytes` v3 |
-| `dump --stage=raw` gains the §14.2 columns | R3 | — |
-| dispatch table bytes | R2a | `dispatch_bytes` v2, `entry_bytes` v3 |
-| interface record | R3 | `iface_bytes` v3, digest v2 |
-| texts of §15.3 | R5, R6, R13 | — |
-| `method_needs_annotation` retired | R7 | — |
+| What | Version |
+|---|---|
+| `dump --stage=dispatch` format (§13.2) | — |
+| the `Convention` column (§12.5) | `dispatch_bytes` v3 |
+| `dump --stage=raw` gains the §14.2 columns | — |
+| dispatch table bytes | `dispatch_bytes` v2, `entry_bytes` v3 |
+| interface record | `iface_bytes` v3, digest v2 |
+| texts of §15.3 | — |
+| `method_needs_annotation` retired | — |
 
 ### 20.3 Emitted JavaScript that changes
 
 1. **Derived functions of parametric types whose context is not "every parameter, same method"
    (D4).** A phantom parameter loses its parameter, and a nested requirement gains a
-   different-method parameter. `emit/Derived*` goldens are reviewed individually at R11. `Maybe`,
+   different-method parameter. `emit/Derived*` goldens are reviewed individually at the cut-over. `Maybe`,
    `Result`, `List` and every type that compares each parameter do not change.
-2. **Every CK fix.**
-3. **`let` evidence parameters (D5, R14).**
-   *As built by R14 (2026-09-27):* a `let` function binding with requirements is
+2. **Every defect fix** catalogued in `plans/checker-findings.md`.
+3. **`let` evidence parameters (D5).**
+   *As built (2026-09-27):* a `let` function binding with requirements is
    `function <name>($l<inst>$0, …, params…)` (or its arrow, for a `lambda` right-hand side), each
    use passes its evidence first, `f(ev…, args…)`, and a reference in value position is its
    eta-expansion over the binding's arity. `emit/LetEvidenceParameter` pins the shape.
 
-*As measured by R8a (2026-09-26):* no golden of `tests/corpus/emit/`, `dispatch/` or `run/` moved
+*As measured 2026-09-26:* no golden of `tests/corpus/emit/`, `dispatch/` or `run/` moved
 under v2 for item 1 — every derived type the corpus emits compares each of its parameters with the
 derived method, so its context is v1's list, entry for entry (`test-v2`: all 28 `emit/` and
 `emit/release/` fixtures pass, the 13 a `--library` build of a type used to refuse among them, and
@@ -4591,77 +4397,78 @@ their bytes equal v1's; `blackbox_test.zig` compares the two checkers' `--librar
 byte). The shapes item 1 changes are pinned by `run/` fixtures instead, whose output shows it:
 `PhantomParameterEq` (a phantom parameter: `Tag$$eq` takes no evidence), and
 `GenericDerivationNestedRequirement` (`Outer$$eq = ($m$0, $x, $y) => Holder$eq($m$0, $x.a, $y.a)`
-with `$m$0` a `key`, the §11.2 example). Item 2's CK-85 changes one `run/` golden on purpose,
+with `$m$0` a `key`, the §11.2 example). Item 2's fix for a constrained constant that recomputed
+its body at every read changes one `run/` golden on purpose,
 under both checkers (the emitter is shared): `run/EvidenceFunctionBodyPerCall` prints one
-`table (where)` line where it printed three (`static-dispatch-spike.md` A.85 *as amended by R8a*),
-and CK-87's cap removal turns `run/DerivedEqDeepRecord` from refused to built.
+`table (where)` line where it printed three (`static-dispatch-spike.md` A.85, as amended), and the
+removal of the 32-level cap on a nested record's `==` turns `run/DerivedEqDeepRecord` from refused to built.
 
-*As measured by R9 (2026-09-27), with `core` under v2:* `bench/corpus` built with `--library` under
+*As measured 2026-09-27, with `core` under v2:* `bench/corpus` built with `--library` under
 both checkers (dev and `--release`) differs in one kind of line, and no item 1 function: a derived
 body's position whose type is an all-nullary nominal type (`Dict`'s `NColor`, `ExprParser`'s `Op`,
 `Router`'s `Sort` and `SettingsTab`) is `x.a === y.a` under v2 where v1 calls the type's derived
 `eq`, whose body is that same `===` — A.18's rule (`Instances.onApp` step 5), which v2 applies at
 every position and v1 only at a site. The `Router` and `ExprParser` lines were already there before
-R9 (root-package modules); R9 adds `core/Dict.mjs`'s two, and `--release` renames the short names
+`core` was checked by v2 (root-package modules); checking `core` adds `core/Dict.mjs`'s two, and `--release` renames the short names
 after the `Dict$NColor$$eq` it no longer reaches. `bench/corpus/DictExtra.beni`'s `any` was a
 `find dict predicate /= Nothing` on `Maybe ( String, v )` with `v` rigid, which v2 refuses
-(`missing_where_constraint`, CK-20's rule) and v1 answered with structural equality; it is a
-`case` since R9.
+(`missing_where_constraint`: a rigid inside a derived shape is never answered structurally) and
+v1 answered with structural equality; it is a `case` now.
 
 ### 20.4 Existing fixtures whose expectations change
 
-These change at the slice named, and are re-blessed with review, never in bulk:
+These changed at the step named, and were re-blessed with review, never in bulk:
 
-| Fixture | Slice | Why |
+| Fixture | When | Why |
 |---|---|---|
-| `tests/corpus/dispatch/*` | R2 | the format |
-| `check/bad/MethodNeedsAnnotation/` | R11 | D3: becomes a `run/` fixture that prints the answers |
-| `check/bad/PriorityGroupSpecializedPayloadEq/` | R11 | its refusal is re-derived without priority groups. Expected to stay a refusal, with a new region |
-| `run/DerivedEqInPriorityGroup/` | R11 | must still pass. Only its intent comment changes |
-| `check/bad/LetConstrainedTwice.beni` | R14 | D5: `show` generalises; the diagnostic becomes whatever `Int`/`String` lack (`unknown_method render`) |
-| `check/bad/LetHelperCyclicReceiver` | R14 | D5: the program is valid. It becomes `run/LetHelperCyclicReceiver` |
-| `abuse_test.zig`'s row-76 scenario | R14 | expects exit 0 within the bound |
+| `tests/corpus/dispatch/*` | the tree record | the format |
+| `check/bad/MethodNeedsAnnotation/` | the cut-over | D3: becomes a `run/` fixture that prints the answers |
+| `check/bad/PriorityGroupSpecializedPayloadEq/` | the cut-over | its refusal is re-derived without priority groups. Expected to stay a refusal, with a new region |
+| `run/DerivedEqInPriorityGroup/` | the cut-over | must still pass. Only its intent comment changes |
+| `check/bad/LetConstrainedTwice.beni` | constrained `let` bindings | D5: `show` generalises; the diagnostic becomes whatever `Int`/`String` lack (`unknown_method render`) |
+| `check/bad/LetHelperCyclicReceiver` | constrained `let` bindings | D5: the program is valid. It becomes `run/LetHelperCyclicReceiver` |
+| `abuse_test.zig`'s cyclic-receiver scenario | constrained `let` bindings | expects exit 0 within the bound |
 
-*As built by R11 (2026-09-27):* `check/bad/MethodNeedsAnnotation/` is `run/OwnEqCheckedAfterItsUse/`,
+*As built at the cut-over (2026-09-27):* `check/bad/MethodNeedsAnnotation/` is `run/OwnEqCheckedAfterItsUse/`,
 which prints both answers (`EQ`, `True`, `True`; v1 still refuses it). The refusal of
 `PriorityGroupSpecializedPayloadEq` is v2's at the SAME region and text as v1's, so its golden
 did not move; its intent comment, and `DerivedEqInPriorityGroup`'s, now say how v2 reaches it.
-The entries of `tests/pending/v2-expected.md` (deleted at R11) — the differences R4b to R9 introduced,
-this table's among them — were re-blessed one by one, each with its reason, in
-`checker-rewrite.md` R11 *As built*; `LetConstrainedTwice` and `LetHelperCyclicReceiver` among
-them for their v2 texts, not for D5, which still changes them at R14. No `emit/` golden moved
-(§20.3's item 1 was measured by R8a).
+The entries of `tests/pending/v2-expected.md` (deleted at the cut-over) — the differences v2
+introduced before it, this table's among them — were re-blessed one by one, each with its reason
+(`plans/checker-rewrite.md` records them); `LetConstrainedTwice` and `LetHelperCyclicReceiver`
+among them for their v2 texts, not for D5, which changed them later. No `emit/` golden moved
+(§20.3's item 1 was measured 2026-09-26).
 
-*As built by R14 (2026-09-27):* `check/bad/LetHelperCyclicReceiver` is `run/LetHelperCyclicReceiver`,
-which prints both answers, and the `abuse_test.zig` row-76 scenario expects exit 0 within its
-bound. `check/bad/LetConstrainedTwice` is **still refused**, and its row above is withdrawn: its
+*As built (2026-09-27):* `check/bad/LetHelperCyclicReceiver` is `run/LetHelperCyclicReceiver`,
+which prints both answers, and the `abuse_test.zig` cyclic-receiver scenario expects exit 0
+within its bound. `check/bad/LetConstrainedTwice` is **still refused**, and its row above is withdrawn: its
 `show x = x.render 1` carries only a dot-call's own requirement, which the owner's D5 row of
 2026-09-26 (§21.1) keeps monomorphic. Its golden moved in its hint alone, which now says why the
-binding has one type (§8.4 *As built by R14*).
+binding has one type (§8.4, *As built 2026-09-27*).
 
 ---
 
 ## 21. Decisions
 
 All **taken by the owner on 2026-09-24** ("go with the recommendations"). Each names the spec text
-it changes, and the slice that writes that change where this document does not already.
+it changes where this document does not already.
 
-| # | Decision | Rationale | Spec change and slice |
+| # | Decision | Rationale | Spec change |
 |---|---|---|---|
-| **D1** | **Private methods answer dispatch only inside their module.** Derived functions the module emits may use them. *(Amended: that means structural shapes derived in the module; see the D1 round-4 row of §21.1.)* Any wanted from another module that reaches one, directly or through derivation, is `private_method` | Coherence: the same two values never compare differently in two places. The refusal protects no-silent-wrong-answer (rule 7), and `pub` is always available | §11.3 here; `static-dispatch-spike.md` §3.3 and A.63, pointer now; R8 implements |
-| **D2** | **`?` is a deferred obligation**, decided when either side is concrete, defaulting to `Result` only at the enclosing declaration's boundary | The greedy order refuses valid programs (CK-06) and protects nothing | §8.6; `checker.md` §6.5, pointer now; R5 |
-| **D3** | **No annotation is ever required on a method for ordering reasons.** Own untyped methods are deferred (§10). `method_needs_annotation` is retired | The refusal was an implementation ordering limit, not a guarantee (rule 7). Roc shows the deferral works | §10; `static-dispatch-spike.md` §10.12 and §6.3.1 step 4, pointer now; `language.md` §10 catalogue marks the code retired in R7 |
-| **D4** | **A derived function takes one evidence parameter per entry of its inferred context**, not one per type parameter | Closes row 73 (CK-25) and the phantom case (CK-23), and it is smaller output. The emitted ABI is unchanged for every type that compares all its parameters | §11.2; `static-dispatch-spike.md` §9.4 and A.20, pointer now; interface v3 (R3); R8 |
-| **D5** | *(Amended 2026-09-24, round 2 S-new-4: read the D5 row of §21.1, which states the HM(X) rule. The text that follows is the original wording.)* | **D5** | **A constrained `let` binding is generalised when every variable its requirements reach is its own**. Rule (a) is retired, and levels keep outer-receiver requirements monomorphic. Let binders get evidence parameters `$l<inst>$<k>` | HM(X) is sound here once I2 holds, and rule (a) protected no guarantee (rule 7). Row 76's trigger disappears | §8.4, §13; `static-dispatch-spike.md` §6.4, §11 and A.30, pointer now; `backend.md` §4's constrained-declaration row gains `let` in R14 |
+| **D1** | **Private methods answer dispatch only inside their module.** Derived functions the module emits may use them. *(Amended: that means structural shapes derived in the module; see D1's revised row in §21.1.)* Any wanted from another module that reaches one, directly or through derivation, is `private_method` | Coherence: the same two values never compare differently in two places. The refusal protects no-silent-wrong-answer (rule 7), and `pub` is always available | §11.3 here; `static-dispatch-spike.md` §3.3 and A.63, pointer now |
+| **D2** | **`?` is a deferred obligation**, decided when either side is concrete, defaulting to `Result` only at the enclosing declaration's boundary | The greedy order refuses valid programs (`?` commits to `Result` before anything can say `Maybe`) and protects nothing | §8.6; `checker.md` §6.5, pointer now |
+| **D3** | **No annotation is ever required on a method for ordering reasons.** Own untyped methods are deferred (§10). `method_needs_annotation` is retired | The refusal was an implementation ordering limit, not a guarantee (rule 7). Roc shows the deferral works | §10; `static-dispatch-spike.md` §10.12 and §6.3.1 step 4, pointer now; `language.md` §10 catalogue marks the code retired |
+| **D4** | **A derived function takes one evidence parameter per entry of its inferred context**, not one per type parameter | Lets generic derivation carry a nested method's own requirement, and lets a phantom function argument compare, and it is smaller output. The emitted ABI is unchanged for every type that compares all its parameters | §11.2; `static-dispatch-spike.md` §9.4 and A.20, pointer now; interface v3 |
+| **D5** | *(Amended 2026-09-24: read the D5 row of §21.1, which states the HM(X) rule. The text that follows is the original wording.)* | **D5** | **A constrained `let` binding is generalised when every variable its requirements reach is its own**. Rule (a) is retired, and levels keep outer-receiver requirements monomorphic. Let binders get evidence parameters `$l<inst>$<k>` | HM(X) is sound here once I2 holds, and rule (a) protected no guarantee (rule 7). A method obligation on a cyclic receiver made by a monomorphic `let` helper disappears | §8.4, §13; `static-dispatch-spike.md` §6.4, §11 and A.30, pointer now; `backend.md` §4's constrained-declaration row gains `let` |
 | **D6** | **Build v2 in parallel** (`src/check2`, hidden `--checker=v2`), with the old checker as the oracle, then switch and delete | §22 | `checker-rewrite.md` |
 | **D7** | An annotation escape is reported as **`rigid_mismatch`**, with no new code | It is a rigid mismatch against an outer variable. The Elm-style text is enough | §8.3 |
-| **D8** | A float literal pattern gets a dedicated message under **`unexpected_token`**, with no new code | The grammar already excludes it (`language.md` §3). Only the message was wrong | `checker-rewrite.md` R1 |
-| **D9** | The **`number` bridge** exists only for `eq`/`compare` on a `number`-kinded variable, and unifies the declared method type first | Keeps today's ABI (no evidence for `number`) while checking `where` clauses (CK-21) | §9.3 |
+| **D8** | A float literal pattern gets a dedicated message under **`unexpected_token`**, with no new code | The grammar already excludes it (`language.md` §3). Only the message was wrong | `language.md` §3 |
+| **D9** | The **`number` bridge** exists only for `eq`/`compare` on a `number`-kinded variable, and unifies the declared method type first | Keeps today's ABI (no evidence for `number`) while checking `where` clauses | §9.3 |
 | **D10** | The `equatable` marker walk descends into **payloads**, not type arguments | "Comparable exactly when everything it can hold is", which is the message's own promise | §11.4 |
 | **D11** | A **dispatch back-edge merges** the groups on the nested stack into one mutually recursive group | The ML rule. The only sound alternative is an annotation, which D3 rules out | §10.4 |
-| **D12** | The **record-alias constructor** emits the record literal, keys in canonical order | Elm's semantics (`language.md` §0) | `backend.md` §4 row, written in R1 |
+| **D12** | The **record-alias constructor** emits the record literal, keys in canonical order | Elm's semantics (`language.md` §0) | `backend.md` §4 row |
 | **D13** | **Pending fixtures** live in `tests/pending/` with the corpus layout, and are run by `zig build test-pending`, not by the gates | Rule 4: never commit red | `checker-rewrite.md` §2 |
-| **D14** | **Canonical pessimism in recursive groups** (§10.7). In a value SCC of two or more members, or a merged group, a method call or obligation whose receiver is group-level at its constraint node has its method type lowered to the group's rank, even when it resolves inline. The resulting `type_mismatch` carries a hint naming the member to annotate. *Taken 2026-09-24 by the manager under the owner's standing instruction to take the recommendations (review round 3, B-3, option (i)); flagged to the owner.* | Rule 7: the refusal buys I9's order-independence, a guarantee, and annotating a member lifts it. Without it, `sccA` and `sccB` are accepted in one order and refused in the other | §10.7, I9 restated; R7 |
+| **D14** | **Canonical pessimism in recursive groups** (§10.7). In a value SCC of two or more members, or a merged group, a method call or obligation whose receiver is group-level at its constraint node has its method type lowered to the group's rank, even when it resolves inline. The resulting `type_mismatch` carries a hint naming the member to annotate. *Taken 2026-09-24 under the owner's standing instruction to take the recommendations; flagged to the owner.* | Rule 7: the refusal buys I9's order-independence, a guarantee, and annotating a member lifts it. Without it, `sccA` and `sccB` are accepted in one order and refused in the other | §10.7, I9 restated |
 
 ### 21.1 Amendments of 2026-09-24, from the design review
 
@@ -4670,21 +4477,21 @@ Each one records what changed and why.
 
 | Decision | Amendment | Rationale |
 |---|---|---|
-| **D2** | "The enclosing declaration's boundary" means **the boundary that owns the obligation's variables**: the `?`'s target's own generalisation boundary, which may be a `let` (§8.6). The default happens inside that boundary's settle loop, as a last resort | S3. Under D5 a `let` generalises, and deciding its `?` later would unify generalised variables |
-| **D3** | `method_needs_annotation` survives for **one non-ordering case**: a derived instance whose context depends on an in-flight inferred method of the group being checked (§11.2). The refusal is the same in every declaration order, and an annotation always lifts it | S1. A derived instance is not a group member, so there is no monomorphic reading of it. A mixed fixpoint over inference and derivation is not worth its complexity for this rare shape. Rule 7 is kept: a named escape hatch, and no silent wrong answer |
-| **D9** | The `number` bridge applies to a **flex or rigid** of kind `number`. It is a row of §9.2's receiver table, applied when the wanted is first drained, and always unifies the method type first | B4. Without the rigid case, `core` (`abs`, `max`, `min`) and `run/DecodeInto` do not check. v1 has it at `Solve.zig:2750-2753` |
-| **D10** | "Payloads" is made checkable across modules by **`payload_params`** in interface v3. A `foreign type` has all parameters | S15. An imported opaque type's payloads are not in its interface |
-| **D11** | **Value back-edges merge too.** (Round 1 wording, superseded by the round-2 row below.) Nested checking happens at the innermost boundary that drains a wanted, not only at top level, and it checks the value-dependency prefix first. The Roc comparison and the two-types example are recorded in §10.6, with a hint on the resulting `type_mismatch` | B6, B7, S17. Top-level-only pinning made results order-dependent, and a nested group's value dependencies were unchecked. v2 is stricter than Roc on purpose, because Roc's laziness is order-dependent |
-| **D2** (round 2) | Whether a `?` default is due is read on **adjusted** ranks: §8.1 step 2 runs before step 3. A top-level frame merged into another never defaults; its root does | N2, N4. Stale young ranks defaulted an escaping `?` to `Result` too early, and a merged frame defaulted before the root's facts arrived |
-| **D2** (R5's review, 2026-09-25) | The boundary that owns a `?` is its **target's** (the round-1 amendment's words, now the only reading): the subject and the value are lowered to the target's rank, the target is never lowered to the subject's, and a `?` still undecided at its target's step 3 is defaulted to `Result` even when its subject is outer | CK-99: sharing one rank made the target monomorphic in its own success type and refused a program v1 builds; §4.5 *Amended by R5's review* |
-| **D3** (round 2) | The surviving `method_needs_annotation` case is narrowed to a derived context entry **indexed by a type parameter** that depends on an in-flight method. A closed payload contributes nothing and is filled like a group call | S-new-1. The broader refusal guarded nothing (rule 7) |
-| **D14** (round 4) | D14 is stated over **every wanted resolved or attached** on a group-level receiver (a method callee, instantiation evidence, a sub-wanted), and every variable of an obligation with a group-level deciding variable. It is checked in `Resolve`'s single resolution function. `R` is the member's own top-level frame rank. The hint names the member **syntactically** (the reference that produced the receiver's value), or else every unannotated member, sorted by text | R7-1, R7-2, S4-1. The round-3 rule missed evidence and sub-wanteds (`evA`/`evB`, `subA`/`subB` were order-dependent), and its hint depended on union-find class membership |
-| **D1** (round 4) | A private method is still the module's method for **every** type the module declares (the module rule is unchanged by privacy). "Derived functions the module emits use it" covers structural shapes derived in the module. The module's other nominal types have no derived `eq`, and comparing them is the module-rule clash | R0 found the round-1 text contradicted §3.3 step 1. `7427828` already behaves this way |
-| **D8** (round 4) | Elm's `exposing (T(..))` also gets a dedicated message under an existing code: **`expected_token`** at the `(` after the type name, suggesting `exposing (T, Ctor1, Ctor2)` (`language.md` §5.2). Later uses of the unexposed constructors stay quiet. *As built by R1 (2026-09-24): every unknown constructor in that file stays quiet, not only `T`'s — lowering is per file and cannot tell which names are `T`'s constructors, and resolution, which can, finds only silent error instructions. No guarantee is lost: the file already fails, and a misspelt constructor is reported once the import is corrected.* | CK-47. Same reasoning as D8: the grammar already refuses it, and only the message and the cascade were wrong |
-| **D5** (round 2) | Generalisation is plain HM(X) on levels. A young receiver's promoted requirement may mention outer variables free. I15 binds only receivers that are not generalised | S-new-4. The round-1 wording contradicted `adjustRank`, and I15 |
-| **D5** (R7's round-2 review, 2026-09-26; **decided by the owner 2026-09-26: yes**) | A `let` binding whose constrained variables carry ONLY dot-calls' own requirements is not generalised over them, so `let call s = s.f 10 in call { f = … }` stays a field call once D5 lands (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26) | Without it, R14 generalises `call` and the amended rule refuses the record: a program accepted today would be refused, and generalising there buys no guarantee (rule 7) while taking the field call away. The alternative (b) accepts the flip and moves the case to a `check/bad` fixture |
-| **D5** (R14, 2026-09-27; **confirmed by the manager 2026-09-27**, R14's review S1) | A `let` **value** binding (no parameters, and a right-hand side that is not a `lambda`) and a `let` pattern are not generalised over a constrained variable (§8.4 *As built by R14*, rule 2): Haskell's monomorphism restriction | A value binding can take evidence only by becoming a function of it, whose right-hand side then runs at each read: that breaks `language.md` §6's "evaluated once, where written" for `let` bindings, silently re-runs a `Debug.log` or an expensive table per read, and would move `static-dispatch-spike.md` §6.2's pinned-by-a-later-use example. It refuses nothing v1 or pre-R14 v2 accepted, once a `let` over the 64-requirement cap is held rather than refused (R14's review B2; R14's first cut refused one). The workarounds are a parameter, or a placeholder application `f a _`, which is a `lambda` and so a function binding. The alternative is a per-evidence memo like the top level's (A.85 as amended by R8a), at a `let` |
-| **D11** (round 2) | **Nesting happens at demand**, not at a boundary. **Only top-level frames merge**, and every `let` frame generalises at its own boundary. **A reference to an annotated binding is never a back-edge**. It instantiates the scheme (§6.6) | N3, N5, N8. Boundary-time nesting was still order-dependent; merging `let` frames was order-dependent; treating annotated members as in-flight killed polymorphic recursion that v1 accepts. The at-demand design also deletes parking, pinning and prefix closures |
+| **D2** | "The enclosing declaration's boundary" means **the boundary that owns the obligation's variables**: the `?`'s target's own generalisation boundary, which may be a `let` (§8.6). The default happens inside that boundary's settle loop, as a last resort | Under D5 a `let` generalises, and deciding its `?` later would unify generalised variables |
+| **D3** | `method_needs_annotation` survives for **one non-ordering case**: a derived instance whose context depends on an in-flight inferred method of the group being checked (§11.2). The refusal is the same in every declaration order, and an annotation always lifts it | A derived instance is not a group member, so there is no monomorphic reading of it. A mixed fixpoint over inference and derivation is not worth its complexity for this rare shape. Rule 7 is kept: a named escape hatch, and no silent wrong answer |
+| **D9** | The `number` bridge applies to a **flex or rigid** of kind `number`. It is a row of §9.2's receiver table, applied when the wanted is first drained, and always unifies the method type first | Without the rigid case, `core` (`abs`, `max`, `min`) and `run/DecodeInto` do not check. v1 has it at `Solve.zig:2750-2753` |
+| **D10** | "Payloads" is made checkable across modules by **`payload_params`** in interface v3. A `foreign type` has all parameters | An imported opaque type's payloads are not in its interface |
+| **D11** | **Value back-edges merge too.** (First wording, superseded by the revised row below.) Nested checking happens at the innermost boundary that drains a wanted, not only at top level, and it checks the value-dependency prefix first. The Roc comparison and the two-types example are recorded in §10.6, with a hint on the resulting `type_mismatch` | Top-level-only pinning made results order-dependent, and a nested group's value dependencies were unchecked. v2 is stricter than Roc on purpose, because Roc's laziness is order-dependent |
+| **D2** (revised) | Whether a `?` default is due is read on **adjusted** ranks: §8.1 step 2 runs before step 3. A top-level frame merged into another never defaults; its root does | Stale young ranks defaulted an escaping `?` to `Result` too early, and a merged frame defaulted before the root's facts arrived |
+| **D2** (2026-09-25) | The boundary that owns a `?` is its **target's** (the first amendment's words, now the only reading): the subject and the value are lowered to the target's rank, the target is never lowered to the subject's, and a `?` still undecided at its target's step 3 is defaulted to `Result` even when its subject is outer | Sharing one rank made the target monomorphic in its own success type and refused a program v1 builds; §4.5, *Amended 2026-09-25* |
+| **D3** (revised) | The surviving `method_needs_annotation` case is narrowed to a derived context entry **indexed by a type parameter** that depends on an in-flight method. A closed payload contributes nothing and is filled like a group call | The broader refusal guarded nothing (rule 7) |
+| **D14** (revised) | D14 is stated over **every wanted resolved or attached** on a group-level receiver (a method callee, instantiation evidence, a sub-wanted), and every variable of an obligation with a group-level deciding variable. It is checked in `Resolve`'s single resolution function. `R` is the member's own top-level frame rank. The hint names the member **syntactically** (the reference that produced the receiver's value), or else every unannotated member, sorted by text | The first rule missed evidence and sub-wanteds (`evA`/`evB`, `subA`/`subB` were order-dependent), and its hint depended on union-find class membership |
+| **D1** (revised) | A private method is still the module's method for **every** type the module declares (the module rule is unchanged by privacy). "Derived functions the module emits use it" covers structural shapes derived in the module. The module's other nominal types have no derived `eq`, and comparing them is the module-rule clash | A probe of the old checker found the first text contradicted §3.3 step 1. v1 already behaved this way |
+| **D8** (revised) | Elm's `exposing (T(..))` also gets a dedicated message under an existing code: **`expected_token`** at the `(` after the type name, suggesting `exposing (T, Ctor1, Ctor2)` (`language.md` §5.2). Later uses of the unexposed constructors stay quiet. *As built (2026-09-24): every unknown constructor in that file stays quiet, not only `T`'s — lowering is per file and cannot tell which names are `T`'s constructors, and resolution, which can, finds only silent error instructions. No guarantee is lost: the file already fails, and a misspelt constructor is reported once the import is corrected.* | Same reasoning as D8: the grammar already refuses it, and only the message and the cascade were wrong |
+| **D5** (revised) | Generalisation is plain HM(X) on levels. A young receiver's promoted requirement may mention outer variables free. I15 binds only receivers that are not generalised | The first wording contradicted `adjustRank`, and I15 |
+| **D5** (2026-09-26; **decided by the owner 2026-09-26: yes**) | A `let` binding whose constrained variables carry ONLY dot-calls' own requirements is not generalised over them, so `let call s = s.f 10 in call { f = … }` stays a field call once D5 lands (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26) | Without it, D5 generalises `call` and the amended rule refuses the record: a program accepted today would be refused, and generalising there buys no guarantee (rule 7) while taking the field call away. The alternative (b) accepts the flip and moves the case to a `check/bad` fixture |
+| **D5** (2026-09-27; **confirmed 2026-09-27**) | A `let` **value** binding (no parameters, and a right-hand side that is not a `lambda`) and a `let` pattern are not generalised over a constrained variable (§8.4, *As built 2026-09-27*, rule 2): Haskell's monomorphism restriction | A value binding can take evidence only by becoming a function of it, whose right-hand side then runs at each read: that breaks `language.md` §6's "evaluated once, where written" for `let` bindings, silently re-runs a `Debug.log` or an expensive table per read, and would move `static-dispatch-spike.md` §6.2's pinned-by-a-later-use example. It refuses nothing v1 or v2 before it accepted, once a `let` over the 64-requirement cap is held rather than refused (a first cut refused one). The workarounds are a parameter, or a placeholder application `f a _`, which is a `lambda` and so a function binding. The alternative is a per-evidence memo like the top level's (A.85, as amended), at a `let` |
+| **D11** (revised) | **Nesting happens at demand**, not at a boundary. **Only top-level frames merge**, and every `let` frame generalises at its own boundary. **A reference to an annotated binding is never a back-edge**. It instantiates the scheme (§6.6) | Boundary-time nesting was still order-dependent; merging `let` frames was order-dependent; treating annotated members as in-flight killed polymorphic recursion that v1 accepts. The at-demand design also deletes parking, pinning and prefix closures |
 | **D15** (new; **decided by the owner 2026-09-28**: a dot-call derives) | **A dot-call `x.eq y` or `x.compare y` reaches the DERIVED method whenever the receiver's type declares no own method of that name**, directly and through an unannotated function's inferred requirement, exactly as `==` and `<` reach it. The typing of a dot-call is unchanged (§3.1 of the spike: the method type still meets `t, t -> Bool\|Order` when the answer is derived or a primitive). A dot-call on a RECORD is still the record's field call (spike §1.2, §11 *Deferred receiver*); a requirement it promoted through a function, which has no field accessor to be, derives on a closed record as an operator's does. Reverses `static-dispatch-spike.md` §1.3 rule 2 and A.56 (amended there, dated) and the "kind decides derivation" of §4.2 and §9.3 here | Rule 7: rule 2 guarded no guarantee. The derived method is the one `<` already calls, so no answer can be silently different, and `x.compare y` is the natural spelling of an `Order`-returning comparison. Option (c), deriving only through a promoted requirement, would have made adding an annotation change what a program means. The UNKNOWN METHOD text for a dot-call of `eq`/`compare` goes with the refusal. |
 | **D16** (new; **decided by the owner 2026-09-28**: "agree or expand") | **An inferred type keeps an alias name only while every name it meets agrees.** When two alias names meet in unification, the name is kept only if both sides carry the same alias name and arguments (an injective alias, whose arguments unify, §7.1). If they differ — two different aliases, two uses of a non-injective alias, or an alias and its expansion (any type with no name: the expansion, a rigid, a structure) — the result shows the EXPANSION. A flex has no name and still absorbs an alias by name. Annotations still print as written: a declaration's annotation is published and dumped from its own reading, which no unification touches (§7.1, amended 2026-09-28) | I9's scope promises an accepted program's types. "One name, or none" is commutative, associative and idempotent, so the name a type shows is a function of the names it met, never of the order in which it met them: order-independent by construction. First-met (Elm's) is not, inside a recursive group; a canonical choice among names would show a name the program never wrote at that point. The cost, accepted by the owner: after `String.length p` on a `p : Name`, a later message about `p` in that body says `String`. |
 
@@ -4693,29 +4500,29 @@ Each one records what changed and why.
 ## 22. Migration
 
 **Recommendation, adopted as D6: build the new checker in parallel.** The choice was between
-building it beside the old one and replacing the old one in place, slice by slice.
+building it beside the old one and replacing the old one in place, piece by piece.
 
-The parallel build wins, for four reasons:
+The parallel build won, for four reasons:
 
 1. **The old checker is the only complete oracle.** 289 black-box cases, about 580 fixtures and
    the determinism and matrix tests encode what the checker must keep doing. With both checkers
-   runnable on the same input, every difference is either a CK entry, which is listed, or a v2 bug.
+   runnable on the same input, every difference is either a catalogued defect or a v2 bug.
    Replacing in place loses the comparison the moment the first piece is swapped.
 2. **The architecture does not decompose into swappable pieces.** Unify-without-resolution,
    wanteds, elaboration and deferral each change the interface between `Unify`, `Solve` and the
    dispatch code. An in-place sequence would build and then delete adapters at every step. That is
    the accretion this rewrite exists to end.
-3. **The three gates stay meaningful.** Until the cut-over they run v1, which only improves (R1–R3
-   land fixes in shared code). v2 is held to `test-v2` and `test-pending` at every slice (§22.2),
-   and they become part of the gates' meaning at the switch.
+3. **The three gates stay meaningful.** Until the cut-over they run v1, which only improves (fixes
+   in shared code land first). v2 is held to `test-v2` and `test-pending` throughout (§22.2), and
+   they become part of the gates' meaning at the switch.
 4. **Precedent.** rustc's next-generation trait solver shipped behind `-Znext-solver`. The test
    suite and crater ran under both until parity, then the default flipped.
 
 **Its costs, stated.**
-- Two checkers co-exist for about eight slices.
-- Shared code (`Lower`, `Dispatch`, interfaces, `Cycles`) has to serve both. R2 and R3 therefore
-  make the **contract** change on v1 first, so v2 targets a contract that already exists and that
-  v1 already produces.
+- Two checkers co-exist for most of the rewrite.
+- Shared code (`Lower`, `Dispatch`, interfaces, `Cycles`) has to serve both. The **contract**
+  changes (§12.5, §13, §14.2) therefore land on v1 first, so v2 targets a contract that already
+  exists and that v1 already produces.
 - Pending fixtures fixed only by v2 wait in `tests/pending/` until the cut-over, protected by
   `tests/pending/CLAIMED`.
 
@@ -4723,42 +4530,38 @@ The parallel build wins, for four reasons:
 working during the conversion. v1 is kept only as the **oracle**: it checks `core` and the
 dependencies, so the corpus goldens keep running as v2 grows. It is **frozen**: no further fixes
 or features land on v1, and its remaining bugs are fixed by v2 only. v1 is deleted as soon as v2
-can check `core` and pass the corpus (R9–R11). This narrows reason 3 above: the gates stay
-meaningful because v1 stops changing, not because R1–R3-style fixes keep landing on it.
+can check `core` and pass the corpus. This narrows reason 3 above: the gates stay meaningful
+because v1 stops changing, not because fixes in shared code keep landing on it.
 
 ### 22.1 The switch
 
-- **R4–R8.** `--checker=v2` checks the **root package** with v2 and **every non-root package** with v1:
-  `core`, and platform packages such as `Node` (N4). The `--core` corpus fixtures, which make their
-  own module part of `core`, therefore still run v1 under `BENI_CHECKER=v2` before R9. They are
-  listed in `tests/pending/v2-expected.md` as "not yet v2" rather than counted as passes (N13). Both read and
-  write the same interface format, so the black-box corpus can run against v2 before v2 can check
-  `core`.
-- *As built by R4a:* "the root package" is `SourceStore.Package.app` without `--core`
-  (`check2/Check.zig`'s `Options.usesV2`). A module an earlier phase already reported on, or one
-  the graph poisoned, is checked silently by v2 as by v1 (`checker.md` §4.3), so R4a's stub reports
-  `not_implemented` only on the root modules that reach it clean.
-- **R9.** `--checker=v2` covers every package including `core`, and `test-v2` becomes strict.
-  *As built by R9 (2026-09-27):* `Options.usesV2` is `checker == .v2` and nothing else — the root
-  package, `core`, platform packages and `--core` fixtures alike — and `Options.root_is_core` is
-  deleted. Every record a v2 build reads is therefore v2-written, cold or warm (`key_version` 4,
-  §14.3), so v2's fallbacks for a record the old checker wrote are deleted with
-  `Context.oldCheckerWrote`: v1's ABI for a row-less private type in `Instances.derivedNominal` and
-  `Derivable.head` (now `internal`, as for any v2 record), and v1's table bit in `Marker`'s imported
-  gate. `Incremental.install` keeps v1's capability rebuild for `--checker=v1` only. `core`'s
-  records under v2 are v1's byte for byte (`dump --stage=raw` and `interface`, every module) except
-  the `no_function` bit of §14.2 *as amended by R8b*, which v1 never writes, once CK-130 was fixed
+It happened in four steps; the migration is complete, and the notes record what each step did.
+
+- **The root package first.** `--checker=v2` checked the **root package** with v2 and **every
+  non-root package** with v1: `core`, and platform packages such as `Node`. The `--core` corpus
+  fixtures, which make their own module part of `core`, therefore still ran v1, and were listed as
+  "not yet v2" rather than counted as passes. Both checkers read and write the same interface
+  format, so the black-box corpus could run against v2 before v2 could check `core`. "The root
+  package" was `SourceStore.Package.app` without `--core` (`check2/Check.zig`'s
+  `Options.usesV2`). A module an earlier phase already reported on, or one the graph poisoned, is
+  checked silently by v2 as by v1 (`checker.md` §4.3).
+- **Every package.** *(2026-09-27)* `--checker=v2` covered every package including `core`, and
+  `test-v2` became strict. `Options.usesV2` was `checker == .v2` and nothing else, and
+  `Options.root_is_core` was deleted. Every record a v2 build reads is therefore v2-written, cold
+  or warm (`key_version` 4, §14.3), so v2's fallbacks for a record the old checker wrote were
+  deleted with `Context.oldCheckerWrote`: v1's ABI for a row-less private type in
+  `Instances.derivedNominal` and `Derivable.head` (now `internal`, as for any v2 record), and v1's
+  table bit in `Marker`'s imported gate. `core`'s records under v2 are v1's byte for byte (`dump
+  --stage=raw` and `interface`, every module) except the `no_function` bit of §14.2, which v1
+  never writes, once `Order`'s `compare` and `Never`'s `eq` and `compare` were derived under v2 too
   (§23 item 4).
-- **R11.** The default flips.
-  *As built by R11 (2026-09-27):* `--checker` defaults to `v2` (`Cli.zig`, and `Session`,
-  `check2/Check.zig`'s `Options` and `bench` with it), so the three gates run v2. `--checker=v1`
-  stays, hidden, for the scenarios that compare the two checkers (the cache key's checker row,
-  CK-131's ratio, CK-107's, the checker-crossing cache scenarios) and for one v1-only guard
-  (`abuse_test.zig`'s constraint-set counters, A.81), until R12.
-- **R12.** v1, the flag and `check2`'s name are deleted.
-  *As built by R12 (2026-09-27):* `src/check/`'s `Solve.zig`, `Constrain.zig` and `Check.zig`
-  (its pipeline tests moved to `checker_test.zig`, which ran them under v2 from R11), v1's
-  capability settle and its per-type bits in `Types.zig` (`answers_*`, `public_*`, the
+- **The default flipped.** *(2026-09-27)* `--checker` defaulted to `v2` (`Cli.zig`, and
+  `Session`, `check2/Check.zig`'s `Options` and `bench` with it), so the three gates ran v2.
+  `--checker=v1` stayed, hidden, for the scenarios that compared the two checkers and for one
+  v1-only guard (`abuse_test.zig`'s constraint-set counters, A.81).
+- **v1 deleted.** *(2026-09-27)* v1, the flag and `check2`'s name were deleted: `src/check/`'s
+  `Solve.zig`, `Constrain.zig` and `Check.zig` (its pipeline tests moved to `checker_test.zig`),
+  v1's capability settle and its per-type bits in `Types.zig` (`answers_*`, `public_*`, the
   method-parameter requirement tables), the schema endpoints' settled properties
   (`Schema.settleProperties` and its `Types` API), the flat half of `Dispatch.zig` (`Target`,
   `FlatSite`, `FlatDerived`, `Builder` and its converter), the constraint sites of
@@ -4766,193 +4569,167 @@ meaningful because v1 stops changing, not because R1–R3-style fixes keep landi
   `Reporter` methods nothing called, `Check.Checker`, `Options.usesV2`, `Driver`'s v1 branch
   and `Incremental.install`'s capability rebuild. Then `git mv src/check2/* src/check/`.
 
-### 22.2 How v2 is held between slices
+### 22.2 How v2 was held during the migration
 
 | Step | Runs | Mode |
 |---|---|---|
-| `zig build test-v2` | the whole `tests/corpus/` with `--checker=v2` | **report** (R4–R8): pass/fail per fixture, exit 0. **strict** (R9–R11): must be all green except the listed expected-difference fixtures |
+| `zig build test-v2` | the whole `tests/corpus/` with `--checker=v2` | **report** while v2 checked the root package only: pass/fail per fixture, exit 0. **strict** once it checked every package: all green except the listed expected-difference fixtures |
 | `zig build test-pending` | `tests/pending/` under v1 and v2 | fails if a fixture is green under the default checker (promote it), or if a fixture in `tests/pending/CLAIMED` is red under v2 |
 
-*As built by R4a:* report mode is not quite "exit 0". It skips the fixtures of
-`tests/pending/v2-expected.md`, and it FAILS for a red fixture listed in
-`tests/pending/v2-green.txt` (the ratchet, S12), or for a line of either file that names no
-fixture the walk runs (`checker-rewrite.md` §2.4). The scenarios of `pending_test.zig` run under
-the default checker only.
+Report mode was not quite "exit 0". It skipped the fixtures of `tests/pending/v2-expected.md`,
+and it FAILED for a red fixture listed in `tests/pending/v2-green.txt` (a ratchet), or for a line of
+either file that named no fixture the walk ran (`checker-rewrite.md` §2.4). The scenarios of
+`pending_test.zig` ran under the default checker only. Strict mode skipped a fixture
+`v2-expected.md` listed (an entry had to name one fixture the walk ran, or the step failed), and
+any other red fixture failed the step; report mode and the `v2-green.txt` ratchet were deleted.
 
-*As built by R9 (2026-09-27):* strict. `test-v2` is the corpus walker's strict mode under
-`BENI_CHECKER=v2`: a fixture `v2-expected.md` lists is skipped (an entry must name one fixture the
-walk runs, or the step fails), and any other red fixture fails the step. Report mode and the
-`v2-green.txt` ratchet are deleted; the `--core` section of `v2-expected.md` with them.
-
-*As built by R11 (2026-09-27):* both rows are history. `test-v2` is deleted — with v2 the default,
-`test-blackbox` is the same run, and its determinism and incrementality scenarios run under v2
-as they are — and so are `v2-expected.md` (each entry re-blessed individually, `checker-rewrite.md`
-R11 *As built*), `v2-subset.sh` and the name-filtered binaries' guards. `test-pending` and
-`test-pending-perf` run once each, under the default checker: rule (b) holds v2 to promoting
-every fixture it turns green, and `CLAIMED` is empty.
-
-Both are part of every rewrite slice's exit criteria (`checker-rewrite.md`), beside the three
-gates.
+*As built at the cut-over (2026-09-27):* both rows are history. `test-v2` is deleted — with v2 the
+default, `test-blackbox` is the same run, and its determinism and incrementality scenarios run
+under v2 as they are — and so are `v2-expected.md` (each entry re-blessed individually),
+`v2-subset.sh` and the name-filtered binaries' guards. `test-pending` and `test-pending-perf` run
+once each, under the default checker: rule (b) holds the checker to promoting every fixture it
+turns green, and `CLAIMED` is empty.
 
 ---
 
 ## 23. What is not settled
 
-These are honest uncertainties for the implementing slices, not open owner decisions.
+These were honest uncertainties for the implementation, not open owner decisions. The notes under
+each say how far each was settled.
 
 1. **The merge rule of §10.4 has not been exercised on real code.** The argument is the ML rule,
-   but the frame bookkeeping (handing pools downwards, lowering ranks) is new. R7's reviewer must
-   check it against a permutation scenario over at least 4 mutually dispatching own methods, and
+   but the frame bookkeeping (handing pools downwards, lowering ranks) is new. It must be
+   checked against a permutation scenario over at least 4 mutually dispatching own methods, and
    against Roc's `type_checking_integration.zig:10490-10530` shapes.
 2. **The occurs cost at binders (§18)** is unmeasured on beni. The fallback is stated.
 3. **The proven-undetermined default (§9.4)** is today's `settleUndetermined` with a sharper
-   precondition. Which existing fixtures exercise it is unknown until R6 runs the corpus.
+   precondition. Which existing fixtures exercise it was unknown until v2 ran the corpus.
 4. **Interface v3's context rows for `core`.** `core`'s derived types (`Maybe`, `Result`, `Order`)
-   get contexts equal to today's ABI. That must be confirmed by `emit/` goldens not moving in R8.
-   *R9 (2026-09-27):* confirmed with `core` checked by v2: every context row of every `core` record
-   is v1's (`dump --stage=raw`), once CK-130 put back §3.2's derived rows of `Order` and `Never`.
-5. **Schema endpoints in the fixpoint (§11.5)** depend on S3/S4 of `schema.md`, which have not
-   landed. R8 covers S2's check-only endpoints, and later schema slices must use `Instances`, not
-   add a property pass.
+   get contexts equal to today's ABI. That must be confirmed by `emit/` goldens not moving.
+   *2026-09-27:* confirmed with `core` checked by v2: every context row of every `core` record
+   is v1's (`dump --stage=raw`), once §3.2's derived rows of `Order` and `Never` were put back.
+5. **Schema endpoints in the fixpoint (§11.5)** depend on `schema.md`'s runtime library and code
+   generation, which have not landed. §11.5 covers the check-only endpoints, and the later schema
+   work must use `Instances`, not add a property pass.
 6. **The constraint edges of `Walk.owned`, and I15's lowering on attach, are new relative to both
    Elm and Roc** (§3). No shipped checker treats method types as level-carrying graph edges this
-   way. R4 and R6 must prove on the corpus that I15 never lowers a variable a program needed to stay
-   polymorphic. The known costs are D5's outer-receiver case (CK-02), where it is the point, and
-   nothing else yet. The R6 reviewer runs the I15 assert over `bench/corpus`.
+   way. The corpus must show that I15 never lowers a variable a program needed to stay
+   polymorphic. The known costs are D5's outer-receiver case, where it is the point, and nothing
+   else yet. The I15 assert runs over `bench/corpus`.
 7. **Nesting at demand (§10.2) departs from Roc**, which nests only at group boundaries. The
    soundness argument is in §10.2: a nested group shares no variable with the open frames except
    through a back-edge. The prior art closest to it is Roc's own nested check, which the design
    copies, but at a different point.
 8. **D14's merge argument (§10.7)**, "whether a node is inside a recursive group is a function of the
-   member's own body prefix", is argued, not proven. R7's permutation scenario must include 3-cycles,
-   and a member that demands the cycle at two different nodes.
-   *R7 (2026-09-26), for items 1, 7 and 8:* `scenario/PERM` holds every order of 3- and 4-member
+   member's own body prefix", is argued, not proven. The permutation scenario must include
+   3-cycles, and a member that demands the cycle at two different nodes.
+   *2026-09-26, for items 1, 7 and 8:* `scenario/PERM` holds every order of 3- and 4-member
    merges, a member demanding its cycle at two nodes, a value back-edge, a group nested two `let`s
-   deep and D14's refusals (CK-72, CK-73, CK-76) byte-identical (§10.8). Still argued, not proven;
+   deep and D14's refusals byte-identical (§10.8). Still argued, not proven;
    Roc's `type_checking_integration.zig` shapes were not ported.
 9. **The joint derived-context fixpoint (§11.2)**, with its approximation-or-fresh rule and memo
-    replay, is new. R8a's reviewer checks the well-foundedness argument against `xm`, `cbA` and a
-    cross-unit chain.
+    replay, is new. Its well-foundedness argument is checked against `xm`, `cbA` and a cross-unit
+    chain.
 
 ## 24. Revision trace: the design review of 2026-09-24
 
-Every item of `review-design.md` and where it landed. "Disagree" rows say why.
+The document was revised four times on 2026-09-24, after read-only design reviews, and each change
+is marked in place with its date. This section lists what each round changed and where it landed;
+where a reviewer's point was declined, the text in place says why. Points about the test harness
+and the order of work landed in [`plans/checker-rewrite.md`](../../plans/checker-rewrite.md).
 
-| Item | Resolution |
-|---|---|
-| **B1** `children` makes constrained variables cyclic | §4.1 two successor functions; I2 restated; §3 Roc citation corrected; §8.2 and §11.4 use `structural`; §23 item 6 |
-| **B2** constraint edges alone do not close CK-02 | I15; `lowerTo` on attach (§7.1); §4.1 note |
-| **B3** occurs before the unifying steps | §8.1 rewritten as a settle fixpoint, then occurs over binders and unified variables, then generalise; I16 |
-| **B4** no `number` bridge for rigids | §9.2 table; §9.3 step 2 moved; D9 amended (§21.1) |
-| **B5** in-place writes survive rollback | §4.2 journalled `WantUndo`; §7.5; I14 restated with the entry-point assertion |
-| **B6** pinning to top-level rank | §10.2 rewritten: park on the innermost frame, nest at its boundary, pinning retired; §10.6 example; D11 amended. *Superseded in round 2 (N3): nesting is at demand; see §24.1.* |
-| **B7** nested checks ignore value dependencies | §10.2 `checkNested` checks the value-dependency prefix; value back-edges merge (§10.3, §10.4); `Groups.value_deps`. *Superseded in round 2 (N3): the prefix check is "nest on first reference".* |
-| S1 derived query blocked on the current group | §11.2: never memoised while blocked; blocked-on-self → `method_needs_annotation` (D3 amended); the fixpoint's own frame; assert |
-| S2 member requirement lists | §12.3: lists from each member's own scheme; three cases; assert |
-| S3 D2's boundary | §8.6; D2 amended. R5's reviewer focus corrected in `checker-rewrite.md` |
-| S4 CK-04 diagnostics | §6.3 `binders_end` occurs at the lambda or branch end, which keeps `infinite_type` ×2; §18 nested measurement |
-| S5 bridge placement | with B4 |
-| S6 rescanned obligations | §4.5 per-rank buckets; I3. *Superseded in round 2 (N1, S-new-2): obligations ride on their variables.* |
-| S7 infeasible slice claims | `checker-rewrite.md`: CK-08, CK-09 (`.beni` with `==`) and CK-11's v2 check move to R6 |
-| S8 R1 depends on R2 | `Convention` moved to R2 (§12.5); R1 → R2 strictly ordered |
-| S9 R1's CK-17 fix | `checker-rewrite.md` R1: make v1's walk growable, not `.unknown` → refusal |
-| S10 I7 assert on v1 | §13.1: `internal`, never a panic, R2–R10 |
-| S11 environment leaks into gates | `checker-rewrite.md` §2.4 |
-| S12 no ratchet in report mode | `checker-rewrite.md` §2.4 `v2-green.txt` |
-| S13 wrong-reason passes | `checker-rewrite.md` §2.4–§2.5: red signatures, permutation asserts, best of 3 |
-| S14 lineage | §9.5 rewritten: equal-root repeat is `infinite_type`; root identity |
-| S15 D10 across modules | §11.4, §14.2 `payload_params`; D10 amended |
-| S16 rank of P2's rigids | §5 P2, §6.6, §8.3 |
-| S17 D11 vs Roc | §10.6; hint; fixture in R7 |
-| S18 stale invariant numbers | `checker-findings.md` CK-10, 14, 18, 26, 35 corrected |
-| S19 normative scope | Status line |
-| S20 R4 messages | §15.3 |
-| S21 `?` speculation | §7.5: no longer speculative; §8.6 |
-| S22 cache not keyed by checker | §14.3 |
-| N1 | `checker-findings.md`: CK-10 is K3; new class K15 (specification drift) for CK-61 |
-| N2 | `checker-findings.md` CK-22 program annotated |
-| N3 | §7.3 wording |
-| N4, N13 | §22.1 |
-| N5 | §4.1 text order for everything shown |
-| N6 | §13.1 `lets` present and empty from R2 |
-| N7 | §4.2 `origin` optional plus `origin_decl` |
-| N8 | `checker.md` §6.7 sentence fixed now |
-| N9 | `language.md` §10 pointer note added |
-| N10 | §12.1 discovery order; R6 byte-comparison criterion |
-| N11 | §10.4, §15.2 |
-| N12 | §11.2 worklist |
+The first round:
 
-### 24.1 Round 2 (`review-design-2.md`)
+- a single successor function made every constrained variable cyclic: §4.1's two successor
+  functions, I2 restated, §3's Roc citation corrected, `structural` in §8.2 and §11.4, §23 item 6;
+- constraint edges alone did not keep a method type on an outer receiver outer: I15, and
+  `lowerTo` on attach (§7.1);
+- occurs ran before the unifying steps: §8.1's settle fixpoint, then occurs, then generalisation;
+  I16;
+- no `number` bridge for rigids: §9.2's table, §9.3 step 2 moved, D9 amended;
+- in-place writes survived a rollback: §4.2's journalled writes, §7.5, I14 restated;
+- nesting pinned to the top-level rank, and nested checks ignoring value dependencies: §10.2 and
+  D11, both superseded in the second round by nesting at demand;
+- a derived query blocked on the current group: §11.2, D3 amended;
+- the member requirement lists of a group: §12.3's three cases;
+- D2's boundary: §8.6, D2 amended;
+- occurs at a lambda's and a branch's binders: §6.3's `binders_end`, §18's nested measurement;
+- rescanned obligations: §4.5, superseded in the second round by obligations riding on their
+  variables;
+- smaller points: `Convention` moved beside the tree record (§12.5); the I7 assert `internal`
+  while v1 ran (§13.1); the rank of P2's rigids (§5, §6.6, §8.3); D10 across modules (§11.4,
+  §14.2's `payload_params`); the lineage rule (§9.5); `?` not speculative (§7.5, §8.6); the cache
+  keyed by checker (§14.3); text order for everything shown (§4.1); `lets` present from the first
+  format (§13.1); `origin` optional (§4.2); quantifier discovery order (§12.1); failure bits for a
+  merged group (§10.4, §15.2); the fixpoint's worklist (§11.2); the texts of §15.3.
 
-| Item | Resolution |
-|---|---|
-| **N1** obligation extras escape generalisation | §4.5: obligations ride on their variables; all variables of one obligation share one rank (I15 extended); `owned` yields them. Program: CK-68 |
-| **N2** `?` default reads stale ranks | §8.1 is now settle (no defaults) → adjust ranks → defaults on still-rank-`r` obligations → loop; §8.6; D2 amended. Program: CK-62 (`n2try`) |
-| **N3** settle-time nesting order-dependent | §10 rewritten: **nesting at demand**. Deleted: parking, park lists, pinning, settle-time nesting, the value-prefix closure, `Groups.parked` and `value_deps`. Program: CK-63 (`n3box`) |
-| **N4** merged frames default early | §8.1 and §10.4: a merged frame runs steps 1–2 and hands down, with no defaults; debug assert. Program: CK-65 (`n4ambm`) |
-| **N5** merged `let` frames | §10.4: only top-level-kind frames merge. Program: CK-65 (`n5sw`) |
-| **N6** journal-segment occurs | §8.1: an append-only `touched` log with per-frame start; §7.1 |
-| **N7** group variable outside the caller's scheme | §12.3 case 3 → `undetermined` by parametricity; §9.4 promotes per member. Program: CK-66 |
-| **N8** annotated recursion | §6.6: every reference to an annotated binding instantiates its scheme and is never in-flight or a back-edge; only the body sees the rigid instance. Program: `run/AnnotatedPolymorphicRecursion` guard |
-| S-new-1 | §11.2 narrowed (closed payload filled like a group call); D3 amended; programs CK-67 (valid) and CK-69 (refused) |
-| S-new-2 | §4.5, §8.1: obligations readied through their variable; defaults applied in one batch |
-| S-new-3 | §4.4 effective status via union-find root; §10.4 |
-| S-new-4 | §8.4 restated as HM(X); I15 restricted; D5 amended |
-| S-new-5 | §9.1: one `ready` queue, drained by the innermost settle step |
-| S-new-6 | I15 assert bounded to the boundary's own walk; §18 |
-| S18 (still open after round 1) | now edited in place in `checker-findings.md` (CK-10, 14, 18, 26, 35), plus the erratum table |
-| Nits | `checker.md` §5 and §6.5 notes updated; prefix closure moot (deleted); D11 hint prints the cycle from the smallest name by text (§10.6); `payload_params` puts an opaque type's phantom-ness in its digest, which is accepted and noted in §14.2 |
+### 24.1 The second round
 
-**Round-2 correction to the reviewer's programs.** Several of them used a nullary dot-call
+- Obligation extras escaped generalisation: §4.5, obligations ride on their variables and share a
+  rank (I15 extended), and `owned` yields them.
+- A `?` default read stale ranks: §8.1 settles, adjusts ranks, then defaults, and loops; §8.6; D2
+  amended.
+- Settle-time nesting was order-dependent: §10 rewritten around **nesting at demand**, deleting
+  parking, park lists, pinning, settle-time nesting and the value-prefix closure.
+- Merged frames defaulted early, and merged `let` frames were order-dependent: §8.1 and §10.4, a
+  merged frame runs steps 1–2 and hands down, and only top-level-kind frames merge.
+- The "journal segment" did not exist: §8.1's `touched` list.
+- A group variable outside the caller's scheme: §12.3 case 3 answers `undetermined` by
+  parametricity.
+- Annotated recursion: §6.6, every reference to an annotated binding instantiates its scheme.
+- The surviving `method_needs_annotation` case narrowed (§11.2, D3); effective status through the
+  union-find root (§4.4); §8.4 restated as HM(X), with I15 restricted and D5 amended; I15's assert
+  bounded to the boundary's own walk (§18).
+- Nits: `checker.md` §5 and §6.5 notes; D11's hint prints the cycle from the smallest name by
+  text (§10.6); `payload_params` puts an opaque type's phantom-ness in its digest, which is
+  accepted (§14.2).
+
+**A correction to the reviewer's programs.** Several of them used a nullary dot-call
 (`(Box x).size`, `(K u).makeBox`). beni parses that as a **field access**
 (`static-dispatch-spike.md` §11), so v1's refusal of them is correct. The fixtures use `.size ()` and
 a `u` parameter. Two also used Elm's argument order for `Maybe.withDefault`, where beni's is
 subject-first. Both behaviours were re-checked on the v1 binary.
 
-### 24.2 Round 3 (`review-design-3.md`)
+### 24.2 The third round
 
-| Item | Resolution |
-|---|---|
-| **B-1** shared `ready` queue | §9.1: one queue per top-level frame and per fixpoint frame; each frame drains only its own; eager draining after every constraint node; §8.1 step 1; §10.4's demand-chain premise now justified. Programs: `rq1` (CK-73), `rq2` (guard), the merge variant (CK-73 fixture) |
-| **B-2** re-entrant derived query | §11.2: a fresh fixpoint on re-entry; terminates by nesting. Program: CK-74 (`other = (T 1).key "s"`, both orders) |
-| **B-3** I9 inside recursive groups | **D14** (§10.7, §21), option (i), with a hint. I9 restated with its three rules; §10.5 rewritten. Programs: CK-72 (`sccA`/`sccB` refused with the hint in both orders), guard `run/RecursiveGroupAnnotatedReceiver` (annotated form), guard `capt` |
-| S-1 | §10.2: a `checkGroup` that returns merged sends the demand down the in-flight path |
-| S-2 | §11.2: explicit rank and pool for `Instantiate` |
-| S-3 | §8.1: one `touched` list per frame; reversed-chain perf scenario in R7 |
-| S-4 | §10.2: one cumulative recursion budget across nested frames, `nesting_too_deep` with an annotation hint; explicit stack rejected, with reasons; generated deep-chain scenario in R7 |
-| S-5 | `checker-rewrite.md`: R4 split into R4a and R4b; R4b includes obligation-free constraint generation; its subset excludes obligation forms |
-| S-6 | §11.2: memo generations |
-| S-7 | §17 demand order; §18 settle-loop cost; §5 P4 skips `done` groups; the §21 D5 row points to its amendment |
-| N-1 | I14: a probe never nests |
-| N-2 | §10.4: the no-nesting-after-default assert also covers `let` frames |
-| N-3 | §4.5: only result variables' closures are lowered; R5 reviewer test |
-| Slice sizing | `checker-rewrite.md`: R2a/R2b, R4a/R4b, R6a/R6b, R8a/R8b; the CK → slice index updated |
+- A shared `ready` queue: §9.1, one queue per top-level and per fixpoint frame, each drained only
+  by its own frame, with eager draining after every constraint node; §8.1 step 1; §10.4's
+  demand-chain premise.
+- A re-entrant derived query: §11.2, a fresh fixpoint on re-entry.
+- I9 inside recursive groups: **D14** (§10.7, §21), with a hint; I9 restated with its three rules;
+  §10.5 rewritten.
+- A `checkGroup` that returns merged sends the demand down the in-flight path (§10.2); explicit
+  ranks and pools for `Instantiate` (§11.2); one `touched` list per frame (§8.1); one cumulative
+  nesting budget (§10.2); memo generations (§11.2); demand order, the settle loop's cost and P4
+  skipping `done` groups (§17, §18, §5); a probe never nests (I14); the no-nesting-after-default
+  assert covers `let` frames (§10.4, since withdrawn: §10.8); only result variables' closures are
+  lowered (§4.5).
 
-### 24.3 After R0 (2026-09-24)
+### 24.3 After the first probes of the old checker (2026-09-24)
 
-| Item | Resolution |
-|---|---|
-| CK-22's inside fixture was ambiguous | D1 amended (§11.3, §21.1): the module rule is unchanged by privacy, so a private `eq` is the method of every type the module declares. `run/PrivateEqInsideModule/` is a v1-green guard |
-| CK-37's fixture depended on which cycle check fires first | §9.5 pins it: eager draining makes the resolver walk first; one `infinite_type`; the cycle's root is poisoned; a non-cycle rejection flags one method and does not poison. Both are v1's behaviour, so both fixtures are guards |
-| CK-71 (R0: `Session` ids depend on thread timing) | assigned to R1: merge interners in path order |
-| CK-47's code | D8 amended: `expected_token` at the `(`, confirmed |
-| CK-73's merge-variant `.iface` | wrong under D14. The fixture is split into a D14 `check/bad` and a `check/good` without the `q` helper |
+- The private-`eq` fixture was ambiguous: D1 amended (§11.3, §21.1), the module rule is unchanged
+  by privacy.
+- Which cycle defence fires first: §9.5 pins it; both behaviours are v1's, so their fixtures are
+  guards.
+- `Session` ids depended on thread timing: interners are merged in path order.
+- Elm's `exposing (T(..))`: D8 amended, `expected_token` at the `(`.
+- A merge-variant fixture was wrong under D14, and was split into a refused and an accepted one.
 
-### 24.4 Round 4 (`review-design-4.md`)
+### 24.4 The fourth round
 
-| Item | Resolution |
-|---|---|
-| **R4-1** Snapshot and routing | §7.5: the Snapshot records every open frame's `ready`/`touched` lengths. Per-frame lists stay contiguous, which S-3's bound needs, and the cost falls only on failure probes. §9.1: rows carry `frame` and `seq`; routing is by creation frame; a merged frame drains its own queue until hand-down. §4.5's stale "one queue" is fixed |
-| **R7-1** D14 misses evidence and sub-wanteds | §10.7 restates D14 over every wanted resolved or attached, and over all of an obligation's variables, in `Resolve`'s one resolution function; I9 rule (3) restated; D14 amended (§21.1). Programs `evA`/`evB`, `subA`/`subB` (`checker-rewrite.md` §5.6) |
-| **R7-2** the hint's member depended on order | §10.7: syntactic naming by the introducing reference, falling back to the text-sorted unannotated members |
-| **R7-3** the nesting budget | §10.2: budget = 2 × one declaration; admission requires one full declaration's worth left, so the refusal is always at the demand with the hint; `nest_cost` is a counted constant calibrated in Debug; fixpoint frames charge it; the "thousands" claim is corrected and the exception added to I9 |
-| **R8-1** fresh-on-re-entry did not terminate | §11.2: a fixpoint's own payload queries read its approximation; fresh only when a group frame lies above it; a real well-foundedness argument (group frames are unique and bounded; cross-unit chains follow a DAG) |
-| **R8-2** per-method fixpoint was unsound | §11.2: the unit is (type-level SCC) × {`eq`, `compare`}, iterated jointly. Guard `xm`/`xm2` |
-| **R8-3** closed in-flight branch skipped the merge | §11.2: the method-type check is an ordinary wanted in the asking frame, so it merges via §10.3/§10.4; memo-generation hits replay it. Programs `cbA`/`cbB` |
-| S4-1 | §10.7: `R` is the member's own top-level frame rank |
-| S4-2 | §15.3: D14 hint, nesting hint, and derived `private_method` variant added |
-| S4-3 | §9.5: the backstop counts resolution steps per module, cumulatively |
-| S4-4 | §9.1: one creation sequence `seq` across wanteds and obligations |
-| S4-5 | `checker-rewrite.md` R6a: "privacy" means spike §1.2's direct `private_method` only; D1's reach through derivation is R8b's |
-| N-4 | spike §3.3 note and the §21 D1 row now say "structural shapes" |
-| N-5 | left to R0's `CLAIMED`/`RED` notes (R0's region); flagged in the report |
+- The Snapshot and queue routing: §7.5 records every open frame's `ready` and `touched` lengths;
+  §9.1's rows carry `frame` and `seq`, routed by creation frame; a merged frame drains its own
+  queue until hand-down.
+- D14 missed evidence and sub-wanteds: §10.7 restates it over every wanted resolved or attached,
+  and every variable of an obligation; I9's rule (3) restated; D14 amended (§21.1). `R` is the
+  member's own top-level frame rank.
+- The hint's member depended on order: §10.7 names it syntactically.
+- The nesting budget: §10.2, two declarations' worth, admission with one declaration's worth left,
+  a counted `nest_cost`; the exception added to I9.
+- Fresh-on-re-entry did not terminate: §11.2, a fixpoint's own queries read its approximation, with
+  a well-foundedness argument.
+- A per-method fixpoint was unsound: §11.2's unit is (type-level SCC) × {`eq`, `compare`}.
+- The closed in-flight branch skipped the merge: §11.2, the method-type check is an ordinary
+  wanted in the asking frame, and a memo hit replays it.
+- Smaller points: §15.3's new texts; §9.5's backstop counts steps per module; §9.1's one creation
+  sequence; the spike's §3.3 note and §21's D1 row say "structural shapes".

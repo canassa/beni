@@ -28,8 +28,7 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
   update, `Int32`, everything remaining. *Acceptance: the corpus compiles and runs.* **Four of the
   seven were stale when the list was written** and one is not a backend item at all: interpolation,
   tuples and record update worked in M3a (`plans/m3b-audit.md` measured every row of §4 against the
-  code), tail-call loops landed in `bbfc869` (§8), decision trees in `cf7806f` (§7), and `?` with
-  this slice (§4). **`Int32` landed on 2026-09-19 and the list is spent.** It was a *language* gap
+  code), and tail-call loops (§8), decision trees (§7) and `?` (§4) have landed since. **`Int32` landed on 2026-09-19 and the list is spent.** It was a *language* gap
   and never a codegen one — no type, no `core` module, no paragraph in `language.md` — and what
   built it is `core/Int32.beni` with its sibling, `language.md` §2.5 and Appendix A, and
   `checker.md` Appendix B's signature list. The emitter needed **no change at all**: an `Int32` is
@@ -88,9 +87,9 @@ successful `--source-maps` build sends them looking for a `.map` that was never 
 silent `--release` build would have shipped development output. It exits `2` with `frontend.md` §1's
 one-line usage message naming the milestone. The defaults in the table above are what M5 will do;
 until then the only way to build is without that flag. `--release` was refused on the same argument
-and no longer is, because M3c's first slice implements it.
+and no longer is, because the optimiser's first slice implements it.
 
-**`--release` stopped being refused with M3c's first slice, and `--source-maps` did not.** The
+**`--release` stopped being refused with the optimiser's first slice, and `--source-maps` did not.** The
 refusal was one branch (`src/Cli.zig:362-364`); it went, the `release: bool` already parsed at
 `:338-341` reaches `Emit.Options`, and the usage line at `:46` states what the flag does rather than
 what it does not. Nothing else about the command changed: `--release` takes no value, composes with
@@ -145,15 +144,15 @@ changes is the root SET and never whether the pass runs.
 A successful build prints **nothing, on either stream**. `frontend.md` §1 gives stdout to the product
 and stderr to diagnostics and nothing else; a build's product is the files it wrote, so there is no
 stream left for a summary line, and `check` already sets the precedent. How much was written is a
-`--self-profile` counter (`emitted_files`, `emitted_bytes`), which is also where M4's incrementality
+`--self-profile` counter (`emitted_files`, `emitted_bytes`), which is also where the incrementality
 tests read "this edit rewrote one file".
 
 File extension is `.mjs`, so nothing depends on a `package.json` the user owns. **That applies to
-every file a build writes, the hand-written ones included** — M3a shipped copying core's siblings
+every file a build writes, the hand-written ones included** — the first backend shipped copying core's siblings
 and the platform's runtime out as `.js`, and Node then reparsed each one and warned
 `MODULE_TYPELESS_PACKAGE_JSON` on every start, whose own suggested remedy is adding `"type":
 "module"` to a `package.json`. That is the dependency this rule exists to avoid, arriving through
-the back door. (*Amended by R15-fix-F, 2026-09-28:* the rule is about files that are LOADED; the one
+the back door. (*Amended 2026-09-28:* the rule is about files that are LOADED; the one
 file a build writes that is not a module, `_manifest.txt` — *The output directory holds what the
 last build wrote* below — is not `.mjs` and is never imported.) A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
 generated module, so it takes **`.foreign.mjs`**: it says which half of the module it is, and it
@@ -162,9 +161,9 @@ upper identifier, so no generated file has two dots in its base name. The `.js` 
 `platforms/` on disk are unchanged; `language.md` §5.4 fixes the sibling's NAME and not its
 extension, and only the copy is executed.
 
-The rename has one consequence M3a refuses rather than gets wrong: **a sibling may not import
+The rename has one consequence the backend refuses rather than gets wrong: **a sibling may not import
 another FILE.** `import { cons } from "./List.js"` is written against a name the copy no longer has,
-and rewriting the specifier is M3b's. A bare specifier — `node:process`, a package — survives the
+and rewriting the specifier is not done. A bare specifier — `node:process`, a package — survives the
 copy untouched and is what `boundary.md` §4's third check is really about, so nothing that check
 blesses is lost today except sharing a helper file between two siblings. The `not_implemented` this
 raises **points at the specifier itself, inside the `.js`**, by `boundary.md` §4's *a diagnostic
@@ -178,7 +177,7 @@ well point at something they own). A build writes only files it named itself.
 
 ### The output directory holds what the last build wrote, and nothing it wrote before
 
-*Added 2026-09-28 by R15-fix-F (CK-163).* Until then a build only ever ADDED to `--out`: build a
+*Added 2026-09-28.* Until then a build only ever ADDED to `--out`: build a
 `Main` importing `Half` and `Dict`, then a `Main` using neither into the same directory, and
 `out/Half.mjs`, `out/_core/Dict.mjs` and their siblings survived beside a program that never
 wrote them — stale modules a reader of `out/`, a bundler globbing it, or a deploy copying it
@@ -204,7 +203,7 @@ A stale file is removed only when **all** of these hold, and is left alone other
    not acted on;
 3. its bytes still hash to what the manifest recorded. A file the user has since edited is
    theirs now, and survives;
-4. *(added 2026-09-28 by R15-fix-H, CK-191)* it is not **the same file** as one this build
+4. *(added 2026-09-28)* it is not **the same file** as one this build
    writes. `Ab.mjs` from the last build and `AB.mjs` from this one are one file on APFS and NTFS:
    comparing paths byte for byte read the file just written there, found the old hash whenever
    the bytes agreed (two `--release` modules of identical content do), and deleted it. So a stale
@@ -213,7 +212,7 @@ A stale file is removed only when **all** of these hold, and is left alone other
    (different inode numbers); if either cannot be stat'd, it stays. On a case-sensitive file
    system they are two, the older one goes, and `--out` still matches a fresh build.
 
-*Amended 2026-09-28 by R15-fix-H (CK-192).* A manifest must be beni's to be acted on OR
+*Amended 2026-09-28.* A manifest must be beni's to be acted on OR
 overwritten. `_manifest.txt` is beni's when its first line is `beni-manifest 1` and every
 further line is `<16 hex digits> <path>`, the file ending in a newline. A file of that name in
 any other shape — the user's own notes, a future version's format, one that cannot be read — is
@@ -226,7 +225,7 @@ directory from before this rule — nothing is removed.
 
 **Deploying `--out`.** `_manifest.txt` is served next to the modules unless the deploy excludes
 it; it lists the path and a content hash of every file the build wrote (modules, copied
-siblings, the runtime and the entry file), and nothing else. *(Added 2026-09-28 by R15-fix-H.)*
+siblings, the runtime and the entry file), and nothing else. *(Added 2026-09-28.)*
 
 **The order makes an interrupted build safe.** Before the first output byte, the manifest is
 rewritten as the old entries followed by the new ones (the union, so a build killed halfway still
@@ -262,12 +261,12 @@ a subdirectory, which only moves the collision. The reserved names are:
 | `_main.mjs` | the entry file (§5, `boundary.md` §5.2), unless the platform declares another name | `main.mjs` |
 | `_core/` | the `core` package's directory | `core/` |
 | `_platform/` | the platform package's directory, holding its modules, their siblings and its runtime | `platform/` |
-| `_manifest.txt` | the list of files the last build wrote (*The output directory holds what the last build wrote*, R15-fix-F) | — |
+| `_manifest.txt` | the list of files the last build wrote (*The output directory holds what the last build wrote*) | — |
 
 All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
 `Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.
 
-Inside `_core/`, a `_` name is the emitter's own for the same reason: `_core/_derived.mjs` (R8e) is the
+Inside `_core/`, a `_` name is the emitter's own for the same reason: `_core/_derived.mjs` is the
 derived-comparison runtime (§4, *Derived comparisons do not grow the native stack*), which no core
 module file (an upper name) can take.
 
@@ -323,7 +322,7 @@ array literals, `switch`, labelled `while`, `return`, conditional expressions. I
 positions from the start** even while maps are off (§9.6), because retrofitting them touches every
 pass.
 
-Names in `JsIr` are `Symbol`s, never strings, so renaming in M3c is a table swap rather than a
+Names in `JsIr` are `Symbol`s, never strings, so renaming in the optimiser is a table swap rather than a
 rewrite.
 
 **The backend still sees no types, and static dispatch did not change that.** `Lower.Input` gains
@@ -352,10 +351,10 @@ mapping.
 | saturated call at known arity | direct call `f(a, b)` (§6) |
 | record | object literal, keys in a canonical sorted order so one hidden class per record type — the sort moves the **keys** and never an initialiser (below) |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
-| record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; owner decision D12, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (CK-78, the manager's decision of 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2, CK-39): until R3 (2026-09-25) it was `not_implemented`, because interface v2 had no names |
+| record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; the owner's decision that a record alias constructor builds the record, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (decided 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2): until 2026-09-25 it was `not_implemented`, because interface v2 had no names |
 | nullary constructor | the bare tag |
 | tuple | fixed-shape object per arity, no runtime tag |
-| list | cons cells (`{$:1, a, b}` / the empty singleton), pending M3c's benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below) |
+| list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below) |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
 | `Int` | a number |
 | `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B) |
@@ -368,7 +367,7 @@ mapping.
 | method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
 | method call on a `primitive` target | the JavaScript operator the surface origin names — `===` for `==`, and the `Order` result of `compare` tested in place rather than built |
 | return-type dispatch | a direct call of whatever the constrained variable resolved to, or of the evidence parameter standing in for it |
-| a declaration that carries constraints | hidden **leading** parameters, one per constraint in canonical order, invisible in beni and fixed at every call site by the checker. A top-level declaration's are `$m$<k>`. **A generalised `let` function binding** (D5, R14, 2026-09-27: `checker-v2.md` §8.4 *As built by R14*, §13.1) takes them too, named `$l<inst>$<k>` after its `let_def` instruction so an inner binding never shadows an outer name it captures: `function inner($l2$0, a, b)`, or its `const` arrow for a `lambda` right-hand side; each use passes its evidence first, a reference in value position is the eta-expansion over the binding's arity, and a lambda inside reads the names by capture. A `let` value binding never takes evidence (the value restriction) |
+| a declaration that carries constraints | hidden **leading** parameters, one per constraint in canonical order, invisible in beni and fixed at every call site by the checker. A top-level declaration's are `$m$<k>`. **A generalised `let` function binding** (2026-09-27, the owner's decision that a constrained `let` function generalises: `checker-v2.md` §8.4, §13.1) takes them too, named `$l<inst>$<k>` after its `let_def` instruction so an inner binding never shadows an outer name it captures: `function inner($l2$0, a, b)`, or its `const` arrow for a `lambda` right-hand side; each use passes its evidence first, a reference in value position is the eta-expansion over the binding's arity, and a lambda inside reads the names by capture. A `let` value binding never takes evidence (the value restriction) |
 | a derived `eq` / `compare` | a generated top-level function per type or per structural shape, emitted sorted by printed name |
 
 The last five are static dispatch's, and
@@ -376,7 +375,7 @@ The last five are static dispatch's, and
 call shapes and the evidence convention, §9 for the exact JavaScript of every derived function.
 Nothing here reopens a representation decision — §9.4's shapes are what derivation walks.
 
-### Corrections from M3a
+### Corrections to the representation
 
 Three rows of that table did not survive contact with the code. Each is a
 decision the implementation had to make and §4 did not:
@@ -387,7 +386,7 @@ decision the implementation had to make and §4 did not:
    not on a name, so a user's own `type Bool = True | False` is an ordinary ADT.
 2. **"Nullary constructor → the bare tag" and "padded to a uniform shape per type" cannot both
    hold**, and §9.4 states both. For `Maybe`, a bare `"Nothing"` beside `{$:"Just",a}` is exactly
-   the shape inconsistency §9.4 measures 11% on Firefox for. M3a splits on the TYPE: a type whose
+   the shape inconsistency §9.4 measures 11% on Firefox for. The backend splits on the TYPE: a type whose
    constructors are *all* nullary is a bare tag string (`Order` is `"LT"`), and a type with any
    argument-taking constructor pads every constructor (`Nothing` is `{$:"Nothing",a:null}`).
 3. **`&&` and `||` are lowered here, not at print time.** §9.4 files the primitive peephole under
@@ -395,23 +394,23 @@ decision the implementation had to make and §4 did not:
    `Basics.and`/`Basics.or`, a call evaluates both arguments, and `Basics.and` is `foreign`
    precisely so that it does not. A saturated call of either becomes `&&`/`||`, and when the right
    side needs statements of its own it becomes the `if`/`else` a short circuit really is.
-   Arithmetic and comparison stay calls in M3a; that peephole really is M3c's.
+   Arithmetic and comparison stay calls; that peephole really is the optimiser's (§9).
 
 And one thing §4's table is silent on that the emitter had to settle: **where the empty list comes
 from.** "cons cells (`{$:1, a, b}` / the empty singleton)" does not say who owns the singleton, and
 it cannot be a sibling export because `boundary.md` §4's second check forbids a sibling from
-exporting anything that is not a declared `foreign` value. M3a emits `{$:0,a:null,b:null}` inline,
+exporting anything that is not a declared `foreign` value. The backend emits `{$:0,a:null,b:null}` inline,
 and `core/List.js` and `core/String.js` build the same shape by contract. That contract is the one
 piece of the representation that is written down in two places.
 
-Two more rows the table states and M3a did not need: a **`Char`** is a one-scalar JavaScript string
+Two more rows the table did not state and the backend needed: a **`Char`** is a one-scalar JavaScript string
 (§4 says strings are native and core's API exposes code points; a `Char` is the one-character case
 of that), and **`()`** is `null`. Neither is contentious; both are recorded because the table did
 not say.
 
-**Lists and strings are the two representation questions §14 left open.** M3a ships cons cells and
+**Lists and strings are the two representation questions §14 left open.** The backend ships cons cells and
 native strings, which are Elm's answers and the ones pattern matching and interop respectively push
-toward. M3c benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
+toward. The optimiser benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
 open question 2 requires, and records the result here either way.
 
 ### A record literal's keys move; its initialisers do not
@@ -420,7 +419,7 @@ The sorted key order above is a **representation** decision and `language.md` §
 order* is a **semantic** one, and where they meet the semantics wins: `{ zed = p, alpha = q }`
 emits `{alpha: …, zed: …}` and runs `p` before `q`. So the emitter sorts a permutation of the
 fields, lowers the initialisers in the order they are **written**, and binds one to a `const $t$<n>`
-before the object literal whenever leaving it in place would move its evaluation. M3a sorted the
+before the object literal whenever leaving it in place would move its evaluation. The first backend sorted the
 fields and then lowered each one, which ran them in key order; the fixtures are
 `run/EvalOrderRecordFields.beni` and `emit/RecordFieldOrder.js`.
 
@@ -502,7 +501,7 @@ Two consequences worth stating, because they are what the emitted shape looks li
 
 ### Emitted JavaScript nests only as deep as the source
 
-*Added by R2c (CK-83), 2026-09-25.* Every JavaScript engine parses — and V8 and JavaScriptCore
+*Added 2026-09-25.* Every JavaScript engine parses — and V8 and JavaScriptCore
 compile — a nested expression or block by recursion, and gives up with `RangeError` or
 `InternalError` past a depth that depends on the construct and the engine. Before this section a
 program the compiler accepted could lower to a module no engine would load: a list literal was one
@@ -624,7 +623,7 @@ constant (A.85) is a call and stays where it is. For the same reason a hoist tha
 `NestingElseIf.beni`, `NestingEvidence.beni` and `NestingLogicalStatements.beni` log every operand,
 and `ViewMap20x30`, `ViewMap40x12` and `ViewMapEvery3` are TEA-style `view`s with a `List.map` lambda
 at every level or every third; each was confirmed against its
-oracle twin, the same program built by `7ae452f`. `emit/NestingShapes.beni` holds the shapes.
+oracle twin, the same program built by the compiler before this section. `emit/NestingShapes.beni` holds the shapes.
 
 **How the lowering knows.** Cheaply, where it decides, and exactly where it refuses:
 
@@ -632,7 +631,7 @@ oracle twin, the same program built by `7ae452f`. `emit/NestingShapes.beni` hold
   is lowering, and adds the instruction's own weight: one addition per expression, no walk. A
   `let`'s bindings are statements and do not count toward it, and a value that came back an atom
   counts nothing. A lambda's body DOES count: it nests inside whatever the lambda is an argument of
-  (review of R2c, S1, where a `view` of twenty `List.map`s was refused), and once it is
+  (a review found a `view` of twenty `List.map`s refused), and once it is
   `lambda_spill` tall the closure is bound where it is made. Evidence keeps its own count, in
   closures.
 - A chain is counted by following, from each `case`, the last branch whose body is another `case`
@@ -664,11 +663,11 @@ is a flat form refused. `abuse_test.zig` holds the edge: 119 nested functions ru
 parameters called with *n* arguments loads and runs up to 59 610 in Chrome and Node, 65 078 in
 Firefox and the SpiderMonkey shell, and past 70 000 in WebKit and Bun. `Convention.max_positional_evidence`
 stays at 4 096, fourteen times under the scarcest for ONE call. Under recursion the frames add up
-(the review of R2c, Node, default stack, a self-recursive arrow with *n* extra parameters): 16
+(Node, default stack, a self-recursive arrow with *n* extra parameters): 16
 extra parameters recurse 2 928 deep, 256 recurse 237, 1 024 recurse 59 and 4 096 only 13. So a
 recursive nominal type whose payload has exactly 4 096 fields — the positional form — overflows
 `==` about 13 levels down, where 4 097 fields — the array form — does not. No program the corpus
-knows is near it; the caveat is recorded in `static-dispatch-spike.md` §9.2 and A.87. *Since R8d
+knows is near it; the caveat is recorded in `static-dispatch-spike.md` §9.2 and A.87. *Since 2026-09-27
 neither overflows at any depth (*Derived comparisons do not grow the native stack*, below).*
 
 **Cost.** Emit, ReleaseFast `zig build bench -- --generate=100000`, medians of seven interleaved
@@ -679,8 +678,8 @@ brotli, release 15 651 → 15 643 brotli; the `emit/` corpus unchanged; across `
 long list literal is 500–900 bytes smaller raw and within ±12 bytes brotli, since nested cells
 compress very well.
 
-**Known gaps.** A `case` of more than 65 046 literal branches was one `switch` SpiderMonkey refuses
-(CK-88); *closed by R12 (2026-09-27):* a fan of more than 16 384 labels is consecutive `switch`es
+**Known gaps.** A `case` of more than 65 046 literal branches was one `switch` SpiderMonkey refuses;
+*closed 2026-09-27:* a fan of more than 16 384 labels is consecutive `switch`es
 (§7, *The emitted shape*). Mobile engines are unmeasured. A lambda applied on the spot, `(\x -> …) a`, costs a
 function scope where a `let` would cost none; lowering it as the `let` it means would lift the
 120-function edge. Evidence nested inside a deep expression is counted by the
@@ -696,18 +695,18 @@ specified fork, not implemented code or an effects-runtime decision.
 
 ### Derived comparisons do not grow the native stack
 
-*Added by R8d (CK-128), 2026-09-27; the owner's decision of 2026-09-26. Reshaped by R8e the same
+*Added 2026-09-27; the owner's decision of 2026-09-26. Reshaped the same
 day: tail self-calls loop, forwarders, one shared runtime.* **A derived `eq` or `compare` never
 throws on deep data** — unless the recursion runs THROUGH a hand-written method (*What it does not
-cover*, below). Until R8d every derived function ([`static-dispatch-spike.md`](static-dispatch-spike.md)
+cover*, below). Until then every derived function ([`static-dispatch-spike.md`](static-dispatch-spike.md)
 §9) called the comparison of each position on the native stack, so a comparison was as deep as the
 data: under Node's default stack a user linked list `type L = Cons Int L | Nil` threw `RangeError`
-on `==` at 8 940 cells and on `<` at 10 000, and CK-114's record literal at 3 747 of the 4 095
+on `==` at 8 940 cells and on `<` at 10 000, and a nested record literal at 3 747 of the 4 095
 levels the parser accepts. The rule is Elm's (`_Utils_eqHelp`): **recurse on the native stack to a
 depth limit, then continue from an explicit stack**, so native stack use is bounded whatever the
 data, and the only limit left is the heap. Four shapes make it, from cheapest to dearest.
 
-**1. A tail self-call is a loop** (R8e). A position that is the LAST of its constructor and
+**1. A tail self-call is a loop.** A position that is the LAST of its constructor and
 compares the function's own type with the function's own evidence, unchanged — `Cons Int L`'s `L`,
 a tree's right child — does not call: the arm tests what came before it and continues a
 `while (true)` around the body with `$x = $x.b; $y = $y.b;`. The same comparisons in the same order,
@@ -761,9 +760,9 @@ makes that depth 0. `core/List.js` is untouched: a user's own `List.eq` takes no
 (a list, a record through `Maybe`, a rose tree through `List`), so 400 of them are 120–180 kB of
 Node's 984 kB default; measured as the user recursion a page may already be in when it asks for a
 100 000-cell comparison, the comparison costs 3.5–8.3 % of Chrome's stack and 2.2–5.9 % of
-Firefox's (R8d's table below).
+Firefox's (the table below).
 
-**A FORWARDER** is a function whose every depth-taking call is in tail position (R8e): `Maybe`,
+**A FORWARDER** is a function whose every depth-taking call is in tail position: `Maybe`,
 `Result`, a one-field wrapper, a record of one field, `type Rose = Rose Int (List Rose)`. It has no
 prologue and no steps. Its tail call checks the limit itself:
 
@@ -809,7 +808,7 @@ generator saves its whole frame at every `yield`, so a frame of 4 096 registers 
 suspension, and V8's code for it, that big (a 4 096-parameter type, measured: 65 s and a JIT
 out-of-memory abort before, 2.4 s after).
 
-**The runtime** is ONE file a build writes, `_core/_derived.mjs` (R8e; §2's rule 1: a `_` name in
+**The runtime** is ONE file a build writes, `_core/_derived.mjs` (§2's rule 1: a `_` name in
 `_core/`, which no module file can take), iff a module it wrote imports from it — the use-driven
 import is what roots it. It is the compiler's own JavaScript (`src/js/derived_runtime.mjs`, a
 compact copy under `--release`), exporting `deep`, `listEq` and `listCompare` by fixed names that
@@ -857,7 +856,7 @@ exception from a hand-written method leaves nothing behind.
 **Order is exact.** Loops, forwarders and steps make the same calls as the recursive functions of
 §9, in the same order, and stop at the same position — the first `False`, the first order that is
 not `EQ` — so a `Debug.log` in a hand-written method prints the same lines, in the same order,
-below and past the limit (`run/DerivedDeepOrder`; a differential fuzz against `e86883a`, below). No
+below and past the limit (`run/DerivedDeepOrder`; a differential fuzz against the recursive build, below). No
 position is deferred: Elm's `_Utils_eqHelp` defers the rest of an `==` and answers `True`
 optimistically, which is exact only for a pure structural walk, and an order has no optimistic
 answer at all.
@@ -880,9 +879,9 @@ at all. Lifting this needs the hand-written method's cooperation — steps of it
 that writes it — and is not attempted. `abuse_test.zig` pins today's behaviour (100 levels compare,
 100 000 throw), so the day it changes the scenario flips with the spec.
 
-**Measured, R8d** (library builds of `e86883a` and R8d, one page of `==` and `<` on a user list, a
+**Measured** (library builds before and after the depth limit, one page of `==` and `<` on a user list, a
 record nested through `Maybe` and a rose tree through `List`, 2026-09-27; headless Chrome 153,
-Firefox 144, WebKit WPE 605.1.15, Node 24.19). R8e changes none of the paths past the limit but the
+Firefox 144, WebKit WPE 605.1.15, Node 24.19). The later loops and forwarders change none of the paths past the limit but the
 list's, which no longer reaches it:
 
 | | Chrome | Firefox | WebKit | Node |
@@ -900,10 +899,10 @@ last row is how much less deep a user recursion may already be when it asks for 
 when it asks for a function that returns at once; JavaScriptCore and Node re-tier the probe between
 runs, so their figure is noise around zero.
 
-**Cost, run time** (R8e; Node 24.19, library builds, each case its own process, the median of nine
+**Cost, run time** (Node 24.19, library builds, each case its own process, the median of nine
 processes each reporting the median of nine samples, ns per comparison):
 
-| case | `e86883a` | R8d (`9bbe71b`) | R8e | R8e vs `e86883a` |
+| case | before | depth limit only | as built | as built vs before |
 |---|---|---|---|---|
 | user list `==`, 8 cells | 40.97 | 44.85 | 18.98 | −54 % |
 | user list `<`, 8 cells | 43.16 | 47.87 | 21.36 | −51 % |
@@ -917,24 +916,24 @@ processes each reporting the median of nine samples, ns per comparison):
 | `List Point` `==`, 200 | 896.0 | 933.8 | 919.4 | +2.6 % |
 | `List Shape` `==`, 200 | 1 804 | 1 760 | 1 762 | −2.3 % |
 
-The loop is what turns a list and a tree's right spine faster than before R8d: no call at all. The
-two rows over `e86883a` are at the noise floor: `List Point`'s emitted code is byte for byte
-`e86883a`'s (the element is a leaf, the list `core/List.js`'s), and the same build measured in
+The loop is what turns a list and a tree's right spine faster than before: no call at all. The
+two rows over the baseline are at the noise floor: `List Point`'s emitted code is byte for byte
+the baseline's (the element is a leaf, the list `core/List.js`'s), and the same build measured in
 other rounds swung by ±3 %; the rose tree is a genuine cycle through `List` and pays the depth
 parameter and the forwarder's check, about 0.25 ns a node. Past the limit a level costs a
 generator and a `next` — roughly 5–10 times a native call, and only where the native stack would
 otherwise have run out.
 
 
-**Cost, size** (`bench/size.mjs`, 164 programs, `e86883a` → R8d → R8e): release brotli 760 628 →
-780 672 → 769 250 (+1.1 % on `e86883a`, −1.5 % on R8d); development raw +2.6 % and −0.8 %. 144 of
-the 164 programs are byte for byte `e86883a`'s (R8d: 88): list-like types are leaves again,
-`core/List.js` is `e86883a`'s, and a program's derived code reaches the one runtime file only when
-something can recurse. `run/Dictionaries` is `e86883a`'s exactly (6 479). What grows with the
+**Cost, size** (`bench/size.mjs`, 164 programs, before → depth limit only → as built): release brotli 760 628 →
+780 672 → 769 250 (+1.1 % on the baseline, −1.5 % on the depth limit alone); development raw +2.6 % and −0.8 %. 144 of
+the 164 programs are byte for byte the baseline's (with the depth limit alone: 88): list-like types are leaves again,
+`core/List.js` is the baseline's, and a program's derived code reaches the one runtime file only when
+something can recurse. `run/Dictionaries` is the baseline's exactly (6 479). What grows with the
 program is a twin per function with a non-tail depth-taking call and the runtime file, about
 900 bytes under `--release`; `bench/corpus`, a library build that roots every type's methods, is
-15 643 → 16 754 → 16 458 release brotli (+5.2 % on `e86883a`). Emit, ReleaseFast `zig build bench
--- --generate=100000`, seven interleaved pairs against `e86883a`: median 53.15 → 52.79 ms (−0.7 %).
+15 643 → 16 754 → 16 458 release brotli (+5.2 % on the baseline). Emit, ReleaseFast `zig build bench
+-- --generate=100000`, seven interleaved pairs against the baseline: median 53.15 → 52.79 ms (−0.7 %).
 
 
 **Fixtures.** `run/DerivedDeepData` (the exit criterion: two 100 000-cell user lists, `==` and `<`,
@@ -944,7 +943,7 @@ parametric type's own evidence; 100 000 deep; red before), `run/DerivedDeepOrder
 and short-circuiting past the limit, through a hand-written method with `Debug.log`; red before, and
 a 5 000-deep variant, which the recursive build survives, prints byte-identical output on both),
 `run/DerivedDeepAcrossModules/` (a cycle through another user module's parametric type, 100 000
-deep; red before), and five abuse scenarios in `abuse_test.zig`: CK-114's 4 095-deep record literal
+deep; red before), and five abuse scenarios in `abuse_test.zig`: a 4 095-deep record literal
 built and RUN under both checkers, development and `--release` (red before at 3 747); a recursive
 type of 4 096 (positional) and 4 097 (array) parameters compared 1 000 levels deep (red before);
 `Just` nested 4 095 deep, a chain of forwarders, under both checkers, dev and `--release` (red
@@ -953,14 +952,14 @@ exclusion above (100 levels through a hand-written `Box.eq` compare, 100 000 thr
 fixture is also built and run with `--release`. The emitted shapes are pinned by
 `emit/DerivedEqNominal`, `emit/DerivedCompareNominal` and `emit/MatchNested`.
 
-**Compact printing** (R8e, O6): under `--release` an `if` with no `else` whose one live statement is
+**Compact printing**: under `--release` an `if` with no `else` whose one live statement is
 a `return`, `continue`, `break`, `throw`, assignment or expression statement drops its braces,
 `if(c)return a;`; never a declaration (no legal `if` body) and never an `if` (a dangling `else`
 would change owner). The request prints `2**30`.
 
 ### An arrow body or a statement that would begin with `{`
 
-*Added 2026-09-28 by R15-fix-B (CK-138).* JavaScript reads a `{` in two positions as a block, not as
+*Added 2026-09-28.* JavaScript reads a `{` in two positions as a block, not as
 an object literal: the first token of an arrow function's concise body, and the first token of an
 expression statement. **The printer brackets the whole expression in either position when its
 LEFTMOST printed token is an object literal's `{`** — decided by the token, not by the node's kind.
@@ -1029,7 +1028,7 @@ of them is a new mechanism:
   edge. So the survivors come out in the same relative order they have today and the temporal dead
   zone stays closed. The derived pass (`synthesisedValues`, `:1886`) keeps its two sorted runs and
   iterates only surviving rows.
-  *Amended 2026-09-25 by R6b's review (CK-104):* "the dispatch sites" includes the bodies of
+  *Amended 2026-09-25:* "the dispatch sites" includes the bodies of
   the derived rows of this module they name (`Edges.termsEdges` through rows). A constant that
   calls a derived function runs its body, so a value that body names is a dependency: without the
   edge, `main` calling `Main$W$$eq` was emitted above the `Main$key` its body reads, and the
@@ -1054,7 +1053,7 @@ emits a JavaScript call of *n* arguments, `f(a, b)`, and there is nothing else t
 
 **What leaves this document.** The arity tag, the `A2`/`F2` adapter, the saturated-call
 specialiser, the call-site curry wrapper `((x) => (y) => f(x, y))`, the `Arity.unknown` path, and
-M3c's obligation to measure the direct-call share. The share is 100% by construction, so there is
+the optimiser's obligation to measure the direct-call share. The share is 100% by construction, so there is
 no number left to decide anything. Elm pays roughly 49% on Chrome for routing saturated calls
 through its adapter; there is no adapter here to route through.
 
@@ -1097,7 +1096,7 @@ in tail position straight into a statement list.
 
 ### What today's lowering costs, measured
 
-Three programs, compiled with the binary at `889c4fa`. "Tests" counts `===` operands in the emitted
+Three programs, compiled with the binary before decision trees. "Tests" counts `===` operands in the emitted
 function; "worst path" counts the comparisons one call executes on its slowest input.
 
 | Program | Tests emitted | Distinct | Worst path | `if` nesting | The tree emits |
@@ -1166,9 +1165,9 @@ landed: usefulness is exponential (`checker.md` §6.6), and a `case` that exhaus
 reported **nothing**, so it could reach the backend non-exhaustive, take the default-free last edge
 and compute a wrong answer rather than throw — at exit 0, with no diagnostic anywhere. That hole was
 reachable at the DEFAULT budget and with no flag: a `case` over about 440 `Int` literals cost more
-than the 200 000 steps that were the default then (queue slice 22 made a flat table linear and the
+than the 200 000 steps that were the default then (a later change made a flat table linear and the
 default 5 000 000, so that shape costs ~880 now), and one written without its wildcard compiled and
-printed the last branch's answer for every unmatched input. Queue slice 14 closed it at the checker,
+printed the last branch's answer for every unmatched input. It is closed at the checker,
 where it belonged: an
 undecided `case` is now `pattern_budget_exhausted`, an error, so nothing the backend receives is a
 `case` the checker declined to decide. The tree still carries no default arm, and it still needs
@@ -1197,10 +1196,10 @@ the choice to whatever order the constructor set happened to be built in.*
 ### The emitted shape
 
 **A node with three or more case labels is a `switch`; two or fewer is `if`/`else`.** `JsIr` has
-held `switch_stmt` and `switch_case` since M3a (`src/js/JsIr.zig:146`) and the printer emits them
+held `switch_stmt` and `switch_case` from the start (`src/js/JsIr.zig:146`) and the printer emits them
 (`src/js/Print.zig:302`). At two alternatives there is nothing to dispatch and `if (x.$ === "A")` is
 shorter than a `switch` naming the discriminant and adding two labels; at three the `switch` is both
-shorter and one dispatch. The threshold is representation-independent, so it survives M3c turning
+shorter and one dispatch. The threshold is representation-independent, so it survives the optimiser turning
 tags into integers and the dense cases into a jump table, and it removes every special case:
 **a boolean node and a list node have exactly two alternatives and are therefore always `if`**,
 which is why `if` keeps emitting what it emits today.
@@ -1231,8 +1230,8 @@ which is why `if` keeps emitting what it emits today.
   `default: throw new Error(…)`, a diagnosis for a state the checker excludes, at a string per
   `switch` in every program.*
 - Adjacent `case` labels reaching the same body are **not** merged into `case "A": case "B":` — a
-  printer-level win, and M3c's.
-- *Added by R12 (2026-09-27, CK-88).* **At most 16 384 labels a `switch`**
+  printer-level win, and the optimiser's.
+- *Added 2026-09-27.* **At most 16 384 labels a `switch`**
   (`Lower.max_switch_cases`), four times under the 65 046 SpiderMonkey refuses (§4's table). A
   larger fan is written as consecutive `switch`es over the same discriminant, the `default:` in
   the last: every case body terminates (above), so a value no label of one names falls through
@@ -1248,7 +1247,7 @@ even when it is shared. The chain is rebuilt at each use: every value is immutab
 occurrence is a property read on a `{$, a, b}` object, so re-reading costs and risks nothing, and
 the one expression that must be evaluated exactly once is the scrutinee. *Alternative rejected: a
 `const $p$k` per tree edge, Maranget's usual presentation — it makes "evaluated once" literal and
-costs one live binding per edge that M3c's dead-binding pass cannot remove, for a property read V8
+costs one live binding per edge that the optimiser's dead-binding pass cannot remove, for a property read V8
 already inline-caches.*
 
 Two changes to how the scrutinee itself is bound. **`bindSubject` binds unless the tree reads the
@@ -1319,7 +1318,7 @@ a second `while` between a `continue` and §8's.*
 | expression, no `switch`, no shared leaf, every leaf one expression and no bindings | the value | a `cond` chain — `a ? b : c`, exactly as today (`:3599`) |
 
 **§8's gate on the statement form is removed.** §8 used `tailStmts` "only inside a function that has
-at least one tail self-call, so every existing `emit/` golden stays byte-identical"; M3b lowers a
+at least one tail self-call, so every existing `emit/` golden stays byte-identical"; the backend now lowers a
 `case` in tail position into statements whether or not the function loops, deleting the `let $t$n;`
 / assign / `return $t$n` triple from every function whose body is a `case` — the 76 result
 temporaries above. `Maybe.withDefault` becomes
@@ -1357,7 +1356,7 @@ one-row matrix with no relevant column, so the tree is one leaf whose output is 
 emit today by calling `bindings` directly, and they keep calling it. `language.md` §3's `Definition
 := lower_ident PatAtom* '=' Expr` does in fact admit a *refutable* parameter pattern, nothing
 rejects it, and `un (Just n) = n` applied to `Nothing` returns `null` today; that is a front-end or
-checker defect (`plans/m3b-audit.md` M1) and §7 must not be extended to paper over it, because the
+checker defect and §7 must not be extended to paper over it, because the
 tree would have nowhere to send the failing value either.
 
 ### What must not change
@@ -1401,11 +1400,11 @@ tree would have nowhere to send the failing value either.
 gives a different answer or is pinned by an `emit/` golden that changes.
 
 **What that came to, honestly, and it is not what the paragraph above predicted.** Run against the
-binary at `ebacb5b`, with every fixture of this table in place, **eight `emit/` goldens fail and no
+binary before decision trees, with every fixture of this table in place, **eight `emit/` goldens fail and no
 `run/` fixture does** — the three new ones, and the five §7 knew it would move. Every `run/` row
 passes before *and* after, by design and not by accident: a decision tree computes what a linear
 chain computes, which is the first line of "what must not change", so a behaviour fixture for this
-slice guards the rewrite rather than reproducing a defect. That includes `MatchInLoop`, which this
+change guards the rewrite rather than reproducing a defect. That includes `MatchInLoop`, which this
 section expected to overflow without the fix and does not: §8's loop landed FIRST, so the `continue`
 was already a jump before the tree put a `switch` between it and the `while` — what `MatchInLoop`
 proves is that it still is. The fail-first rows are the `emit/` goldens, and `MatchRowOrder` is the
@@ -1421,12 +1420,12 @@ tests, fewer temporaries, one mention of a discriminant per fan-out instead of *
 `case` are as compressible as tokens get — against shared-leaf labels and rows a wildcard column
 duplicates. Runtime should fall on anything that matches in a loop, where the third program above
 runs up to eight comparisons per element that a tree never runs. **Emit throughput must not regress
-beyond noise** (§13, 85.5 MB/s at M3a): the tree is built per `case` over a matrix of branches ×
+beyond noise** (§13, 85.5 MB/s when first measured): the tree is built per `case` over a matrix of branches ×
 columns, the same input the linear chain already walks once per branch, and the exponential case is
 the checker's usefulness relation and not this one. If a corpus module's emit time moves, a
 heuristic is being recomputed where it should be cached — an implementation bug, not a design cost.
 
-**Measured**, `ebacb5b` against the slice, on the same corpus both times (80 programs, the fixtures
+**Measured**, the compiler before decision trees against the one after, on the same corpus both times (80 programs, the fixtures
 of the table above included), five iterations of `bench --generate=100000`:
 
 | | before | after | |
@@ -1441,7 +1440,7 @@ of the table above included), five iterations of `bench --generate=100000`:
 | `runtime.mjs --variant=c1`, ns/op | — | — | −12% to −23%, every program, checksums identical |
 
 Two of those read the wrong way round unless the denominators are read with them. **Emit MB/s
-falls while emit gets faster**: the metric is output bytes over time, the slice removes a fifth of
+falls while emit gets faster**: the metric is output bytes over time, the change removes a fifth of
 the output bytes, and the same 100k lines are lowered in 13% less wall clock — 1.92M to 2.21M
 lines/s. §13's budget is "> 5 MB/s of JavaScript", which this is 12× over; the throughput this
 section told the implementer not to regress is the one per line of input, and it improved. And
@@ -1458,11 +1457,11 @@ Direct self-recursion lowers to `label: while (true)`. **This is mandatory, not 
 no JavaScript engine reliably provides tail-call elimination, V8 shipped and reverted it,
 SpiderMonkey never shipped it. Node 24 overflows a two-parameter accumulator between 5 000 and
 10 000 frames, which is why `bench/runtime/c1/R1DictString.beni:11` builds its key list out of two
-small ranges and why `core/List.beni:71,77` said `foreign` until this slice. Mutual recursion
+small ranges and why `core/List.beni:71,77` said `foreign` until the loop landed. Mutual recursion
 remains a real stack frame and ships as a stated limitation (§14 question 5).
 
-`JsIr` has held `while_true`, `break_stmt`, `continue_stmt` and `assign_stmt` since M3a
-(`src/js/JsIr.zig:141`) and the printer already emits them (`src/js/Print.zig:284`); what M3b adds
+`JsIr` has held `while_true`, `break_stmt`, `continue_stmt` and `assign_stmt` from the start
+(`src/js/JsIr.zig:141`) and the printer already emits them (`src/js/Print.zig:284`); what tail calls add
 is the lowering.
 
 ### What a tail call is
@@ -1502,8 +1501,8 @@ A parameter is **carried** when some tail self-call passes it anything other tha
 that same parameter. A carried parameter is renamed to `$in$<i>` in the JavaScript parameter list,
 *i* being its position counting evidence first; the loop's prologue re-binds it to its ordinary
 name with a `const`, one statement per carried slot — joining the run into a single
-comma-separated declaration is §9 item 5's variable joining, a printer decision and M3c's, not
-this slice's. A parameter that is not carried keeps its ordinary name and gets
+comma-separated declaration is §9 item 5's variable joining, a printer decision and the optimiser's, not
+the loop's. A parameter that is not carried keeps its ordinary name and gets
 neither slot nor copy. The test is syntactic and conservative — when in doubt, carried. A parameter
 whose pattern is not a bare variable already has a compiler-made name and a destructuring prologue
 (`functionOf`, `src/js/Lower.zig:745`); it takes a slot by the same rule, and **its destructuring
@@ -1596,7 +1595,7 @@ the slot numbers count evidence first, so the first beni parameter is `$in$1` an
 **"Evidence is loop-invariant" is not a rule, though, and stating it as one would be a miscompile.**
 Polymorphic recursion is typeable here with an annotation and is accepted today: a `where`-constrained
 declaration may call itself in tail position at a different instantiation, and the checker then writes
-a *different* evidence expression at that site rather than `$m$k` — verified against the M3a binary,
+a *different* evidence expression at that site rather than `$m$k` — verified against the first backend,
 where `f : List a, Int -> Int where a.eq` calling `f [ Red, Blue, Red ] (n - 1)` emitted
 `Main$f(Main$eq$prim, …)`. The syntactic test catches it: the argument is not a reference to `$m$0`,
 so `$m$0` is carried, gets a slot and is reassigned like anything else. A fixture is required.
@@ -1609,7 +1608,7 @@ IIFE and today's lowering produces both: `src/js/Lower.zig`'s `expr` returns an 
 `case` becomes either one `cond` node or a `let $t$n;` above an `if`/`else` chain whose arms assign
 it. Neither can hold a jump.
 
-M3b adds a second entry point beside `expr`: one that lowers an instruction **in tail position**
+Tail calls add a second entry point beside `expr`: one that lowers an instruction **in tail position**
 directly into a statement list, emitting `return <expr>;` for everything that is not a tail
 self-call, an `if`/`else` chain with each arm lowered the same way for a `case`, the bindings
 followed by the body for a `let`, and the assignments plus `continue <label>` for a tail self-call.
@@ -1620,7 +1619,7 @@ tail position be reachable as a statement.
 
 ### `foldl` and `foldr` leave `foreign`
 
-The two of them are the reason this slice is scheduled where it is
+The two of them are the reason the loop was scheduled where it was
 ([`research/17-platform-primitives.md`](research/17-platform-primitives.md) §3,
 [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §10 item 0): they are the only
 `foreign` values in the repository with a function type anywhere in them, and a JavaScript loop
@@ -1653,7 +1652,7 @@ twenty-five lines and a magic number. Revisit if `List.map`, built on `foldr`, s
 are unaffected. `core/List.beni`'s header list goes from five `foreign` declarations to three:
 `cons` stays (`::` desugars to it), and `eq`/`compare` stay for a reason the loop does not touch,
 that `List a` has no constructors for the compiler to walk. **Report 17 §3.4 counted 66 first-order
-`foreign` values and exactly two that are not; after this slice the count of higher-order `foreign`
+`foreign` values and exactly two that are not; after the loop landed the count of higher-order `foreign`
 values in the repository is zero**, which discharges the first half of
 `transparent-effects-proposal.md` §10 item 0 in fact and not only on paper.
 *Corrected 2026-09-18: zero in a **signature**, not zero. `List.eq` and `List.compare` are `foreign`
@@ -1710,8 +1709,8 @@ The `--jobs=1` / `--jobs=8` comparison covers it with no new machinery.
 
 ### Measurement
 
-`bench/runtime.mjs` is the instrument. The visible effect is a follow-up rather than part of this
-slice: `bench/runtime/c0/` and `c1/` split their workloads into blocks of 500 because
+`bench/runtime.mjs` is the instrument. The visible effect is a follow-up rather than part of the
+loop: `bench/runtime/c0/` and `c1/` split their workloads into blocks of 500 because
 `List.range 1 2000` is near the stack limit, and once the loop lands those headers and their
 `concatMap` scaffolding can go, which makes the R-programs shorter and their `ns_per_op` comparable
 to a plain range. **What must not regress is §13's emit throughput** — the loop adds one walk of
@@ -1798,7 +1797,7 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    second copy of resolution, and a copy that drifts drops an edge, and a dropped edge is a
    `ReferenceError`.*
 3. every **dispatch site** of `d` — `Dispatch.sitesIn` over `d`'s instructions — its callee term and evidence roots, and, recursively through
-   each term's `args` (`checker-v2.md` §13.3, since R2a), every term nested in one. **These are the edges `Bir` deliberately does not
+   each term's `args` (`checker-v2.md` §13.3), every term nested in one. **These are the edges `Bir` deliberately does not
    have** (`frontend.md` §3.6, `static-dispatch-spike.md` §1.4): a method call's callee is not known
    until the checker runs, and evidence arguments are references that no source line spells. Target
    by target: `top {decl}` → `(m, decl)`; `ext {module, value}` → that module's declaration, through
@@ -1815,7 +1814,7 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    and `err` lowers to a call of `Basics.eq` (`Lower.partEq`'s `err` arm, the position A.66 names).
    Each is a reference to another module's declaration that no `refs` row and no `top`/`ext` target
    records. So: `primitive string_compare` → core `String`'s `compare`; `err` → core `Basics`' `eq`
-   (since R2a the `err` part is the `undetermined` term, `checker-v2.md` §13.1, with the same edge).
+   (the `err` part is now the `undetermined` term, `checker-v2.md` §13.1, with the same edge).
    Twelve `run/` fixtures fail without the first — every program that puts a `String` in a `Dict` —
    with a `ReferenceError` at load, after a build that exited 0. *(Found in implementation.)*
 
@@ -1980,7 +1979,7 @@ for — `tests/corpus/emit/app/` — by the same per-fixture mechanism.
 what the program printed, and elimination does not change that. A `run/` fixture that moves is
 over-elimination, which is the failure this pass has to fear.
 
-#### Incrementality (M4) and chunking (M3d)
+#### Incrementality (M4) and chunking (§10)
 
 `fast-compiler.md` §8.2's declaration-level graph and this one are **the same graph**, which is what
 §9.1 means by "build once, use three times". Concretely, for M4:
@@ -2062,10 +2061,10 @@ comparator as an ordinary argument and would have made the edge an ordinary one.
 
 ### The release optimiser — items 1, 2, 3 and 5
 
-**One slice, four passes, one flag** (§1). Everything here runs **only under `--release`**; the dev
+**One change, four passes, one flag** (§1). Everything here runs **only under `--release`**; the dev
 build is byte-identical to today's. The measurements are
 [`plans/release-notes.md`](../../plans/release-notes.md), taken by hand-applying each candidate to
-the emitted `.mjs` of the corpus built at `e407c10` and re-compressing — and by running every one of
+the emitted `.mjs` of the corpus built before the optimiser and re-compressing — and by running every one of
 the 100 `run/` programs afterwards to prove the transformed output still prints its `.expected`.
 
 | | dev | release | |
@@ -2078,7 +2077,7 @@ the 100 `run/` programs afterwards to prove the transformed output still prints 
 copied verbatim (§2) and **is never minified — not renamed, not reprinted, not parsed**, because
 reading it exactly needs a JavaScript parser and that is the dependency `boundary.md` §4's wall
 exists to avoid. It costs **1 643 of the floor's 2 147 bytes (76%)**, **13 773 of `Dictionaries`'
-31 495 (44%)** and 14 980 of `bench/corpus`' 126 436 (12%). After this slice the generated half of
+31 495 (44%)** and 14 980 of `bench/corpus`' 126 436 (12%). After the optimiser the generated half of
 `Dictionaries` has fallen 17 722 → 6 198 bytes, −65%, and the siblings are **69% of what ships** —
 the same answer §9's *Purity* paragraph reached about sibling-level elimination, for the same reason.
 
@@ -2225,7 +2224,7 @@ as the rewriting walk runs backwards: a substitution never raises anyone's use c
 `const x = p.a; const y = x.b; return f(y);` — collapses in one backward pass because `y` is
 resolved before `x` is looked at.
 
-*Amended 2026-09-28 by R15-fix-H (CK-190).* As built, the pass does not rewrite: it records one
+*Amended 2026-09-28.* As built, the pass does not rewrite: it records one
 substitution per use site and the printer follows them. It followed a chain for at most 64 steps
 and then printed the name it had stopped at — whose binding the pass had dropped — so `let x1 = x0
 … x130 = x129 in x130` printed, under `--release`, whatever top-level `Rename` had given that short
@@ -2236,7 +2235,7 @@ general rule this states: **no budget in the release optimiser or the printer ma
 output.** A budget either bounds a search that then declines the optimisation — `chainBase`'s
 member-chain depth, the single-use scan's 64 statements — or it is not a budget: `markAssigned`
 walks to the root, because its give-up answer was the unsafe "not assigned". The same audit found
-`boundary.md` §4's check 1 answering "concrete" when its 64-slot stack filled (CK-193); it walks
+`boundary.md` §4's check 1 answering "concrete" when its 64-slot stack filled; it walks
 the whole type now.
 **Where:** inside `Emit.emitModules`, between `Lower.lower` and `Print.print`
 (`src/js/Emit.zig:760-786`), on the `JsIr` the lowering just produced.
@@ -2244,7 +2243,7 @@ the whole type now.
 #### Item 2 — short names, emitted directly
 
 Identifiers are 66.8% of unminified bytes and qualified globals 26.6% (report 12 §5.2), and this is
-the largest single win in the slice: **−4 941 brotli on `bench/corpus` alone, −22.6%.** Names in
+the largest single win in the optimiser: **−4 941 brotli on `bench/corpus` alone, −22.6%.** Names in
 `JsIr` are `Name` records in one column (`src/js/JsIr.zig:52-54`, `:300-330`) and the printer is the only
 thing that turns one into bytes (`src/js/Print.zig:172-192`), so this is a rewrite of that column
 and of nothing else — no second traversal, no mangler, no string building on the hot path.
@@ -2303,7 +2302,7 @@ Cross-module agreement needs no new machinery: both the `import` specifier and t
 built from the same `NameIndex`es the declaration uses (`Lower.exports`, `src/js/Lower.zig:637-680`;
 `need`/`needDerived`, `:743-759`), so renaming the column renames both ends. **Emission order and
 grouping do not change** — report 12 §2.1 measures up to 7% of gzipped bytes for keeping related
-declarations adjacent, at identical raw size, and this slice must not spend it.
+declarations adjacent, at identical raw size, and the optimiser must not spend it.
 
 M5's source maps read the mapping the other way: `addSourceMappingForName` carries the *original*
 name in the fifth VLQ field, which is what makes a minified stack trace readable, and the printer
@@ -2370,7 +2369,7 @@ brace does not read as a block. Neither is item 5's conditional lowering and nei
 they are recorded here so the implementer does not go looking.
 
 *What compact printing must not do: reorder anything, merge adjacent `switch` labels (§7 files that
-under "a printer-level win, and M3c's" — it is item 5's family and measured with it), or change
+under "a printer-level win, and the optimiser's" — it is item 5's family and measured with it), or change
 which node is printed. It is a whitespace decision and nothing else.*
 
 #### Item 5 — variable joining, and the three rewrites that did not earn their place
@@ -2466,14 +2465,14 @@ The fixtures, by intent:
 | `emit/release/ReleaseCompact` | the shape: one line per top-level declaration, no indentation, every semicolon present, joined `const` run | golden |
 | `emit/release/ReleaseInline` | the shape: a leaf prologue folded into the literal that reads it, and a binding read twice NOT folded | golden |
 
-Fail-first is ordinary: every `emit/release/` golden does not exist before the slice and every `run/`
+Fail-first is ordinary: every `emit/release/` golden does not exist before the optimiser and every `run/`
 row above either throws, prints the wrong thing, or fails to build today (`--release` exits 2). The
 `run/` rows that are re-runs of existing fixtures are the regression half, and one that moves is a
 finding.
 
 #### Acceptance
 
-§1's M3c acceptance is §9's size and throughput numbers alone. For this slice, all five:
+§1's optimiser acceptance is §9's size and throughput numbers alone. For this first slice, all five:
 
 1. **`bench/corpus` under `--release` is at or below 15 055 brotli bytes** and `Dictionaries` at or
    below 5 847, against 21 840 and 7 008 today — the hand-applied predictions above. A real
@@ -2679,7 +2678,7 @@ ReleaseFast, this machine), which a print-time table lookup cannot move.
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with
-"two build modes, one graph", and M3d is what makes the second half true. A chunk is a file; a
+"two build modes, one graph", and chunking is what makes the second half true. A chunk is a file; a
 declaration's chunk is decided by which entry points reach it; and **with one entry point and no
 `lazy`, a release build is exactly one file**, which is the degenerate case of everything below and
 the part of this section worth the most bytes.
@@ -2835,7 +2834,7 @@ only test is the degenerate case is a pass that will be wrong the first time it 
 
 Fused into the print pass — a mapping recorded at each emit site, never a second traversal —
 delta-encoded, per-file chunks rebased once at join time. On by default in dev, off in release.
-Positions live in `JsIr` from M3a even while maps are off.
+Positions live in `JsIr` from the start even while maps are off.
 
 ## 12. Testing
 
@@ -2877,7 +2876,7 @@ behaviour must. That is the whole point of preferring it.
 
 §8 lists the fixtures the tail-call loop owes, one row each, with the observable that separates a
 right loop from a wrong one. Two of them are worth naming here because they are the pattern the rest
-of M3b should copy: the loop's fail-first fixture overflows the stack without the change, and its
+of the backend should copy: the loop's fail-first fixture overflows the stack without the change, and its
 closure-capture fixture exits 0 with the wrong answer, which is the failure mode a `run/` fixture
 exists to catch and an `emit/` golden cannot.
 
@@ -2889,7 +2888,7 @@ Zig's standard library has no brotli, so the benchmark shells out to an encoder 
 
 | What | Target |
 |---|---|
-| Emit throughput | > 5 MB/s of JavaScript — **measured 85.5 MB/s** at M3a (`bench/README.md`) |
+| Emit throughput | > 5 MB/s of JavaScript — **measured 85.5 MB/s** when first built (`bench/README.md`) |
 | Whole cold build, 100k lines | < 800 ms including core |
 | Output size | Elm's TodoMVC at 9KB compressed is the number to beat |
 | Own output vs esbuild `--minify` | within ~10%; revisit before M5 if it approaches 1.58× |

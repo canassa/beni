@@ -2,12 +2,12 @@
 
 ## Open decisions for the owner
 
-**Status:** normative. S1 frontend support and the layout declaration spelling
-(§2/A.5) and S2 checking (§3–§4/A.6) are implemented; library
-interpretation and specialised execution await S3–S4. Q3, Q6, Q9 and Q11
-below remain open; their recommendations guide the affected later slice, not S1.
+**Status:** normative. Frontend support and the layout declaration spelling
+(§2/A.5) and checking (§3–§4/A.6) are implemented; library
+interpretation and specialised execution await the later slices of §10. Q3, Q6, Q9 and Q11
+below remain open; their recommendations guide the affected later slice, not the frontend.
 Q1, Q2, Q4, Q5, Q7, Q8 and Q10 are decided (A.2/A.6).
-Q12's scheduling is A.3/A.4: S1 and row 67 may run in parallel; both precede S2.
+Q12's scheduling is A.3/A.4: the frontend and the numeric-alias checker fix may run in parallel; both precede checking.
 Question identifiers and section numbers stay stable. Append later decisions
 to Appendix A.
 
@@ -15,8 +15,8 @@ to Appendix A.
 |---|---|---|---|
 | Q3 | Does v1 have defaults? | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
 | Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
-| Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost in S4. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
-| Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | S3 is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
+| Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost with specialisation. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
+| Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | The library is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
 
 The source of settled decisions is [the queue](../../plans/queue.md), *Owner
 decisions on schemas*, 2026-09-21 and 2026-09-22, and the commissioned fork
@@ -315,15 +315,15 @@ can disappear into ordinary calls before imported types are known. Ordinary
 library construction remains the semantic elaboration; the plan retains the
 static shape needed to specialise it.
 
-S1 stores that unresolved plan as a schema declaration plus a contiguous BIR
+The frontend stores that unresolved plan as a schema declaration plus a contiguous BIR
 instruction graph. The declaration has a dedicated `schema_body` root and is
 in neither the value nor type namespace. Plan instructions retain operand
 name tokens, ordered argument edges, record fields, ordered modifiers, decoded
 external keys/tags, tagged variants and explicit grouping. A `via` retains the
 ordinary Atom tree, but unresolved nonlocal leaves use schema-expression
 reference instructions carrying their symbol and source token; lexical locals
-inside a parenthesised lambda or let remain ordinary local references. S2 can
-therefore resolve the tree without reparsing source, and S1 does not report an
+inside a parenthesised lambda or let remain ordinary local references. Checking can
+therefore resolve the tree without reparsing source, and the frontend does not report an
 ordinary unbound-value error for a name whose schema meaning is not available
 yet. All edges are indices or ranges in the flat BIR and every instruction
 keeps its source token. Changing these tags or the declaration row bumps the
@@ -424,7 +424,7 @@ This is a semantic vocabulary, not an existential Beni ADT declaration.
 Heterogeneous fields may be implemented with typed private combinators and
 closures over their children; inspection returns plain structural data with
 stable references. No cast, runtime reflection on arbitrary Beni records,
-existential type syntax or higher-kinded type is licensed. S3 must demonstrate
+existential type syntax or higher-kinded type is licensed. The library work must demonstrate
 that the plain library builders express every accepted declaration and keep
 context closed. Q11 deliberately leaves the stored-function ABI unfrozen.
 
@@ -432,8 +432,8 @@ context closed. Q11 deliberately leaves the stored-function ABI unfrozen.
 in declared field/variant order; assign definition identities from stable
 schema identity and structural position; deduplicate by identity, not display
 name. Every reference resolves exactly once, including a nested recursive
-schema within another recursive schema. This closes queue row 61's missing
-child definitions and avoids expanding recursion. Describing never runs a
+schema within another recursive schema. This closes the missing
+child definitions of nested recursive descriptions and avoids expanding recursion. Describing never runs a
 conversion or validator; a function body is not inspectable data.
 
 The following core/Schema operations are required. `Failure` below abbreviates
@@ -482,7 +482,7 @@ or key policy. An incorrect same-typed field swap is still a user conversion
 bug; the declaration reads both directions from one field list. A dynamic
 builder given duplicate keys/tags or a dangling reference returns a construction
 failure, not a corrupt executable schema. The concrete builder API must be
-specified before S3.
+specified before the library work.
 
 ### Traversal and failure rules
 
@@ -497,16 +497,16 @@ to FirstError, Ignore unknown keys, sequential traversal and reportInput false,
 following Effect. A root may override these through With. `maxDepth` has a
 finite implementation ceiling: negative, nonintegral or above-ceiling requests
 fail as invalid options at the root. The proposed default is 512 and candidate
-ceiling 4,096; these numeric choices require the S3/S4 proof below, not an
+ceiling 4,096; these numeric choices require the library and specialisation proof below, not an
 assumption that JavaScript guarantees that many frames.
 
 The ceiling must cover both interpreters and emitted workers, including helper
 frames, conversion nesting and JSON output, across supported browser engines
-and Node. Queue row 39 already records overflow near 3,700 calls for a different
-function. S3/S4 must establish a conservative ceiling and the boundary handling
+and Node. `List.map5` already overflowed near 3,700 calls, a different
+function. The library and specialisation work must establish a conservative ceiling and the boundary handling
 needed to preserve G1/G3 when callers have already consumed stack; record the
 result here before shipping. No explicit traversal-frame stack is required.
-Queue row 69 tracks this implementation proof.
+The queue tracks this implementation proof.
 
 Decode/read paths use external keys; encode paths use declared Beni keys for
 program input, and an external-output failure uses its external key. Direction
@@ -515,7 +515,7 @@ and failing endpoint must remain distinguishable in the final Issue design
 a variant payload adds no fictitious JSON field. Engine-attached relative
 conversion paths are appended to the current path. Empty relative paths mean
 this value, never the root. Missing-key and unknown-key failures include the
-key itself; a key-count shortcut that loses it is invalid (report 34, row 62).
+key itself; a key-count shortcut that loses it is invalid (report 34).
 
 Follow pinned Effect's synchronous product order: check the enclosing shape,
 then excess keys under Reject, then declared fields in declaration order;
@@ -544,7 +544,7 @@ lookup or prototype mutation. JSON duplicate keys follow JSON.parse's last
 value semantics; this specification does not invent lossless token parsing.
 Arbitrary host objects, getters, proxies and JS undefined are not Beni Value.
 A future foreign-object adapter must specify them inside the privilege wall,
-not inherit the benchmark's JSON-only results (queue rows 64–65).
+not inherit the benchmark's JSON-only results (the queue records two such divergences).
 
 `Schema.int` uses safe-integer validation both ways: integral finite numbers
 within −(2^53−1)…2^53−1. JSON numbers have JSON.parse semantics, including
@@ -692,7 +692,7 @@ across interfaces; callbacks need not be evaluated or inlined to specialise
 the surrounding structure. Generic parameter slots take the library path
 when their schema values are supplied at runtime, while the known outer shape
 remains specialised. Runtime branches selecting schemas and ordinary runtime
-builder calls are library operations; S4 need not perform general constant
+builder calls are library operations; specialisation need not perform general constant
 evaluation or whole-program monomorphisation. A future recogniser may specialise
 statically known plain builder composition, but may change no semantics. There
 is no eval/new Function, including capability probes, on either path.
@@ -741,7 +741,7 @@ invalid payload; native rename is not fused, browser bundles cover only the
 flat workload, and startup is Node fresh-module import with an unflushed OS
 cache, not browser loading. No many-schema code-size curve, effectful codec or
 arbitrary-JS-object parity is established. The fused-decoder and optional Effect
-compiler rows have **not landed in this capture** and remain owed. S4 adds a
+compiler rows have **not landed in this capture** and remain owed. Specialisation adds a
 Beni row and reports per-operation medians/orderings, both directions and all
 fault paths, without a geometric-mean parity claim or a new measurement here.
 
@@ -765,7 +765,7 @@ its §3 and §7 cover related inference risks. The concrete H4 obligation is
 [the prototype's EFFECTS.md](../../bench/schema-prototype/EFFECTS.md), and the
 missing plan anchor is recorded in the queue.
 
-S5, after P2, owes all seven acceptance cases there through **both** paths:
+The effects work, after P2, owes all seven acceptance cases there through **both** paths:
 
 1. A suspending decoder and pure encoder exported from A through the intended
    abstraction; B composes object/list, parks/resumes, returns the exact value,
@@ -789,7 +789,7 @@ compiler/runtime work; today's synchronous prototype cannot settle it.
 ## 8. Diagnostics
 
 These new compiler codes are appended to `language.md` §10, in this order.
-`duplicate_schema_modifier` is emitted by S1 lowering; the remaining codes are
+`duplicate_schema_modifier` is emitted by frontend lowering; the remaining codes are
 reserved for later slices. Every error protects a unique typed
 or executable interpretation (G1/G5), or correct failure context (G2–G4);
 none refuses an inconvenient but unambiguous valid schema for taste.
@@ -821,16 +821,16 @@ exit 1 and no build output. Runtime validation failures are **Issue values in
 Result**, not compiler diagnostics, stderr output or process exit codes; their
 fixtures assert complete values.
 
-S2 accepts schema programs in `check` and in resolution-requiring dumps.
+Checking accepts schema programs in `check` and in resolution-requiring dumps.
 `build` still reports `not_implemented` on the schema name from `Emit.run`,
 before entry discovery or any output: “This schema is checked, but its parse
-and print are not generated until schema S4.” This replaces S1's frontend
+and print are not generated until schema S4.” This replaces the frontend's
 refusal; a successful check does not claim executable runners. A frontend or
 checker error keeps its own diagnostic without adding this refusal.
 
 ## 9. What v1 leaves out
 
-The committed scope excludes an effects runtime (S5 follows P2), implicit
+The committed scope excludes an effects runtime (the effects work follows P2), implicit
 currying/evidence selection of schema arguments, arbitrary computation of types
 from runtime descriptions, and automatic replacement of platform ports.
 The first two follow the accepted language model; runtime type computation
@@ -862,8 +862,8 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-S1 provides the frontend, including §2/A.5’s brace-equivalent layout spelling;
-the independent row 67 checker fix has also landed
+The frontend, including §2/A.5’s brace-equivalent layout spelling, has landed,
+and so has the independent checker fix for numeric literals through primitive aliases
 (A.4). Q7 is confirmed in A.6. Later slices retain the dependencies below.
 Each begins with a fixture that fails on the preceding compiler/library; prove
 red, implement, then reverse the fix in an isolated copy to prove the regression
@@ -875,10 +875,10 @@ for this boundary. Follow the write-tests skill when implementation starts.
 
 | Slice | Contract | Red fixtures first | Done means |
 |---|---|---|---|
-| S1 — frontend | §2, §8; syntax decisions settled in A.2; independent of row 67 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
-| S2 — checker (**implemented**, 2026-09-22) | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; remove S1’s whole-input schema exclusion from resolver fuzz; no successful build silently omits runners |
-| S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove row 69; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
-| S4 — specialisation | §6 and this section; settle Q9; prove row 69 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
+| S1 — frontend | §2, §8; syntax decisions settled in A.2; independent of the numeric-alias fix | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
+| S2 — checker (**implemented**, 2026-09-22) | §3–§4, §8; settle Q7; fix numeric literals through primitive aliases first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; remove the frontend's whole-input schema exclusion from resolver fuzz; no successful build silently omits runners |
+| S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove the native-recursion ceiling; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
+| S4 — specialisation | §6 and this section; settle Q9; prove the native-recursion ceiling | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
 | S5 — effects after P2 | §7; resolve Q11 in the effects specification first | All seven EFFECTS.md cases: `run/`, cross-module `.iface`, `check/bad` sync/extraction diagnostics, cancellation/finalisers and both directions | Directional bits and context survive abstraction/import/suspension in compiled and library paths, no conversion after cancellation, exact effect order and ordinary failures, unchanged sync behavior |
 
 The differential corpus runs **every schema semantic fixture** via the emitted
@@ -895,12 +895,12 @@ it must not become a production flag changing semantics. Description-only
 execution must not silently call a cached compiled validator. `emit/` asserts
 shape, `run/` asserts behavior, and DCE fixtures assert absent files/declarations
 as well as values. Jobs 1/8 twice byte-compare dumps, diagnostics and complete
-output trees; interface/cache round trips are part of S2/S4 acceptance.
+output trees; interface/cache round trips are part of checking's and specialisation's acceptance.
 
 The three existing gates remain `zig build test`, `zig build test-blackbox`,
 `zig build fmt-check`. Q9 recommends putting differential execution in the
 second; it is **not wired by this spec commit**. Chrome semantic checks and
-report 34 performance measurements are S4 evidence, not timing thresholds in
+report 34 performance measurements are specialisation evidence, not timing thresholds in
 an otherwise deterministic correctness gate. A failing test is investigated,
 not fixed by blessing all goldens. No new measurements are run for this document.
 
@@ -925,7 +925,7 @@ The compiled path validates the raw host value in one pass and never constructs
 a Value ADT. Generated validation is JsIr, because its input is untyped host
 data, not typed BIR. The library path uses core foreign primitives over the
 same host value. `Value` is an opaque handle, not a marshalling requirement.
-This keeps S3 from imposing report 34's unfused cost on S4.
+This keeps the library from imposing report 34's unfused cost on specialisation.
 
 ### A.2 — Surface and traversal decisions (2026-09-22)
 
@@ -936,13 +936,13 @@ invariant; Q5: Effect defaults and a bounded maxDepth with native recursion;
 Q8: schema/parse/print plus parseWith/printWith only, typed operations in the
 library; Q10: schema operands, separate Presence/Nullable, explicit nominal
 recursion. §§2–6 record these decisions. Exact safe depth numbers still need
-implementation evidence (queue row 69). Q3/Q6/Q7/Q9/Q11 remain open.
+implementation evidence (a portable native-recursion ceiling). Q3/Q6/Q7/Q9/Q11 remain open.
 
 ### A.3 — Implementation order (2026-09-22)
 
-The owner delegated Q12. Schedule S1 next; fix confirmed numeric-alias defect
-67 before S2. Continue S2–S4 in dependency order after their remaining decisions;
-S5 follows P2 and H4. The recorded M4-first slices 1–3 have landed, so this
+The owner delegated Q12. Schedule the frontend next; fix the confirmed numeric-alias defect
+before checking. Continue checking, the library and specialisation in dependency order after their remaining decisions;
+the effects work follows P2 and H4. The first three M4 steps recorded as preceding schemas have landed, so this
 places schemas ahead of remaining M4 work without rewriting that history.
 This revision changes documents only; it does not claim any slice landed.
 
@@ -953,9 +953,9 @@ The owner settled Q6's representation clause: an opaque target is reachable
 only through its conversion; typeOnly retains optional checks (identity if none),
 and read/write construction fails if Type contains an opaque target without a
 structural description (§5). Q6's metadata and JSON Schema/generator scope
-remain open. Row 67 is an independent checker fix with check/good fixtures:
-it may run in parallel with S1, and must land before S2. This updates A.3's
-ordering without making the fix a dependency of S1.
+remain open. The numeric-alias defect is an independent checker fix with check/good fixtures:
+it may run in parallel with the frontend, and must land before checking. This updates A.3's
+ordering without making the fix a dependency of the frontend.
 
 
 ### A.5 — Layout record declarations (2026-09-22)
@@ -975,30 +975,30 @@ where a block cannot go: inline record types/operands, extensible records,
 ordinary `type` constructor payloads, empty records and all record values.
 A schema record with outer modifiers remains a brace operand because the
 layout field-block production has no outer modifiers. Ordinary `type`, `case`
-and `let` are unchanged. This surface slice follows S1 and precedes S2.
+and `let` are unchanged. This surface slice follows the frontend and precedes checking.
 
 
-### A.6 — S2 type surface, interface and resolved plan (2026-09-22)
+### A.6 — Checked type surface, interface and resolved plan (2026-09-22)
 
 The owner confirmed Q7: constructor patterns use exactly the expression name.
 The program family is `Message.Count row`; the encoded family is
 `Message.Encoded.Count row`; a module prefix may precede either. Exposing a
 schema exposes neither family as bare constructors.
 
-`core/Schema.beni` establishes the public type surface which S3 and S4
+`core/Schema.beni` establishes the public type surface which the library and specialisation
 implement against. `Presence` and `Nullable` are distinct custom types.
 `Issue` is a record carrying `path : List PathSegment`, `direction : Direction`,
 `endpoint : Endpoint`, a structured `IssueCode`, `message : String`, and
 `input : Maybe Value`; `Value` is an opaque host handle rather than a Beni
 value tree. `Options` is a record with `errors : ErrorMode`,
 `unknownKeys : UnknownKeys`, `maxDepth : Int`, and `reportInput : Bool`.
-Defaults are `FirstError`, `Ignore`, and `reportInput = False`; S3's stack
+Defaults are `FirstError`, `Ignore`, and `reportInput = False`; the library's stack
 proof still decides the default and maximum depth numbers. `InvalidSchema`
 covers a malformed or dangling description and nonproductive recursion;
 `ConversionFailed` includes a callback which violates the nonempty `Err`
 invariant. `Schema e a`, `Conversion b a`, and `Value` are `pub foreign type`s
 whose JavaScript representations belong to the engine. This is a type
-contract, not a frozen representation: Q11 remains open and S2 adds no
+contract, not a frozen representation: Q11 remains open and checking adds no
 directional callback ABI or library functions.
 
 The hashed interface grows three columns. `schemas` is sorted by schema-name
@@ -1066,19 +1066,19 @@ The interface byte format becomes version 2 with fourteen columns, in order:
 unchanged. Readers validate schema/member/constructor ranges, kinds, schemes,
 arity and visibility. Any failure, including a
 version mismatch, is a cache miss. The front-end artifact becomes version 3;
-this is the explicit S2 boundary after S1's version 2 unresolved schema graph,
+this is the explicit checking boundary after the frontend's version 2 unresolved schema graph,
 and its existing `verifySchemaInst` validation remains mandatory. *(2026-09-24: the
-checker rewrite's R1 made it version 4 — `Token.Tag` gained `dot_dot`, which
+checker rewrite made it version 4 — `Token.Tag` gained `dot_dot`, which
 shifts later tags, and `Bir.Exposed` gained `all_ctors_token` — with no change
-to the schema sections.)* In S2, `via`
+to the schema sections.)* Once checked, `via`
 leaves use ordinary value-reference instructions and declaration references:
 these are real value dependencies for mixed schema/value SCCs and cache keys.
 The BIR dump therefore shows `qualified` and `import_value` for imported
-conversion leaves where S1 showed inert `schema_expr_ref` placeholders. This
+conversion leaves where the frontend showed inert `schema_expr_ref` placeholders. This
 is a permanent dependency representation, not a temporary execution surface.
 
 The unhashed cache sidecar gains one resolved-plan section. The cache entry
-becomes version 2 (3 since the checker rewrite's R2a, whose `dispatch` section is
+becomes version 2 (3 since the checker rewrite, whose `dispatch` section is
 `dispatch_bytes` format 2, `checker-v2.md` §14.3) and its sections are `interface`, `dispatch`, `schema_plan`,
 `diagnostics`. `schema_plan` uses magic `BENISPL\0`, format version 1, the
 standard column table, little-endian scalars, four-byte alignment and
@@ -1124,7 +1124,7 @@ external: LiteralIndex, payload: NodeIndex.Optional, program_ctor:
 CtorTargetIndex, encoded_ctor: CtorTargetIndex, token: u32 }`. A 16-byte
 conversion row is `{ expr: Bir.Inst.Index, target_term: TermIndex,
 token: u32, flags: u8, pad: [3]u8 }`; flags distinguish an opaque target and
-the presence of opaque checks. In S2 an arbitrary `via` expression sets both:
+the presence of opaque checks. When checked, an arbitrary `via` expression sets both:
 its target type is known, while its description and any engine-owned target
 checks are opaque, so the plan must not claim their known absence. A 20-byte
 check row is `{ endpoint: u8,
@@ -1138,7 +1138,7 @@ target is a node or field and `side` says program, encoded or both. The
 expression root is retained because `via` accepts
 an arbitrary Atom, including a parenthesised lambda or let, rather than only a
 bare function. Its resolved BIR subtree and ordinary reference edges carry all
-local and external call dependencies. S2 does not split it into directional
+local and external call dependencies. Checking does not split it into directional
 engine callbacks.
 
 The plan's `term_*`, `type_extra` and `type_refs` columns use the interface's
@@ -1178,17 +1178,17 @@ definition including private schemas on a cache hit. The existing named-type
 digest rows then hash those restored settled properties exactly as on a cold
 check; the sidecar does not become an additional digest input.
 
-*Amended 2026-09-26 (checker rewrite R8b, `checker-v2.md` §11.5 *as built by R8b*).* Under the
+*Amended 2026-09-26 (checker rewrite, `checker-v2.md` §11.5).* Under the
 new checker the property bytes are read off the derived contexts in P9, not off settled session
 bits, and a cache hit of a module it checked restores nothing into the session table: the
 old checker's settle (`Schema.settleProperties`) is not on its path. What a dependent observes
 about an endpoint — whether and how it derives `eq` and `compare`, and its `equatable` gate — is
 in the record's hidden rows, which the interface hash covers; the digest's named-type rows hash
 the table's bits, which are the same in a cold and a warm build. The old checker kept the rule
-above until R12 deleted it (2026-09-27), with `Schema.settleProperties` and the table's schema
+above until it was deleted (2026-09-27), with `Schema.settleProperties` and the table's schema
 property bits.
 
-S2 moves the temporary wall rather than removing it. `check` accepts a valid
+Checking moves the temporary wall rather than removing it. `check` accepts a valid
 schema program and all resolution-requiring dumps see these interface members.
 `build` stops in `Emit.run`, before `findEntry` and before writing any path,
 with `not_implemented` on the schema name: “This schema is checked, but its

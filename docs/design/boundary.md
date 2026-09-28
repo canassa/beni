@@ -120,7 +120,7 @@ Four checks run at build time, and all four are things Elm does not do:
    common-subexpression reasoning, `lazy` chunk assignment and M4's split between a declaration's
    type and its value.
 
-   **Corrected in M3a, twice.** An earlier draft said "all 65 of core's foreign values are shape
+   **Corrected while building the backend, twice.** An earlier draft said "all 65 of core's foreign values are shape
    (a)", which is false: `Basics.pi` and `Basics.e` are constants, not functions, and the rule as
    written rejected core itself. Worse, the rule is **unenforceable as stated** — `pi : Float` is
    indistinguishable by type from the `now : Float` it exists to refuse, and the type is all the
@@ -145,7 +145,7 @@ Four checks run at build time, and all four are things Elm does not do:
    writes `pi` as `Math.PI`. The diagnostic is `foreign_arity_mismatch`, and it points at the beni
    DECLARATION, because that is where the expected count is written down.
 
-   *Amended 2026-09-24 (R2b review, S2).* **"Declared arity" is the arity of the declared TYPE,
+   *Amended 2026-09-24.* **"Declared arity" is the arity of the declared TYPE,
    looking through aliases**, and both counts are `check/Convention.zig`'s (`checker-v2.md` §12.5),
    the same answer every call of the `foreign` is lowered by. So `pub foreign isPos : IntPred`, with
    `type alias IntPred = Int -> Bool`, is a function of one parameter and is written `(x) => …`;
@@ -177,7 +177,7 @@ Four checks run at build time, and all four are things Elm does not do:
    fooled. The fix is always the same — write the parameter list out:
    `export const f = (a, b) => g(a, b);`.
 
-**A diagnostic points at the file whose text is wrong** (2026-09-19, queue slice 45). The four
+**A diagnostic points at the file whose text is wrong** (2026-09-19). The four
 checks compare two files, so each one has to say WHICH of them the author must edit, and the caret
 is that answer. The scanner already knows the byte offset of every export, reference and specifier
 it reads, so a fault in the JavaScript is reported IN the JavaScript — path, line, column and an
@@ -204,8 +204,7 @@ is innocent and the caret must not be on it. All three of those used to land on 
 `foreign` declaration, an arbitrary line chosen only because it was the one the check had a token
 for.
 
-**This rule was documented and unenforced for one day and is now check 4** (2026-09-18, queue slice
-4). While it was unenforced a sibling that forgot its leading evidence parameter built cleanly and
+**This rule was documented and unenforced for one day and is now check 4** (2026-09-18). While it was unenforced a sibling that forgot its leading evidence parameter built cleanly and
 failed at run time — the `List.eq` shape above, with the evidence function arriving where the first
 list belonged, compares nothing and answers `false`. That was a real widening of the `foreign`
 surface against CLAUDE.md rule 6, taken knowingly and now closed. The alternative the adoption
@@ -252,12 +251,12 @@ obligation at synchronous host boundaries. Schemas neither grant user packages
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per
 platform rather than hardcoding one, and a platform may offer more than one entry point.
 
-**`main` must carry an annotation** — a language rule M3a had to introduce. Without one the checker
+**`main` must carry an annotation** — a language rule the backend had to introduce. Without one the checker
 infers something and the build cannot tell whether it is this platform's `Program`; with one, the
 checker has already proved the body matches, so comparing the annotation is a complete check that
 costs no inference.
 
-**An absence has no token, so `missing_main` underlines nothing** (2026-09-19, queue slice 45). It
+**An absence has no token, so `missing_main` underlines nothing** (2026-09-19). It
 is reported against a FILE at `1:1` with no excerpt, the form
 `Session.reportInvalidModulePath` already uses for a fault about a file rather than a place in
 one, and the message says which file it named and why. The file is the first module of the root
@@ -525,25 +524,24 @@ Elm, where kernel code lives inside the package and any change re-runs the packa
 requirement to state now rather than debug later: **M4's `stat` fast-path must cover sibling files**,
 not only `.beni` files.
 
-*Amended 2026-09-19, as M4-1 built the key (`fast-compiler.md` §8, `plans/m4-1.md`). The sibling
+*Amended 2026-09-19, as the persistent cache built the key (`fast-compiler.md` §8, `plans/m4-1.md`). The sibling
 hash is in the key, as a 16-byte term that is 16 zero bytes for a module declaring no `foreign`.
 Two corrections to the paragraph above, both from where the checks actually live. **(i) §4's four
 checks are a whole-program pass, not part of a module's check**: they run in `Emit.checkContract`
 (`src/js/Emit.zig:172`, `:229`, `:424`), which `beni build` runs and `beni check --platform` runs
 too (`src/check/Command.zig:89`), outside and after the per-module check whose result an entry
-holds. So in M4-1 no cached artifact depends on a sibling's bytes, and the term is conservative —
+holds. So no cached artifact depends on a sibling's bytes, and the term is conservative —
 taken anyway, because check 4 reads the sibling to count a declared `foreign`'s parameters and the
 day that answer is cached the key has to have been right all along, and because one hash per module
-declaring a `foreign` is a cost nobody can measure. **(ii) "and nothing else" is M4-3's, not
-M4-1's**: an M4-1 key carries its imports' keys, so a sibling edit does reach a dependent. It stops
+declaring a `foreign` is a cost nobody can measure. **(ii) "and nothing else" is the firewall cutoff's, not
+the first cache key's**: that key carried its imports' keys, so a sibling edit does reach a dependent. It stops
 there the moment the key is weakened to the interface hash, which a sibling cannot move — foreignness
 is one bit derived from the `.beni` source and no byte of the JavaScript is in the record, which is
-this section's own point. The `stat` fast-path over siblings arrives with the one over sources, in
-M4-2.*
+this section's own point. The `stat` fast-path over siblings arrives with the one over sources.*
 
 ## 8. Milestones
 
-- **B1 — the platform contract in the compiler.** *Shipped with M3a.* The manifest key
+- **B1 — the platform contract in the compiler.** *Shipped with the backend.* The manifest key
   (`beni.json`, `"platform": true`) that marks a platform package; `foreign_outside_platform`; the
   first three build-time checks of §4 (check 4 arrived with static dispatch and landed on
   2026-09-18); `Program` as a platform-owned opaque type; `main` resolved per
@@ -568,7 +566,7 @@ M4-2.*
   intrinsics, plus the web-standard capabilities §5.1 says every runtime has (`fetch`, `URL`,
   `TextEncoder`, `crypto`, the timers, `console`). A HOST global is deliberately not on that list,
   which is what makes `import process from "node:process"` the fix rather than an allowlist entry.
-- **B2 — the Node platform and core's JavaScript.** *Shipped with M3a.* All 65 of core's foreign
+- **B2 — the Node platform and core's JavaScript.** *Shipped with the backend.* All 65 of core's foreign
   values, the Node platform, and with them the test suite's second boundary: compile, run under
   Node, assert what it printed (`tests/corpus/run/`). **This is the milestone that makes M3
   testable**, and it landed before the optimiser rather than after. What §4.1's recipe still owes:

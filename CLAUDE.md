@@ -43,38 +43,38 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 Five reviews of the old checker found ~30 defects, half of them programs that
 checked and then misbehaved, so the owner ordered a ground-up rewrite. The new
-checker is `src/check/` (it was `src/check2/` until R12 deleted v1); its
+checker is `src/check/`; its
 normative architecture is [`checker-v2.md`](docs/design/checker-v2.md), which
 supersedes the parts of `checker.md` and `static-dispatch-spike.md` its notes
 name. [`plans/checker-findings.md`](plans/checker-findings.md) catalogues every
-defect (CK-NN), [`plans/checker-rewrite.md`](plans/checker-rewrite.md) holds the
-slices (R0–R15) with an *As built* note each and §1.1's table of v1's six root
-causes. Red fixtures for open findings live in `tests/pending/`, run by
+defect, [`plans/checker-rewrite.md`](plans/checker-rewrite.md) holds the
+rewrite's slices with an *As built* note each and §1.1's table of the old
+checker's six root causes. Red fixtures for open findings live in `tests/pending/`, run by
 `zig build test-pending` (never by the gates); timing scenarios by
 `test-pending-perf` and, once fixed, `test-perf`. Owner decisions D1–D16 and
 their amendments are `checker-v2.md` §21–§21.1. Declaration order never
-changes whether a program checks or what it prints (I9, `ordering_test.zig`).
+changes whether a program checks or what it prints (`ordering_test.zig`).
 
 ## M3 — in progress
 
-**Schema S1–S2 implement the frontend and checker** (2026-09-22):
+**Schemas have frontend and checker support** (2026-09-22):
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
 `core/Schema` under the same engine-owned context contract and differential tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
-S1 and the layout surface slice parse both brace and aligned declaration bodies,
-format nonempty record bodies and tagged variants as layout, and preserve unresolved schema plans in
-AST/BIR dumps and the frontend cache. S2 resolves schema namespaces and both
-endpoint types, publishes member/constructor schemes, and caches an immutable
-resolved plan. `core/Schema` supplies the public type surface; executable library
-functions await S3. `check` and interface dumps accept schemas; `build` refuses
-them from emit before any output, with `not_implemented`: their parse and print
-are not generated until S4. A.6 owns interface v2, frontend artifact v3 (v4 since
-the checker rewrite's R1: a new token and a wider exposed row), cache
-entry v2 (v3 since R2a) and the unhashed plan v1. Queue row 67 and the brace-modifier row 70
-are fixed. Remaining decisions lead the document; H4 remains open. The
-recorded M4-first slices 1–3 have landed (schema.md A.2–A.4).
+The parser accepts both brace and aligned declaration bodies, the formatter
+emits nonempty record bodies and tagged variants as layout, and unresolved
+schema plans survive in AST/BIR dumps and the frontend cache. The checker
+resolves schema namespaces and both endpoint types, publishes
+member/constructor schemes, and caches an immutable resolved plan.
+`core/Schema` supplies the public type surface; executable library functions
+are still to come. `check` and interface dumps accept schemas; `build` refuses
+them from emit before any output, with `not_implemented`: their parse and
+print are not generated yet. A.6 owns interface v2, frontend artifact v3 (now
+v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
+unhashed plan v1. Remaining decisions lead the document; H4 remains open. The
+incrementality-first schema work schema.md A.2–A.4 records has landed.
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,
 its decision trees for pattern matching and its `?` have landed
@@ -112,7 +112,7 @@ field-interference artifact the backend
 does not receive (§9's *What the second slice owes*), integer constructor tags
 riding with it, and chunking (§10).
 
-**The output tree's reserved names begin with `_`** (2026-09-21, queue row 58):
+**The output tree's reserved names begin with `_`** (2026-09-21):
 `_main.mjs`, `_core/` and `_platform/`. They were `main.mjs`, `core/` and
 `platform/`, every one of them a name a module path can take — and the first was
 a live defect, not a hazard: `Main.beni` emits `Main.mjs`, which on APFS and
@@ -153,7 +153,7 @@ with `|>` flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 
-*Historical (the old checker these items describe was deleted at R12, 2026-09-27; `checker-v2.md` covers the same ground).* Report 19 §14, items 1–5. **All five are done** (2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
+*Historical (the old checker these items describe was deleted on 2026-09-27; `checker-v2.md` covers the same ground).* Report 19 §14, items 1–5. **All five are done** (2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
 (A.84), the inferred-`where` suffix is capped at 64 constraints and an
 unannotated declaration over the cap is `too_many_inferred_constraints`, which
 bounds the n² with it —
@@ -179,8 +179,8 @@ A.83 — and dead-code elimination has landed.
    every existing sibling passed unchanged
    ([`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §5.2,
    §11, A.7, A.84).
-3. ~~**The two `master` printer defects** report 19 §3.1 reproduces.~~ **Done**
-   (`83ce553`): a record truncated past 64 extension links prints `… | ` and
+3. ~~**The two `master` printer defects** report 19 §3.1 reproduces.~~ **Done**:
+   a record truncated past 64 extension links prints `… | ` and
    stays open, and `<error>` never reaches an interface unreported — the cause
    was a 256-slot stack in the poisoned-type scan, not `Schemes.Writer.max_depth`
    as report 19 guessed (`checker.md` §7, §8.2).
@@ -193,8 +193,8 @@ A.83 — and dead-code elimination has landed.
    feeding the next link, so a chain costs ⌈n/65⌉ diagnostics in linear time
    and memory instead of n(n+1)/2 constraints (spec §10.11).
 
-M4 is the daemon and incrementality: slices 0–3 have landed, including the
-on-disk cache and interface firewall; remaining incrementality work and the
+M4 is the daemon and incrementality: its first part has landed, including
+the on-disk cache and interface firewall; remaining incrementality work and the
 daemon are still ahead ([`queue.md`](plans/queue.md), M4 rows). M5 is source
 maps, code splitting and LSP, and has not started.
 

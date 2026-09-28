@@ -210,7 +210,7 @@ option (b), the whole feature, and the reasons are recorded in spec A.82. Pre-1.
 withdrawn.
 
 **What the reversal owes**, from report 19 §14 — none of it is optional and all of it is tracked in
-CLAUDE.md: dead-code elimination (already M3c, and eager derivation without it is not shippable);
+CLAUDE.md: dead-code elimination (already planned for the optimiser, and eager derivation without it is not shippable);
 an arity check for a `foreign` carrying a `where` clause, or withdrawal of that combination
 ([`boundary.md`](boundary.md) §4); the two printer defects §3.1 of that report reproduces; a cap on
 the `where` suffix an inferred interface may carry (§8.1 below); and a position on the n² count.
@@ -568,11 +568,11 @@ sharded global pool and the SSO are not implemented** — `Token.payload` is a p
 may hold one. That is why every record from `Bir` to `Interface` to `JsIr` holds symbols through one
 remappable column; see `plans/m4-plan.md` §2.5.*
 
-*Corrected 2026-09-24 (checker rewrite R1, CK-71): the merge is now in FILE order —
+*Corrected 2026-09-24 (checker rewrite): the merge is now in FILE order —
 `Session.mergeInterners` walks the files by index and interns each symbol a file's tokens or Bir
 reference on first sight, then whatever no file references, by text. A global symbol id is
 therefore input-derived and no longer varies with `--jobs` or with which worker took which file.
-The 2026-09-18 note's premise was already a live bug: CK-07's `unifyRecord` chose a field by id, so
+The 2026-09-18 note's premise was already a live bug: the old checker's `unifyRecord` chose a field by id, so
 the same input printed different diagnostics under load. What still holds is the rule it drew: an
 id moves with every edit to an earlier file, so no user-visible choice may be made by id.*
 
@@ -657,7 +657,7 @@ whole-program dense index assigned by walking every module in `Graph.Index` orde
 adding one type declaration (`pub` or private) to an alphabetically earlier module, or adding a new
 file containing a type, shifted an untouched, non-importing module's `dump --stage=raw` bytes by one
 word: `term 2 app 15 4` became `term 2 app 16 4`. Hashed as it stood, the cutoff would have failed
-to fire on approximately every type-introducing edit. **Fixed the same day** (plan decision D2):
+to fire on approximately every type-introducing edit. **Fixed the same day** (the owner's decision to fix the leak at once):
 `app` and `alias` now index a per-module `type_refs` table whose rows are `(package, declaring
 module's name, type's name)`, which no unrelated edit can move, and `checker.md` §7 states the
 purity rule as an invariant with the encoding and its four consequences. The session's translation
@@ -719,24 +719,24 @@ format version and content hash. No general serialization library — rkyv-style
 *idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads at
 roughly memcpy speed (05 §4). Only possible because of the no-pointers rule in §5.
 
-*Corrected 2026-09-19, on the `mmap` clause only, from M4-2's measurements (`plans/m4-2.md` §4).
+*Corrected 2026-09-19, on the `mmap` clause only, from the front-end artifacts' measurements (`plans/m4-2.md` §4).
 Everything else here stands: flat arrays as byte ranges, a header, a format version, validation on
 load, no serialization library. **But `mmap` per entry loses to `read` per entry at this granularity,
 measured.** 633 files on this machine's btrfs: `open` + `mmap` + `munmap` costs **4.5–5.0 ms**, and
 it costs the same whether the loader touches one byte or every page — the cost is the syscall pair,
 not the paging — against **1.9–2.3 ms** for `open` + `read` into a reused buffer. An `mmap` wins only
 with ONE mapping over MANY entries: one 8 MB pack file maps and reads its 633 headers in 0.05–0.28 ms.
-So the granularity decides the mechanism, and M4-2 is one file per key and therefore `read`. Two
+So the granularity decides the mechanism, and the front-end cache is one file per key and therefore `read`. Two
 consequences follow and are taken deliberately: the on-disk form stays **little-endian by definition
 and host-alignment-independent**, exactly as the interface record is (`checker.md` §7), so nothing in
 a cache directory is machine-specific by layout; and §8.3's zero-copy load is not abandoned but
-**re-aimed at the pack file**, which is M4-4's to take when `Types`, the `Reach` edge lists and the
+**re-aimed at the pack file**, which is the incremental whole-program passes' to take when `Types`, the `Reach` edge lists and the
 emit cache arrive and the directory's shape is being revisited anyway. The numbers for that are in
 `plans/m4-2.md` §4 and §6 so it need not be measured twice.*
 
-### The interface hash, and slice zero
+### The interface hash
 
-*Added 2026-09-18. Slice zero is the part of M4 that is the same under every answer to
+*Added 2026-09-18. The interface hash is the part of M4 that is the same under every answer to
 `plans/m4-plan.md`'s nine open decisions: make the interface serializable, hash it, and prove a
 round-tripped build is byte-identical to a cold one. The record's byte format is `checker.md` §7;
 the plan is `plans/m4-slice-zero.md`.*
@@ -785,25 +785,25 @@ and cannot see a cross-module effect. With `--iface-hash` it reports "importers 
 instead, and gains the edit class it could not express: **a type added to a module the observed one
 does not import — expected 0**, which is what `TypeId` in the record used to make nonzero.
 
-**What slice zero deliberately does not do**, each pointing at the decision that owns it: no cache
-directory and no file naming (D1 — disk cache before daemon); no invalidation policy and no cache
+**What the interface hash deliberately does not do**, each pointing at the decision that owns it: no cache
+directory and no file naming (the owner's order: disk cache before daemon); no invalidation policy and no cache
 key, so the `stat` fast-path, the sibling `.js` hash of `boundary.md` §7.3 and the "produced by a
-clean check" bit all wait (D1); no reserved bits for effects (D4, already taken — the version field
-is the mechanism); no `mmap` and therefore no commitment to a host-specific layout (D1); no memory
-ceiling (D7); no watching (D8); no cancellation (D9). It also does not close the two cross-module
+clean check" bit all wait (the same order); no reserved bits for effects (decided: the version field
+is the mechanism); no `mmap` and therefore no commitment to a host-specific layout (the same order); no memory
+ceiling, no watching and no cancellation (the daemon's decisions). It also does not close the two cross-module
 `Bir` reads `checker.md` §7 names, `Types.build` and `Types.Builder.aliasBody`: the round-trip
-happens with every module's Bir in memory, which is what keeps the slice one slice.
+happens with every module's Bir in memory, which is what keeps the step small.
 
 ### The persistent cache, and its key
 
-*Added 2026-09-19 for M4-1 (`plans/m4-1.md`), taken against owner decision D1 and D5. It is the
-first slice that keeps anything between processes; it changes not one byte of slice zero's record.*
+*Added 2026-09-19 (`plans/m4-1.md`), taken against the owner's decisions on the order of the
+incrementality work. It is the first step that keeps anything between processes; it changes not one byte of the interface record.*
 
-**What M4-1 is, in one sentence.** A module whose cache key is unchanged is not re-checked: its
+**What the persistent cache is, in one sentence.** A module whose cache key is unchanged is not re-checked: its
 interface record, its dispatch table and its diagnostics are loaded from disk and installed, and
 `constrain`, `solve`, `exhaustive`, `fillInterface` and `Cycles` never run for it. The FIREWALL
 CUTOFF — an importer spared because its imports' interface *hashes* did not move although their
-sources did — is **M4-3** and is deliberately not here; §8.1's formula is reached in two steps and
+sources did — is **the firewall cutoff, below,** and is deliberately not here; §8.1's formula is reached in two steps and
 this is the first.
 
 **The key is a 128-bit value over this byte string, in this order, every integer little-endian:**
@@ -828,18 +828,18 @@ hashed with the same `std.hash.SipHash128(1, 3)` and the same all-zero key the r
 computed **serially, in `graph.order`** (`src/resolve/Graph.zig:172` gives the direct imports), which
 is why an import's key is always available before its importer's.
 
-**An import contributes its KEY, not its interface hash, and that is the slice's central decision.**
+**An import contributes its KEY, not its interface hash, and that is the step's central decision.**
 A key is inductively the whole transitive input set, so an equal key means every byte that could
 reach this module's check — sources, options, compiler — is identical, and every whole-program fact
 recomputed from them (`Types`, the `equatable`/`comparable`/`has_function` fixpoint, the settled bits
 of `plans/m4-slice-zero.md` §4) is identical with it. The interface-hash form is *weaker* than the
 record: a dependent's check reads facts about its dependencies that the record does not carry, and
-enumerating them and proving the enumeration complete is the whole content of M4-3. *Rejected: keying
-on the imports' `(interface hash, sidecar hash)` pair now — it is M4-3's answer arrived at without
-M4-3's proof, and the sidecar that would carry the settled bits does not exist in M4-1 because every
-module's `Bir` is still in memory.* The cost is stated plainly: **in M4-1 a comment-only edit to a
+enumerating them and proving the enumeration complete is the whole content of the firewall cutoff. *Rejected: keying
+on the imports' `(interface hash, sidecar hash)` pair now — it is the cutoff's answer arrived at without
+its proof, and the sidecar that would carry the settled bits does not exist yet because every
+module's `Bir` is still in memory.* The cost is stated plainly: **with this key alone a comment-only edit to a
 leaf re-checks every transitive importer**, because the leaf's key moved even though its interface
-hash did not. That is the number M4-3 exists to fix.
+hash did not. That is the number the firewall cutoff exists to fix.
 
 **`core` is an unconditional input of every module's check**, with no import edge to say so — the
 solver reaches `core/Basics` directly (`src/check/Solve.zig:2583`, `:3348`), `Types.findWellKnown`
@@ -870,18 +870,18 @@ one is an error and errors are not cached; `--diagnostics`, `--self-profile`, `-
 `--iface-hash`, `--positions` because they select a rendering; `--roundtrip-interfaces` because a
 run with it must produce the same record, and exempting it would excuse it from the acceptance
 matrix; `--out`, `--library`, `--release` because they are the backend's and no emitted byte is
-cached in M4-1.
+cached.
 
-**The `stat` fast-path is M4-2's.** M4-1 reads and hashes every source on every run because it reads
+**The `stat` fast-path is the front-end artifacts'.** The persistent cache reads and hashes every source on every run because it reads
 every source anyway, so the hash is the only added cost: 1 836 kB at the 3.2 GB/s measured here is
 **0.57 ms** over the 100k corpus, against a 4.5 ms `read` phase. There is no size/mtime/inode column
-on `SourceStore.File` (`src/SourceStore.zig:67-85`) and M4-1 does not add one; the fast path pays
+on `SourceStore.File` (`src/SourceStore.zig:67-85`) and the persistent cache does not add one; the fast path pays
 only once the read itself is gone.
 
 **The cache directory** is named by `--cache-dir=<path>` on `check` and `build`
-([`frontend.md`](frontend.md) §1) and **there is no default: in M4-1 the cache is opt-in**. A cache
+([`frontend.md`](frontend.md) §1) and **there is no default: at first the cache was opt-in**. A cache
 that is on by default must be right about every input, and the fixtures that establish that are this
-slice's product, not its premise. It becomes the default in M4-3, the slice whose cutoff makes it
+step's product, not its premise. It became the default with the firewall cutoff, whose cutoff makes it
 worth having and whose edit-scenario table is what proves the key complete. Inside it, one file per
 module, **content-addressed by the key**: `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec`, two levels so
 no directory holds 100 000 entries. Writing is write-to-temp-then-`rename` inside the same directory
@@ -889,7 +889,7 @@ and there are no locks: two `beni` processes that compute the same key write ide
 later rename is harmless, and two that compute different keys never touch one file. *Rejected: one
 entry per module path, overwritten — two builds of one project with different options then fight
 over one file, and a stale entry becomes a wrong answer instead of an unreferenced one.* **No
-garbage collection in M4-1** and no size cap: entries accumulate at ~2 kB per checked module per
+garbage collection** and no size cap: entries accumulate at ~2 kB per checked module per
 distinct key, and the remedy is deleting the directory, which is always safe. `.gitignore` it; a
 cache is machine-local by policy from the moment §8.3's zero-copy map lands, and is never committed.
 
@@ -910,7 +910,7 @@ the entry's module
 and type references into this session's `Graph.Index`es and `TypeId`s, install the record and the
 dispatch table, replay the diagnostics, fill `Types.ref_ids` (`src/check/Check.zig:1127-1129`) — and
 nothing else. `beni build` then runs `eliminate` and `emit` for every module as it always did: no
-emitted byte is cached, and the write-skip `Emit.flush` wants is M4-4's.
+emitted byte is cached, and the write-skip `Emit.flush` wants belongs to the incremental whole-program passes.
 
 **The acceptance test is the matrix with a third axis.** `tests/blackbox/matrix_test.zig` gains two
 runs per fixture: a **cold-with-cache** run at `--jobs=1` into a fresh cache directory, which must be
@@ -923,25 +923,26 @@ written at one worker count and read at another is what would catch a `Symbol` r
 `plans/m4-plan.md` §4.5's "the counters did not move" is a claim about two runs at the same
 temperature.
 
-**Explicitly not in M4-1**, each pointing at its owner: front-end artifacts on disk and the `stat`
-fast-path (M4-2); the firewall cutoff, and with it the declared-type sidecar of
-`plans/m4-slice-zero.md` §4 — M4-3 needs its definition and its hash, M4-4 its bytes
+**Explicitly not in the persistent cache**, each pointing at its owner: front-end artifacts on disk and the `stat`
+fast-path (the front-end artifacts); the firewall cutoff, and with it the declared-type sidecar of
+`plans/m4-slice-zero.md` §4 — the cutoff needs its definition and its hash, an incremental `Types` its bytes
 (`checker.md` §7); the whole-program passes, `Types` and the `Reach` edge lists, and
-any caching of emitted bytes (M4-4); `mmap` and §8.3's zero-copy load (M4-4, with the artifacts);
-the daemon, the socket protocol, the memory ceiling, watching and cancellation (M4-5, D6–D9
-**PENDING**); the declaration-level graph of §8.2 (M4-6).
+any caching of emitted bytes (the incremental whole-program passes); `mmap` and §8.3's zero-copy load (the same, with the artifacts);
+the daemon, the socket protocol, the memory ceiling, watching and cancellation (the daemon, its decisions
+**PENDING**); the declaration-level graph of §8.2.
 
 ### The front-end artifacts, and the file key
 
-*Added 2026-09-19 for M4-2 (`plans/m4-2.md`), taken against owner decision D1 and D5. It changes not
+*Added 2026-09-19 (`plans/m4-2.md`), taken against the owner's decisions on the order of the
+incrementality work. It changes not
 one byte of the interface record, the cache entry or the module key; it adds a SECOND file beside
 them, under a second key.*
 
-**What M4-2 is, in one sentence.** A file whose **file key** is unchanged is not read for its
+**What the front-end artifacts are, in one sentence.** A file whose **file key** is unchanged is not read for its
 content, lexed, parsed or lowered: its pre-resolve `Bir`, its token spans, its line-start table and
 its front-end diagnostics are loaded from disk and installed, and `lex`, `parse` and `lower` never
 run for it. On the 100k corpus the front end is **41.9 ms of a 62 ms warm `check`** *(measured,
-`--jobs=1`)* — 67 % of it — and that is what this slice removes.
+`--jobs=1`)* — 67 % of it — and that is what this step removes.
 
 **The artifact set is decided by who still reads what on a WARM run, and it is smaller than the
 front end produces.** Four things survive `lower` and go to disk; two do not.
@@ -965,7 +966,7 @@ which is a miss by construction. *Rejected: caching tokens whole and the `Ast` w
 LSP will want it" — a cache pays for every byte it writes on every cold build and is asked for these
 bytes by nothing that exists.*
 
-**The file key is not the module key, and that is the whole reason for a second file.** M4-1's key
+**The file key is not the module key, and that is the whole reason for a second file.** The module key
 folds every import's key, so a body edit in a leaf moves every transitive importer's module key. It
 must not move their FRONT END. The file key is a 128-bit value over this byte string, in this order,
 every integer little-endian, hashed with the same `SipHash128(1, 3)` and the same all-zero key
@@ -990,7 +991,7 @@ would throw the front end away for a flag that cannot change a token. Nor is any
 `self_import` reads it; the package and the two permission bits because `foreign` and `equatable`
 are lexically gated.
 
-**Two files, not two sections of one.** `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec` is M4-1's entry
+**Two files, not two sections of one.** `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec` is the persistent cache's entry
 under the module key and is untouched; `…/<file key>.bef` is the front end under the file key, same
 fan-out, same directory, same "a bad file is a MISS, never a message and never an exit code"
 posture. *Rejected: one file with two independently-keyed sections — a file is named by one key or
@@ -1018,7 +1019,7 @@ declaration order as `src/bir/Bir.zig:10-14` promises; every `locals`, `refs`, `
 `type_params` and `params` range in range; every `Inst.Tag`, `Decl.Kind`, `Local.Kind` and
 `Ref.Kind` a value its enum defines; every `SymbolIndex` inside `symbols`; every `main_token` inside
 `token_tags`. It is a linear pass over the columns with no allocation — the shape `JsIr.verify`
-already has (`src/js/JsIr.zig:509-532`) — and the slice must report its cost as a `frontend_load`
+already has (`src/js/JsIr.zig:509-532`) — and the step must report its cost as a `frontend_load`
 sub-row against the 14.1 ms `lower` it replaces. *Rejected: trusting the bytes because the key
 covers them — the key says which compiler and which source, not that the disk kept them.*
 
@@ -1038,10 +1039,10 @@ overwrites, so the failure is self-healing. *Rejected: keeping `rename` — it i
 build to buy an atomicity that a content-addressed name already provides.* **(3) The pack file is
 recorded and not taken.** One file for the whole generation writes in 0.5–2.7 ms and maps in 0.05–0.28
 ms, 10–50× better than either, and it is where §8.3's zero-copy load goes — but it needs an index, a
-merge on write, and an answer for two processes whose key sets differ, none of which M4-2 has a
-fixture for. It is M4-4's, with these numbers.
+merge on write, and an answer for two processes whose key sets differ, none of which the front-end artifacts have a
+fixture for. It belongs to the incremental whole-program passes, with these numbers.
 
-**The `stat` fast path stays out of M4-2, and moves to M4-5.** M4-1 deferred it here on the argument
+**The `stat` fast path stays out of the front-end artifacts, and moves to the daemon.** The persistent cache deferred it here on the argument
 that it pays once the read is gone. It is not gone: the file key hashes the source, so the source is
 still read. What a `stat` path would save is `read` **5.2 ms** plus the source hash **0.6 ms**, minus
 **1.9 ms** for 633 `open`+`fstat` *(all measured)* — a net **~3.9 ms** of a predicted ~30 ms warm
@@ -1052,7 +1053,7 @@ rule it must obey when it does land is stated now so it is not re-derived: trust
 inode)` match only when the mtime is OLDER than the index's own write time by more than the
 filesystem's timestamp granularity — git's "racy" rule — and hash otherwise.** That covers the edit
 made twice inside one tick, a checkout restoring an old mtime, a copied tree and a skewed clock; each
-of the others degrades to a hash, which is 0.6 ms. M4-5 is where it belongs because a daemon holds the
+of the others degrades to a hash, which is 0.6 ms. The daemon is where it belongs because it holds the
 sources in memory and the watcher already knows what changed.
 
 **Acceptance is the matrix, one hidden flag, and a counter that must be zero.** The matrix's cache
@@ -1066,31 +1067,32 @@ diagnostic, every dispatch table and every emitted byte is built from artifacts 
 through the format. It is passed with its two siblings on the matrix's round-tripped runs, at no
 extra invocations.
 
-**Explicitly not in M4-2**, each pointing at its owner: the firewall cutoff, and with it the
-declared-type sidecar's definition and hash (M4-3); the whole-program passes — `types`, `graph`,
+**Explicitly not in the front-end artifacts**, each pointing at its owner: the firewall cutoff, and with it the
+declared-type sidecar's definition and hash (below); the whole-program passes — `types`, `graph`,
 `merge_interners`, `eliminate`, the 4.68 ms serial floor of `plans/m4-plan.md` §4.3 — and any
-caching of emitted bytes (M4-4); the pack file and §8.3's zero-copy load (M4-4); the `stat` fast
-path (M4-5, above); the daemon, the memory ceiling, watching and cancellation (M4-5, D6–D9
-**PENDING**); the `Ast` an LSP will want (M5); the declaration-level graph of §8.2 (M4-6).
+caching of emitted bytes (the incremental whole-program passes); the pack file and §8.3's zero-copy load (the same); the `stat` fast
+path (the daemon, above); the daemon, the memory ceiling, watching and cancellation (its decisions
+**PENDING**); the `Ast` an LSP will want (M5); the declaration-level graph of §8.2.
 
 ### The firewall cutoff, and the dependency digest
 
-*Added 2026-09-19 for M4-3 (`plans/m4-3.md`), taken against owner decision D1 and D5. It is the
-slice §8.1 has been pointing at since the document was written: the first one in which an importer
+*Added 2026-09-19 (`plans/m4-3.md`), taken against the owner's decisions on the order of the
+incrementality work. It is the
+step §8.1 has been pointing at since the document was written: the first one in which an importer
 is spared because its imports' PUBLIC FACE did not move, although their sources did. It changes not
 one byte of the interface record, the cache entry or the front-end artifact; it changes the module
 key, and it adds a second hash beside the interface hash.*
 
-**What M4-3 is, in one sentence.** A module is re-checked only when something it can OBSERVE about
+**What the firewall cutoff is, in one sentence.** A module is re-checked only when something it can OBSERVE about
 one of its imports changed — and "observe" is a closed, enumerated list, not a hope.
 
-**The measurement that says why.** On the 100k corpus, at the M4-2 tip *(measured, ReleaseFast,
+**The measurement that says why.** On the 100k corpus, with the front-end artifacts in place *(measured, ReleaseFast,
 `--jobs=1`, ABBA, load 0.3–0.6)*: a fully warm `check` is **40 ms** and a cold one **130 ms**, but a
 warm `check` after **a comment added to one leaf module** is **115 ms** — 88 % of cold. A comment,
 a whitespace change, an added private value and an added private type all cost the same 115 ms, and
-so does the same edit made in a hub. The reason is M4-1's key induction: that one edit moves **624
+so does the same edit made in a hub. The reason is the persistent cache's key induction: that one edit moves **624
 of 634 module keys** and **0 of 634 interface hashes**. The cache is doing almost nothing for the
-one case §2's budgets are about, and this slice is the whole of the difference.
+one case §2's budgets are about, and this step is the whole of the difference.
 
 **An import contributes `(interface hash, dependency digest)`, and that pair replaces its key.** The
 key's recipe is otherwise unchanged and `key_version` bumps to 2:
@@ -1115,19 +1117,19 @@ import_count: u32
     digest: [16]u8              the import's dependency digest, below
 ```
 
-*Amended by R4a (2026-09-25, `checker-v2.md` §14.3, S22):* `key_version` 3. The compiler-identity
+*Amended 2026-09-25 (`checker-v2.md` §14.3):* `key_version` 3. The compiler-identity
 component gains the checker id right after the build id — `checker_len: u32, checker`, the text `v1`
 or `v2` of the hidden `--checker` flag — in every module's key, core's included, so an entry one
-checker wrote is never read by the other. R12 removes the term with the flag.
+checker wrote is never read by the other. Deleting v1 removes the term with the flag.
 
-*Amended by R9 (2026-09-27, `checker-v2.md` §14.3, R9 note):* `key_version` 4. From R9 `v2` checks
+*Amended 2026-09-27 (`checker-v2.md` §14.3):* `key_version` 4. From then on `v2` checks
 every package, `core` included, where it had meant "v2 checks the root package, v1 checks `core`";
 the text stays `v2`, so the version moves instead, and no `core` entry v1 wrote under `v2` is read
 by a v2 that checks `core` — not even across a `--cache-build-id` that pins the build id.
 
-*Amended by R12 (2026-09-27, `checker-v2.md` §14.3):* `key_version` 5. v1 and the hidden
+*Amended 2026-09-27, when v1 was deleted (`checker-v2.md` §14.3):* `key_version` 5. v1 and the hidden
 `--checker` flag are deleted, and the checker id with them: the compiler-identity component is the
-build id alone again, as before R4a. The bump keeps a key without the term from ever equalling one
+build id alone again, as before 2026-09-25. The bump keeps a key without the term from ever equalling one
 written with it.
 
 **`core_surface` is `core_epoch` with its term changed and nothing else.** `core_epoch` hashed core's
@@ -1137,7 +1139,7 @@ property that matters: an edit to core that no module can observe re-checks noth
 *Rejected: narrowing it to implicit import edges on the six modules `Types.findWellKnown` names.* It
 is sharper, and it is not worth the proof it would need — `js/Reach.zig:224` reaches `core/String`
 and `core/Basics` by scanning their `Bir` with no edge at all, and enumerating the build side's core
-reaches is M4-4's job, not this slice's. One term over ten modules is the honest price of not
+reaches is the incremental whole-program passes' job, not this step's. One term over ten modules is the honest price of not
 enumerating them yet.
 
 **The dependency digest is a SECOND hash per module, and it is deliberately not part of the
@@ -1147,7 +1149,7 @@ private type to a module must not move that module's interface hash, and it does
 either — but the two facts have different owners, and folding the digest into the record would put a
 module's private business into the bytes every `.iface` golden and every `--stage=raw` output
 asserts. The record is the public face; the digest is the checking contract. `dump --stage=raw` and
-the `.iface` goldens do not move by one byte in this slice, and the record's `format_version` does
+the `.iface` goldens do not move by one byte in this step, and the record's `format_version` does
 not bump.
 
 **The digest is INDUCTIVE over direct imports, and that is what covers transitive reachability.** A
@@ -1157,7 +1159,7 @@ name against `A`'s whole declaration list. So a key over direct imports alone wo
 and a key over the transitive closure of type-reachability would have to compute that closure, which
 is the thing nobody can compute before checking. The digest folds each direct import's
 `(interface hash, digest)` into its own bytes, so one level of import terms carries every level of
-reachability, exactly as M4-1's key is inductive over sources. *Rejected: an explicit reachability
+reachability, exactly as the persistent cache's key is inductive over sources. *Rejected: an explicit reachability
 closure — it is the same answer computed twice, and the second computation is the one that can be
 wrong.*
 
@@ -1170,12 +1172,12 @@ nowhere in the record; renaming a field of it leaves the declaring module's hash
 turns an importer's clean build into `missing_field`. An interface-hash-only firewall answers exit 0
 to both, which is the one failure mode `checker.md` §7 says a compiler may not have.
 
-*Amended by R10 (2026-09-27), for the new checker only (the only one since R12).* Under `--checker=v2` the first fact's
+*Amended 2026-09-27, for the new checker only (the only one since v1 was deleted).* Under `--checker=v2` the first fact's
 hash is no longer byte-identical: a private type a `pub` scheme reaches has a `hidden_types` row in
-the record with its derived `eq` and `compare` (`checker-v2.md` §14.2 *as amended by R8a*), and
+the record with its derived `eq` and `compare` (`checker-v2.md` §14.2 *as amended 2026-09-26*), and
 those rows go from `present` to `function`. The digest still moves as well, and the importer is
 re-checked either way; the second fact (the alias no scheme mentions) is unchanged under both
-checkers. `checker-v2.md` §14.3 *as built by R10* lists every such difference.
+checkers. `checker-v2.md` §14.3 lists every such difference.
 
 **`TypeId` values are not a dependency, and that is why a private type is free.** A `TypeId` is a
 whole-program dense index, so adding a private type anywhere renumbers most of the table — but
@@ -1186,7 +1188,7 @@ dependent observes is the `Types.Entry` FIELDS an id indexes, and the digest car
 So `plans/m4-1.md` §6.1's row 5 is kept: a private type added to a leaf re-checks the leaf alone.
 
 **The key can no longer be computed in one serial pre-pass, and the DAG walk is where it moves.** An
-import's interface hash exists only once that import has been checked or loaded, so M4-1's serial
+import's interface hash exists only once that import has been checked or loaded, so the persistent cache's serial
 `cache_key` phase splits in two. The part with no import term — package, name, option string, source
 hash, sibling hash — stays serial and keeps the `cache_key` row. The key itself is finished on the
 DAG, in the worker that claimed the module, from the two arrays the driver publishes as each module
@@ -1206,7 +1208,7 @@ cross-module accessor records `(read module, kind of fact)` into the reading mod
 module that took a cache-key decision must not read a fact whose kind is not on the list or whose
 module its key does not cover; either is `internal`. It compiles away in ReleaseFast, exactly as
 `Reach.requireLive` and `Rename.verify` do, and it is what turns an incomplete enumeration into a
-test failure instead of a stale answer in the field. *Measured: the census build this slice was
+test failure instead of a stale answer in the field. *Measured: the census build this step was
 specified from put an atomic increment on every one of those accessors and cost **nothing** — 128–131
 ms against 127–130 cold, 41 ms against 41 warm — so the safe-build version is affordable without
 argument.*
@@ -1220,33 +1222,33 @@ skipped. Byte-identity alone would pass a cache that never hits. The classes and
 `plans/m4-3.md` §8; a bounded subset joins `test-blackbox` and the full cross stays a documented
 `bench/` command.
 
-**The cache becomes the default in this slice, and that is its last commit.** `--cache-dir` keeps its
+**The cache becomes the default in this step, and that is its last commit.** `--cache-dir` keeps its
 meaning; with no flag the directory is `.beni-cache/` in the working directory, created on demand,
 and `--no-cache` is the escape. It is the last commit behind the harness so that the flip is a
 one-line revert, and it flips only once the safe-build self-check is green over the whole corpus at
 both `--jobs` and the matrix is green over every edit class. `.gitignore` it: a cache is machine-local
 by policy from the moment §8.3's zero-copy map lands, and is never committed. Deleting the directory
-is always safe and is the documented remedy; there is no `beni clean` and no garbage collection in
-M4-3, both of which stay M4-5's with the size cap.
+is always safe and is the documented remedy; there is no `beni clean` and no garbage collection
+yet, both of which stay the daemon's with the size cap.
 
 **What a one-shot process can be held to, and what it cannot.** §2's warm rows were written for a
-**daemon** — no process start, sources already in memory — and M4-3 is a one-shot process. Its floor
+**daemon** — no process start, sources already in memory — and the firewall cutoff runs in a one-shot process. Its floor
 is measured: `beni version` costs **1.14 ms** amortized over 200 invocations, and a fully warm
 `check` of the 100k corpus is **40 ms**, of which the front end is `read` 5.3 + `frontend_load` 15.6
 and the rest is `cache_load`, `resolve`, `merge_interners`, `graph`, `types`, `enumerate` and the key
-pass — every one of them O(project) and none of them removed by this slice. So **< 15 ms for a body
-edit is not reachable by a one-shot process in M4-3 and is not this slice's to miss**; it needs
-M4-4's whole-program passes and `frontend_decode`, and M4-5's daemon. What M4-3 *is* held to is the
+pass — every one of them O(project) and none of them removed by this step. So **< 15 ms for a body
+edit is not reachable by a one-shot process and is not this step's to miss**; it needs
+the incremental whole-program passes and `frontend_decode`, and the daemon. What the firewall cutoff *is* held to is the
 **< 60 ms exported-signature row**, which a one-shot should meet for the first time, and the
-**< 120 ms daemon-cold-start row**, which M4-2 already meets. Stating which budget a slice owns is
+**< 120 ms daemon-cold-start row**, which the front-end artifacts already meet. Stating which budget a step owns is
 what keeps the other two from being quietly missed.
 
-**Explicitly not in M4-3**, each pointing at its owner: the emit-side cutoff and any caching of
+**Explicitly not in the firewall cutoff**, each pointing at its owner: the emit-side cutoff and any caching of
 emitted bytes, `frontend_decode`'s 10 ms, and the whole-program passes — `types`, `graph`,
-`merge_interners`, `eliminate` — with the pack file and §8.3's zero-copy load (M4-4); the `stat` fast
-path, the daemon, the socket protocol, the memory ceiling, watching and cancellation (M4-5, D6–D9
-**PENDING**); garbage collection and a size cap (M4-5); the `Ast` an LSP will want (M5); the
-declaration-level graph of §8.2 (M4-6, and only if these measurements demand it).
+`merge_interners`, `eliminate` — with the pack file and §8.3's zero-copy load (the incremental whole-program passes); the `stat` fast
+path, the daemon, the socket protocol, the memory ceiling, watching and cancellation (the daemon, its decisions
+**PENDING**); garbage collection and a size cap (the daemon); the `Ast` an LSP will want (M5); the
+declaration-level graph of §8.2 (only if these measurements demand it).
 
 ## 9. JavaScript backend
 

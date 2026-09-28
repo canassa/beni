@@ -1095,7 +1095,7 @@ const Sees$n = List$length(Blank$blankInts);
 
 Spike §8.1 says *"the checker refuses it first (`constrained_constant`, §6.4), so the backend never
 meets one"*, and §10.10 scopes `constrained_constant` to *inferred* schemes, so the annotated case
-falls between the two. It is `plans/queue.md` row 57, and it is why K2 keeps the `()`.
+falls between the two. It is the queue's annotated-constrained-constant defect, and it is why K2 keeps the `()`.
 
 ---
 
@@ -2214,7 +2214,7 @@ affordable. It should be a separate commission with its own measurement.
   its own: today a beni program that touches JSON has nothing at all.
 - **S2 — the well-known table (H2)** and `where a.schema : () -> Schema e a` as a *hand-written*
   pattern. Checker work, small, and §3.9(i) shows it already works.
-- **S3 — H3**, the annotated-constrained-constant defect (`plans/queue.md` row 57), with its
+- **S3 — H3**, the annotated-constrained-constant defect (`plans/queue.md`), with its
   fail-first fixture. Independent of schemas, and it should not wait for them.
 - **S4 — K13**, the namespace: `schema X` with **no body**, over a type that already exists, so
   `X.Type`, `X.Encoded` and `X.schema` resolve and nothing else is new. This is the slice that

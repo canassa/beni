@@ -464,7 +464,7 @@ writes.**
 The 26 programs B measures with no C0 counterpart are listed at `results:2155-2163` so that no total
 mixes them into a before/after. B's own total over 61 programs is 216 942 bytes of derived code
 across 1 497 functions (`results:2173`) — mostly never called, and the upper bound the elimination
-pass the M3a build order owes would work against.
+pass the backend's build order owes would work against.
 
 ---
 

@@ -1157,7 +1157,7 @@ That was not measured here and §12 records it.
 | the same 13 files concatenated, then compressed | 21 322 | **6 380** (−15.4 %) | 7 396 (−17.6 %) |
 | an `esbuild --bundle --format=esm --tree-shaking=false` bundle | **16 102** | **3 269** (−56.6 %) | 3 678 (−59.0 %) |
 
-R12/M3d's **−22 % brotli** is in the same family as the middle row. The bottom row is much larger,
+R12's chunking **−22 % brotli** is in the same family as the middle row. The bottom row is much larger,
 and the decomposition says why:
 
 | | bytes | share of the tree's raw bytes |
@@ -1390,16 +1390,16 @@ A1's own reasoning and by §7.1 — the browser will keep running the other fibe
 nearly free *if* the platform owns every listener through one `AbortController` (§6.3), which is a
 constraint worth adopting now. (c) has a release-build size cost (§8.3's arithmetic: a crash-screen
 string table is exactly the kind of thing `Reach.zig` cannot see is live), so gating it on the
-development build keeps the release floor where M3c put it. **And a sub-question that needs an answer
+development build keeps the release floor where the release optimiser put it. **And a sub-question that needs an answer
 either way: what replaces the non-zero exit code?** §9 needs one to test with.
 
-**Q7. Does the single-file bundle move ahead of chunking in M3d?**
+**Q7. Does the single-file bundle move ahead of chunking?**
 (a) chunking first, as `backend.md` §10 and `fast-compiler.md` §13 have it;
 (b) the degenerate one-entry-point single file first, chunking after.
 *Recommended: (b).* §8.2 says the single file is worth **3.0× time-to-`main` on 4G** and
 `backend.md` §10 already states that *"with one entry point and no `lazy`, a release build is exactly
 one file"* — the degenerate case needs no colouring lattice, no merge pass, no threshold and none of
-§10's PENDING decisions about `lazy`. It is the part of M3d that is unblocked, and it is the part
+§10's PENDING decisions about `lazy`. It is the part of the chunking work that is unblocked, and it is the part
 with the measured payoff.
 
 **Q8. Is sibling JavaScript minified in a release build?**

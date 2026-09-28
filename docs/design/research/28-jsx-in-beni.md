@@ -45,7 +45,7 @@ and the performance work can — and should — be sequenced independently (J5).
    `src/Session.zig:774, 825`), so the parser cannot steer the lexer the way Babel, TypeScript and
    old ReScript do. **This single fact decides the shape of the feature**: bare text children would
    need the tokenizer to track element nesting — a mini-parser inside the lexer, whose state must
-   also survive M4-2's cached token stream. Quoted children need **no lexer change at all**. (§3.1,
+   also survive the front-end cache's token stream. Quoted children need **no lexer change at all**. (§3.1,
    §4.2)
 2. **A JSX element with quoted children already tokenises today.** `q = <div class="a">` and
    `q = <input type="text"/>` produce exactly the token sequence a JSX parser wants; the only
@@ -669,7 +669,7 @@ mode STACK"* (`src/lex/Tokenizer.zig:20-24`).
 JSX *text children* are not self-delimiting in that sense. `<p>hello</p>`'s `hello` is text only
 because a tag was open, and whether `<` opened a tag is a question about expression position, which
 the lexer does not have. So **bare text children require the lexer to track element nesting** — a
-mini parser inside the tokenizer, whose state must also survive M4-2's cached token stream
+mini parser inside the tokenizer, whose state must also survive the front-end cache's token stream
 (`frontend.md` §3.2: the cached form is `tag` and `start`, five bytes, two columns).
 
 **Quoted string children require no lexer change at all.** That is not a stylistic preference; it is
@@ -864,7 +864,7 @@ interpolation** (`language.md` §2.6), which is the exact shape a text child wan
 Costs: a lexer that must decide, for every `<`, whether it is in expression position — the parser's
 knowledge (§3.1); `--` inside text becomes a comment and eats the rest of the line
 (`language.md` §2.3); a tab inside text is `tab_in_source`; the formatter may never reflow text
-(§7); and M4-2's cached token stream has to carry the mode.
+(§7); and the front-end cache's token stream has to carry the mode.
 Buys: familiarity, and markup pasted from HTML.
 
 **(b) Quoted string children.** `<p>"Hello " {name}</p>`.
@@ -1464,9 +1464,9 @@ no monomorphised view type to blow up.
   compile-time content hash *"to ensure identical templates compare equal regardless of optimization
   levels"* (`core-template/src/data.rs:33-44`), which is the same problem arriving by another door.
 - **Interface hashes**: under lowering (i) JSX produces ordinary calls, so a module's interface is
-  whatever its annotations say and JSX is invisible to `checker.md` §7's serialized form. **M4-3's
+  whatever its annotations say and JSX is invisible to `checker.md` §7's serialized form. **The interface
   firewall is unaffected.**
-- **The front-end cache (M4-2)**: `frontend.md` §3.2 caches `tag` and `start` only, and §3.6 the
+- **The front-end cache**: `frontend.md` §3.2 caches `tag` and `start` only, and §3.6 the
   pre-resolve `Bir`. A new token tag is a new enum value — an ordinary format change the
   compiler-build-id key already invalidates. **A lexer mode would have been the thing that needed a
   format decision, and there isn't one.**
@@ -1708,7 +1708,7 @@ whether text must be a string literal.
 (`src/lex/Tokenizer.zig:119-127`), so the lexer would have to decide for itself when it is inside a
 tag — which is the parser's knowledge. It also means `--` inside text becomes a comment and eats the
 rest of the line; a tab inside text is `tab_in_source`; a whitespace-collapsing rule (Babel's, §2.3)
-has to go into `language.md` and bind `beni fmt` forever; and M4-2's cached token stream has to carry
+has to go into `language.md` and bind `beni fmt` forever; and the front-end cache's token stream has to carry
 the mode.
 
 **What quoted text buys.** No lexer change at all. `${…}` interpolation inside the text, so

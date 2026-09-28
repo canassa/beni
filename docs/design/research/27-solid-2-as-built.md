@@ -1076,7 +1076,7 @@ untouched `b`, and because records are immutable that implies `b` is *deeply* un
 Two caveats report 29 must carry. **Nesting:** `{ m | user = { m.user | name = n } }` allocates two
 objects, so a per-hole check at the granularity of *the record the hole reads from* is correct and
 cheap, while a check against the root model is useless because the root always changes.
-**Lists are cons cells** (`backend.md` §4, with `:275-277` recording that M3c benchmarks a 32-way
+**Lists are cons cells** (`backend.md` §4, with `:275-277` recording that the optimiser benchmarks a 32-way
 persistent vector trie against them): updating row *i* rebuilds the spine for cells `0..i`, so those
 *i* cells are fresh objects and **a walk must compare the element, never the spine cell**. At element
 granularity one changed row is one miss; at spine granularity it is up to N. The 9.3 µs figure above

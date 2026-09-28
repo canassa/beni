@@ -870,7 +870,7 @@ because Terser cannot verify any of it.
 | every field access site | safe property renaming, and **ambiguation** | off by default; `--mangle-props` breaks code |
 | no `obj[dynamicString]` exists | the above, unconditionally | must assume dynamic access |
 | every call site's arity | direct n-ary calls, no `A2` adapter (§9.3) | none |
-| a `case` is exhaustive (M2c) | drop the default branch and its throw | none |
+| a `case` is exhaustive (the checker's exhaustiveness pass) | drop the default branch and its throw | none |
 | a value is an unboxed `Int` | `===` with no `typeof` guard | none |
 | constants across module boundaries | whole-program constant propagation | blocked unless bundled |
 
