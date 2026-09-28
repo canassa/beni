@@ -81,6 +81,19 @@ const leaf_source =
     \\    | Blue
     \\
     \\
+    \\type alias Inner =
+    \\    { n : Int }
+    \\
+    \\
+    \\pub type alias Outer =
+    \\    { inner : Inner }
+    \\
+    \\
+    \\pub keep : Outer -> Outer
+    \\keep o =
+    \\    o
+    \\
+    \\
     \\pub make : Int -> Hidden
     \\make x =
     \\    H x
@@ -129,6 +142,11 @@ const mid_source =
     \\pub column : Coord -> Int
     \\column ( x, y ) =
     \\    x
+    \\
+    \\
+    \\pub kept : Int
+    \\kept =
+    \\    (Leaf.keep { inner = { n = 1 } }).inner.n
     \\
 ;
 
@@ -292,6 +310,9 @@ const Edit = struct {
     /// fact the test states rather than a consequence of the key.
     rechecked: u64,
     cut_off: u64,
+    /// The warm build's exit code after the edit, for an edit meant to
+    /// change the answer and not only the keys.
+    exit_code: ?u8 = null,
 };
 
 // ---------------------------------------------------------------------------
@@ -319,6 +340,23 @@ test "an alias body no scheme names moves only Leaf's digest, and Mid is re-chec
         .rechecked = 4,
         .cut_off = 11,
         .source = replace(leaf_source, "pub type alias Coord =\n    ( Int, Int )", "pub type alias Coord =\n    ( Float, Int )"),
+        .exit_code = 1,
+    });
+}
+
+test "a private alias inside a scheme's alias moves Leaf's record, and Mid reads the new body" {
+    // `keep : Outer -> Outer` names `Outer`, whose body names the private
+    // `Inner`: the record carries both bodies, once each, on their
+    // `type_refs` rows (checker-v2.md §14.2). `Inner`'s field becoming a
+    // `Float` moves Leaf's record and hash, so every module downstream is
+    // re-checked, and `Mid.kept` — which reads `Inner` only through
+    // `keep`'s scheme — now returns a `Float` its annotation calls `Int`.
+    try differential(.{
+        .what = "change a private alias a pub scheme reaches",
+        .rechecked = 4,
+        .cut_off = 11,
+        .source = replace(leaf_source, "type alias Inner =\n    { n : Int }", "type alias Inner =\n    { n : Float }"),
+        .exit_code = 1,
     });
 }
 
@@ -351,6 +389,7 @@ fn differential(edit: Edit) !void {
     const warm1 = try run(&w, arena, "cache", "warm1.json");
     const cold1 = try run(&w, arena, null, "cold1.json");
     try expectSameRun(edit.what, cold1, warm1);
+    if (edit.exit_code) |want| try testing.expectEqual(want, warm1.exit_code);
 
     // **The assertion that matters.** The cache re-checked exactly the
     // modules whose key moved — computed from `--cache-keys`. An importer

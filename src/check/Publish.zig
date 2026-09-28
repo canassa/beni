@@ -56,6 +56,12 @@ pub fn fill(in: Input) Error!void {
     const prov = in.provenance;
     var writer: Schemes.Writer = .init(gpa, cx.store, cx.interner, cx.types, @intCast(iface.symbols.len));
     defer writer.deinit();
+    // The reader the writer takes each alias's body from, once per alias
+    // (checker-v2.md §14.2).
+    var bodies = cx.builder(.flex, TypeStore.generalized);
+    defer bodies.deinit();
+    bodies.shallow = true;
+    writer.bodies = &bodies;
     try writer.seedExtra(iface.extra);
     var p: Publisher = .{ .cx = cx, .stacks = in.stacks, .writer = &writer };
 

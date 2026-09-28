@@ -79,7 +79,6 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A fixed scenario leaves this table for `ordering_test.zig`,
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
-    .{ .name = "scenario/CK-144", .step = .fast },
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
@@ -102,45 +101,6 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
-
-// An interface term expands every alias body inside every scheme,
-// so a chain of nested record aliases is quadratic in BYTES (and in
-// publication time, and in the cache entry). `pub type alias R{i} =
-// { x : Int, p : R{i-1} }` with one `pub get{i} : R{i} -> Int` each. The
-// claim is the size of `dump --stage=raw` (the interface as written), which
-// is exact, so one run of each size. Today 60 / 120 levels write
-// 1 021 435 / 4 140 731 bytes, a ratio of 4.05 (240 levels: 17.1 MB, a
-// 4.9 MB cache entry; a `pub schema` chain of 240 writes a 22 MB entry).
-// Expected: alias references by name, each body written once — linear.
-test "an alias chain's interface is linear in its length" {
-    var s = try Scenario.init("CK-144");
-    defer s.deinit();
-    try s.w.write("R.beni", try aliasChain(s.arena(), 60));
-    try s.w.write("R2.beni", try aliasChain(s.arena(), 120));
-    var bytes: [2]usize = undefined;
-    for ([_][]const u8{ "R.beni", "R2.beni" }, &bytes) |file, *slot| {
-        const run = try s.timed(&.{ "dump", "--stage=raw", "--diagnostics=json", file }, world.bulk_timeout_ms) orelse
-            return s.finish(.{ .green = false, .signature = "timeout", .detail = "a dump did not finish" });
-        if (run.result.exit_code != 0) return s.finish(try s.failed(run.result));
-        slot.* = run.result.stdout.len;
-    }
-    const hundredths = bytes[1] * 100 / @max(bytes[0], 1);
-    const green = hundredths <= 250;
-    try s.finish(.{
-        .green = green,
-        .signature = if (green) "" else "superlinear",
-        .detail = try std.fmt.allocPrint(s.arena(), "60 aliases: {d} bytes; 120: {d} bytes; ratio {d}.{d:0>2}", .{ bytes[0], bytes[1], hundredths / 100, hundredths % 100 }),
-    });
-}
-
-/// `pub type alias R0 = { x : Int }`, then `R{i} = { x : Int, p : R{i-1} }`
-/// with a `pub get{i} : R{i} -> Int` each, up to `count`.
-fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n\n\n");
-    for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} -> Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
-    return out.items;
-}
 
 // The list stays honest: every `RED` entry names a pending fixture that
 // exists or a scenario of this file. A fixture promoted into the corpus takes

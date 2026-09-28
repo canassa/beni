@@ -1094,6 +1094,43 @@ test "publishing a chain of pub types is linear" {
     try s.finish("publishing a chain of pub types", try s.eventRatio("C.beni", "C2.beni", 16_000, "publish", &.{}));
 }
 
+// An interface term that wrote every alias it named with its whole
+// expansion made a chain of nested record aliases quadratic in BYTES:
+// `pub type alias R{i} = { x : Int, p : R{i-1} }` with one `pub get{i} :
+// R{i} -> Int` each. An alias is named in a term now and its body written
+// once per record, on its `type_refs` row (checker-v2.md §14.2). The claim is
+// the size of `dump --stage=raw` (the interface as written), which is exact,
+// so one run of each size. Calibration: expanded, 1 021 435 / 4 140 731
+// bytes at 60 / 120 links (ratio 4.05; 240: 17.3 MB); by name, 49 507 /
+// 101 460 (2.04; 240: 209 385).
+test "an alias chain's interface is linear in its length" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("R.beni", try aliasChain(s.arena(), 60));
+    try s.w.write("R2.beni", try aliasChain(s.arena(), 120));
+    var bytes: [2]usize = undefined;
+    for ([_][]const u8{ "R.beni", "R2.beni" }, &bytes) |file, *slot| {
+        const run = try s.timed(&.{ "dump", "--stage=raw", "--diagnostics=json", file }, world.bulk_timeout_ms) orelse
+            return error.PerfRunFailed;
+        try Perf.expectClean(run.result);
+        slot.* = run.result.stdout.len;
+    }
+    const hundredths = bytes[1] * 100 / @max(bytes[0], 1);
+    try s.finish("interface bytes of an alias chain", .{
+        .green = hundredths <= 250,
+        .detail = try std.fmt.allocPrint(s.arena(), "60 aliases: {d} bytes; 120: {d} bytes; ratio {d}.{d:0>2}", .{ bytes[0], bytes[1], hundredths / 100, hundredths % 100 }),
+    });
+}
+
+/// `pub type alias R0 = { x : Int }`, then `R{i} = { x : Int, p : R{i-1} }`
+/// with a `pub get{i} : R{i} -> Int` each, up to `count`.
+fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n\n\n");
+    for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} -> Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
+    return out.items;
+}
+
 // The frontend's `resolve` asks, for EVERY qualified reference, whether its
 // root names a schema; answered by a scan of the module's declarations and of
 // every import's `exposing` list, a module's resolution is quadratic in its

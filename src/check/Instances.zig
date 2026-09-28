@@ -583,44 +583,53 @@ fn reportedAtDeclaration(s: *Solve, t: Types.TypeId, entry: Types.Entry, value: 
     if (@intFromEnum(value) >= iface.values.len) return false;
     const index = iface.values[@intFromEnum(value)].scheme;
     if (index == .none or @intFromEnum(index) >= iface.schemes.len) return false;
-    const body = expansionOf(iface, iface.scheme(index).body);
-    if (body.tag != .func) return false;
-    const params = iface.range(body.lhs);
-    if (params.len == 0) return false;
-    const first = expansionOf(iface, @enumFromInt(params[0]));
-    if (first.tag != .app or first.lhs >= refs.len or refs[first.lhs] != t) return false;
-    // `fitsWellKnown`, on terms.
-    if (params.len != 2) return true;
-    for (params) |p| {
-        const term = expansionOf(iface, @enumFromInt(p));
-        switch (term.tag) {
-            .@"var", .err => {},
-            .app => if (term.lhs >= refs.len or refs[term.lhs] != t) return true,
-            else => return true,
-        }
-    }
-    const result = expansionOf(iface, @enumFromInt(body.rhs));
-    return switch (result.tag) {
-        .@"var", .err => false,
-        .app => !(result.lhs < refs.len and refs[result.lhs] == Resolve.wellKnownResult(s, method) and iface.range(result.rhs).len == 0),
-        else => true,
-    };
+    const judge: WrittenFor = .{ .iface = iface, .refs = refs, .t = t, .result = Resolve.wellKnownResult(s, method) };
+    return iface.through(iface.scheme(index).body, null, &judge, WrittenFor.body);
 }
 
-/// Interface term `t` with its aliases looked through, as `resolvedContent`
-/// looks through a variable's.
-fn expansionOf(iface: *const Interface, t: Interface.TermIndex) Interface.Term {
-    var term = iface.term(t);
-    // An interface is acyclic; the bound only keeps a malformed one from
-    // looping (every step moves to another term).
-    var steps: usize = 0;
-    while (term.tag == .alias and steps < iface.terms.len) : (steps += 1) {
-        const r = iface.range(term.rhs);
-        if (r.len == 0) break;
-        term = iface.term(@enumFromInt(r[r.len - 1]));
+/// `reportedAtDeclaration`'s two tests on the scheme's terms, each seen
+/// through its aliases as `resolvedContent` looks through a variable's
+/// (`Interface.through`: an alias's body is on its row, checker-v2.md
+/// §14.2).
+const WrittenFor = struct {
+    iface: *const Interface,
+    refs: []const Types.TypeId,
+    t: Types.TypeId,
+    result: Types.TypeId,
+
+    const Shape = enum { own, open, other };
+
+    fn body(j: *const WrittenFor, seen: Interface.Seen) bool {
+        if (seen.term.tag != .func) return false;
+        const params = j.iface.range(seen.term.lhs);
+        if (params.len == 0) return false;
+        if (j.iface.through(@enumFromInt(params[0]), seen.frame, j, shape) != .own) return false;
+        // `fitsWellKnown`, on terms.
+        if (params.len != 2) return true;
+        for (params) |p| {
+            if (j.iface.through(@enumFromInt(p), seen.frame, j, shape) == .other) return true;
+        }
+        return j.iface.through(@enumFromInt(seen.term.rhs), seen.frame, j, unfit);
     }
-    return term;
-}
+
+    /// An application of `t`, a variable or `err`, or anything else.
+    fn shape(j: *const WrittenFor, seen: Interface.Seen) Shape {
+        return switch (seen.term.tag) {
+            .@"var", .err => .open,
+            .app => if (seen.term.lhs < j.refs.len and j.refs[seen.term.lhs] == j.t) .own else .other,
+            else => .other,
+        };
+    }
+
+    /// Whether a result is not the well-known one.
+    fn unfit(j: *const WrittenFor, seen: Interface.Seen) bool {
+        return switch (seen.term.tag) {
+            .@"var", .err => false,
+            .app => !(seen.term.lhs < j.refs.len and j.refs[seen.term.lhs] == j.result and j.iface.range(seen.term.rhs).len == 0),
+            else => true,
+        };
+    }
+};
 
 /// A `pub eq` or `pub compare` written for a type `T` of this
 /// module — its first parameter an application of `T` — whose type fits no

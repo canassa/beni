@@ -31,6 +31,7 @@ const Evidence = @import("Evidence.zig");
 const int_hash = @import("int_hash.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
+const InterfaceTerms = @import("InterfaceTerms.zig");
 
 const Schemes = @This();
 
@@ -113,6 +114,26 @@ pub const Writer = struct {
     /// a type costs no allocation per application or function it holds.
     stack: std.ArrayList(u32) = .empty,
     depth: u32 = 0,
+    /// The deepest term the write in progress reached (`depth`'s maximum).
+    peak: u32 = 0,
+    /// Where an alias's body comes from (checker-v2.md §14.2): a reader of
+    /// this module's written types, in its shallow mode
+    /// (`Types.Builder.canonical`). Null only in unit tests that name no
+    /// alias; a body it cannot give is `err`.
+    bodies: ?*Types.Builder = null,
+    /// Every alias the record's terms name, in the order first named: its
+    /// `type_refs` row carries the body, written once (`writeRows`).
+    rows: std.ArrayList(Row) = .empty,
+    /// `type_refs` row → index into `rows`, or `no_row`.
+    ref_row: std.ArrayList(u32) = .empty,
+    /// The first row whose body is not written yet.
+    rows_written: u32 = 0,
+    /// The `alias` terms of the write in progress and of the bodies written
+    /// after it, each with the depth it was met at (`finish`).
+    uses: std.ArrayList(Use) = .empty,
+    /// Set while a body is written: a variable that is not one of the
+    /// alias's parameters is `err`, never a new quantifier.
+    in_body: bool = false,
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -122,12 +143,32 @@ pub const Writer = struct {
     too_deep: bool = false,
 
     const unbound: u32 = std.math.maxInt(u32);
+    const no_row: u32 = std.math.maxInt(u32);
     /// How deep a solved type may nest before the writer gives up. The same
     /// number as `Types.Builder.max_depth` and for the same reason: a type
     /// that came from an annotation cannot be deeper than the annotation
     /// was, so a scheme that trips this came from unification joining two
-    /// annotations that each fit.
-    pub const max_depth = 512;
+    /// annotations that each fit. It is the reader's bound too, and what is
+    /// counted is what a reader walks: an alias's body from the `alias`
+    /// term that names it on (`finish`).
+    pub const max_depth = InterfaceTerms.max_depth;
+
+    /// One alias the record names (checker-v2.md §14.2).
+    const Row = struct {
+        ref: Interface.TypeRefIndex,
+        id: TypeStore.TypeId,
+        /// Its body's own deepest term, the body's root at depth 1.
+        peak: u32 = 0,
+        /// `uses[uses_start..uses_end]`: the aliases its body names.
+        uses_start: u32 = 0,
+        uses_end: u32 = 0,
+        /// How deep a reader walks expanding it: `peak`, or a nested
+        /// alias's depth from where the body names it (`rowDepth`).
+        depth: u32 = 0,
+        state: enum { written, visiting, settled } = .written,
+    };
+
+    const Use = struct { row: u32, at: u32 };
 
     pub fn init(
         gpa: Allocator,
@@ -150,6 +191,9 @@ pub const Writer = struct {
         w.pending_flags.deinit(w.gpa);
         w.pending_roots.deinit(w.gpa);
         w.stack.deinit(w.gpa);
+        w.rows.deinit(w.gpa);
+        w.ref_row.deinit(w.gpa);
+        w.uses.deinit(w.gpa);
         w.gpa.free(w.memo);
         w.gpa.free(w.quantified);
         w.gpa.free(w.stamp);
@@ -169,8 +213,7 @@ pub const Writer = struct {
     /// `TypeStore.generalized` becomes a quantifier; anything else is
     /// concrete by the time a module is done.
     pub fn add(w: *Writer, v: Var) Error!Interface.SchemeIndex {
-        try w.resetMemo();
-        w.too_deep = false;
+        const mark = try w.begin();
         // The body is written first and the quantifier list placed after
         // it: the walk DISCOVERS the quantifiers, and their order is first
         // appearance in the body, which is also the order `Render` names
@@ -187,6 +230,7 @@ pub const Writer = struct {
             .quantified_count = count,
             .body = body,
         });
+        try w.finish(mark);
         return @enumFromInt(index);
     }
 
@@ -194,9 +238,10 @@ pub const Writer = struct {
     /// emits no Scheme row or constraint block: the plan retains the canonical
     /// endpoint/conversion term itself and owns the moved flat tables.
     pub fn addPlanRoot(w: *Writer, v: Var) Error!Interface.TermIndex {
-        try w.resetMemo();
-        w.too_deep = false;
-        return w.writeVar(v);
+        const mark = try w.begin();
+        const root = try w.writeVar(v);
+        try w.finish(mark);
+        return root;
     }
 
     pub const PlanTerms = struct {
@@ -243,8 +288,7 @@ pub const Writer = struct {
     /// arguments do not mention every parameter — `type Phantom a = Phantom`
     /// — would otherwise number them by accident.
     pub fn addCtor(w: *Writer, params: []const Var, args: []const Var) Error!CtorTerms {
-        try w.resetMemo();
-        w.too_deep = false;
+        const mark = try w.begin();
         for (params) |p| {
             const root = w.store.find(p);
             const flags: TypeStore.Flags = switch (w.store.content(root)) {
@@ -259,7 +303,119 @@ pub const Writer = struct {
         try w.writeConstraints();
         const quantified_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
-        return .{ .arg_terms = try w.addRange(words), .quantified_start = quantified_start };
+        const arg_terms = try w.addRange(words);
+        try w.finish(mark);
+        return .{ .arg_terms = arg_terms, .quantified_start = quantified_start };
+    }
+
+    /// Start a write: a new memo epoch, no depth reached, and the mark in
+    /// `uses` its own `alias` terms start at.
+    fn begin(w: *Writer) Error!usize {
+        try w.resetMemo();
+        w.too_deep = false;
+        w.peak = 0;
+        return w.uses.items.len;
+    }
+
+    /// End a write: write the body of every alias it named for the first
+    /// time — and of the aliases those name — then judge its depth as a
+    /// reader will walk it, each alias's body counted from the `alias` term
+    /// that names it (checker-v2.md §14.2). `too_deep` is the verdict.
+    fn finish(w: *Writer, mark: usize) Error!void {
+        const own_peak = w.peak;
+        const own_too_deep = w.too_deep;
+        const own_end = w.uses.items.len;
+        const first = w.rows_written;
+        try w.writeRows();
+        for (first..w.rows.items.len) |i| _ = try w.rowDepth(@intCast(i));
+        var reach = own_peak;
+        for (w.uses.items[mark..own_end]) |u| reach = @max(reach, u.at + w.rows.items[u.row].depth);
+        // Every body written above has its depth; the uses are spent.
+        w.uses.shrinkRetainingCapacity(mark);
+        w.too_deep = own_too_deep or reach > max_depth;
+    }
+
+    /// The row of alias `id`, named by `ref`, queued for `writeRows` the
+    /// first time.
+    fn rowOf(w: *Writer, ref: Interface.TypeRefIndex, id: TypeStore.TypeId) Error!u32 {
+        const slot = &w.ref_row.items[ref.int()];
+        if (slot.* != no_row) return slot.*;
+        slot.* = @intCast(w.rows.items.len);
+        try w.rows.append(w.gpa, .{ .ref = ref, .id = id });
+        return slot.*;
+    }
+
+    /// Write every queued body, in queue order; a body may queue more.
+    fn writeRows(w: *Writer) Error!void {
+        while (w.rows_written < w.rows.items.len) : (w.rows_written += 1) {
+            const i = w.rows_written;
+            // Before `begin`, which sizes the memo to the store this grows.
+            const app = if (w.bodies) |b| try b.canonical(w.rows.items[i].id) else null;
+            _ = try w.begin();
+            w.rows.items[i].uses_start = @intCast(w.uses.items.len);
+            const body = if (app) |v| try w.writeBody(v) else try w.term(.err, 0, 0);
+            const row = &w.rows.items[i];
+            row.uses_end = @intCast(w.uses.items.len);
+            row.peak = if (w.too_deep) max_depth + 1 else w.peak;
+            w.type_refs.items[row.ref.int()].body = body;
+        }
+    }
+
+    /// The body of an alias from `app`, the alias applied to distinct
+    /// parameter variables: its expansion, with parameter `i` written as
+    /// `var(i)`. Anything else — not an alias, a parameter repeated or not
+    /// a variable — is `err` (`Types.Builder.canonical` says when).
+    fn writeBody(w: *Writer, app: Var) Error!Interface.TermIndex {
+        const a = switch (w.store.content(w.store.find(app))) {
+            .alias => |a| a,
+            else => return w.term(.err, 0, 0),
+        };
+        const params = try w.gpa.dupe(Var, w.store.vars(a.args));
+        defer w.gpa.free(params);
+        for (params, 0..) |p, i| {
+            const root = w.store.find(p);
+            switch (w.store.content(root)) {
+                .flex, .rigid => {},
+                else => return w.term(.err, 0, 0),
+            }
+            if (w.live(root) and w.quantified[root.int()] != unbound) return w.term(.err, 0, 0);
+            if (!w.claim(root)) return w.term(.err, 0, 0);
+            w.quantified[root.int()] = @intCast(i);
+        }
+        w.in_body = true;
+        defer w.in_body = false;
+        return w.writeVar(a.actual);
+    }
+
+    /// How deep a reader walks expanding row `start`, settling every row
+    /// it names first. An explicit stack: a chain of aliases is as deep as
+    /// the program makes it. A row met again on the stack names itself,
+    /// which a written body never does (a recursive alias reads as `err`);
+    /// it counts its own peak.
+    fn rowDepth(w: *Writer, start: u32) Error!u32 {
+        if (w.rows.items[start].state == .settled) return w.rows.items[start].depth;
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(w.gpa);
+        try stack.append(w.gpa, start);
+        w.rows.items[start].state = .visiting;
+        while (stack.items.len != 0) {
+            const top = stack.items[stack.items.len - 1];
+            const row = w.rows.items[top];
+            const pending = for (w.uses.items[row.uses_start..row.uses_end]) |u| {
+                if (w.rows.items[u.row].state == .written) break u.row;
+            } else null;
+            if (pending) |next| {
+                w.rows.items[next].state = .visiting;
+                try stack.append(w.gpa, next);
+                continue;
+            }
+            var depth = row.peak;
+            for (w.uses.items[row.uses_start..row.uses_end]) |u| depth = @max(depth, u.at + w.rows.items[u.row].depth);
+            w.rows.items[top].depth = depth;
+            w.rows.items[top].state = .settled;
+            _ = stack.pop();
+        }
+        return w.rows.items[start].depth;
     }
 
     /// A scheme for a declaration that did not check (checker.md §7).
@@ -404,6 +560,7 @@ pub const Writer = struct {
             .name = @enumFromInt(try w.symbolIndex(t.name)),
         });
         try w.ref_ids.append(w.gpa, id);
+        try w.ref_row.append(w.gpa, no_row);
         try w.ref_index.put(w.gpa, id, @intFromEnum(index));
         return index;
     }
@@ -411,6 +568,7 @@ pub const Writer = struct {
     fn writeVar(w: *Writer, v: Var) Error!Interface.TermIndex {
         w.depth += 1;
         defer w.depth -= 1;
+        w.peak = @max(w.peak, w.depth);
         if (w.depth > max_depth) {
             w.too_deep = true;
             return w.term(.err, 0, 0);
@@ -429,6 +587,10 @@ pub const Writer = struct {
         switch (content) {
             .err => return try w.memoise(root, try w.term(.err, 0, 0)),
             .flex, .rigid => |flags| {
+                // A body's only variables are its parameters (`writeBody`).
+                if (w.in_body and !(w.live(root) and w.quantified[root.int()] != unbound)) {
+                    return try w.memoise(root, try w.term(.err, 0, 0));
+                }
                 const index = try w.quantifierOf(root, flags);
                 const t = try w.term(.@"var", index, 0);
                 return try w.memoise(root, t);
@@ -481,13 +643,14 @@ pub const Writer = struct {
                     return try w.memoise(root, try w.term(.record, start, ext.int()));
                 },
             },
+            // By name (checker-v2.md §14.2): the arguments here, the body
+            // once on the alias's row. The expansion is not walked.
             .alias => |a| {
                 const base = try w.writeRange(w.store.vars(a.args));
-                const actual = try w.writeVar(a.actual);
-                try w.stack.append(w.gpa, actual.int());
                 const start = try w.addRange(w.stack.items[base..]);
                 w.stack.shrinkRetainingCapacity(base);
                 const ref = try w.typeRefOf(a.type);
+                if (ref != .none) try w.uses.append(w.gpa, .{ .row = try w.rowOf(ref, a.type), .at = w.depth });
                 return try w.memoise(root, try w.term(.alias, ref.int(), start));
             },
         }
@@ -681,321 +844,16 @@ fn pushReversed(stack: *std.ArrayList(Var), gpa: Allocator, vars: []const Var) E
     }
 }
 
-/// A reader's memo of an interface's terms, by term index: one variable per
-/// term, so a term referenced twice becomes one variable (`instantiate`).
-/// Kept by a module's check and reused by every instantiation it makes:
-/// a slot holds a variable only while its stamp is the current
-/// read's, so starting a read is one increment, not a clear of a table as
-/// long as the whole interface, which an instantiation of a small scheme
-/// from `core` paid on every use.
-pub const TermMemo = struct {
-    slots: std.ArrayList(Slot) = .empty,
-    stamp: u32 = 0,
+/// The reader's memo, kept by a module's check across its instantiations
+/// (`InterfaceTerms.TermMemo`).
+pub const TermMemo = InterfaceTerms.TermMemo;
 
-    const Slot = struct { stamp: u32 = 0, v: Var = undefined };
-
-    pub fn deinit(m: *TermMemo, gpa: Allocator) void {
-        m.slots.deinit(gpa);
-    }
-
-    /// A new read over `len` terms: every slot empty.
-    fn begin(m: *TermMemo, gpa: Allocator, len: usize) Error!void {
-        if (m.slots.items.len < len) try m.slots.appendNTimes(gpa, .{}, len - m.slots.items.len);
-        m.stamp +%= 1;
-        if (m.stamp == 0) {
-            @memset(m.slots.items, .{});
-            m.stamp = 1;
-        }
-    }
-
-    fn get(m: *const TermMemo, index: u32) ?Var {
-        const slot = m.slots.items[index];
-        return if (slot.stamp == m.stamp) slot.v else null;
-    }
-
-    fn put(m: *TermMemo, index: u32, v: Var) void {
-        m.slots.items[index] = .{ .stamp = m.stamp, .v = v };
-    }
-};
-
-/// Copy an interface scheme into `store` at `rank`: one fresh variable per
-/// quantifier, then the body rebuilt on top of them.
-///
-/// `type_ids` is this session's translation of `iface.type_refs`, which is
-/// `Types.refIds` of the module the record belongs to. It is passed in
-/// rather than resolved here because it is built ONCE per module, when that
-/// module is checked, and read on every import use: resolving a reference
-/// has to stay one array index however many times a scheme is instantiated
-/// (`Interface.TypeRef`, `Types.ref_ids`).
-pub fn instantiate(
-    iface: *const Interface,
-    type_ids: []const TypeStore.TypeId,
-    store: *TypeStore,
-    scheme_index: u32,
-    rank: u32,
-    scratch: Allocator,
-) Error!Var {
-    var memo: TermMemo = .{};
-    defer memo.deinit(scratch);
-    return instantiateWith(iface, type_ids, store, scheme_index, rank, scratch, &memo, scratch);
-}
-
-/// `instantiate` with the caller's memo, allocated with `gpa`.
-pub fn instantiateWith(
-    iface: *const Interface,
-    type_ids: []const TypeStore.TypeId,
-    store: *TypeStore,
-    scheme_index: u32,
-    rank: u32,
-    scratch: Allocator,
-    memo: *TermMemo,
-    gpa: Allocator,
-) Error!Var {
-    const s = iface.schemes[scheme_index];
-    const fresh = try scratch.alloc(Var, s.quantified_count);
-    defer scratch.free(fresh);
-    for (fresh, 0..) |*v, i| {
-        const q = iface.quantified(s, @intCast(i));
-        v.* = try store.fresh(.{ .flex = .{
-            .name = iface.quantifiedSymbol(q),
-            .kind = @enumFromInt(q.kind),
-            .equatable = q.equatable,
-        } }, rank);
-    }
-    // One store variable per TERM, so a term referenced twice becomes one
-    // variable and the sharing the writer preserved survives the crossing.
-    try memo.begin(gpa, iface.terms.len);
-    var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
-    const body = try reader.read(s.body);
-    // The constraint blocks LAST, so every quantifier already has its
-    // variable and a `var(i)` inside a constraint's type lands on the same
-    // one the body uses (static-dispatch-spike.md §6.5 rule 3). Each
-    // quantifier gets a FRESH set; the evidence index runs across
-    // quantifiers in canonical order (§7.2).
-    for (fresh, 0..) |v, i| {
-        const q = iface.quantified(s, @intCast(i));
-        if (q.constraints_len == 0) continue;
-        const built = try scratch.alloc(TypeStore.MethodConstraint, q.constraints_len);
-        defer scratch.free(built);
-        for (built, 0..) |*c, j| {
-            const qc = iface.quantifiedConstraint(q, @intCast(j));
-            c.* = .{
-                .name = iface.symbol(qc.name),
-                .fn_var = try reader.read(qc.type),
-                .region = @enumFromInt(0),
-                .origin = .where_clause,
-            };
-        }
-        const set = try store.addConstraints(built);
-        const flags = store.flagsOf(store.find(v));
-        store.setContent(store.find(v), .{ .flex = .{
-            .name = flags.name,
-            .kind = flags.kind,
-            .equatable = flags.equatable,
-            .constraints = set.toOptional(),
-        } });
-    }
-    return body;
-}
-
-/// Copy an imported constructor's type into `store` at `rank`:
-/// `arg1 -> … -> argN -> T p0 … pk`, with one fresh variable per parameter
-/// of the owning type.
-///
-/// The mirror of `instantiate`, and the point of `Interface.Ctor.arg_terms`:
-/// a dependent builds an imported constructor's type out of the interface
-/// alone, never out of the declaring module's `Bir`. `type_id` is what
-/// `Types.ofInterface` says the owning type is in THIS session — the
-/// interface stores its own `TypeIndex`, which is meaningless anywhere
-/// else.
-///
-/// Null when the constructor has no terms: the declaring module was never
-/// checked, or its declaration was too deep to read. The caller poisons.
-pub fn instantiateCtor(
-    iface: *const Interface,
-    type_ids: []const TypeStore.TypeId,
-    store: *TypeStore,
-    ctor_index: u32,
-    type_id: TypeStore.TypeId,
-    rank: u32,
-    scratch: Allocator,
-) Error!?Var {
-    var memo: TermMemo = .{};
-    defer memo.deinit(scratch);
-    return instantiateCtorWith(iface, type_ids, store, ctor_index, type_id, rank, scratch, &memo, scratch);
-}
-
-/// `instantiateCtor` with the caller's memo, allocated with `gpa`.
-pub fn instantiateCtorWith(
-    iface: *const Interface,
-    type_ids: []const TypeStore.TypeId,
-    store: *TypeStore,
-    ctor_index: u32,
-    type_id: TypeStore.TypeId,
-    rank: u32,
-    scratch: Allocator,
-    memo: *TermMemo,
-    gpa: Allocator,
-) Error!?Var {
-    if (ctor_index >= iface.ctors.len) return null;
-    const c = iface.ctors[ctor_index];
-    if (c.arg_terms == Interface.no_terms) return null;
-    if (@intFromEnum(c.type) >= iface.types.len) return null;
-    const arity = iface.types[@intFromEnum(c.type)].arity;
-
-    const fresh = try scratch.alloc(Var, arity);
-    defer scratch.free(fresh);
-    for (fresh, 0..) |*v, i| {
-        const q = iface.ctorQuantified(c, @intCast(i));
-        v.* = try store.fresh(.{ .flex = .{
-            .name = iface.quantifiedSymbol(q),
-            .kind = @enumFromInt(q.kind),
-            .equatable = q.equatable,
-        } }, rank);
-    }
-    try memo.begin(gpa, iface.terms.len);
-    var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
-
-    const words = iface.range(c.arg_terms);
-    const args = try scratch.alloc(Var, words.len);
-    defer scratch.free(args);
-    for (words, args) |word, *v| v.* = try reader.read(@enumFromInt(word));
-
-    // The result: the owning type applied to its own parameters — or, for
-    // a record alias's constructor (interface v3), the alias of the
-    // RECORD its fields make, argument `i` being field `i` of the row's
-    // declaration-order names. That is exactly what the declaring module's
-    // own check builds for it (`Types.Builder.apply` on the alias), so a
-    // field access or an update on `P 1 "a"` types the same on both sides
-    // of the import.
-    const params = try store.addVars(fresh);
-    const result = switch (c.result) {
-        .nominal => try store.fresh(.{ .structure = .{ .app = .{ .type = type_id, .args = params } } }, rank),
-        .record_alias => blk: {
-            const names = iface.range(c.fields);
-            // A row whose names do not match its arguments is a record the
-            // writer never produces; poison rather than guess.
-            if (names.len != args.len) return null;
-            const fields = try scratch.alloc(TypeStore.Field, args.len);
-            defer scratch.free(fields);
-            for (fields, names, args) |*f, name, arg| {
-                if (name >= iface.symbols.len) return null;
-                f.* = .{ .name = iface.symbol(@enumFromInt(name)), .value = arg };
-            }
-            const field_range = try store.addFields(fields);
-            const closed = try store.fresh(.{ .structure = .empty_record }, rank);
-            const record = try store.fresh(.{ .structure = .{ .record = .{ .fields = field_range, .ext = closed } } }, rank);
-            break :blk try store.fresh(.{ .alias = .{ .type = type_id, .args = params, .actual = record } }, rank);
-        },
-    };
-    // A constructor of n fields is an n-ARY function, not a chain of n
-    // one-argument ones (language.md §6.7), and a nullary one is the type
-    // itself.
-    if (args.len == 0) return result;
-    const arg_range = try store.addVars(args);
-    return try store.fresh(.{ .structure = .{ .func = .{ .params = arg_range, .result = result } } }, rank);
-}
-
-const Reader = struct {
-    iface: *const Interface,
-    /// `iface.type_refs` translated into this session — see `instantiate`.
-    type_ids: []const TypeStore.TypeId,
-    store: *TypeStore,
-    rank: u32,
-    scratch: Allocator,
-    fresh: []const Var,
-    memo: *TermMemo,
-    depth: u32 = 0,
-
-    fn read(r: *Reader, index: Interface.TermIndex) Error!Var {
-        if (index == .none) return r.store.freshErr(r.rank);
-        r.depth += 1;
-        defer r.depth -= 1;
-        // Silence is right HERE and nowhere else in this file: the writer
-        // refuses to emit a term deeper than `max_depth`, so a well-formed
-        // interface cannot trip this. What can is a record mapped from
-        // disk that does not describe itself, and there is no source
-        // position in THIS module to point a message at — the module that
-        // wrote it reported when it wrote it.
-        if (r.depth > Writer.max_depth) return r.store.freshErr(r.rank);
-        if (r.memo.get(index.int())) |v| return v;
-
-        const t = r.iface.term(index);
-        const v = switch (t.tag) {
-            .err => try r.store.freshErr(r.rank),
-            .@"var" => if (t.lhs < r.fresh.len) r.fresh[t.lhs] else try r.store.freshErr(r.rank),
-            .unit => try r.store.fresh(.{ .structure = .unit }, r.rank),
-            .empty_record => try r.store.fresh(.{ .structure = .empty_record }, r.rank),
-            .func => blk: {
-                const params = try r.readRange(t.lhs);
-                defer r.scratch.free(params);
-                const range = try r.store.addVars(params);
-                const result = try r.read(@enumFromInt(t.rhs));
-                break :blk try r.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, r.rank);
-            },
-            .app => blk: {
-                const args = try r.readRange(t.rhs);
-                defer r.scratch.free(args);
-                const range = try r.store.addVars(args);
-                break :blk try r.store.fresh(.{ .structure = .{ .app = .{ .type = r.typeId(t.lhs), .args = range } } }, r.rank);
-            },
-            .tuple => blk: {
-                const elements = try r.readRange(t.lhs);
-                defer r.scratch.free(elements);
-                const range = try r.store.addVars(elements);
-                break :blk try r.store.fresh(.{ .structure = .{ .tuple = range } }, r.rank);
-            },
-            .record => blk: {
-                const words = r.iface.range(t.lhs);
-                const count = words.len / 2;
-                const fields = try r.scratch.alloc(TypeStore.Field, count);
-                defer r.scratch.free(fields);
-                for (0..count) |i| {
-                    fields[i] = .{
-                        .name = r.iface.symbol(@enumFromInt(words[i * 2])),
-                        .value = try r.read(@enumFromInt(words[i * 2 + 1])),
-                    };
-                }
-                const range = try r.store.addFields(fields);
-                const ext = try r.read(@enumFromInt(t.rhs));
-                break :blk try r.store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } }, r.rank);
-            },
-            .alias => blk: {
-                const words = r.iface.range(t.rhs);
-                // An alias range is its arguments followed by the
-                // expansion, so it is never empty; a malformed one — the
-                // cache maps these from disk — must poison rather than
-                // underflow the length.
-                if (words.len == 0) break :blk try r.store.freshErr(r.rank);
-                const args = try r.scratch.alloc(Var, words.len - 1);
-                defer r.scratch.free(args);
-                for (args, 0..) |*a, i| a.* = try r.read(@enumFromInt(words[i]));
-                const actual = try r.read(@enumFromInt(words[words.len - 1]));
-                const range = try r.store.addVars(args);
-                break :blk try r.store.fresh(.{ .alias = .{ .type = r.typeId(t.lhs), .args = range, .actual = actual } }, r.rank);
-            },
-        };
-        r.memo.put(index.int(), v);
-        return v;
-    }
-
-    /// The session `TypeId` an `app` or `alias` operand names. One array
-    /// index — the whole point of `Types.ref_ids`. A reference the session
-    /// could not resolve, and an operand a record mapped from disk does not
-    /// describe, both give `.none`, which is the poisoned id this operand
-    /// carried directly before the reference existed.
-    fn typeId(r: *const Reader, operand: u32) TypeStore.TypeId {
-        return if (operand < r.type_ids.len) r.type_ids[operand] else .none;
-    }
-
-    fn readRange(r: *Reader, start: u32) Error![]Var {
-        const words = r.iface.range(start);
-        const out = try r.scratch.alloc(Var, words.len);
-        errdefer r.scratch.free(out);
-        for (words, out) |word, *v| v.* = try r.read(@enumFromInt(word));
-        return out;
-    }
-};
+/// Instantiating an interface's schemes and constructors lives with its
+/// reader (`InterfaceTerms`).
+pub const instantiate = InterfaceTerms.instantiate;
+pub const instantiateWith = InterfaceTerms.instantiateWith;
+pub const instantiateCtor = InterfaceTerms.instantiateCtor;
+pub const instantiateCtorWith = InterfaceTerms.instantiateCtorWith;
 
 // ---------------------------------------------------------------------------
 // Tests

@@ -322,12 +322,15 @@ pub fn writeRaw(
     // or `alias` operand below is a row of THIS table, so an unrelated
     // module gaining a type cannot move it (`Interface.TypeRef`).
     for (iface.type_refs, 0..) |ref, i| {
-        try w.print("typeref {d} {t} {s}.{s}\n", .{
+        try w.print("typeref {d} {t} {s}.{s}", .{
             i,
             ref.package,
             interner.slice(iface.symbol(ref.module)),
             interner.slice(iface.symbol(ref.name)),
         });
+        // An alias's body, once per record (checker-v2.md §14.2).
+        if (ref.body != .none) try w.print(" body={d}", .{ref.body.int()});
+        try w.writeByte('\n');
     }
     const tags = iface.terms.items(.tag);
     const lhs = iface.terms.items(.lhs);

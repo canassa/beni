@@ -147,25 +147,14 @@ pub fn importArity(interfaces: []const Interface, module: Graph.Index, value: u3
     if (value >= iface.values.len) return 0;
     const index = iface.values[value].scheme;
     if (index == .none or @intFromEnum(index) >= iface.schemes.len) return 0;
-    var at = iface.scheme(index).body;
-    // An alias term's LAST extra word is its expansion (`Interface.Term`).
-    // Each step moves to a term written before it, so the walk ends; the
-    // bound is only a guard against a malformed interface.
-    var steps: u32 = 0;
-    while (steps < iface.terms.len) : (steps += 1) {
-        if (at == .none or at.int() >= iface.terms.len) return 0;
-        const t = iface.term(at);
-        switch (t.tag) {
-            .func => return @intCast(iface.range(t.lhs).len),
-            .alias => {
-                const words = iface.range(t.rhs);
-                if (words.len == 0) return 0;
-                at = @enumFromInt(words[words.len - 1]);
-            },
-            else => return 0,
+    // Through the aliases at the root, their bodies on their rows
+    // (checker-v2.md §14.2).
+    const Count = struct {
+        fn visit(record: *const Interface, seen: Interface.Seen) u32 {
+            return if (seen.term.tag == .func) @intCast(record.range(seen.term.lhs).len) else 0;
         }
-    }
-    return 0;
+    };
+    return iface.through(iface.scheme(index).body, null, iface, Count.visit);
 }
 
 // ---------------------------------------------------------------------------

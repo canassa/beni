@@ -1029,6 +1029,11 @@ pub const Builder = struct {
     /// (`shared`), so one read shares across modules too.
     aliases: AliasMemo = .empty,
     shared: ?*AliasMemo = null,
+    /// Leave every alias this read meets unexpanded: an `alias` variable
+    /// whose expansion is a placeholder `err`, which no one walks. The
+    /// interface writer's mode (`canonical`): a body names the aliases in
+    /// it, and each is written once on its own row (checker-v2.md §14.2).
+    shallow: bool = false,
     /// Set when `max_depth` stopped the walk, so the caller can REPORT
     /// before it uses the poisoned result. "Errors never stop the build"
     /// (`fast-compiler.md` §5) means a poisoned variable after a message,
@@ -1201,6 +1206,14 @@ pub const Builder = struct {
     /// type, an interned `alias` for an alias (checker.md §5 — never
     /// expanded away, only looked THROUGH).
     fn named(b: *Builder, tag: Bir.Inst.Tag, data: Bir.Inst.Data, args: []const Var) Error!Var {
+        // Shallow, a schema endpoint is its identity alone: an `alias` that
+        // `apply` leaves unexpanded for a record endpoint, an `app` for a
+        // tagged one.
+        if (b.shallow and (tag == .ext_schema_type or tag == .schema_type_top)) {
+            const id = b.types.headId(b.module, tag, data);
+            if (id == .none) return b.store.freshErr(b.varRank());
+            return b.apply(id, args);
+        }
         if (tag == .ext_schema_type) return b.schemaMember(@enumFromInt(data.lhs), data.rhs, args);
         const id: TypeId = switch (tag) {
             .type_top => b.types.ofDecl(b.module, @enumFromInt(data.lhs)),
@@ -1222,7 +1235,7 @@ pub const Builder = struct {
                     // schema plan's.
                     const id = b.types.ofSchemaDecl(b.module, @enumFromInt(data.lhs), endpoint);
                     if (id != .none and b.types.entry(id).kind == .adt) break :blk id;
-                    if (try b.planEndpoint(@enumFromInt(data.lhs), endpoint, args)) |v| return v;
+                    if (try b.planEndpoint(b.module, @enumFromInt(data.lhs), endpoint, args, false)) |v| return v;
                 }
                 break :blk .none;
             },
@@ -1247,9 +1260,9 @@ pub const Builder = struct {
     /// `null` when the module has no plan: it had an error, so the importer
     /// has a dependency's message and the `err` the caller makes is
     /// downstream of it (§12.2's table).
-    fn planEndpoint(b: *Builder, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, args: []const Var) Error!?Var {
-        if (b.module.int() >= b.types.plans.len) return null;
-        const plan = &b.types.plans[b.module.int()];
+    fn planEndpoint(b: *Builder, module: Graph.Index, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, args: []const Var, one_level: bool) Error!?Var {
+        if (module.int() >= b.types.plans.len) return null;
+        const plan = &b.types.plans[module.int()];
         // Definitions are appended in declaration order (`SchemaPlanBuild`).
         const Ctx = struct {
             fn order(want: Bir.DeclIndex, def: SchemaPlan.Definition) std.math.Order {
@@ -1261,7 +1274,7 @@ pub const Builder = struct {
         const def = plan.definitions[at];
         const root = if (endpoint == .type) def.program_term else def.encoded_term;
         if (root.int() >= plan.terms.len) return null;
-        reads.note(.types_alias_body, b.module);
+        reads.note(.types_alias_body, module);
         var view = Interface.empty;
         view.terms = plan.terms;
         view.extra = plan.type_extra;
@@ -1272,6 +1285,7 @@ pub const Builder = struct {
         for (plan.type_refs, ids) |ref, *slot| {
             slot.* = b.types.find(b.graph, ref.package, view.symbol(ref.module), view.symbol(ref.name));
         }
+        if (one_level) return try InterfaceTerms.applicationOf(&view, ids, b.store, root, args, b.rank, b.scratch);
         return try InterfaceTerms.instantiateRoot(&view, ids, b.store, root, args, b.rank, b.scratch);
     }
 
@@ -1284,6 +1298,43 @@ pub const Builder = struct {
         if (scheme_i == .none) return b.store.freshErr(b.varRank());
         const scheme = iface.scheme(scheme_i);
         return InterfaceTerms.instantiateRoot(iface, b.types.refIds(module), b.store, scheme.body, args, b.rank, b.scratch);
+    }
+
+    /// Alias `id` applied to fresh, distinct parameter variables, its body
+    /// read once with every alias inside it left unexpanded: what the
+    /// interface writer writes an alias's body from (checker-v2.md §14.2).
+    /// Needs `shallow`. A `type alias` of any module is read from its
+    /// declaration, exactly as an annotation reads it; a record endpoint
+    /// of this module is the schema's own variables; another module's is
+    /// its record's row, or its plan's for a private schema. Null when
+    /// there is none to read — another module's endpoint whose module has
+    /// no plan or no scheme for it — which that module has reported.
+    pub fn canonical(b: *Builder, id: TypeId) Error!?Var {
+        std.debug.assert(b.shallow);
+        if (id == .none) return null;
+        const e = b.types.entry(id);
+        if (e.kind != .alias) return null;
+        const params = try b.scratch.alloc(Var, e.arity);
+        defer b.scratch.free(params);
+        for (params) |*p| p.* = try b.store.fresh(.{ .flex = .{} }, b.rank);
+        if (!e.schema_endpoint) {
+            const actual = try b.aliasBody(e, id, params);
+            return try b.store.fresh(.{ .alias = .{ .type = id, .args = try b.store.addVars(params), .actual = actual } }, b.rank);
+        }
+        const endpoint: Interface.SchemaCtor.Endpoint = if (b.types.ofSchemaDecl(e.module, e.decl, .type) == id) .type else .encoded;
+        if (e.module == b.module) {
+            const context = b.schema_context orelse return null;
+            const lookup = b.schema_lookup orelse return null;
+            return try lookup(context, e.decl.int(), endpoint == .encoded, &.{});
+        }
+        if (b.types.schemaMemberOfDecl(e.module, e.decl, endpoint)) |member| {
+            if (e.module.int() >= b.interfaces.len) return null;
+            const iface = &b.interfaces[e.module.int()];
+            const scheme_i = iface.schema_members[member].scheme;
+            if (scheme_i == .none) return null;
+            return try InterfaceTerms.applicationOf(iface, b.types.refIds(e.module), b.store, iface.scheme(scheme_i).body, params, b.rank, b.scratch);
+        }
+        return try b.planEndpoint(e.module, e.decl, endpoint, params, true);
     }
 
     /// Build `id args`, expanding an alias's body ONCE under its
@@ -1320,7 +1371,7 @@ pub const Builder = struct {
             }
         }
         const range = try b.store.addVars(args);
-        const actual = try b.aliasBody(e, id, args);
+        const actual = if (b.shallow) try b.store.freshErr(b.varRank()) else try b.aliasBody(e, id, args);
         const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
         try b.memo().put(b.scratch, key, v);
         return v;
@@ -1362,6 +1413,7 @@ pub const Builder = struct {
         const here: Expansion = .{ .id = id, .outer = b.expanding };
         inner.expanding = &here;
         inner.shared = b.memo();
+        inner.shallow = b.shallow;
         // A schema endpoint in the body is read as the caller would read
         // it written directly: through the caller's schema lookup
         // when the alias is the checked module's own, and through the

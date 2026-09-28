@@ -4047,6 +4047,17 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   run each, exact), red `superlinear`. The hint has no fixture of its own: whether a 255-level
   chain is still refused after the fix is the fix's to decide.
 - **Slice** R15-fix.
+- **Status** fixed (2026-09-28), `checker-v2.md` §14.2 *amended 2026-09-28* (interface format 7,
+  plan format 2, entry format 4, §14.3): an `alias` term holds its arguments and the alias's body
+  is on its `type_refs` row, written once per record; the importer expands a row once per `(row,
+  argument roots)` per read. 60 / 120 / 240 links: 49 507 / 101 460 / 209 385 bytes of `dump
+  --stage=raw` (ratio 2.04), from 1 021 435 / 4 140 731 / 17 252 635. Scenario promoted into
+  `perf_test.zig` ("an alias chain's interface is linear in its length"); `iface_test.zig` holds
+  the cross-module half (16 / 32 links named by another module: 16 501 / 33 674 bytes, master
+  74 519 / 284 974). **The chain past about 254 links is still refused**, by the annotation reader
+  (`Types.Builder.max_depth`), which is where the expansion is real (the store holds it), so the
+  message's hint is unchanged and still wrong for an inner part that is already an alias; that
+  half (K13) is not addressed here.
 
 ### CK-145 — A record mismatch's text depends on the other files of the project
 
@@ -5164,7 +5175,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-141 | compiler-crash-or-hang | K9 | `check/bad/ImportedErrorValueCompared/` | R15-fix |
 | CK-142 | compiler-crash-or-hang | K9 | `check/bad/DerivedRowTemplateTooDeep/` | R15-fix |
 | CK-143 | performance | K11 | `perf_test.zig` "CK-143", "CK-143-publish" (`test-perf`) | R15-fix-D (fixed) |
-| CK-144 | performance | K11 | `scenario/CK-144` | R15-fix |
+| CK-144 | performance | K11 | promoted: `perf_test.zig` "an alias chain's interface is linear in its length"; new `iface_test.zig` cross-module chain | R15-fix-K (fixed) |
 | CK-145 | diagnostic-quality | K12 | promoted: `check/bad/RecordUnifyFieldOrderOtherFile/` | R15-fix-D (fixed) |
 | CK-146 | latent | K9 | — (structural); item (3) was CK-201 | R15-fix-J (closed) |
 | CK-147 | valid-program-rejected | K9 | promoted: `check/bad/FailedDeclarationPublishedType/` | R15-fix-D (fixed) |

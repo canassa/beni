@@ -2,10 +2,11 @@
 //! nothing in the compiler computes today (`checker.md` §7, *The dependency
 //! digest*).
 //!
-//! **What it is for.** An `alias` term's range in an interface record is its
-//! arguments followed by the ACTUAL type, so a `pub type alias` a scheme of its
-//! own module mentions has its expansion in the record and the firewall sees a
-//! change to it. One that NO scheme of its own module mentions has its
+//! **What it is for.** An interface record carries the body of every alias its
+//! terms name, on the alias's `type_refs` row (`checker-v2.md` §14.2), so a
+//! `pub type alias` a scheme of its own module mentions has its body in the
+//! record and the firewall sees a change to it. One that NO scheme of its own
+//! module mentions has its
 //! expansion nowhere — and renaming a field of it turns an importer's clean
 //! build into `missing_field` while the declaring module's interface hash stays
 //! byte-identical (`plans/m4-3.md` §6.2, reproduced here: a `pub type alias
@@ -107,7 +108,7 @@ pub fn write(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, root: Bir.Ins
 
 /// The same position-free encoding, starting from a checked interface term.
 /// Schema record endpoints have no BIR type annotation of their own: their
-/// structural expansion is the last child of the endpoint's `alias` term.
+/// structural expansion is the body on the endpoint's `type_refs` row.
 /// Reading that term keeps the dependency digest sensitive to the endpoint
 /// shape without admitting the resolved schema plan (and private `via`
 /// expressions) into the hash.
@@ -150,13 +151,9 @@ fn writeInterfaceAt(
             return writeInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
         },
         .app => return writeInterfaceNamed(gpa, out, cx, term.lhs, cx.iface.range(term.rhs), depth),
-        .alias => {
-            const words = cx.iface.range(term.rhs);
-            if (words.len == 0) return tag(gpa, out, .err);
-            // The final word is the alias expansion. As with BIR bodies,
-            // nested aliases stay named; closure adds their own digest row.
-            return writeInterfaceNamed(gpa, out, cx, term.lhs, words[0 .. words.len - 1], depth);
-        },
+        // As with BIR bodies, a nested alias stays named; closure adds its
+        // own digest row.
+        .alias => return writeInterfaceNamed(gpa, out, cx, term.lhs, cx.iface.range(term.rhs), depth),
         .tuple => {
             const elements = cx.iface.range(term.lhs);
             try tag(gpa, out, .tuple);
@@ -367,9 +364,9 @@ pub fn collectLocal(
     return collectAt(gpa, out, cx, root, 0);
 }
 
-/// Every type of `cx.module` named by an interface term. Alias terms carry an
-/// expansion for consumers, but closure follows the named alias and its
-/// arguments only; the alias receives its own digest row on the worklist.
+/// Every type of `cx.module` named by an interface term. Closure follows a
+/// named alias and its arguments only; the alias receives its own digest
+/// row on the worklist.
 pub fn collectLocalInterface(
     gpa: Allocator,
     out: *std.ArrayList(Types.TypeId),
@@ -397,9 +394,7 @@ fn collectInterfaceAt(
                     if (id != .none) try out.append(gpa, id);
                 }
             }
-            const words = cx.iface.range(term.rhs);
-            const args = if (term.tag == .alias and words.len != 0) words[0 .. words.len - 1] else words;
-            for (args) |arg| try collectInterfaceAt(gpa, out, cx, @enumFromInt(arg), depth + 1);
+            for (cx.iface.range(term.rhs)) |arg| try collectInterfaceAt(gpa, out, cx, @enumFromInt(arg), depth + 1);
         },
         .func => {
             for (cx.iface.range(term.lhs)) |p| try collectInterfaceAt(gpa, out, cx, @enumFromInt(p), depth + 1);

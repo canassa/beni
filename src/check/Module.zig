@@ -285,7 +285,10 @@ pub fn check(in: Input) Error!Check.Counters {
             const pair = schemas.endpoints[i];
             p.* = .{ try Derivable.propertyBits(&solver, pair.program), try Derivable.propertyBits(&solver, pair.encoded) };
         }
-        break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties);
+        var bodies = cx.builder(.flex, TypeStore.generalized);
+        defer bodies.deinit();
+        bodies.shallow = true;
+        break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties, &bodies);
     } else .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);

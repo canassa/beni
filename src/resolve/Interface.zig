@@ -147,6 +147,11 @@ pub const TypeRef = struct {
     module: SymbolIndex,
     /// The type's own name, as its declaration spells it.
     name: SymbolIndex,
+    /// For a row an `alias` term names: the alias's body, written once per
+    /// record, as a term in which `var(i)` is the alias's parameter `i`
+    /// (checker-v2.md §14.2). An alias inside it is an `alias` term naming
+    /// its own row. `none` on every other row.
+    body: TermIndex = .none,
 };
 
 /// Index into `type_refs`. `none` is a poisoned type — the term said
@@ -266,8 +271,9 @@ pub const Term = struct {
         unit,
         /// The closed end of a record.
         empty_record,
-        /// `lhs` is a `TypeRefIndex`; `rhs` an `extra` range whose last
-        /// word is the expansion and whose earlier words are the arguments.
+        /// `lhs` is a `TypeRefIndex`; `rhs` an `extra` range of the
+        /// arguments. The expansion is the row's `body` with `var(i)` bound
+        /// to argument `i` (checker-v2.md §14.2).
         alias,
         /// A declaration that failed to check (checker.md §7).
         err,
@@ -725,6 +731,71 @@ pub fn term(iface: *const Interface, index: TermIndex) Term {
 pub fn typeRef(iface: *const Interface, index: TypeRefIndex) ?TypeRef {
     if (index == .none or index.int() >= iface.type_refs.len) return null;
     return iface.type_refs[index.int()];
+}
+
+/// The body of the alias an `alias` term's `lhs` names: `none` for a row
+/// with no body and for an index this record does not describe.
+pub fn aliasBody(iface: *const Interface, ref: u32) TermIndex {
+    if (ref >= iface.type_refs.len) return .none;
+    const body = iface.type_refs[ref].body;
+    return if (body.int() < iface.terms.len) body else .none;
+}
+
+/// What `var(i)` means inside an alias body being looked through: the
+/// arguments of the use (terms of the enclosing context), and that context.
+/// Frames live on the stack of `through`'s recursion.
+pub const Frame = struct { args: []const u32, outer: ?*const Frame };
+
+/// A term with every alias at its root looked through and a body parameter
+/// at its root replaced by the use's argument: `term` is not an `alias`,
+/// and its operands mean what they mean under `frame`.
+pub const Seen = struct { term: Term, frame: ?*const Frame };
+
+/// Call `visit(context, seen)` with `at` seen through its aliases
+/// (checker-v2.md §14.2) and return what it returns. The frames it builds
+/// stay valid for the whole call, so `visit` may look through the seen
+/// term's operands in turn with `through(…, seen.frame, …)`. Bounded by
+/// the reader's depth, so a record that does not describe itself ends in
+/// `err` rather than looping.
+pub fn through(
+    iface: *const Interface,
+    at: TermIndex,
+    frame: ?*const Frame,
+    context: anytype,
+    comptime visit: anytype,
+) @typeInfo(@TypeOf(visit)).@"fn".return_type.? {
+    return throughAt(iface, at, frame, context, visit, 0);
+}
+
+/// The interface reader's depth bound (`InterfaceTerms.max_depth`),
+/// restated because `resolve/` does not depend on the checker.
+const through_max_depth = 512;
+
+fn throughAt(
+    iface: *const Interface,
+    at: TermIndex,
+    frame: ?*const Frame,
+    context: anytype,
+    comptime visit: anytype,
+    depth: u32,
+) @typeInfo(@TypeOf(visit)).@"fn".return_type.? {
+    const err: Seen = .{ .term = .{ .tag = .err, .lhs = 0, .rhs = 0 }, .frame = null };
+    if (depth > through_max_depth) return visit(context, err);
+    const t = iface.term(at);
+    switch (t.tag) {
+        .@"var" => if (frame) |f| {
+            if (t.lhs >= f.args.len) return visit(context, err);
+            return throughAt(iface, @enumFromInt(f.args[t.lhs]), f.outer, context, visit, depth + 1);
+        },
+        .alias => {
+            const body = iface.aliasBody(t.lhs);
+            if (body == .none) return visit(context, err);
+            const inner: Frame = .{ .args = iface.range(t.rhs), .outer = frame };
+            return throughAt(iface, body, &inner, context, visit, depth + 1);
+        },
+        else => {},
+    }
+    return visit(context, Seen{ .term = t, .frame = frame });
 }
 
 /// The scheme at `index`. `none`, and an index this record does not

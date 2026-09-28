@@ -32,6 +32,8 @@ pub fn build(
     /// as the checker read them off its derived contexts (checker-v2.md
     /// §11.5).
     properties: []const [2]u8,
+    /// The reader the writer takes each alias's body from (`Schemes.Writer.bodies`).
+    bodies: *Types.Builder,
 ) Allocator.Error!SchemaPlan {
     var b: Builder = .{
         .gpa = gpa,
@@ -64,6 +66,7 @@ pub fn build(
 
     var writer = Schemes.Writer.init(gpa, store, interner, types, @intCast(b.symbols.items.len));
     defer writer.deinit();
+    writer.bodies = bodies;
     for (b.conversion_vars.items, 0..) |target, i| b.conversions.items[i].target_term = try writer.addPlanRoot(target);
 
     var plan = SchemaPlan.empty;

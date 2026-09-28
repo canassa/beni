@@ -10,7 +10,9 @@ const Interface = @import("../resolve/Interface.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 
 pub const magic = "BENISPL\x00";
-pub const format_version: u32 = 1;
+/// 2: a `type_refs` row carries an alias's body and an `alias` term its
+/// arguments only, as in the interface (`checker-v2.md` §14.2).
+pub const format_version: u32 = 2;
 
 pub const Column = enum(u32) {
     definitions,
@@ -46,7 +48,8 @@ pub const Column = enum(u32) {
             .fields, .checks, .annotations => 20,
             .variants => 24,
             .conversions => 16,
-            .type_refs, .schema_targets, .ctor_targets => 12,
+            .type_refs => 16,
+            .schema_targets, .ctor_targets => 12,
             .literals => 8,
         };
     }
@@ -183,10 +186,11 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
     }
     writeWords(col(out, offsets, .type_extra), plan.type_extra);
     for (plan.type_refs, 0..) |r, i| {
-        const row = col(out, offsets, .type_refs)[i * 12 ..][0..12];
+        const row = col(out, offsets, .type_refs)[i * 16 ..][0..16];
         std.mem.writeInt(u32, row[0..4], @intFromEnum(r.module), .little);
         std.mem.writeInt(u32, row[4..8], @intFromEnum(r.name), .little);
-        row[8] = @intFromEnum(r.package);
+        std.mem.writeInt(u32, row[8..12], @intFromEnum(r.body), .little);
+        row[12] = @intFromEnum(r.package);
     }
     for (plan.literals, 0..) |l, i| words(col(out, offsets, .literals)[i * 8 ..][0..8], &.{ l.start, l.len });
     @memcpy(col(out, offsets, .literal_bytes)[0..plan.literal_bytes.len], plan.literal_bytes);
@@ -363,7 +367,7 @@ pub fn verify(plan: *const SchemaPlan) bool {
         if (a.value != .none and @intFromEnum(a.value) >= plan.literals.len) return false;
     }
     for (plan.literals) |l| if (@as(u64, l.start) + l.len > plan.literal_bytes.len) return false;
-    for (plan.type_refs) |r| if (@intFromEnum(r.module) >= symbol_len or @intFromEnum(r.name) >= symbol_len) return false;
+    for (plan.type_refs) |r| if (@intFromEnum(r.module) >= symbol_len or @intFromEnum(r.name) >= symbol_len or (r.body != .none and r.body.int() >= plan.terms.len)) return false;
     for (plan.schema_targets) |t| if (@intFromEnum(t.module) >= symbol_len or @intFromEnum(t.schema) >= symbol_len) return false;
     for (plan.ctor_targets) |t| if (@intFromEnum(t.schema) >= plan.schema_targets.len or @intFromEnum(t.variant) >= symbol_len) return false;
     return verifyTerms(plan);
@@ -439,7 +443,7 @@ fn verifyTerms(plan: *const SchemaPlan) bool {
         .app => if (l >= plan.type_refs.len or !termRange(plan, r, false)) return false,
         .tuple => if (!termRange(plan, l, false)) return false,
         .record => if (!termRange(plan, l, true) or r >= plan.terms.len) return false,
-        .alias => if (l >= plan.type_refs.len or !termRange(plan, r, false)) return false,
+        .alias => if (l >= plan.type_refs.len or plan.type_refs[l].body == .none or !termRange(plan, r, false)) return false,
     };
     return true;
 }
@@ -522,12 +526,17 @@ fn readAnnotations(gpa: Allocator, bytes: []const u8) ![]SchemaPlan.Annotation {
 }
 
 fn readTypeRefs(gpa: Allocator, bytes: []const u8) ![]Interface.TypeRef {
-    const out = try gpa.alloc(Interface.TypeRef, bytes.len / 12);
+    const out = try gpa.alloc(Interface.TypeRef, bytes.len / 16);
     errdefer gpa.free(out);
     for (out, 0..) |*r, i| {
-        const row = bytes[i * 12 ..][0..12];
-        if (!allZero(row[9..12])) return error.BadPlan;
-        r.* = .{ .module = @enumFromInt(word(row, 0)), .name = @enumFromInt(word(row, 1)), .package = std.enums.fromInt(SourceStore.Package, row[8]) orelse return error.BadPlan };
+        const row = bytes[i * 16 ..][0..16];
+        if (!allZero(row[13..16])) return error.BadPlan;
+        r.* = .{
+            .module = @enumFromInt(word(row, 0)),
+            .name = @enumFromInt(word(row, 1)),
+            .body = @enumFromInt(word(row, 2)),
+            .package = std.enums.fromInt(SourceStore.Package, row[12]) orelse return error.BadPlan,
+        };
     }
     return out;
 }
@@ -711,10 +720,14 @@ test "invalid plan enums roots and ranges are cache misses" {
     try testing.expectError(error.BadPlan, read(gpa, copy, &pool));
 
     @memcpy(copy, encoded);
-    copy[refs_at + 8] = 0xff;
+    std.mem.writeInt(u32, copy[refs_at + 8 ..][0..4], 99, .little);
     try testing.expectError(error.BadPlan, read(gpa, copy, &pool));
 
     @memcpy(copy, encoded);
-    copy[refs_at + 9] = 1;
+    copy[refs_at + 12] = 0xff;
+    try testing.expectError(error.BadPlan, read(gpa, copy, &pool));
+
+    @memcpy(copy, encoded);
+    copy[refs_at + 13] = 1;
     try testing.expectError(error.BadPlan, read(gpa, copy, &pool));
 }

@@ -830,3 +830,54 @@ test "an importer's type error names the imported types identically through the 
         \\
     , checked.stderr);
 }
+
+test "an alias chain another module names is written once per record, in bytes linear in its length" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `A` declares `R{i} = { x : Int, p : R{i-1} }` and names none of them;
+    // `B` names every link in a scheme of its own. An `alias` term holds its
+    // arguments and each alias's body is on its `type_refs` row, once per
+    // record (checker-v2.md §14.2), so `B`'s record grows by one row and one
+    // scheme per link. Writing each scheme's expansion whole made it grow by
+    // the whole chain per link: 74 519 / 284 974 bytes of the two modules'
+    // raw dump at 16 / 32 links, where they are 16 501 / 33 674 now.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var bytes: [2]usize = undefined;
+    for ([_]usize{ 16, 32 }, &bytes) |links, *slot| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var a: std.ArrayList(u8) = .empty;
+        try a.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n");
+        var b: std.ArrayList(u8) = .empty;
+        try b.appendSlice(arena, "import A\n");
+        for (1..links + 1) |i| {
+            try a.print(arena, "\n\npub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n", .{ i, i - 1 });
+            try b.print(arena, "\n\npub get{d} : A.R{d} -> Int\nget{d} r =\n    r.x\n", .{ i, i, i });
+        }
+        try w.write("src/A.beni", a.items);
+        try w.write("src/B.beni", b.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        // Through the format too: a record read back from its bytes must
+        // print the same rows.
+        const raw = try expectSameThroughTheFormat(&w, &.{ "dump", "--stage=raw", "src" }, arena);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), raw.exit_code);
+        try testing.expectEqualStrings("", raw.stderr);
+        slot.* = raw.stdout.len;
+    }
+    // Twice the links, at most two and a half times the bytes: linear with
+    // room for the wider numbers; quadratic is about four.
+    if (bytes[1] * 2 > bytes[0] * 5) {
+        std.debug.print("16 links: {d} bytes; 32 links: {d} bytes\n", .{ bytes[0], bytes[1] });
+        return error.InterfaceNotLinear;
+    }
+}

@@ -20,7 +20,6 @@
 # R15's audit (2026-09-27): red fixtures of every behavioural finding, written
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
 # R15-fix-A (2026-09-28) fixed and promoted CK-135, 137, 139, 140, 141 and 142.
-scenario/CK-144 superlinear
 # R15-fix-C (2026-09-28): R15-fix-A's review found CK-169 to CK-171 (alias
 # chains past `TypeStore.resolved`'s 1 024-link guard; the alias DAG
 # expanded as a tree), and writing their fixtures found CK-172 to CK-174
@@ -57,7 +56,8 @@ scenario/CK-144 superlinear
 # R15-fix-I fixed all of them and promoted each (CK-161's four fixtures,
 # CK-195 and CK-197 into tests/corpus/, CK-194 into perf_test.zig, CK-196
 # into ordering_test.zig), and CK-179 with them under D16 (into
-# ordering_test.zig). CK-144 is the one left.
+# ordering_test.zig). CK-144 was the one left; fixed on 2026-09-28 (aliases
+# named in interface terms) and promoted into perf_test.zig.
 # The tests over the gates' test budget of 4 300 million instructions
 # (2026-09-28): parked here until the compiler fits them, then promoted
 # back into abuse_wide_test.zig and cache_test.zig.

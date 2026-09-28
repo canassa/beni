@@ -3088,6 +3088,47 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   and CK-201 and CK-150's fixture are red on the base and green after. Gates green after every
   commit; `test-pending`: CK-144 only.
 
+#### R15-fix-K — Aliases named in interface terms (added by the manager, 2026-09-28)
+
+- **Goal.** Fix CK-144, the last open finding: an interface term wrote every alias it named with
+  its whole expansion, so an alias chain was quadratic in bytes (and in the cache entry).
+- **As built (2026-09-28).** Base `d90ab5f`, rebased onto `508bfaa` (R15-fix-J). Spec first, its own commit: `checker-v2.md` §14.2
+  *amended 2026-09-28* (interface format 6 → 7) and §14.3 (plan format 1 → 2, entry format 3 → 4;
+  `dispatch_bytes`, `digest_version`, the frontend artifact and `key_version` unchanged), with
+  pointers from `checker.md` §7 and `schema.md` A.6.
+  - **The format.** An `alias` term's range is its arguments; `Interface.TypeRef.body` holds the
+    alias's body (`var(i)` = parameter `i`, no quantifier block) once per record, for every alias
+    the record's terms name, whichever module declares it — the record still reads alone.
+    `iface_bytes` and `schema_plan_bytes` rows 12 → 16 bytes; `verify` refuses an `alias` term
+    whose row has no body and a body that is not a term.
+  - **The writer** (`Schemes.Writer`): an alias variable is written by name and its row queued;
+    `finish` writes queued bodies after each write (`add`, `addCtor`, `addPlanRoot`), each from
+    `Types.Builder.canonical` — the alias applied to fresh parameters, read with the new
+    `shallow` mode so every alias inside a body is named and never expanded (a `type alias` from
+    its declaration; an own record endpoint from `Schema.State`; another module's endpoint from its
+    record's or plan's row via `InterfaceTerms.applicationOf`). Depth: each `alias` term's use
+    depth plus its row's depth (explicit-stack `rowDepth`, nested bodies counted with no sharing)
+    against `max_depth`, so the reader's silent bound is never met on a written record.
+  - **The reader** moved whole into `InterfaceTerms.zig` (the one reader; `Schemes.instantiate*`
+    re-export it): a use's arguments, then the row's body under a memo stamp of its own (stamps are
+    `u64` and never reissued), shared per `(row, argument roots)` per read. The store gets the same
+    `alias{type, args, actual}`, so messages print alias names as before; no `.iface`, dispatch,
+    emit or diagnostic golden moved.
+  - **Look-through readers.** `Interface.through` (frames on the recursion's stack, substituting a
+    body parameter by the use's argument) replaces the two expansion walks, in
+    `Convention.importArity` and `Instances.reportedAtDeclaration`. The digest's endpoint
+    expansion is the plan row's body; `type_body` encodes an alias term's whole range.
+  - **Not done.** A chain past about 254 links is still refused by the annotation reader, and the
+    too-deep message's hint is unchanged (CK-144's K13 half).
+- **Evidence.** 60 / 120 / 240 links: 49 507 / 101 460 / 209 385 bytes of `dump --stage=raw`
+  (1 021 435 / 4 140 731 / 17 252 635 on `d90ab5f`). Scenario promoted into `perf_test.zig`
+  with the fix; `iface_test.zig` "an alias chain another module names…" red on a separately
+  built `d90ab5f` (74 519 / 284 974 bytes) and green on the fix. `cache_test.zig` "an importer
+  re-checked against cached records…" and `cutoff_test.zig` "a private alias inside a scheme's
+  alias…" are guards, green on `d90ab5f` too; both go red on a mutant whose reader never expands a
+  row. `test-perf`'s "many schemas with vias" is borderline on both `d90ab5f` and the fix (red
+  once in three on each). Pending: none.
+
 ---
 
 ## 4. CK → slice index
@@ -3128,6 +3169,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-H | CK-190 (`run/ReleaseAliasChain*`), CK-193 (`build/bad/ForeignBadShapeWideRecord/`), CK-191, 192 (`build_test.zig`) — all four found by R15-fix-F's review or the slice's audit | — | the budget audit of `src/js` (`backend.md` §9 item 1, amended) |
 | R15-fix-I | CK-161 (`run/DotCall*`, under D15), CK-179 and CK-196 (`ordering_test.zig`), CK-194 (`perf_test.zig`), CK-195, 197 (`tests/corpus/check/bad/`) — CK-194 to CK-197 from the manager's residues | — | D15 and D16 recorded (`checker-v2.md` §21.1) |
 | R15-fix-J | CK-200 (`check/bad/StringLiteralMismatchSpan`), CK-201 (`ordering_test.zig`), CK-150 (`check/bad/LetValueConstrainedWideType`); CK-146, 149, 151, 152, 153, 155 to 158, 160 structural (asserts, deletions, a widened fence); CK-10, 14, 35 checked closed | — | CK-194's re-ranking recorded as a perf idea; `checker-v2.md` §7.5 and I14 amended (journal deleted) |
+| R15-fix-K | CK-144 (`perf_test.zig`; new `iface_test.zig`, `cache_test.zig`, `cutoff_test.zig` cases) | — | interface format 7: aliases named in terms, bodies on `type_refs` rows (`checker-v2.md` §14.2) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

@@ -74,7 +74,9 @@ pub const magic = "BENIIFC\x00";
 /// (`checker-v2.md` §14.2).
 /// 6: a derived row may be `requirement`, with its culprit in the same
 /// two words (§14.2).
-pub const format_version: u32 = 6;
+/// 7: an `alias` term holds its arguments only; the alias's body is on its
+/// `type_refs` row, which grows to 16 bytes (§14.2).
+pub const format_version: u32 = 7;
 
 /// The fifteen columns, in this order and no other (`hidden_types` since
 /// format 4, `checker-v2.md` §14.2). `terms` is split into
@@ -109,7 +111,7 @@ pub const Column = enum(u32) {
             .schemes => 12,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
-            .type_refs => 12,
+            .type_refs => 16,
             .hidden_types => 24,
             .schemas => 32,
             .schema_members, .schema_ctors => 16,
@@ -304,10 +306,11 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@intFromEnum(Column.type_refs)]..];
         for (iface.type_refs, 0..) |r, i| {
-            const row = out[i * 12 ..][0..12];
+            const row = out[i * 16 ..][0..16];
             std.mem.writeInt(u32, row[0..4], @intFromEnum(r.module), .little);
             std.mem.writeInt(u32, row[4..8], @intFromEnum(r.name), .little);
-            row[8] = @intFromEnum(r.package);
+            std.mem.writeInt(u32, row[8..12], @intFromEnum(r.body), .little);
+            row[12] = @intFromEnum(r.package);
         }
     }
     {
@@ -576,11 +579,12 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const refs = try gpa.alloc(Interface.TypeRef, lengths[@intFromEnum(Column.type_refs)]);
         iface.type_refs = refs;
         for (refs, 0..) |*r, i| {
-            const row = in[i * 12 ..][0..12];
+            const row = in[i * 16 ..][0..16];
             r.* = .{
                 .module = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .name = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
-                .package = std.enums.fromInt(SourceStore.Package, row[8]) orelse return error.BadRecord,
+                .body = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .package = std.enums.fromInt(SourceStore.Package, row[12]) orelse return error.BadRecord,
             };
         }
     }
@@ -700,11 +704,11 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
 ///   * every term's operands, by tag: `func` a parameter range and a result
 ///     term, `app`/`alias` a `type_refs` slot or `none` plus a range,
 ///     `tuple` a range, `record` an even-length range of (symbol, term)
-///     pairs and an extension term, `alias`'s range non-empty. `var`'s
+///     pairs and an extension term, an `alias` term's row carrying a body. `var`'s
 ///     `lhs` is a quantifier ordinal with no scheme in hand, which
-///     `Schemes.Reader` already bounds against the instantiation's own
+///     `InterfaceTerms.Reader` already bounds against the instantiation's own
 ///     variables.
-///   * `type_refs[i].module` and `.name` are symbol slots.
+///   * `type_refs[i].module` and `.name` are symbol slots, `.body` `none` or a term.
 pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool {
     const symbols = iface.symbols.len;
     const terms = iface.terms.len;
@@ -810,10 +814,9 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
             },
             .alias => {
                 if (!isTypeRef(iface, l)) return false;
+                // The body is on the row the term names (§14.2).
+                if (l != std.math.maxInt(u32) and iface.type_refs[l].body == .none) return false;
                 const words = rangeOf(iface, r) orelse return false;
-                // An alias range is its arguments followed by the
-                // expansion, so it is never empty.
-                if (words.len == 0) return false;
                 for (words) |word| {
                     if (!isTerm(terms, word)) return false;
                 }
@@ -823,6 +826,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     for (iface.type_refs) |r| {
         if (@intFromEnum(r.module) >= symbols) return false;
         if (@intFromEnum(r.name) >= symbols) return false;
+        if (!isTerm(terms, @intFromEnum(r.body))) return false;
     }
     var members_end: u32 = 0;
     var ctors_end: u32 = 0;
@@ -1560,7 +1564,7 @@ test "each check the reader makes refuses the one mutation aimed at it" {
         .{ .what = "a constructor's padding", .column = .ctors, .byte = 25, .value = 1 },
         .{ .what = "a constructor result no version defines", .column = .ctors, .byte = 24, .value = 0xff },
         .{ .what = "a term tag no version defines", .column = .term_tags, .byte = 0, .value = 0xff },
-        .{ .what = "a type reference's package no version defines", .column = .type_refs, .byte = 8, .value = 0xff },
+        .{ .what = "a type reference's package no version defines", .column = .type_refs, .byte = 12, .value = 0xff },
     };
     var loaded: usize = 0;
     for (mutations) |m| {

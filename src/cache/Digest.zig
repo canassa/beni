@@ -57,8 +57,9 @@
 //! module is this module, which is how `pub make : Hidden` over a private type
 //! puts that type's name into its own record — a dependent can reach a type of
 //! this module only by naming it, and it can only name it through a `type_refs`
-//! row of some record it reads. But an alias BODY is in no record, so a `pub
-//! type alias Outer = Inner` over a PRIVATE alias `Inner` has `Inner`'s body
+//! row of some record it reads. But a record carries only the bodies of the
+//! aliases its terms name (`checker-v2.md` §14.2), so a `pub type alias Outer
+//! = Inner` no scheme names, over a PRIVATE alias `Inner`, has `Inner`'s body
 //! nowhere: the spec's set stops one level short of the very case §6.2 is
 //! about. The closure adds every type of THIS module that a body already in the
 //! set names, which reaches the same answer as expanding the aliases would, in
@@ -410,11 +411,12 @@ fn schemaEndpointExpansion(plan: *const SchemaPlan, entry: Types.Entry) ?Interfa
             definition.encoded_term
         else
             continue;
+        // The endpoint applied to its own parameters: its row's body.
+        if (endpoint.int() >= plan.terms.len) return null;
         const term = plan.terms.get(endpoint.int());
-        if (term.tag != .alias) return null;
-        const words = planRange(plan.type_extra, term.rhs) orelse return null;
-        if (words.len == 0) return null;
-        return @enumFromInt(words[words.len - 1]);
+        if (term.tag != .alias or term.lhs >= plan.type_refs.len) return null;
+        const body = plan.type_refs[term.lhs].body;
+        return if (body.int() < plan.terms.len) body else null;
     }
     return null;
 }
@@ -426,13 +428,6 @@ fn planTermInterface(plan: *const SchemaPlan) Interface {
     iface.type_refs = plan.type_refs;
     iface.symbols = plan.symbols;
     return iface;
-}
-
-fn planRange(extra: []const u32, start: u32) ?[]const u32 {
-    if (start >= extra.len) return null;
-    const len = extra[start];
-    if (@as(u64, start) + 1 + len > extra.len) return null;
-    return extra[start + 1 ..][0..len];
 }
 
 fn bodyContext(s: Session, e: Types.Entry, bir: *const Bir, d: Bir.Decl) type_body.Context {

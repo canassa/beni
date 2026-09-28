@@ -2206,6 +2206,102 @@ test "a warm build emits byte-identical JavaScript, and it runs" {
     try w.expectProgram("warm/_main.mjs", .{ .stdout = "12\n" });
 }
 
+test "an importer re-checked against cached records reads their aliases as a cold build does" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Geo` declares the aliases; `Wrap` publishes inferred schemes that name
+    // them, so its record carries their bodies on its `type_refs` rows
+    // (checker-v2.md §14.2); `Main` imports `Wrap` alone. After an edit to
+    // `Main` only, the warm build re-checks `Main` against `Wrap`'s record
+    // as the cache stored it — the bodies read back from bytes, `Pred`'s
+    // arity through its body included — and must write what a cold build
+    // of the same tree writes.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Geo.beni",
+        \\type alias Inner a =
+        \\    { v : a, w : Int }
+        \\
+        \\
+        \\pub type alias Box a =
+        \\    { inner : Inner a, tag : String }
+        \\
+        \\
+        \\pub type alias Pred a =
+        \\    a -> Bool
+        \\
+        \\
+        \\pub box : a -> Box a
+        \\box x =
+        \\    { inner = { v = x, w = 1 }, tag = "box" }
+        \\
+        \\
+        \\pub positive : Pred Int
+        \\positive n =
+        \\    n > 0
+        \\
+    );
+    try w.write("src/Wrap.beni",
+        \\import Geo
+        \\
+        \\
+        \\pub twice x =
+        \\    Geo.box (Geo.box x)
+        \\
+        \\
+        \\pub check =
+        \\    Geo.positive
+        \\
+    );
+    const main_source =
+        \\import Node
+        \\import Wrap
+        \\
+        \\
+        \\pub main : Node.Program
+        \\main =
+        \\    let
+        \\        b =
+        \\            Wrap.twice 5
+        \\    in
+        \\    Node.printLines
+        \\        [ String.fromInt b.inner.v.inner.v
+        \\        , b.inner.v.tag
+        \\        , if Wrap.check 3 then "positive" else "not"
+        \\        ]
+        \\
+    ;
+    try w.write("src/Main.beni", main_source);
+    const cold = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=first", "--jobs=1", "--cache-dir=cache", "src" }, "first.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Main.beni", "-- edited\n" ++ main_source);
+    const warm = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=warm", "--jobs=1", "--cache-dir=cache", "src" }, "warm.json");
+    const fresh = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=cold", "--jobs=1", "--no-cache", "src" }, "cold.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(fresh.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(fresh.result.stderr, warm.result.stderr);
+    // `Main` alone was re-checked; `Wrap` and `Geo` were installed.
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try expectSameTree(&w, arena, "cold", "warm");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "5\nbox\npositive\n" });
+}
+
 /// Every file under `want` is under `got`, with the same name and the same
 /// bytes, and there is nothing extra. Not "the files a test thought to name":
 /// a module that appears or vanishes on a warm build is exactly the sort of
