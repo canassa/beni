@@ -1612,6 +1612,12 @@ test "dump --stage=ast on a broken file prints placeholders in the tree, the err
 // so a script, an editor or an LSP driving `dump` read a silent success
 // over a file the compiler had just refused. The dump is still printed: a
 // broken file is exactly the file someone runs `dump` on.
+/// Every stage `dump` prints, for the two scenarios below.
+const dump_stages = [_][]const u8{
+    "--stage=tokens",    "--stage=ast",   "--stage=bir",   "--stage=raw",
+    "--stage=interface", "--stage=types", "--stage=graph", "--stage=dispatch",
+};
+
 test "every dump stage exits 1 over a file that produced an error, and still prints what it has" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1621,26 +1627,19 @@ test "every dump stage exits 1 over a file that produced an error, and still pri
     // An unclosed `(`: every stage from the lexer down has something to say
     // about it, and every stage has something to print anyway.
     try w.write("Min.beni", "f =\n    (\n");
-    try w.write("Fine.beni", "f =\n    1\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const stages = [_][]const u8{
-        "--stage=tokens",    "--stage=ast",   "--stage=bir",   "--stage=raw",
-        "--stage=interface", "--stage=types", "--stage=graph", "--stage=dispatch",
-    };
-    var broken: [stages.len]world.Result = undefined;
-    var fine: [stages.len]world.Result = undefined;
-    for (stages, &broken, &fine) |stage, *b, *f| {
+    var broken: [dump_stages.len]world.Result = undefined;
+    for (dump_stages, &broken) |stage, *b| {
         b.* = try w.runWith(&.{ "dump", stage, "Min.beni" }, .{ .raw_diagnostics = true });
-        f.* = try w.runWith(&.{ "dump", stage, "Fine.beni" }, .{ .raw_diagnostics = true });
     }
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for (stages, broken, fine) |stage, b, f| {
+    for (dump_stages, broken) |stage, b| {
         if (b.exit_code != 1) {
             std.debug.print("dump {s} over a broken file exited {d}\n--- stderr ---\n{s}\n", .{ stage, b.exit_code, b.stderr });
             return error.DumpDidNotFail;
@@ -1649,7 +1648,29 @@ test "every dump stage exits 1 over a file that produced an error, and still pri
         // whole message on stderr — the exit code is all that changed.
         try testing.expect(b.stdout.len != 0);
         try testing.expect(std.mem.indexOf(u8, b.stderr, "UNCLOSED DELIMITER") != null);
-        // A clean file is still 0, on every one of the same stages.
+    }
+}
+
+test "every dump stage exits 0 over a clean file, with nothing on stderr" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Fine.beni", "f =\n    1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var fine: [dump_stages.len]world.Result = undefined;
+    for (dump_stages, &fine) |stage, *f| {
+        f.* = try w.runWith(&.{ "dump", stage, "Fine.beni" }, .{ .raw_diagnostics = true });
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (dump_stages, fine) |stage, f| {
         if (f.exit_code != 0) {
             std.debug.print("dump {s} over a clean file exited {d}\n--- stderr ---\n{s}\n", .{ stage, f.exit_code, f.stderr });
             return error.CleanDumpFailed;
@@ -5698,44 +5719,39 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
     }}), discriminator.diagnostics);
 }
 
-test "schemas check and dump, while emit refuses before entry discovery and writes nothing" {
+/// A program whose `main` sits beside a schema, for the schema scenarios
+/// below.
+const schema_main_source =
+    \\import Node exposing (Program)
+    \\
+    \\
+    \\pub schema User =
+    \\    { name : String }
+    \\
+    \\
+    \\main : Program
+    \\main =
+    \\    Node.printLines []
+    \\
+;
+
+/// What `build` says about `schema_main_source`: the schema is checked, and
+/// its parse and print are not generated yet.
+const schema_main_refused = @as([]const diagnostic.Diagnostic, &.{.{
+    .code = .not_implemented,
+    .severity = .@"error",
+    .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 12 }, .end = .{ .line = 4, .col = 16 } },
+    .title = "NOT IMPLEMENTED YET",
+    .message = "This schema is checked, but its parse and print are not generated yet.",
+}});
+
+test "schemas check and dump at every stage that resolves imports" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Main.beni",
-        \\import Node exposing (Program)
-        \\
-        \\
-        \\pub schema User =
-        \\    { name : String }
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines []
-        \\
-    );
-    try w.write("NoMain.beni",
-        \\schema Spare =
-        \\    value : Int
-        \\
-    );
-    const main_expected = @as([]const diagnostic.Diagnostic, &.{.{
-        .code = .not_implemented,
-        .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 12 }, .end = .{ .line = 4, .col = 16 } },
-        .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is checked, but its parse and print are not generated yet.",
-    }});
-    const no_main_expected = @as([]const diagnostic.Diagnostic, &.{.{
-        .code = .not_implemented,
-        .severity = .@"error",
-        .span = .{ .file = "NoMain.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 13 } },
-        .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is checked, but its parse and print are not generated yet.",
-    }});
+    try w.write("Main.beni", schema_main_source);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -5746,13 +5762,6 @@ test "schemas check and dump, while emit refuses before entry discovery and writ
     inline for (.{ "interface", "raw", "types", "graph", "dispatch" }, 2..) |stage, i| {
         checked[i] = try w.run(&.{ "dump", "--stage=" ++ stage, "--platform=node", "Main.beni" });
     }
-    var builds: [5]world.Result = undefined;
-    builds[0] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
-    builds[1] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "--roundtrip-interfaces", "Main.beni" });
-    builds[2] = try w.run(&.{ "build", "--platform=node", "--out=out3", "--jobs=1", "--cache-dir=cache", "Main.beni" });
-    builds[3] = try w.run(&.{ "build", "--platform=node", "--out=out4", "--jobs=8", "--cache-dir=cache", "Main.beni" });
-    builds[4] = try w.run(&.{ "build", "--platform=node", "--out=out5", "--jobs=1", "--no-cache", "NoMain.beni" });
-    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=out6", "--jobs=8", "--no-cache", "NoMain.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -5763,21 +5772,78 @@ test "schemas check and dump, while emit refuses before entry discovery and writ
         try testing.expectEqualStrings("", r.stderr);
     }
     try testing.expect(std.mem.indexOf(u8, checked[2].stdout, "schema User") != null);
-    for (builds[0..4]) |r| {
+}
+
+test "emit refuses a schema beside main before entry discovery, cold and warm, and writes nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", schema_main_source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var builds: [4]world.Result = undefined;
+    builds[0] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
+    builds[1] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "--roundtrip-interfaces", "Main.beni" });
+    builds[2] = try w.run(&.{ "build", "--platform=node", "--out=out3", "--jobs=1", "--cache-dir=cache", "Main.beni" });
+    builds[3] = try w.run(&.{ "build", "--platform=node", "--out=out4", "--jobs=8", "--cache-dir=cache", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (builds) |r| {
         try testing.expectEqual(@as(u8, 1), r.exit_code);
         try testing.expectEqualStrings("", r.stdout);
-        try testing.expectEqualDeep(main_expected, r.diagnostics);
+        try testing.expectEqualDeep(schema_main_refused, r.diagnostics);
     }
-    try testing.expectEqual(@as(u8, 1), builds[4].exit_code);
-    try testing.expectEqualDeep(no_main_expected, builds[4].diagnostics);
-    try testing.expectEqual(@as(u8, 1), library.exit_code);
-    try testing.expectEqualDeep(no_main_expected, library.diagnostics);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expect(w.exists("cache"));
-    inline for (.{ "out1", "out2", "out3", "out4", "out5", "out6" }) |path| try testing.expect(!w.exists(path));
+    inline for (.{ "out1", "out2", "out3", "out4" }) |path| try testing.expect(!w.exists(path));
+}
+
+test "emit refuses a schema in a module with no main, as an application and as a library" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("NoMain.beni",
+        \\schema Spare =
+        \\    value : Int
+        \\
+    );
+    const expected = @as([]const diagnostic.Diagnostic, &.{.{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "NoMain.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 13 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "This schema is checked, but its parse and print are not generated yet.",
+    }});
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const application = try w.run(&.{ "build", "--platform=node", "--out=out5", "--jobs=1", "--no-cache", "NoMain.beni" });
+    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=out6", "--jobs=8", "--no-cache", "NoMain.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), application.exit_code);
+    try testing.expectEqualDeep(expected, application.diagnostics);
+    try testing.expectEqual(@as(u8, 1), library.exit_code);
+    try testing.expectEqualDeep(expected, library.diagnostics);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    inline for (.{ "out5", "out6" }) |path| try testing.expect(!w.exists(path));
 }
 
 test "the checker writes the annotation escape and the infinite type as checker.md §8.5 specifies" {
