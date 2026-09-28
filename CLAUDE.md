@@ -224,8 +224,16 @@ zig build test-blackbox   # spawns a ReleaseSafe beni (zig-out/safe/bin) against
 zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf/bin); not a gate
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
+zig build gates           # the three gates (rule 4), concurrently
 zig build --list-steps
 ```
+
+Every test binary runs under `tests/test_runner.zig`, std's runner plus
+`BENI_TEST_SHARD=k/n`: `build.zig` runs the unit tests and the heavier
+black-box binaries as several processes, each taking every n-th test, so a
+suite takes about as long as its slowest test. A test that loops over
+independent cases for many seconds is better written as several tests.
+Run a test binary by hand (no `--listen`) to get each test's wall time.
 
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on
@@ -284,10 +292,11 @@ floor, not the evidence.
 ### 4. Three gates, and they pass on `master`
 
 ```sh
-zig build test && zig build test-blackbox && zig build fmt-check
+zig build gates    # test, test-blackbox and fmt-check in one build graph
 ```
 
-All three pass today, so a failure is yours. Never commit red or unformatted
+`gates` runs the three steps concurrently, which is faster than chaining
+them with `&&`; each step still works on its own. All three pass today, so a failure is yours. Never commit red or unformatted
 code, and never commit a slice that is half-landed.
 
 ### 5. Determinism is a requirement, not an aspiration

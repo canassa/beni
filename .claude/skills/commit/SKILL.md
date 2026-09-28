@@ -73,8 +73,8 @@ If nothing fits, use ✨ and pick a clear subject.
    live in the environment, never in the repo. If something odd is staged, flag it
    rather than committing it blindly.
 3. **For code changes**, if you haven't already verified them this session, run
-   `zig build test`, `zig build test-blackbox` and `zig build fmt-check` in the dev shell
-   (`direnv exec . …`) before committing. Don't commit red or unformatted code.
+   `zig build gates` (`test`, `test-blackbox` and `fmt-check` at once) in the dev
+   shell (`direnv exec . …`) before committing. Don't commit red or unformatted code.
 4. **Prefer several focused commits over one sprawling one.** If the work spans
    the front end and the docs, that is two commits, not one with two emoji.
 5. **Pick the emoji** from the map and **write the message** (subject + tight

@@ -102,11 +102,11 @@ zig build test             # hermetic suite (Debug; add -Doptimize=ReleaseSafe t
 zig build test-blackbox    # spawns the installed binary; runs the corpus walker
 zig build bench -- --generate=100000   # ReleaseFast per-phase throughput
 zig build fmt-check        # zig fmt --check over src build.zig tests bench
+zig build gates            # test, test-blackbox and fmt-check, concurrently
 BENI_WRITE_EXPECTED=1 zig build test-blackbox   # bless corpus goldens (BENI_BLESS_ONLY=<substr>)
 ```
 
-Always `zig build`, `zig build test`, `zig build test-blackbox` and `zig build fmt-check`
-after changes, before reporting done.
+Always `zig build` and `zig build gates` after changes, before reporting done.
 
 **Submodule vs. toolchain — know which to trust for what.** The vendored
 `references/zig` submodule is at master (`0.16.0-2129-gd84959d9e2`), roughly 2,100
