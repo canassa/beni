@@ -13,12 +13,15 @@
 //!   `Derivable.foreignDerives` and `Publish` alone: §11.2's derived contexts
 //!   (`Contexts.zig`) are the one answer to "does this type derive". The
 //!   table's other two bits, `comparable` and `has_function`, have no reader
-//!   in the checker at all (the cache's digest reads them).
+//!   in the checker at all (the cache's digest reads them). A read is any
+//!   field access of one of the three names whose receiver is not a
+//!   variable's flags or an interface quantifier, however the receiver is
+//!   spelled, and the rule reads `src/js` and `src/cache` as well.
 //! - **No file over §19.1's 1 500 lines** (`checker-v2.md` §19.1): a file
 //!   past it is split, as §19.1's notes record each time one was.
 //!
 //! The file list is checked against the directory, so a new file cannot slip
-//! past any of them.
+//! past any of them; the table-bit rule reads its directories at test time.
 
 const std = @import("std");
 const testing = std.testing;
@@ -139,45 +142,109 @@ test "only Walk, Unify and Instantiate read a type's children" {
     try testing.expectEqual(@as(usize, 0), bad);
 }
 
-/// The reads the second rule fences, and who may make each.
-const Fenced = struct { pattern: []const u8, readers: []const []const u8 };
+/// The table's three structural bits, and who may read each besides the
+/// files that build the table (`table_writers`).
+const Bit = struct { name: []const u8, readers: []const []const u8 };
 
-/// `Types.zig` builds the bits and `Schemes.zig` writes a blank entry for a
-/// poisoned id; every other file is held to the list. `e.equatable` and
-/// `).equatable` catch the other spellings of the same read;
-/// "e.equatable" is also inside "entry.equatable", which is not a second
-/// read in a file allowed the first.
-const fenced = [_]Fenced{
-    .{ .pattern = "isEquatable(", .readers = &.{"Marker.zig"} },
-    .{ .pattern = "entry.equatable", .readers = &.{ "Derivable.zig", "Publish.zig" } },
-    .{ .pattern = "e.equatable", .readers = &.{} },
-    .{ .pattern = ").equatable", .readers = &.{} },
-    .{ .pattern = ".comparable", .readers = &.{} },
-    .{ .pattern = ".has_function", .readers = &.{} },
+const bits = [_]Bit{
+    .{ .name = "equatable", .readers = &.{ "check/Derivable.zig", "check/Publish.zig", "cache/Digest.zig" } },
+    .{ .name = "comparable", .readers = &.{"cache/Digest.zig"} },
+    .{ .name = "has_function", .readers = &.{"cache/Digest.zig"} },
 };
 
-const table_writers = [_][]const u8{ "Types.zig", "Schemes.zig" };
+/// `Types.zig` builds the bits and `Schemes.zig` writes a blank entry for a
+/// poisoned id.
+const table_writers = [_][]const u8{ "check/Types.zig", "check/Schemes.zig" };
+
+/// The receivers whose `.equatable` is a type variable's marker or an
+/// interface quantifier's, never the table's: a `TypeStore.Flags`
+/// (`flags`, `fa`, `fb`, `joined`, `flagged`, `f`) or an
+/// `Interface.Quantified` (`q`, `info`). Any other receiver of one of the
+/// three names is a read of the table.
+const flag_receivers = [_][]const u8{ "flags", "fa", "fb", "joined", "flagged", "f", "q", "info" };
+
+/// The directories the rule reads, at test time, so a file added to any of
+/// them is read without being listed.
+const fenced_dirs = [_][]const u8{ "check", "check/constrain", "js", "cache" };
+
+fn isIdent(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+/// The table-bit reads on `line`: every `<receiver>.<bit>` that is a field
+/// read — the receiver ends in a name, `]` or `)`, and no `(` follows, which
+/// would make it a method call — whose receiver is not in `flag_receivers`.
+fn tableReads(line: []const u8, bit: []const u8) usize {
+    var found: usize = 0;
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, line, from, bit)) |at| {
+        from = at + bit.len;
+        if (at < 2 or line[at - 1] != '.') continue;
+        if (from < line.len and (isIdent(line[from]) or line[from] == '(')) continue;
+        const before = line[at - 2];
+        if (!isIdent(before) and before != ']' and before != ')') continue;
+        if (isIdent(before)) {
+            var start = at - 1;
+            while (start > 0 and isIdent(line[start - 1])) start -= 1;
+            if (listed(line[start .. at - 1], &flag_receivers)) continue;
+        }
+        found += 1;
+    }
+    return found;
+}
 
 test "the table's structural bits are read by their listed readers alone" {
+    const io = testing.io;
+    const gpa = testing.allocator;
     var bad: usize = 0;
-    for (files) |f| {
-        if (listed(f.path, &table_writers) or std.mem.eql(u8, f.path, "rules_test.zig")) continue;
-        var it = codeLines(f.text);
-        var n: usize = 0;
-        while (it.next()) |line| {
-            n += 1;
-            if (isComment(line)) continue;
-            for (fenced) |rule| {
-                if (std.mem.indexOf(u8, line, rule.pattern) == null) continue;
-                if (listed(f.path, rule.readers)) continue;
-                if (std.mem.eql(u8, rule.pattern, "e.equatable") and std.mem.indexOf(u8, line, "entry.equatable") != null and
-                    listed(f.path, fenced[1].readers)) continue;
-                std.debug.print("{s}:{d} reads a structural bit of the type table: `{s}`\n", .{ f.path, n, rule.pattern });
-                bad += 1;
+    var read: usize = 0;
+    for (fenced_dirs) |sub| {
+        const dir_path = try std.fs.path.join(gpa, &.{ "src", sub });
+        defer gpa.free(dir_path);
+        var dir = try std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
+        defer dir.close(io);
+        var it = dir.iterate();
+        while (try it.next(io)) |entry| {
+            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".zig")) continue;
+            if (std.mem.eql(u8, entry.name, "rules_test.zig")) continue;
+            const path = try std.fs.path.join(gpa, &.{ sub, entry.name });
+            defer gpa.free(path);
+            if (listed(path, &table_writers)) continue;
+            const text = try dir.readFileAlloc(io, entry.name, gpa, .limited(1 << 24));
+            defer gpa.free(text);
+            read += 1;
+            var lines = codeLines(text);
+            var n: usize = 0;
+            while (lines.next()) |line| {
+                n += 1;
+                if (isComment(line)) continue;
+                if (std.mem.indexOf(u8, line, "isEquatable(") != null and !std.mem.eql(u8, path, "check/Marker.zig")) {
+                    std.debug.print("src/{s}:{d} reads a structural bit of the type table: `isEquatable`\n", .{ path, n });
+                    bad += 1;
+                }
+                for (bits) |b| {
+                    if (tableReads(line, b.name) == 0 or listed(path, b.readers)) continue;
+                    std.debug.print("src/{s}:{d} reads a structural bit of the type table: `{s}`\n", .{ path, n, b.name });
+                    bad += 1;
+                }
             }
         }
     }
+    try testing.expect(read > 0);
     try testing.expectEqual(@as(usize, 0), bad);
+}
+
+test "a table-bit read is told from a variable's marker by its receiver" {
+    try testing.expectEqual(@as(usize, 1), tableReads("if (entry.equatable) x", "equatable"));
+    try testing.expectEqual(@as(usize, 1), tableReads("t.equatable and", "equatable"));
+    try testing.expectEqual(@as(usize, 1), tableReads("entries[i].equatable", "equatable"));
+    try testing.expectEqual(@as(usize, 1), tableReads("types.entry(id).comparable", "comparable"));
+    try testing.expectEqual(@as(usize, 1), tableReads("s.types.entry(id).has_function", "has_function"));
+    try testing.expectEqual(@as(usize, 0), tableReads("if (flags.equatable) x", "equatable"));
+    try testing.expectEqual(@as(usize, 0), tableReads("kind == .equatable", "equatable"));
+    try testing.expectEqual(@as(usize, 0), tableReads("s.marker.equatable(v)", "equatable"));
+    try testing.expectEqual(@as(usize, 0), tableReads(".equatable = true,", "equatable"));
+    try testing.expectEqual(@as(usize, 0), tableReads("header.equatable_token", "equatable"));
 }
 
 test "no file of src/check is over 1 500 lines" {
