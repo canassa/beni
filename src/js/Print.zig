@@ -1365,21 +1365,21 @@ const Printer = struct {
 /// an ES module is always strict. beni's keyword set is different, so any
 /// of these can be a legal beni identifier.
 pub fn isReservedWord(text: []const u8) bool {
-    const words = [_][]const u8{
-        "arguments", "await",      "break",     "case",    "catch",      "class",
-        "const",     "continue",   "debugger",  "default", "delete",     "do",
-        "else",      "enum",       "eval",      "export",  "extends",    "false",
-        "finally",   "for",        "function",  "if",      "implements", "import",
-        "in",        "instanceof", "interface", "let",     "new",        "null",
-        "package",   "private",    "protected", "public",  "return",     "static",
-        "super",     "switch",     "this",      "throw",   "true",       "try",
-        "typeof",    "var",        "void",      "while",   "with",       "yield",
-    };
-    for (words) |word| {
-        if (std.mem.eql(u8, word, text)) return true;
-    }
-    return false;
+    return reserved_words.has(text);
 }
+
+/// Looked up by length first: every name the printer writes is asked, and
+/// a scan of all 48 was a tenth of printing a wide program.
+const reserved_words: std.StaticStringMap(void) = .initComptime(.{
+    .{"arguments"}, .{"await"},      .{"break"},     .{"case"},    .{"catch"},      .{"class"},
+    .{"const"},     .{"continue"},   .{"debugger"},  .{"default"}, .{"delete"},     .{"do"},
+    .{"else"},      .{"enum"},       .{"eval"},      .{"export"},  .{"extends"},    .{"false"},
+    .{"finally"},   .{"for"},        .{"function"},  .{"if"},      .{"implements"}, .{"import"},
+    .{"in"},        .{"instanceof"}, .{"interface"}, .{"let"},     .{"new"},        .{"null"},
+    .{"package"},   .{"private"},    .{"protected"}, .{"public"},  .{"return"},     .{"static"},
+    .{"super"},     .{"switch"},     .{"this"},      .{"throw"},   .{"true"},       .{"try"},
+    .{"typeof"},    .{"var"},        .{"void"},      .{"while"},   .{"with"},       .{"yield"},
+});
 
 // ---------------------------------------------------------------------------
 // Tests
