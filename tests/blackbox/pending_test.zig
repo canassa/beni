@@ -97,6 +97,9 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // R15-fix-G (2026-09-28) added CK-179.
     .{ .name = "scenario/CK-144", .step = .fast },
     .{ .name = "scenario/CK-179", .step = .fast },
+    // R15-fix-H (2026-09-28): two claims about `--out`'s record.
+    .{ .name = "scenario/CK-191", .step = .fast },
+    .{ .name = "scenario/CK-192", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -189,6 +192,61 @@ fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
     try out.appendSlice(arena, "pub type alias R0 =\n    { x : Int }\n\n\n");
     for (1..count + 1) |i| try out.print(arena, "pub type alias R{d} =\n    {{ x : Int, p : R{d} }}\n\n\npub get{d} : R{d} -> Int\nget{d} r =\n    r.x\n\n\n", .{ i, i - 1, i, i, i });
     return out.items;
+}
+
+// CK-191: `removeStale` compared an old record's paths with the new build's
+// byte for byte. A build writing `Zz.mjs` and a later one writing `ZZ.mjs`:
+// on APFS and NTFS those are ONE file, the second build's write lands in it,
+// and the stale pass then reads `Zz.mjs` — the file just written — finds the
+// first build's hash (a `--release` module of identical content has it) and
+// deletes it. Linux cannot fold case, so the case-folding file system is
+// simulated the way it behaves: `ZZ.mjs` is made a hard link of `Zz.mjs`
+// before the second build. `--out` is absolute so that the harness's own
+// folding check, which would see both names, leaves the tree to the
+// scenario. Expected: a stale name that is the same file as a written one is
+// not removed. At 31dd4bd `out/Zz.mjs` is removed.
+test "CK-191: a stale name that is the same file as a written one is not removed" {
+    var s = try Scenario.init("CK-191");
+    defer s.deinit();
+    const lib = "pub one : Int\none =\n    1\n";
+    try s.w.write("one/Zz.beni", lib);
+    try s.w.write("one/Main.beni", "import Node exposing (Program)\nimport Zz\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt Zz.one ]\n");
+    try s.w.write("two/ZZ.beni", lib);
+    try s.w.write("two/Main.beni", "import Node exposing (Program)\nimport ZZ\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt ZZ.one ]\n");
+    const out = try std.fmt.allocPrint(s.arena(), "--out={s}/out", .{try s.w.projectPath()});
+    for ([_][]const u8{ "one", "two" }) |root| {
+        const r = try s.w.run(&.{ "build", "--platform=node", "--release", out, "--diagnostics=json", try std.fmt.allocPrint(s.arena(), "--root={s}", .{root}), root });
+        if (r.exit_code != 0) return s.finish(try s.failed(r));
+        if (std.mem.eql(u8, root, "one")) try s.w.hardLink("out/Zz.mjs", "out/ZZ.mjs");
+    }
+    const kept = s.w.exists("out/Zz.mjs");
+    try s.finish(.{
+        .green = kept,
+        .signature = if (kept) "" else "removed",
+        .detail = if (kept) "out/Zz.mjs kept" else "out/Zz.mjs removed",
+    });
+}
+
+// CK-192: a `_manifest.txt` in `--out` that beni did not write — a user's
+// own notes, say — was read as an empty record and overwritten. Expected:
+// a file of that name that does not parse as beni's record (its first line
+// `beni-manifest 1`, then `<16 hex digits> <path>` per line) refuses the
+// build with a diagnostic naming the file, and nothing is written. At
+// 31dd4bd the build exits 0 and the file is replaced.
+test "CK-192: a _manifest.txt beni did not write refuses the build" {
+    var s = try Scenario.init("CK-192");
+    defer s.deinit();
+    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try s.w.write("out/_manifest.txt", "my own notes\n");
+    const r = try s.w.run(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" });
+    const intact = std.mem.eql(u8, try s.w.read("out/_manifest.txt"), "my own notes\n");
+    const refused = r.exit_code == 1 and !s.w.exists("out/_main.mjs");
+    const green = intact and refused;
+    try s.finish(.{
+        .green = green,
+        .signature = if (green) "" else if (!intact) "overwritten" else "not-refused",
+        .detail = try std.fmt.allocPrint(s.arena(), "exit {d}; the file {s}", .{ r.exit_code, if (intact) "intact" else "overwritten" }),
+    });
 }
 
 // The list stays honest: every `RED` entry names a pending fixture that

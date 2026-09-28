@@ -4628,6 +4628,68 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `scenario/CK-179` (`test-pending`), red `order-dependent`.
 - **Slice** unassigned (owner's decision first).
 
+*CK-190 to CK-192 were added on 2026-09-28 from the review of R15-fix-F, and CK-193 by R15-fix-H's
+own audit of the budgets in `src/js`. They start at 190 because R15-fix-G was cataloguing
+concurrently (it took CK-175 to CK-179); CK-180 to CK-189 are unused.*
+
+### CK-190 — `--release` prints a dropped binding past 64 chained substitutions (unsound)
+
+- **Severity** unsound-runtime. **Area** the release optimiser: `Opt` inlines each single-use alias
+  and drops its binding; `Printer.resolve` follows the substitution chain for at most 64 steps
+  (and `Opt.chainBase` likewise), then prints the name it stopped at, whose binding is gone, and
+  `Rename` spells it as whatever short name a live top-level holds. **Class** K14. **Sources**
+  review of R15-fix-F, H1.
+- **Program** `v x0 = let x1 = x0 … x130 = x129 in x130`, beside a top-level `k = 7`.
+- **Observed** dev prints `42`; `--release` prints `7` (emitted `const c=7,d=(a)=>c`). At 129 links
+  it prints a function's source; at 1 000 it throws `ReferenceError`; up to 128 it is right.
+- **Expected** both builds print `42` at every length. A budget whose exhaustion yields output is
+  only acceptable where the output is the conservative, unoptimised program.
+- **Fixture** `run/ReleaseAliasChain{129,130,1000}.beni`, red `release: exit=0 stdout-differs`
+  (1000: `program-exit=1`); `ReleaseAliasChain{64,65,128}` are green and went straight into
+  `tests/corpus/run/` as the boundary.
+- **Slice** R15-fix-H.
+
+### CK-191 — The output record's stale pass can delete the file just written, on APFS and NTFS
+
+- **Severity** latent (low-medium: a missing module after a rename by case only, on macOS or
+  Windows). **Area** `OutputRecord.removeStale`. **Class** K14. **Sources** review of R15-fix-F,
+  H2.
+- **Program** build a `Main` importing `Zz` into `out/`, then one importing `ZZ` (identical bytes
+  under `--release`; `Ab`/`AB` are not, their exports get different short names).
+- **Observed** the stale pass compares paths byte for byte: `Zz.mjs` is not written, so it is
+  read, its hash matches the old record, and it is deleted — on a case-folding file system, the
+  very file `ZZ.mjs` just wrote. Reproduced on Linux by making `ZZ.mjs` a hard link of `Zz.mjs`
+  before the second build, which is how the two names behave on APFS.
+- **Expected** a stale path equal to a written one under ASCII case folding (as
+  `output_path_collision` folds, `backend.md` §2) is not removed when it is the same file. Where
+  it is another file (a case-sensitive file system), it is stale like any other, so `--out` still
+  matches a fresh build — which the harness's own folding check requires.
+- **Fixture** `scenario/CK-191` (fast step), red `removed`.
+- **Slice** R15-fix-H.
+
+### CK-192 — A `_manifest.txt` beni did not write is silently overwritten
+
+- **Severity** latent (low: a user's file of that name is lost). **Area** `OutputRecord.read`.
+  **Class** K14. **Sources** review of R15-fix-F, H3.
+- **Program** `out/_manifest.txt` holding `my own notes`, then `build --out=out`.
+- **Observed** exit 0; the file is replaced by beni's record.
+- **Expected** a `_manifest.txt` that does not parse as beni's record refuses the build with a
+  diagnostic naming the file, and nothing is written.
+- **Fixture** `scenario/CK-192` (fast step), red `overwritten`.
+- **Slice** R15-fix-H.
+
+### CK-193 — The `foreign` shape check admits a polymorphic value when its type is wide
+
+- **Severity** unsound-runtime (a platform package only: rule 6 keeps `foreign` there). **Area**
+  `Emit.firstTypeVar`, `boundary.md` §4's check 1: it walked the type on a 64-slot stack under a
+  4 096-node budget and answered null — "concrete", the admitting answer — when either ran out.
+  **Class** K14. **Sources** R15-fix-H's audit of the budgets in `src/js` (CK-190's kind).
+- **Program** `pub foreign wide : { f1 : Int, …, f64 : Int, g : a }` in a platform package.
+- **Observed** the build exits 0; `Bad.wide.g` is a value of any type the caller picks.
+- **Expected** `foreign_bad_shape`, exactly as for `foreign anything : a`.
+- **Fixture** `build/bad/ForeignBadShapeWideRecord/`, red `BuildDidNotFail`.
+- **Slice** R15-fix-H.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -4815,14 +4877,18 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-177 | diagnostic-quality | K13 | promoted: `check/bad/InfiniteTypeBeforeMismatch.beni` | R15-fix-G (fixed) |
 | CK-178 | diagnostic-quality | K9 | promoted: `check/bad/SchemaPayloadArityNoCascade.beni` | R15-fix-G (fixed) |
 | CK-179 | nondeterminism | K12 | `scenario/CK-179` | unassigned (owner's decision) |
+| CK-190 | unsound-runtime | K14 | `run/ReleaseAliasChain129.beni`, `…130.beni`, `…1000.beni` | R15-fix-H |
+| CK-191 | latent | K14 | `scenario/CK-191` | R15-fix-H |
+| CK-192 | latent | K14 | `scenario/CK-192` | R15-fix-H |
+| CK-193 | unsound-runtime | K14 | `build/bad/ForeignBadShapeWideRecord/` | R15-fix-H |
 
 Totals:
-- 179 entries (CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 32 (CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
+- 183 entries (CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 34 (CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 22 (CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 32 (CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 4 (CK-179 from R15-fix-G; CK-132 among them, v1 only).
 - performance: 27 (CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
 - diagnostic-quality: 36 (CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
-- latent: 25 (CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 21 (CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
+- latent: 27 (CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
+- Outside the checker (K14): 25 (CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

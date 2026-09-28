@@ -1,0 +1,413 @@
+-- CK-190: a `let` chain of 129 single-use aliases, each binding the
+-- one before it. Under `--release` backend.md §9 item 1 inlines every
+-- link; at 31dd4bd the printer stopped following the substitutions after
+-- 64 steps and printed a name whose binding had been dropped, which the
+-- renamer then spelled as an unrelated top-level's short name: past 128
+-- links the release build printed `7` (the value of `k`), a function's
+-- source, or threw a ReferenceError. Expected: both builds print `42`
+-- then `7`. Oracle twin: the development build, which inlines nothing.
+import Node exposing (Program)
+import String
+
+
+k : Int
+k =
+    7
+
+
+v : Int -> Int
+v x0 =
+    let
+        x1 =
+            x0
+
+        x2 =
+            x1
+
+        x3 =
+            x2
+
+        x4 =
+            x3
+
+        x5 =
+            x4
+
+        x6 =
+            x5
+
+        x7 =
+            x6
+
+        x8 =
+            x7
+
+        x9 =
+            x8
+
+        x10 =
+            x9
+
+        x11 =
+            x10
+
+        x12 =
+            x11
+
+        x13 =
+            x12
+
+        x14 =
+            x13
+
+        x15 =
+            x14
+
+        x16 =
+            x15
+
+        x17 =
+            x16
+
+        x18 =
+            x17
+
+        x19 =
+            x18
+
+        x20 =
+            x19
+
+        x21 =
+            x20
+
+        x22 =
+            x21
+
+        x23 =
+            x22
+
+        x24 =
+            x23
+
+        x25 =
+            x24
+
+        x26 =
+            x25
+
+        x27 =
+            x26
+
+        x28 =
+            x27
+
+        x29 =
+            x28
+
+        x30 =
+            x29
+
+        x31 =
+            x30
+
+        x32 =
+            x31
+
+        x33 =
+            x32
+
+        x34 =
+            x33
+
+        x35 =
+            x34
+
+        x36 =
+            x35
+
+        x37 =
+            x36
+
+        x38 =
+            x37
+
+        x39 =
+            x38
+
+        x40 =
+            x39
+
+        x41 =
+            x40
+
+        x42 =
+            x41
+
+        x43 =
+            x42
+
+        x44 =
+            x43
+
+        x45 =
+            x44
+
+        x46 =
+            x45
+
+        x47 =
+            x46
+
+        x48 =
+            x47
+
+        x49 =
+            x48
+
+        x50 =
+            x49
+
+        x51 =
+            x50
+
+        x52 =
+            x51
+
+        x53 =
+            x52
+
+        x54 =
+            x53
+
+        x55 =
+            x54
+
+        x56 =
+            x55
+
+        x57 =
+            x56
+
+        x58 =
+            x57
+
+        x59 =
+            x58
+
+        x60 =
+            x59
+
+        x61 =
+            x60
+
+        x62 =
+            x61
+
+        x63 =
+            x62
+
+        x64 =
+            x63
+
+        x65 =
+            x64
+
+        x66 =
+            x65
+
+        x67 =
+            x66
+
+        x68 =
+            x67
+
+        x69 =
+            x68
+
+        x70 =
+            x69
+
+        x71 =
+            x70
+
+        x72 =
+            x71
+
+        x73 =
+            x72
+
+        x74 =
+            x73
+
+        x75 =
+            x74
+
+        x76 =
+            x75
+
+        x77 =
+            x76
+
+        x78 =
+            x77
+
+        x79 =
+            x78
+
+        x80 =
+            x79
+
+        x81 =
+            x80
+
+        x82 =
+            x81
+
+        x83 =
+            x82
+
+        x84 =
+            x83
+
+        x85 =
+            x84
+
+        x86 =
+            x85
+
+        x87 =
+            x86
+
+        x88 =
+            x87
+
+        x89 =
+            x88
+
+        x90 =
+            x89
+
+        x91 =
+            x90
+
+        x92 =
+            x91
+
+        x93 =
+            x92
+
+        x94 =
+            x93
+
+        x95 =
+            x94
+
+        x96 =
+            x95
+
+        x97 =
+            x96
+
+        x98 =
+            x97
+
+        x99 =
+            x98
+
+        x100 =
+            x99
+
+        x101 =
+            x100
+
+        x102 =
+            x101
+
+        x103 =
+            x102
+
+        x104 =
+            x103
+
+        x105 =
+            x104
+
+        x106 =
+            x105
+
+        x107 =
+            x106
+
+        x108 =
+            x107
+
+        x109 =
+            x108
+
+        x110 =
+            x109
+
+        x111 =
+            x110
+
+        x112 =
+            x111
+
+        x113 =
+            x112
+
+        x114 =
+            x113
+
+        x115 =
+            x114
+
+        x116 =
+            x115
+
+        x117 =
+            x116
+
+        x118 =
+            x117
+
+        x119 =
+            x118
+
+        x120 =
+            x119
+
+        x121 =
+            x120
+
+        x122 =
+            x121
+
+        x123 =
+            x122
+
+        x124 =
+            x123
+
+        x125 =
+            x124
+
+        x126 =
+            x125
+
+        x127 =
+            x126
+
+        x128 =
+            x127
+
+        x129 =
+            x128
+    in
+    x129
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (v 42), String.fromInt k ]
