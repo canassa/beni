@@ -86,6 +86,12 @@ pub const Namer = struct {
     /// of megabytes for a two-line program. The dumps, whose output is a
     /// type's whole text, set it to `unlimited`.
     budget: u32 = message_budget,
+    /// The roots being printed, outermost first (CK-177): a node met again
+    /// inside itself is a CYCLE, printed `…` there rather than unrolled
+    /// until `budget` runs out — which printed `x = ( x, x )` as 4 096
+    /// nodes of tuple. Never deeper than `max_depth`, so it is inline.
+    path: [max_depth + 2]Var = undefined,
+    path_len: u32 = 0,
 
     pub const message_budget: u32 = 4096;
     pub const unlimited: u32 = std.math.maxInt(u32);
@@ -357,7 +363,19 @@ fn write(
     if (namer.budget == 0) return w.writeAll("…");
     namer.budget -= 1;
     const root = cx.store.find(v);
-    switch (cx.store.content(root)) {
+    const content = cx.store.content(root);
+    // A cycle is elided where it repeats (`Namer.path`). `depth` bounds the
+    // path, so the push fits; the test is only a backstop.
+    const pushed = (content == .alias or content == .structure) and namer.path_len < namer.path.len;
+    if (pushed) {
+        for (namer.path[0..namer.path_len]) |on| if (on == root) return w.writeAll("…");
+        namer.path[namer.path_len] = root;
+        namer.path_len += 1;
+    }
+    defer if (pushed) {
+        namer.path_len -= 1;
+    };
+    switch (content) {
         .err => try w.writeAll("?"),
         .flex, .rigid => |flags| {
             const preferred = preferredName(cx.interner, flags);

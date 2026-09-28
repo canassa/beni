@@ -105,6 +105,11 @@ pub const Status = enum(u8) {
     /// the pass made of it (static-dispatch-spike.md §10.13, CK-116):
     /// `culprit` is the `TypeId` whose method it is, `method` its name.
     absent_requirement,
+    /// A payload position met `err` and nothing else failed (checker-v2.md
+    /// §12.2 *amended by R15-fix-G*, CK-178): that `err` has its message,
+    /// said where it was made, so the type's method is no answer and the
+    /// use is `poisoned`, in silence — never "does not support `==`".
+    poisoned,
 };
 
 /// One context entry: `args[param]` must answer `method`, at the well-known
@@ -1185,9 +1190,16 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
         .{ .status = .absent_requirement, .culprit = @intFromEnum(q.type_id), .method = q.method }
     else
         .{ .status = if (r.saw_function) .absent_function else .absent_other };
-    for (ids) |wid| {
-        if (s.evidence.get(wid).state.rejected()) return failed;
-    }
+    // A failed position is the answer; a POISONED one only when nothing
+    // else failed (`Status.poisoned`, CK-178), and never over a reason the
+    // run recorded.
+    var poisoned = false;
+    for (ids) |wid| switch (s.evidence.get(wid).state) {
+        .failed => return failed,
+        .poisoned => poisoned = true,
+        else => {},
+    };
+    if (poisoned) return if (failed.status == .absent_other) .{ .status = .poisoned } else failed;
     // Every marker a distinct plain flex or a PIN — bound to a ground type,
     // by a payload's specialised method (CK-159) — found in linear time: each
     // flex root is stamped `seen` (R8a's reviews: a type of tens of

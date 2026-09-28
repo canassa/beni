@@ -393,6 +393,9 @@ const Facts = struct {
             // importer says "does not support" where the module itself gives
             // the annotation hint (R8a's review, nit): the texts are R13's.
             .absent_other, .needs_annotation => return .{ .status = .unanswerable },
+            // A payload met `err`: the module has a message, and an importer
+            // poisons in silence as for a module never checked (CK-178).
+            .poisoned => return .{ .status = .unchecked },
             // P5 ran it with a budget of its own: one that still ran out is
             // the compiler's failure, not a fact about the type (R8b's
             // round-2 review, S1).

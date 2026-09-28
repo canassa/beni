@@ -94,7 +94,9 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // (both halves) into `perf_test.zig`, and R15-fix-F CK-164 and CK-165
     // into `perf_test.zig`, CK-166 and CK-167 into `abuse_test.zig` and
     // CK-163, a claim about the output tree, into `build_test.zig`.
+    // R15-fix-G (2026-09-28) added CK-179.
     .{ .name = "scenario/CK-144", .step = .fast },
+    .{ .name = "scenario/CK-179", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -145,6 +147,38 @@ test "CK-144: an alias chain's interface is linear in its length" {
         .green = green,
         .signature = if (green) "" else "superlinear",
         .detail = try std.fmt.allocPrint(s.arena(), "60 aliases: {d} bytes; 120: {d} bytes; ratio {d}.{d:0>2}", .{ bytes[0], bytes[1], hundredths / 100, hundredths % 100 }),
+    });
+}
+
+// CK-179: which alias name an inferred type shows depends on declaration
+// order (checker-v2.md I9's scope: "for an accepted program its types").
+// `x : Name` (`type alias Name = String`), `y : String`, and a recursive
+// group `f` → `x`, `g` → `y`: its members' result is one flex, and it
+// absorbs whichever of `Name` and `String` the group meets first. At
+// 8a68e12 (and R15-fix-G) `f` above `g` publishes `f : number -> Name`,
+// the swap `f : number -> String`. Expected: one type in both orders.
+test "CK-179: an inferred type names the same alias in every declaration order" {
+    var s = try Scenario.init("CK-179");
+    defer s.deinit();
+    const head = "type alias Name =\n    String\n\n\nx : Name\nx =\n    \"x\"\n\n\ny : String\ny =\n    \"y\"\n\n\n";
+    const f = "f n =\n    if n == 0 then\n        x\n\n    else\n        g (n - 1)\n\n\n";
+    const g = "g n =\n    if n == 0 then\n        y\n\n    else\n        f (n - 1)\n\n\n";
+    try s.w.write("FG.beni", head ++ f ++ g);
+    try s.w.write("GF.beni", head ++ g ++ f);
+    var types: [2][]const u8 = undefined;
+    for ([_][]const u8{ "FG.beni", "GF.beni" }, &types) |file, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        // `f`'s line: the module line and the declaration order differ.
+        const at = std.mem.indexOf(u8, run.stdout, "\n  f : ") orelse return s.finish(.{ .green = false, .signature = "stdout-differs", .detail = "no `f` in the dump" });
+        const end = std.mem.indexOfScalarPos(u8, run.stdout, at + 1, '\n') orelse run.stdout.len;
+        slot.* = run.stdout[at + 1 .. end];
+    }
+    const same = std.mem.eql(u8, types[0], types[1]);
+    try s.finish(.{
+        .green = same,
+        .signature = if (same) "" else "order-dependent",
+        .detail = try std.fmt.allocPrint(s.arena(), "f above g: `{s}`; g above f: `{s}`", .{ types[0], types[1] }),
     });
 }
 

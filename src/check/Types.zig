@@ -56,6 +56,7 @@ const TypeStore = @import("TypeStore.zig");
 const reads = @import("reads.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
+const Injective = @import("Injective.zig");
 
 const Types = @This();
 
@@ -108,6 +109,15 @@ pub const Entry = struct {
     /// These entries have no ordinary type declaration body for the
     /// equatability walk to inspect.
     schema_endpoint: bool = false,
+    /// An alias every one of whose parameters survives its FULL expansion
+    /// (`settleInjective`): two of its uses expand to one type exactly when
+    /// their arguments are one type, so `Unify` may unify the arguments
+    /// and keep the name (checker-v2.md §7.1 *amended by R15-fix-G*,
+    /// CK-175). `type alias Tagged t = Int` is not: `Tagged String` and
+    /// `Tagged Bool` are both `Int`. False for anything that is not an
+    /// alias, and for a schema endpoint, whose body this table does not
+    /// read — false is always sound, it only costs the fast path.
+    injective: bool = false,
 };
 
 /// Owned. One per declared type, in topological module order.
@@ -598,7 +608,13 @@ pub fn build(
     // says so and not because `core/Char.beni` declares anything.
     types.findWellKnown(graph, interfaces, interner);
     try types.settleEquatable(gpa, graph, artifacts);
+    try Injective.settle(&types, gpa, graph, artifacts);
     return types;
+}
+
+/// Whether alias `id` is injective (`Entry.injective`).
+pub fn isInjective(types: *const Types, id: TypeId) bool {
+    return types.entry(id).injective;
 }
 
 fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) bool {

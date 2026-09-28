@@ -297,7 +297,15 @@ pub const Stacks = struct {
     ordered: std.ArrayList(OrderedFrame) = .empty,
     kids: std.ArrayList(Var) = .empty,
     fields: std.ArrayList(TypeStore.Field) = .empty,
+    /// Debug: `assertProved`'s colours and frames, reused across its calls
+    /// (R15-fix-G): a fresh map per call made the Debug check of a
+    /// 1 100-link alias chain spend 24 s allocating
+    /// (`run/AliasChainThroughLet`), where ReleaseFast takes 30 ms.
+    assert_colours: std.AutoHashMapUnmanaged(Var, AssertColour) = .empty,
+    assert_frames: std.ArrayList(Frame) = .empty,
     pub fn deinit(s: *Stacks, gpa: Allocator) void {
+        s.assert_colours.deinit(gpa);
+        s.assert_frames.deinit(gpa);
         s.frames.deinit(gpa);
         s.vars.deinit(gpa);
         s.ranks.deinit(gpa);
@@ -363,7 +371,7 @@ pub const Occurs = struct {
         const start = store.find(v);
         if (isLeaf(store, start) or store.mark(start) == o.black) return null;
         if (o.trusts and store.proved(start)) {
-            try assertProved(store, gpa, start);
+            try assertProved(store, stacks, gpa, start);
             return null;
         }
         const frames = &stacks.frames;
@@ -383,7 +391,7 @@ pub const Occurs = struct {
                 // one was walked to the bottom already: neither is pushed.
                 if (mark == o.black) continue;
                 if (o.trusts and store.proved(r)) {
-                    try assertProved(store, gpa, r);
+                    try assertProved(store, stacks, gpa, r);
                     continue;
                 }
                 if (isLeaf(store, r)) {
@@ -417,14 +425,13 @@ pub const Occurs = struct {
 /// walks share a budget of `assert_budget_per_var` visits per store
 /// variable (plus a floor): every program the corpus holds is checked in
 /// full, and a pathological one is checked until the budget runs out.
-fn assertProved(store: *TypeStore, gpa: Allocator, v: Var) Error!void {
+fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!void {
     if (!std.debug.runtime_safety) return;
     if (store.proof_assert_work > assert_budget_floor + @as(u64, store.count()) * assert_budget_per_var) return;
-    const Colour = enum { grey, black };
-    var colours: std.AutoHashMapUnmanaged(Var, Colour) = .empty;
-    defer colours.deinit(gpa);
-    var frames: std.ArrayList(Frame) = .empty;
-    defer frames.deinit(gpa);
+    const colours = &stacks.assert_colours;
+    colours.clearRetainingCapacity();
+    const frames = &stacks.assert_frames;
+    frames.clearRetainingCapacity();
     try frames.append(gpa, .{ .v = v, .cursor = 0 });
     try colours.put(gpa, v, .grey);
     defer store.proof_assert_work += colours.count();
@@ -449,6 +456,7 @@ fn assertProved(store: *TypeStore, gpa: Allocator, v: Var) Error!void {
     }
 }
 
+const AssertColour = enum { grey, black };
 const assert_cap = 1024;
 const assert_budget_per_var = 16;
 const assert_budget_floor = 1 << 20;

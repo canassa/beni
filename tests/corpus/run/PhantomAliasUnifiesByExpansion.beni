@@ -6,7 +6,8 @@
 -- TYPE MISMATCH, and `[ f 1, b ]` is refused with `f` above `g` and accepted
 -- with the two swapped (`f`'s result absorbs `Tagged String` or `Int`,
 -- whichever its group meets first; checker-v2.md I9). Expected: it builds
--- and prints 3, 2, 1, 2 and 1 in every order (ordering_test.zig's PERM).
+-- and prints 3, 2, 1, 2 and 1 in every order (its twin in PERM is
+-- `PhantomAliasMutualGroup.beni`; the names inferred here are CK-179).
 -- Oracle twin: every `Tagged …` written `Int` prints the same.
 import Node exposing (Program)
 import String

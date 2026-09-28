@@ -1,0 +1,1 @@
+[{"code":"wrong_type_arity","severity":"error","span":{"file":"tests/corpus/check/bad/SchemaPayloadArityNoCascade.beni","start":{"line":10,"col":13},"end":{"line":10,"col":16}},"title":"WRONG TYPE ARITY","message":"The schema `Int` expects 0 arguments, but it was given 2.\n"}]

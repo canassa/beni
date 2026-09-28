@@ -1,0 +1,41 @@
+-- CK-175's guard (R15-fix-G): an alias whose parameter survives only into
+-- another alias that drops it drops it too. `Outer t = Tagged t` and
+-- `Tagged t = Int`, so `Outer String` and `Outer Bool` are both `Int`: the
+-- injectivity `Types.settleInjective` computes looks through the nested
+-- alias. And `Wrap t = List t` keeps its parameter: `Wrap Int` against
+-- `List Int` is one type. Expected: it builds and prints 1, 2 and 3.
+-- Oracle twin: `Outer …` written `Int` and `Wrap Int` written `List Int`.
+import Node exposing (Program)
+import String
+
+
+type alias Tagged t =
+    Int
+
+
+type alias Outer t =
+    Tagged t
+
+
+type alias Wrap t =
+    List t
+
+
+a : Outer String
+a =
+    1
+
+
+b : Outer Bool
+b =
+    2
+
+
+w : Wrap Int
+w =
+    [ 3 ]
+
+
+main : Program
+main =
+    Node.printLines (List.map ([ a, b ] ++ w) String.fromInt)

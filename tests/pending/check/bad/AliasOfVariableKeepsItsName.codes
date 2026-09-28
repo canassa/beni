@@ -1,4 +1,0 @@
-# CK-176: both messages print the alias as written, and the hint names the
-# annotation's variable found through it.
-rigid_mismatch 19:5 contains "    Id b" contains "type variable `b`"
-rigid_mismatch 24:5 contains "    Id a" contains "type variable `a`"

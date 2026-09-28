@@ -6284,7 +6284,10 @@ test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
     // `x = ( x, x )` is a DAG the printer walked as a TREE: under
     // `Render.max_depth` alone that is 2^24 leaves, 300 MB of stderr from a
     // two-line program on both checkers (R4b's adversarial review, F1). The
-    // namer's node budget (`checker.md` §8.2) bounds one message.
+    // namer's node budget (`checker.md` §8.2) bounds one message. Since
+    // R15-fix-G (CK-177) the failure is the cycle's INFINITE TYPE, `a = ( a,
+    // a )`, and the printer elides a cycle where it repeats: a few hundred
+    // bytes where the mismatch printed 37 KB.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6304,8 +6307,9 @@ test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
     // └─────────────────────────────────────────┘
     for ([_]world.Result{ v1, v2 }) |r| {
         try testing.expectEqual(@as(u8, 1), r.exit_code);
-        try testing.expect(std.mem.indexOf(u8, r.stderr, "TYPE MISMATCH") != null);
-        try testing.expect(r.stderr.len < 64 * 1024);
+        try testing.expect(std.mem.indexOf(u8, r.stderr, "INFINITE TYPE") != null);
+        try testing.expect(std.mem.indexOf(u8, r.stderr, "a = ( a, a )") != null);
+        try testing.expect(r.stderr.len < 4 * 1024);
     }
 }
 

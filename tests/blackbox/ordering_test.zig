@@ -170,6 +170,11 @@ const perm_programs = [_]PermProgram{
     .{ .name = "r14-field-merged", .path = "tests/corpus/run/LetFieldCallInMergedGroup.beni", .expect = .{ .prints = "tests/corpus/run/LetFieldCallInMergedGroup.expected" } },
     .{ .name = "r14-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
     .{ .name = "r14-polymorphic", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
+    // R15-fix-G (CK-175): two uses of an alias that drops its parameter,
+    // met inside a recursive group, are one type in every order. (CK-175's
+    // own fixture is not here: which alias name its members' inferred types
+    // show depends on the order, CK-179, and PERM compares the types.)
+    .{ .name = "ck175-group", .path = "tests/corpus/run/PhantomAliasMutualGroup.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasMutualGroup.expected" } },
 };
 
 test "PERM: every declaration order of an own-method program does what its twin says" {

@@ -658,12 +658,19 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
 ///     walk with no bound;
 ///   - a **variable** meets the alias's expansion when that expansion is a
 ///     variable too: a `number` flex against `Id number` is two flexes
-///     (CK-174), a rigid against `Id a` is `a` against `a` (CK-173). Only a
-///     flex against an alias of a STRUCTURE absorbs it by name, so a message
-///     still prints `Id Int` where the program wrote it;
-///   - two aliases of the same name unify their arguments and keep the
-///     name; otherwise the expansions meet, directly — not one link per
-///     recursion, which spent `max_depth` on a long chain.
+///     (CK-174), a rigid against `Id a` is `a` against `a` (CK-173). A flex
+///     against an alias of a STRUCTURE absorbs it by name, so a message
+///     still prints `Id Int` where the program wrote it, and so does a flex
+///     nothing rides on against an alias of a variable (*amended by
+///     R15-fix-G*, CK-176: `bad : a -> Id b` says `Id b`);
+///   - two aliases of the same INJECTIVE name unify their arguments and
+///     keep the name (*amended by R15-fix-G*, CK-175: only there do equal
+///     expansions mean equal arguments — `Tagged String` and `Tagged Bool`
+///     of `type alias Tagged t = Int` are one type, and unifying their
+///     arguments refused it, or not, by which one a group met first);
+///     otherwise the expansions meet, directly — not one link per
+///     recursion, which spent `max_depth` on a long chain — and the two
+///     nodes stay apart, each printing what its source wrote.
 fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStore.Content) Error!bool {
     const st = u.store;
     const xa, const xca = if (ca == .alias) st.resolved(ra) else .{ ra, ca };
@@ -672,7 +679,7 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
     if (ca == .alias and cb == .alias) {
         const aa = ca.alias;
         const ab = cb.alias;
-        if (aa.type != ab.type or aa.args.len != ab.args.len) return u.go(xa, xb);
+        if (aa.type != ab.type or aa.args.len != ab.args.len or !u.types.isInjective(aa.type)) return u.go(xa, xb);
         if (u.isActive(ra, rb)) return true;
         try u.pushActive(ra, rb);
         defer u.popActive();
@@ -701,7 +708,20 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
             return true;
         },
         .flex => |f| switch (xc) {
-            .flex, .rigid => return if (alias_left) u.go(x, r) else u.go(r, x),
+            // A flex nothing rides on absorbs the alias by name, as it does
+            // an alias of a structure (*amended by R15-fix-G*, CK-176): it
+            // IS the expansion, and binding it writes no cycle — `x`, the
+            // expansion, is not `r`, and a later `r` against `x` is the
+            // first row. One that carries a kind, a marker or anything
+            // riding meets the expansion, whose flags must join its own.
+            .flex, .rigid => {
+                if (f.kind == .any and !f.equatable and f.obls == .none and f.constraints == .none) {
+                    const named = if (alias_left) ra else rb;
+                    try u.bind(r, f, named, st.content(named));
+                    return true;
+                }
+                return if (alias_left) u.go(x, r) else u.go(r, x);
+            },
             // The flex absorbs the alias, name and all.
             else => {
                 const named = if (alias_left) ra else rb;

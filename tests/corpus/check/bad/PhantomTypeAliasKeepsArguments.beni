@@ -1,0 +1,24 @@
+-- CK-175's other guard (R15-fix-G): a parameter that reaches a NOMINAL
+-- type is kept, even a phantom one. `Box t = Box` is a `type`, so
+-- `Boxed String` and `Boxed Bool` are `Box String` and `Box Bool`: two
+-- types, and the list is refused, naming the aliases as written.
+type Box t
+    = Box
+
+
+type alias Boxed t =
+    Box t
+
+
+a : Boxed String
+a =
+    Box
+
+
+b : Boxed Bool
+b =
+    Box
+
+
+both =
+    [ a, b ]

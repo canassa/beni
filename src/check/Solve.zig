@@ -542,6 +542,17 @@ fn reportFailure(s: *Solve, region: Bir.Inst.Index, category: Category, expected
 
 fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expected: Var, actual: Var, problem: ?Unify.Problem) Error!void {
     const r = s.report;
+    // A cycle on either side is the mistake, and the failure its consequence
+    // (§7.3 *amended by R15-fix-G*, CK-177): `[ x, ( x, x ), { zb = x } ]`
+    // is `a = ( a, a )`, never a mismatch printing that tuple unrolled.
+    // Unification does not occurs-check a binding — the boundary does
+    // (§8.2) — so a cycle made earlier in the group is still here. Only on
+    // the error path, which is where `too_deep` always looked.
+    for ([_]Var{ expected, actual }) |side| {
+        var run: Walk.Occurs = .begin(s.store());
+        const cycle = (try run.check(s.store(), &s.stacks, s.cx.gpa, side)) orelse continue;
+        return s.reportCycle(region, .none, side, cycle);
+    }
     const p = problem orelse return r.mismatch(region, category, expected, actual, s.rigidOf(expected, actual));
     switch (p) {
         .kinds => |k| try r.kindMismatch(region, k.left, k.right),
@@ -552,24 +563,20 @@ fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expe
         .record_not_closed => |f| try r.recordNotClosed(region, f.actual, f.expected),
         // §7.3: past the guard, a reported refusal and never "ok".
         // A cycle is `infinite_type`, never "nested too deep" (review B1):
-        // the error path looks for one from both sides before saying the
-        // source is deep.
-        .too_deep => {
-            for ([_]Var{ expected, actual }) |side| {
-                var run: Walk.Occurs = .begin(s.store());
-                const cycle = (try run.check(s.store(), &s.stacks, s.cx.gpa, side)) orelse continue;
-                return s.reportCycle(region, .none, side, cycle);
-            }
-            try r.nestingTooDeep(region, Unify.max_depth);
-        },
+        // the error path looked for one from both sides above.
+        .too_deep => try r.nestingTooDeep(region, Unify.max_depth),
     }
 }
 
-/// Which side was an annotation's promise, for `rigid_mismatch`.
+/// Which side was an annotation's promise, for `rigid_mismatch`: looked for
+/// through an alias, which is a name for its expansion (CK-176: `Id b` is
+/// the rigid `b`, and the hint names it).
 fn rigidOf(s: *Solve, expected: Var, actual: Var) ?Report.Rigid {
     const st = s.store();
-    if (st.content(st.find(expected)) == .rigid) return .{ .v = expected, .against = actual };
-    if (st.content(st.find(actual)) == .rigid) return .{ .v = actual, .against = expected };
+    const re, const ce = st.resolved(expected);
+    if (ce == .rigid) return .{ .v = re, .against = actual };
+    const ra, const ca = st.resolved(actual);
+    if (ca == .rigid) return .{ .v = ra, .against = expected };
     return null;
 }
 

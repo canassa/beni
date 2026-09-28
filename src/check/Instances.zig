@@ -676,6 +676,8 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
                 return Resolve.reject(s, id, true);
             },
             .absent_other, .own_method, .foreign => return refuseDerived(s, id, root, .opaque_type),
+            // A payload met `err`, which has its message (CK-178).
+            .poisoned => return Resolve.poisoned(s, id),
         }
         const t = s.contexts.local(a.type).?;
         const entries = try s.cx.scratch.dupe(Contexts.Entry, s.contexts.entriesOf(answer));

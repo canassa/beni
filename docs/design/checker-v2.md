@@ -879,6 +879,32 @@ each alias on the walked path gets `actual` = the chain's end, journalled like a
 so a chain is walked in full once. An alias's name and arguments, all `Render` prints, are
 untouched.
 
+*Amended by R15-fix-G (2026-09-28, CK-175, CK-176): arguments only for an injective alias, and a
+plain flex keeps the name.* Two corrections to the rows above:
+
+- **Two aliases of one name unify their arguments only when the alias is INJECTIVE** — every
+  parameter survives its full expansion (`Types.Entry.injective`, settled once per session by
+  `Injective.settle` over the alias DAG: a parameter that reaches only an argument a nested alias
+  drops is dropped too, and one that reaches a nominal type, phantom or not, is kept). Only then
+  do equal expansions mean equal arguments. `type alias Tagged t = Int` is not injective:
+  `Tagged String` and `Tagged Bool` are both `Int`, and unifying their arguments refused `[ a, b
+  ]`, `retag : Tagged x -> Tagged y`, and — in a recursive group — accepted or refused a program by
+  whichever of two uses the group met first (CK-175, an I9 violation). A non-injective pair meets
+  by expansion, and the two nodes stay apart, each printing what its source wrote. `false` is the
+  sound default (a schema endpoint, a recursive alias): it costs only the fast path.
+- **A flex nothing rides on absorbs an alias of a VARIABLE by name** too — kind `any`, no marker,
+  no obligation, no wanted — so `bad : a -> Id b` says "should be: `Id b`" again (CK-176, a
+  regression from the second bullet above). Binding it writes no cycle: the expansion is not the
+  flex (the first row caught that), and a later meeting of the two is the first row. A flex that
+  carries anything still meets the expansion, whose flags must join its own (CK-174). The rigid
+  hint looks for its rigid through an alias (`Solve.rigidOf`), so it names `b`.
+
+Which name an INFERRED type shows when it meets two names for one type — `Name` and `String`, or
+`Tagged String` and `Int` — is still whichever it met first, and inside a recursive group that
+follows declaration order: CK-179, pending, the owner's to decide (I9's scope promises an accepted
+program's types). `PERM`'s CK-175 program (`run/PhantomAliasMutualGroup.beni`) is chosen so that
+no member can meet two names.
+
 ### 7.2 Choice among failures is by text (I13, CK-07)
 
 `unifyRecord` unifies every shared field and collects the failures. The one returned is the
@@ -945,6 +971,16 @@ missed and unrolled once more; merges only reduce the roots, so that happens bou
 Two structures with no children (`Int`, `()`, `{}`) are merged without a pair on the stack: they
 recurse into nothing, so they cannot meet a pair again (R8c's review round 2, −0.5 % of
 instructions).
+
+*Amended by R15-fix-G (2026-09-28, CK-177): every failure looks for a cycle first.* The third
+bullet of R4b's review above ran the occurs check only on `too_deep`. A cycle made earlier in the
+group — unification does not occurs-check a binding (§8.2) — then failed against a record as a
+TYPE MISMATCH that printed the cycle unrolled to the namer's 4 096-node budget: 37 KB for `[ x, (
+x, x ), { zb = x, za = "s" } ]`. Now `Solve.reportFailureText` runs the occurs check from both
+sides before any failure's text, and a cycle is `infinite_type` at the unification, `a = ( a, a )`
+— the mistake, where the mismatch was its consequence. Error path only. And `Render` elides a
+cycle where it repeats (`Namer.path`, the roots being printed): a cyclic type met by any other
+printer is `( …, … )`, never unrolled.
 
 ### 7.4 Kinds
 
@@ -3104,6 +3140,16 @@ over those types. It runs over every gate; on `346268b`'s `resolved` it fires on
 fixtures. (The whole store is not walked: a derived-context pass leaves `err`s on the variables of
 its discarded frames, which are answers, not holes.)
 
+*Amended by R15-fix-G (2026-09-28, CK-178): a derived context over a poisoned payload is
+`poisoned`, not absent.* A derived-context pass (§11.2) read a payload wanted that was
+`poisoned` — its payload's type `err`, with its message where it was made — as a failed one, and
+answered `absent_other`, which the use reported as NOT EQUATABLE "a function anywhere inside it":
+`v : Int Int Int` in a tagged schema was two messages, the second false. A pass whose positions
+include a `poisoned` one and no `failed` one, with no recorded reason (a private method, a
+requirement, a function), answers `Contexts.Status.poisoned`: the use's wanted is `poisoned` in
+silence (`Derivable`, `Instances.derivedNominal`), and the published row is `unchecked`, which
+an importer also poisons in silence.
+
 ### 12.3 Calls inside a binding group (CK-30, CK-31)
 
 A reference from one member of a group to another, or from a member to itself, or through an
@@ -4420,6 +4466,10 @@ is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
 *As built by R15-fix-F (2026-09-28):* one new file, **`ColumnIndex`** (column zero of a pattern
 matrix by the alternative heading each row: `collect`'s bitset, `split`'s counting sort, and the
 per-branch `Heads` index — CK-167), which keeps `Exhaustive` under the cap (1 490).
+
+*As built by R15-fix-G (2026-09-28):* one new file, **`Injective`** (which aliases keep every
+parameter through their full expansion, settled once per session into `Types.Entry.injective` —
+§7.1 *amended by R15-fix-G*, CK-175), which keeps `Types` under the cap.
 
 ---
 

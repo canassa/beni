@@ -2909,6 +2909,46 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     missing, redundant and general-path variants) into `abuse_test.zig`; CK-163 into
     `build_test.zig` (three scenarios: fresh-equal tree with user files kept, an edited output and a
     hostile record line kept, a refused rebuild changing nothing). Only CK-144 is left pending.
+#### R15-fix-G — Phantom aliases, alias names, cycles before mismatches, a poisoned payload (added by the manager, 2026-09-28)
+
+- **Goal.** Fix R15-fix-E's review's four findings, catalogued CK-175 to CK-178 and written red
+  on `8a68e12` first (their own commit): CK-175 (an alias that drops a parameter unified by its
+  arguments — an I9 violation), CK-176 (an alias of a variable lost from a message, a regression
+  from R15-fix-C), CK-177 (a cycle reported as a 37 KB mismatch) and CK-178 (a payload's `err`
+  refusing its type's derived `==`).
+- **As built (2026-09-28).** Base `8a68e12` (R15-fix-E). Spec: `checker-v2.md` §7.1, §7.3 and
+  §12.2, each *amended by R15-fix-G*. No format bump: nothing written changes shape (a poisoned
+  context publishes the existing `unchecked` row).
+  - **CK-175.** `Types.Entry.injective`, settled once per session by the new `Injective.zig`
+    (split out for §19.1's budget): a parameter is kept when it reaches the full expansion — a
+    nested alias's dropped position drops it, a nominal type (phantom or not) keeps it; aliases
+    settled depth-first over the DAG, iteratively; `false` for a schema endpoint or a recursive
+    alias, the sound default. `Unify.throughAlias` unifies arguments only for an injective
+    alias, and otherwise meets the expansions and leaves the nodes apart.
+  - **CK-176.** A flex nothing rides on absorbs an alias of a variable by name (no cycle: the
+    first row caught the expansion being the flex); `Solve.rigidOf` finds the rigid through an
+    alias. The names this keeps made `run/AliasChainThroughLet`'s 1 100-link chain real again,
+    and its Debug check took 24 s — all in `Walk.assertProved` allocating a fresh map per call;
+    its colours and frames now live in `Walk.Stacks` (1.4 s; ReleaseFast 30 ms either way).
+  - **CK-177.** `Solve.reportFailureText` looks for a cycle on both sides before any failure's
+    text (it did only for `too_deep`); `Render` elides a cycle where it repeats (`Namer.path`).
+    `blackbox_test.zig`'s CK-92 scenario now expects the INFINITE TYPE (under 4 KB, was 37 KB),
+    and `check/bad/InfiniteTypeInterleaved.diag` re-blessed: `a = ( a, ( …, a ) )`.
+  - **CK-178.** `Contexts.Status.poisoned`: a pass whose positions include a `poisoned` wanted and
+    no failed one, with no recorded reason, is no answer and no message (`Derivable`,
+    `Instances.derivedNominal` poison; `Publish` writes `unchecked`).
+  - **Found: CK-179**, left pending (`scenario/CK-179`): which alias name an inferred type shows
+    when it meets two names for one type follows declaration order inside a recursive group (`f`
+    above `g` publishes `number -> Name`, the swap `number -> String`), on `8a68e12` as on the
+    fix. I9's scope promises an accepted program's types, so it is a finding; which name wins —
+    first met (Elm), the expansion, or a canonical rule — is the owner's.
+- **Evidence.** Fixture-first against a separately built `8a68e12` binary: the four red
+  fixtures' signatures are their findings' (`tests/pending/RED`, first commit), and each is green
+  on the fix, promoted with it (`.codes` → blessed `.diag`). New, each red on `8a68e12`:
+  `run/PhantomAliasNested.beni` (a parameter dropped through a nested alias; `Wrap t = List t`
+  kept), `run/PhantomAliasMutualGroup.beni` (in `ordering_test.zig`'s PERM, every order) and the
+  guard `check/bad/PhantomTypeAliasKeepsArguments.beni` (a phantom NOMINAL parameter is kept:
+  `Boxed String` against `Boxed Bool` is still refused, naming the aliases).
 
 ---
 
@@ -2946,6 +2986,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-D | CK-126, 145, 147, 148 (`tests/corpus/check/bad/`; CK-126 also `digest_test.zig` "row 13 for a schema"), CK-143 (`perf_test.zig`, both scenarios) | — | the digest's schema-endpoint hole (found and fixed with CK-126); `Report.failed` gets its reader (CK-146 item 1) |
 | R15-fix-E | CK-154, 162, 168 (`tests/corpus/check/bad/`), CK-159 (`run/DerivedOverSpecialisedEq/`; new `run/DerivedPinnedAcrossModules/`, `check/bad/DerivedPinnedRefused/`) | — | CK-161 kept for the owner (message fixed; fixture moved to `check/bad/`) |
 | R15-fix-F | CK-163 (`build_test.zig`), CK-164, 165 (`perf_test.zig`), CK-166, 167 (`abuse_test.zig`) | — | perf study item 4 (`Graph.lookup` as arrays); `backend.md` §2's output record |
+| R15-fix-G | CK-175 (`run/PhantomAliasUnifiesByExpansion`; new `run/PhantomAliasNested`, `run/PhantomAliasMutualGroup` in PERM, `check/bad/PhantomTypeAliasKeepsArguments`), CK-176, 177, 178 (`tests/corpus/check/bad/`) — all four found by R15-fix-E's review | — | CK-179 found, pending (`scenario/CK-179`, the owner's) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

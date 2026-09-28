@@ -1,0 +1,56 @@
+-- CK-175's permutation twin (R15-fix-G; ordering_test.zig's PERM runs it
+-- in every declaration order): a recursive group whose members return
+-- `Tagged String`, compared in a list with a `Tagged Bool`. Both are `Int`
+-- (`type alias Tagged t = Int` drops its parameter). At 8a68e12 unifying the
+-- two aliases unified their arguments, `String` against `Bool`: TYPE
+-- MISMATCH in every order. Expected: it builds and prints 3, 2 and 3, and
+-- its types are the same in every order. (`c` is `Tagged String` rather
+-- than `Int` so that no member's inferred type can take either name:
+-- which name an inferred type shows when it meets two is CK-179.)
+-- Oracle twin: every `Tagged …` written `Int` prints the same.
+import Node exposing (Program)
+import String
+
+
+type alias Tagged t =
+    Int
+
+
+a : Tagged String
+a =
+    1
+
+
+b : Tagged Bool
+b =
+    2
+
+
+c : Tagged String
+c =
+    3
+
+
+f n =
+    if n == 0 then
+        a
+
+    else
+        g (n - 1)
+
+
+g n =
+    if n == 0 then
+        c
+
+    else
+        f (n - 1)
+
+
+k =
+    [ f 1, b, g 2 ]
+
+
+main : Program
+main =
+    Node.printLines (List.map k String.fromInt)

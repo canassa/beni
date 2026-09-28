@@ -186,6 +186,9 @@ pub const Verdict = union(enum) {
     /// (static-dispatch-spike.md §10.13, CK-116): said at the use, naming
     /// the type whose method it is.
     requirement: struct { type_id: Types.TypeId, method: Symbol },
+    /// An own type whose context met a payload's `err` (`Contexts.Status.
+    /// poisoned`, CK-178): no answer, and no message — the `err` has one.
+    poisoned,
 };
 
 /// `derivability` for wanted `id` on `root`, reported at the use when it is
@@ -233,6 +236,10 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
             return true;
         },
         .pending, .query => unreachable,
+        .poisoned => {
+            try Resolve.poisoned(s, id);
+            return false;
+        },
         .cycle => |node| {
             try s.reportCycle(w.origin, .none, root, node);
             try Resolve.reject(s, id, false);
@@ -251,7 +258,8 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
     const is_eq = method == InternPool.WellKnown.eq.symbol();
     const w = .{ .origin = origin, .method = method };
     switch (verdict) {
-        .ok, .pending, .query, .cycle => {},
+        // A poisoned verdict has its message where the `err` was made.
+        .ok, .pending, .query, .cycle, .poisoned => {},
         .private_method => |p| {
             s.contexts.notePrivate(s, p.type_id, p.method);
             try Messages.privateMethod(s.report, w.origin, root, p.type_id, p.method);
@@ -482,7 +490,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
                 try frames.append(scratch, f);
             },
             .refusal => |refusal| return switch (refusal) {
-                .pending, .query, .needs_annotation, .private_method, .requirement, .budget => refusal,
+                .pending, .query, .needs_annotation, .private_method, .requirement, .budget, .poisoned => refusal,
                 else => map orelse refusal,
             },
         }
@@ -571,6 +579,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             .absent_function => return .contains_function,
             .absent_other, .foreign => return .opaque_type,
             .absent_budget => return .budget,
+            .poisoned => return .poisoned,
             .absent_private => return .{ .private_method = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
             .absent_requirement => return .{ .requirement = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
             .own_method => {},
