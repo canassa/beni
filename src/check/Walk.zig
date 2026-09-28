@@ -435,7 +435,11 @@ pub const Occurs = struct {
 /// level and position, so an unbounded Debug check would take hundreds of
 /// times ReleaseFast's time. The walks share a budget of `assert_budget_per_var` visits per store
 /// variable (plus a floor): every program the corpus holds is checked in
-/// full, and a pathological one is checked until the budget runs out.
+/// full but the two whose size is their point (an alias chain 1 100
+/// links long, a requirement 512 deep), and a pathological one is checked
+/// until the budget runs out. A floor of a million visits let a
+/// comparison of lists nested 1 024 deep spend most of a second on this
+/// check alone, several times the check it guards.
 fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!void {
     if (!std.debug.runtime_safety) return;
     if (store.proof_assert_work > assert_budget_floor + @as(u64, store.count()) * assert_budget_per_var) return;
@@ -470,7 +474,7 @@ fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Erro
 const AssertColour = enum { grey, black };
 const assert_cap = 1024;
 const assert_budget_per_var = 16;
-const assert_budget_floor = 1 << 20;
+const assert_budget_floor = 1 << 16;
 
 /// A node with no `structural` successor: no cycle passes through it.
 fn isLeaf(store: *const TypeStore, root: Var) bool {

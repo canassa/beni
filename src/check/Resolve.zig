@@ -247,11 +247,16 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             // nothing has voided since (`TypeStore.acyclic`), is not walked
             // again: a position of a receiver just resolved is in the graph
             // its parent's test proved. Debug checks the proof on
-            // shallow positions (a check at every depth would make a Debug
-            // build quadratic again).
-            if (std.debug.runtime_safety and s.resolve_depth < 64 and st.proved(root)) {
+            // shallow positions, and to a bounded depth below each: a
+            // check of the whole graph at every depth would make a Debug
+            // build quadratic again. `resolve_depth` alone does not bound
+            // it — a `where` clause's requirement on an element is a new
+            // wanted, not a nested one, so `a == b` over lists nested
+            // 1 024 deep re-walked the whole remaining type at every level.
+            if (std.debug.runtime_safety and s.resolve_depth < proof_check_depth and st.proved(root)) {
                 var run: Walk.Occurs = .begin(st);
                 run.trusts = false;
+                run.limit = proof_check_depth;
                 if (try run.check(st, &s.stacks, s.cx.gpa, root) != null) std.debug.panic("a receiver proved acyclic is on a cycle (checker-v2.md §8.2)", .{});
             }
             if (try Instances.cyclic(s, id, root)) return;
@@ -261,6 +266,10 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
         },
     }
 }
+
+/// How shallow a position is whose proof a safety build checks again, and
+/// how deep below it that check walks.
+const proof_check_depth = 64;
 
 /// Answer `id` with `a`.
 pub fn answer(s: *Solve, id: WantedId, a: Evidence.Answer) void {
