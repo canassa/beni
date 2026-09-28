@@ -6,6 +6,7 @@
 //!   zig build test-blackbox   spawns a ReleaseSafe `beni`; never folded into `test`
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
+//!   zig build gates           the three gates above, in one build graph
 //!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
@@ -332,6 +333,15 @@ pub fn build(b: *std.Build) void {
         .exclude_paths = &.{"bench/compare/work"},
         .check = true,
     }).step);
+
+    // ---- The three gates as one step. ----
+    // One build graph instead of three chained invocations: the unit tests
+    // and the formatting check run while the black-box suites do, and the
+    // compilers they share are built once.
+    const gates_step = b.step("gates", "Run test, test-blackbox and fmt-check concurrently");
+    gates_step.dependOn(test_step);
+    gates_step.dependOn(blackbox_step);
+    gates_step.dependOn(fmt_step);
 }
 
 /// `tests/test_runner.zig`: std's runner plus `BENI_TEST_SHARD`, which lets
