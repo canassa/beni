@@ -448,8 +448,20 @@ fn ownCtor(in: *Instantiate, index: u32, region: Bir.Inst.Index) Error!?Var {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const small_stack = @import("../small_stack.zig");
 
-test "copy keeps sharing, shares what is not generalised, and walks 100 000 levels" {
+/// Twice the depth a copy that recursed once per level fails at on
+/// `small_stack.size`: one finished 1 000 levels on the Debug test binary
+/// and overflowed at 3 000.
+const deep_type = 6_000;
+
+test "copy keeps sharing, shares what is not generalised, and walks a type deeper than a recursive copy survives" {
+    // The copy keeps its own stack (`Walk.Stacks`), so it runs on
+    // `small_stack`'s few pages at any depth.
+    try small_stack.run(copyKeepsSharing, .{});
+}
+
+fn copyKeepsSharing() !void {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
     var stacks: Walk.Stacks = .{};
@@ -491,7 +503,7 @@ test "copy keeps sharing, shares what is not generalised, and walks 100 000 leve
     try testing.expectEqual(@as(u32, 1), store.rank(copied[0]));
 
     var v = a;
-    for (0..100_000) |_| {
+    for (0..deep_type) |_| {
         const args = try store.addVars(&.{v});
         v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, TypeStore.generalized);
     }

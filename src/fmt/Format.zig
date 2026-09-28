@@ -2434,6 +2434,7 @@ const Printer = struct {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const small_stack = @import("../small_stack.zig");
 const InternPool = @import("../InternPool.zig");
 const Parse = @import("../parse/Parse.zig");
 const dump_ast = @import("../dump/ast.zig");
@@ -3596,38 +3597,47 @@ test "the 100-column boundary: a line of exactly 100 fits, 101 does not" {
 
 // ---- Robustness ----------------------------------------------------------------
 
-test "deep nesting and very long chains format without exhausting the stack" {
+test "4 000 nested parentheses, as deep as the parser admits, format without exhausting the stack" {
+    // Nesting the source writes is walked by recursion, bounded by the
+    // parser's 4 096 levels (`Parse.max_depth`): this is the budget, on the
+    // test runner's stack, not a loop.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
+    const depth = 4000;
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(arena, "x = ");
+    try src.appendNTimes(arena, '(', depth);
+    try src.append(arena, '1');
+    try src.appendNTimes(arena, ')', depth);
+    try src.append(arena, '\n');
+    try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
+}
 
-    // 4000 nested parentheses (under the parser's 4096 limit).
-    {
-        const depth = 4000;
-        var src: std.ArrayList(u8) = .empty;
-        try src.appendSlice(arena, "x = ");
-        try src.appendNTimes(arena, '(', depth);
-        try src.append(arena, '1');
-        try src.appendNTimes(arena, ')', depth);
-        try src.append(arena, '\n');
-        try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
-    }
-    // A left-associative chain, an access chain and a question chain, each
-    // as long as the parser will build one. These are the three spines the
-    // parser assembles in a loop; the printer flattens them in a loop too
-    // (`Measurer.chain`, `Measurer.access`), which is why it survives what
-    // the AST dumper cannot. The dump is therefore skipped and idempotence
-    // alone is asserted.
-    //
-    // 4000, not 20000: `Parse.max_depth` now bounds these spines as well
-    // (they are real tree depth, and every other consumer recurses along
-    // them), so a 20000-link chain is `nesting_too_deep` and would not
-    // reach the formatter at all. Each `x = a` costs one level before the
-    // chain starts, hence 4000 rather than 4096.
+/// Twice the length the formatter fails at when it measures a chain by
+/// recursion, on `small_stack.size`: a `Measurer` that recursed into each
+/// operator's operands, or into each access's base, formatted 100 links on
+/// the Debug test binary and overflowed at 250.
+const long_chain = 500;
+
+test "chains longer than a recursive formatter survives format in a loop" {
+    // A left-associative chain, an access chain and a question chain: the
+    // three spines the parser assembles in a loop, and the formatter
+    // measures and prints in a loop too (`Measurer.chain`,
+    // `Measurer.access`), on `small_stack`'s few pages. The AST dump
+    // recurses per node, so it is skipped and idempotence alone is
+    // asserted.
+    try small_stack.run(formatLongChains, .{});
+}
+
+fn formatLongChains() !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
     inline for (.{ " + a", ".a", "?" }) |piece| {
         var src: std.ArrayList(u8) = .empty;
         try src.appendSlice(arena, "x = a");
-        for (0..4000) |_| try src.appendSlice(arena, piece);
+        for (0..long_chain) |_| try src.appendSlice(arena, piece);
         try src.append(arena, '\n');
         const first = try runWith(arena, try arena.dupeZ(u8, src.items), false);
         const again = try runWith(arena, try arena.dupeZ(u8, first.text), false);

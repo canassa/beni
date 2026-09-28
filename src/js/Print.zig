@@ -1391,6 +1391,7 @@ pub fn isReservedWord(text: []const u8) bool {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const small_stack = @import("../small_stack.zig");
 
 /// A tiny world: an interner, a builder, and `print` over what was built.
 const Fixture = struct {
@@ -2073,13 +2074,24 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
     try testing.expect(!isReservedWord("newer"));
 }
 
-test "a chain 200 000 links deep prints in a loop, not a stack frame per link" {
+/// Twice the depth the printer fails at when it only recurses, on
+/// `small_stack.size`: with no switch to its work stack
+/// (`recursion_limit` unbounded) it printed 250 links on the Debug test
+/// binary and overflowed at 400. Its default 256 recursive levels fit, with
+/// about a third of the stack to spare.
+const deep_chain = 800;
+
+test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {
     // A supplement to `abuse_test.zig`'s end-to-end scenarios, which are the
     // coverage: here the tree is built directly, so the depth is exact. A
     // left-nested `&&` (a derived `eq`'s shape) and a right-nested object in
-    // the last property (a list literal's) — each 200 000 deep, which the
-    // recursive printer could not finish on a test thread's stack.
-    const depth = 200_000;
+    // the last property (a list literal's), each deeper than a printer that
+    // only recursed could finish on `small_stack`'s few pages.
+    try small_stack.run(printDeepChains, .{});
+}
+
+fn printDeepChains() !void {
+    const depth = deep_chain;
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
     const a = try f.name("a");
