@@ -325,8 +325,8 @@ pub const CoreEntry = struct { name: []const u8, key: Key };
 /// `--diagnostics`, `--self-profile`, `--explain`, `--iface-hash`,
 /// `--positions` because they select a rendering; `--roundtrip-interfaces`
 /// and `--roundtrip-dispatch` because a run with either must produce the
-/// same record, and exempting them would excuse them from the acceptance
-/// matrix; `--out`, `--library`, `--release` because they are the backend's
+/// same record, and exempting them would excuse them from the round-trip
+/// tests; `--out`, `--library`, `--release` because they are the backend's
 /// and no emitted byte is cached.
 pub const OptionBits = struct {
     /// `Lower.Options.core` for this module's file.

@@ -127,7 +127,7 @@ pub const Common = struct {
     ///
     /// On `Common` rather than on `check` and `build`, exactly as its twin
     /// is, because every command that resolves runs the checker and the
-    /// acceptance matrix has to be able to pass it to `dump` as well.
+    /// round-trip tests have to be able to pass it to `dump` as well.
     roundtrip_dispatch: bool = false,
     /// `--roundtrip-frontend` — hidden, and the third of that family
     /// (`fast-compiler.md` §8's *The front-end artifacts, and the file key*,
@@ -169,7 +169,7 @@ pub const Cache = struct {
     dir: ?[]const u8 = null,
     /// `--no-cache`: read and write no cache at all. It existed BEFORE there
     /// was a default so that a script written then keeps working now, and it
-    /// is what the acceptance matrix's oracle runs pass — a `--no-cache` run
+    /// is what a test's oracle runs pass — a `--no-cache` run
     /// must stay cache-free or it is no oracle.
     off: bool = false,
     /// `--cache-build-id=<s>` — **hidden**, for `--roundtrip-interfaces`'
@@ -1032,7 +1032,7 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
 
     // `--roundtrip-dispatch` is a fourth, and on `Common` for its twin's
-    // reason: the acceptance matrix passes it to `dump` as well as to
+    // reason: a round-trip test may pass it to `dump` as well as to
     // `check` and `build`.
     try expectCommand(
         .{ .check = .{ .common = .{ .roundtrip_dispatch = true }, .paths = &.{"src"} } },
