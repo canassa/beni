@@ -118,8 +118,7 @@ builds a binary on tagged releases. Three failure modes to design against:
 - Verify side effects *and their absence*: on a failed compile, assert that no
   output file was written and no cache entry was created.
 - Put a new parser behind a fuzz harness in the hermetic suite.
-- Run the tiers of CLAUDE.md's *Testing tiers* green before reporting (see
-  *Running the tests* below).
+- Run `zig build gates` green before reporting (see *Running the tests*).
 
 ## CRITICAL: assertions must be broad
 
@@ -298,29 +297,16 @@ and **Node 24**, so Boundary 2 (running the emitted JavaScript) is available fro
 the first test — build it in rather than deferring it. Invoke Node through the dev
 shell, never a host binary, so CI and laptops agree on the version.
 
-## Running the tests: cheapest tier first
+## Running the tests
 
-CLAUDE.md's *Testing tiers* is the rule; in short:
-
-The black-box steps spawn a ReleaseSafe beni built by Zig's self-hosted
-backend: a 3 s compile, every safety check intact, debug info kept.
-
-- **Tier 0, while writing the test** — run only what it touches:
-  - one fixture or kind: `zig build test-blackbox-corpus -Dcorpus=run/MyFixture`
-    (the path substring; also blesses with `BENI_WRITE_EXPECTED=1`);
-  - one black-box file: `zig build test-blackbox-<file>`, narrowed
-    to one test with `-Dtest-filter=<part of its name>`;
-  - unit tests: `zig build test -Dtest-filter=<name>`;
-  - a pending fixture: `zig build test-pending -Dcorpus=<path>`.
-- **Tier 1, once, when it is done and before committing** — `zig build gates`.
-- **Extra, only when it applies** — `zig build gates -Dllvm`: the LLVM
-  build users get, about 70 s more compile. Run it once for a change that
-  is sensitive to the code generator or to safety checks, before a
-  release, or when the owner asks.
-
-To prove a fixture fails before the fix (rule 3), run it at Tier 0 with the
-fix set aside, not the whole suite. Never run two full suites at once, never
-re-run a green one, and read a failure from the log instead of re-running.
+`zig build gates` takes about 10 s; run it whenever you want an answer. To
+iterate on one test: `zig build test-blackbox-corpus -Dcorpus=run/MyFixture`
+(also blesses with `BENI_WRITE_EXPECTED=1`), `zig build test-blackbox-<file>
+-Dtest-filter=<part of its name>`, `zig build test -Dtest-filter=<name>`, or
+`zig build test-pending -Dcorpus=<path>`. To prove a fixture fails before the
+fix (rule 3), run just that fixture with the fix set aside. Never run two
+full suites at once, never re-run a green one, and read a failure from the
+log instead of re-running.
 
 **What a test costs.** `zig build test-time-report` runs the gates (or
 `-Dtime-step=<step>`) with `BENI_TEST_TIMING` set and writes per-test,
@@ -389,5 +375,5 @@ assertion checked what it did — that is still the test's job.
 - [ ] Happy path first and complete; errors last and verifying no side effects.
 - [ ] Banners present; one `test` per scenario; no fixed sleeps, only bounded waits.
 - [ ] Every new parser has a fuzz test in the hermetic suite.
-- [ ] Tier 0 green while writing, then `zig build gates` green once, before
-      the commit (plus `-Dllvm` when it applies); no leaked process or temp dir.
+- [ ] `zig build gates` green before the commit (plus `-Dllvm` when it
+      applies); no leaked process or temp dir.

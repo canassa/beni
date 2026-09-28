@@ -218,247 +218,70 @@ the shape `foldl` was.
 ## Building
 
 ```sh
+zig build gates           # the gate: test + test-blackbox + fmt-check (rule 4)
 zig build                 # install ./zig-out/bin/beni (-Doptimize, Debug by default)
-zig build test            # hermetic unit tests
-zig build test-blackbox   # spawns a self-hosted ReleaseSafe beni (zig-out/safe/bin) against temp projects
-zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf/bin); not a gate
+zig build test            # unit tests
+zig build test-blackbox   # black-box suites and the corpus
+zig build fmt-check       # zig fmt --check
+zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
+zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
+zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
+zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
+zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
+zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
+zig build test-bench      # the benchmarks' own tests; not a gate
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
-zig build test-bench      # the benchmarks' own tests (generators, size.mjs, runtime.mjs); not a gate
-zig build fuzz            # the unit tests with their random sweeps on; not a gate
-zig build coverage        # lines of src/ the black-box tests reach, on an instrumented beni (x86-64 Linux); not a gate
-zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
-zig build gates           # the three gates (rule 4), concurrently
 zig build --list-steps
 ```
 
-Options (they work on every step that builds or runs tests; `gates`
-refuses the two filters, because a gate runs everything):
+Options: `-Dtest-filter=<text>` (tests whose name contains it),
+`-Dcorpus=<text>` (corpus fixtures whose path contains it; matching nothing
+fails), `zig build test-blackbox-<file>` (one black-box file), `-Dllvm` (see
+below), `-Dtest-budget=<millions>` (profiling only). `gates` refuses the filters.
 
-```sh
--Dllvm                         # black-box compiler built by LLVM, the code users get
--Dtest-filter=<text>           # only tests whose name contains <text> (repeatable)
--Dcorpus=<text>                # only corpus fixtures whose path contains <text>
--Dtest-budget=<millions>       # another budget per test, in millions of instructions, for local profiling (0: none)
-zig build test-blackbox-<file> # one black-box file: ordering, cache, corpus, abuse-wide, …
-```
+**Running the tests.** `zig build gates` takes about 6 s with nothing changed
+and 10 s after an edit under `src/` (quiet machine), so run it whenever you
+want an answer; to iterate on one failing test, use `-Dtest-filter` or
+`-Dcorpus`. Three habits:
 
-Every black-box step (`test-blackbox`, `test-pending`, `test-run-hashes`,
-`test-time-report`, the `test-blackbox-<file>` steps) spawns a ReleaseSafe
-beni built by **Zig's self-hosted backend**, installed in `zig-out/safe/bin/`.
-Every safety check fires — bounds, overflow, `unreachable`,
-`std.debug.assert`, everything gated on `std.debug.runtime_safety` — and it
-keeps debug info, so a panic prints a symbolised trace. It compiles in about
-3 s; its code runs two to four times slower than LLVM's, so a suite spends
-more CPU on the tests themselves.
+- never run two full suites at once — they fight for the same cores;
+- never re-run a green result to double-check it;
+- read a failure from the log (`… > zig-out/gates.log 2>&1`), don't re-run it.
 
-`-Dllvm` builds the same ReleaseSafe compiler with LLVM into
-`zig-out/safe-llvm/bin/` instead (separate directories, so switching
-rebuilds nothing). That is the code generator users get, and its compile is
-about 70 s on one thread after any change under `src/`. `test-perf`,
-`test-pending-perf` and `bench` always time a ReleaseFast LLVM beni
-(`zig-out/perf/bin/`), because a timing claim is about the shipped code;
-plain `zig build` installs the `-Doptimize` build at `zig-out/bin/beni`.
+**Which beni the tests run.** A ReleaseSafe beni built by Zig's self-hosted
+backend (`zig-out/safe/bin/`): it compiles in about 3 s, keeps debug info, and
+every safety check fires. Invariant checks in `src/` are gated on
+`std.debug.runtime_safety`, never on `builtin.mode == .Debug`. `-Dllvm`
+builds the same compiler with LLVM (`zig-out/safe-llvm/bin/`), the code users
+get: about 70 s of single-threaded compile after an edit, which no flag
+shortens. Run `zig build gates -Dllvm` when a change could make the two code
+generators disagree (safety checks, undefined-behaviour-shaped code, layouts,
+atomics, recursion depth), before a release, or when the owner asks.
+`test-perf` and `bench` always time a ReleaseFast LLVM beni. Never share one
+Zig cache between git worktrees: with Zig 0.16 a worktree was handed a stale
+binary built from another worktree's sources.
 
-`-Dcorpus` matches the fixture's repo-relative path (`run/`, `check/bad/`,
-`Int32Hash`), in `test-blackbox`, `test-blackbox-corpus` and `test-pending`
-alike; one that matches no fixture is a failure, not an empty green.
+**Every test has a budget of 4 300 million instructions** (about one second of
+quiet CPU), counted for the test and every process it starts; a test over it
+fails. Instructions, not time, so load does not move it. A test over budget is
+fixed by the smallest input that reaches its branch, a small-stack unit test
+for a "does not recurse" claim, one test per branch, or deletion when another
+test reaches the branch — never an exemption. Corpus cases are budgeted one
+by one.
 
-### Testing tiers — run the cheapest one that answers the question
+**Node runs only on unverified JavaScript.** Each program a test runs has a
+recorded SHA-256 of its emitted output, its expected result and the Node
+version (`tests/corpus/run/*.run-hash`, `tests/blackbox/run-hashes.txt`);
+when it matches, Node is skipped, otherwise the program runs as before. After
+changing the emitter, the runtime, `core/`, a `run/` golden or an expected
+output, or upgrading Node, run `zig build test-run-hashes` and commit the
+updated hashes; the gates print a line when programs ran for want of one.
 
-Every full-suite run loads a 32-thread machine that other agents share. Run
-the cheapest tier that answers the question, and move up only when the one
-below is green.
-
-| Tier | When | Command | After a `src/` edit |
-|---|---|---|---|
-| 0 | while editing | the targeted run for what you changed | 3–12 s |
-| 1 | once, when the change is done and before committing | `zig build gates` | about 25 s wall, 490 CPU-s |
-| — | extra: codegen- or safety-sensitive change, before a release, or when the owner asks | `zig build gates -Dllvm` | about 82 s wall, 70 s of it the LLVM compile |
-
-Tier 0 is one of: `zig build test-blackbox-corpus -Dcorpus=run/Foo` (one
-fixture, 3 s; a whole kind such as `-Dcorpus=run/`, 9 s), `zig build
-test-blackbox-ordering` (one black-box file, 9 s), `zig build test
--Dtest-filter=<name>` (unit tests, 3 s; all of them, 11 s), `zig build
-fmt-check` (under 1 s).
-
-Tier 1 is the gate (rule 4): `zig build gates`, on the self-hosted beni,
-once. **`zig build gates -Dllvm` is an extra check, not the default gate.**
-Run it, once, when a change touches something where the two code generators
-could disagree or where safety checks are the point — `@setRuntimeSafety`, `unreachable` or undefined-behaviour-shaped
-code, packed or `extern` layouts, SIMD, inline assembly, atomics and threads,
-deep recursion or stack size, anything that reads its own `builtin.mode` or
-backend — before a release, and whenever the owner asks. It costs the
-single-threaded LLVM compile, about 70 s after any `src/` edit, on top of the
-suite; and remember that the self-hosted beni the default gate runs is not
-the binary users get.
-
-Measured on the 32-thread development machine with `zig build
-test-time-report`, quiet (load average under 2), one file under `src/`
-changed: the self-hosted gates took 25.3 s wall and 492 CPU-s; the LLVM
-gates 81.6 s, of which about 70 s is the LLVM compile and 117 CPU-s the
-tests. A warm `zig build gates` (every compile cached) took 52.9 s wall
-and 827 CPU-s beside another agent's test run (load average 5.8 when it
-started): shared cores raise both numbers, the wall time most.
-
-Why the LLVM compile cannot be made cheaper: about 95% of it is LLVM's O3
-passes and machine-code generation, and Zig 0.16 runs them on one thread for
-the whole program, with no flag to split or parallelise them; incremental
-compilation does not shorten them either. Do not share one Zig cache between
-git worktrees (for example with `ZIG_LOCAL_CACHE_DIR`): with Zig 0.16 a
-worktree was handed a stale test binary built from another worktree's
-sources, and a gates run went green over two real failures.
-
-Only when relevant:
-
-- `zig build test-perf` (21 s, ReleaseFast) when the change can move
-  performance or touches a timing scenario;
-- `zig build fuzz` when the change touches a byte format's reader, the
-  lexer or the parser: the gates run one hand-picked input per check they
-  make, and this runs the random mutation sweeps and stress loops
-  (`src/fuzzing.zig`);
-- `zig build test-bench` when the change touches `bench/` or the language
-  the cross-language benchmark prints: benchmarks are not part of the
-  gates;
-- `zig build test-pending` (under 2 s) when adding,
-  changing or promoting a fixture under `tests/pending/`;
-- the determinism test is inside `gates`; there is nothing extra to run.
-
-And three habits that waste more wall clock than any tier:
-
-- **Never run two full-suite builds at once** — two `gates`, or `gates`
-  beside `test-blackbox`. They compete for the same cores and both take
-  twice as long.
-- **Never re-run a green result to double-check it.** Green is green.
-- **Read a failure from its log instead of re-running it.** Redirect the
-  run to a file (`… > zig-out/gates.log 2>&1`) and read the `FAIL` lines;
-  then re-run only the failing file or fixture, at Tier 0.
-
-Every test binary runs under `tests/test_runner.zig`, std's runner plus
-`BENI_TEST_SHARD=k/n`: `build.zig` runs the unit tests and the heavier
-black-box binaries as several processes, each taking every n-th test, so a
-suite takes about as long as its slowest test. A test that loops over
-independent cases for many seconds is better written as several tests.
-Run a test binary by hand (no `--listen`) to get each test's wall time,
-CPU time and what it spent against the budget.
-
-**Every test has a budget of a second's work** (the owner, 2026-09-28):
-**4 300 million user-space instructions**. The runner counts the
-instructions the test retires — its own thread and every thread and
-process it creates, through `perf_event_open` with `inherit` — and a test
-that passes but retired more fails, with the line `FAIL: <n> million
-instructions, over the budget of 4300 …: <test>`. The unit is instructions
-and not CPU time because a count does not move with load: the gates' own
-load raised tests' CPU two to three times over a quiet run, while every
-count is the same in both. 4 300 million is what one second of CPU retires
-on this code, measured quiet, every unit and black-box test run one
-process at a time: 213 billion instructions in 49.5 s of CPU, user plus
-system (the median test 4.2 billion a second). Where the kernel does not
-permit the count (`/proc/sys/kernel/perf_event_paranoid` above 2, no
-PMU), the budget falls back to 1 000 ms of CPU and the build or the test
-process says so once. The budget holds on every run of a binary the gates
-run (`zig build test`, `test-blackbox` and each `test-blackbox-<file>`),
-with one global value and no exemption; `fuzz`, `test-bench`, the pending
-and timing steps, `test-run-hashes` and `coverage` are not held to it. The
-corpus walker's tests are hundreds of independent cases, so the walker
-holds **each case** (a fixture, and each build of a `run/` fixture) to the
-budget — its worker's own counter, children included — and the runner
-holds the walker test to it for what the cases did not spend.
-`-Dtest-budget=<millions>` sets another budget for profiling
-(`-Dtest-budget=1` makes every test print its count; `0` enforces
-nothing, and `test-time-report` passes it on); a commit never relies on
-it. A test over the budget is brought under it by the rules of
-*write-tests*: the smallest input that reaches the limit, a "does not
-recurse" claim moved to a unit test on `src/small_stack.zig`, one test per
-branch, one build per mode that has a branch of its own, or deleted when
-another test reaches its branch — never an exemption; and when the input
-cannot shrink, by making the compiler faster.
-
-`zig build test-time-report` answers "where does the test time go": it runs
-`gates` (or `-Dtime-step=<step>`, with `-Dllvm`, `-Dcorpus` and
-`-Dtest-filter` passed on) in a child build with `BENI_TEST_TIMING=<dir>`,
-so every test process records each test, corpus case and spawned `beni` or
-`node` (wall, user, sys, max RSS), and renders the tables — per step, test,
-fixture, tool, harness overhead and repeated commands — into
-[`plans/test-time-report.md`](plans/test-time-report.md) between its markers
-(`tests/time_report.zig`; `-- --out=- --top=N` to print instead). It costs
-one full gates run, so it is not a tier; unset, the recording costs nothing.
-Read CPU time, not wall: under load it moves far less than wall time,
-though it moves; an instruction count (the budget above) does not.
-
-`zig build coverage` (x86-64 Linux) answers "which lines of the compiler
-do the black-box tests reach". It builds an LLVM ReleaseSafe beni with
-full debug info and LLVM's SanitizerCoverage `trace-pc-guard`
-instrumentation (`tests/coverage/runtime.zig`): every process records
-each instrumented block the first time it runs, as one byte in a hits
-file all of them share, so a process that panics or is killed keeps what
-it ran. It runs the black-box suites and the corpus against that binary
-— the unit tests are not run and not counted, so a line only a unit test
-executes shows as uncovered — and reports even when a test fails
-(`tests/coverage.zig`): `zig-out/coverage/summary.md` with the total, a
-row per directory under `src/` and one per file, and `lcov.info`, which
-`genhtml -o zig-out/coverage/html zig-out/coverage/lcov.info` (inside
-`nix develop .#coverage`) turns into pages with every line coloured. The
-summary leaves out the tests' own lines (`*_test.zig` files and `test`
-blocks). `-Dcorpus` and `-Dtest-filter` measure one fixture or black-box
-test alone; `zig build coverage -- --report-only` reports the last run's
-hits file again. It is not a gate and not a tier: a full run took 3.6 s
-wall and 68 CPU-s, quiet (load average 2), for 2 557 compiler processes,
-and reported 92.0% of 22 965 lines; the instrumented compile adds about
-two minutes on one thread after a change under `src/`.
-
-How a block becomes a line: LLVM guards only some blocks, so the report
-decodes the binary's machine code (`tests/coverage/x86.zig`), builds each
-function's control-flow graph and infers the unguarded blocks that must
-have run — dominators and post-dominators of a block that ran, nothing
-weaker (`tests/coverage/cfg.zig`) — then maps blocks to lines through the
-DWARF line table: a line is covered when any instruction the line table
-gives it ran. Measured against kcov on the same binary and the same 502
-processes (the `run/` corpus), the two agreed on 99.45% of 22 773 lines;
-115 lines kcov saw run were reported uncovered (an inference too weak to
-reach them) and 10 the other way (lines whose instructions share an
-address with another line's, or carry no statement marker, which kcov
-does not count). Limits: it needs the LLVM backend, since Zig's own backend
-emits no such instrumentation; the post-dominator rule trusts that a call
-which ran a block returned; and it reads x86-64 only.
-Read it as a map of what no test reaches: a red line is untested, and a
-green line only ran, which does not mean any test checked what it did.
-Lines the optimiser folded away are in neither count.
-
-**The suites run Node only on JavaScript they have not verified.** Each
-`tests/corpus/run/` fixture carries a `.run-hash` (`_expected.run-hash` in a
-project): per build, dev and release, a SHA-256 of the whole emitted output
-tree, the golden and the Node version, written only after that JavaScript ran
-and matched (`tests/blackbox/run_hash.zig`). A black-box scenario runs its
-program through `World.expectProgram` or `World.buildAndRun`, which take the
-expected exit code, stdout and stderr up front: the digest covers them, the
-script and the output tree holding it, and the Node version, and the verified
-ones are lines of `tests/blackbox/run-hashes.txt` (`<test name> #<n>
-<digest>`). The harness always builds; when the digest is listed it skips
-Node, and otherwise runs it exactly as before, so a change to emitted code
-or to an expectation is never unverified. The build asks `node --version`
-once and hands it to every test process. The gates print one line when
-programs ran for want of a hash — never a failure. After a change to the
-emitter, the runtime, `core/`, a `run/` golden or a scenario's expected
-output, or a Node upgrade, run `zig build test-run-hashes` (takes
-`-Dtest-filter`, `-Dcorpus` and `-Dllvm`) and commit the rewritten
-`.run-hash` files and index with the change: it runs every selected program
-and records a hash only for a run that did what its test expects, so a
-mismatch is reported and gets none. The index is merged after the last test
-process, so a recording whose tests fail leaves it unchanged. On a merge
-conflict in either, take either side and regenerate. `run_hash_test.zig`'s
-scenarios run Node on purpose every time: they test the skip.
-
-The black-box suites run the compiler built ReleaseSafe: every invariant
-check in `src/` is gated on `std.debug.runtime_safety`, never on
-`builtin.mode == .Debug`, so it runs there as it does in Debug. The
-self-hosted build keeps its debug info, so a crash prints a symbolised
-trace; the `-Dllvm` build carries none (it would lengthen the compile a
-change under `src/` waits for), so a crash it hits is traced by re-running
-the command with `zig-out/bin/beni`, or the step without `-Dllvm`. An input a
-black-box test generates is the smallest that reaches the limit or the
-defect it is about — one past a cap, or the size that failed before a fix,
-not ten times past it — and a declaration-order test writes the order that
-failed before its fix, never a sweep of orders.
+**Coverage** (`zig build coverage`, x86-64 Linux, about 4 s plus a two-minute
+instrumented LLVM compile after an edit) reports the lines the black-box tests
+reach in `zig-out/coverage/summary.md` and `lcov.info`
+(`nix develop .#coverage` has `genhtml`). A red line is untested; a green line
+only ran — no test necessarily checked it. Details: `tests/coverage.zig`.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than
@@ -512,16 +335,10 @@ floor, not the evidence.
 zig build gates    # test, test-blackbox and fmt-check in one build graph
 ```
 
-`gates` runs the three steps concurrently, which is faster than chaining
-them with `&&`; each step still works on its own. All three pass today, so a failure is yours. Never commit red or unformatted
-code, and never commit a slice that is half-landed.
-
-The gate before a commit is `zig build gates` exactly — no filter, on the
-self-hosted beni — run once, when the change is done (Tier 1 of *Testing
-tiers* above). Iterate at Tier 0; a filtered or single-file run is not the
-gate. Add `zig build gates -Dllvm`, once, when the change is sensitive to the
-code generator or to safety checks, before a release, or when the owner asks:
-it is the binary users get, and it costs about 70 s of LLVM compile.
+All three pass on `master`, so a failure is yours. Never commit red or
+unformatted code, and never commit a slice that is half-landed. The gate is
+`zig build gates` exactly, with no filter; a filtered run is not the gate.
+Add `-Dllvm` when *Building* says to.
 
 ### 5. Determinism is a requirement, not an aspiration
 
