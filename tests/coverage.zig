@@ -1,45 +1,65 @@
 //! Which lines of the compiler the black-box tests execute: `zig build
 //! coverage`.
 //!
-//!   coverage --kcov=K --src=S --raw=R --out=O [--top=N] -- <command...>
-//!   coverage --kcov=K --src=S --raw=R --out=O [--top=N] --report-only
+//!   coverage --exe=E --hits=H --src=S --out=O [--top=N] -- <command...>
+//!   coverage --exe=E --hits=H --src=S --out=O [--top=N] --report-only
 //!
-//! The first form empties `R` and `O`, runs the command (a child `zig build
-//! coverage-run`, whose every `beni` process spawned by the black-box suites
-//! and the corpus leaves kcov's counts in a directory of its own under
-//! `R`; the unit tests do not run), measures its wall and CPU
-//! time, then merges whatever was collected — also when a test failed —
-//! into `O` with `kcov --merge`: HTML at `O/index.html`, Cobertura XML at
-//! `O/kcov-merged/cobertura.xml`. `--report-only` merges and reports what
-//! `R` holds without running anything (`zig build coverage --
-//! --report-only`; the command, which the build step always passes, is then
-//! ignored).
+//! `E` is the compiler the command's tests spawn, built with LLVM's
+//! SanitizerCoverage `trace-pc-guard` instrumentation around
+//! `tests/coverage/runtime.zig`: every process of it records each guarded
+//! block the first time it runs, as one byte in the shared hits file `H`.
 //!
-//! The summary it prints, and writes with the per-file table to
-//! `O/summary.md`, counts the compiler's lines only: a file named
-//! `*_test.zig` and the lines of every `test` block are the tests
-//! themselves, so they are left out of every figure. The compiler binary
-//! compiles none of them, so this matters only when `R` holds counts from
-//! some other binary.
+//! The first form deletes `H`, runs the command (a child `zig build
+//! coverage-run`, whose black-box suites and corpus spawn `E`; the unit
+//! tests do not run), measures its wall and CPU time, then reports whatever
+//! was collected — also when a test failed. `--report-only` reports what
+//! `H` holds without running anything (`zig build coverage --
+//! --report-only`; the command, which the build step always passes, is
+//! then ignored).
 //!
-//! A covered line is one that ran, not one whose effect a test checked.
+//! The report maps what ran to lines of `S`:
+//!
+//!   1. `E`'s symbol table gives its functions, and each is decoded
+//!      (`coverage/x86.zig`) into a control-flow graph
+//!      (`coverage/cfg.zig`), in which every call of the coverage callback
+//!      names its guard: a guard that is set in `H` proves its block ran.
+//!   2. Blocks LLVM left unguarded are inferred from those that ran, by
+//!      dominance and post-dominance only (`coverage/cfg.zig` has the
+//!      rules and what they assume).
+//!   3. The DWARF line table maps addresses to lines: a line is covered
+//!      when a block holding one of its rows ran, and counted when it has
+//!      any row. A line the optimiser folded away has none, and is in
+//!      neither count.
+//!
+//! It writes `O/summary.md` — the total, a row per directory under `src/`
+//! and one per file — and `O/lcov.info`, which `genhtml` turns into a
+//! browsable report. Every figure leaves out the tests' own lines: files
+//! named `*_test.zig` and the lines of `test` blocks. A covered line is one
+//! that ran, not one whose effect a test checked.
 //!
 //! Exits with the command's exit code, after reporting what was collected.
 
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
+const elf = std.elf;
+const Dwarf = std.debug.Dwarf;
+const cfg = @import("coverage/cfg.zig");
 
 const usage =
-    \\usage: coverage --kcov=K --src=S --raw=R --out=O [--top=N] -- <command...>
-    \\       coverage --kcov=K --src=S --raw=R --out=O [--top=N] --report-only
+    \\usage: coverage --exe=E --hits=H --src=S --out=O [--top=N] -- <command...>
+    \\       coverage --exe=E --hits=H --src=S --out=O [--top=N] --report-only
     \\
 ;
 
+/// The hits file's header: a 64-bit count of the processes that mapped it
+/// (`coverage/runtime.zig`).
+const hits_header_len = 8;
+
 const Options = struct {
-    kcov: []const u8 = "",
+    exe: []const u8 = "",
+    hits: []const u8 = "",
     src: []const u8 = "",
-    raw: []const u8 = "",
     out: []const u8 = "",
     /// How many files the "most uncovered" list names.
     top: usize = 10,
@@ -75,12 +95,12 @@ pub fn main(init: std.process.Init) !u8 {
             break;
         } else if (std.mem.eql(u8, arg, "--report-only")) {
             options.report_only = true;
-        } else if (value(arg, "--kcov=")) |v| {
-            options.kcov = v;
+        } else if (value(arg, "--exe=")) |v| {
+            options.exe = v;
+        } else if (value(arg, "--hits=")) |v| {
+            options.hits = v;
         } else if (value(arg, "--src=")) |v| {
             options.src = v;
-        } else if (value(arg, "--raw=")) |v| {
-            options.raw = v;
         } else if (value(arg, "--out=")) |v| {
             options.out = v;
         } else if (value(arg, "--top=")) |v| {
@@ -93,7 +113,7 @@ pub fn main(init: std.process.Init) !u8 {
             return 2;
         }
     }
-    if (options.kcov.len == 0 or options.src.len == 0 or options.raw.len == 0 or options.out.len == 0 or
+    if (options.exe.len == 0 or options.hits.len == 0 or options.src.len == 0 or options.out.len == 0 or
         (options.command.len == 0 and !options.report_only))
     {
         try stderr.writeAll(usage);
@@ -103,23 +123,41 @@ pub fn main(init: std.process.Init) !u8 {
     const cwd = Io.Dir.cwd();
     var measured: Measured = .{};
     if (!options.report_only) {
-        try cwd.deleteTree(io, options.raw);
-        try cwd.createDirPath(io, options.raw);
+        cwd.deleteFile(io, options.hits) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        };
+        if (std.fs.path.dirname(options.hits)) |dir| try cwd.createDirPath(io, dir);
         measured = try runCommand(arena, io, init.environ_map, options, stderr);
     }
 
+    const hits = cwd.readFileAlloc(io, options.hits, arena, .unlimited) catch |err| switch (err) {
+        error.FileNotFound => {
+            try stderr.print("coverage: nothing was collected: {s} does not exist\n", .{options.hits});
+            return if (measured.exit != 0) 1 else 2;
+        },
+        else => return err,
+    };
+    const started = Io.Clock.awake.now(io);
+    const analysis = analyse(arena, io, options, hits) catch |err| {
+        try stderr.print("coverage: cannot map {s} to lines of {s}: {t}\n", .{ options.exe, options.src, err });
+        return 2;
+    };
+    try stderr.print("coverage: mapped {d} blocks to lines in {d:.1} s\n", .{
+        analysis.stats.blocks,
+        @as(f64, @floatFromInt(durationUs(started.durationTo(Io.Clock.awake.now(io))))) / std.time.us_per_s,
+    });
+    const files = try tally(arena, io, options.src, analysis.lines);
+
     try cwd.deleteTree(io, options.out);
-    const collected = try merge(arena, io, options, stderr);
-    if (collected == 0) {
-        try stderr.print("coverage: nothing was collected under {s}\n", .{options.raw});
-        return if (measured.exit != 0) 1 else 2;
-    }
-    const files = try readCobertura(arena, io, options);
-    const markdown = try render(arena, files, measured, collected, options);
+    try cwd.createDirPath(io, options.out);
+    const markdown = try render(arena, files, measured, analysis.stats, options);
     const summary_path = try std.fs.path.join(arena, &.{ options.out, "summary.md" });
     try cwd.writeFile(io, .{ .sub_path = summary_path, .data = markdown.full });
+    const lcov_path = try std.fs.path.join(arena, &.{ options.out, "lcov.info" });
+    try cwd.writeFile(io, .{ .sub_path = lcov_path, .data = try renderLcov(arena, options.src, files) });
     try stderr.writeAll(markdown.terminal);
-    try stderr.print("coverage: HTML at {s}/index.html, per-file table at {s}\n", .{ options.out, summary_path });
+    try stderr.print("coverage: per-file table at {s}; `genhtml -o {s}/html {s}` for HTML\n", .{ summary_path, options.out, lcov_path });
 
     if (measured.exit != 0) {
         try stderr.print("coverage: `{s}` exited {d}; the report covers what ran\n", .{ options.command[0], measured.exit });
@@ -140,7 +178,7 @@ fn runCommand(arena: Allocator, io: Io, parent_env: *const std.process.Environ.M
     // progress pipe this process was handed.
     _ = env.swapRemove("ZIG_PROGRESS");
 
-    try stderr.print("coverage: running `{s}` with every compiler under kcov\n", .{try std.mem.join(arena, " ", options.command)});
+    try stderr.print("coverage: running `{s}` on the instrumented compiler\n", .{try std.mem.join(arena, " ", options.command)});
     try stderr.flush();
     const started = Io.Clock.awake.now(io);
     var child = try std.process.spawn(io, .{
@@ -171,76 +209,260 @@ fn durationUs(d: Io.Duration) u64 {
     return @intCast(@divFloor(d.nanoseconds, std.time.ns_per_us));
 }
 
-/// Merge every directory under `options.raw` into `options.out`, and return
-/// how many there were. One `kcov --merge` of thousands of directories runs
-/// on one core for minutes, so the directories are merged in one batch per
-/// core first, all at once, and the batches then into the report.
-fn merge(arena: Allocator, io: Io, options: Options, stderr: *Io.Writer) !usize {
-    const cwd = Io.Dir.cwd();
-    var dirs: std.ArrayList([]const u8) = .empty;
-    {
-        var raw = cwd.openDir(io, options.raw, .{ .iterate = true }) catch |err| switch (err) {
-            error.FileNotFound => return 0,
-            else => return err,
-        };
-        defer raw.close(io);
-        var it = raw.iterate();
-        while (try it.next(io)) |entry| {
-            if (entry.kind != .directory) continue;
-            try dirs.append(arena, try std.fs.path.join(arena, &.{ options.raw, entry.name }));
+/// How the blocks were accounted for.
+const Stats = struct {
+    processes: u64 = 0,
+    functions: u64 = 0,
+    /// Functions whose graph could not be trusted, so nothing was inferred
+    /// in them.
+    unsound_functions: u64 = 0,
+    blocks: u64 = 0,
+    guards: u64 = 0,
+    guards_hit: u64 = 0,
+    /// Blocks a set guard proved ran, and blocks the rules added.
+    blocks_guarded_ran: u64 = 0,
+    blocks_inferred: u64 = 0,
+    /// Calls of the coverage callback whose guard was not found.
+    unmatched_sites: u64 = 0,
+};
+
+/// For each line of one file, what the line table and the blocks say.
+const LineState = enum(u2) {
+    /// No row: no code, or code the optimiser folded away.
+    none,
+    /// Code, none of which ran.
+    code,
+    /// Code, some of which ran.
+    ran,
+};
+
+const Analysis = struct {
+    stats: Stats,
+    /// Every file under the source directory that has a row, relative to
+    /// it, with its lines' states (line `n` at index `n - 1`).
+    lines: std.StringArrayHashMapUnmanaged(std.ArrayList(LineState)),
+};
+
+/// Everything the report reads from the binary.
+const Binary = struct {
+    image: cfg.Image,
+    /// The functions, ascending, none overlapping.
+    functions: []Function,
+    dwarf: Dwarf,
+
+    const Function = struct { address: u64, code: []const u8 };
+};
+
+fn loadBinary(arena: Allocator, io: Io, path: []const u8) !Binary {
+    const bytes = try Io.Dir.cwd().readFileAlloc(io, path, arena, .unlimited);
+    if (bytes.len < @sizeOf(elf.Elf64.Ehdr)) return error.NotAnElfFile;
+    const header = std.mem.bytesToValue(elf.Elf64.Ehdr, bytes[0..@sizeOf(elf.Elf64.Ehdr)]);
+    if (!std.mem.eql(u8, header.ident[0..4], elf.MAGIC) or header.ident[elf.EI.CLASS] != elf.ELFCLASS64 or
+        header.ident[elf.EI.DATA] != elf.ELFDATA2LSB or header.machine != .X86_64) return error.NotAnX8664ElfFile;
+
+    const shdr_size = @sizeOf(elf.Elf64.Shdr);
+    if (header.shoff + @as(u64, header.shnum) * shdr_size > bytes.len) return error.TruncatedElfFile;
+    const shdrs = try arena.alloc(elf.Elf64.Shdr, header.shnum);
+    for (shdrs, 0..) |*s, k| s.* = std.mem.bytesToValue(elf.Elf64.Shdr, bytes[header.shoff + k * shdr_size ..][0..shdr_size]);
+    const names = try sectionBytes(bytes, shdrs[header.shstrndx]);
+
+    var binary: Binary = .{
+        .image = .{ .callback = 0, .guards = 0, .guard_count = 0, .data = &.{} },
+        .functions = &.{},
+        .dwarf = .{},
+    };
+    var segments: std.ArrayList(cfg.Image.Segment) = .empty;
+    var symtab: ?elf.Elf64.Shdr = null;
+    var found_guards = false;
+    for (shdrs) |s| {
+        const name = std.mem.sliceTo(names[@min(s.name, names.len)..], 0);
+        if (std.mem.eql(u8, name, "__sancov_guards")) {
+            binary.image.guards = s.addr;
+            binary.image.guard_count = s.size / 4;
+            found_guards = true;
+        } else if (s.type == .SYMTAB) {
+            symtab = s;
+        } else if (s.flags.shf.ALLOC and !s.flags.shf.EXECINSTR and s.type != .NOBITS and !s.flags.shf.TLS) {
+            try segments.append(arena, .{ .address = s.addr, .bytes = try sectionBytes(bytes, s) });
+        } else if (std.mem.startsWith(u8, name, ".debug_")) {
+            inline for (@typeInfo(Dwarf.Section.Id).@"enum".fields) |field| {
+                if (std.mem.eql(u8, name[1..], field.name)) {
+                    binary.dwarf.sections[field.value] = .{ .data = try sectionBytes(bytes, s), .owned = false };
+                }
+            }
         }
     }
-    if (dirs.items.len == 0) return 0;
-    std.mem.sort([]const u8, dirs.items, {}, struct {
-        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-            return std.mem.lessThan(u8, a, b);
+    binary.image.data = segments.items;
+    if (!found_guards) return error.NotInstrumented;
+    const symbols = symtab orelse return error.NoSymbolTable;
+    if (symbols.link >= shdrs.len) return error.NoSymbolTable;
+    const strings = try sectionBytes(bytes, shdrs[symbols.link]);
+    const symbol_bytes = try sectionBytes(bytes, symbols);
+
+    var functions: std.ArrayList(Binary.Function) = .empty;
+    const sym_size = @sizeOf(elf.Elf64.Sym);
+    var k: usize = 0;
+    while (k + sym_size <= symbol_bytes.len) : (k += sym_size) {
+        const sym = std.mem.bytesToValue(elf.Elf64.Sym, symbol_bytes[k..][0..sym_size]);
+        if (sym.info.type != .FUNC or sym.shndx == 0 or sym.shndx >= shdrs.len) continue;
+        const section = shdrs[sym.shndx];
+        if (!section.flags.shf.EXECINSTR) continue;
+        const name = std.mem.sliceTo(strings[@min(sym.name, strings.len)..], 0);
+        if (std.mem.eql(u8, name, "__sanitizer_cov_trace_pc_guard")) binary.image.callback = sym.value;
+        if (sym.size == 0 or sym.value < section.addr or sym.value + sym.size > section.addr + section.size) continue;
+        const code = try sectionBytes(bytes, section);
+        try functions.append(arena, .{ .address = sym.value, .code = code[sym.value - section.addr ..][0..sym.size] });
+    }
+    if (binary.image.callback == 0) return error.NoCoverageCallback;
+    // Ascending; of several symbols at one address the largest; none that
+    // starts inside the one before it.
+    std.mem.sort(Binary.Function, functions.items, {}, struct {
+        fn lessThan(_: void, a: Binary.Function, b: Binary.Function) bool {
+            if (a.address != b.address) return a.address < b.address;
+            return a.code.len > b.code.len;
         }
     }.lessThan);
-
-    const started = Io.Clock.awake.now(io);
-    const batches_dir = try std.fmt.allocPrint(arena, "{s}-batches", .{options.raw});
-    try cwd.deleteTree(io, batches_dir);
-    try cwd.createDirPath(io, batches_dir);
-    const cores: usize = std.Thread.getCpuCount() catch 1;
-    const batch_count = @min(cores, dirs.items.len);
-    const per_batch = std.math.divCeil(usize, dirs.items.len, batch_count) catch unreachable;
-
-    var batch_outs: std.ArrayList([]const u8) = .empty;
-    var children: std.ArrayList(std.process.Child) = .empty;
-    var start: usize = 0;
-    while (start < dirs.items.len) : (start += per_batch) {
-        const end = @min(start + per_batch, dirs.items.len);
-        const out = try std.fmt.allocPrint(arena, "{s}/{d}", .{ batches_dir, batch_outs.items.len });
-        try batch_outs.append(arena, out);
-        var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(arena, &.{ options.kcov, "--merge", out });
-        try argv.appendSlice(arena, dirs.items[start..end]);
-        try children.append(arena, try std.process.spawn(io, .{
-            .argv = argv.items,
-            .stdin = .ignore,
-            .stdout = .ignore,
-        }));
+    var kept: usize = 0;
+    for (functions.items) |f| {
+        if (kept != 0) {
+            const last = functions.items[kept - 1];
+            if (f.address < last.address + last.code.len) continue;
+        }
+        functions.items[kept] = f;
+        kept += 1;
     }
-    var failed = false;
-    for (children.items) |*child| {
-        const term = try child.wait(io);
-        if (term != .exited or term.exited != 0) failed = true;
+    binary.functions = functions.items[0..kept];
+    var no_return: std.ArrayList(u64) = .empty;
+    for (binary.functions) |f| {
+        if (!cfg.returns(f.address, f.code)) try no_return.append(arena, f.address);
     }
-    if (failed) return error.KcovMergeFailed;
+    binary.image.no_return = no_return.items;
+    return binary;
+}
 
-    var argv: std.ArrayList([]const u8) = .empty;
-    try argv.appendSlice(arena, &.{ options.kcov, "--merge", options.out });
-    try argv.appendSlice(arena, batch_outs.items);
-    var final = try std.process.spawn(io, .{ .argv = argv.items, .stdin = .ignore, .stdout = .ignore });
-    const term = try final.wait(io);
-    if (term != .exited or term.exited != 0) return error.KcovMergeFailed;
-    try cwd.deleteTree(io, batches_dir);
+fn sectionBytes(bytes: []const u8, s: elf.Elf64.Shdr) ![]const u8 {
+    if (s.type == .NOBITS) return &.{};
+    if (s.offset + s.size > bytes.len) return error.TruncatedElfFile;
+    return bytes[s.offset..][0..s.size];
+}
 
-    try stderr.print("coverage: merged {d} kcov runs in {d:.1} s\n", .{
-        dirs.items.len,
-        @as(f64, @floatFromInt(durationUs(started.durationTo(Io.Clock.awake.now(io))))) / std.time.us_per_s,
-    });
-    return dirs.items.len;
+/// Every block of the binary, ascending, and whether it ran.
+const Blocks = struct {
+    starts: std.ArrayList(u64) = .empty,
+    ends: std.ArrayList(u64) = .empty,
+    ran: std.ArrayList(bool) = .empty,
+
+    /// Whether the block holding `address` ran, or null when no function's
+    /// block holds it.
+    fn at(blocks: Blocks, address: u64) ?bool {
+        const starts = blocks.starts.items;
+        var lo: usize = 0;
+        var hi: usize = starts.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            if (starts[mid] <= address) lo = mid + 1 else hi = mid;
+        }
+        if (lo == 0) return null;
+        if (address >= blocks.ends.items[lo - 1]) return null;
+        return blocks.ran.items[lo - 1];
+    }
+};
+
+fn analyse(arena: Allocator, io: Io, options: Options, hits_file: []const u8) !Analysis {
+    var binary = try loadBinary(arena, io, options.exe);
+    const guard_count = binary.image.guard_count;
+    if (hits_file.len != hits_header_len + guard_count) return error.HitsFileIsFromAnotherBuild;
+    const hits = hits_file[hits_header_len..];
+    var stats: Stats = .{
+        .processes = std.mem.readInt(u64, hits_file[0..hits_header_len], .little),
+        .functions = binary.functions.len,
+        .guards = guard_count,
+    };
+    for (hits) |h| stats.guards_hit += @intFromBool(h != 0);
+
+    // Blocks, one function at a time in a scratch arena.
+    var blocks: Blocks = .{};
+    var scratch_state: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer scratch_state.deinit();
+    for (binary.functions) |f| {
+        _ = scratch_state.reset(.retain_capacity);
+        const scratch = scratch_state.allocator();
+        const graph = try cfg.build(scratch, binary.image, f.address, f.code);
+        stats.unsound_functions += @intFromBool(!graph.sound);
+        stats.unmatched_sites += graph.unmatched_sites;
+        const ran = try scratch.alloc(bool, graph.blockCount());
+        @memset(ran, false);
+        for (graph.sites) |site| {
+            if (hits[site.guard] != 0) ran[site.block] = true;
+        }
+        for (ran) |r| stats.blocks_guarded_ran += @intFromBool(r);
+        try cfg.infer(scratch, graph, ran);
+        for (graph.starts, 0..) |start, b| {
+            try blocks.starts.append(arena, start);
+            try blocks.ends.append(arena, if (b + 1 < graph.starts.len) graph.starts[b + 1] else graph.end);
+            try blocks.ran.append(arena, ran[b]);
+            stats.blocks_inferred += @intFromBool(ran[b]);
+        }
+    }
+    stats.blocks_inferred -= stats.blocks_guarded_ran;
+    stats.blocks = blocks.starts.items.len;
+
+    // Lines.
+    try binary.dwarf.open(arena, .little);
+    var lines: std.StringArrayHashMapUnmanaged(std.ArrayList(LineState)) = .empty;
+    const src_prefix = try srcPrefix(arena, &binary.dwarf, options.src);
+    for (binary.dwarf.compile_unit_list.items) |*cu| {
+        binary.dwarf.populateSrcLocCache(arena, .little, cu) catch |err| switch (err) {
+            error.MissingDebugInfo => continue,
+            else => return err,
+        };
+        const slc = &cu.src_loc_cache.?;
+        // Each file of the unit: its line states, when it is under `src/`.
+        const file_lines = try arena.alloc(?usize, slc.files.len);
+        for (slc.files, file_lines) |file, *slot| {
+            slot.* = null;
+            const path = try filePath(arena, slc, file);
+            if (!std.mem.startsWith(u8, path, src_prefix)) continue;
+            const entry = try lines.getOrPut(arena, path[src_prefix.len..]);
+            if (!entry.found_existing) entry.value_ptr.* = .empty;
+            slot.* = entry.index;
+        }
+        const offset: u32 = @intFromBool(slc.version < 5);
+        for (slc.line_table.keys(), slc.line_table.values()) |address, row| {
+            if (row.line == 0 or row.file < offset or row.file - offset >= file_lines.len) continue;
+            const list = &lines.values()[file_lines[row.file - offset] orelse continue];
+            const ran = blocks.at(address) orelse continue;
+            if (list.items.len < row.line) try list.appendNTimes(arena, .none, row.line - list.items.len);
+            const state = &list.items[row.line - 1];
+            state.* = if (ran or state.* == .ran) .ran else .code;
+        }
+    }
+    return .{ .stats = stats, .lines = lines };
+}
+
+/// The binary's source directory, with a trailing slash: where the root
+/// source file `main.zig` was when the binary was built. That is `src`
+/// unless the build cache handed over a binary another checkout of the
+/// same sources compiled.
+fn srcPrefix(arena: Allocator, dwarf: *Dwarf, src: []const u8) ![]const u8 {
+    const own = try std.fmt.allocPrint(arena, "{s}/", .{src});
+    for (dwarf.compile_unit_list.items) |*cu| {
+        dwarf.populateSrcLocCache(arena, .little, cu) catch continue;
+        const slc = &cu.src_loc_cache.?;
+        var fallback: ?[]const u8 = null;
+        for (slc.files) |file| {
+            const path = try filePath(arena, slc, file);
+            if (std.mem.startsWith(u8, path, own)) return own;
+            if (std.mem.endsWith(u8, path, "/src/main.zig")) fallback = path[0 .. path.len - "main.zig".len];
+        }
+        if (fallback) |p| return p;
+    }
+    return own;
+}
+
+fn filePath(arena: Allocator, slc: *const Dwarf.CompileUnit.SrcLocCache, file: anytype) ![]const u8 {
+    if (std.fs.path.isAbsolute(file.path) or file.dir_index >= slc.directories.len) return file.path;
+    return std.fs.path.join(arena, &.{ slc.directories[file.dir_index].path, file.path });
 }
 
 /// One source file's lines as the report counts them.
@@ -250,34 +472,26 @@ const File = struct {
     /// Lines with code, and how many of them ran.
     total: u32,
     covered: u32,
+    /// Each line's state, test lines already set to `none`.
+    lines: []const LineState,
 
     fn uncovered(f: File) u32 {
         return f.total - f.covered;
     }
 };
 
-/// Every file under `options.src` in the merged Cobertura report, with the
-/// tests' own lines taken out, sorted by path.
-fn readCobertura(arena: Allocator, io: Io, options: Options) ![]File {
-    const cwd = Io.Dir.cwd();
-    const xml_path = try std.fs.path.join(arena, &.{ options.out, "kcov-merged", "cobertura.xml" });
-    const xml = try cwd.readFileAlloc(io, xml_path, arena, .unlimited);
+/// Every file with a counted line, the tests' own lines taken out, sorted
+/// by path.
+fn tally(arena: Allocator, io: Io, src: []const u8, lines: std.StringArrayHashMapUnmanaged(std.ArrayList(LineState))) ![]File {
     var files: std.ArrayList(File) = .empty;
-    var rest: []const u8 = xml;
-    while (std.mem.indexOf(u8, rest, "<class ")) |at| {
-        rest = rest[at..];
-        const class_end = std.mem.indexOf(u8, rest, "</class>") orelse rest.len;
-        const class = rest[0..class_end];
-        rest = rest[class_end..];
-        const filename = attribute(class, "filename") orelse continue;
-        const path = relativeToSrc(arena, filename, options.src) orelse continue;
+    for (lines.keys(), lines.values()) |path, list| {
         if (std.mem.endsWith(u8, path, "_test.zig")) continue;
-        const full = try std.fs.path.join(arena, &.{ options.src, path });
-        const source = cwd.readFileAlloc(io, full, arena, .unlimited) catch |err| switch (err) {
+        const full = try std.fs.path.join(arena, &.{ src, path });
+        const source = Io.Dir.cwd().readFileAlloc(io, full, arena, .unlimited) catch |err| switch (err) {
             error.FileNotFound => continue,
             else => return err,
         };
-        const file = tallyClass(path, class, try testLines(arena, source));
+        const file = tallyFile(path, list.items, try testLines(arena, source));
         if (file.total != 0) try files.append(arena, file);
     }
     std.mem.sort(File, files.items, {}, struct {
@@ -288,44 +502,21 @@ fn readCobertura(arena: Allocator, io: Io, options: Options) ![]File {
     return files.items;
 }
 
-/// The lines of one Cobertura `<class>` element, `class`, that are not in
-/// `test_lines`, and how many of them ran.
-fn tallyClass(path: []const u8, class: []const u8, test_lines: []const bool) File {
-    var file: File = .{ .path = path, .total = 0, .covered = 0 };
-    var lines: []const u8 = class;
-    while (std.mem.indexOf(u8, lines, "<line ")) |line_at| {
-        // `attribute` reads the tag this points into; the next search
-        // starts past its opening `<`.
-        lines = lines[line_at + 1 ..];
-        const number = std.fmt.parseUnsigned(u32, attribute(lines, "number") orelse continue, 10) catch continue;
-        const hits = std.fmt.parseUnsigned(u64, attribute(lines, "hits") orelse continue, 10) catch continue;
-        if (number == 0 or (number <= test_lines.len and test_lines[number - 1])) continue;
+/// The lines of one file that are not in `test_lines`, and how many of
+/// them ran; `states` is changed to leave the test lines out.
+/// `test_lines` has an entry for every line of the source, and a line past
+/// its end is left out too: the line table names a few, for code the
+/// compiler generated.
+fn tallyFile(path: []const u8, all_states: []LineState, test_lines: []const bool) File {
+    const states = all_states[0..@min(all_states.len, test_lines.len)];
+    var file: File = .{ .path = path, .total = 0, .covered = 0, .lines = states };
+    for (states, 0..) |*state, index| {
+        if (test_lines[index]) state.* = .none;
+        if (state.* == .none) continue;
         file.total += 1;
-        if (hits != 0) file.covered += 1;
+        if (state.* == .ran) file.covered += 1;
     }
     return file;
-}
-
-/// The value of `name="..."` in the first tag of `text`.
-fn attribute(text: []const u8, comptime name: []const u8) ?[]const u8 {
-    const tag_end = std.mem.indexOfScalar(u8, text, '>') orelse text.len;
-    const tag = text[0..tag_end];
-    const key = " " ++ name ++ "=\"";
-    const at = std.mem.indexOf(u8, tag, key) orelse return null;
-    const begin = at + key.len;
-    const end = std.mem.indexOfScalarPos(u8, tag, begin, '"') orelse return null;
-    return tag[begin..end];
-}
-
-/// `filename` relative to `src`, or null when it is not under it. kcov
-/// writes absolute paths, or paths relative to the longest prefix every
-/// file shares, which is `src/` itself once more than one directory ran.
-fn relativeToSrc(arena: Allocator, filename: []const u8, src: []const u8) ?[]const u8 {
-    if (std.fs.path.isAbsolute(filename)) {
-        if (!std.mem.startsWith(u8, filename, src) or filename.len <= src.len or filename[src.len] != '/') return null;
-        return arena.dupe(u8, filename[src.len + 1 ..]) catch null;
-    }
-    return filename;
 }
 
 /// For each line of `source`, whether it belongs to a `test` block: from a
@@ -354,6 +545,23 @@ pub fn testLines(arena: Allocator, source: []const u8) ![]bool {
         }
     }
     return marks;
+}
+
+/// The files in the lcov tracefile format `genhtml` reads: one record per
+/// file, a `DA` line per counted line with 1 for ran and 0 for not.
+fn renderLcov(arena: Allocator, src: []const u8, files: []const File) ![]const u8 {
+    var out: Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll("TN:\n");
+    for (files) |f| {
+        try w.print("SF:{s}/{s}\n", .{ src, f.path });
+        for (f.lines, 1..) |state, line| {
+            if (state == .none) continue;
+            try w.print("DA:{d},{d}\n", .{ line, @intFromBool(state == .ran) });
+        }
+        try w.print("LF:{d}\nLH:{d}\nend_of_record\n", .{ f.total, f.covered });
+    }
+    return out.written();
 }
 
 const Rendered = struct {
@@ -387,7 +595,7 @@ fn topDirectory(path: []const u8) []const u8 {
     return path[0..slash];
 }
 
-fn render(arena: Allocator, files: []const File, measured: Measured, collected: usize, options: Options) !Rendered {
+fn render(arena: Allocator, files: []const File, measured: Measured, stats: Stats, options: Options) !Rendered {
     var total: Tally = .{};
     var dirs: std.StringArrayHashMapUnmanaged(Tally) = .empty;
     for (files) |f| {
@@ -398,7 +606,7 @@ fn render(arena: Allocator, files: []const File, measured: Measured, collected: 
     }
     const Dir = struct { name: []const u8, tally: Tally };
     var dir_list: std.ArrayList(Dir) = .empty;
-    for (dirs.keys(), dirs.values()) |name, tally| try dir_list.append(arena, .{ .name = name, .tally = tally });
+    for (dirs.keys(), dirs.values()) |name, t| try dir_list.append(arena, .{ .name = name, .tally = t });
     std.mem.sort(Dir, dir_list.items, {}, struct {
         fn lessThan(_: void, a: Dir, b: Dir) bool {
             return std.mem.lessThan(u8, a.name, b.name);
@@ -416,16 +624,21 @@ fn render(arena: Allocator, files: []const File, measured: Measured, collected: 
     var head: Io.Writer.Allocating = .init(arena);
     const h = &head.writer;
     try h.print("Line coverage of src/: {d:.1}% ({d} of {d} lines)\n\n", .{ total.percent(), total.covered, total.total });
+    try h.print("Collected from {d} compiler processes", .{stats.processes});
     if (measured.ran) {
-        try h.print("Collected from {d} processes in {d:.0} s wall, {d:.0} CPU-s", .{
-            collected,
+        try h.print(" in {d:.1} s wall, {d:.0} CPU-s", .{
             @as(f64, @floatFromInt(measured.wall_us)) / std.time.us_per_s,
             @as(f64, @floatFromInt(measured.cpu_us)) / std.time.us_per_s,
         });
         if (measured.load_start) |l| try h.print("; load average {d:.1} at the start", .{l[0]});
         if (measured.load_end) |l| try h.print(", {d:.1} at the end", .{l[0]});
-        try h.writeAll(".\n\n");
     }
+    try h.writeAll(".\n");
+    try h.print(
+        "{d} of {d} guards set; of {d} blocks in {d} functions, {d} ran by their guard and {d} more by inference; " ++
+            "{d} functions without a trusted graph, {d} guarded calls without a known guard.\n\n",
+        .{ stats.guards_hit, stats.guards, stats.blocks, stats.functions, stats.blocks_guarded_ran, stats.blocks_inferred, stats.unsound_functions, stats.unmatched_sites },
+    );
     try h.writeAll("| Directory | Lines | Covered | % |\n|---|---:|---:|---:|\n");
     for (dir_list.items) |d| {
         try h.print("| {s} | {d} | {d} | {d:.1} |\n", .{ d.name, d.tally.total, d.tally.covered, d.tally.percent() });
@@ -474,20 +687,17 @@ fn loadAverage(arena: Allocator, io: Io) ?[3]f64 {
     return out;
 }
 
-test "a class counts its lines that ran, leaving out the tests' lines" {
-    const class =
-        \\<class name="A_zig__1" filename="lex/A.zig" line-rate="0.5">
-        \\    <lines>
-        \\        <line number="1" hits="3"/>
-        \\        <line number="2" hits="0"/>
-        \\        <line number="3" hits="1"/>
-        \\        <line number="4" hits="0"/>
-        \\    </lines>
-    ;
-    const file = tallyClass("lex/A.zig", class, &.{ false, false, true, true });
+test {
+    _ = cfg;
+}
+
+test "a file counts its lines with code and those that ran, leaving out the tests' lines and lines past its end" {
+    // The sixth line is past the end of the five-line source.
+    var states = [_]LineState{ .ran, .code, .none, .ran, .code, .ran };
+    const file = tallyFile("lex/A.zig", &states, &.{ false, false, false, true, true });
     try std.testing.expectEqual(@as(u32, 2), file.total);
     try std.testing.expectEqual(@as(u32, 1), file.covered);
-    try std.testing.expectEqualStrings("lex/A.zig", attribute(class, "filename").?);
+    try std.testing.expectEqualSlices(LineState, &.{ .ran, .code, .none, .none, .none }, file.lines);
 }
 
 test "the lines of a test block are marked, and nothing else" {
@@ -506,4 +716,20 @@ test "the lines of a test block are marked, and nothing else" {
         \\};
     );
     try std.testing.expectEqualSlices(bool, &.{ false, true, true, true, false, true, true, true, false, false }, marks);
+}
+
+test "the lcov tracefile has a record per file and a DA line per counted line" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const files = [_]File{.{ .path = "lex/A.zig", .total = 2, .covered = 1, .lines = &.{ .none, .ran, .code } }};
+    try std.testing.expectEqualStrings(
+        \\TN:
+        \\SF:/repo/src/lex/A.zig
+        \\DA:2,1
+        \\DA:3,0
+        \\LF:2
+        \\LH:1
+        \\end_of_record
+        \\
+    , try renderLcov(arena.allocator(), "/repo/src", &files));
 }
