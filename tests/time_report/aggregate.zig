@@ -982,11 +982,13 @@ test "the report of a small run is exactly these tables" {
         \\### Per test
         \\
         \\The 1 most expensive of 3 tests by CPU. "Harness" is CPU in the test
-        \\process, "children" in what it spawned.
+        \\process, "children" in what it spawned; "M instr" the millions of
+        \\instructions the test is held to its budget by (a corpus walker's tests
+        \\count what their cases did not; "–" where the budget did not count them).
         \\
-        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | beni | node |
-        \\|---:|---|---:|---:|---:|---:|---:|---:|
-        \\| 1 | corpus_test · corpus: run | 0.1 | 0.0 | 0.1 | **0.1** | 1 | 1 |
+        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | M instr | beni | node |
+        \\|---:|---|---:|---:|---:|---:|---:|---:|---:|
+        \\| 1 | corpus_test · corpus: run | 0.1 | 0.0 | 0.1 | **0.1** | – | 1 | 1 |
         \\
         \\**Distribution of tests by CPU:**
         \\
@@ -1003,9 +1005,9 @@ test "the report of a small run is exactly these tables" {
         \\The 1 most expensive of 1 corpus cases by CPU: the walker thread's own
         \\time plus every process the case spawned.
         \\
-        \\| # | fixture | kind | **CPU ms** | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
-        \\|---:|---|---|---:|---:|---:|---:|---:|
-        \\| 1 | tests/corpus/run/A.beni | run_dev | **95** | 95 | 5.0 | 1 / 30 | 1 / 60 |
+        \\| # | fixture | kind | **CPU ms** | M instr | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
+        \\|---:|---|---|---:|---:|---:|---:|---:|---:|
+        \\| 1 | tests/corpus/run/A.beni | run_dev | **95** | – | 95 | 5.0 | 1 / 30 | 1 / 60 |
         \\
         \\**Distribution of cases by CPU:**
         \\

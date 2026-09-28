@@ -85,8 +85,8 @@ test "the time report of one corpus fixture has every table and names the fixtur
     // The one case: its kind and its one `dump`; the CPU figures vary.
     try testing.expectEqual(1, fixture_rows.items.len);
     try testing.expectEqualStrings("parse_good", cell(fixture_rows.items[0], 2));
-    try testing.expect(std.mem.startsWith(u8, cell(fixture_rows.items[0], 6), "1 / "));
-    try testing.expect(std.mem.startsWith(u8, cell(fixture_rows.items[0], 7), "0 / "));
+    try testing.expect(std.mem.startsWith(u8, cell(fixture_rows.items[0], 7), "1 / "));
+    try testing.expect(std.mem.startsWith(u8, cell(fixture_rows.items[0], 8), "0 / "));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
