@@ -474,6 +474,7 @@ fn adjustRank(
         }
         const done = frames.pop().?;
         store.setRank(done.v, done.max);
+        assertOwnedWithin(store, stacks.obligations, done.v);
         result = done.max;
         if (frames.items.len > 0) {
             const parent = &frames.items[frames.items.len - 1];
@@ -509,11 +510,38 @@ fn enter(
     try Walk.eachOwned(store, stacks.obligations, root, content, &succ);
     if (kids.items.len == base) {
         store.setRank(root, max);
+        assertOwnedWithin(store, stacks.obligations, root);
         return max;
     }
     std.mem.reverse(Var, kids.items[base..]);
     try stacks.ranks.append(gpa, .{ .v = root, .base = base, .max = max, .maxes = fold.maxes });
     return null;
+}
+
+/// I15 at a variable the walk just ranked (checker-v2.md §2, §4.5, §7.1):
+/// nothing riding on it — a constraint's method type, an open obligation's
+/// dependant — outranks it. Every successor was ranked first (or is an
+/// ancestor still being walked, whose rank is its group's), and a
+/// structure's rank is the maximum of its successors', so comparing each
+/// successor's root is the whole closure's check, and the walk stays linear.
+/// A young receiver is quantified at this boundary and is exempt in the
+/// contract; the check still holds for it, since nothing the walk ranks goes
+/// above its group's rank. One already generalised is skipped. Safe builds
+/// only.
+fn assertOwnedWithin(store: *TypeStore, obligations: ?*const Obligations, root: Var) void {
+    if (!std.debug.runtime_safety) return;
+    switch (store.content(root)) {
+        .flex, .rigid => {},
+        else => return,
+    }
+    const rank = store.rank(root);
+    // A generalised receiver's method type may mention outer variables free.
+    if (rank == TypeStore.generalized) return;
+    var n: u32 = 0;
+    while (Walk.owned(store, obligations, root, n)) |c| : (n += 1) {
+        const r = store.rank(store.find(c));
+        if (r > rank) std.debug.panic("a variable of rank {d} rides on one of rank {d} after rank adjustment (checker-v2.md I15)", .{ r, rank });
+    }
 }
 
 /// A young node with no successor to walk: an `err`, or a variable with
