@@ -2788,9 +2788,17 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
     // function` at run time.
     //
     // Three passes over one cache directory, because the count a warm
-    // importer uses is the one the RECORD states: cold (both checked),
-    // warm (neither), and partly warm (`Main` edited: `Wide` from the cache,
-    // `Main` checked against the loaded record).
+    // importer uses is the one the RECORD states: cold (both checked, the
+    // count from the interface in memory), warm (neither: `Main`'s cached
+    // dispatch table states it), and partly warm (`Main` edited: `Wide`
+    // from the cache, `Main` checked against the loaded record). The warm
+    // pass is the `--release` build, whose optimiser and renamer are the
+    // one other thing that could drop the packing; the other two grep the
+    // development output for it. A pass per further edit — `Wide` edited
+    // with its record moved or not, each build again under `--release` —
+    // lands on one of these three: which module a digest or a hash re-checks
+    // is `cutoff_test.zig`'s, and every pass here costs a whole build of a
+    // type 4 097 wide.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2803,8 +2811,6 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
     const passes = [_]struct {
         what: []const u8,
         edit: ?[]const u8,
-        /// Appended to `Wide.beni`, with `Main` as the last pass left it.
-        wide_edit: ?[]const u8 = null,
         release: bool,
         /// Null on the cold pass, which checks core too: there it is
         /// `hits == 0` that says nothing came from the cache.
@@ -2813,27 +2819,11 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
         expected: []const u8,
     }{
         .{ .what = "cold", .edit = null, .release = false, .checked = null, .hits_at_least = 0, .expected = expected },
-        .{ .what = "warm", .edit = null, .release = false, .checked = 0, .hits_at_least = 2, .expected = expected },
         .{ .what = "warm, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected },
         .{ .what = "Main edited", .edit = ", show (y == y)", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
-        .{ .what = "Main edited, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected ++ "True\n" },
-        // The DEPENDENCY edited while `Main` stays cached:
-        // a private value (one that adds no import: `helper : Int` would add
-        // `Basics`, which moves the digest) leaves `Wide`'s record as it was,
-        // so `Main` is cut
-        // off and runs from its cached entry against the re-checked `Wide`;
-        // a new `pub` value moves the record, and `Main` is re-checked
-        // against it.
-        .{ .what = "Wide edited, record unmoved", .edit = null, .wide_edit = "\n\nhelper x =\n    x\n", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
-        .{ .what = "Wide edited, record moved", .edit = null, .wide_edit = "\n\npub one : Int\none =\n    1\n", .release = false, .checked = 2, .hits_at_least = 1, .expected = expected ++ "True\n" },
-        .{ .what = "Wide edited, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected ++ "True\n" },
     };
     for (passes, 0..) |pass, i| {
         if (pass.edit) |extra| try wideImportProject(&w, arena, n, extra);
-        if (pass.wide_edit) |tail| {
-            const wide = try w.read("Wide.beni");
-            try w.write("Wide.beni", try std.mem.concat(arena, u8, &.{ wide, tail }));
-        }
 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │

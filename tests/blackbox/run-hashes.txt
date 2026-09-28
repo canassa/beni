@@ -87,13 +87,8 @@ cache_test.test.a warm rebuild is a cold build: constructors reordered, which re
 cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 843a6d75428a1034e395271b1391e11a699c3471bb86de3712e82e255cb3fa2e
 cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 52ad8d0d140195874f22b081006a9f5f7f80f67d9d9dc674e2e71eae349b5787
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #0 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #1 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #2 a078cf91c8865c5016f9f6269d7923a545782522f5aeae012fb8e0ea7e6e21e6
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #3 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #4 85f6db30fe472e4d0edf51fae4c7c0ecd9bd31c1cbc415edff116beb2169d109
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #5 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #6 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
-cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #7 85f6db30fe472e4d0edf51fae4c7c0ecd9bd31c1cbc415edff116beb2169d109
+cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #1 a078cf91c8865c5016f9f6269d7923a545782522f5aeae012fb8e0ea7e6e21e6
+cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #2 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 47a7a24a6de15a047673154e7a9d05f7d8eaba8cb04319896881618d4b85b531
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516
