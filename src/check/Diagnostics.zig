@@ -32,6 +32,7 @@ const Env = EnvFile.Env;
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Walk = @import("Walk.zig");
 const DispatchTexts = @import("DispatchTexts.zig");
 const PatternTexts = @import("PatternTexts.zig");
 
@@ -192,7 +193,7 @@ pub const Reporter = struct {
         if (callee.int() >= bir.insts.len or bir.instTag(callee) != .local) return false;
         const index = bir.instData(callee).lhs;
         const v = r.env.localVar(index) orelse return false;
-        const found = r.monomorphicMethod(v) orelse return false;
+        const found = (try r.monomorphicMethod(v)) orelse return false;
         const at = r.env.locals_base + index;
         const name = if (at < bir.locals.len)
             (if (bir.locals[at].name.unwrap()) |sym| r.env.interner.slice(bir.symbols[sym]) else "it")
@@ -253,44 +254,26 @@ pub const Reporter = struct {
     }
 
     /// The held variable that made `v`'s binding monomorphic, if any: a
-    /// variable inside `v`'s type that a `let` held back.
-    fn monomorphicMethod(r: *Reporter, v: Var) ?EnvFile.Monomorphic {
+    /// variable inside `v`'s type that a `let` held back. The walk follows
+    /// `structural` successors to the bottom, each root once, on a stack
+    /// that grows: `Walk`'s rule, no fixed stack and no answer for giving up.
+    fn monomorphicMethod(r: *Reporter, v: Var) Error!?EnvFile.Monomorphic {
         if (r.env.monomorphic.items.len == 0) return null;
         const st = r.env.store;
+        const scratch = r.env.scratch;
         const seen = st.nextMark();
-        var stack: [64]Var = undefined;
-        var len: usize = 1;
-        stack[0] = v;
-        var budget: u32 = 4096;
-        while (len > 0 and budget > 0) {
-            budget -= 1;
-            len -= 1;
-            const root, const c = st.resolved(stack[len]);
+        var stack: std.ArrayList(Var) = .empty;
+        defer stack.deinit(scratch);
+        try stack.append(scratch, v);
+        while (stack.pop()) |next| {
+            const root = st.find(next);
             if (st.mark(root) == seen) continue;
             st.setMark(root, seen);
             for (r.env.monomorphic.items) |m| {
                 if (st.find(m.v) == root) return m;
             }
-            const push = struct {
-                fn f(buf: *[64]Var, l: *usize, x: Var) void {
-                    if (l.* >= buf.len) return;
-                    buf[l.*] = x;
-                    l.* += 1;
-                }
-            }.f;
-            switch (c) {
-                .structure => |flat| switch (flat) {
-                    .func => |fn_| {
-                        for (st.vars(fn_.params)) |param| push(&stack, &len, param);
-                        push(&stack, &len, fn_.result);
-                    },
-                    .app => |a| for (st.vars(a.args)) |arg| push(&stack, &len, arg),
-                    .tuple => |t| for (st.vars(t)) |el| push(&stack, &len, el),
-                    .record => |rec| for (st.fields(rec.fields)) |f| push(&stack, &len, f.value),
-                    else => {},
-                },
-                else => {},
-            }
+            var n: u32 = 0;
+            while (Walk.child(st, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
         }
         return null;
     }
