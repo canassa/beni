@@ -932,6 +932,7 @@ test "every stream of every command is byte-identical across --jobs=1 and --jobs
         try w.write(rel, body);
         path.* = try w.arena.allocator().dupe(u8, rel);
     }
+    try w.write("nocore/PLACEHOLDER", "");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -945,13 +946,17 @@ test "every stream of every command is byte-identical across --jobs=1 and --jobs
     for (&transcripts, jobs) |*transcript, j| {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(testing.allocator);
-        // Whole-project commands.
-        try record(&w, &out, &.{ "check", "--diagnostics=json", j, "src" });
-        try record(&w, &out, &.{ "check", j, "src" });
+        // Whole-project commands. The findings are the project's own, so
+        // the checks run against an empty core: checking the real one
+        // tripled their cost and added no finding to merge.
+        try record(&w, &out, &.{ "check", "--diagnostics=json", "--core-root=nocore", j, "src" });
+        try record(&w, &out, &.{ "check", "--core-root=nocore", j, "src" });
         try record(&w, &out, &.{ "fmt", "--check", j, "src" });
-        // Per-file commands, in the order the enumerator would number
-        // them, so the transcript itself has a fixed shape.
-        for (paths) |path| {
+        // Per-file commands. One file is one worker's work whatever the
+        // count, so there is no merge for the count to reorder: one file
+        // of each of the five kinds is enough to show the streams do not
+        // depend on it, where every file of the project cost 480 runs.
+        for (paths[0..5]) |path| {
             try record(&w, &out, &.{ "fmt", "--stdout", j, path });
             try record(&w, &out, &.{ "dump", "--stage=ast", j, path });
             try record(&w, &out, &.{ "dump", "--stage=bir", j, path });
@@ -965,7 +970,7 @@ test "every stream of every command is byte-identical across --jobs=1 and --jobs
     for (transcripts[1..]) |other| try testing.expectEqualStrings(transcripts[0], other);
     // And the transcript is not trivially empty: 3 project commands plus
     // 3 per file, each contributing one header line.
-    try testing.expectEqual(@as(usize, 3 + 3 * 40), std.mem.count(u8, transcripts[0], "\n$ beni "));
+    try testing.expectEqual(@as(usize, 3 + 3 * 5), std.mem.count(u8, transcripts[0], "\n$ beni "));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
