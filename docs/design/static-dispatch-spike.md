@@ -164,6 +164,14 @@ Four rules hang on it:
    on a record with a field named `eq` still means structural equality.
 2. Only such a call may derive (§9) — `x.eq y` written by hand on a type with no `eq` is
    `unknown_method`, not a silent derivation.
+   **Reversed by the owner, 2026-09-28** ([`checker-v2.md`](checker-v2.md) §21.1):
+   a dot-call `x.eq y` or `x.compare y` reaches the derived method whenever the
+   receiver's type declares no own method of that name, directly and through an unannotated
+   function's inferred requirement, as `==` and `<` do. The rule guarded no guarantee: the derived
+   method is the one the operator already calls, so no answer can be silently different. A
+   dot-call on a record is still the record's field call (§1.2, §11 *Deferred receiver*). Rules
+   1, 3 and 4 are unchanged: the origin still decides the typing rule, the emitted operator and
+   the texts.
 3. The backend emits a JavaScript operator for such a call when the target is `primitive`, choosing
    which operator from the origin (§8.3).
 4. The constraint it raises is the pinned one of §3.1, not the loose dot-call one.
@@ -964,7 +972,8 @@ caller never named. Appendix A.28 records the decision; this row records which `
    (`checker.md` §6.4), so nothing new is needed for the recursion.
 4. **Derive.** Not found, the name is well-known and the call is marked: target
    `derived { kind, shape = nominal(T) }`. A `foreign type` that reached here has no constructors
-   and no table row, so it falls to 5.
+   and no table row, so it falls to 5. *(Amended 2026-09-28: "and the call is marked" is dropped
+   here and in step 1 — a dot-call derives too; §1.3 rule 2 as reversed.)*
 
    **Derivation for a nominal type is eager, and happens in the declaring module** (§8.5, §9.4). A
    use site therefore *names* `T`'s derived function; it does not request one. Nothing else works:
@@ -3848,6 +3857,13 @@ type, so `eqGen Red Green` under `eqGen : a, a -> Bool where a.eq : …` was `un
 clause — could not have compiled at all. *Alternative:* let a `dot_call` derive too, which is §1.3
 rule 2 reversed and makes `x.eq y` silently mean something the module never declared. Fixture:
 `dispatch/WhereClauseDerives`.
+*Amended 2026-09-28 by the owner's decision ([`checker-v2.md`](checker-v2.md) §21.1):
+the alternative is taken.* `isWellKnown` is `name ∈ { eq, compare }`, whatever the origin: a
+hand-written `x.eq y` derives when `x`'s type declares no `eq`, directly and through a
+requirement an unannotated function promoted. The objection above does not hold: what `x.eq y`
+means is exactly what `x == y` means on the same type, which the module never declared either,
+and a module that declares its own `eq` still wins (§3.3 step 1). A dot-call on a record stays
+the field call. Fixtures: `run/DotCallCompareDerivedUnannotated.beni` and its siblings.
 
 **A.57 — every instantiation's constraints get an obligation, and a constraint is answered exactly
 once** (§6.2, §6.3) [S3]. Both halves are one decision. **Every instantiation**: a local copy

@@ -51,7 +51,7 @@ defect (CK-NN), [`plans/checker-rewrite.md`](plans/checker-rewrite.md) holds the
 slices (R0–R15) with an *As built* note each and §1.1's table of v1's six root
 causes. Red fixtures for open findings live in `tests/pending/`, run by
 `zig build test-pending` (never by the gates); timing scenarios by
-`test-pending-perf` and, once fixed, `test-perf`. Owner decisions D1–D14 and
+`test-pending-perf` and, once fixed, `test-perf`. Owner decisions D1–D16 and
 their amendments are `checker-v2.md` §21–§21.1. Declaration order never
 changes whether a program checks or what it prints (I9, `ordering_test.zig`).
 
