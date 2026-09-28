@@ -185,7 +185,7 @@ pub const Coverage = struct {
         // `core_surface` is one term over every core module, so every
         // module's key sees every core module move.
         for (0..n) |i| {
-            if (graph.module(@enumFromInt(i)).package != .core) continue;
+            if (graph.modulePackage(@enumFromInt(i)) != .core) continue;
             for (out.rows) |*row| row.set(i);
         }
         for (graph.order) |m| {

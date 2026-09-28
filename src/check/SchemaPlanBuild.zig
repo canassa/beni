@@ -294,7 +294,7 @@ const Builder = struct {
         const data = b.bir.instData(head);
         const target: SchemaPlan.SchemaTarget = switch (b.bir.instTag(head)) {
             .schema_target_top => .{
-                .package = b.graph.module(b.module).package,
+                .package = b.graph.modulePackage(b.module),
                 .module = try b.symbolIndex(b.graph.moduleName(b.module)),
                 .schema = try b.symbolIndex(b.bir.symbol(b.bir.decl(@enumFromInt(data.lhs)).name)),
             },
@@ -302,7 +302,7 @@ const Builder = struct {
                 const module: Graph.Index = @enumFromInt(data.lhs);
                 const iface = &b.interfaces[module.int()];
                 break :blk .{
-                    .package = b.graph.module(module).package,
+                    .package = b.graph.modulePackage(module),
                     .module = try b.symbolIndex(b.graph.moduleName(module)),
                     .schema = try b.symbolIndex(iface.symbol(iface.schemas[data.rhs].name)),
                 };
@@ -353,7 +353,7 @@ const Builder = struct {
 
     fn localSchemaTarget(b: *Builder, owner: Bir.DeclIndex) Allocator.Error!SchemaPlan.SchemaTargetIndex {
         const target: SchemaPlan.SchemaTarget = .{
-            .package = b.graph.module(b.module).package,
+            .package = b.graph.modulePackage(b.module),
             .module = try b.symbolIndex(b.graph.moduleName(b.module)),
             .schema = try b.symbolIndex(b.bir.symbol(b.bir.decl(owner).name)),
         };

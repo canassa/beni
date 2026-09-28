@@ -727,7 +727,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
             try s.report.constrainedConstant(region, d.name_token, bir.symbol(d.name), st.flagsOf(reqs.items[0].root).name, reqs.items[0].method);
             continue;
         }
-        if (s.informational and s.cx.graph.module(s.cx.module).package == .app) {
+        if (s.informational and s.cx.graph.modulePackage(s.cx.module) == .app) {
             try s.report.ambiguousMethodReceiver(region, d.name_token, bir.symbol(d.name), @intCast(reqs.items.len), header);
         }
     }

@@ -275,7 +275,7 @@ pub fn verifyTargets(
     types: *const Types,
 ) bool {
     const current_module = graph.moduleName(current);
-    const current_package = graph.module(current).package;
+    const current_package = graph.modulePackage(current);
     for (plan.definitions) |definition| {
         const declaration = bir.decl(definition.decl);
         const root = declaration.schema_body.unwrap() orelse return false;

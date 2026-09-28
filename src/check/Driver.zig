@@ -171,11 +171,11 @@ fn widthBound(d: *const Driver) Allocator.Error!usize {
     // `graph.order` is topological on an unpoisoned graph, so every
     // dependency's depth is final before its dependents read it.
     for (d.graph.order) |m| {
-        const half = @intFromBool(d.graph.module(m).package == .core);
+        const half = @intFromBool(d.graph.modulePackage(m) == .core);
         var deepest: u32 = 0;
         for (d.graph.dependencies(m)) |dep| {
             if (dep == m) continue;
-            if (@intFromBool(d.graph.module(dep).package == .core) != half) continue;
+            if (@intFromBool(d.graph.modulePackage(dep) == .core) != half) continue;
             deepest = @max(deepest, depth[dep.int()]);
         }
         depth[m.int()] = deepest + 1;
@@ -222,11 +222,11 @@ fn serial(d: *Driver, scratch: *Arena) Error!void {
     // the sequence is `graph.order`'s, so the walk is a function of the
     // input alone (`fast-compiler.md` §10).
     for (0..d.graph.count()) |i| {
-        if (d.graph.module(@enumFromInt(i)).package == .core) d.core_pending += 1;
+        if (d.graph.modulePackage(@enumFromInt(i)) == .core) d.core_pending += 1;
     }
     for ([_]bool{ true, false }) |core| {
         for (d.graph.order) |m| {
-            if ((d.graph.module(m).package == .core) != core) continue;
+            if ((d.graph.modulePackage(m) == .core) != core) continue;
             try d.check(m, scratch, &patterns, 0, &recorder);
             scratch.reset(.retain_capacity);
             if (core and d.core_pending != 0) d.core_pending -= 1;
@@ -290,11 +290,11 @@ fn buildSchedule(d: *Driver) Error!void {
     // until the last core module has published (see `core_pending`).
     d.core_pending = 0;
     for (0..n) |i| {
-        if (d.graph.module(@enumFromInt(i)).package == .core) d.core_pending += 1;
+        if (d.graph.modulePackage(@enumFromInt(i)) == .core) d.core_pending += 1;
     }
     if (d.core_pending != 0) {
         for (0..n) |i| {
-            if (d.graph.module(@enumFromInt(i)).package == .core) continue;
+            if (d.graph.modulePackage(@enumFromInt(i)) == .core) continue;
             d.blockers[i] += 1;
         }
     }
@@ -313,7 +313,7 @@ fn buildSchedule(d: *Driver) Error!void {
 /// released. Under the lock, once.
 fn openCoreGate(d: *Driver) void {
     for (0..d.graph.count()) |i| {
-        if (d.graph.module(@enumFromInt(i)).package == .core) continue;
+        if (d.graph.modulePackage(@enumFromInt(i)) == .core) continue;
         d.blockers[i] -= 1;
         if (d.blockers[i] != 0) continue;
         d.queue[d.queue_len] = @enumFromInt(@as(u32, @intCast(i)));
@@ -384,7 +384,7 @@ fn finish(d: *Driver, m: Graph.Index, result: Error!void) void {
     if (result) |_| {} else |err| {
         if (d.failure == null) d.failure = err;
     }
-    if (d.graph.module(m).package == .core and d.core_pending != 0) {
+    if (d.graph.modulePackage(m) == .core and d.core_pending != 0) {
         d.core_pending -= 1;
         if (d.core_pending == 0) {
             // The last core module has PUBLISHED — `check` publishes

@@ -52,7 +52,7 @@ pub fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
     defer entries.deinit(scratch.allocator());
     for (0..d.graph.count()) |i| {
         const m: Graph.Index = @enumFromInt(i);
-        if (d.graph.module(m).package != .core) continue;
+        if (d.graph.modulePackage(m) != .core) continue;
         try entries.append(scratch.allocator(), .{
             .name = d.interner.slice(d.graph.moduleName(m)),
             .iface_hash = cutoff.iface_hash[i],
@@ -67,7 +67,7 @@ pub fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
     defer old.deinit(scratch.allocator());
     for (0..d.graph.count()) |i| {
         const m: Graph.Index = @enumFromInt(i);
-        if (d.graph.module(m).package != .core) continue;
+        if (d.graph.modulePackage(m) != .core) continue;
         try old.append(scratch.allocator(), .{
             .name = d.interner.slice(d.graph.moduleName(m)),
             .key = cutoff.compare[i],
@@ -92,7 +92,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     for (d.graph.dependencies(m)) |dep| {
         if (dep == m) continue;
         try pairs.append(scratch.allocator(), .{
-            .package = d.graph.module(dep).package,
+            .package = d.graph.modulePackage(dep),
             .name = d.interner.slice(d.graph.moduleName(dep)),
             .iface_hash = cutoff.iface_hash[dep.int()],
             .digest = cutoff.digest[dep.int()],
@@ -101,7 +101,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     Key.sortPairs(&pairs);
     // A CORE module's own core term is `none` by definition: core is not a
     // dependency of itself, exactly as `core_epoch` was not.
-    const surface = if (d.graph.module(m).package == .core) Digest.none else cutoff.core_surface;
+    const surface = if (d.graph.modulePackage(m) == .core) Digest.none else cutoff.core_surface;
     cutoff.keys.set(m, try Key.finish(
         scratch.allocator(),
         cutoff.keys.ownTerms(m),
@@ -137,13 +137,13 @@ pub fn compareKey(d: *Driver, m: Graph.Index, scratch: *Arena) Error!void {
     for (d.graph.dependencies(m)) |dep| {
         if (dep == m) continue;
         try imports.append(scratch.allocator(), .{
-            .package = d.graph.module(dep).package,
+            .package = d.graph.modulePackage(dep),
             .name = d.interner.slice(d.graph.moduleName(dep)),
             .key = cutoff.compare[dep.int()],
         });
     }
     Key.sortImports(&imports);
-    const epoch = if (d.graph.module(m).package == .core) Key.none else cutoff.core_epoch;
+    const epoch = if (d.graph.modulePackage(m) == .core) Key.none else cutoff.core_epoch;
     cutoff.compare[m.int()] = try Key.finishTransitive(
         scratch.allocator(),
         cutoff.keys.ownTerms(m),
@@ -170,7 +170,7 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     for (d.graph.dependencies(m)) |dep| {
         if (dep == m) continue;
         try imports.append(scratch.allocator(), .{
-            .package = d.graph.module(dep).package,
+            .package = d.graph.modulePackage(dep),
             .name = d.interner.slice(d.graph.moduleName(dep)),
             .iface_hash = cutoff.iface_hash[dep.int()],
             .digest = cutoff.digest[dep.int()],

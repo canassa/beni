@@ -269,7 +269,7 @@ const Pass = struct {
     /// which (§5.2), so either is enough.
     fn checkExposing(p: *Pass, m: Graph.Index, bir: *const Bir) Allocator.Error!void {
         if (p.quiet) return;
-        const pkg = p.graph.module(m).package;
+        const pkg = p.graph.modulePackage(m);
         for (bir.imports) |imp| {
             if (imp.prelude) continue;
             const module_symbol = bir.symbol(imp.module);
@@ -376,7 +376,7 @@ const Pass = struct {
     };
 
     fn resolveOne(p: *Pass, m: Graph.Index, module_symbol: Symbol, name: Symbol, namespace: Namespace, token: u32) Allocator.Error!Resolved {
-        const target = p.graph.lookup(p.graph.module(m).package, module_symbol) orelse {
+        const target = p.graph.lookup(p.graph.modulePackage(m), module_symbol) orelse {
             // Lowering checked that the ALIAS is imported (language.md
             // §6.2); this is the other half — whether the module it names
             // exists at all, which only the graph knows. A prelude module
@@ -397,7 +397,7 @@ const Pass = struct {
     }
 
     fn resolveOrdinaryReference(p: *Pass, m: Graph.Index, bir: *const Bir, module_symbol: Symbol, name: Symbol, namespace: Namespace, token: u32) Allocator.Error!Resolved {
-        const target = p.graph.lookup(p.graph.module(m).package, module_symbol);
+        const target = p.graph.lookup(p.graph.modulePackage(m), module_symbol);
         const ordinary_exists = target != null and p.ordinaryExists(target.?, name, namespace);
         if (p.qualifiedRoot(m, token)) |root| {
             if (p.schemaFromRoot(m, bir, root)) |schema| if (p.schemaAccessExists(schema, name, namespace)) {
@@ -633,7 +633,7 @@ const Pass = struct {
                 const schema_text = tail[0..dot];
                 const schema_name = p.interner.find(schema_text) orelse
                     return p.resolveOrdinarySchemaFallback(m, bir, text, namespace, token);
-                const target = p.graph.lookup(p.graph.module(m).package, imp.module) orelse
+                const target = p.graph.lookup(p.graph.modulePackage(m), imp.module) orelse
                     return p.resolveOne(m, imp.module, schema_name, .schema, token);
                 if (target == m) {
                     if (p.localSchema(bir, schema_name)) |di| {
@@ -680,7 +680,7 @@ const Pass = struct {
     }
 
     fn qualifiedImportAccessExists(p: *Pass, m: Graph.Index, imp: QualifiedImport, text: []const u8, namespace: Namespace) bool {
-        const target = p.graph.lookup(p.graph.module(m).package, imp.module) orelse return false;
+        const target = p.graph.lookup(p.graph.modulePackage(m), imp.module) orelse return false;
         const tail = text[imp.alias_len + 1 ..];
         const dot = std.mem.indexOfScalar(u8, tail, '.');
         if (dot == null) {
@@ -734,7 +734,7 @@ const Pass = struct {
             if (d.kind == .schema) try t.schemas.add(p.gpa, name, index);
         }
         for (bir.ctors, 0..) |c, i| try t.ctors.add(p.gpa, bir.symbol(c.name), @intCast(i));
-        const package = p.graph.module(m).package;
+        const package = p.graph.modulePackage(m);
         for (bir.imports) |imp| {
             const exposed = bir.importExposed(imp);
             if (exposed.len == 0) continue;
@@ -930,7 +930,7 @@ const Pass = struct {
             const schema_name = p.interner.find(text[dot + 1 ..]) orelse name;
             for (bir.imports) |imp| if (std.mem.eql(u8, p.interner.slice(bir.symbol(imp.alias)), module_text)) {
                 const module_symbol = bir.symbol(imp.module);
-                if (p.graph.lookup(p.graph.module(m).package, module_symbol)) |target| {
+                if (p.graph.lookup(p.graph.modulePackage(m), module_symbol)) |target| {
                     if (target != m) {
                         const iface = &p.interfaces[target.int()];
                         if (iface.findSchema(p.interner, schema_name) == null and
@@ -955,7 +955,7 @@ const Pass = struct {
         }
         for (bir.imports) |imp| for (bir.importExposed(imp)) |e| {
             if (bir.symbol(e.name) != name) continue;
-            const target = p.graph.lookup(p.graph.module(m).package, bir.symbol(imp.module)) orelse continue;
+            const target = p.graph.lookup(p.graph.modulePackage(m), bir.symbol(imp.module)) orelse continue;
             const iface = &p.interfaces[target.int()];
             if (iface.findType(p.interner, name) != null) return 1;
             if (iface.findValue(p.interner, name) != null) return 2;

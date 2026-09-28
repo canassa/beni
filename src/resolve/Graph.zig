@@ -178,6 +178,12 @@ pub fn module(g: *const Graph, i: Index) Module {
     return g.modules.get(i.int());
 }
 
+/// Module `i`'s package: one column, where `module` builds the whole row —
+/// the resolver asks it once per reference.
+pub fn modulePackage(g: *const Graph, i: Index) Package {
+    return g.modules.items(.package)[i.int()];
+}
+
 pub fn moduleFile(g: *const Graph, i: Index) SourceStore.Index {
     return g.modules.items(.file)[i.int()];
 }

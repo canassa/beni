@@ -485,7 +485,13 @@ pub fn nextMark(store: *TypeStore) u32 {
 
 /// The representative of `v`, compressing the path walked. The ONLY place
 /// that walks parents; every other operation takes roots.
-pub fn find(store: *TypeStore, v: Var) Var {
+pub inline fn find(store: *TypeStore, v: Var) Var {
+    // Most variables asked about are roots: that answer without a call.
+    if (store.col.parent[v.int()] == v) return v;
+    return store.findSlow(v);
+}
+
+fn findSlow(store: *TypeStore, v: Var) Var {
     const parents = store.col.parent;
     var root = v;
     while (parents[root.int()] != root) root = parents[root.int()];
