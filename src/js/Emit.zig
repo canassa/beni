@@ -275,6 +275,10 @@ pub fn run(
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    // A symbolic link where the build would write is somebody else's, and
+    // writing its path would write wherever it points.
+    try e.refuseLinks();
+    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
     // §2's record, read before the first byte is written: a
     // `_manifest.txt` that is not beni's is somebody's file.
     const previous = try e.readRecord();
@@ -1756,11 +1760,55 @@ const Emitter = struct {
         }
     }
 
+    /// §2's *beni writes through no link it did not make*: every path this
+    /// build would write — the record and each output — is looked at under
+    /// `--out`, component by component, without following links, and the
+    /// first link on each is refused, before anything is written. beni
+    /// makes no links, so one there is somebody else's: a dangling
+    /// `_manifest.txt` link read as no record, and the build wrote the
+    /// record wherever it pointed. Each link is named once, in the order of
+    /// the paths (the record first, then `pending`, which is module order).
+    fn refuseLinks(e: *Emitter) !void {
+        const io = e.session.io;
+        const out_dir = e.options.out_dir;
+        var named: std.StringHashMapUnmanaged(void) = .empty;
+        const paths = try e.scratch.alloc([]const u8, e.pending.items.len + 1);
+        paths[0] = OutputRecord.file_name;
+        for (e.pending.items, paths[1..]) |output, *p| p.* = output.path;
+        for (paths) |path| {
+            const link = try OutputRecord.firstLink(e.scratch, io, out_dir, path) orelse continue;
+            if ((try named.getOrPut(e.scratch, link)).found_existing) continue;
+            const full = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ out_dir, path });
+            const what = if (std.mem.eql(u8, full, link))
+                "This build writes that file"
+            else
+                try std.fmt.allocPrint(e.scratch, "This build writes `{s}` inside it", .{full});
+            try e.reportInFile(
+                .unknown_output_record,
+                .{ .path = link },
+                \\`{s}` is a symbolic link, and beni never makes one in the output directory,
+                \\so it is somebody else's.
+                \\
+                \\{s}, and writing through the link would write into whatever it points at,
+                \\which may be outside the output directory altogether. Nothing was written.
+                \\Remove the link, or build into another directory with `--out`.
+            ,
+                .{ link, what },
+            );
+        }
+    }
+
     fn writeRecord(e: *Emitter, entries: []const OutputRecord.Entry) Error!void {
-        OutputRecord.write(e.scratch, e.session.io, e.options.out_dir, entries) catch |err| switch (err) {
+        const io = e.session.io;
+        Io.Dir.cwd().createDirPath(io, e.options.out_dir) catch |err| {
+            e.io_failure.* = .{ .path = e.options.out_dir, .err = err };
+            return error.OutputPath;
+        };
+        const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name });
+        OutputRecord.write(e.scratch, io, path, entries) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
-                e.io_failure.* = .{ .path = e.options.out_dir, .err = err };
+                e.io_failure.* = .{ .path = path, .err = err };
                 return error.OutputPath;
             },
         };

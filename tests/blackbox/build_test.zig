@@ -2453,6 +2453,139 @@ test "an unreadable _manifest.txt refuses the build as a read failure and nothin
     try testing.expectEqualStrings("_manifest.txt", left[0]);
 }
 
+// beni makes no symbolic link in `--out`, so one there is somebody else's,
+// and writing its path would write wherever it points. A dangling
+// `_manifest.txt` link read as "no record", and the build wrote the record
+// through it, creating the link's target outside `--out`. The link is
+// refused, named, before anything is written.
+test "a _manifest.txt that is a symbolic link refuses the build and nothing is written through it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try w.createDir("elsewhere");
+    try w.symlink("../elsewhere/manifest", "out/_manifest.txt");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .unknown_output_record,
+        .severity = .@"error",
+        .span = .{ .file = "out/_manifest.txt", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNKNOWN FILE IN THE OUTPUT DIRECTORY",
+        .message = "`out/_manifest.txt` is a symbolic link, and beni never makes one in the output\n" ++
+            "directory, so it is somebody else's.\n" ++
+            "\n" ++
+            "This build writes that file, and writing through the link would write into\n" ++
+            "whatever it points at, which may be outside the output directory altogether.\n" ++
+            "Nothing was written. Remove the link, or build into another directory with\n" ++
+            "`--out`.",
+    }}, r.diagnostics);
+    try testing.expectEqualStrings("", r.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("elsewhere/manifest"));
+    try testing.expectEqual(@as(usize, 0), (try w.listFiles("elsewhere")).len);
+    // The link is left as it was, and nothing else is in `--out`
+    // (`listFiles` lists regular files only).
+    try testing.expectEqual(std.Io.File.Kind.sym_link, try w.kind("out/_manifest.txt"));
+    try testing.expectEqual(@as(usize, 0), (try w.listFiles("out")).len);
+}
+
+// The same rule for a directory the build writes into: `out/_platform` a
+// link to a directory elsewhere would put the platform's runtime there. The
+// link is named, with the file the build would have written through it.
+test "an output directory that is a symbolic link refuses the build and nothing is written through it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try w.createDir("elsewhere");
+    try w.symlink("../elsewhere", "out/_platform");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .unknown_output_record,
+        .severity = .@"error",
+        .span = .{ .file = "out/_platform", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNKNOWN FILE IN THE OUTPUT DIRECTORY",
+        .message = "`out/_platform` is a symbolic link, and beni never makes one in the output\n" ++
+            "directory, so it is somebody else's.\n" ++
+            "\n" ++
+            "This build writes `out/_platform/Node.mjs` inside it, and writing through the\n" ++
+            "link would write into whatever it points at, which may be outside the output\n" ++
+            "directory altogether. Nothing was written. Remove the link, or build into\n" ++
+            "another directory with `--out`.",
+    }}, r.diagnostics);
+    try testing.expectEqualStrings("", r.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(usize, 0), (try w.listFiles("elsewhere")).len);
+    try testing.expectEqual(std.Io.File.Kind.sym_link, try w.kind("out/_platform"));
+    try testing.expect(!w.exists("out/_main.mjs"));
+    try testing.expect(!w.exists("out/Main.mjs"));
+    try testing.expect(!w.exists("out/_manifest.txt"));
+}
+
+// A record that cannot be written is reported by its own path, as every
+// other output is: an `--out` whose mode forbids creating files failed as
+// "cannot write 'out'", the directory's name, which says nothing of which
+// file the build was writing.
+test "a _manifest.txt that cannot be written is reported by its own path" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try w.createDir("out");
+    defer w.restoreDirMode("out");
+    if (!try w.makeDirUnwritable("out")) {
+        std.debug.print("skipping: chmod 555 did not make the directory unwritable (running as root?)\n", .{});
+        return;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("beni: cannot write 'out/_manifest.txt': AccessDenied\n", r.stderr);
+    try testing.expectEqualStrings("", r.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(usize, 0), (try w.listFiles("out")).len);
+}
+
 test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

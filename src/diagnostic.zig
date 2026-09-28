@@ -271,7 +271,9 @@ pub const Code = enum {
     /// Appended on 2026-09-28 (`backend.md` §2's
     /// *The output directory holds what the last build wrote*): `--out`
     /// holds a `_manifest.txt` that is not beni's record, which the build
-    /// would otherwise overwrite. Reported before the first byte is written.
+    /// would otherwise overwrite, or a symbolic link on the way to a path
+    /// the build writes, which it would otherwise write through. Reported
+    /// before the first byte is written.
     unknown_output_record,
 };
 

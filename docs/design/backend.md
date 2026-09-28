@@ -229,6 +229,16 @@ somebody else's: whose it is cannot be told, and `unknown_output_record`'s "does
 cannot read — `beni: cannot read 'out/_manifest.txt': AccessDenied`, exit 2 — still before the
 first byte is written, and `--out` is left as it was.
 
+*Amended 2026-09-29: beni writes through no symbolic link.* beni makes no link in `--out`, so one
+there is somebody else's, and writing its path writes wherever it points — outside `--out`,
+possibly. A dangling `_manifest.txt` link read as no manifest, and the build wrote the manifest
+through it; a `_main.mjs` link had the entry file written over its target. Before the first byte
+is written, every path the build would write — the manifest and each output — is examined under
+`--out` component by component without following links, and the first link on each is refused
+with `unknown_output_record`, naming the link (and, for a directory, the file the build would
+write inside it). Nothing is written. `--out` itself may be a link: the user named it. A write
+that fails names the file that failed: the manifest's is `out/_manifest.txt`, not `out`.
+
 **Deploying `--out`.** `_manifest.txt` is served next to the modules unless the deploy excludes
 it; it lists the path and a content hash of every file the build wrote (modules, copied
 siblings, the runtime and the entry file), and nothing else. *(Added 2026-09-28.)*

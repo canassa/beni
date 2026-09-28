@@ -146,8 +146,9 @@ pub fn isContained(path: []const u8) bool {
 }
 
 /// Write the record: `entries` in order, each path once (a later duplicate
-/// is dropped, so the union of an old and a new record is well formed).
-pub fn write(arena: Allocator, io: Io, out_dir: []const u8, entries: []const Entry) (Allocator.Error || Io.Dir.WriteFileError || Io.Dir.CreateDirPathError)!void {
+/// is dropped, so the union of an old and a new record is well formed), to
+/// `path`, in a directory that exists.
+pub fn write(arena: Allocator, io: Io, path: []const u8, entries: []const Entry) (Allocator.Error || Io.Dir.WriteFileError)!void {
     var text: std.ArrayList(u8) = .empty;
     try text.appendSlice(arena, header ++ "\n");
     var seen: std.StringHashMapUnmanaged(void) = .empty;
@@ -155,9 +156,27 @@ pub fn write(arena: Allocator, io: Io, out_dir: []const u8, entries: []const Ent
         if ((try seen.getOrPut(arena, entry.path)).found_existing) continue;
         try text.print(arena, "{x:0>16} {s}\n", .{ entry.hash, entry.path });
     }
-    try Io.Dir.cwd().createDirPath(io, out_dir);
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, file_name });
     try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = text.items });
+}
+
+/// The first symbolic link on the way to `path` inside `out_dir` — `path`
+/// itself, or a directory it would be written in — as that link's path
+/// (`out_dir/...`), or null when there is none. beni creates no link, so one
+/// there is somebody else's, and writing through it would write wherever it
+/// points, `--out` or not. `out_dir` itself may be a link: the user named
+/// it. A component that does not exist ends the walk (nothing below it can
+/// be a link yet), and so does one that cannot be examined: the write that
+/// follows fails there and reports its own error.
+pub fn firstLink(arena: Allocator, io: Io, out_dir: []const u8, path: []const u8) Allocator.Error!?[]const u8 {
+    var end: usize = 0;
+    while (end < path.len) {
+        end = if (std.mem.indexOfScalarPos(u8, path, end, '/')) |slash| slash else path.len;
+        const at = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, path[0..end] });
+        const stat = Io.Dir.cwd().statFile(io, at, .{ .follow_symlinks = false }) catch return null;
+        if (stat.kind == .sym_link) return at;
+        end += 1;
+    }
+    return null;
 }
 
 /// Remove every file `old` lists that `new` does not, when its bytes still

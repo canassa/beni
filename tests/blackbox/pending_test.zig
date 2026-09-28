@@ -82,12 +82,9 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
-    // A symbolic link in `--out` that the build writes through, and a
-    // failed write of the record that names the directory instead of the
-    // file. A wide alias DAG over the test budget went back into
-    // `abuse_test.zig`.
-    .{ .name = "scenario/CK-212", .step = .fast },
-    .{ .name = "scenario/CK-213", .step = .fast },
+    // A wide alias DAG over the test budget went back into
+    // `abuse_test.zig`, and a symbolic link in `--out` and a failed write
+    // of the record into `build_test.zig`.
 };
 
 const Step = enum { fast, perf };
@@ -126,44 +123,6 @@ test "pending: RED names fixtures and scenarios that exist" {
         }
     }
     try testing.expectEqual(@as(usize, 0), stale);
-}
-
-// CK-212: beni never creates a symbolic link in `--out`, so one there is
-// somebody else's, and writing its path writes wherever it points. A
-// dangling `out/_manifest.txt` link read as "no record" and the build wrote
-// the record through it, creating the link's target outside `--out`. The
-// build must refuse the link, naming it, before anything is written.
-test "CK-212: a symbolic link named _manifest.txt in --out refuses the build" {
-    var s = try Scenario.init("CK-212");
-    defer s.deinit();
-    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
-    try s.w.createDir("elsewhere");
-    try s.w.createDir("out");
-    try s.w.symlink("../elsewhere/manifest", "out/_manifest.txt");
-    const run = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
-    const diags = s.diagnosticsOf(run) catch &.{};
-    const refused = run.exit_code == 1 and diags.len == 1 and diags[0].code == .unknown_output_record and
-        std.mem.eql(u8, diags[0].span.file, "out/_manifest.txt");
-    if (!refused) return s.finish(try s.failed(run));
-    const nothing_written = !s.w.exists("elsewhere/manifest") and (try s.w.listFiles("out")).len == 1;
-    try s.finish(.{ .green = nothing_written, .signature = if (nothing_written) "" else "stale-files", .detail = "the link is refused" });
-}
-
-// CK-213: a record that cannot be written is reported by the directory's
-// name — "beni: cannot write 'out': AccessDenied" — and not the file's. An
-// `--out` whose mode forbids creating files fails at `out/_manifest.txt`,
-// and the message must say so, as it does for every other file.
-test "CK-213: a record that cannot be written is reported by its own path" {
-    var s = try Scenario.init("CK-213");
-    defer s.deinit();
-    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
-    try s.w.createDir("out");
-    if (!try s.w.makeDirUnwritable("out")) return error.SkipZigTest;
-    defer s.w.restoreDirMode("out");
-    const run = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
-    const expected = "beni: cannot write 'out/_manifest.txt': AccessDenied\n";
-    if (run.exit_code != 2 or !std.mem.eql(u8, run.stderr, expected)) return s.finish(try s.failed(run));
-    try s.finish(.{ .green = true, .signature = "", .detail = "the record's path is named" });
 }
 
 // ┌─────────────────────────────────────────────────────────────────────────┐

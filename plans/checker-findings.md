@@ -5267,7 +5267,14 @@ with a red fixture on `8f78224` before its fix.*
   naming the link, before anything is written.
 - **Fixture** `scenario/CK-212` (`test-pending`), red `exit=0 codes=none`.
 - **Slice** the last review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `backend.md` §2 *amended 2026-09-29*: before anything is
+  written, `Emit.refuseLinks` examines every path the build writes — the record, then each
+  output — under `--out` component by component without following links
+  (`OutputRecord.firstLink`), and refuses the first link on each with `unknown_output_record`,
+  naming it (and, for a directory, the file it would write inside); `--out` itself may be a
+  link. Promoted into `build_test.zig` ("a _manifest.txt that is a symbolic link refuses the
+  build …", and "an output directory that is a symbolic link …" for `out/_platform`), both red on
+  the base.
 
 ### CK-213 — A record that cannot be written is reported by the directory's name
 
@@ -5281,7 +5288,10 @@ with a red fixture on `8f78224` before its fix.*
   for every other output.
 - **Fixture** `scenario/CK-213` (`test-pending`), red `exit=2 codes=unparsed`.
 - **Slice** the last review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29): `Emit.writeRecord` creates `--out` itself and names it only for
+  that failure; `OutputRecord.write` writes the file it is given, whose path a failure names.
+  Promoted into `build_test.zig` ("a _manifest.txt that cannot be written is reported by its own
+  path").
 
 ### CK-214 — A refused `where` requirement or `Basics.eq` call names `==`
 
@@ -5508,8 +5518,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-209 | diagnostic-quality | K14 | promoted: `build_test.zig` "an unreadable _manifest.txt refuses the build …" | the final review's fixes (fixed) |
 | CK-210 | diagnostic-quality | K12 | promoted: `check/good/SchemaEndpointMeetsItself.beni` | the last review's fixes (fixed) |
 | CK-211 | performance | K11 | promoted: `abuse_test.zig` "a wide alias DAG checks on a safety build …" | the last review's fixes (fixed) |
-| CK-212 | latent | K14 | `scenario/CK-212` | the last review's fixes |
-| CK-213 | diagnostic-quality | K14 | `scenario/CK-213` | the last review's fixes |
+| CK-212 | latent | K14 | promoted: `build_test.zig` (two symbolic-link tests) | the last review's fixes (fixed) |
+| CK-213 | diagnostic-quality | K14 | promoted: `build_test.zig` "a _manifest.txt that cannot be written …" | the last review's fixes (fixed) |
 | CK-214 | diagnostic-quality | K13 | `check/bad/EqRefusalNamesTheUse.beni` | the last review's fixes |
 
 Totals:
