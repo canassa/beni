@@ -114,7 +114,7 @@ core_pending: usize = 0,
 failure: ?Error = null,
 
 pub fn go(d: *Driver, scratch: *Arena) Error!void {
-    const jobs = if (d.parallelisable()) @min(d.options.jobs, d.graph.count()) else 1;
+    const jobs = if (d.parallelisable()) @min(d.options.jobs, try d.widthBound()) else 1;
     if (jobs <= 1) return d.serial(scratch);
     try d.buildSchedule();
     defer d.freeSchedule();
@@ -151,6 +151,42 @@ fn parallelisable(d: *const Driver) bool {
         if (d.graph.isPoisoned(@enumFromInt(i))) return false;
     }
     return true;
+}
+
+/// The most modules the walk can ever have in flight at once, bounded
+/// from above so a pool is never larger than its work. Modules checked at
+/// the same time are pairwise unordered, so no two of them lie on one
+/// chain of imports, and a DAG with `n` modules whose longest chain has
+/// `l` of them has at most `n - l + 1` such modules. The core barrier
+/// splits the walk in two (see `core_pending`), so the bound is taken
+/// over each half and the larger one kept. A thread past it would cost a
+/// spawn and a 64 MiB stack and could never add parallelism.
+fn widthBound(d: *const Driver) Allocator.Error!usize {
+    const n = d.graph.count();
+    const depth = try d.gpa.alloc(u32, n);
+    defer d.gpa.free(depth);
+    @memset(depth, 0);
+    var modules: [2]usize = .{ 0, 0 };
+    var longest: [2]u32 = .{ 0, 0 };
+    // `graph.order` is topological on an unpoisoned graph, so every
+    // dependency's depth is final before its dependents read it.
+    for (d.graph.order) |m| {
+        const half = @intFromBool(d.graph.module(m).package == .core);
+        var deepest: u32 = 0;
+        for (d.graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            if (@intFromBool(d.graph.module(dep).package == .core) != half) continue;
+            deepest = @max(deepest, depth[dep.int()]);
+        }
+        depth[m.int()] = deepest + 1;
+        modules[half] += 1;
+        longest[half] = @max(longest[half], deepest + 1);
+    }
+    var bound: usize = 1;
+    for (modules, longest) |count, chain| {
+        if (count != 0) bound = @max(bound, count - chain + 1);
+    }
+    return bound;
 }
 
 fn serial(d: *Driver, scratch: *Arena) Error!void {

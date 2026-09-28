@@ -415,6 +415,14 @@ pub const Worker = struct {
         worker.diagnostics.shrinkRetainingCapacity(mark);
     }
 
+    fn deinit(worker: *Worker, gpa: Allocator) void {
+        for (worker.diagnostics.items) |p| gpa.free(p.diagnostic.message);
+        worker.diagnostics.deinit(gpa);
+        worker.artifact_buffer.deinit(gpa);
+        worker.interner.deinit(gpa);
+        worker.arena.deinit();
+    }
+
     pub fn addCounter(worker: *Worker, counter: Profile.Counter, value: u64) void {
         worker.counters[@intFromEnum(counter)] += value;
     }
@@ -451,13 +459,7 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
 
 pub fn deinit(session: *Session) void {
     const gpa = session.gpa;
-    for (session.workers) |*worker| {
-        for (worker.diagnostics.items) |p| gpa.free(p.diagnostic.message);
-        worker.diagnostics.deinit(gpa);
-        worker.artifact_buffer.deinit(gpa);
-        worker.interner.deinit(gpa);
-        worker.arena.deinit();
-    }
+    for (session.workers) |*worker| worker.deinit(gpa);
     gpa.free(session.workers);
     gpa.free(session.file_keys);
     gpa.free(session.iface_hashes);
@@ -507,6 +509,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         };
     }
     try session.store.finish(gpa);
+    try session.fitWorkers(session.store.count());
     try session.artifacts.resize(gpa, session.store.count());
     // Sized before any worker starts, and written only by the worker that
     // took the file — the one-index-one-writer discipline `Artifacts.set`
@@ -614,6 +617,21 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 
     if (session.options.self_profile) |profile_path| try session.writeProfile(profile_path);
     return summary;
+}
+
+/// Drop the workers beyond one per file. A worker with no file to claim
+/// still costs a thread with a `check_stack_size` stack, an interner seeded
+/// with the well-known symbols and a pass of the interner merge, and the
+/// checker sizes its own pool from this one. Which worker took which file
+/// is unobservable in the output (see the header), so this changes the
+/// cost and nothing else.
+fn fitWorkers(session: *Session, files: u32) Allocator.Error!void {
+    const keep = @max(files, 1);
+    if (keep >= session.workers.len) return;
+    const kept = try session.gpa.dupe(Worker, session.workers[0..keep]);
+    for (session.workers[keep..]) |*worker| worker.deinit(session.gpa);
+    session.gpa.free(session.workers);
+    session.workers = kept;
 }
 
 /// Queue the core package's files (checker.md §3, §4.1) when the run needs
