@@ -1080,7 +1080,9 @@ is a permanent dependency representation, not a temporary execution surface.
 The unhashed cache sidecar gains one resolved-plan section. The cache entry
 becomes version 2 (3 since the checker rewrite, whose `dispatch` section is
 `dispatch_bytes` format 2, `checker-v2.md` §14.3) and its sections are `interface`, `dispatch`, `schema_plan`,
-`diagnostics`. `schema_plan` uses magic `BENISPL\0`, format version 1, the
+`diagnostics`. *(2026-09-28: plan format 2 and entry format 4 — plan terms name an
+alias and carry its body on the `type_refs` row, as interface terms do, `checker-v2.md` §14.2 and
+§14.3.)* `schema_plan` uses magic `BENISPL\0`, format version 1, the
 standard column table, little-endian scalars, four-byte alignment and
 zero-filled gaps. It has these columns in order:
 

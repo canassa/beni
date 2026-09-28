@@ -811,6 +811,14 @@ larger stands would buy nothing M4 can use, so what M4 needs is a story for the 
 table, at which point `alias_body` falls out of it. Both sites say so in the code; neither
 claims a firewall it does not have, which is what went wrong the first time.
 
+*Amended 2026-09-28 (`checker-v2.md` §14.2, interface format 7).* The record no longer writes an
+alias's expansion inside each term that names it: an `alias` term holds its arguments, and its
+`type_refs` row holds the alias's body once per record (`type_refs: [] { package, module, name,
+body: TermIndex }`, 16 bytes serialized). That is `alias_body` moved onto the reference and
+written for every alias a record names, whichever module declares it; the cross-module Bir read
+for an alias an ANNOTATION names (`Types.Builder.aliasBody`) is unchanged, and the paragraph above
+still describes it.
+
 **`Interface.Provenance` is NOT part of the record.** `Interface.build` also returns, as a
 separate value, the `Bir` declaration behind each value, type and constructor — the two places
 that need to go interface entry → declaration (`Types`' `by_interface` and `Check`'s

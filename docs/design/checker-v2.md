@@ -3781,6 +3781,68 @@ that unification is the pin's check; its failure is the pinned `not_equatable` w
 named (the record carries none). A pinned row always has a scheme: the pinned type is an element
 of its template. Before, such a row was `unanswerable`.
 
+*Amended 2026-09-28; `iface_bytes.format_version` 6 → 7.* **An alias is named in a term, and its
+body is written once per record.** An `alias` term's range was its arguments followed by its
+expansion, and the writer's memo lives for one scheme, so every scheme wrote every alias it named
+out in full, nested aliases included. A chain `R{i} = { x : Int, p : R{i-1} }` with one
+`get{i} : R{i} -> Int` each wrote 1 021 435 / 4 140 731 bytes of `dump --stage=raw` at 60 / 120
+links (quadratic), and a 240-link `pub schema` chain a 22 MB cache entry. Now:
+
+- **The term.** `alias(TypeRefIndex, range)` holds the use's **arguments only**; the range may be
+  empty. The expansion is not in the term.
+- **The body is on the reference.** A `type_refs` row gains `body: TermIndex`. On a row an `alias`
+  term names, it is the alias's body written as a term in which `var(i)` is the alias's parameter
+  `i`; there is no quantifier block, because an alias is always fully applied and its parameters
+  are substituted by a use's arguments, never generalised. On every other row it is `none`. An alias
+  inside a body is itself an `alias` term naming its own row. The serialized row grows 12 → 16
+  bytes: `module: u32`, `name: u32`, `body: u32`, `package: u8`, pad `[3]`.
+- **Once per record, and the record stands alone.** Every alias the record's terms name — in a
+  scheme, a constructor's arguments, a derived row's template or another body — has exactly one
+  body in the record, whichever module declares it. A record is therefore still read with nothing
+  but itself: an importer, the dumps and the readers that look through an alias at a scheme's shape
+  (`Convention.importArity`, `Instances.reportedAtDeclaration`, which substitute a use's arguments
+  where a body is a parameter) need no other module. A body of another module's alias is written
+  into this record, as its expansion was before, so the purity rule (`checker.md` §7) is unchanged:
+  every byte is a function of this module's source and what its imports publish.
+- **Where the writer gets a body.** From the alias applied to fresh parameters, with every alias
+  inside it named and never expanded: `Types.Builder` in its shallow mode for a `type alias` of
+  any module (the declaration, exactly as an annotation reads it); the schema's own endpoint
+  variables for a record endpoint of this module; the declaring record's (or, for a private
+  schema, the declaring plan's) row, read shallow, for another module's endpoint. The bodies a
+  write names are written after it and before the next write returns, so a record never has an
+  `alias` term without its body. A body that cannot be built — a declaration that did not parse, a
+  declaring module with no plan — is `err`, and each of those already has a message of its own
+  (§12.2's table); a clean scheme never names one, because its own store variable expands to the
+  same `err`.
+- **Reading.** An importer reads a use's arguments first, then the row's body with `var(i)` bound
+  to argument `i`. Each `(row, argument roots)` is expanded once per read, and the alias variable
+  shared by every term of that read that names it — `Types.Builder.aliases`' rule — so a read costs
+  its distinct applications, not its tree. The store receives the same `alias{type, args, actual}`
+  variable as before: **every message prints an alias by its name exactly as before**, and
+  unification looks through it as before.
+- **Depth.** `Writer.max_depth` still bounds what a reader walks. An `alias` term met at depth `d`
+  whose body walks to depth `D` reaches `d + D`, where `D` counts the bodies it names in turn with
+  no sharing credited between them — the reader shares, so it never walks deeper than the writer
+  counted. A scheme over the bound is `nesting_too_deep` and `<error>`, as before, so the reader's
+  silent bound is never met on a record the writer wrote. The annotation reader's bound
+  (`Types.Builder.max_depth`) is unchanged, so a chain of more than about 254 nested record
+  aliases is still refused where an annotation names its end; what changed is that every chain
+  that checks publishes bytes linear in its length.
+- **Verification.** `iface_bytes.verify` accepts an `alias` range of any length, and refuses a
+  `type_refs` body that is not a term and an `alias` term whose row has no body.
+- **Schema plans** are written by the same writer, so their terms name aliases the same way and
+  their `type_refs` rows carry bodies. A plan's endpoint term is the endpoint applied to its own
+  parameters; its expansion — what the dependency digest encodes for a private endpoint
+  (`Digest.schemaEndpointExpansion`) — is that row's body.
+- **What an edit moves.** An alias's body is in every record that names the alias, so editing the
+  body moves each such record's bytes and interface hash, and every importer of those modules is
+  re-checked. The declaring module's digest carries the body of every alias its record or its
+  `types` table reaches (`cache/Digest.zig`, unchanged), so an importer that names the alias only in
+  its own annotations is re-checked too. An alias no record names and no importer can name — a
+  private alias nothing published reaches — is in no record and no digest: editing it re-checks its
+  own module and nothing else. The digest's recipe does not change (`type_body.zig` already wrote an
+  alias as its name and arguments), so `digest_version` stays 2.
+
 ### 14.3 Cache and table versions
 
 - `dispatch_bytes` 1 → 2 (the tree record with `DeclInfo.value_arity`), then 2 → 3
@@ -3852,6 +3914,11 @@ of its template. Before, such a row was `unanswerable`.
   - **Writing a module's cache entry is linear in its types.** The dispatch sidecar's writer
     searched `type_refs` and `module_refs` linearly per row; both are indexed now, and
     `test-perf` holds it.
+- *2026-09-28:* `iface_bytes.format_version` 6 → 7 (an alias named in a term, its body on its
+  `type_refs` row, §14.2); `schema_plan_bytes.format_version` 1 → 2 (the same terms and the same
+  16-byte `type_refs` row); `entry_bytes.format_version` 3 → 4, because an entry embeds both.
+  `dispatch_bytes` (4), the dependency digest (`digest_version` 2), the frontend artifact and
+  `key_version` are unchanged. Every older entry is a miss.
 
 ---
 
