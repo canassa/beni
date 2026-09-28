@@ -15,8 +15,8 @@
 //!      file's tokens, then its Bir's symbols, interned on first sight, and
 //!      what no file references after them by text. So the global index an
 //!      identifier gets is a function of the input, never of which worker
-//!      took which file or of `--jobs` (worker index order would let
-//!      `unifyRecord`'s choice by id vary between runs). An id
+//!      took which file or of `--jobs` (worker index order would let any
+//!      choice made by id vary between runs). An id
 //!      still moves with every edit to an earlier file, so nothing a user
 //!      sees may be chosen by one.
 //!   4. Diagnostics are gathered in file index order (each file's are
@@ -1306,7 +1306,7 @@ fn resolveSerial(session: *Session) RunError!void {
 /// Bir's symbol column. That is a function of the input alone
 /// (`fast-compiler.md` §10, rule 5). Merging whole pools in WORKER order
 /// would number a symbol by which worker the `next_file` race handed its
-/// file to, so any choice made by id — `unifyRecord`'s is one — would
+/// file to, so any choice made by id would
 /// change between runs of the same input at the same `--jobs`.
 fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
     const gpa = session.gpa;
@@ -2204,11 +2204,13 @@ test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not"
     try testing.expectEqualSlices(bool, &.{ false, true, false }, &quiet);
 }
 
-// Input-ordered symbol numbering, the reliable half (the black-box half is `blackbox_test.zig`'s loaded
-// determinism test, which only a racing scheduler can turn red): the files
-// are handed to the workers in the one order the race can produce and a
-// fixed run cannot — file 0 to worker 1, file 1 to worker 0 — and the ids
-// must still follow the FILES.
+// Input-ordered symbol numbering. The files are handed to the workers in
+// the one order the race can produce and a fixed run cannot — file 0 to
+// worker 1, file 1 to worker 0 — and the ids must still follow the FILES.
+// A merge in worker order, or in reverse file order, fails the ordering
+// assertions below. No black-box test can reach this deterministically: a
+// program shows the ids only through a choice made by id, and only a
+// racing scheduler would vary them.
 test "mergeInterners numbers symbols in file order, whichever worker lexed the file" {
     const gpa = testing.allocator;
     var session = try Session.init(gpa, testing.io, .{ .jobs = 2, .diagnostics = .json });
