@@ -4041,7 +4041,9 @@ type I need", with the field's type against the needed one; the old "This is not
 requirement variants that share its first line) names `.eq` when the refused use is a dot-call,
 written or promoted through a function (the wanted's `kind` is `dot_call`), and `==` otherwise:
 after D15 a dot-call derives, so it is refused with the operator's texts, never with an operator
-the program did not write.
+the program did not write. (3) A `type_mismatch` that prints two distinct types or aliases of one
+name qualifies each by its module, `Main.T` against `Shapes.T` (`Render.qualifyClashes`, over
+what the message prints: an alias's arguments, never its expansion).
 
 ### 15.4 Regions and categories
 

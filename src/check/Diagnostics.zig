@@ -145,6 +145,8 @@ pub const Reporter = struct {
         var namer: Render.Namer = .init(r.gpa);
         defer namer.deinit();
         const w = &out.writer;
+        // Two types of one name are told apart by their modules.
+        try Render.qualifyClashes(&namer, r.cx(), &.{ expected, actual });
 
         // A field access whose record HAS the field: the field's type is
         // what failed, so the message shows it against the type the code

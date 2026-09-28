@@ -5123,7 +5123,11 @@ with a red fixture on `b8b289a` before its fix.*
   by module: `Main.T` against `Shapes.T`.
 - **Fixture** `check/bad/SameNameTypesQualified/`, red `why=message`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §15.3 *amended 2026-09-29*: before a
+  `type_mismatch` prints its two types, `Render.qualifyClashes` walks what the message will print
+  and marks every type or alias whose name another distinct one shares; `Render.writeNamed`
+  prints those as `Module.Name`. Other messages print as before. No other golden changed.
+  Promoted: `tests/corpus/check/bad/SameNameTypesQualified/`.
 
 ### CK-206 — A mismatch on a multiline string spans its first line only
 
@@ -5396,7 +5400,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-202 | nondeterminism | K12 | promoted: `check/good/AliasNamesInsideStructures.beni`; `ordering_test.zig` (two tests) | the final review's fixes (fixed) |
 | CK-203 | performance | K11 | promoted: `perf_test.zig` "an annotation over an alias DAG whose uses differ …" | the final review's fixes (fixed) |
 | CK-204 | diagnostic-quality | K13 | promoted: `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes (fixed) |
-| CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
+| CK-205 | diagnostic-quality | K13 | promoted: `check/bad/SameNameTypesQualified/` | the final review's fixes (fixed) |
 | CK-206 | diagnostic-quality | K14 | promoted: `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes (fixed) |
 | CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |
 | CK-208 | diagnostic-quality | K13 | promoted: `check/bad/DotCallEqRefusal.beni` | the final review's fixes (fixed) |

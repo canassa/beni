@@ -92,6 +92,9 @@ pub const Namer = struct {
     /// nodes of tuple. Never deeper than `max_depth`, so it is inline.
     path: [max_depth + 2]Var = undefined,
     path_len: u32 = 0,
+    /// The types this message prints with their module's name
+    /// (`qualifyClashes`): two distinct types, or aliases, of one name.
+    qualified: std.AutoHashMapUnmanaged(TypeStore.TypeId, void) = .empty,
 
     pub const message_budget: u32 = 4096;
     pub const unlimited: u32 = std.math.maxInt(u32);
@@ -101,6 +104,7 @@ pub const Namer = struct {
     }
 
     pub fn deinit(n: *Namer) void {
+        n.qualified.deinit(n.gpa);
         // Before the texts: a stem key points into one of them.
         n.next_suffix.deinit(n.gpa);
         n.by_var.deinit(n.gpa);
@@ -189,6 +193,61 @@ pub const Context = struct {
     types: *const Types,
     interner: *const InternPool.Global,
 };
+
+/// Mark for qualification (`Namer.qualified`) every named type in `roots`
+/// that shares its name with a different one there: `T` against `T` from two
+/// modules prints `Main.T` against `Shapes.T`. Only what a message prints is
+/// walked — an alias's arguments, never its expansion — each node once, and
+/// no more of them than a message prints.
+pub fn qualifyClashes(namer: *Namer, cx: Context, roots: []const Var) Allocator.Error!void {
+    const gpa = namer.gpa;
+    var seen: std.AutoHashMapUnmanaged(Var, void) = .empty;
+    defer seen.deinit(gpa);
+    var by_name: std.AutoHashMapUnmanaged(Symbol, TypeStore.TypeId) = .empty;
+    defer by_name.deinit(gpa);
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(gpa);
+    try stack.appendSlice(gpa, roots);
+    var budget: u32 = Namer.message_budget;
+    while (stack.pop()) |next| {
+        if (budget == 0) break;
+        budget -= 1;
+        const root = cx.store.find(next);
+        if ((try seen.getOrPut(gpa, root)).found_existing) continue;
+        const named: ?struct { TypeStore.TypeId, []const Var } = switch (cx.store.content(root)) {
+            .alias => |a| .{ a.type, cx.store.vars(a.args) },
+            .structure => |s| switch (s) {
+                .app => |a| .{ a.type, cx.store.vars(a.args) },
+                .func => |f| blk: {
+                    try stack.appendSlice(gpa, cx.store.vars(f.params));
+                    try stack.append(gpa, f.result);
+                    break :blk null;
+                },
+                .tuple => |range| blk: {
+                    try stack.appendSlice(gpa, cx.store.vars(range));
+                    break :blk null;
+                },
+                .record => |r| blk: {
+                    for (cx.store.fields(r.fields)) |f| try stack.append(gpa, f.value);
+                    try stack.append(gpa, r.ext);
+                    break :blk null;
+                },
+                .unit, .empty_record => null,
+            },
+            .flex, .rigid, .err => null,
+        };
+        const id, const args = named orelse continue;
+        try stack.appendSlice(gpa, args);
+        if (id == .none) continue;
+        const slot = try by_name.getOrPut(gpa, cx.types.name(id));
+        if (!slot.found_existing) {
+            slot.value_ptr.* = id;
+        } else if (slot.value_ptr.* != id) {
+            try namer.qualified.put(gpa, slot.value_ptr.*, {});
+            try namer.qualified.put(gpa, id, {});
+        }
+    }
+}
 
 /// Write the type of `v`.
 pub fn writeVar(
@@ -436,9 +495,14 @@ fn writeNamed(
 ) (std.Io.Writer.Error || Allocator.Error)!void {
     if (id == .none) return w.writeAll("?");
     const text = cx.interner.slice(cx.types.name(id));
-    if (args.len == 0) return w.writeAll(text);
+    const module: ?[]const u8 = if (namer.qualified.contains(id)) cx.interner.slice(cx.types.entry(id).module_name) else null;
+    if (args.len == 0) {
+        if (module) |m| try w.print("{s}.", .{m});
+        return w.writeAll(text);
+    }
     const wrap = prec == .app_arg;
     if (wrap) try w.writeByte('(');
+    if (module) |m| try w.print("{s}.", .{m});
     try w.writeAll(text);
     for (args) |arg| {
         try w.writeByte(' ');
