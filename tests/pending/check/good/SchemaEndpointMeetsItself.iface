@@ -1,0 +1,7 @@
+module SchemaEndpointMeetsItself
+  value h : number -> List A.Type
+  value k : number -> List A.Type
+  value la : List A.Type
+  value ma : Maybe A.Type
+  value two : Bool -> List A.Type
+  value twoMaybe : Bool -> Maybe A.Type

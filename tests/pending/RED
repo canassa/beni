@@ -72,3 +72,13 @@
 # and six diagnostic faults. Written and checked on b8b289a; all fixed and
 # promoted the same day (the scenarios into ordering_test.zig, perf_test.zig
 # and build_test.zig).
+# CK-210 to CK-214 (2026-09-29), from the last review of the checker: a
+# schema endpoint meeting itself shows its expansion, a safety build's proof
+# re-walk is quadratic on a wide alias DAG, a symbolic link in --out is
+# written through, a failed record write names the directory, and a refused
+# comparison names `==` for a `where` requirement and for `Basics.eq`.
+tests/pending/check/good/SchemaEndpointMeetsItself.beni exit=0 iface-differs
+scenario/CK-211 over-budget
+scenario/CK-212 exit=0 codes=none
+scenario/CK-213 exit=2 codes=unparsed
+tests/pending/check/bad/EqRefusalNamesTheUse.beni exit=1 codes=not_equatable×5 why=message

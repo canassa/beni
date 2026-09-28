@@ -1,0 +1,51 @@
+-- CK-210: a schema endpoint that meets ITSELF keeps its name ("agree or
+-- expand", checker-v2.md §7.1: the same name with the same arguments keeps
+-- it). Both branches of `two` are `List A.Type`, both of `twoMaybe` `Maybe
+-- A.Type`, and the recursive pair `h`/`k` returns `List A.Type` from both
+-- members. Unfixed, every one of them printed the expansion, `List { x : Int
+-- }`: an endpoint counts as a non-injective alias, and two uses of a
+-- non-injective alias expanded even when their arguments were the same.
+schema A =
+    x : Int
+
+
+pub la : List A.Type
+la =
+    []
+
+
+pub ma : Maybe A.Type
+ma =
+    Nothing
+
+
+pub two c =
+    if c then
+        la
+
+    else
+        la
+
+
+pub twoMaybe c =
+    if c then
+        ma
+
+    else
+        ma
+
+
+pub h n =
+    if n == 0 then
+        la
+
+    else
+        k (n - 1)
+
+
+pub k n =
+    if n == 0 then
+        la
+
+    else
+        h (n - 1)
