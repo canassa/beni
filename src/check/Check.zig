@@ -157,6 +157,10 @@ pub const Options = struct {
     /// runs everything on the calling thread and spawns nothing, which is
     /// what every hermetic test and every small project wants.
     jobs: u32 = 1,
+    /// `jobs` is a ceiling and the pool is sized by the work: one checker
+    /// per `tokens_per_checker` tokens of the modules still to check
+    /// (`Session.Options.size_by_work`).
+    size_by_work: bool = false,
     /// Work one `case` may spend on pattern usefulness before it is
     /// abandoned and reports nothing (`Exhaustive.default_budget`).
     /// Settable so a test can prove the bound is what makes it fall silent,

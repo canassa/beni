@@ -68,7 +68,7 @@ Options common to all subcommands:
 |---|---|---|
 | `--diagnostics=text\|json` | diagnostics on stderr as Elm-style prose, or as one JSON array | `text` |
 | `--self-profile=<path>` | write a Chrome trace-event JSON file at exit (§6) | off |
-| `--jobs=<n>` | worker threads for per-file phases; output is identical for every `n` | logical CPUs |
+| `--jobs=<n>` | worker threads for per-file phases and checking; output is identical for every `n` | logical CPUs, as a ceiling: with no `--jobs` a run spawns a worker per 256 KiB of source and a checker per 16 Ki tokens, so a small project runs on one of each |
 | `--root=<dir>` | the source root that module names are derived from | see below |
 | `--core` | treat the files as the core package: `foreign` declarations are legal (language.md §5.4). Used only to build and test core; never by user projects | off |
 

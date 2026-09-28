@@ -167,6 +167,14 @@ pub const DiagnosticsFormat = enum { text, json };
 pub const Options = struct {
     /// Worker count, at least 1. `1` runs on the calling thread.
     jobs: u32,
+    /// `jobs` is a ceiling rather than a request: it is the machine's CPU
+    /// count because the user named none. The run then spawns a per-file
+    /// worker per `frontend_bytes_per_worker` of source and a checker per
+    /// `Check.tokens_per_checker` tokens still to check, so a small project
+    /// pays for no thread it cannot keep busy. An explicit `--jobs` is
+    /// honoured as given, up to the files and modules there are, which is
+    /// what lets a test cross a real parallel run with a serial one.
+    size_by_work: bool = false,
     diagnostics: DiagnosticsFormat = .text,
     /// Path of the trace to write at the end of `run`, if any.
     self_profile: ?[]const u8 = null,
@@ -509,7 +517,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         };
     }
     try session.store.finish(gpa);
-    try session.fitWorkers(session.store.count());
+    try session.fitWorkers(session.frontendWorkers());
     try session.artifacts.resize(gpa, session.store.count());
     // Sized before any worker starts, and written only by the worker that
     // took the file — the one-index-one-writer discipline `Artifacts.set`
@@ -619,14 +627,49 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     return summary;
 }
 
-/// Drop the workers beyond one per file. A worker with no file to claim
-/// still costs a thread with a `check_stack_size` stack, an interner seeded
-/// with the well-known symbols and a pass of the interner merge, and the
-/// checker sizes its own pool from this one. Which worker took which file
-/// is unobservable in the output (see the header), so this changes the
-/// cost and nothing else.
-fn fitWorkers(session: *Session, files: u32) Allocator.Error!void {
-    const keep = @max(files, 1);
+/// Source bytes one per-file worker is worth spawning for, when the run
+/// sizes its pools by work (`Options.size_by_work`). The front end gets
+/// through about 50 KB a millisecond, so this is some 5 ms of lexing,
+/// parsing and lowering per thread; a thread costs a spawn, a stack
+/// mapping, an interner seeded with the well-known symbols and a pass of
+/// the interner merge. The embedded core package is about 100 KB, so core
+/// plus a small project runs on one worker.
+pub const frontend_bytes_per_worker = 256 * 1024;
+
+/// How many per-file workers the run keeps: never more than one per file,
+/// and under `size_by_work` one per `frontend_bytes_per_worker` of source.
+/// Embedded files' sizes are known; a file on disk is asked its size, and
+/// the walk stops as soon as the sum has reached the ceiling, so a large
+/// project stats only as many files as it takes to know it is large.
+fn frontendWorkers(session: *Session) u32 {
+    const files = session.store.count();
+    const ceiling: u32 = @intCast(@min(session.workers.len, @max(files, 1)));
+    if (!session.options.size_by_work) return ceiling;
+    const enough = @as(u64, ceiling) * frontend_bytes_per_worker;
+    var bytes: u64 = 0;
+    for (0..files) |i| {
+        if (bytes >= enough) break;
+        const file: SourceStore.Index = @enumFromInt(i);
+        if (session.store.isEmbedded(file)) {
+            bytes += session.store.bytes(file).len;
+            continue;
+        }
+        // A file that cannot be asked cannot be read either, and the
+        // worker that tries reports it; it adds no work here.
+        const stat = Io.Dir.cwd().statFile(session.io, session.store.path(file), .{}) catch continue;
+        bytes += stat.size;
+    }
+    const wanted = @max(1, std.math.divCeil(u64, bytes, frontend_bytes_per_worker) catch unreachable);
+    return @intCast(@min(ceiling, wanted));
+}
+
+/// Drop the workers beyond `keep`. A worker with no file to claim still
+/// costs a thread with a `check_stack_size` stack, an interner seeded with
+/// the well-known symbols and a pass of the interner merge. Which worker
+/// took which file is unobservable in the output (see the header), so this
+/// changes the cost and nothing else.
+fn fitWorkers(session: *Session, keep_wanted: u32) Allocator.Error!void {
+    const keep = @max(keep_wanted, 1);
     if (keep >= session.workers.len) return;
     const kept = try session.gpa.dupe(Worker, session.workers[0..keep]);
     for (session.workers[keep..]) |*worker| worker.deinit(session.gpa);
@@ -1670,7 +1713,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
                     .quiet = r.quiet,
-                    .jobs = @intCast(r.session.workers.len),
+                    .jobs = r.session.options.jobs,
+                    .size_by_work = r.session.options.size_by_work,
                     .pattern_budget = r.session.options.pattern_budget,
                     .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,

@@ -83,6 +83,9 @@ fn sessionOptions(common: Cli.Common) Session.Options {
     const jobs: u32 = @min(common.jobs orelse cpus, cpus *| 4);
     return .{
         .jobs = @max(jobs, 1),
+        // With no `--jobs`, the CPU count is only a ceiling, and the pools
+        // are sized by how much source there is to work on.
+        .size_by_work = common.jobs == null,
         .diagnostics = switch (common.diagnostics) {
             .text => .text,
             .json => .json,

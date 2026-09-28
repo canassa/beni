@@ -114,7 +114,7 @@ core_pending: usize = 0,
 failure: ?Error = null,
 
 pub fn go(d: *Driver, scratch: *Arena) Error!void {
-    const jobs = if (d.parallelisable()) @min(d.options.jobs, try d.widthBound()) else 1;
+    const jobs = if (d.parallelisable()) @min(d.options.jobs, try d.widthBound(), d.workBound()) else 1;
     if (jobs <= 1) return d.serial(scratch);
     try d.buildSchedule();
     defer d.freeSchedule();
@@ -187,6 +187,28 @@ fn widthBound(d: *const Driver) Allocator.Error!usize {
         if (count != 0) bound = @max(bound, count - chain + 1);
     }
     return bound;
+}
+
+/// Tokens one checker thread is worth spawning for, under
+/// `Options.size_by_work`. Checking runs at about 2 500 tokens a
+/// millisecond, so this is some 6 ms of work per thread, against a spawn,
+/// a `stack_size` mapping and the queue's hand-offs. The embedded core
+/// package is about 10 000 tokens, so core plus a small project is checked
+/// on the calling thread alone.
+pub const tokens_per_checker = 16 * 1024;
+
+/// The most threads the modules' size can keep busy: one per
+/// `tokens_per_checker` tokens of every module in the graph, when the pool
+/// is sized by work, and no bound otherwise. A module whose cache entry
+/// will hit costs far less than its tokens, but whether it hits is known
+/// only once its dependencies are done, so it is counted in full.
+fn workBound(d: *const Driver) usize {
+    if (!d.options.size_by_work) return std.math.maxInt(usize);
+    var tokens: usize = 0;
+    for (0..d.graph.count()) |i| {
+        tokens += d.artifacts.tokens(d.graph.moduleFile(@enumFromInt(i))).len;
+    }
+    return @max(1, std.math.divCeil(usize, tokens, tokens_per_checker) catch unreachable);
 }
 
 fn serial(d: *Driver, scratch: *Arena) Error!void {

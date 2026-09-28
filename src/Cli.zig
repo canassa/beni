@@ -31,7 +31,7 @@ pub const usage =
     \\options (all commands):
     \\  --diagnostics=text|json   diagnostics on stderr as prose (default) or one JSON array
     \\  --self-profile=<path>     write a Chrome trace-event JSON file at exit
-    \\  --jobs=<n>                worker threads (default: logical CPUs, capped at 4x that); output is identical for every n
+    \\  --jobs=<n>                worker threads (default: as many as the work keeps busy, at most the logical CPUs); output is identical for every n
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
