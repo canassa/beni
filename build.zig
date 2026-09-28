@@ -43,8 +43,8 @@
 //!                                 (`tests/time_report.zig`)
 //! And which lines the tests execute, not a gate either; needs kcov, from
 //! `nix develop .#coverage`:
-//!   zig build coverage            run the black-box suites, the corpus and
-//!                                 the unit tests under kcov and write the
+//!   zig build coverage            run the black-box suites and the corpus
+//!                                 with every beni under kcov and write the
 //!                                 merged report into zig-out/coverage/
 //!                                 (`tests/coverage.zig`); takes -Dcorpus
 //!                                 and -Dtest-filter
@@ -616,12 +616,13 @@ pub fn build(b: *std.Build) void {
     // `coverage` runs `coverage-run` in a child `zig build` and merges what
     // it collected even when a test failed, as `test-time-report` does. The
     // child builds a compiler with full debug info and a wrapper
-    // (`tests/coverage_wrapper.zig`) that runs it under kcov, points every
-    // black-box suite's `BENI_EXE` at the wrapper, and runs the unit tests
-    // under kcov themselves. Neither step is a gate.
+    // (`tests/coverage_wrapper.zig`) that runs it under kcov, and points
+    // every black-box suite's `BENI_EXE` at the wrapper: the report counts
+    // only the lines the black-box suites and the corpus reach through the
+    // binary. Neither step is a gate.
     const kcov_path: ?[]const u8 = b.findProgram(&.{"kcov"}, &.{}) catch null;
-    const coverage_step = b.step("coverage", "Run the test suites under kcov and report which lines of src/ they execute, into zig-out/coverage/ (not a gate; needs `nix develop .#coverage`)");
-    const coverage_run_step = b.step("coverage-run", "The test suites with every compiler process under kcov, without the report; `coverage` runs it (not a gate)");
+    const coverage_step = b.step("coverage", "Run the black-box suites and the corpus with every beni under kcov and report which lines of src/ they execute, into zig-out/coverage/ (not a gate; needs `nix develop .#coverage`)");
+    const coverage_run_step = b.step("coverage-run", "The black-box suites and the corpus with every beni process under kcov, without the report; `coverage` runs it (not a gate)");
     if (kcov_path) |kcov| {
         const src_dir = b.pathFromRoot("src");
         const raw_dir = b.getInstallPath(.prefix, coverage_raw_dir);
@@ -663,7 +664,9 @@ pub fn build(b: *std.Build) void {
         const timeout_scale = "20";
 
         // `-Dcorpus` measures the chosen fixtures alone; without it, every
-        // black-box file runs too, and the unit tests.
+        // black-box file runs too. The unit tests never run here: the
+        // report counts what a test reaches through the binary, so a line
+        // that only a unit test runs shows as uncovered.
         if (corpus_only.len == 0) {
             for (blackbox_suites) |suite| {
                 cbb.runSharded(coverage_run_step, cbb.artifact(suite[0]), .{ .root = "tests/corpus", .timeout_scale = timeout_scale }, suite[1]);
@@ -671,23 +674,6 @@ pub fn build(b: *std.Build) void {
         }
         for (std.enums.values(corpus_parts.Part)) |part| {
             coverage_run_step.dependOn(&cbb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .timeout_scale = timeout_scale }).step);
-        }
-
-        if (corpus_only.len == 0) {
-            // The unit tests, built by LLVM with debug info like the
-            // compiler, each process run under kcov directly: the build
-            // runner still speaks the test protocol to the binary through it.
-            measured.beni.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
-            measured.beni.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
-            const unit = b.addTest(.{ .name = "unit_test", .root_module = measured.beni, .test_runner = testRunner(b), .filters = test_filters, .use_llvm = true });
-            const diag = b.addTest(.{ .name = "diagnostic_test", .root_module = measured.diagnostic, .test_runner = testRunner(b), .filters = test_filters, .use_llvm = true });
-            for (0..unit_shards) |k| {
-                const run = underKcov(b, kcov, src_dir, b.fmt("{s}/unit-{d}", .{ raw_dir, k }), unit);
-                run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
-                run.setName(b.fmt("run beni tests under kcov shard {d}/{d}", .{ k, unit_shards }));
-                coverage_run_step.dependOn(&run.step);
-            }
-            coverage_run_step.dependOn(&underKcov(b, kcov, src_dir, b.fmt("{s}/diagnostic", .{raw_dir}), diag).step);
         }
 
         const coverage_exe = b.addExecutable(.{
@@ -782,17 +768,6 @@ fn childBuildArgs(
 /// passes the test binary a fresh `--seed`.
 fn runTests(b: *std.Build, t: *std.Build.Step.Compile) *std.Build.Step.Run {
     const run = b.addRunArtifact(t);
-    run.has_side_effects = true;
-    return run;
-}
-
-/// A run of the test binary `t` under kcov, collecting the lines of `src`
-/// it executes into `out`: the build runner speaks the test protocol to the
-/// binary through kcov, which passes the standard streams through.
-fn underKcov(b: *std.Build, kcov: []const u8, src: []const u8, out: []const u8, t: *std.Build.Step.Compile) *std.Build.Step.Run {
-    const run = b.addSystemCommand(&.{ kcov, "--collect-only", b.fmt("--include-path={s}", .{src}), out });
-    run.addArtifactArg(t);
-    run.enableTestRunnerMode();
     run.has_side_effects = true;
     return run;
 }

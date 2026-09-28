@@ -331,16 +331,18 @@ not its wall column. A spawn that bypasses `World` (a bare
 spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 
 **What the tests reach.** `zig build coverage`, inside `nix develop
-.#coverage`, runs the black-box suites, the corpus and the unit tests with
-every compiler process under kcov and reports which lines of `src/` ran
-(`zig-out/coverage/index.html`, and `summary.md` beside it). Use it two
+.#coverage`, runs the black-box suites and the corpus with every compiler
+process under kcov and reports which lines of `src/` the black-box tests
+reach (`zig-out/coverage/index.html`, and `summary.md` beside it). The
+unit tests are not run: a line only a unit test executes shows red, which
+is the point — no program has been shown to reach it. Use it two
 ways. To find what to test: open a file's page and read its red lines —
 an error path, a `switch` arm, a branch of the checker no fixture reaches
 is a missing test, and the fixture that reaches it goes in the corpus like
 any other. To check a deletion: a test or fixture you remove should leave
 the total and the file's count where they were; if either drops, something
 only it reached is now untested. `-Dcorpus=<path>` or `-Dtest-filter=<name>`
-measures one fixture or test alone. A covered line ran; it does not mean an
+measures one fixture or black-box test alone. A covered line ran; it does not mean an
 assertion checked what it did — that is still the test's job.
 
 ## Checklist before reporting done
