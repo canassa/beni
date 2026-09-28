@@ -237,7 +237,9 @@ Run a test binary by hand (no `--listen`) to get each test's wall time.
 
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on
-`builtin.mode == .Debug`, so it runs there as it does in Debug. An input a
+`builtin.mode == .Debug`, so it runs there as it does in Debug. It carries no
+debug info (its LLVM compile is what a change under `src/` waits for), so a
+crash it hits is traced by re-running the command with `zig-out/bin/beni`. An input a
 black-box test generates is the smallest that reaches the limit or the
 defect it is about — one past a cap, or the size that failed before a fix,
 not ten times past it — and a declaration-order test tries a fixed set of
