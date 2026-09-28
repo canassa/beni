@@ -267,8 +267,11 @@ const Pool = struct {
     /// Every interned identifier's bytes, back to back.
     bytes: std.ArrayList(u8) = .empty,
     /// Per symbol: where its bytes are, and its hash (kept so growing the
-    /// table never rehashes bytes).
-    entries: std.MultiArrayList(Entry) = .empty,
+    /// table never rehashes bytes). One record per symbol and not a
+    /// `MultiArrayList`: every read wants the whole record, and a
+    /// `MultiArrayList.get` recomputes every column's address first, which
+    /// Zig's own backend does not fold away.
+    entries: std.ArrayList(Entry) = .empty,
     /// Open-addressed slots holding `@intFromEnum(Symbol)` or `empty_slot`.
     /// Length is a power of two; linear probing.
     slots: []u32 = &.{},
@@ -285,11 +288,11 @@ const Pool = struct {
     }
 
     fn count(pool: *const Pool) u32 {
-        return @intCast(pool.entries.len);
+        return @intCast(pool.entries.items.len);
     }
 
     fn slice(pool: *const Pool, symbol: Symbol) []const u8 {
-        const e = pool.entries.get(@intFromEnum(symbol));
+        const e = pool.entries.items[@intFromEnum(symbol)];
         return pool.bytes.items[e.offset..][0..e.len];
     }
 
@@ -301,7 +304,7 @@ const Pool = struct {
     /// ReleaseSafe) by hashing the identifier again.
     fn getOrPutHashed(pool: *Pool, gpa: Allocator, hash: u64, bytes: []const u8) Allocator.Error!Symbol {
         if (std.debug.runtime_safety) std.debug.assert(hash == Hasher.hash(bytes));
-        if (pool.slots.len == 0 or (pool.entries.len + 1) * 4 > pool.slots.len * 3) {
+        if (pool.slots.len == 0 or (pool.entries.items.len + 1) * 4 > pool.slots.len * 3) {
             try pool.grow(gpa);
         }
         const mask = pool.slots.len - 1;
@@ -309,7 +312,7 @@ const Pool = struct {
         while (true) : (i = (i + 1) & mask) {
             const slot = pool.slots[i];
             if (slot == empty_slot) break;
-            const e = pool.entries.get(slot);
+            const e = pool.entries.items[slot];
             if (e.hash == hash and std.mem.eql(u8, pool.bytes.items[e.offset..][0..e.len], bytes)) {
                 return @enumFromInt(slot);
             }
@@ -320,7 +323,7 @@ const Pool = struct {
         const offset: u32 = @intCast(pool.bytes.items.len);
         try pool.bytes.appendSlice(gpa, bytes);
         errdefer pool.bytes.shrinkRetainingCapacity(offset);
-        const index: u32 = @intCast(pool.entries.len);
+        const index: u32 = @intCast(pool.entries.items.len);
         try pool.entries.append(gpa, .{ .offset = offset, .len = @intCast(bytes.len), .hash = hash });
         pool.slots[i] = index;
         return @enumFromInt(index);
@@ -337,7 +340,7 @@ const Pool = struct {
         while (true) : (i = (i + 1) & mask) {
             const slot = pool.slots[i];
             if (slot == empty_slot) return null;
-            const e = pool.entries.get(slot);
+            const e = pool.entries.items[slot];
             if (e.hash == hash and std.mem.eql(u8, pool.bytes.items[e.offset..][0..e.len], bytes)) {
                 return @enumFromInt(slot);
             }
@@ -350,7 +353,8 @@ const Pool = struct {
         const new_slots = try gpa.alloc(u32, new_len);
         @memset(new_slots, empty_slot);
         const mask = new_len - 1;
-        for (pool.entries.items(.hash), 0..) |hash, index| {
+        for (pool.entries.items, 0..) |entry, index| {
+            const hash = entry.hash;
             var i: usize = @intCast(hash & mask);
             while (new_slots[i] != empty_slot) i = (i + 1) & mask;
             new_slots[i] = @intCast(index);
@@ -383,7 +387,7 @@ pub const Local = struct {
     /// True when `init` (not `empty`) made this pool: the well-known prefix
     /// is in place. Lowering asserts it.
     pub fn hasWellKnown(local: *const Local) bool {
-        return local.pool.entries.len >= WellKnown.count;
+        return local.pool.entries.items.len >= WellKnown.count;
     }
 
     pub fn deinit(local: *Local, gpa: Allocator) void {
@@ -473,7 +477,7 @@ pub const Global = struct {
     pub fn mergeOne(global: *Global, gpa: Allocator, local: *const Local, remap: []Symbol, symbol: Symbol) Allocator.Error!void {
         const i = @intFromEnum(symbol);
         if (remap[i] != unmapped) return;
-        const e = local.pool.entries.get(i);
+        const e = local.pool.entries.items[i];
         remap[i] = try global.pool.getOrPutHashed(gpa, e.hash, local.pool.bytes.items[e.offset..][0..e.len]);
     }
 
@@ -511,7 +515,7 @@ pub const Global = struct {
 
 /// Intern every `WellKnown` name, in declaration order, into an empty pool.
 fn registerWellKnown(pool: *Pool, gpa: Allocator) Allocator.Error!void {
-    std.debug.assert(pool.entries.len == 0);
+    std.debug.assert(pool.entries.items.len == 0);
     inline for (@typeInfo(WellKnown).@"enum".fields) |field| {
         const symbol = try pool.getOrPut(gpa, field.name);
         std.debug.assert(@intFromEnum(symbol) == field.value);
