@@ -109,7 +109,7 @@ pub inline fn eachOwned(store: *TypeStore, obligations: ?*const Obligations, roo
     }
 }
 
-fn shape(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
+inline fn shape(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
     switch (store.content(root)) {
         .err, .flex, .rigid => return null,
         .alias => |a| {

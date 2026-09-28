@@ -246,7 +246,7 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
 /// The declaration behind `id`. `.none` and an out-of-range id both yield a
 /// blank entry rather than a trap: every id in a Bir came from `ofDecl` or
 /// `ofInterface`, but the checker must not crash on a poisoned one.
-pub fn entry(types: *const Types, id: TypeId) Entry {
+pub inline fn entry(types: *const Types, id: TypeId) Entry {
     if (id == .none or id.int() >= types.entries.len) return .{
         .module = @enumFromInt(0),
         .decl = @enumFromInt(0),
@@ -284,7 +284,7 @@ pub fn count(types: *const Types) usize {
 
 /// The type declared by `decl` of `module`, or `.none` when that
 /// declaration is a value.
-pub fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) TypeId {
+pub inline fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) TypeId {
     reads.note(.types_of_decl, module);
     if (module.int() + 1 >= types.decl_offsets.len) return .none;
     const base = types.decl_offsets[module.int()];
@@ -296,7 +296,7 @@ pub fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) Typ
 }
 
 /// The type at `index` in `module`'s interface.
-pub fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.TypeIndex) TypeId {
+pub inline fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.TypeIndex) TypeId {
     reads.note(.types_of_interface, module);
     if (module.int() + 1 >= types.interface_offsets.len) return .none;
     const base = types.interface_offsets[module.int()];

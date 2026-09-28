@@ -121,7 +121,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     const stack = &in.stacks.vars;
     stack.clearRetainingCapacity();
     try stack.append(gpa, root);
-    while (stack.pop()) |next| {
+    while (lists.pop(stack)) |next| {
         const r = store.find(next);
         if (store.rank(r) != TypeStore.generalized) continue;
         if (store.copy(r) != .none) continue;
@@ -171,7 +171,7 @@ pub fn freeze(in: *Instantiate, v: Var, from: []const Var, to: []const Var) Erro
     const stack = &in.stacks.vars;
     stack.clearRetainingCapacity();
     try stack.append(gpa, store.find(v));
-    while (stack.pop()) |next| {
+    while (lists.pop(stack)) |next| {
         const r = store.find(next);
         if (store.copy(r) != .none) continue;
         const c = try store.fresh(.err, TypeStore.generalized);

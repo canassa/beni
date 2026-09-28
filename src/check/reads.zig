@@ -147,7 +147,7 @@ pub fn end() void {
 /// The whole of the hot path: a thread-local load, a null test, a bounds test
 /// and at most one bit set per (module, check) pair. Outside a safe build the
 /// body is dead and the call vanishes.
-pub fn note(kind: Kind, m: Graph.Index) void {
+pub inline fn note(kind: Kind, m: Graph.Index) void {
     if (!enabled) return;
     const r = current orelse return;
     const i = m.int();

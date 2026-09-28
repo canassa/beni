@@ -465,7 +465,7 @@ fn adjustRank(
     while (frames.items.len > 0) {
         const top = &frames.items[frames.items.len - 1];
         if (kids.items.len > top.base) {
-            const c = kids.pop().?;
+            const c = lists.pop(kids).?;
             if (try enter(store, stacks, gpa, young_mark, visit_mark, group_rank, c)) |r| {
                 const parent = &frames.items[frames.items.len - 1];
                 if (parent.maxes) parent.max = @max(parent.max, r);

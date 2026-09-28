@@ -54,6 +54,7 @@ const Allocator = std.mem.Allocator;
 const Arena = @import("../Arena.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
+const lists = @import("../lists.zig");
 
 const TypeStore = @This();
 
@@ -855,9 +856,9 @@ fn oneParam(store: *TypeStore, v: Var) ?Structure.Func {
 // `extra`
 // ---------------------------------------------------------------------------
 
-pub fn addVars(store: *TypeStore, items: []const Var) Allocator.Error!Range {
+pub inline fn addVars(store: *TypeStore, items: []const Var) Allocator.Error!Range {
     const start: u32 = @intCast(store.extra.items.len);
-    try store.extra.appendSlice(store.gpa(), @ptrCast(items));
+    try lists.addSlice(&store.extra, store.gpa(), @ptrCast(items));
     return .{ .start = start, .len = @intCast(items.len) };
 }
 

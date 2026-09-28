@@ -39,3 +39,31 @@ test "add appends in order, growing as append does" {
     for (0..100) |i| try add(&list, std.testing.allocator, @intCast(i));
     for (list.items, 0..) |item, i| try std.testing.expectEqual(@as(u32, @intCast(i)), item);
 }
+
+/// `list.pop()` without a call: the last item, removed, or null.
+pub inline fn pop(list: anytype) ?@TypeOf(list.items[0]) {
+    if (list.items.len == 0) return null;
+    list.items.len -= 1;
+    return list.items.ptr[list.items.len];
+}
+
+/// `list.appendSlice`, with the common case, room already there, copied
+/// without a call.
+pub inline fn addSlice(list: anytype, gpa: Allocator, items: []const @TypeOf(list.items[0])) Allocator.Error!void {
+    if (list.capacity - list.items.len >= items.len) {
+        const at = list.items.len;
+        list.items.len += items.len;
+        @memcpy(list.items[at..], items);
+    } else try list.appendSlice(gpa, items);
+}
+
+test "pop and addSlice agree with the list's own" {
+    var list: std.ArrayList(u32) = .empty;
+    defer list.deinit(std.testing.allocator);
+    for (0..40) |i| try addSlice(&list, std.testing.allocator, &.{ @intCast(i), @intCast(i + 1) });
+    try std.testing.expectEqual(@as(usize, 80), list.items.len);
+    try std.testing.expectEqual(@as(?u32, 40), pop(&list));
+    try std.testing.expectEqual(@as(usize, 79), list.items.len);
+    list.clearRetainingCapacity();
+    try std.testing.expectEqual(@as(?u32, null), pop(&list));
+}
