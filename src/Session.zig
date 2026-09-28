@@ -1151,8 +1151,7 @@ fn fileKey(session: *const Session, file: SourceStore.Index) FileKey.FileKey {
 /// the `comments`, the lexer's offset-only diagnostics and the token `line`
 /// and `payload` columns are KEPT, because they are not artifacts (§3) — and
 /// keeping them is what makes `dump --stage=ast|tokens` and `fmt` unchanged
-/// under the flag by construction, which the acceptance matrix asserts rather
-/// than assumes.
+/// under the flag by construction.
 ///
 /// A `verify` that refuses what this very process just wrote is a bug in the
 /// format, not a stale file, so it FAILS the run instead of falling back.

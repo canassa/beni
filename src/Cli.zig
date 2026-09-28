@@ -1058,8 +1058,8 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try testing.expect(std.mem.indexOf(u8, usage, "dispatch-") == null);
 
     // `--roundtrip-frontend` is the fifth, and the first that is not the
-    // checker's. It is on `Common` because `dump` and
-    // `fmt` are the identity oracles it is asserted against.
+    // checker's. It is on `Common` because `dump --stage=bir` is the
+    // identity oracle it is asserted against.
     try expectCommand(
         .{ .check = .{ .common = .{ .roundtrip_frontend = true }, .paths = &.{"src"} } },
         &.{ "check", "--roundtrip-frontend", "src" },

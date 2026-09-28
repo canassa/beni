@@ -161,10 +161,11 @@ is not the checker's: every file's `Bir`, token spans, line-start table and fron
 written to bytes and read back in place the moment its per-file phase ends and **before anything
 downstream reads them**, so every dump, every diagnostic, every dispatch table and every emitted byte
 is built from artifacts that have been through the format. It is on `Common` like its two siblings,
-because `dump` has to be able to take it: `dump --stage=tokens|ast|bir` is the lossless textual form
-of exactly these artifacts and is therefore the identity oracle the round trip is asserted against.
-An `ast` dump under the flag is unchanged by construction — the `Ast` is not among the artifacts
-(§3.5) — and that is a fact `frontend_test.zig` asserts rather than assumes. **`--frontend-keys`**
+because `dump` has to be able to take it: `dump --stage=bir` is the lossless textual form of the
+`Bir`, and a `check` diagnostic's position reads the token starts and the line-start table, so the
+two are the identity oracle the round trip is asserted against (`frontend_test.zig`, on sources
+chosen so that every section is non-empty). The round trip runs where lowering ends, so `dump
+--stage=tokens|ast` and `fmt`, which stop before it, are unchanged by construction. **`--frontend-keys`**
 is hidden too and is `--cache-keys`' twin: one `<path> <32 hex digits>` line per file on stdout,
 sorted by path, so an edit-scenario fixture can assert that a leaf's body edit moved that leaf's file
 key and no other — the claim the whole slice rests on — with no cache directory involved.
