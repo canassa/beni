@@ -31,6 +31,9 @@ const perf_bin_dir = "perf/bin";
 /// installed, under the prefix.
 const safe_bin_dir = "safe/bin";
 
+/// How many processes `test-perf` spreads its CPU-time scenarios over.
+const perf_shards = 7;
+
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
 /// in core names `core/Basics.beni` whether it came from the embedded copy
@@ -219,9 +222,20 @@ pub fn build(b: *std.Build) void {
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`),
     // on the same ReleaseFast compiler by the same ratio method. Not a gate:
-    // rule 4 names three.
+    // rule 4 names three. The scenarios judged on a ratio of CPU times run in
+    // `perf_shards` processes at once; the few judged on the wall time of a
+    // `--self-profile` event, or on a small difference of CPU times, run in
+    // one process after them, alone (`perf_test.zig`'s `Run`). The
+    // harness is built ReleaseSafe: it generates the large inputs and parses
+    // the large traces, and in Debug that was half the step.
     const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler");
-    fixed_perf_step.dependOn(&bb.run(bb.artifact("tests/blackbox/perf_test.zig"), .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni" }).step);
+    const perf_test = bb.artifactAt("tests/blackbox/perf_test.zig", .ReleaseSafe);
+    const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni", .perf_shard = "wall" });
+    for (0..perf_shards) |k| {
+        const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni", .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }) });
+        wall_perf.step.dependOn(&shard.step);
+    }
+    fixed_perf_step.dependOn(&wall_perf.step);
 
     // ---- Bench. ----
     const bench_exe = b.addExecutable(.{
@@ -642,7 +656,8 @@ fn collectFiles(
 /// Every environment variable the black-box harness reads to decide what a
 /// run MEANS: the corpus walker's three knobs (`tests/blackbox/corpus_test.zig`'s
 /// `Config`), its part (`corpus_parts.zig`), which pending scenarios run
-/// (`pending_test.zig`) and which binary is under test (`world.zig`'s
+/// (`pending_test.zig`), which timing scenarios run (`perf_test.zig`) and
+/// which binary is under test (`world.zig`'s
 /// `exePath`). An empty value is the harness's "unset": every field but the
 /// root and the binary defaults to it.
 const HarnessEnvironment = struct {
@@ -651,6 +666,9 @@ const HarnessEnvironment = struct {
     timeout_ms: []const u8 = "",
     part: []const u8 = "",
     scenarios: []const u8 = "",
+    /// `perf_test.zig`'s `BENI_PERF_SHARD`: which of its scenarios this
+    /// process runs.
+    perf_shard: []const u8 = "",
     /// Relative to the install prefix: the ReleaseSafe compiler unless a
     /// timing step names the ReleaseFast one.
     exe: []const u8 = safe_bin_dir ++ "/beni",
@@ -668,11 +686,16 @@ const Blackbox = struct {
     perf_install: *std.Build.Step,
 
     fn artifact(bb: Blackbox, root: []const u8) *std.Build.Step.Compile {
+        return bb.artifactAt(root, bb.optimize);
+    }
+
+    /// `artifact` with the harness itself built at `mode`.
+    fn artifactAt(bb: Blackbox, root: []const u8, mode: std.builtin.OptimizeMode) *std.Build.Step.Compile {
         return bb.b.addTest(.{
             .root_module = bb.b.createModule(.{
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,
-                .optimize = bb.optimize,
+                .optimize = mode,
                 .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
             }),
         });
@@ -694,6 +717,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
+        r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, env.exe));
         return r;
     }

@@ -20,6 +20,9 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
 `test-pending` runs at every commit. `test-pending-perf` runs in any change that touches what a
 timing scenario covers or the checker's hot paths, and wherever it runs, `test-perf` runs beside
 it: a fixed timing scenario that turns red again is a regression, not a pending finding.
+`test-perf` runs its scenarios that are judged on a ratio of CPU times in several processes at
+once, and the few judged on the wall time of a `--self-profile` event, or on a small difference of
+CPU times, alone, after them.
 
 ## Layout
 
