@@ -45,19 +45,6 @@ pub const Ctx = enum(u8) {
 
 pub const Key = struct { wanted: Evidence.WantedId, ctx: Ctx };
 
-/// `memo`'s hash: the wanted's index times an odd constant, the context in
-/// the bits the product leaves alone. `std`'s `AutoContext` runs Wyhash
-/// over the key, which was most of elaborating a record of 65 537 fields.
-const KeyContext = struct {
-    pub fn hash(_: KeyContext, k: Key) u64 {
-        return (@as(u64, @intFromEnum(k.wanted)) << 2 | @intFromEnum(k.ctx)) *% 0x9E37_79B9_7F4A_7C15;
-    }
-
-    pub fn eql(_: KeyContext, a: Key, b: Key) bool {
-        return a.wanted == b.wanted and a.ctx == b.ctx;
-    }
-};
-
 pub const Node = struct { term: Dispatch.Term, args: Dispatch.Range = .empty };
 
 pub const Pending = struct { node: u32, key: Key };
@@ -66,9 +53,14 @@ nodes: std.ArrayList(Node) = .empty,
 /// Every node's arguments, as node indices.
 node_args: std.ArrayList(u32) = .empty,
 /// Each wanted's node. A site's unit is a handful of nodes, so the first
-/// `inline_len` are searched in `inline_keys` and only a larger unit hashes
-/// (hashing every unit cost a seventh of P6 on 6 000 tuple comparisons).
-memo: std.HashMapUnmanaged(Key, u32, KeyContext, std.hash_map.default_max_load_percentage) = .empty,
+/// `inline_len` are searched in `inline_keys`; a larger unit reads `memo`,
+/// dense over the module's wanteds and contexts (a wanted id is a dense id,
+/// and hashing one cost most of elaborating a record of 65 537 fields). A
+/// slot means something only while its stamp is `epoch`, so a unit clears
+/// nothing: `begin` is one increment.
+memo: std.ArrayList(u32) = .empty,
+memo_stamp: std.ArrayList(u32) = .empty,
+epoch: u32 = 0,
 inline_keys: [inline_len]Key = undefined,
 inline_nodes: [inline_len]u32 = undefined,
 /// Keys held inline, or `inline_len + 1` once they moved into `memo`.
@@ -81,11 +73,13 @@ pending: std.ArrayList(Pending) = .empty,
 roots: std.ArrayList(u32) = .empty,
 
 const inline_len = 16;
+const contexts = @typeInfo(Ctx).@"enum".fields.len;
 
 pub fn deinit(u: *Unit, scratch: Allocator) void {
     u.nodes.deinit(scratch);
     u.node_args.deinit(scratch);
     u.memo.deinit(scratch);
+    u.memo_stamp.deinit(scratch);
     u.pending.deinit(scratch);
     u.roots.deinit(scratch);
 }
@@ -93,7 +87,13 @@ pub fn deinit(u: *Unit, scratch: Allocator) void {
 pub fn begin(u: *Unit) void {
     u.nodes.clearRetainingCapacity();
     u.node_args.clearRetainingCapacity();
-    u.memo.clearRetainingCapacity();
+    if (u.inlined > inline_len) {
+        u.epoch +%= 1;
+        if (u.epoch == 0) {
+            @memset(u.memo_stamp.items, 0);
+            u.epoch = 1;
+        }
+    }
     u.inlined = 0;
     u.pending.clearRetainingCapacity();
     u.roots.clearRetainingCapacity();
@@ -113,14 +113,35 @@ pub fn wanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
             u.inlined += 1;
             return n;
         }
-        try u.memo.ensureTotalCapacity(scratch, inline_len * 2);
-        for (u.inline_keys, u.inline_nodes) |k, n| u.memo.putAssumeCapacity(k, n);
+        if (u.epoch == 0) u.epoch = 1;
+        for (u.inline_keys, u.inline_nodes) |k, n| (try u.slot(scratch, k)).* = n;
         u.inlined = inline_len + 1;
     }
-    const entry = try u.memo.getOrPut(scratch, key);
-    if (entry.found_existing) return entry.value_ptr.*;
-    entry.value_ptr.* = try u.newWanted(scratch, key);
-    return entry.value_ptr.*;
+    const at = try u.slot(scratch, key);
+    const stamp = &u.memo_stamp.items[slotIndex(key)];
+    if (stamp.* == u.epoch) return at.*;
+    const n = try u.newWanted(scratch, key);
+    u.memo.items[slotIndex(key)] = n;
+    stamp.* = u.epoch;
+    return n;
+}
+
+fn slotIndex(key: Key) usize {
+    return @as(usize, @intFromEnum(key.wanted)) * contexts + @intFromEnum(key.ctx);
+}
+
+/// `key`'s slot in `memo`, the columns grown to hold it (to twice what is
+/// needed, so growth is amortised). Stamped live only by the caller.
+fn slot(u: *Unit, scratch: Allocator, key: Key) Error!*u32 {
+    const i = slotIndex(key);
+    if (i >= u.memo.items.len) {
+        const len = @max(i + 1, u.memo.items.len * 2, 64);
+        try u.memo.appendNTimes(scratch, 0, len - u.memo.items.len);
+        try u.memo_stamp.appendNTimes(scratch, 0, len - u.memo_stamp.items.len);
+    }
+    // Inline keys moved here are live at once.
+    if (u.inlined <= inline_len) u.memo_stamp.items[i] = u.epoch;
+    return &u.memo.items[i];
 }
 
 fn newWanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
