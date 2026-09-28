@@ -348,9 +348,6 @@ pub const Occurs = struct {
     /// positions of the receiver it proved are proved; a boundary's
     /// run only its roots, which is all a later boundary meets.
     interior: bool = false,
-    /// Whether this run stops at a proved node. False only for the Debug
-    /// check of a proof (`Resolve.step`).
-    trusts: bool = true,
     /// The deepest path a run walks before it stops and says `too_deep`
     /// for a boundary's run over its binders (`Solve.closeFrame`),
     /// whose binder is then `nesting_too_deep` (checker-v2.md
@@ -366,12 +363,10 @@ pub const Occurs = struct {
 
     pub fn restart(o: *Occurs, store: *TypeStore) void {
         const proves = o.proves;
-        const trusts = o.trusts;
         const interior = o.interior;
         const limit = o.limit;
         o.* = begin(store);
         o.proves = proves;
-        o.trusts = trusts;
         o.interior = interior;
         o.limit = limit;
     }
@@ -381,7 +376,7 @@ pub const Occurs = struct {
     pub fn check(o: *Occurs, store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!?Var {
         const start = store.find(v);
         if (isLeaf(store, start) or store.mark(start) == o.black) return null;
-        if (o.trusts and store.proved(start)) {
+        if (store.proved(start)) {
             try assertProved(store, stacks, gpa, start);
             return null;
         }
@@ -401,7 +396,7 @@ pub const Occurs = struct {
                 // A node with no successor cannot be on a cycle, and a black
                 // one was walked to the bottom already: neither is pushed.
                 if (mark == o.black) continue;
-                if (o.trusts and store.proved(r)) {
+                if (store.proved(r)) {
                     try assertProved(store, stacks, gpa, r);
                     continue;
                 }
@@ -427,10 +422,11 @@ pub const Occurs = struct {
     }
 };
 
-/// Debug: a proved node reaches no cycle (`checker-v2.md` §8.2), checked by
-/// a walk of its own that trusts no proof
-/// and touches no mark, over at most `assert_cap` nodes, wherever a walk
-/// stops at a proof. A hole in the invariant panics in the tests instead of
+/// Safety builds: a proved node reaches no cycle (`checker-v2.md` §8.2),
+/// checked by a walk of its own that trusts no proof and touches no mark,
+/// over at most `assert_cap` nodes, wherever a walk stops at a proof and
+/// wherever the resolver skips the cycle test of a proved receiver
+/// (`Resolve.step`). A hole in the invariant panics in the tests instead of
 /// hiding a cycle.
 ///
 /// **Bounded per store**: every stop at a proof re-walks up
@@ -443,7 +439,7 @@ pub const Occurs = struct {
 /// until the budget runs out. A floor of a million visits let a
 /// comparison of lists nested 1 024 deep spend most of a second on this
 /// check alone, several times the check it guards.
-fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!void {
+pub fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!void {
     if (!std.debug.runtime_safety) return;
     if (store.proof_assert_work > assert_budget_floor + @as(u64, store.count()) * assert_budget_per_var) return;
     // The colours are marks of this walk's own, in a column beside the

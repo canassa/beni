@@ -78,7 +78,6 @@
 # written through, a failed record write names the directory, and a refused
 # comparison names `==` for a `where` requirement and for `Basics.eq`.
 tests/pending/check/good/SchemaEndpointMeetsItself.beni exit=0 iface-differs
-scenario/CK-211 over-budget
 scenario/CK-212 exit=0 codes=none
 scenario/CK-213 exit=2 codes=unparsed
 tests/pending/check/bad/EqRefusalNamesTheUse.beni exit=1 codes=not_equatable×5 why=message

@@ -82,10 +82,10 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
-    // A wide alias DAG over the test budget (`over-budget`), and a symbolic
-    // link in `--out` that the build writes through, and a failed write of
-    // the record that names the directory instead of the file.
-    .{ .name = "scenario/CK-211", .step = .fast },
+    // A symbolic link in `--out` that the build writes through, and a
+    // failed write of the record that names the directory instead of the
+    // file. A wide alias DAG over the test budget went back into
+    // `abuse_test.zig`.
     .{ .name = "scenario/CK-212", .step = .fast },
     .{ .name = "scenario/CK-213", .step = .fast },
 };
@@ -126,39 +126,6 @@ test "pending: RED names fixtures and scenarios that exist" {
         }
     }
     try testing.expectEqual(@as(usize, 0), stale);
-}
-
-// CK-211: a safety build checks the acyclicity proof of every receiver the
-// resolver answers from one, and that check had no budget: it walked the
-// whole graph reachable from each receiver within 64 levels, so a wide alias
-// DAG cost wanteds × graph. `A{i} a b` holds three `A{i-1}` at different
-// arguments; `type Box = Box (A26 Int Int)` derives `eq` and `compare` over
-// every distinct type the DAG reaches. Unfixed, one check is about 1.3 s of
-// CPU on the ReleaseSafe beni against 0.45 s with the check under the
-// store-wide budget every other proof check has.
-test "CK-211: a wide alias DAG checks within the test budget on a safety build" {
-    var s = try Scenario.init("CK-211");
-    defer s.deinit();
-    const budget = try s.budget();
-    try s.w.write("Dag.beni", try aliasDagProgram(s.arena(), 26));
-    const before = budget.counter.read();
-    const checked = try s.w.runWith(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Dag.beni" }, .{ .raw_diagnostics = true });
-    const spent = budget.counter.read() - before;
-    if (checked.exit_code != 0) return s.finish(try s.failed(checked));
-    try s.finish(s.againstBudget(spent, budget.limit, "one check"));
-}
-
-/// `type alias A0 a b = ( a, b )`, `type alias A{i} a b = ( A{i-1} a b,
-/// A{i-1} (List a) b, A{i-1} a (List b) )` up to `depth`, and `type Box =
-/// Box (A{depth} Int Int)`.
-fn aliasDagProgram(arena: std.mem.Allocator, depth: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "type alias A0 a b =\n    ( a, b )\n\n\n");
-    for (1..depth + 1) |i| {
-        try out.print(arena, "type alias A{d} a b =\n    ( A{d} a b, A{d} (List a) b, A{d} a (List b) )\n\n\n", .{ i, i - 1, i - 1, i - 1 });
-    }
-    try out.print(arena, "type Box\n    = Box (A{d} Int Int)\n", .{depth});
-    return out.items;
 }
 
 // CK-212: beni never creates a symbolic link in `--out`, so one there is

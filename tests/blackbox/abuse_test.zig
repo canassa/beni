@@ -1087,6 +1087,45 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     }
 }
 
+// A safety build checks the acyclicity proof of every receiver the resolver
+// answers from one. That check must share the store-wide budget of every
+// other proof check: walked afresh per wanted, it covered the whole graph
+// reachable from each receiver, and a wide alias DAG makes that graph every
+// wanted's. `A{i} a b` holds three `A{i-1}` at different arguments, and
+// `Box` derives `eq` and `compare` over every distinct type the DAG reaches.
+// At 24 levels, on the tests' ReleaseSafe beni, the check spent about 6.5
+// billion instructions with the proof check unbudgeted, half again the test
+// budget, and spends about 2.3 billion with it budgeted. The test budget is
+// the assertion.
+test "a wide alias DAG checks on a safety build without re-walking its graph per comparison" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.ArrayList(u8) = .empty;
+    const arena = w.arena.allocator();
+    try source.appendSlice(arena, "type alias A0 a b =\n    ( a, b )\n\n\n");
+    const depth = 24;
+    for (1..depth + 1) |i| {
+        try source.print(arena, "type alias A{d} a b =\n    ( A{d} a b, A{d} (List a) b, A{d} a (List b) )\n\n\n", .{ i, i - 1, i - 1, i - 1 });
+    }
+    try source.print(arena, "type Box\n    = Box (A{d} Int Int)\n", .{depth});
+    try w.write("Dag.beni", source.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--no-cache", "--jobs=1", "Dag.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 0);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+    try testing.expectEqualStrings("", r.stdout);
+}
+
 test "a flat let past what a summed budget allows is accepted: its bindings are siblings" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

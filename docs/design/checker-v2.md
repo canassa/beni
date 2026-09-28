@@ -1299,6 +1299,12 @@ walk, and a proof never changes a verdict.
   own that trusts no proof and touches no mark, over at most 1 024 nodes, panics if the node
   reaches a cycle. With the `err` rule switched off it panics on both second-round programs.
   `Resolve.step` also re-walks every proved receiver fewer than 64 positions deep.
+  *Amended 2026-09-29:* `Resolve.step` checks a proved receiver with `Walk.assertProved` too, so
+  every such check shares one budget per store (a floor plus 16 visits per variable). Its own
+  untrusting walk to 64 levels had no budget and covered the whole graph reachable from each
+  receiver: a wide alias DAG made that wanteds × graph, and a 60-level DAG ReleaseFast checks in
+  0.4 s took 14 s in a safety build. The checks are in every safety build (ReleaseSafe included),
+  not Debug only.
 - The derivability walk's verdict over a graph with variables below (`Resolve.State.derivable_open`)
   is kept while no proof has been voided (`TypeStore.proof_voids`, a count that does not
   wrap as the epoch does): the walk records every leaf it meets, so any leaf given successors, an

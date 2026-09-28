@@ -244,19 +244,15 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             // A receiver an earlier cycle test proved acyclic, whose proof
             // nothing has voided since (`TypeStore.acyclic`), is not walked
             // again: a position of a receiver just resolved is in the graph
-            // its parent's test proved. Debug checks the proof on
-            // shallow positions, and to a bounded depth below each: a
-            // check of the whole graph at every depth would make a Debug
-            // build quadratic again. `resolve_depth` alone does not bound
-            // it — a `where` clause's requirement on an element is a new
-            // wanted, not a nested one, so `a == b` over lists nested
-            // 1 024 deep re-walked the whole remaining type at every level.
-            if (std.debug.runtime_safety and s.resolve_depth < proof_check_depth and st.proved(root)) {
-                var run: Walk.Occurs = .begin(st);
-                run.trusts = false;
-                run.limit = proof_check_depth;
-                if (try run.check(st, &s.stacks, s.cx.gpa, root) != null) std.debug.panic("a receiver proved acyclic is on a cycle (checker-v2.md §8.2)", .{});
-            }
+            // its parent's test proved. A safety build checks that proof
+            // with `Walk.assertProved`, the check every walk that stops at a
+            // proof makes: at most `assert_cap` nodes per receiver, out of
+            // one budget for the whole store. A check per wanted with no
+            // such budget walked the whole graph reachable from each
+            // receiver, which a wide alias DAG makes every wanted's — the
+            // check then cost wanteds × graph, and a 60-level DAG that
+            // ReleaseFast checks in 0.4 s took 14 s.
+            if (std.debug.runtime_safety and st.proved(root)) try Walk.assertProved(st, &s.stacks, s.cx.gpa, root);
             if (try Instances.cyclic(s, id, root)) return;
             if (s.evidence.isRejected(root, flagOf(w))) return reject(s, id, true);
             if (derives(w) and try memoised(s, id, root)) return;
@@ -264,10 +260,6 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
         },
     }
 }
-
-/// How shallow a position is whose proof a safety build checks again, and
-/// how deep below it that check walks.
-const proof_check_depth = 64;
 
 /// Answer `id` with `a`.
 pub fn answer(s: *Solve, id: WantedId, a: Evidence.Answer) void {

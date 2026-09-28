@@ -5239,7 +5239,13 @@ with a red fixture on `8f78224` before its fix.*
   safety build costs a constant factor over ReleaseFast.
 - **Fixture** `scenario/CK-211` (`test-pending`, N = 26), red `over-budget`.
 - **Slice** the last review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §8.2 *amended 2026-09-29*: `Resolve.step`
+  checks a proved receiver with `Walk.assertProved`, the check every walk that stops at a proof
+  makes, under its one budget per store; the untrusting occurs walk and `Occurs.trusts` are
+  deleted. N = 60: 4.8 s ReleaseSafe (14.3 s before); the rest is the self-hosted backend's code
+  and the other safety checks, linear in the graph. Promoted into `abuse_test.zig` ("a wide alias
+  DAG checks on a safety build without re-walking its graph per comparison"), resized to N = 24:
+  6.5 billion instructions before the fix, 2.3 billion after, against a budget of 4.3.
 
 ### CK-212 — A symbolic link in `--out` is written through
 
@@ -5494,7 +5500,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-208 | diagnostic-quality | K13 | promoted: `check/bad/DotCallEqRefusal.beni` | the final review's fixes (fixed) |
 | CK-209 | diagnostic-quality | K14 | promoted: `build_test.zig` "an unreadable _manifest.txt refuses the build …" | the final review's fixes (fixed) |
 | CK-210 | diagnostic-quality | K12 | `check/good/SchemaEndpointMeetsItself.beni` | the last review's fixes |
-| CK-211 | performance | K11 | `scenario/CK-211` | the last review's fixes |
+| CK-211 | performance | K11 | promoted: `abuse_test.zig` "a wide alias DAG checks on a safety build …" | the last review's fixes (fixed) |
 | CK-212 | latent | K14 | `scenario/CK-212` | the last review's fixes |
 | CK-213 | diagnostic-quality | K14 | `scenario/CK-213` | the last review's fixes |
 | CK-214 | diagnostic-quality | K13 | `check/bad/EqRefusalNamesTheUse.beni` | the last review's fixes |
