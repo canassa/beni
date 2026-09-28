@@ -66,6 +66,8 @@ done: bool = false,
 gpa: Allocator,
 interner: *InternPool.Local,
 out: *Output,
+/// `out.tokens`' columns, for `push`.
+cols: Columns = .{},
 
 pub const Mode = enum(u8) {
     /// Ordinary source text.
@@ -445,8 +447,39 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         },
     };
 
-    try t.out.tokens.append(t.gpa, .{ .tag = tag, .start = start, .line = t.line, .payload = payload });
+    try t.push(tag, start, payload);
     return tag;
+}
+
+/// The token columns up to the list's capacity, refreshed when it grows.
+const Columns = struct {
+    tag: []Tag = &.{},
+    start: []u32 = &.{},
+    line: []u32 = &.{},
+    payload: []u32 = &.{},
+};
+
+/// Append a token column by column: `MultiArrayList.append` recomputes
+/// every column's address to write one token, which Zig's own backend does
+/// not fold away, and it was nearly half of lexing a wide file.
+fn push(t: *Tokenizer, tag: Tag, start: u32, payload: u32) Allocator.Error!void {
+    const list = &t.out.tokens;
+    if (list.len == list.capacity or t.cols.tag.len != list.capacity) {
+        try list.ensureUnusedCapacity(t.gpa, 1);
+        const s = list.slice();
+        t.cols = .{
+            .tag = s.items(.tag).ptr[0..list.capacity],
+            .start = s.items(.start).ptr[0..list.capacity],
+            .line = s.items(.line).ptr[0..list.capacity],
+            .payload = s.items(.payload).ptr[0..list.capacity],
+        };
+    }
+    const i = list.len;
+    list.len = i + 1;
+    t.cols.tag[i] = tag;
+    t.cols.start[i] = start;
+    t.cols.line[i] = t.line;
+    t.cols.payload[i] = payload;
 }
 
 /// Advance `n` bytes and return `tag`: the tail of every fixed-length arm.
