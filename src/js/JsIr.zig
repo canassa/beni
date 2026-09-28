@@ -86,11 +86,11 @@ pub const Node = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn int(i: Index) u32 {
+        pub inline fn int(i: Index) u32 {
             return @intFromEnum(i);
         }
 
-        pub fn toOptional(i: Index) OptionalIndex {
+        pub inline fn toOptional(i: Index) OptionalIndex {
             const o: OptionalIndex = @enumFromInt(@intFromEnum(i));
             std.debug.assert(o != .none);
             return o;
@@ -101,7 +101,7 @@ pub const Node = struct {
         none = std.math.maxInt(u32),
         _,
 
-        pub fn unwrap(o: OptionalIndex) ?Index {
+        pub inline fn unwrap(o: OptionalIndex) ?Index {
             return if (o == .none) null else @enumFromInt(@intFromEnum(o));
         }
     };
@@ -360,11 +360,11 @@ pub const NameIndex = enum(u32) {
     none = std.math.maxInt(u32),
     _,
 
-    pub fn int(i: NameIndex) u32 {
+    pub inline fn int(i: NameIndex) u32 {
         return @intFromEnum(i);
     }
 
-    pub fn unwrap(i: NameIndex) ?u32 {
+    pub inline fn unwrap(i: NameIndex) ?u32 {
         return if (i == .none) null else @intFromEnum(i);
     }
 };
@@ -475,19 +475,29 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
 
 // ---- Raw access -------------------------------------------------------------
 
-pub fn tag(ir: *const JsIr, node: Node.Index) Node.Tag {
-    return ir.nodes.items(.tag)[node.int()];
+// Every pass asks these per node, so they are `inline`: Zig's own backend,
+// which builds the compiler the test suites run, inlines nothing on its own,
+// and a call per ask was a tenth of emitting a wide module. `tag` and `data`
+// read the column pointer directly, since `Slice.items` builds a whole
+// slice for each ask; the bounds check stays.
+
+pub inline fn tag(ir: *const JsIr, node: Node.Index) Node.Tag {
+    if (node.int() >= ir.nodes.len) unreachable;
+    const tags: [*]const Node.Tag = @ptrCast(ir.nodes.ptrs[@intFromEnum(NodeList.Field.tag)]);
+    return tags[node.int()];
 }
 
-pub fn data(ir: *const JsIr, node: Node.Index) Node.Data {
-    return ir.nodes.items(.data)[node.int()];
+pub inline fn data(ir: *const JsIr, node: Node.Index) Node.Data {
+    if (node.int() >= ir.nodes.len) unreachable;
+    const datas: [*]const Node.Data = @ptrCast(@alignCast(ir.nodes.ptrs[@intFromEnum(NodeList.Field.data)]));
+    return datas[node.int()];
 }
 
-pub fn pos(ir: *const JsIr, node: Node.Index) u32 {
+pub inline fn pos(ir: *const JsIr, node: Node.Index) u32 {
     return ir.nodes.items(.pos)[node.int()];
 }
 
-pub fn name(ir: *const JsIr, index: NameIndex) Name {
+pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
     return ir.names[index.int()];
 }
 
@@ -498,7 +508,7 @@ pub fn bytes(ir: *const JsIr, node: Node.Index) []const u8 {
 }
 
 /// The elements of a range, viewed as `T` (`Node.Index`, `NameIndex`, `u32`).
-pub fn extraSlice(ir: *const JsIr, range: SubRange, comptime T: type) []const T {
+pub inline fn extraSlice(ir: *const JsIr, range: SubRange, comptime T: type) []const T {
     comptime std.debug.assert(@sizeOf(T) % 4 == 0 and @alignOf(T) == 4);
     const words = ir.extra[@intFromEnum(range.start)..@intFromEnum(range.end)];
     return @ptrCast(@alignCast(words));
@@ -529,7 +539,7 @@ pub fn subRange(ir: *const JsIr, index: ExtraIndex) SubRange {
 }
 
 /// The range stored inline in `lhs..rhs`.
-pub fn inlineRange(d: Node.Data) SubRange {
+pub inline fn inlineRange(d: Node.Data) SubRange {
     return .{ .start = @enumFromInt(d.lhs), .end = @enumFromInt(d.rhs) };
 }
 
@@ -545,21 +555,21 @@ pub fn inlineRange(d: Node.Data) SubRange {
 pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
     const d = ir.data(node);
     switch (ir.tag(node)) {
-        .member, .unary, .spread_property => try stack.append(gpa, @enumFromInt(d.lhs)),
-        .index_get => try stack.appendSlice(gpa, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
-        .property => try stack.append(gpa, @enumFromInt(d.rhs)),
+        .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)}),
+        .index_get => try pushAll(gpa, stack, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
+        .property => try pushAll(gpa, stack, &.{@enumFromInt(d.rhs)}),
         .call => {
             try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Node.Index));
-            try stack.append(gpa, @enumFromInt(d.lhs));
+            try pushAll(gpa, stack, &.{@enumFromInt(d.lhs)});
         },
         .object, .array, .template => try pushReversed(gpa, stack, ir.extraSlice(inlineRange(d), Node.Index)),
         .cond => {
             const c = ir.extraData(@enumFromInt(d.rhs), Cond);
-            try stack.appendSlice(gpa, &.{ c.alternate, c.consequent, @enumFromInt(d.lhs) });
+            try pushAll(gpa, stack, &.{ c.alternate, c.consequent, @enumFromInt(d.lhs) });
         },
         .binary => {
             const b = ir.extraData(@enumFromInt(d.lhs), Binary);
-            try stack.appendSlice(gpa, &.{ b.right, b.left });
+            try pushAll(gpa, stack, &.{ b.right, b.left });
         },
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
@@ -569,13 +579,33 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
     }
 }
 
+// The walkers push and pop a node at a time, a million times over a wide
+// module, so these write the stack's items in place: `append` is three
+// calls deep, none of which Zig's own backend inlines.
+
+/// Push `items` in order.
+fn pushAll(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+    const at = stack.items.len;
+    if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
+    stack.items.len = at + items.len;
+    @memcpy(stack.items[at..], items);
+}
+
 fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
-    try stack.ensureUnusedCapacity(gpa, items.len);
-    var i = items.len;
-    while (i > 0) {
-        i -= 1;
-        stack.appendAssumeCapacity(items[i]);
-    }
+    const at = stack.items.len;
+    if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
+    stack.items.len = at + items.len;
+    const into = stack.items[at..];
+    for (items, 0..) |item, i| into[items.len - 1 - i] = item;
+}
+
+/// The top of a walker's stack, taken off; null when it is empty. What
+/// `ArrayList.pop` does, without its calls.
+pub fn popOperand(stack: *std.ArrayList(Node.Index)) ?Node.Index {
+    const len = stack.items.len;
+    if (len == 0) return null;
+    stack.items.len = len - 1;
+    return stack.items.ptr[len - 1];
 }
 
 // ---- Invariants -------------------------------------------------------------
@@ -874,9 +904,33 @@ pub const Builder = struct {
     extra: std.ArrayList(u32) = .empty,
     string_bytes: std.ArrayList(u8) = .empty,
     names: std.ArrayList(Name) = .empty,
-    name_index: std.AutoHashMapUnmanaged(NameKey, NameIndex) = .empty,
+    name_index: std.HashMapUnmanaged(NameKey, NameIndex, NameKeyContext, std.hash_map.default_max_load_percentage) = .empty,
+    /// `nodes`' columns, refreshed whenever `nodes` grows: `addNode` writes
+    /// through them. `MultiArrayList.append` recomputes every column's
+    /// address for each node, and Zig's own backend does not fold that
+    /// away; on a module of a million nodes it was a tenth of the build.
+    cols: NodeList.Slice = .empty,
+    /// Recent answers of `intern`, one per slot (`intern`).
+    recent: [recent_slots]Recent = @splat(.{ .key = undefined, .index = .none }),
+
+    const recent_slots = 256;
+    const Recent = struct { key: NameKey, index: NameIndex };
 
     const NameKey = struct { module: u32, base: u32, tag: u32 };
+
+    /// Three words mixed by multiplication. The default hash runs Wyhash
+    /// over the key's twelve bytes, a tenth of lowering a wide module.
+    const NameKeyContext = struct {
+        pub fn hash(_: NameKeyContext, k: NameKey) u64 {
+            const a: u64 = (@as(u64, k.module) << 32) | k.base;
+            const m = (a ^ (@as(u64, k.tag) *% 0xC2B2_AE3D_27D4_EB4F)) *% 0x9E37_79B9_7F4A_7C15;
+            return m ^ (m >> 29);
+        }
+
+        pub fn eql(_: NameKeyContext, a: NameKey, b: NameKey) bool {
+            return a.module == b.module and a.base == b.base and a.tag == b.tag;
+        }
+    };
 
     pub fn init(gpa: Allocator) Builder {
         return .{ .gpa = gpa };
@@ -900,25 +954,48 @@ pub const Builder = struct {
             .body = body,
         };
         b.name_index.clearRetainingCapacity();
+        b.recent = @splat(.{ .key = undefined, .index = .none });
+        b.cols = .empty;
         return ir;
     }
 
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
-        const index: u32 = @intCast(b.nodes.len);
-        try b.nodes.append(b.gpa, node);
+        const index = b.nodes.len;
+        if (index == b.nodes.capacity) {
+            try b.nodes.ensureUnusedCapacity(b.gpa, 1);
+            b.cols = b.nodes.slice();
+        }
+        b.nodes.len = index + 1;
+        b.cols.len = index + 1;
+        const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@intFromEnum(NodeList.Field.tag)]);
+        const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.pos)]));
+        const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.data)]));
+        tags[index] = node.tag;
+        positions[index] = node.pos;
+        datas[index] = node.data;
         return @enumFromInt(index);
     }
 
     pub fn intern(b: *Builder, n: Name) Allocator.Error!NameIndex {
         const key: NameKey = .{ .module = @intFromEnum(n.module), .base = @intFromEnum(n.base), .tag = n.tag };
+        // Most names a module interns are asked for again and again — the
+        // parameters of a derived function once per position — so a small
+        // table of recent answers, one slot per hash, is asked first. It
+        // only ever holds answers the map gave, so it decides nothing.
+        const slot = &b.recent[@intCast(NameKeyContext.hash(.{}, key) % recent_slots)];
+        if (slot.index != .none and NameKeyContext.eql(.{}, slot.key, key)) return slot.index;
         const got = try b.name_index.getOrPut(b.gpa, key);
-        if (got.found_existing) return got.value_ptr.*;
+        if (got.found_existing) {
+            slot.* = .{ .key = key, .index = got.value_ptr.* };
+            return got.value_ptr.*;
+        }
         const index: NameIndex = @enumFromInt(@as(u32, @intCast(b.names.items.len)));
         b.names.append(b.gpa, n) catch |err| {
             _ = b.name_index.remove(key);
             return err;
         };
         got.value_ptr.* = index;
+        slot.* = .{ .key = key, .index = index };
         return index;
     }
 
