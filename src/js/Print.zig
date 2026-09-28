@@ -92,6 +92,10 @@ pub const Options = struct {
 
 /// Print `ir` as an ES module. The caller owns the returned bytes.
 pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Allocator.Error![]u8 {
+    var spelled: std.heap.ArenaAllocator = .init(gpa);
+    defer spelled.deinit();
+    const spellings = try spelled.allocator().alloc(?Spelling, ir.names.len);
+    @memset(spellings, null);
     var p: Printer = .{
         .joiner = .init(gpa),
         .ir = ir,
@@ -100,6 +104,8 @@ pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Al
         .rename = options.rename,
         .compact = options.compact,
         .recursion_limit = options.recursion_limit,
+        .spelled = spelled.allocator(),
+        .spellings = spellings,
     };
     defer p.joiner.deinit();
     defer p.work.deinit(gpa);
@@ -150,10 +156,11 @@ pub const Joiner = struct {
         j.scratch.deinit(j.gpa);
     }
 
-    /// Append bytes that outlive the joiner. Nothing is copied.
-    pub fn push(j: *Joiner, text: []const u8) Allocator.Error!void {
+    /// Append bytes that outlive the joiner. Nothing is copied. Inline, like
+    /// `addPiece`: the printer calls it once per token.
+    pub inline fn push(j: *Joiner, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
-        try j.pieces.append(j.gpa, .{ .borrowed = text.ptr, .offset = 0, .len = @intCast(text.len) });
+        try j.addPiece(.{ .borrowed = text.ptr, .offset = 0, .len = @intCast(text.len) });
         j.length += text.len;
     }
 
@@ -162,8 +169,18 @@ pub const Joiner = struct {
         if (text.len == 0) return;
         const offset: u32 = @intCast(j.scratch.items.len);
         try j.scratch.appendSlice(j.gpa, text);
-        try j.pieces.append(j.gpa, .{ .borrowed = null, .offset = offset, .len = @intCast(text.len) });
+        try j.addPiece(.{ .borrowed = null, .offset = offset, .len = @intCast(text.len) });
         j.length += text.len;
+    }
+
+    /// One piece more. Written in place rather than through `append`, which
+    /// is three calls deep per piece where Zig's own backend inlines none of
+    /// them, and a printed module is a piece per token.
+    inline fn addPiece(j: *Joiner, p: Piece) Allocator.Error!void {
+        const at = j.pieces.items.len;
+        if (at == j.pieces.capacity) try j.pieces.ensureUnusedCapacity(j.gpa, 1);
+        j.pieces.items.len = at + 1;
+        j.pieces.items[at] = p;
     }
 
     /// Everything pushed so far, in one allocation. The caller owns it.
@@ -172,7 +189,13 @@ pub const Joiner = struct {
         var at: usize = 0;
         for (j.pieces.items) |piece| {
             const source = if (piece.borrowed) |ptr| ptr[0..piece.len] else j.scratch.items[piece.offset..][0..piece.len];
-            @memcpy(out[at..][0..piece.len], source);
+            const into = out[at..][0..piece.len];
+            // Most pieces are a token of a few bytes, where a byte loop is
+            // cheaper than a call to `memcpy`, which `@memcpy` is in a
+            // build by Zig's own backend.
+            if (piece.len <= 16) {
+                for (into, source) |*to, from| to.* = from;
+            } else @memcpy(into, source);
             at += piece.len;
         }
         std.debug.assert(at == j.length);
@@ -204,13 +227,13 @@ fn unaryOperand(op: JsIr.UnaryOp) u8 {
 }
 
 /// A character that may appear inside an identifier, a keyword or a number.
-fn identChar(c: u8) bool {
+inline fn identChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_' or c == '$';
 }
 
 /// The first byte of `text`, or `fallback` when it is empty.
-fn firstByte(text: []const u8, fallback: u8) u8 {
+inline fn firstByte(text: []const u8, fallback: u8) u8 {
     return if (text.len == 0) fallback else text[0];
 }
 
@@ -225,6 +248,13 @@ fn merges(a: u8, b: u8) bool {
     if (a == '<' and b == '!') return true; // `<!--` opens an HTML-style comment
     return false;
 }
+
+/// A name as printed (`Printer.spelling`): its text without the reserved-
+/// word escape, and whether it takes one where it is a binding.
+const Spelling = struct {
+    text: []const u8,
+    escapable: bool,
+};
 
 const Printer = struct {
     joiner: Joiner,
@@ -247,6 +277,10 @@ const Printer = struct {
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
     recursion_limit: u32 = 256,
+    /// Each name's printed text, spelled the first time it is printed
+    /// (`spelling`), and where those texts live until the joiner blits.
+    spellings: []?Spelling,
+    spelled: Allocator,
 
     // ---- Bytes out ---------------------------------------------------------
 
@@ -354,29 +388,38 @@ const Printer = struct {
                 m.unresolved(index);
             }
         }
+        const s = try p.spelling(index);
+        const escaped = escape_reserved and s.escapable;
+        // `Module$base$tag` is ONE token, so the adjacency guard is asked
+        // once, about its first byte, and the rest goes in raw.
+        try p.openToken(if (escaped) '$' else firstByte(s.text, '$'));
+        if (escaped) try p.pushInner("$");
+        try p.pushInner(s.text);
+    }
+
+    /// Name `index`'s printed text, `Module$base$tag` with every `.` of the
+    /// module path spelled `$`, worked out the first time it is printed: a
+    /// module prints its few names over and over, the parameters of a
+    /// derived function once per position.
+    fn spelling(p: *Printer, index: JsIr.NameIndex) Allocator.Error!Spelling {
+        if (p.spellings[index.int()]) |s| return s;
         const n = p.ir.name(index);
         const base = p.names.text(n.base);
-        const escaped = n.module == .none and escape_reserved and isReservedWord(base);
-        // `Module$base$tag` is ONE token written in up to five pieces, so the
-        // adjacency guard is asked once and the rest go in raw.
-        try p.openToken(if (n.module.unwrap()) |module| firstByte(p.names.text(module), '$') else if (escaped) '$' else firstByte(base, '$'));
+        var text: std.ArrayList(u8) = .empty;
         if (n.module.unwrap()) |module| {
-            const text = p.names.text(module);
-            var start: usize = 0;
-            while (std.mem.indexOfScalarPos(u8, text, start, '.')) |dot| {
-                try p.pushInner(text[start..dot]);
-                try p.pushInner("$");
-                start = dot + 1;
-            }
-            try p.pushInner(text[start..]);
-            try p.pushInner("$");
+            const path = p.names.text(module);
+            try text.ensureUnusedCapacity(p.spelled, path.len + 1);
+            for (path) |c| text.appendAssumeCapacity(if (c == '.') '$' else c);
+            text.appendAssumeCapacity('$');
         }
-        if (escaped) try p.pushInner("$");
-        try p.pushInner(base);
+        try text.appendSlice(p.spelled, base);
         if (n.tag != JsIr.Name.no_tag) {
             var buf: [12]u8 = undefined;
-            try p.pushInnerOwned(std.fmt.bufPrint(&buf, "${d}", .{n.tag}) catch "$x");
+            try text.appendSlice(p.spelled, std.fmt.bufPrint(&buf, "${d}", .{n.tag}) catch "$x");
         }
+        const s: Spelling = .{ .text = text.items, .escapable = n.module == .none and isReservedWord(base) };
+        p.spellings[index.int()] = s;
+        return s;
     }
 
     // ---- Statements -------------------------------------------------------
