@@ -874,9 +874,10 @@ pub fn addFields(store: *TypeStore, items: []Field) Allocator.Error!Range {
     try sortById(Field, store.gpa(), items);
     const start: u32 = @intCast(store.extra.items.len);
     try store.extra.ensureUnusedCapacity(store.gpa(), items.len * 2);
-    for (items) |f| {
-        store.extra.appendAssumeCapacity(@intFromEnum(f.name));
-        store.extra.appendAssumeCapacity(@intFromEnum(f.value));
+    const words = store.extra.addManyAsSliceAssumeCapacity(items.len * 2);
+    for (items, 0..) |f, i| {
+        words[i * 2] = @intFromEnum(f.name);
+        words[i * 2 + 1] = @intFromEnum(f.value);
     }
     return .{ .start = start, .len = @intCast(items.len) };
 }

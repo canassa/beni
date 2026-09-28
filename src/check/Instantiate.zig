@@ -35,6 +35,7 @@ const Schemes = @import("Schemes.zig");
 const Context = @import("Context.zig");
 const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
+const lists = @import("lists.zig");
 const Evidence = @import("Evidence.zig");
 
 const Instantiate = @This();
@@ -97,7 +98,7 @@ pub fn adoptSince(in: *Instantiate, mark: u32) Error!void {
     var i = mark;
     while (i < store.count()) : (i += 1) {
         const v: Var = @enumFromInt(i);
-        if (store.rank(v) == f.rank) try f.pool.append(in.cx.gpa, v);
+        if (store.rank(v) == f.rank) try lists.push(Var, &f.pool, in.cx.gpa, v);
     }
 }
 
@@ -125,13 +126,13 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
         if (store.rank(r) != TypeStore.generalized) continue;
         if (store.copy(r) != .none) continue;
         const c = try store.fresh(.err, f.rank);
-        try f.pool.append(gpa, c);
+        try lists.push(Var, &f.pool, gpa, c);
         store.setCopy(r, c.toOptional());
-        try in.copied.append(gpa, r);
+        try lists.push(Var, &in.copied, gpa, r);
         var n: u32 = 0;
         while (Walk.owned(store, in.stacks.obligations, r, n)) |ch| : (n += 1) {
             const cr = store.find(ch);
-            if (store.rank(cr) == TypeStore.generalized and store.copy(cr) == .none) try stack.append(gpa, cr);
+            if (store.rank(cr) == TypeStore.generalized and store.copy(cr) == .none) try lists.push(Var, stack, gpa, cr);
         }
     }
     // Pass 2: each copy's content, its successors mapped through the memo.
@@ -175,7 +176,7 @@ pub fn freeze(in: *Instantiate, v: Var, from: []const Var, to: []const Var) Erro
         if (store.copy(r) != .none) continue;
         const c = try store.fresh(.err, TypeStore.generalized);
         store.setCopy(r, c.toOptional());
-        try in.copied.append(gpa, r);
+        try lists.push(Var, &in.copied, gpa, r);
         var n: u32 = 0;
         while (Walk.child(store, r, n, .structural)) |ch| : (n += 1) {
             if (store.copy(store.find(ch)) == .none) try stack.append(gpa, ch);

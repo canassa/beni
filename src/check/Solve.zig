@@ -79,6 +79,7 @@ const Obligations = @import("Obligations.zig");
 const Report = @import("Report.zig");
 const Unify = @import("Unify.zig");
 const Walk = @import("Walk.zig");
+const lists = @import("lists.zig");
 const Tree = @import("constrain/Tree.zig");
 
 const Solve = @This();
@@ -214,7 +215,7 @@ pub fn frame(s: *Solve) *Frame {
 pub fn fresh(s: *Solve, content: TypeStore.Content) Error!Var {
     const f = s.frame();
     const v = try s.store().fresh(content, f.rank);
-    try f.pool.append(s.cx.gpa, v);
+    try lists.push(Var, &f.pool, s.cx.gpa, v);
     return v;
 }
 

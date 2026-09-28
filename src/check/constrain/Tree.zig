@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 const Bir = @import("../../bir/Bir.zig");
 const InternPool = @import("../../InternPool.zig");
 const TypeStore = @import("../TypeStore.zig");
+const lists = @import("../lists.zig");
 const Types = @import("../Types.zig");
 const CategoryFile = @import("../Category.zig");
 const Context = @import("../Context.zig");
@@ -313,7 +314,7 @@ pub const Generator = struct {
 
     pub fn fresh(g: *Generator, content: TypeStore.Content) Error!Var {
         const v = try g.cx.store.fresh(content, g.rank);
-        try g.pool.append(g.gpa, v);
+        try lists.push(Var, &g.pool, g.gpa, v);
         return v;
     }
 

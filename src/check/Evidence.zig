@@ -40,6 +40,7 @@ const Dispatch = @import("Dispatch.zig");
 const Schemes = @import("Schemes.zig");
 const TypeStore = @import("TypeStore.zig");
 const Walk = @import("Walk.zig");
+const lists = @import("lists.zig");
 
 const Evidence = @This();
 
@@ -324,8 +325,8 @@ pub fn repoint(e: *Evidence, start: u32, from: u32, to: u32) void {
 pub fn add(e: *Evidence, gpa: Allocator, w: Wanted) Error!WantedId {
     std.debug.assert(w.frame != std.math.maxInt(u32));
     const id: WantedId = @enumFromInt(@as(u32, @intCast(e.wanteds.items.len)));
-    try e.wanteds.append(gpa, w);
-    try e.answers.append(gpa, .none);
+    try lists.push(Wanted, &e.wanteds, gpa, w);
+    try lists.push(Answer, &e.answers, gpa, .none);
     return id;
 }
 

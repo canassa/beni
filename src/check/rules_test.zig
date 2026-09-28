@@ -79,6 +79,7 @@ const files = [_]File{
     .{ .path = "Walk.zig", .text = @embedFile("Walk.zig") },
     .{ .path = "checker_test.zig", .text = @embedFile("checker_test.zig") },
     .{ .path = "int_hash.zig", .text = @embedFile("int_hash.zig") },
+    .{ .path = "lists.zig", .text = @embedFile("lists.zig") },
     .{ .path = "reads.zig", .text = @embedFile("reads.zig") },
     .{ .path = "rules_test.zig", .text = "" },
     .{ .path = "constrain/Decl.zig", .text = @embedFile("constrain/Decl.zig") },
