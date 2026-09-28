@@ -436,6 +436,20 @@ const Walker = struct {
             const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
             const bless_this = wk.bless and (wk.bless_only == null or std.mem.indexOf(u8, path, wk.bless_only.?) != null);
             const case: Case = .{ .arena = arena, .w = &w, .kind = wk.kind, .fixture = fixture, .bless = bless_this, .cfg = wk.cfg };
+            // Timing (`tests/timing.zig`): the case's own record, and its
+            // name on every child it spawns.
+            const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
+            world.timing.current_fixture = path;
+            defer {
+                world.timing.current_fixture = "";
+                if (timed) |t| world.timing.write(.{ .fixture = .{
+                    .@"test" = world.timing.current_test,
+                    .kind = @tagName(wk.kind),
+                    .path = path,
+                    .wall_us = world.timing.sinceUs(t[0]),
+                    .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
+                } });
+            }
             switch (wk.cfg.mode) {
                 .strict => {
                     case.run() catch |err| {

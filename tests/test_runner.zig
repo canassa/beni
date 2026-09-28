@@ -16,6 +16,10 @@
 //!     time in milliseconds (`zig build` does not show them), then a
 //!     summary; exit 1 on any failure, leak or logged error.
 //!
+//! `BENI_TEST_TIMING=<dir>` makes the process record each test's wall and
+//! CPU time, and everything the black-box harness spawns, into `<dir>`
+//! (`timing.zig`); `zig build test-time-report` reads the records.
+//!
 //! Each test gets a fresh `std.testing.allocator` (leaks are reported per
 //! test), a fresh `std.testing.io`, and `std.testing.environ`. Fuzz tests run
 //! their corpus and the empty input, as std's runner does in a build that is
@@ -25,6 +29,8 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Io = std.Io;
 const testing = std.testing;
+/// The recorder, reached by the black-box harness as `@import("root").timing`.
+pub const timing = @import("timing.zig");
 
 comptime {
     if (builtin.fuzz) @compileError("tests/test_runner.zig does not support -ffuzz builds");
@@ -60,6 +66,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         }
     }
     selectShard(init.environ);
+    timing.open(runner_io, init.environ, args[0]);
     if (listen) {
         mainServer(init) catch |err| std.debug.panic("internal test runner failure: {t}", .{err});
     } else {
@@ -108,6 +115,8 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.log_level = .warn;
     log_err_count = 0;
     const test_fn = builtin.test_functions[index];
+    timing.current_test = test_fn.name;
+    const started: ?Started = if (timing.enabled()) .now() else null;
     const status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
         .pass
     else |err| switch (err) {
@@ -121,8 +130,35 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.io_instance.deinit();
     const leaks = testing.allocator_instance.detectLeaks();
     testing.allocator_instance.deinitWithoutLeakChecks();
+    if (started) |s| s.record(test_fn.name, status);
+    timing.current_test = "";
     return .{ .status = status, .leaks = leaks };
 }
+
+/// The clocks at the start of a test, for its `timing.Test` record.
+const Started = struct {
+    at: Io.Timestamp,
+    self: timing.Usage,
+    children: timing.Usage,
+
+    fn now() Started {
+        return .{ .at = timing.now(), .self = timing.usage(.self), .children = timing.usage(.children) };
+    }
+
+    fn record(s: Started, name: []const u8, status: @FieldType(Outcome, "status")) void {
+        const self = timing.usage(.self);
+        const children = timing.usage(.children);
+        timing.write(.{ .@"test" = .{
+            .name = name,
+            .status = @tagName(status),
+            .wall_us = timing.sinceUs(s.at),
+            .user_us = self.user_us -| s.self.user_us,
+            .sys_us = self.sys_us -| s.self.sys_us,
+            .child_user_us = children.user_us -| s.children.user_us,
+            .child_sys_us = children.sys_us -| s.children.sys_us,
+        } });
+    }
+};
 
 fn mainServer(init: std.process.Init.Minimal) !void {
     var stdin_reader: Io.File.Reader = .initStreaming(.stdin(), runner_io, &stdin_buffer);
@@ -136,7 +172,10 @@ fn mainServer(init: std.process.Init.Minimal) !void {
     while (true) {
         const hdr = try server.receiveMessage();
         switch (hdr.tag) {
-            .exit => return std.process.exit(0),
+            .exit => {
+                timing.close(@intCast(selected.len));
+                return std.process.exit(0);
+            },
             .query_test_metadata => {
                 var gpa_state: std.heap.DebugAllocator(.{}) = .init;
                 defer _ = gpa_state.deinit();
@@ -209,6 +248,7 @@ fn mainTerminal(init: std.process.Init.Minimal) void {
         if (outcome.leaks != 0) leaked += 1;
         if (log_err_count != 0) logged += 1;
     }
+    timing.close(@intCast(selected.len));
     std.debug.print("{d} passed; {d} skipped; {d} failed; {d} leaked; {d} logged errors.\n", .{ passed, skipped, failed, leaked, logged });
     if (failed != 0 or leaked != 0 or logged != 0) std.process.exit(1);
 }

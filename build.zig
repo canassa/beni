@@ -26,6 +26,11 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
+//! And where the test time goes, not a gate either:
+//!   zig build test-time-report    run `gates` (or `-Dtime-step=<step>`) with
+//!                                 every test process timed, and write the
+//!                                 tables into plans/test-time-report.md
+//!                                 (`tests/time_report.zig`)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -141,12 +146,27 @@ pub fn build(b: *std.Build) void {
     beni_mod.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
     beni_mod.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
 
-    const beni_tests = b.addTest(.{ .root_module = beni_mod, .test_runner = testRunner(b), .filters = test_filters });
-    const diagnostic_tests = b.addTest(.{ .root_module = diagnostic_mod, .filters = test_filters });
+    const beni_tests = b.addTest(.{ .name = "unit_test", .root_module = beni_mod, .test_runner = testRunner(b), .filters = test_filters });
+    const diagnostic_tests = b.addTest(.{ .name = "diagnostic_test", .root_module = diagnostic_mod, .test_runner = testRunner(b), .filters = test_filters });
     const gen_tests = b.addTest(.{
+        .name = "bench_gen_test",
         .filters = test_filters,
+        .test_runner = testRunner(b),
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/gen.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    // The test-time report's aggregator (`tests/time_report.zig`), tested
+    // with std's runner: `tests/test_runner.zig` imports the recorder the
+    // aggregator reads, and one file cannot belong to two modules of a
+    // binary.
+    const time_report_tests = b.addTest(.{
+        .name = "time_report_unit_test",
+        .filters = test_filters,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/time_report.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -163,6 +183,7 @@ pub fn build(b: *std.Build) void {
     }
     test_step.dependOn(&b.addRunArtifact(diagnostic_tests).step);
     test_step.dependOn(&b.addRunArtifact(gen_tests).step);
+    test_step.dependOn(&b.addRunArtifact(time_report_tests).step);
 
     // ---- ReleaseFast and ReleaseSafe compilers. ----
     // Each has its own module instances, because a module's optimize mode is
@@ -324,7 +345,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .name = "compare_gen_unit_test",
         .filters = test_filters,
+        .test_runner = testRunner(b),
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/compare/gen/main.zig"),
             .target = target,
@@ -353,6 +376,7 @@ pub fn build(b: *std.Build) void {
     const compare_bb = b.addTest(.{
         .name = "compare_gen_test",
         .filters = test_filters,
+        .test_runner = testRunner(b),
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/blackbox/compare_gen_test.zig"),
             .target = target,
@@ -366,6 +390,52 @@ pub fn build(b: *std.Build) void {
     const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
     compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
     blackbox_step.dependOn(compare_bb_step);
+
+    // ---- Where the test time goes. ----
+    // `time-report` runs a step of this build again, in a child `zig build`,
+    // with `BENI_TEST_TIMING` set, so every test process records itself
+    // (`tests/timing.zig`), and renders the records into
+    // `plans/test-time-report.md` between its markers. The options that pick
+    // what runs are passed on to the child build; `-- <args>` reach the
+    // report tool (`--out=`, `--top=`, `--records=`).
+    const time_step_name = b.option([]const u8, "time-step", "The step `test-time-report` times (default: gates)") orelse "gates";
+    const time_report_exe = b.addExecutable(.{
+        .name = "time-report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/time_report.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const child_build_args = childBuildArgs(b, optimize, quick, test_filters, corpus_only);
+    {
+        const run = b.addRunArtifact(time_report_exe);
+        run.addArg("run");
+        if (b.args) |args| run.addArgs(args);
+        run.addArgs(&.{ "--", b.graph.zig_exe, "build", time_step_name });
+        run.addArgs(child_build_args);
+        run.setCwd(b.path("."));
+        run.has_side_effects = true;
+        b.step("test-time-report", "Run `gates` (or -Dtime-step) with every test timed; write the tables into plans/test-time-report.md").dependOn(&run.step);
+    }
+    // The smoke test runs the report tool around a child build of one
+    // corpus fixture, so it needs the tool, Zig, and the corpus binary the
+    // child reuses already compiled (it passes on `-Dquick` and
+    // `-Doptimize` for the same reason: a different compiler would be a
+    // minute's compile).
+    {
+        const tool_install = b.addInstallArtifact(time_report_exe, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
+        const smoke = bb.artifact("tests/blackbox/time_report_test.zig");
+        const smoke_step = bb.fileStep("tests/blackbox/time_report_test.zig");
+        const run = bb.run(smoke, .{ .root = "tests/corpus" });
+        run.setEnvironmentVariable("BENI_TIME_REPORT_EXE", b.getInstallPath(.prefix, "tools/time-report"));
+        run.setEnvironmentVariable("BENI_ZIG_EXE", b.graph.zig_exe);
+        run.setEnvironmentVariable("BENI_CHILD_BUILD_ARGS", std.mem.join(b.allocator, " ", childBuildArgs(b, optimize, quick, &.{}, "")) catch @panic("OOM"));
+        run.step.dependOn(&tool_install.step);
+        run.step.dependOn(&corpus_test.step);
+        smoke_step.dependOn(&run.step);
+        blackbox_step.dependOn(smoke_step);
+    }
 
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
@@ -392,6 +462,23 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(test_step);
     gates_step.dependOn(blackbox_step);
     gates_step.dependOn(fmt_step);
+}
+
+/// The options of this build that a child `zig build` needs to build and run
+/// the same thing: `-Doptimize`, `-Dquick`, `-Dtest-filter`, `-Dcorpus`.
+fn childBuildArgs(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    quick: bool,
+    test_filters: []const []const u8,
+    corpus_only: []const u8,
+) []const []const u8 {
+    var args: std.ArrayList([]const u8) = .empty;
+    if (optimize != .Debug) args.append(b.allocator, b.fmt("-Doptimize={t}", .{optimize})) catch @panic("OOM");
+    if (quick) args.append(b.allocator, "-Dquick") catch @panic("OOM");
+    for (test_filters) |filter| args.append(b.allocator, b.fmt("-Dtest-filter={s}", .{filter})) catch @panic("OOM");
+    if (corpus_only.len != 0) args.append(b.allocator, b.fmt("-Dcorpus={s}", .{corpus_only})) catch @panic("OOM");
+    return args.items;
 }
 
 /// `tests/test_runner.zig`: std's runner plus `BENI_TEST_SHARD`, which lets

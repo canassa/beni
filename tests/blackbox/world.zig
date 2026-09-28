@@ -29,6 +29,11 @@ const diagnostic = @import("diagnostic");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
+/// The test runner's timing recorder (`tests/timing.zig`): every child
+/// `spawnAndCapture` reaps is one `child` record when `BENI_TEST_TIMING` is
+/// set. The runner is the root of every black-box binary.
+pub const timing = @import("root").timing;
+
 /// Relative to the repo root, which the build step pins as cwd. Resolved to
 /// an absolute path at `init` because the child runs with a different cwd.
 pub const exe_relative = "zig-out/bin/beni";
@@ -538,11 +543,28 @@ pub fn spawnAndCapture(
 ) !Result {
     var env = std.process.Environ.Map.init(gpa);
     defer env.deinit();
+    return spawnAndCaptureIn(arena, io, argv, cwd, timeout_ms, &env);
+}
+
+/// `spawnAndCapture` with the environment `env` instead of an empty one: for
+/// a harness tool that runs `zig build` and needs the dev shell's `PATH` and
+/// Zig cache variables.
+pub fn spawnAndCaptureIn(
+    arena: Allocator,
+    io: Io,
+    argv: []const []const u8,
+    cwd: std.process.Child.Cwd,
+    timeout_ms: i64,
+    env: *const std.process.Environ.Map,
+) !Result {
+    // Timing (`timing.zig`): one record per child, whatever way this ends.
+    const started: ?Io.Timestamp = if (timing.enabled()) timing.now() else null;
+    errdefer if (started) |at| recordChild(argv, cwd, at, null, -2);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
         .cwd = cwd,
-        .environ_map = &env,
+        .environ_map = env,
         .stdin = .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
@@ -560,6 +582,7 @@ pub fn spawnAndCapture(
         // overflowed stack takes longer to print than a case's timeout, so
         // without this one crash signed `timeout` or `crash=ABRT` by machine
         // speed.
+        if (started) |at| recordChild(argv, cwd, at, null, -2);
         return .{
             .cpu_ms = null,
             .exit_code = 255,
@@ -571,22 +594,53 @@ pub fn spawnAndCapture(
     }
 
     const term = try child.wait(io);
-    const cpu_ms: ?i64 = if (comptime @TypeOf(child.resource_usage_statistics.rusage) == ?std.posix.rusage) cpu: {
-        const ru = child.resource_usage_statistics.rusage orelse break :cpu null;
+    const rusage: ?std.posix.rusage = if (comptime @TypeOf(child.resource_usage_statistics.rusage) == ?std.posix.rusage)
+        child.resource_usage_statistics.rusage
+    else
+        null;
+    const cpu_ms: ?i64 = if (rusage) |ru| cpu: {
         const us = (@as(i64, ru.utime.sec) + @as(i64, ru.stime.sec)) * 1_000_000 + @as(i64, ru.utime.usec) + @as(i64, ru.stime.usec);
         break :cpu @divTrunc(us, 1000);
     } else null;
+    const exit_code: u8 = switch (term) {
+        .exited => |code| code,
+        else => 255,
+    };
+    if (started) |at| recordChild(argv, cwd, at, rusage, if (term == .exited) exit_code else -1);
     return .{
         .cpu_ms = cpu_ms,
-        .exit_code = switch (term) {
-            .exited => |code| code,
-            else => 255,
-        },
+        .exit_code = exit_code,
         .term = term,
         .stdout = stdout.items,
         .stderr = stderr.items,
         .diagnostics = &.{},
     };
+}
+
+/// The `child` timing record of one reaped (or killed) process. `rusage` is
+/// null when the harness killed it, and then only the wall time is known.
+fn recordChild(argv: []const []const u8, cwd: std.process.Child.Cwd, started: Io.Timestamp, rusage: ?std.posix.rusage, exit: i32) void {
+    var args_buffer: [timing.max_args_bytes]u8 = undefined;
+    var args: Io.Writer = .fixed(&args_buffer);
+    for (argv[1..], 0..) |arg, i| {
+        if (i != 0) args.writeByte(' ') catch break;
+        // Past the buffer the list is cut; what fitted is kept.
+        args.writeAll(arg) catch break;
+    }
+    const used: timing.Usage = if (rusage) |ru| timing.fromRusage(ru) else .{};
+    timing.write(.{ .child = .{
+        .@"test" = timing.current_test,
+        .fixture = timing.current_fixture,
+        .tool = std.fs.path.basename(argv[0]),
+        .args = args.buffered(),
+        .repo_cwd = cwd == .inherit,
+        .wall_us = timing.sinceUs(started),
+        .user_us = used.user_us,
+        .sys_us = used.sys_us,
+        .max_rss_kib = used.max_rss_kib,
+        .minor_faults = used.minor_faults,
+        .exit = exit,
+    } });
 }
 
 /// Read both pipes to EOF, multiplexed with `poll`, within the deadline.

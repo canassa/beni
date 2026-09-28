@@ -310,6 +310,17 @@ suite takes about as long as its slowest test. A test that loops over
 independent cases for many seconds is better written as several tests.
 Run a test binary by hand (no `--listen`) to get each test's wall time.
 
+`zig build test-time-report` answers "where does the test time go": it runs
+`gates` (or `-Dtime-step=<step>`, with `-Dquick`, `-Dcorpus` and
+`-Dtest-filter` passed on) in a child build with `BENI_TEST_TIMING=<dir>`,
+so every test process records each test, corpus case and spawned `beni` or
+`node` (wall, user, sys, max RSS), and renders the tables — per step, test,
+fixture, tool, harness overhead and repeated commands — into
+[`plans/test-time-report.md`](plans/test-time-report.md) between its markers
+(`tests/time_report.zig`; `-- --out=- --top=N` to print instead). It costs
+one full gates run, so it is not a tier; unset, the recording costs nothing.
+Read CPU time, not wall: under load only CPU time is stable.
+
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on
 `builtin.mode == .Debug`, so it runs there as it does in Debug. It carries no

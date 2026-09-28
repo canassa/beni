@@ -296,6 +296,14 @@ To prove a fixture fails before the fix (rule 3), run it at Tier 0 with the
 fix set aside, not the whole suite. Never run two full suites at once, never
 re-run a green one, and read a failure from the log instead of re-running.
 
+**What a test costs.** `zig build test-time-report` runs the gates (or
+`-Dtime-step=<step>`) with `BENI_TEST_TIMING` set and writes per-test,
+per-fixture and per-tool CPU tables into `plans/test-time-report.md`. Look
+there before adding an expensive scenario, and at the table's CPU column,
+not its wall column. A spawn that bypasses `World` (a bare
+`std.process.run`) is invisible to it except as "unrecorded" child CPU, so
+spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
+
 ## Checklist before reporting done
 
 - [ ] Right boundary: the binary, unless it is a semantics question (run the JS) or
