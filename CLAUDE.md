@@ -238,6 +238,7 @@ refuses the two filters, because a gate runs everything):
 -Dllvm                         # black-box compiler built by LLVM, the code users get
 -Dtest-filter=<text>           # only tests whose name contains <text> (repeatable)
 -Dcorpus=<text>                # only corpus fixtures whose path contains <text>
+-Dtest-budget-ms=<ms>          # another CPU budget per test, for local profiling (0: none)
 zig build test-blackbox-<file> # one black-box file: ordering, cache, corpus, abuse-wide, …
 ```
 
@@ -336,7 +337,31 @@ Every test binary runs under `tests/test_runner.zig`, std's runner plus
 black-box binaries as several processes, each taking every n-th test, so a
 suite takes about as long as its slowest test. A test that loops over
 independent cases for many seconds is better written as several tests.
-Run a test binary by hand (no `--listen`) to get each test's wall time.
+Run a test binary by hand (no `--listen`) to get each test's wall and CPU
+time.
+
+**Every test has a budget of one second of CPU** (the owner, 2026-09-28).
+The runner measures each test's CPU — its own and every process it spawned
+and reaped, user plus system, from `getrusage` — and a test that passes but
+spent more fails, with the line `FAIL: <ms> ms of CPU, over the 1000 ms
+budget …: <test>`. It holds on every run of a binary the gates run
+(`zig build test`, `test-blackbox` and each `test-blackbox-<file>`), with
+one global value and no exemption; `fuzz`, the pending and timing steps,
+`test-run-hashes` and `coverage` are not held to it. The corpus walker's
+tests are hundreds of independent cases, so the walker holds **each case**
+(a fixture, and each build of a `run/` fixture) to the budget — its worker
+thread's CPU plus its children's — and the runner holds the walker test to
+it for what the cases did not spend. `-Dtest-budget-ms=<ms>` sets another
+budget for profiling (`-Dtest-budget-ms=1` makes every test print its
+CPU; `0` enforces nothing, and `test-time-report` passes it on); a commit
+never relies on it. A test over the budget is brought under it by the
+rules of *write-tests*: the smallest input that reaches the limit, a
+"does not recurse" claim moved to a unit test on `src/small_stack.zig`,
+one test per branch, one build per mode that has a branch of its own, or
+deleted when another test reaches its branch — never an exemption. CPU
+time still rises when the machine is loaded (shared cores and lower
+clocks): the gates' own load raised tests' CPU two to three times over a
+quiet run, so a test near the budget quiet is over it in the gates.
 
 `zig build test-time-report` answers "where does the test time go": it runs
 `gates` (or `-Dtime-step=<step>`, with `-Dllvm`, `-Dcorpus` and
@@ -347,7 +372,8 @@ fixture, tool, harness overhead and repeated commands — into
 [`plans/test-time-report.md`](plans/test-time-report.md) between its markers
 (`tests/time_report.zig`; `-- --out=- --top=N` to print instead). It costs
 one full gates run, so it is not a tier; unset, the recording costs nothing.
-Read CPU time, not wall: under load only CPU time is stable.
+Read CPU time, not wall: under load it moves far less than wall time,
+though it moves (see the budget above).
 
 `zig build coverage`, inside `nix develop .#coverage` (kcov, Linux only),
 answers "which lines of the compiler do the black-box tests reach": it runs

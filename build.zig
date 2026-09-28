@@ -22,6 +22,11 @@
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses the two filters: a gate runs everything.
 //!
+//! Every test of the gates' binaries, and every corpus case, is held to a
+//! CPU budget (`tests/test_runner.zig`): one that spends more than 1000 ms
+//! of CPU, its own and its children's, fails. For profiling only:
+//!   -Dtest-budget-ms=<ms> another budget; 0 enforces none
+//!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
@@ -137,6 +142,12 @@ pub fn build(b: *std.Build) void {
     const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
     const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
+    // The CPU budget of one test or corpus case (`tests/test_runner.zig`),
+    // on every run of a binary the gates run; the random sweeps of `fuzz`,
+    // the pending and timing steps and the run-hash recording are not held
+    // to it. Another value is for profiling a test locally.
+    const test_budget_ms = b.option(u64, "test-budget-ms", "Fail a test or corpus case that spends more CPU than this, its own and its children's (default 1000; 0 enforces none; for local profiling)") orelse 1000;
+    const budget_env = b.fmt("{d}", .{test_budget_ms});
 
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
@@ -235,23 +246,33 @@ pub fn build(b: *std.Build) void {
     for (0..unit_shards) |k| {
         const run = runTests(b, beni_tests);
         run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
+        run.setEnvironmentVariable("BENI_TEST_BUDGET_MS", budget_env);
         run.setName(b.fmt("run beni tests shard {d}/{d}", .{ k, unit_shards }));
         test_step.dependOn(&run.step);
     }
-    test_step.dependOn(&runTests(b, diagnostic_tests).step);
+    {
+        const run = runTests(b, diagnostic_tests);
+        run.setEnvironmentVariable("BENI_TEST_BUDGET_MS", budget_env);
+        test_step.dependOn(&run.step);
+    }
     test_step.dependOn(&runTests(b, time_report_tests).step);
     // The coverage report's own logic (`tests/coverage.zig`), which needs no
     // kcov to test.
     const coverage_tests = b.addTest(.{
         .name = "coverage_unit_test",
         .filters = test_filters,
+        .test_runner = testRunner(b),
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/coverage.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    test_step.dependOn(&runTests(b, coverage_tests).step);
+    {
+        const run = runTests(b, coverage_tests);
+        run.setEnvironmentVariable("BENI_TEST_BUDGET_MS", budget_env);
+        test_step.dependOn(&run.step);
+    }
 
     // The same unit tests with their random exploration on (`BENI_FUZZ=1`,
     // `src/fuzzing.zig`): the byte-format mutation sweeps and the lexer's
@@ -344,6 +365,7 @@ pub fn build(b: *std.Build) void {
         .safe_dir = safe_dir,
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
+        .budget_ms = budget_env,
     };
     // A process that runs an emitted program skips Node when the run's
     // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
@@ -403,9 +425,9 @@ pub fn build(b: *std.Build) void {
         &.{ "--index=tests/blackbox/run-hashes.txt", "--whole" }
     else
         &.{"--index=tests/blackbox/run-hashes.txt"});
-    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }).step);
+    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir, .budget = false }).step);
     if (records_scenarios) for (suites, suite_tests) |suite, t| {
-        bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }, suite[1]);
+        bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir, .budget = false }, suite[1]);
     };
     b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
 
@@ -455,12 +477,12 @@ pub fn build(b: *std.Build) void {
     // (`=perf`) on the ReleaseFast binary, because the budgets they guard
     // are ReleaseFast budgets.
     const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode, and the non-timing scenarios");
-    pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending" }).step);
+    pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending", .budget = false }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
-    pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
+    pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast", .budget = false }).step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
-    perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);
+    perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast, .budget = false }).step);
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`),
     // on the same ReleaseFast compiler by the same ratio method. Not a gate:
@@ -472,9 +494,9 @@ pub fn build(b: *std.Build) void {
     // the large traces, and in Debug that was half the step.
     const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler");
     const perf_test = bb.artifactAt("tests/blackbox/perf_test.zig", .ReleaseSafe);
-    const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = "wall" });
+    const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = "wall", .budget = false });
     for (0..perf_shards) |k| {
-        const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }) });
+        const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }), .budget = false });
         wall_perf.step.dependOn(&shard.step);
     }
     fixed_perf_step.dependOn(&wall_perf.step);
@@ -565,7 +587,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
-    compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
+    compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus", .budget = false }).step);
     bench_test_step.dependOn(compare_bb_step);
 
     // ---- Where the test time goes. ----
@@ -591,6 +613,9 @@ pub fn build(b: *std.Build) void {
         if (b.args) |args| run.addArgs(args);
         run.addArgs(&.{ "--", b.graph.zig_exe, "build", time_step_name });
         run.addArgs(child_build_args);
+        // `-Dtest-budget-ms=0` measures every test to completion, for a
+        // report on a suite that does not meet the budget.
+        if (b.user_input_options.contains("test-budget-ms")) run.addArg(b.fmt("-Dtest-budget-ms={s}", .{budget_env}));
         run.setCwd(b.path("."));
         run.has_side_effects = true;
         b.step("test-time-report", "Run `gates` (or -Dtime-step) with every test timed; write the tables into plans/test-time-report.md").dependOn(&run.step);
@@ -667,11 +692,11 @@ pub fn build(b: *std.Build) void {
         // that only a unit test runs shows as uncovered.
         if (corpus_only.len == 0) {
             for (blackbox_suites) |suite| {
-                cbb.runSharded(coverage_run_step, cbb.artifact(suite[0]), .{ .root = "tests/corpus", .timeout_scale = timeout_scale }, suite[1]);
+                cbb.runSharded(coverage_run_step, cbb.artifact(suite[0]), .{ .root = "tests/corpus", .timeout_scale = timeout_scale, .budget = false }, suite[1]);
             }
         }
         for (std.enums.values(corpus_parts.Part)) |part| {
-            coverage_run_step.dependOn(&cbb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .timeout_scale = timeout_scale }).step);
+            coverage_run_step.dependOn(&cbb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .timeout_scale = timeout_scale, .budget = false }).step);
         }
 
         const coverage_exe = b.addExecutable(.{
@@ -1189,6 +1214,9 @@ const HarnessEnvironment = struct {
     /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
     run_hashes: []const u8 = "",
     report_dir: []const u8 = "",
+    /// Whether each test and corpus case is held to the CPU budget
+    /// (`tests/test_runner.zig`): every run the gates make is.
+    budget: bool = true,
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -1211,6 +1239,8 @@ const Blackbox = struct {
     /// Install `<safe_dir>/beni` and `perf_bin_dir/beni`.
     safe_install: *std.Build.Step,
     perf_install: *std.Build.Step,
+    /// `-Dtest-budget-ms`, as `BENI_TEST_BUDGET_MS`.
+    budget_ms: []const u8,
 
     /// `test-blackbox-<file>`: the step that runs one black-box test file.
     fn fileStep(bb: Blackbox, root: []const u8) *std.Build.Step {
@@ -1268,6 +1298,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
         r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
+        r.setEnvironmentVariable("BENI_TEST_BUDGET_MS", if (env.budget) bb.budget_ms else "");
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,
             .fast => perf_bin_dir,

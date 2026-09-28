@@ -468,12 +468,27 @@ const Walker = struct {
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
                 } });
             }
+            // The CPU budget holds per case (`timing.budget_us`): a kind is
+            // hundreds of independent cases, and one case is what a
+            // fixture costs.
+            const thread_cpu_start = world.timing.threadCpu();
+            const child_cpu_start = world.timing.thread_child_cpu_us;
             switch (wk.cfg.mode) {
                 .strict => {
-                    case.run() catch |err| {
+                    const passed = if (case.run()) |_| true else |err| failed: {
                         std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
                         _ = wk.failures.fetchAdd(1, .monotonic);
+                        break :failed false;
                     };
+                    const cpu_us = world.timing.durationUs(thread_cpu_start.durationTo(world.timing.threadCpu())) +
+                        (world.timing.thread_child_cpu_us - child_cpu_start);
+                    _ = world.timing.cases_cpu_us.fetchAdd(cpu_us, .monotonic);
+                    if (passed and world.timing.budget_us != 0 and cpu_us > world.timing.budget_us) {
+                        std.debug.print("FAIL: {d} ms of CPU, over the {d} ms budget (the case's own and its children's): {s}/{s}\n", .{
+                            cpu_us / std.time.us_per_ms, world.timing.budget_us / std.time.us_per_ms, fixture.dir, fixture.name,
+                        });
+                        _ = wk.failures.fetchAdd(1, .monotonic);
+                    }
                 },
                 .pending => if (!try case.pending(path)) {
                     _ = wk.failures.fetchAdd(1, .monotonic);

@@ -330,6 +330,31 @@ not its wall column. A spawn that bypasses `World` (a bare
 `std.process.run`) is invisible to it except as "unrecorded" child CPU, so
 spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 
+**Every test fits in one second of CPU.** The runner fails a test in the
+gates that spends more — its own CPU and every process it spawned, user
+plus system — and the corpus walker holds each case (each build of a
+`run/` fixture) to the same second. There is one budget and no exemption.
+Measure a new test with `-Dtest-budget-ms=1`, which makes every selected
+test fail with its CPU printed (`zig build test-blackbox-<file>
+-Dtest-filter=<name> -Dtest-budget-ms=1`), or run the binary by hand; aim
+well under the second, because the gates' own load raises CPU time two to
+three times over a quiet run. A test that does not fit is made to fit, by
+the owner's rule that a few hand-picked tests reach specific branches:
+
+- size the input just past the limit it tests, never a round number past it;
+- move a "the walk does not recurse" claim to a unit test that runs its
+  body on `src/small_stack.zig`'s 1 MiB stack, so the tree need only be as
+  deep as a recursive walk survives there;
+- split a test that checks several branches into one test per branch;
+- build only the modes that have a branch of their own;
+- put a random sweep or stress loop under `zig build fuzz` (`BENI_FUZZ`)
+  and keep one hand-picked input in the gates;
+- delete a test whose branch another test reaches — shown by breaking the
+  guard and watching the other test go red.
+
+If none of these fits it, the claim needs a design decision; report it, do
+not raise the budget for it.
+
 **What the tests reach.** `zig build coverage`, inside `nix develop
 .#coverage`, runs the black-box suites and the corpus with every compiler
 process under kcov and reports which lines of `src/` the black-box tests

@@ -1,5 +1,6 @@
 //! Opt-in timing records for the test suites, read by `zig build
-//! test-time-report` (`tests/time_report.zig`).
+//! test-time-report` (`tests/time_report.zig`), and the CPU budget every
+//! test is held to (`budget_us`).
 //!
 //! `BENI_TEST_TIMING=<dir>` turns it on. Every test process then writes one
 //! file, `<dir>/<binary>-<pid>.jsonl`, of one JSON `Record` per line: a
@@ -126,6 +127,27 @@ var io: Io = undefined;
 var mutex: Io.Mutex = .init;
 var process_start: Io.Timestamp = undefined;
 
+/// The CPU budget of one test, in microseconds; 0 is none. The test runner
+/// reads it from `BENI_TEST_BUDGET_MS` (`zig build -Dtest-budget-ms=`,
+/// 1000 unless given) and fails a test that spends more: its own CPU and
+/// that of every process it spawned, user plus system time. A test that
+/// runs independent cases, the corpus walker, holds each case to the budget
+/// on its own and adds what the cases spent to `cases_cpu_us`; the rest of
+/// the test is held to the budget like any other.
+pub var budget_us: u64 = 0;
+
+/// The variable the budget is read from, in milliseconds.
+pub const budget_env_var = "BENI_TEST_BUDGET_MS";
+
+/// The CPU of the cases the running test budgeted one by one (see
+/// `budget_us`), which the runner leaves out of the test's own sum.
+pub var cases_cpu_us: std.atomic.Value(u64) = .init(0);
+
+/// The CPU of every process the calling thread spawned and reaped, as
+/// `wait4` reported it: a case that runs on a thread of its own counts its
+/// children's CPU with this.
+pub threadlocal var thread_child_cpu_us: u64 = 0;
+
 /// The test running now. Tests run one at a time in a process, so a global
 /// is the truth for every thread of it.
 pub var current_test: []const u8 = "";
@@ -138,14 +160,18 @@ pub fn enabled() bool {
     return file != null;
 }
 
-/// Open this process's record file when `BENI_TEST_TIMING` names a
-/// directory, and write its `start` record. `the_io` must stay usable for
-/// the life of the process and from any thread.
+/// Read the CPU budget; open this process's record file when
+/// `BENI_TEST_TIMING` names a directory, and write its `start` record.
+/// `the_io` must stay usable for the life of the process and from any
+/// thread.
 pub fn open(the_io: Io, environ: std.process.Environ, argv0: []const u8) void {
     const a = std.heap.page_allocator;
+    io = the_io;
+    const budget = envOr(environ, budget_env_var);
+    if (budget.len != 0) budget_us = std.time.us_per_ms * (std.fmt.parseUnsigned(u64, budget, 10) catch
+        std.debug.panic("{s} must be a whole number of milliseconds, got '{s}'", .{ budget_env_var, budget }));
     const dir_path = environ.getAlloc(a, env_var) catch return;
     if (dir_path.len == 0) return;
-    io = the_io;
     process_start = Io.Clock.awake.now(io);
     const binary = std.fs.path.basename(argv0);
     const pid: i64 = @intCast(std.posix.system.getpid());

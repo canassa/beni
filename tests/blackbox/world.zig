@@ -695,6 +695,9 @@ pub fn spawnAndCaptureIn(
         null;
     const cpu_ms: ?i64 = if (rusage) |ru| cpu: {
         const us = (@as(i64, ru.utime.sec) + @as(i64, ru.stime.sec)) * 1_000_000 + @as(i64, ru.utime.usec) + @as(i64, ru.stime.usec);
+        // The calling thread's share, for a case the corpus walker holds
+        // to the CPU budget on its own (`timing.budget_us`).
+        timing.thread_child_cpu_us += @intCast(@max(0, us));
         break :cpu @divTrunc(us, 1000);
     } else null;
     const exit_code: u8 = switch (term) {

@@ -13,8 +13,16 @@
 //!   - `--listen=-`: the `std.zig.Server` protocol the build runner speaks,
 //!     reporting the shard's tests as the binary's whole list.
 //!   - no argument: run the shard and print one line per test with its wall
-//!     time in milliseconds (`zig build` does not show them), then a
-//!     summary; exit 1 on any failure, leak or logged error.
+//!     and CPU time in milliseconds (`zig build` does not show them), then
+//!     a summary; exit 1 on any failure, leak or logged error.
+//!
+//! `BENI_TEST_BUDGET_MS=<ms>` is the CPU budget of every test: one that
+//! passes but spent more CPU than that, its own and every process's it
+//! spawned (user plus system, from `getrusage`), fails, named with its time.
+//! `build.zig` sets it on every run of the gates' binaries, 1000 unless
+//! `-Dtest-budget-ms=` says otherwise; unset or 0, nothing is enforced. A
+//! test that runs independent cases holds each to the budget instead
+//! (`timing.budget_us`).
 //!
 //! `--node-version=<text>` hands the black-box harness the Node version the
 //! build asked for once (`node_version`).
@@ -129,6 +137,9 @@ const Outcome = struct {
     status: enum { pass, skip, fail },
     /// Allocations the test left behind in `std.testing.allocator`.
     leaks: usize,
+    /// The CPU the test spent, its own and its children's, less what its
+    /// cases were held to on their own (`timing.cases_cpu_us`).
+    cpu_us: u64,
 };
 
 /// Set up the per-test globals std's runner sets, run test `index`, tear
@@ -144,8 +155,9 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     log_err_count = 0;
     const test_fn = builtin.test_functions[index];
     timing.current_test = test_fn.name;
-    const started: ?Started = if (timing.enabled()) .now() else null;
-    const status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
+    timing.cases_cpu_us.store(0, .monotonic);
+    const started: Started = .now();
+    var status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
         .pass
     else |err| switch (err) {
         error.SkipZigTest => .skip,
@@ -158,9 +170,19 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.io_instance.deinit();
     const leaks = testing.allocator_instance.detectLeaks();
     testing.allocator_instance.deinitWithoutLeakChecks();
-    if (started) |s| s.record(test_fn.name, status);
+    const cpu_us = started.cpuUs() -| timing.cases_cpu_us.load(.monotonic);
+    // The budget (`timing.budget_us`): CPU, not wall time, so a loaded
+    // machine does not fail a test by running it slowly.
+    if (status == .pass and timing.budget_us != 0 and cpu_us > timing.budget_us) {
+        // The time first: the build runner cuts a long line.
+        std.debug.print("FAIL: {d} ms of CPU, over the {d} ms budget (its own and its children's): {s}\n", .{
+            cpu_us / std.time.us_per_ms, timing.budget_us / std.time.us_per_ms, test_fn.name,
+        });
+        status = .fail;
+    }
+    if (timing.enabled()) started.record(test_fn.name, status);
     timing.current_test = "";
-    return .{ .status = status, .leaks = leaks };
+    return .{ .status = status, .leaks = leaks, .cpu_us = cpu_us };
 }
 
 /// The clocks at the start of a test, for its `timing.Test` record.
@@ -171,6 +193,14 @@ const Started = struct {
 
     fn now() Started {
         return .{ .at = timing.now(), .self = timing.usage(.self), .children = timing.usage(.children) };
+    }
+
+    /// The CPU the process and its reaped children spent since `s`.
+    fn cpuUs(s: Started) u64 {
+        const self = timing.usage(.self);
+        const children = timing.usage(.children);
+        return (self.user_us -| s.self.user_us) + (self.sys_us -| s.self.sys_us) +
+            (children.user_us -| s.children.user_us) + (children.sys_us -| s.children.sys_us);
     }
 
     fn record(s: Started, name: []const u8, status: @FieldType(Outcome, "status")) void {
@@ -267,7 +297,8 @@ fn mainTerminal(init: std.process.Init.Minimal) void {
         const outcome = runOne(init, index);
         const elapsed = start.durationTo(Io.Clock.awake.now(runner_io));
         const ms = @as(f64, @floatFromInt(elapsed.nanoseconds)) / std.time.ns_per_ms;
-        std.debug.print("{d:>10.1} ms  {t}  {s}\n", .{ ms, outcome.status, builtin.test_functions[index].name });
+        const cpu_ms = @as(f64, @floatFromInt(outcome.cpu_us)) / std.time.us_per_ms;
+        std.debug.print("{d:>10.1} ms  {d:>10.1} ms CPU  {t}  {s}\n", .{ ms, cpu_ms, outcome.status, builtin.test_functions[index].name });
         switch (outcome.status) {
             .pass => passed += 1,
             .skip => skipped += 1,
