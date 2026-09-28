@@ -232,7 +232,7 @@ fn equatable(s: *Solve, id: Id, row: Row) Error!void {
         .rigid => .rigid_variable,
     };
     s.obligations.rowPtr(row.origin).reported = true;
-    try s.report.notEquatable(row.region, row.vars[0], reason);
+    try s.report.notEquatable(row.region, row.vars[0], reason, false);
 }
 
 const Head = enum { flex, err, result, maybe, other };

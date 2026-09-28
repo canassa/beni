@@ -1,0 +1,26 @@
+-- check/bad: a refused dot-call `.eq` names the dot-call the program wrote,
+-- never an operator it did not write. `F` holds a function, so neither `F`
+-- nor a function has an `eq`: `direct` calls `.eq` on an `F`, `onFunction`
+-- on a function, and `viaHelper` reaches `.eq` through `h`, whose
+-- requirement it promoted. Each NOT EQUATABLE says `.eq`, not `==`.
+type F
+    = F (Int -> Int)
+
+
+h x =
+    x.eq x
+
+
+direct : Bool
+direct =
+    (F (\y -> y)).eq (F (\y -> y))
+
+
+onFunction : Bool
+onFunction =
+    (\y -> y + 1).eq (\y -> y)
+
+
+viaHelper : Bool
+viaHelper =
+    h (F (\y -> y))

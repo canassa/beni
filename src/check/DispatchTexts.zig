@@ -669,13 +669,17 @@ fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
     return best;
 }
 
-pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
+/// `not_equatable`. `dot_call`: the refused use is a dot-call `.eq` —
+/// written, or reached through a function whose requirement it promoted —
+/// and the text names it, never an operator the program did not write.
+pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason, dot_call: bool) Error!void {
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
     defer namer.deinit();
     const w = &out.writer;
-    w.writeAll("I cannot compare these values with `==`:\n\n    ") catch return error.OutOfMemory;
+    const op = if (dot_call) "`.eq`" else "`==`";
+    w.print("I cannot compare these values with {s}:\n\n    ", .{op}) catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
     switch (reason) {
         .function => w.writeAll(
@@ -688,16 +692,16 @@ pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: Equata
             \\compare — a name, an id — next to the function.
             \\
         ) catch return error.OutOfMemory,
-        .opaque_type => w.writeAll(
+        .opaque_type => w.print(
             \\
             \\
-            \\That type does not support `==`.
+            \\That type does not support {s}.
             \\
             \\Hint: a `type` is comparable exactly when everything it can hold is, so a
             \\function anywhere inside it rules the whole type out. A `foreign type` is
             \\comparable only when it is declared `equatable`.
             \\
-        ) catch return error.OutOfMemory,
+        , .{op}) catch return error.OutOfMemory,
         .rigid_variable => w.writeAll(
             \\
             \\

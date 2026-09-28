@@ -5168,7 +5168,12 @@ with a red fixture on `b8b289a` before its fix.*
 - **Expected** each names the dot-call it refuses, `.eq`.
 - **Fixture** `check/bad/DotCallEqRefusal.beni`, red `why=message`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §15.3 *amended 2026-09-29*: `not_equatable`'s
+  texts (`DispatchTexts.notEquatable`, and `Messages.pinnedDerived` and
+  `Messages.requirementFailed`, which share its first line) take whether the refused wanted is a
+  dot-call (`Evidence.Kind.dot_call`, which a promoted requirement keeps at its uses) and name
+  `.eq` for one: "I cannot compare these values with `.eq`", "That type does not support `.eq`".
+  No other golden changed. Promoted: `tests/corpus/check/bad/DotCallEqRefusal.beni`.
 
 ### CK-209 — An unreadable `_manifest.txt` is reported as one beni did not write
 
@@ -5394,7 +5399,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
 | CK-206 | diagnostic-quality | K14 | promoted: `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes (fixed) |
 | CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |
-| CK-208 | diagnostic-quality | K13 | `check/bad/DotCallEqRefusal.beni` | the final review's fixes |
+| CK-208 | diagnostic-quality | K13 | promoted: `check/bad/DotCallEqRefusal.beni` | the final review's fixes (fixed) |
 | CK-209 | diagnostic-quality | K14 | promoted: `build_test.zig` "an unreadable _manifest.txt refuses the build …" | the final review's fixes (fixed) |
 
 Totals:

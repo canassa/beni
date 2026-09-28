@@ -225,7 +225,7 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
             try Resolve.reject(s, id, false);
             return false;
         },
-        else => try report(s, w.origin, root, w.method, verdict),
+        else => try report(s, w.origin, root, w.method, verdict, w.kind == .dot_call),
     }
     try Resolve.reject(s, id, true);
     return false;
@@ -254,9 +254,11 @@ fn payloadAt(s: *Solve, site: ?Messages.PayloadSite) Error!?Messages.Payload {
     return null;
 }
 
-pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verdict: Verdict) Error!void {
+/// `dot_call`: the refused use is a dot-call, which a `not_equatable` text
+/// names instead of `==`.
+pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verdict: Verdict, dot_call: bool) Error!void {
     const is_eq = method == InternPool.WellKnown.eq.symbol();
-    const w = .{ .origin = origin, .method = method };
+    const w = .{ .origin = origin, .method = method, .kind = if (dot_call) Evidence.Kind.dot_call else Evidence.Kind.well_known };
     switch (verdict) {
         // A poisoned verdict has its message where the `err` was made.
         .ok, .pending, .query, .cycle, .poisoned => {},
@@ -267,7 +269,7 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
         .budget => try Messages.derivedBudget(s.report, w.origin, root, method),
         .requirement => |q| {
             s.contexts.noteRequirement(s, q.type_id, q.method);
-            try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null, try payloadAt(s, q.site));
+            try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null, try payloadAt(s, q.site), dot_call);
         },
         .needs_annotation => |n| {
             s.contexts.noteCulprit(s, n.decl);
@@ -276,7 +278,7 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
         .function => {
             s.contexts.noteFunction(s);
             if (is_eq) {
-                try s.report.notEquatable(w.origin, root, .function);
+                try s.report.notEquatable(w.origin, root, .function, w.kind == .dot_call);
             } else {
                 try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
             }
@@ -284,13 +286,13 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
         .contains_function => {
             s.contexts.noteFunction(s);
             if (is_eq) {
-                try s.report.notEquatable(w.origin, root, .opaque_type);
+                try s.report.notEquatable(w.origin, root, .opaque_type, w.kind == .dot_call);
             } else {
                 try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
             }
         },
         .opaque_type => if (is_eq) {
-            try s.report.notEquatable(w.origin, root, .opaque_type);
+            try s.report.notEquatable(w.origin, root, .opaque_type, w.kind == .dot_call);
         } else {
             try s.report.noMethodsOnShape(w.origin, w.method, root, .not_orderable);
         },

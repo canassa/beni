@@ -4034,6 +4034,15 @@ written with the change that needed them, blessed there, and reviewed: the escap
 rendering first, then the `?` legs, `.where_clause` and `.method_signature`, the
 recursive-dispatch hint, and the rest last.
 
+*Amended 2026-09-29: texts say what the program wrote.* (1) A `type_mismatch` at a
+field access whose record HAS the field says so, "This record has a `count` field, but not of the
+type I need", with the field's type against the needed one; the old "This is not a record with a
+`count` field" is kept for a value that is no record. (2) `not_equatable` (and the pinned and
+requirement variants that share its first line) names `.eq` when the refused use is a dot-call,
+written or promoted through a function (the wanted's `kind` is `dot_call`), and `==` otherwise:
+after D15 a dot-call derives, so it is refused with the operator's texts, never with an operator
+the program did not write.
+
 ### 15.4 Regions and categories
 
 - The resolver reports at `w.origin`, the instruction in this module (spike §6.2's promise).

@@ -243,15 +243,17 @@ pub fn kindNotSatisfied(r: *Report, region: Bir.Inst.Index, category: Category, 
 }
 
 pub fn notEquatableRigid(r: *Report, region: Bir.Inst.Index, v: Var) Error!void {
-    try r.texts.notEquatable(region, v, .rigid_variable);
+    try r.texts.notEquatable(region, v, .rigid_variable, false);
     try r.flush();
 }
 
 pub const EquatableReason = Diagnostics.Reporter.EquatableReason;
 
 /// The `equatable` marker walk's refusal (§11.4), the shared text.
-pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
-    try r.texts.notEquatable(region, v, reason);
+/// `dot_call`: the refused use is a dot-call `.eq`, which the text names
+/// instead of `==`.
+pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason, dot_call: bool) Error!void {
+    try r.texts.notEquatable(region, v, reason, dot_call);
     try r.flush();
 }
 
