@@ -1,11 +1,11 @@
--- check/good: CK-24's closed twin (checker-v2.md §11.5 *as amended by R8b's
--- review*). `h` compares `Loop.Type`s, `conv` calls `h`, and `Loop`'s `via`
+-- check/good: the closed twin of `check/bad/SchemaEndpointInFlight`
+-- (checker-v2.md §11.5). `h` compares `Loop.Type`s, `conv` calls `h`, and `Loop`'s `via`
 -- is `conv`, so `h`, `conv` and `Loop` end up one group: the endpoint's
 -- payload is inferred together with the comparison. `Loop.Type` has no
 -- parameter, so the comparison is deferred and checked once the group is
--- done — `conv`'s target is `Int`, so it compares. R8b first refused it
--- with `method_needs_annotation` (its structural review, S2): a restriction
--- no guarantee needed (rule 7). v1 accepts it.
+-- done — `conv`'s target is `Int`, so it compares. Refusing it with
+-- `method_needs_annotation` would be a restriction
+-- no guarantee needs (rule 7).
 import Schema exposing (Conversion)
 
 

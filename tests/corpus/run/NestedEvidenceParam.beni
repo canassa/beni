@@ -1,5 +1,5 @@
--- Evidence nested three deep with a PARAMETER at the bottom (I5, I7;
--- checker-v2.md §12.2, §13.1): `==` on `List (List (Box a))` passes
+-- Evidence nested three deep with a PARAMETER at the bottom
+-- (checker-v2.md §12.2, §13.1): `==` on `List (List (Box a))` passes
 -- `List.eq` the evidence `List.eq (Box$eq a.eq)`, where `a.eq` is the
 -- enclosing function's own hidden argument — in `same`, annotated with a
 -- `where` clause, and in `sameInferred`, whose requirement is promoted.

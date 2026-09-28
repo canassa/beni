@@ -1,17 +1,17 @@
--- CK-117: a derived-context pass that demands an UNCHECKED group which,
--- checked nested, merges down into the asker's (checker-v2.md §11.2 *as
--- amended by R8b*). `same` compares `W`s; `W`'s pass asks `H.eq`, which
+-- A derived-context pass that demands an UNCHECKED group which,
+-- checked nested, merges down into the asker's (checker-v2.md §11.2).
+-- `same` compares `W`s; `W`'s pass asks `H.eq`, which
 -- needs `key` on `T`; `key` is unchecked, so the pass checks it nested, and
 -- `key`'s body calls `same`, which is in flight: `key` merges into `same`'s
 -- group. The pass then meets `key` IN FLIGHT and takes §11.2's closed branch
 -- (the in-flight link is the asker's replayed wanted), never the link from
--- its own frame: before R8b it unified its frame's method type with `key`'s
--- variable, binding `key`'s unused `u` from inside the discarded frame. The
--- Debug frame assert (`Unify.assertContained`) panics on that. Expected
+-- its own frame: unifying its frame's method type with `key`'s
+-- variable would bind `key`'s unused `u` from inside the discarded frame,
+-- and the Debug frame assert (`Unify.assertContained`) panics on that. Expected
 -- `True`, `False`, `True`: `key` returns its `Int`, `H.eq` compares keys.
--- Red on v1 for CK-67's reason (NOT EQUATABLE: `key` is unannotated); the
+-- `key` is unannotated; the
 -- oracle twin is the same program with `key : T, () -> Int` annotated,
--- which both checkers build and which prints the same three lines.
+-- which prints the same three lines.
 import H
 import Node exposing (Program)
 

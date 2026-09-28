@@ -1,10 +1,10 @@
--- A regression guard for CK-22's inside half (owner decision D1 as amended,
--- checker-v2.md §11.3; plans/checker-rewrite.md §5.5): a private `eq`
+-- A regression guard for a private `eq`'s inside half (the owner's decision
+-- as amended, checker-v2.md §11.3): a private `eq`
 -- answers dispatch inside its own module, directly (`inside`) and through a
 -- derived shape the module compares (`insideTuple`), so both compare modulo
 -- 10 and print `true` (`Debug.toString`). The outside half, where every such comparison from
--- another module is `private_method`, is pending (CK-22). 7427828 gets this
--- right (round 4 probe `priv`); R8b keeps it green.
+-- another module is `private_method`, is
+-- `check/bad/PrivateEqThroughThirdModule`.
 pub type T
     = T Int
 

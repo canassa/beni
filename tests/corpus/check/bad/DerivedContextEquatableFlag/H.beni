@@ -1,4 +1,4 @@
--- R8a's structural review, B1 (checker-v2.md §11.2 *As built by R8a*): see
+-- A derived context keeps the `equatable` flag (checker-v2.md §11.2): see
 -- Main.beni. `H.eq` is unannotated and compares its payloads with
 -- `Basics.eq`, so its `a` is `equatable`: it asks no evidence, but it may
 -- only be given a type the structural walk can compare.

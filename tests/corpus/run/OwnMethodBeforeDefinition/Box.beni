@@ -1,19 +1,19 @@
--- CK-36: (queue row 75) a use of a module's own unannotated method is
+-- run: a use of a module's own unannotated method is
 -- deferred to the using group's boundary, so it checks whatever the source
--- order (owner decision D3, checker-v2.md §10). No annotation is ever
+-- order (the owner's decision, checker-v2.md §10). No annotation is ever
 -- required on a method for ordering reasons, and `method_needs_annotation`
 -- is retired. Three shapes, one module each, every one using `eq` ABOVE its
--- unannotated definition: `Box` (adv's `box`: `compare` compares `Box`es
--- with `==` directly, through a tuple and through a record), `O1` (disp's
--- `o1`: a private `eq`) and `Row75` (row 75: `U`'s `compare` needs `T`'s
+-- unannotated definition: `Box` (`compare` compares `Box`es
+-- with `==` directly, through a tuple and through a record), `O1` (a
+-- private `eq`) and `Row75` (`U`'s `compare` needs `T`'s
 -- `eq`). Expected `False`, `True`, `True`, `True`, `True`, `custom eq used`.
 --
--- Oracle twin, run on 7427828: this project with each `eq` moved above its
--- first use (disp's `o2`, orch's `row75b`, and `box` reordered) prints
--- exactly the expected six lines. As written, 7427828 refuses all three
--- modules with METHOD NEEDS AN ANNOTATION.
+-- Oracle twin: this project with each `eq` moved above its
+-- first use prints
+-- exactly the expected six lines. As written, no module may be refused
+-- with METHOD NEEDS AN ANNOTATION.
 --
--- `Box`'s payload is a `String` rather than adv's `a`: an unannotated `pub`
+-- `Box`'s payload is a `String` rather than a type variable: an unannotated `pub`
 -- method with a `where` is the `ambiguous_method_receiver` warning, and a
 -- `run/` fixture must build silently.
 pub type Box

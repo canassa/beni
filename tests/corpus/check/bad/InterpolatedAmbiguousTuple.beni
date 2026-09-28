@@ -1,6 +1,6 @@
 -- check/bad: interpolating two undetermined tuple indexes is two AMBIGUOUS
 -- TUPLEs and nothing else: the interpolation of a result the tuple's own
--- message already poisoned adds no third (I12; R5's adversarial review, F6).
--- The golden is checker v1's.
+-- message already poisoned adds no third (I12).
+--
 pub f p =
     "${p.0}${p.1}"

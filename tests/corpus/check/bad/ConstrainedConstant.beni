@@ -7,7 +7,7 @@
 -- It must be UNANNOTATED: with `pub blank : Dict k v` the annotation
 -- declares `k` rigid with an empty constraint set and the body's requirement
 -- is `missing_where_constraint` (§10.4) instead. And its type must not be a
--- function: `pub equals = (==)` is accepted since R2b's review (S3), see
+-- function: `pub equals = (==)` is accepted, see
 -- `run/ConstrainedPubFunctionConstant/`.
 import Dict
 

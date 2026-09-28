@@ -1,12 +1,12 @@
--- CK-175's permutation twin (R15-fix-G; ordering_test.zig's PERM runs it
--- in every declaration order): a recursive group whose members return
+-- The permutation twin of `PhantomAliasNested` (ordering_test.zig's PERM
+-- runs it in every declaration order): a recursive group whose members return
 -- `Tagged String`, compared in a list with a `Tagged Bool`. Both are `Int`
--- (`type alias Tagged t = Int` drops its parameter). At 8a68e12 unifying the
--- two aliases unified their arguments, `String` against `Bool`: TYPE
+-- (`type alias Tagged t = Int` drops its parameter). Unifying the
+-- two aliases' arguments, `String` against `Bool`, would be a TYPE
 -- MISMATCH in every order. Expected: it builds and prints 3, 2 and 3, and
 -- its types are the same in every order. (`c` is `Tagged String` rather
 -- than `Int` so that no member's inferred type can take either name:
--- which name an inferred type shows when it meets two is CK-179.)
+-- which name an inferred type shows when it meets two is a separate question.)
 -- Oracle twin: every `Tagged …` written `Int` prints the same.
 import Node exposing (Program)
 import String

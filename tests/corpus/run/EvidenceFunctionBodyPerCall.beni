@@ -1,13 +1,13 @@
--- R2b review S1 and CK-85 (language.md §6 *Evaluation order*, checker-v2.md
+-- run (language.md §6 *Evaluation order*, checker-v2.md
 -- §12.5): a value with no parameters, a function TYPE and a `where` clause is
 -- defined over its type's parameters, and its body — here the `let` that
--- builds `table` — used to run at EACH CALL, where the identical value without
--- the `where` computes it once, at load. Since R8a (CK-85) the body runs once
+-- builds `table` — must not run at EACH CALL, where the identical value without
+-- the `where` computes it once, at load. The body runs once
 -- per evidence: three calls of `lookup` with one instantiation print one
 -- `table (where)` line, at the first call, as three calls of `lookupPlain`
--- print one at load. On 84e3cb1 `lookup` had CK-33's curried definition and
--- the program printed JavaScript source text for its sum; from R2b to R8a it
--- printed three `table (where)` lines.
+-- print one at load. A curried definition here would print JavaScript
+-- source text for the sum, and a body run per call would print three
+-- `table (where)` lines.
 import Node exposing (Program)
 
 

@@ -1,5 +1,5 @@
 -- check/depth: a record of 65 fields built by extension (`Render.max_ext_links`
--- is 64) prints whole and STAYS OPEN, `{ r | … }`, since R11 (§4.1, CK-08).
+-- is 64) prints whole and STAYS OPEN, `{ r | … }` (checker-v2.md §4.1).
 f1 x =
     x.a1
 

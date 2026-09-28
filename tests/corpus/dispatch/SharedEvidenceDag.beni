@@ -1,9 +1,9 @@
--- dispatch: CK-136. `w3 1` has a tuple type three doublings deep whose two
+-- dispatch: `w3 1` has a tuple type three doublings deep whose two
 -- halves are one type at every level, so the table SHARES a term per level
--- (checker-v2.md §13.1 as amended by R6b). The dump prints a shared term
+-- (checker-v2.md §13.1). The dump prints a shared term
 -- with arguments in full once, as `<term> #<n>`, and every later
--- occurrence as `<term> = #<n>` (§13.2 as amended by R15-fix-B); printed
--- as a tree it doubled per level, and 32 levels never finished.
+-- occurrence as `<term> = #<n>` (§13.2); printed
+-- as a tree it would double per level, and 32 levels would never finish.
 w1 x =
     ( x, x )
 

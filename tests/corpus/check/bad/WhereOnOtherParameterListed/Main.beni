@@ -1,8 +1,8 @@
 -- check/bad: a requirement on another parameter asked of a type that holds
--- the receiver but has no such method is `unknown_method`, as v1 reports:
--- `List` has no `describe`. Not a cycle (checker-v2.md §9.5, withdrawn
--- premise; round-2 review of R6a, N1) — R6a's lineage rule reported
--- `infinite_type` here.
+-- the receiver but has no such method is `unknown_method`:
+-- `List` has no `describe`. Not a cycle (checker-v2.md §9.5): a lineage
+-- rule that called this a cycle would report `infinite_type` here.
+--
 import Box exposing (Box)
 
 

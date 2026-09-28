@@ -1,11 +1,11 @@
--- CK-138, the wider half: the printer brackets an arrow body by its
+-- The wider half of `ArrowBodyStartsWithRecord`: the printer brackets an arrow body by its
 -- LEFTMOST TOKEN, not by its node kind (backend.md §4, *An arrow body or a
 -- statement that would begin with `{`*). Each body below prints with an
 -- object literal as its first token and something after it — a record
 -- update read at once, a field call on a record literal, a field of a
 -- field, a tuple read as an operand, a record literal's field as an `if`
--- test. Before the fix each was `(…) => { … }…`, a block, and loading the
--- module was a SyntaxError. Expected: the six values print.
+-- test. Printed as `(…) => { … }…`, each would be a block, and loading the
+-- module a SyntaxError. Expected: the six values print.
 import Node exposing (Program)
 import String
 

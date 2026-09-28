@@ -1,4 +1,4 @@
--- CK-86: see M.beni.
+-- See M.beni.
 import M exposing (Box(..))
 
 

@@ -1,6 +1,6 @@
-//! M4 slice zero: the serialized interface, black-box
+//! The serialized interface, black-box
 //! (`docs/design/checker.md` §7's *The serialized form*,
-//! `fast-compiler.md` §8's *The interface hash, and slice zero*,
+//! `fast-compiler.md` §8's interface hash,
 //! `plans/m4-slice-zero.md` §7).
 //!
 //! Two hidden flags are the whole surface. `--roundtrip-interfaces`

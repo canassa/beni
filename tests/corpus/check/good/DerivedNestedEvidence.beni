@@ -1,5 +1,5 @@
 -- checker-v2.md §9.5's lineage rule must not fire on a deep ACYCLIC
--- receiver (R6a's reviewer focus): `List (List (Box a))` resolves `List.eq`,
+-- receiver: `List (List (Box a))` resolves `List.eq`,
 -- whose `a.eq` resolves `List.eq` again, whose `a.eq` reaches `Box`'s
 -- derived `eq` and then the given `a.eq` — each sub-wanted's receiver
 -- strictly inside its parent's, so no `infinite_type`. The unannotated twin

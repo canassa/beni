@@ -1,4 +1,4 @@
--- A regression guard for CK-22: see M.beni.
+-- A regression guard: see M.beni.
 import M
 import Node exposing (Program)
 

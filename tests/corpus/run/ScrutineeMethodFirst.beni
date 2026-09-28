@@ -1,8 +1,8 @@
--- A regression guard from the checker-v2 design review (round 3, B-1; plans/
--- checker-rewrite.md §5.4): a `case` scrutinee calls own methods written
--- BEFORE it (round 3's `rq2`), and the later `let` helper `q` generalises, so
--- `q 1` and `q "s"` both check and `f 3` is `( 3, 3 )`. 7427828 gets this
--- order right; CK-73 is the same program with the methods written after.
+-- A regression guard: a `case` scrutinee calls own methods written
+-- BEFORE it, and the later `let` helper `q` generalises, so
+-- `q 1` and `q "s"` both check and `f 3` is `( 3, 3 )`. The same program
+-- with the methods written after is the harder order; this one must stay
+-- right.
 import Node exposing (Program)
 
 

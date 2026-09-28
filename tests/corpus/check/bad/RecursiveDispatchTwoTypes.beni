@@ -1,10 +1,10 @@
--- CK-70: a method used at two types inside a dispatch cycle is refused the
+-- A method used at two types inside a dispatch cycle is refused the
 -- same way in every declaration order: `show` compares `Box 1 == Box 2` and
 -- `Box "x" == Box "y"`, and the unannotated `eq` on `Box` calls `show` back,
 -- so the merged group types `eq` once, monomorphically, and the second
 -- comparison is one `type_mismatch` with the recursive-dispatch hint
--- (checker-v2.md §10.6). On 7427828 it is METHOD NEEDS AN ANNOTATION at
--- `(K 0).show` — a code whose premise is the declaration order.
+-- (checker-v2.md §10.6) — never METHOD NEEDS AN ANNOTATION at
+-- `(K 0).show`, a code whose premise is the declaration order.
 
 
 type K

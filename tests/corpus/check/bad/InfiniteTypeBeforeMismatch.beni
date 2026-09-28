@@ -1,9 +1,9 @@
--- CK-177: a mismatch between types one of which is cyclic is the cycle's
+-- A mismatch between types one of which is cyclic is the cycle's
 -- INFINITE TYPE, never a TYPE MISMATCH printing the cycle. `( x, x )` makes
 -- `x`'s type `a = ( a, a )` (unification does not occurs-check a binding;
 -- the boundary does, checker-v2.md §8.2), and the record then fails against
--- it. At 8a68e12 that failure is a 37 KB TYPE MISMATCH: the record's `zb`
--- rendered as a tuple unrolled until the printer's node budget ran out, and
+-- it. That failure must not be a TYPE MISMATCH printing the record's `zb`
+-- as a tuple unrolled until the printer's node budget runs out (37 KB) and
 -- the list's other elements as `…`. Expected: one INFINITE TYPE, written
 -- down with `a` standing for the repeat.
 f x =

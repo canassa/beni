@@ -1,9 +1,9 @@
--- CK-91: a `let` of 5 000 bindings is solved to its end. The last binding,
--- `bad`, passes the `number` chain to `String.length`, a mismatch. v1 solves a
--- `let`'s groups by recursion, one level per group, and its guard past
--- `Parse.max_depth + 104` levels returns in silence: on 986b2c5 `f` checks
--- clean as `f : number -> a`, a result that promises anything. v2 walks the groups
--- as a tail chain (checker-v2.md §8.1; `Solve.let_`) and reports.
+-- A `let` of 5 000 bindings is solved to its end. The last binding,
+-- `bad`, passes the `number` chain to `String.length`, a mismatch. Solving a
+-- `let`'s groups by recursion, one level per group, with a guard that
+-- returns in silence past `Parse.max_depth + 104` levels, would check `f`
+-- clean as `f : number -> a`, a result that promises anything. The groups are
+-- walked as a tail chain (checker-v2.md §8.1; `Solve.let_`), and it reports.
 -- Generated: `xN = negate x(N-1)` for N = 1 … 5000.
 f x0 =
     let

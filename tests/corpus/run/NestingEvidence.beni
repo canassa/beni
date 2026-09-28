@@ -1,7 +1,7 @@
 -- run: evidence as deep as the type it compares. `==` on a list of lists of
 -- … 40 deep is `List.eq` handed `List.eq` handed … one closure per level
 -- (`static-dispatch-spike.md` §8.2), `(x, y) => List$eq(<next>, x, y)`, and
--- 1 024 of them were past every engine's parser (CK-83, and the blackbox
+-- 1 024 of them would be past every engine's parser (see the blackbox
 -- scenario "evidence nested past a thousand levels"). `backend.md` §4 binds a
 -- closure that has grown `nesting.spill` tall to a `const` ahead of the call;
 -- making a closure runs nothing, so only the shape moves. At the bottom is

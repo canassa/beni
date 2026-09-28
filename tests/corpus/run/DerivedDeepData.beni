@@ -1,10 +1,10 @@
--- run: a derived `==` and `<` never throw on deep data (CK-128, R8d;
+-- run: a derived `==` and `<` never throw on deep data (
 -- `backend.md` §4, *Derived comparisons do not grow the native stack*).
 --
--- Before R8d a derived `eq` called itself once per level of the data, so
--- Node's stack gave out at about 8 940 cells of a user linked list for `==`
+-- A derived `eq` that called itself once per level of the data would give
+-- out Node's stack at about 8 940 cells of a user linked list for `==`
 -- and 10 000 for `<` — `RangeError: Maximum call stack size exceeded` from a
--- program the compiler accepted. Now a derived function recurses to
+-- program the compiler accepted. A derived function recurses to
 -- `derived_depth_limit` and continues from an explicit stack, so the only
 -- limit is the heap.
 --

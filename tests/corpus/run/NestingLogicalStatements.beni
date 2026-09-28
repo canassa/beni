@@ -1,8 +1,8 @@
 -- run: `&&` and `||` chains of 300 operands that each need statements (a
 -- `let` in every operand). `backend.md` §4: from the first such operand the
 -- chain is a temporary and one FLAT `if` per operand — `if ($t) { …; $t = … }`,
--- `if (!$t)` for `||` — where it nested one block per operand, a scope each,
--- which Firefox refuses past 251 (review of R2c, S2). Every operand is logged:
+-- `if (!$t)` for `||` — rather than one nested block per operand, a scope
+-- each, which Firefox refuses past 251. Every operand is logged:
 -- the operands run in order and stop at the first that decides, operand 250.
 import Node exposing (Program)
 

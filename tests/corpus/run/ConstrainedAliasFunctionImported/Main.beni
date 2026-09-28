@@ -1,4 +1,4 @@
--- CK-84: see M.beni.
+-- See M.beni.
 import M exposing (Pred)
 import Node exposing (Program)
 

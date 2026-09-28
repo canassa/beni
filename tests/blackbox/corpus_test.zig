@@ -45,15 +45,14 @@
 //! the fixtures whose repo-relative path contains the substring (the rest
 //! are compared as usual), so one kind — or one file — can be pinned while
 //! the goldens a later milestone owns stay unwritten. Exit codes are asserted exactly and never
-//! special-cased: while `dump` and `fmt` return 2 (M1 lands them), any
-//! fixture in those kinds fails — which is correct, and why the directories
-//! are empty except for their READMEs until then.
+//! special-cased: a command that is not implemented returns 2, and any
+//! fixture of a kind that runs it fails — which is correct, and why such a
+//! kind's directory holds only its README until the command exists.
 //!
 //! The same walker runs `tests/pending/` (`plans/checker-rewrite.md` §2):
 //! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending` reports
 //! RED/GREEN per fixture instead of failing on it, and `BENI_CASE_TIMEOUT_MS`
-//! bounds each run. (`BENI_CHECKER`, which added `--checker=<value>`, went
-//! with v1 at R12.) Unset (or empty), each is today's strict corpus run; see
+//! bounds each run. Unset (or empty), each is today's strict corpus run; see
 //! `Config`, and `tests/pending/README.md` for `.codes` and `RED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
 //! `test-blackbox` spreads the corpus over parallel processes.
@@ -183,8 +182,8 @@ test "corpus: bir" {
 
 // The checker→backend side table (static-dispatch-spike.md §7). Its own
 // kind for the reason `bir/` is one: it is an OUTPUT of a phase, printed
-// with no ids and no positions, and a golden here is the contract S4 and S5
-// lower against. A method call that resolved to the wrong function is
+// with no ids and no positions, and a golden here is the contract the
+// backend lowers against. A method call that resolved to the wrong function is
 // invisible in `--stage=types` and obvious here.
 test "corpus: dispatch" {
     try walk(.dispatch);
@@ -331,7 +330,7 @@ fn walk(kind: Kind) !void {
     }
 
     if (fixtures.items.len == 0) {
-        if (cfg.is_default_root) std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind_dir});
+        if (cfg.is_default_root) std.debug.print("corpus {s} is empty\n", .{kind_dir});
         return;
     }
 
@@ -443,8 +442,7 @@ const Config = struct {
     red: []const world.pending.RedLine,
 
     const Mode = enum {
-        /// Unset: every fixture must pass (today's behaviour; until the cut-over,
-        /// R11, `test-v2` exempted the fixtures of `v2-expected.md` here).
+        /// Unset: every fixture must pass (today's behaviour).
         strict,
         /// `pending`: every fixture is reported RED or GREEN, and the step
         /// fails only for rules (a), (b) and (d).
@@ -595,7 +593,7 @@ fn classFor(err: anyerror) []const u8 {
 /// `exit=<n> codes=<code>×<count>,…` for a finished compiler run (the codes
 /// sorted by name, `none` when there are none, `unparsed` when stderr is
 /// not a JSON diagnostic list), or `crash=<signal>`. The whole multiset and
-/// not only the first code (review of R0, S3): a second bug, or a typo that
+/// not only the first code: a second bug, or a typo that
 /// adds one more diagnostic behind the first, changes the signature.
 fn failSignature(arena: std.mem.Allocator, r: world.Result) []const u8 {
     return switch (r.term) {
@@ -663,7 +661,7 @@ fn summarize(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
 
 /// The first diagnostic's message, first line only: what a pending-mode RED
 /// line adds to `summarize`'s codes, so a failed build says WHY without a
-/// re-run by hand (R4a review, N1). Empty when there is none.
+/// re-run by hand. Empty when there is none.
 fn messageHead(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
     const trimmed = std.mem.trim(u8, stderr, " \r\n");
     if (trimmed.len != 0 and trimmed[0] == '[') {
@@ -762,8 +760,7 @@ const Case = struct {
     /// Pending mode's verdict on one fixture (`plans/checker-rewrite.md`
     /// §2.4): print RED or GREEN, and return false only when the fixture
     /// breaks a rule — (a) it is malformed, (b) it is GREEN and so must be
-    /// promoted, (d) it is red for another reason than `RED` records. (Rule
-    /// (c), a claimed fixture red under v2, went with v1 at R12.)
+    /// promoted, (d) it is red for another reason than `RED` records.
     fn pending(c: Case, path: []const u8) !bool {
         const rel = if (std.mem.startsWith(u8, path, c.cfg.root) and path.len > c.cfg.root.len)
             path[c.cfg.root.len + 1 ..]
@@ -781,7 +778,7 @@ const Case = struct {
         }
         const repo_path = std.mem.trimEnd(u8, path, "/");
         // Rule (d)'s record: the signature `tests/pending/RED` holds for this
-        // fixture, so a slice cannot drift it from "red for the bug" to "red
+        // fixture, so a change cannot drift it from "red for the bug" to "red
         // for a typo" unseen.
         const recorded = c.cfg.redSignature(repo_path);
 
@@ -838,7 +835,8 @@ const Case = struct {
         const line = text[0 .. std.mem.indexOfScalar(u8, text, '\n') orelse text.len];
         const prefix = "-- CK-";
         if (!std.mem.startsWith(u8, line, prefix)) return error.NoFindingLine;
-        // Two digits or more: IDs are never renumbered, and CK-100 will come.
+        // Two digits or more: finding IDs are never renumbered, and a
+        // three-digit one parses like a two-digit one.
         var end = prefix.len;
         while (end < line.len and std.ascii.isDigit(line[end])) end += 1;
         if (end - prefix.len < 2) return error.NoFindingLine;
@@ -927,7 +925,7 @@ const Case = struct {
     /// for the two commands that take it.
     ///
     /// **`--no-cache` is not tidiness, it is the corpus's premise.** The cache
-    /// is on by default since M4-3 and these cases run with cwd = the REPO
+    /// is on by default and these cases run with cwd = the REPO
     /// ROOT, so without the flag every one of ~576 fixtures would share one
     /// `.beni-cache/` that survives between suite runs — and a golden compared
     /// against a run that may have hit an entry written by a different case,

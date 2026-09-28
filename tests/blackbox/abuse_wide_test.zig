@@ -17,7 +17,7 @@ const chain = support.chain;
 const nested = support.nested;
 
 // ---------------------------------------------------------------------------
-// The equatable walk (CK-17, plans/checker-rewrite.md R1)
+// The equatable walk over a wide record
 // ---------------------------------------------------------------------------
 
 /// `r = { f1 = 1, …, f<n> = 1 }` with field `fn_at` a function (0: none),
@@ -211,7 +211,7 @@ test "a nominal payload of 65 537 fields checks, and builds and runs or is refus
 }
 
 // ---------------------------------------------------------------------------
-// Chains as long as their input is wide (CK-81)
+// Chains as long as their input is wide
 // ---------------------------------------------------------------------------
 
 /// `type T = T { f1 : Int, …, f<n> : Int }`, `r` a record of that shape, `s`
@@ -351,16 +351,16 @@ test "a written operator chain runs at the widest the parser admits, and one ter
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The user's half of CK-81: an operator chain a person writes. The
+    // The user's half: an operator chain a person writes. The
     // parser charges every operator to `Parse.max_depth`, so a chain is
     // bounded before the backend sees it: `&&` over `x == 3` reaches the
     // budget at 1 366 terms (three charges each), `++` at 2 049 (two) and
     // `+` at 4 096 (one), and one term past the widest is exactly one
     // `nesting_too_deep`. Under it the chain goes through check, both walks
-    // and the printer — and, since R2c (CK-83), RUNS at the widest the
-    // parser admits: `&&` prints as one flat run and `+`/`++` are bound to a
-    // `const` every `nesting.spill` units (`backend.md` §4), where they
-    // nested one call per term and Node refused them from about 1 550.
+    // and the printer — and RUNS at the widest the parser admits: `&&`
+    // prints as one flat run and `+`/`++` are bound to a `const` every
+    // `nesting.spill` units (`backend.md` §4), so no call nests one level
+    // per term (Node refuses such nesting from about 1 550).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const Case = struct { head: []const u8, term: []const u8, op: []const u8, width: usize, tail: []const u8, expected: []const u8 };
@@ -405,7 +405,7 @@ test "a written operator chain runs at the widest the parser admits, and one ter
 }
 
 // ---------------------------------------------------------------------------
-// Type arity (CK-38, interface v3: `checker-v2.md` §14.2)
+// Type arity (interface v3: `checker-v2.md` §14.2)
 // ---------------------------------------------------------------------------
 
 /// `pub type Wide a0 … a<n-1> = Wide a0`.
@@ -422,14 +422,14 @@ test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // An arity is a `u16` in interface v3 (CK-38): as a `u8` it saturated
-    // at 255 and a 256-parameter type was imported at the wrong width
+    // An arity is a `u16` in interface v3: as a `u8` it would saturate at
+    // 255 and a 256-parameter type would be imported at the wrong width
     // (`check/good/WideTypeArity/`). §14.2's "a saturating cast becomes an
     // error at 65 535" is this: lowering refuses the 65 536th parameter,
-    // once, at that parameter, so nothing downstream can saturate. On
-    // 3487c12 the 65 536-parameter declaration spent 35 s of a Debug build in
-    // lowering's pairwise duplicate-parameter scan and then panicked the
-    // checker (`@intCast` in `deriveOneParts`); the scan is a sort now.
+    // once, at that parameter, so nothing downstream can saturate. The
+    // duplicate-parameter scan is a sort, so the 65 536-parameter
+    // declaration costs no pairwise work, and nothing reaches the checker's
+    // `@intCast` in `deriveOneParts` with a width it cannot hold.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const widest = try wideParams(testing.allocator, 65_535);
@@ -472,7 +472,7 @@ test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_
 }
 
 // ---------------------------------------------------------------------------
-// A derived row past 65 535 context entries (CK-109, R8a's review)
+// A derived row past 65 535 context entries
 // ---------------------------------------------------------------------------
 
 /// `H.beni`: `pub type Holder a = Holder a` and its own `eq`, which asks `a`

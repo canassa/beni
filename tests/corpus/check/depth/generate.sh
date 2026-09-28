@@ -87,10 +87,10 @@ inferred 512 'one over: the scheme is `<error>` AND there is a message.' \
 
 # ---------------------------------------------------------------------------
 # `Exhaustive.max_depth` (512): how deep a PATTERN the usefulness analysis
-# walks before it gives up on the `case`. It was outside this sweep until
-# 2026-09-18 because it gave up in SILENCE — and that silence was the hole
-# queue slice 14 closed: `backend.md` §7 compiles a `case` to a decision tree
-# with no default arm, so a `case` nobody decided answered wrongly at exit 0.
+# walks before it gives up on the `case`. It belongs in this sweep because
+# giving up in SILENCE would be a hole: `backend.md` §7 compiles a `case`
+# to a decision tree with no default arm, so a `case` nobody decided would
+# answer wrongly at exit 0.
 # The `Deep` fixture here IS that program.
 #
 # The trailing `_ ->` is what makes the shallow one exhaustive, so its clean

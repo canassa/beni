@@ -1,11 +1,11 @@
 -- run: a record alias's constructor as a PATTERN binds the alias's fields
 -- in DECLARATION order, with no test: the pattern is irrefutable, since the
--- alias has one constructor (the manager's decision of 2026-09-24 under rule
--- 7, CK-78). `User` declares `name` before `age`, the reverse of the sorted
+-- alias has one constructor (a decision of 2026-09-24 under rule
+-- 7). `User` declares `name` before `age`, the reverse of the sorted
 -- key order its record is emitted in, so a positional read would swap them.
 -- A parameter, a `let` pattern, a `case` branch, one nested under `Just`
--- and one under `as` all read the same fields. A guard: 22daa5f printed the
--- same lines, through the tagged object R1 replaced (backend.md §4, D12).
+-- and one under `as` all read the same fields (backend.md §4). A guard:
+-- the fields are read by name.
 import Node exposing (Program)
 
 

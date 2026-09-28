@@ -1,5 +1,5 @@
--- The `number` bridge on a RIGID (checker-v2.md §9.2's `rigid` row, D9 as
--- amended): a `number` is `Int` or `Float`, so `<`, `==` and `number.eq`
+-- The `number` bridge on a RIGID (checker-v2.md §9.2's `rigid` row, §21.1):
+-- a `number` is `Int` or `Float`, so `<`, `==` and `number.eq`
 -- need no `where` clause and no evidence — `core`'s `abs`, `max` and
 -- `run/DecodeInto`'s `sameNum`. Each answers with the method type checked
 -- against the well-known one first.

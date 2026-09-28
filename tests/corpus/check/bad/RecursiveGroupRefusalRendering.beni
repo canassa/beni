@@ -1,10 +1,10 @@
--- CK-105: the same refusal in every declaration order, down to its code and
+-- The same refusal in every declaration order, down to its code and
 -- region: `x == x` compares functions (`mb` passes `\q -> q` for `x`). The
 -- MESSAGE shows the type as it stands when the refusal is found, which in a
 -- recursive group depends on how far the other member had got: `a -> a` in
 -- the orders that write `ma` first, `a -> b` in the others (checker-v2.md
--- §10.8's statement of I9's scope). `scenario/PERM` holds it to one code and
--- one region, not one text (R7's adversarial review, F5's `T102`).
+-- §10.8: declaration order decides neither code nor region). `scenario/PERM` holds it to one code and
+-- one region, not one text.
 type K
     = K Int
 

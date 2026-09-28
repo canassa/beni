@@ -1,4 +1,4 @@
--- R8a's structural review, B1, the `compare` side: see Main.beni. `H.compare`
+-- The `compare` side of `DerivedContextEquatableFlag`: see Main.beni. `H.compare`
 -- is unannotated and tests its payloads with `Basics.eq`, so its `a` is
 -- `equatable`.
 pub type Holder a

@@ -2,9 +2,9 @@
 -- §3.1) and resolves for every shape §3.2 and §3.3 name: the primitives
 -- from the well-known table, a record and a tuple by derivation over their
 -- closed shapes (§6.3, A.36), a custom type and `Maybe` by derivation over
--- the nominal type, and a `List a` through `List`'s own methods — which on
--- this branch are still the structural walk `Basics.eq` does, because the
--- core rewrite of §5.2 is slice S6.
+-- the nominal type, and a `List a` through `List`'s own methods (§5.2).
+--
+--
 pub type Colour
     = Red
     | Green

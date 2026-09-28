@@ -1,4 +1,4 @@
--- CK-36: see Box.beni.
+-- See Box.beni.
 pub type T
     = T Int
 

@@ -1,11 +1,11 @@
--- CK-100: a call whose result disagrees with its expectation is ONE
+-- A call whose result disagrees with its expectation is ONE
 -- `type_mismatch`, and the requirements the callee's instantiation made are
--- that message's consequence and fail in silence (checker-v2.md §9, as built
--- by R6a's review, F6). `f4 : a -> ( b, b ) where a.bar : a, () -> b` —
+-- that message's consequence and fail in silence (checker-v2.md §9).
+-- `f4 : a -> ( b, b ) where a.bar : a, () -> b` —
 -- both results are `x.bar ()`'s — so `bad4` is `( Int, Int )` against
--- `( String, Int )`. On 68186fa v1 publishes `f4 : a -> ( b, c ) where
--- a.bar : a, () -> d` and checks `bad4` clean (CK-100); R6a's first round
--- also reported `T.bar` against the `String` the failed unification left.
+-- `( String, Int )`. Publishing `f4 : a -> ( b, c ) where a.bar : a, () -> d`
+-- would check `bad4` clean; and `T.bar` is not reported again against the
+-- `String` the failed unification left.
 import T exposing (T)
 
 

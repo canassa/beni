@@ -1,23 +1,23 @@
--- D5 (checker-v2.md §8.4 *As built by R14*; queue row 76, CK-37): a `let`
+-- run (checker-v2.md §8.4): a `let`
 -- FUNCTION binding whose requirement is its own generalises over it and
 -- takes it as a hidden parameter (`$l<inst>$<k>`, backend.md §4), so each
 -- use instantiates it at its own type.
 --
---   - `pairEq` is row 76's program: `inner`'s `eq` is an operator's, so
+--   - `pairEq`: `inner`'s `eq` is an operator's, so
 --     `inner` generalises and `inner x y` and `inner [ x ] [ y ]` are two
---     instantiations — no `x ~ List x`. It was `infinite_type` before R14
---     (`check/bad/LetHelperCyclicReceiver`, now `run/`).
+--     instantiations — no `x ~ List x`, and no `infinite_type`
+--     (`run/LetHelperCyclicReceiver`).
 --   - `describe`'s `show` needs `render` through `label`'s `where` clause
---     (a scheme's requirement, not a dot-call's own, which D5's row of
---     2026-09-26 keeps monomorphic), and is used at `Colour` and at
+--     (a scheme's requirement, not a dot-call's own, which the owner's rule
+--     of 2026-09-26 keeps monomorphic), and is used at `Colour` and at
 --     `Shape.Shape`, which both have one.
 --
 -- Expected `True`, `False`, `True`, `False`, `<red1><square2>`.
 --
--- Oracle twin, run on 3e924cc: `inner` and `show` lifted to top-level
+-- Oracle twin: `inner` and `show` lifted to top-level
 -- declarations with the `where` clauses written out print exactly the
--- expected lines. As written, 3e924cc refuses `pairEq` with INFINITE TYPE and
--- `describe` with TYPE MISMATCH at `show s`.
+-- expected lines. As written, it must not refuse `pairEq` with INFINITE
+-- TYPE or `describe` with TYPE MISMATCH at `show s`.
 import Node exposing (Program)
 import Shape exposing (Shape, Square)
 

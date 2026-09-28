@@ -1,7 +1,7 @@
 -- Method calls, executed. `docs/design/static-dispatch-spike.md` §8.3: a
 -- dot-call is the declaring module's `pub` value applied to its receiver,
 -- and the checker decided which one — so the four rows here are the four
--- targets S4 lowers.
+-- targets the backend lowers.
 --
 --   * `top`      — a method of a type this module declares
 --   * `ext`      — a method of a type another module declares (`List.map`)

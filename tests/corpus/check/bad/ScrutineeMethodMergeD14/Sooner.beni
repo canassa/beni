@@ -1,4 +1,4 @@
--- CK-73: see Later.beni. The same module with the methods first.
+-- See Later.beni. The same module with the methods first.
 type K
     = K Int
 

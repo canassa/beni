@@ -1,7 +1,7 @@
--- CK-170: an alias chain longer than 1 024 links keeps its type.
+-- An alias chain longer than 1 024 links keeps its type.
 -- Three calls of `deep` (400 `Id`s each) over `( 2, 7 )`: past 1 024 links
--- `TypeStore.resolved` answered `err` at 346268b, and `err` unifies with
--- anything, so `String.isEmpty p.0` checked, built, and called
+-- `TypeStore.resolved` must not give up and answer `err`, which unifies with
+-- anything, so that `String.isEmpty p.0` would check, build, and call
 -- `String.isEmpty` on the number 2. Expected: the TYPE MISMATCH that two
 -- calls (800 links) report. Oracle twin: `deep (deep ( 2, 7 ))` reports
 -- it at the same place.

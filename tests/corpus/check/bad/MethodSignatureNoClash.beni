@@ -1,8 +1,8 @@
--- CK-52: the "module-rule clash" hint is printed only when the module
+-- The "module-rule clash" hint is printed only when the module
 -- declares at least two types and the method's first parameter names a
 -- different one (checker-v2.md §15.4). This module declares one type, so
 -- `eq : Mod, Int -> Bool` failing to be `Mod`'s `eq` is a plain signature
--- mismatch. On 7427828 the message still says "this is the module-rule
+-- mismatch. The message does not say "this is the module-rule
 -- clash of … §11. Move one of the types into a module of its own".
 
 

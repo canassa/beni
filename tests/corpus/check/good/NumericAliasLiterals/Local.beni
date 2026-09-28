@@ -1,6 +1,6 @@
 -- check/good (project): numeric literals satisfy annotations through local
 -- aliases of both primitive number types. The record alias is the control:
--- aliases were already transparent for structural values before row 67.
+-- aliases are transparent for structural values too.
 pub type alias Count =
     Int
 

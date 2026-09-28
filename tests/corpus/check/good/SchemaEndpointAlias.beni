@@ -1,8 +1,8 @@
--- check/good: CK-122. A `type alias` of a schema endpoint answers as the
--- endpoint written directly (checker-v2.md §11.5 *amended by R8c*). Before
--- the fix the alias's body was read without the module's schema lookup, so
--- it expanded to a silent `err`: every comparison below was an `internal`
--- (both checkers), and `H`/`W` were a false NOT EQUATABLE.
+-- check/good: a `type alias` of a schema endpoint answers as the
+-- endpoint written directly (checker-v2.md §11.5). The alias's body is read
+-- with the module's schema lookup; read without it, it would expand to a
+-- silent `err`, every comparison below would be an `internal`, and `H`/`W`
+-- a false NOT EQUATABLE.
 schema R tagged "k" of
     A as "a"
         v : Int

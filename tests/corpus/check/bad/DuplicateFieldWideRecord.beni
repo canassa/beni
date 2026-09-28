@@ -1,5 +1,5 @@
 -- check/bad: `duplicate_field` past the first 16 fields, where the check
--- switches from a scan to a hash set (bir/Lower.zig `FieldNames`, CK-44):
+-- switches from a scan to a hash set (bir/Lower.zig `FieldNames`):
 -- the type repeats `f3` as its 20th field and the literal repeats `f2` as
 -- its 18th. Expected: one `duplicate_field` at each repeat, at the second
 -- name, and nothing else.

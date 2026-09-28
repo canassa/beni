@@ -1,11 +1,11 @@
 //! `--roundtrip-frontend` as an IDENTITY ORACLE (`plans/m4-2.md` §9.2,
 //! `fast-compiler.md` §8's *The front-end artifacts, and the file key*).
 //!
-//! **This is M4-2's cut line.** Everything risky about the front-end artifact
+//! **This is the front-end cache's cut line.** Everything risky about the front-end artifact
 //! — the symbol column travelling as text and being re-interned into a
 //! worker's own pool, the token columns losing two of four, the `Bir` being
 //! reached by raw index by four later passes — is settled here, with no cache
-//! directory in sight and no byte written to one. The slice's disk I/O is
+//! directory in sight and no byte written to one. The cache's disk I/O is
 //! built on top of a format that is already known to be lossless.
 //!
 //! The matrix (`matrix_test.zig`) carries the bulk of the claim: its two

@@ -1,14 +1,14 @@
--- CK-38: `==` and `<` on an imported type of 256 parameters, one past what
--- a `u8` arity held (checker-v2.md §14.2, interface v3). The importer counts
+-- `==` and `<` on an imported type of 256 parameters, one past what
+-- a `u8` arity held (checker-v2.md §14.2). The importer counts
 -- a derived function's evidence from the imported type's arity, so it must
 -- read all 256: `Wide` emits `T`'s `eq` and `compare` with 256 evidence
 -- parameters, and `Main` must pass 256. `y` differs from `x` in its LAST
 -- field only, so a call that dropped the last entry compares the wrong thing.
 --
--- On 3487c12 the arity saturated at 255: the build exited 0 and the program
--- threw `TypeError: Cannot read properties of undefined (reading 'a')` at run
--- time. Oracle twin: the same program with `T` declared in `Main` (no import)
--- prints these four lines on 3487c12.
+-- An arity that saturated at 255 would build with exit 0 and throw
+-- `TypeError: Cannot read properties of undefined (reading 'a')` at run
+-- time. Oracle twin: the same program with `T` declared in `Main` (no
+-- import) prints these four lines.
 import Node exposing (Program)
 import Wide
 

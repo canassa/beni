@@ -1,11 +1,11 @@
--- CK-105: CK-105's first program (`run/FieldCallThroughMember`) with `ma`
+-- The program of `run/FieldCallThroughMember` with `ma`
 -- also passing `x` to `h`, whose inferred `where a.combine` requirement joins
 -- the dot-call `x.combine 1` on `x` (static-dispatch-spike.md §6.1 invariant
 -- 3). The joined class has a requirement, which has no field accessor to be,
 -- so when `mb`'s record reaches `x` it is `no_methods_on_shape` at `h x` —
--- in every declaration order (R7's round-2 review, X1: the orders that
--- check `mb` first made the class a field call and P6 reported an internal
--- I7 miscount; the others refused it).
+-- in every declaration order (an order that checks `mb` first must not make
+-- the class a field call and then report an internal evidence miscount;
+-- every order refuses it).
 type K
     = K Int
 

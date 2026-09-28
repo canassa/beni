@@ -1,9 +1,9 @@
 -- checker-v2.md §12.5 and §13.2: every value declaration's `decl` line names
 -- its calling convention. `plain` takes no evidence, whatever its shape;
 -- `function` takes evidence and is a function by its parameters (`maxOf`),
--- by its lambda body (`viaLambda`) or by its TYPE alone (`pointFree`, the
--- CK-33 case: `arity=2` with no parameters); `thunk` takes evidence and is
--- not a function (`blank`, CK-34), so every read runs it.
+-- by its lambda body (`viaLambda`) or by its TYPE alone (`pointFree`:
+-- `arity=2` with no parameters); `thunk` takes evidence and is
+-- not a function (`blank`), so every read runs it.
 
 
 maxOf : a, a -> a

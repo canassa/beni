@@ -1,4 +1,4 @@
--- R2b review S3 (static-dispatch-spike.md §10.10 as amended; rule 7): an
+-- check/good (static-dispatch-spike.md §10.10 as amended; rule 7): an
 -- UNANNOTATED `pub` value of no parameters whose inferred scheme keeps a
 -- constraint is refused as `constrained_constant` only when its type is not
 -- a function. `equals = (==)`, `eqs = \a b -> …` and `bigger = maxOf` are
@@ -8,7 +8,7 @@
 -- pub function constant with a constraint builds and runs" runs this program
 -- (`f`, `t`, `t`, `2`, `9`, `b`, `2`); a `run/` fixture must be warning-free.
 --
--- On 84e3cb1 each of the three is CONSTRAINED CONSTANT (exit 1).
+-- None of the three is CONSTRAINED CONSTANT.
 maxOf : a, a -> a
     where a.compare : a, a -> Order
 maxOf a b =

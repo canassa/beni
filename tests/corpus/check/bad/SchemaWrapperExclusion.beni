@@ -1,10 +1,10 @@
--- CK-24: (queue row 74) a type wrapping a schema endpoint inherits the
+-- check/bad: a type wrapping a schema endpoint inherits the
 -- endpoint's settled exclusion (schema.md §3–§4; checker-v2.md §11.5):
 -- `Fn.Type` holds an `Int -> Int`, so it does not compare, and neither does
--- `Wrap`, which holds a `Fn.Type`. Both `==` are `not_equatable`. On
--- 7427828 only `sameFn`'s is reported and `same` checks clean: `Wrap`'s
--- answer is settled before the endpoint's exclusion is known, and never
--- revisited.
+-- `Wrap`, which holds a `Fn.Type`. Both `==` are `not_equatable`. Settling
+-- `Wrap`'s answer before the endpoint's exclusion is known, and never
+-- revisiting it, would report only `sameFn`'s and check `same` clean.
+--
 import Schema exposing (Conversion)
 
 

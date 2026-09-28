@@ -1,12 +1,12 @@
 -- A module whose one error is a value cycle reports that cycle and nothing
--- else (checker-v2.md §13.1 as amended by the review of R2a, S2). `r` is
+-- else (checker-v2.md §13.1). `r` is
 -- defined in terms of itself through a record field, which is
--- `cyclic_value`; and v1 gives the `r` inside it an evidence argument (the
--- `==`'s `strict_eq`) that `r`, which has no requirements, does not take.
--- R2a's first I7 assert ran BEFORE `Cycles`, saw a module with
--- no error yet, and added an INTERNAL ERROR at that `r` to the cycle
--- message. The assert now runs last, gated on every error the module
--- reported, so the golden holds the cycle alone. On 9a931d7: the cycle
--- alone, as here.
+-- `cyclic_value`; and the `r` inside it could be given an evidence argument
+-- (the `==`'s `strict_eq`) that `r`, which has no requirements, does not take.
+-- The evidence-count assert must not run BEFORE `Cycles`, see a module with
+-- no error yet, and add an INTERNAL ERROR at that `r` to the cycle
+-- message. It runs last, gated on every error the module
+-- reported, so the golden holds the cycle alone.
+--
 r =
     { f = \x -> if x == 0 then 0 else r.f (x - 1) }

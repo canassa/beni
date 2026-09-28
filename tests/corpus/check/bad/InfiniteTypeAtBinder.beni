@@ -1,15 +1,15 @@
--- CK-04: the occurs check covers every binder, not only `let` headers
+-- The occurs check covers every binder, not only `let` headers
 -- (checker-v2.md §8.2, §6.3): a lambda parameter `y` applied to itself has
 -- an infinite type, and it is `infinite_type` at that parameter.
 --
--- `g` is `Omega`: on 7427828 it checks clean, and the built program dies
--- with `RangeError: Maximum call stack size exceeded`. `f` is `CR1`: on
--- 7427828 it is a TYPE MISMATCH whose expected type is a 25-level unrolled
+-- `g` is `Omega`: checked clean, its built program would die with
+-- `RangeError: Maximum call stack size exceeded`. `f` is `CR1`: it must not
+-- be a TYPE MISMATCH whose expected type is a 25-level unrolled
 -- arrow. Expected here is Elm's answer, `infinite_type` at each lambda's `y`,
 -- two in `g` and one in `f` (Elm occurs-checks a lambda's header
 -- before the application meets `"s"`); checker-v2.md §6.3's `binders_end`
 -- node does the same, so `y` is poisoned before `"s"` is unified and there
--- is no second diagnostic (design review S4).
+-- is no second diagnostic.
 
 
 g : Int -> Int

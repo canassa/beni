@@ -1,4 +1,4 @@
--- CK-139's variants: a parameterised type used short of its arguments in
+-- More variants: a parameterised type used short of its arguments in
 -- a constructor — parenthesised, beside another argument, in a record
 -- field, under `List`, as the type's own name (`Trip`), and a local `Int`
 -- that takes a parameter — is WRONG TYPE ARITY, and each type is then

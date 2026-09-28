@@ -1,11 +1,11 @@
--- CK-136: building `==` on a doubling DAG type costs its distinct nodes.
+-- Building `==` on a doubling DAG type costs its distinct nodes.
 -- `w6 1` has a tuple type 32 levels deep whose every level shares one
--- node; its derived `eq` evidence is a DAG of 32 distinct terms. At
--- 8b98464 `check` takes 70 ms but `build` does not finish in 60 s (the
--- backend walks the evidence as a tree, `Lower.derivedBodiesExist` with no
--- visited set; `dump --stage=dispatch` prints it as a tree too). Expected:
--- it builds and prints `F`. Oracle twin: the same program at `w5` builds in
--- 80 ms and prints `F`.
+-- node; its derived `eq` evidence is a DAG of 32 distinct terms. The
+-- backend must not walk the evidence as a tree (`Lower.derivedBodiesExist`
+-- keeps a visited set; `dump --stage=dispatch` prints shared terms once):
+-- as a tree, `build` would not finish in 60 s. Expected:
+-- it builds and prints `F`. Oracle twin: the same program at `w5` builds
+-- and prints `F`.
 import Node exposing (Program)
 
 

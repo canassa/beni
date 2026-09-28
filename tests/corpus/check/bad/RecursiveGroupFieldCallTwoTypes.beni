@@ -1,10 +1,10 @@
--- CK-105: a field call on a parameter another member of the recursive group
+-- A field call on a parameter another member of the recursive group
 -- types (`x.f z`, `x` typed by `mb`'s in-flight call) is the field call in
 -- every order (static-dispatch-spike.md §11 *Deferred receiver*, amended
 -- 2026-09-26), and inside the group `x` is monomorphic: `h 1` and `h "s"`
 -- cannot both hold. One `kind_mismatch` at `h "s"`, byte-identical in every
--- declaration order (`scenario/PERM`); before the amendment the orders
--- disagreed on the code (R7's adversarial review, F5's `T104`).
+-- declaration order (`scenario/PERM`), never a code that depends on the
+-- order.
 type K
     = K Int
 

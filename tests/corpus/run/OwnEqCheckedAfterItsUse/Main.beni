@@ -1,6 +1,6 @@
 -- The answers of `M`'s `compare`, `first` and `second`: `EQ`, `True` and
 -- `True`, because `M.eq` answers every `==` on a `T` although it is written
--- after all three (D3). A structural `==` would print `LT`, `False`, `False`.
+-- after all three. A structural `==` would print `LT`, `False`, `False`.
 import M
 import Node exposing (Program)
 

@@ -1,8 +1,8 @@
--- CK-22: D1 across three modules, every shape that can hold the private
+-- A private `eq` across three modules, every shape that can hold the private
 -- `eq` (checker-v2.md §11.3): `B`'s wrapper built by a function and by its
 -- constructor, a parameterised wrapper, `C`'s own wrapper of `B`'s, and a
--- list. Each is `private_method` at its `==`, naming `A.T`. On 7427828 every
--- one builds and prints `False`.
+-- list. Each is `private_method` at its `==`, naming `A.T`; none may
+-- build and print `False`.
 pub type T
     = T Int
 

@@ -1,8 +1,8 @@
--- CK-02: `g`'s parameter is reachable from the method constraint on the
--- OUTER receiver `x`, so HM(X) does not generalise it (checker-v2.md §8.4,
--- I2): `g 1` fixes it to a number and `g "s"` is a `type_mismatch` at `"s"`.
--- On 7427828 `f : a -> ( b, c ) where a.combine : a, d -> e` — free `d`, `e`
--- — and the program builds, printing 6, 5s and NaN.
+-- `g`'s parameter is reachable from the method constraint on the
+-- OUTER receiver `x`, so HM(X) does not generalise it (checker-v2.md §8.4):
+-- `g 1` fixes it to a number and `g "s"` is a `type_mismatch` at `"s"`.
+-- Generalising it would publish `f : a -> ( b, c ) where a.combine : a, d -> e`
+-- — free `d`, `e` — and the program would build, printing 6, 5s and NaN.
 
 
 type T

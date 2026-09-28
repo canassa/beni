@@ -1,11 +1,11 @@
--- CK-65: four own methods mutually recursive THROUGH DISPATCH (`ma` → `mb` →
+-- Four own methods mutually recursive THROUGH DISPATCH (`ma` → `mb` →
 -- `mc` → `md` → `ma`), none annotated, merged into one group whatever the
--- declaration order (D11, checker-v2.md §10.4; §23 item 1 asks for at least
+-- declaration order (checker-v2.md §10.4; §23 item 1 asks for at least
 -- four). `(K 5).ma ()` is `1112` and `(K 7).mc ()` is `2212`.
 --
--- Oracle twin, run on 8016030 under v1: this file with the four methods
--- annotated `K, () -> Int` prints exactly the expected lines. As written, v1
--- refuses it with METHOD NEEDS AN ANNOTATION.
+-- Oracle twin: this file with the four methods
+-- annotated `K, () -> Int` prints exactly the expected lines. As written, it
+-- must not be refused with METHOD NEEDS AN ANNOTATION.
 import Node exposing (Program)
 
 

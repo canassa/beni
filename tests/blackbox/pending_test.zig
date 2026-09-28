@@ -1,64 +1,55 @@
 //! The pending scenarios (`plans/checker-rewrite.md` §2.5): one
 //! test per finding of `plans/checker-findings.md` that a corpus
 //! fixture cannot state, because its claim is about TIME, or about a program
-//! too wide or deep to check in (CK-82: generated, as `abuse_test.zig`
-//! generates its inputs). (CK-71's claim about runs agreeing was promoted
-//! into `blackbox_test.zig` by R1.) Run only by `zig build test-pending`
+//! too wide or deep to check in (generated, as `abuse_test.zig` generates
+//! its inputs). Run only by `zig build test-pending`
 //! and `zig build test-pending-perf`, never by the gates: every scenario here
 //! is expected to be RED on the checker the gates run.
 //!
 //! Each scenario generates its program into a `World`, times the installed
 //! binary on it, and prints one line in the corpus walker's pending format:
 //!
-//!   PENDING  RED    CK-88  scenario/CK-88  [slow]  n=3000: 204 ms; 2n > 510 ms (2.5×) on 3 of 3 runs
-//!
-//! (CK-88's line before R12 fixed it)
+//!   PENDING  RED    CK-NN  scenario/CK-NN  [slow]  n=3000: 204 ms; 2n > 510 ms (2.5×) on 3 of 3 runs
 //!
 //! and fails the step only under the walker's rules:
 //!   (b) GREEN: it is fixed on the checker the gates run, so it moves
 //!       VERBATIM now — a timing scenario into `perf_test.zig`
-//!       (`zig build test-perf`, the manager's decision of 2026-09-25, CK-41
-//!       the first), any other into `abuse_test.zig`;
+//!       (`zig build test-perf`), any other into `abuse_test.zig`;
 //!   (d) RED with another signature than `tests/pending/RED` records
 //!       (`scenario/CK-NN <signature>`), or with no record at all.
-//! (Rule (c), a `CLAIMED` scenario red under v2, and the checker column went
-//! with v1 at R12.)
 //!
 //! **Scaling findings assert a ratio**: time(2n) / time(n) ≤ 2.5, linear with
 //! head-room (quadratic is about 4, cubic about 8), because a ratio holds
 //! across machines where an absolute bound does not. **Each point is the best
-//! of 3 runs** (S13): time only ever gets ADDED by a loaded machine, so the
+//! of 3 runs**: time only ever gets ADDED by a loaded machine, so the
 //! minimum is the measurement. A run of 2n is killed at twice the bound, so a
 //! red scenario costs three kills and not three quadratic builds; GREEN needs
 //! one run under the bound, RED needs all three over it.
 //!
 //! **Time is the child's CPU time** (user + system, from `wait4`'s rusage;
-//! `world.Result.cpu_ms`), not the wall clock (review of R2a, 2026-09-24). A
-//! concurrent build stretched the two points' wall clocks unequally and gave
-//! CK-40 a ratio of 1.85 — 87 s against 162 s — and a false GREEN; a loaded
+//! `world.Result.cpu_ms`), not the wall clock. A concurrent build can
+//! stretch the two points' wall clocks unequally, and once gave a cubic
+//! scenario a ratio of 1.85 — 87 s against 162 s — and a false GREEN; a loaded
 //! machine cannot add CPU time the compiler did not spend, and every run is
 //! `--jobs=1`. The wall clock only bounds how long a run may take before it
 //! is killed.
 //!
-//! **Two steps** (2026-09-25). The scenarios whose claim is about TIME
-//! (none since R12 promoted CK-88) run in `zig build
+//! **Two steps.** The scenarios whose claim is about TIME run in `zig build
 //! test-pending-perf`, on a ReleaseFast compiler (`BENI_EXE`), because the
 //! budgets they guard (`fast-compiler.md` §2) are ReleaseFast budgets; the
 //! rest run in `zig build test-pending`, on the ReleaseSafe binary the gates
 //! run.
 //! The `scenarios` table decides which; both steps apply rules (a)–(d).
 //!
-//! **Calibration (2026-09-25, ReleaseFast, CPU time, idle 32-core Linux).**
-//! Each `n` is the smallest, in steps of the numbers quoted per scenario,
-//! at which (i) `050cd2d` is RED with its ratio clearly over 2.5, and
-//! (ii) where a reference fix is known — orch's two scratch fixes, per-group
-//! schema settling removed and `Schemes.Writer.resetMemo` growing to twice
-//! what it needs — `050cd2d` WITH that fix reads GREEN, both checked through
-//! this harness (`BENI_EXE` at a scratch build) on three runs. An empty module
-//! checks in about 6 ms (process start plus `core`), which is the floor under
-//! every point. Scenarios without a reference fix say so. R0's original sizes
-//! were for a Debug binary and at least 0.5 s of fixed work at `n`; they cost
-//! eleven minutes a run.
+//! **Calibration (ReleaseFast, CPU time, idle 32-core Linux).** Each `n` is
+//! the smallest, in steps of the numbers quoted per scenario, at which (i)
+//! the defective checker is RED with its ratio clearly over 2.5, and (ii)
+//! where a reference fix is known, the same checker WITH that fix reads
+//! GREEN, both checked through this harness (`BENI_EXE` at a scratch build)
+//! on three runs. An empty module checks in about 6 ms (process start plus
+//! `core`), which is the floor under every point. Scenarios without a
+//! reference fix say so. Sizes chosen for a Debug binary, with at least
+//! 0.5 s of fixed work at `n`, cost eleven minutes a run.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -84,19 +75,9 @@ const pending_root = "tests/pending";
 /// scenario's step is decided, and `Scenario.init` refuses an id missing
 /// from it, so no scenario can fall out of both steps.
 const scenarios = [_]struct { name: []const u8, step: Step }{
-    // Since the cut-over (R11) the rest are promoted: PERM, NEST-OVER and
-    // NEST-DEEP into `ordering_test.zig`, CK-79 and CK-82 into
-    // `abuse_wide_test.zig`, NEST-UNDER into `perf_test.zig`; CK-03, CK-40,
-    // CK-42, CK-75 and CK-80 were red under v1 only, and their v2 twins were
-    // already in `perf_test.zig` (R6a, R8a). CK-88, the last, went to
-    // `perf_test.zig` when R12 fixed it. The table was empty until R15's
-    // audit (2026-09-27) added the findings below; R15-fix-A promoted
-    // CK-140 into `abuse_test.zig`, R15-fix-C CK-171 and R15-fix-D CK-143
-    // (both halves) into `perf_test.zig`, and R15-fix-F CK-164 and CK-165
-    // into `perf_test.zig`, CK-166 and CK-167 into `abuse_test.zig` and
-    // CK-163, a claim about the output tree, into `build_test.zig`.
-    // R15-fix-G (2026-09-28) added CK-179; R15-fix-H added CK-191 and
-    // CK-192 (`--out`'s record) and promoted both into `build_test.zig`.
+    // A fixed scenario leaves this table for `ordering_test.zig`,
+    // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
+    // `build_test.zig`, whichever states its claim.
     .{ .name = "scenario/CK-144", .step = .fast },
 };
 
@@ -118,19 +99,16 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// (CK-88, the last of R0–R12's, was fixed and promoted into `perf_test.zig`
-// by R12. The ones below are R15's audit, 2026-09-27.)
-
-// CK-144: an interface term expands every alias body inside every scheme,
+// An interface term expands every alias body inside every scheme,
 // so a chain of nested record aliases is quadratic in BYTES (and in
 // publication time, and in the cache entry). `pub type alias R{i} =
 // { x : Int, p : R{i-1} }` with one `pub get{i} : R{i} -> Int` each. The
 // claim is the size of `dump --stage=raw` (the interface as written), which
-// is exact, so one run of each size. At 8b98464: 60 / 120 levels write
+// is exact, so one run of each size. Today 60 / 120 levels write
 // 1 021 435 / 4 140 731 bytes, a ratio of 4.05 (240 levels: 17.1 MB, a
 // 4.9 MB cache entry; a `pub schema` chain of 240 writes a 22 MB entry).
 // Expected: alias references by name, each body written once — linear.
-test "CK-144: an alias chain's interface is linear in its length" {
+test "an alias chain's interface is linear in its length" {
     var s = try Scenario.init("CK-144");
     defer s.deinit();
     try s.w.write("R.beni", try aliasChain(s.arena(), 60));
@@ -255,7 +233,7 @@ const Scenario = struct {
     /// from `wait4`'s rusage), and the wall clock only where the platform
     /// reports none. Every verdict below compares `ms`: a concurrent build on
     /// the same machine stretches the wall clock of the two points by
-    /// different amounts, and once turned CK-40's cubic 87 s / 162 s into a
+    /// different amounts, and once turned a cubic 87 s / 162 s into a
     /// ratio of 1.85 and a false GREEN. It cannot add CPU time the child did
     /// not spend, and `--jobs=1` everywhere keeps CPU time equal to work.
     fn timed(s: *Scenario, args: []const []const u8, kill_ms: i64) !?struct { ms: i64, wall_ms: i64, result: world.Result } {
@@ -354,16 +332,15 @@ const Scenario = struct {
 
     /// `perf_test.zig`'s `eventRatio`: time(2n) / time(n) ≤ 2.5 on one
     /// `--self-profile` event of the file's own module, each point the best
-    /// of 3 `check --no-cache --jobs=1` runs, wall time of the event (R8c,
-    /// CK-93). For a finding in one phase whose program also carries other
-    /// phases' costs.
+    /// of 3 `check --no-cache --jobs=1` runs, wall time of the event. For a
+    /// finding in one phase whose program also carries other phases' costs.
     fn eventRatio(s: *Scenario, small: []const u8, large: []const u8, n: usize, event: []const u8) !Verdict {
         return s.eventRatioOf(small, large, n, event, small, large);
     }
 
     /// `eventRatio` where what is checked (a file or a directory) and the
-    /// file whose event is timed differ (CK-165: a project directory, and
-    /// its `Main`).
+    /// file whose event is timed differ (a project directory, and its
+    /// `Main`).
     fn eventRatioOf(s: *Scenario, small: []const u8, large: []const u8, n: usize, event: []const u8, small_file: []const u8, large_file: []const u8) !Verdict {
         var ms: [2]f64 = undefined;
         for ([_][]const u8{ small, large }, [_][]const u8{ small_file, large_file }, &ms) |target, file, *slot| {

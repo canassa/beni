@@ -1,9 +1,9 @@
--- CK-51: a `?` that cannot apply says WHICH leg failed — the enclosing
+-- A `?` that cannot apply says WHICH leg failed — the enclosing
 -- definition's return shape, or the error types — rather than that a
--- `Maybe` or a `Result` "is neither" (owner decision D2, checker-v2.md
+-- `Maybe` or a `Result` "is neither" (the owner's decision, checker-v2.md
 -- §8.6: "the enclosing definition returns `Result String Int`, and this is
--- a `Maybe Int`", or "the error types differ"). On 7427828 both say
--- "`?` needs a `Result` or a `Maybe`, and this is neither: `Maybe Int`" (and
+-- a `Maybe Int`", or "the error types differ") — never "`?` needs a
+-- `Result` or a `Maybe`, and this is neither: `Maybe Int`" (or
 -- `Result Int Int`).
 
 

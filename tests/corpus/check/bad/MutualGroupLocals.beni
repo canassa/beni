@@ -1,9 +1,9 @@
--- CK-09: while a mutually recursive group is solved, each member's locals
--- are its own (checker-v2.md §6.2, I11). `y` is a `String` (it reaches
--- `String.toUpper`), so `g`'s `f a 5` is a `type_mismatch` at `5`. On
--- 7427828 `f`'s locals are resolved against `g`'s, `f` is inferred
--- `number, number2 -> Int`, and the built program dies with
--- `TypeError: s.toUpperCase is not a function`.
+-- While a mutually recursive group is solved, each member's locals
+-- are its own (checker-v2.md §6.2: the solver reads no generation-time
+-- context). `y` is a `String` (it reaches
+-- `String.toUpper`), so `g`'s `f a 5` is a `type_mismatch` at `5`. Resolving
+-- `f`'s locals against `g`'s would infer `f : number, number2 -> Int`, and
+-- the built program would die with `TypeError: s.toUpperCase is not a function`.
 
 
 f x y =

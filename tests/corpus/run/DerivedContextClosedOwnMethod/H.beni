@@ -1,15 +1,15 @@
--- CK-67: a CLOSED wrapper is comparable whatever its payload's methods
+-- A CLOSED wrapper is comparable whatever its payload's methods
 -- infer: `W` holds an `H.Holder T`, `H.eq` needs `T`'s `key`, and `W`'s
 -- derived context is empty however `key` is typed (checker-v2.md §11.2).
--- `Main` is round 2's `s1n` (`key` unannotated); `Nested` is `s1n2`, where
+-- `Main` has `key` unannotated; `Nested` is the form where
 -- `key`'s own body compares `W`s, so `key` is in flight when `W`'s context
 -- is asked for. In both, `same 1 1` is `True` and `same 1 2` is `False`:
 -- expected `True`, `False`, `True`, `False`.
 --
--- Oracle twin, run on 7427828: this project with both `key`s annotated
--- `T, () -> Int` prints exactly the expected four lines. As written,
--- 7427828 refuses both comparisons with NOT EQUATABLE `W`: the capability
--- walk decides before `key`'s scheme exists.
+-- Oracle twin: this project with both `key`s annotated
+-- `T, () -> Int` prints exactly the expected four lines. A capability walk
+-- that decided before `key`'s scheme exists would refuse both comparisons
+-- with NOT EQUATABLE `W`.
 pub type Holder a
     = Holder a
 

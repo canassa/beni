@@ -1,4 +1,4 @@
-//! Declaration-order scenarios for own methods (`checker-v2.md` I9, §10.2–
+//! Declaration-order scenarios for own methods (`checker-v2.md` §10.2–
 //! §10.5): whether a program checks, and what it prints or reports, never
 //! depends on the order its declarations are written in; and the nesting
 //! budget a check that nests another check spends.
@@ -40,20 +40,22 @@ const testing = std.testing;
 // check them all (a failing order is named by the file its diagnostic is
 // in). A project's module is permuted one build per order.
 const perm_programs = [_]PermProgram{
-    // Round 1: disp's `o1`, orch's `row75`, adv's `box` (CK-36).
+    // An own method used before its definition, in three modules.
     .{ .name = "o1", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "O1.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
     .{ .name = "row75", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "Row75.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
     .{ .name = "box", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "Box.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
-    // CK-30's `m1b` and its seven siblings, CK-30's miscount, CK-31's `p5`.
-    .{ .name = "m1b", .path = "tests/corpus/run/RecursionWithComparison.beni", .expect = .{ .prints = "tests/corpus/run/RecursionWithComparison.expected" } },
+    // Recursion with a comparison and its seven siblings, a miscount of
+    // dead declarations, and a mutual group's evidence order.
+    .{ .name = "recursion-with-comparison", .path = "tests/corpus/run/RecursionWithComparison.beni", .expect = .{ .prints = "tests/corpus/run/RecursionWithComparison.expected" } },
     .{ .name = "dead", .path = "tests/corpus/run/DeadMiscount.beni", .expect = .{ .prints = "tests/corpus/run/DeadMiscount.expected" } },
-    .{ .name = "p5", .path = "tests/corpus/run/MutualGroupEvidenceOrder.beni", .expect = .{ .prints = "tests/corpus/run/MutualGroupEvidenceOrder.expected" } },
-    // CK-63 to CK-66.
-    .{ .name = "ck63", .path = "tests/corpus/run/OwnMethodDemandedEarly.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodDemandedEarly.expected" } },
+    .{ .name = "mutual-group-evidence-order", .path = "tests/corpus/run/MutualGroupEvidenceOrder.beni", .expect = .{ .prints = "tests/corpus/run/MutualGroupEvidenceOrder.expected" } },
+    // An own method demanded early, through a value prefix, by a mutual
+    // dispatch, and from a group variable outside its caller.
+    .{ .name = "demanded-early", .path = "tests/corpus/run/OwnMethodDemandedEarly.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodDemandedEarly.expected" } },
     .{ .name = "twolets", .path = "tests/corpus/run/OwnMethodDemandedTwoLetsDeep.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodDemandedTwoLetsDeep.expected" } },
-    .{ .name = "ck64", .path = "tests/corpus/run/OwnMethodValuePrefix.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefix.expected" } },
-    .{ .name = "ck65", .path = "tests/corpus/run/MutualDispatchMethods.beni", .expect = .{ .prints = "tests/corpus/run/MutualDispatchMethods.expected" } },
-    .{ .name = "ck66", .path = "tests/corpus/run/GroupVariableOutsideCaller.beni", .expect = .{ .prints = "tests/corpus/run/GroupVariableOutsideCaller.expected" } },
+    .{ .name = "own-method-value-prefix", .path = "tests/corpus/run/OwnMethodValuePrefix.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefix.expected" } },
+    .{ .name = "mutual-dispatch", .path = "tests/corpus/run/MutualDispatchMethods.beni", .expect = .{ .prints = "tests/corpus/run/MutualDispatchMethods.expected" } },
+    .{ .name = "group-variable-outside-caller", .path = "tests/corpus/run/GroupVariableOutsideCaller.beni", .expect = .{ .prints = "tests/corpus/run/GroupVariableOutsideCaller.expected" } },
     // Merges of three and four methods, and a member that demands its
     // cycle at two nodes (§23 items 1 and 8).
     .{ .name = "three", .path = "tests/corpus/run/OwnMethodThreeCycle.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodThreeCycle.expected" } },
@@ -65,101 +67,99 @@ const perm_programs = [_]PermProgram{
     .{ .name = "annotated-or-first", .path = "tests/corpus/run/OwnMethodAnnotatedOrFirst.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodAnnotatedOrFirst.expected" } },
     .{ .name = "value-prefix", .path = "tests/corpus/run/OwnMethodValuePrefixOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefixOrdered.expected" } },
     .{ .name = "in-scrutinee", .path = "tests/corpus/run/OwnMethodInScrutineeOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodInScrutineeOrdered.expected" } },
-    // Round 3: `rq1`, `rq2` (CK-73 and its guard), `capt`, the annotated
-    // `sccA`/`sccB`; and CK-73's merge variant, whose nested group must not
-    // drain its demander's queue.
-    .{ .name = "rq1", .path = "tests/corpus/run/ScrutineeMethodLater.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodLater.expected" } },
-    .{ .name = "rq2", .path = "tests/corpus/run/ScrutineeMethodFirst.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodFirst.expected" } },
-    .{ .name = "capt", .path = "tests/corpus/run/SingleMemberGroupReceiver.beni", .expect = .{ .prints = "tests/corpus/run/SingleMemberGroupReceiver.expected" } },
+    // A method on a scrutinee written later or first, a single-member
+    // group's receiver, an annotated recursive group's receiver; and the
+    // merge variant, whose nested group must not drain its demander's queue.
+    .{ .name = "scrutinee-method-later", .path = "tests/corpus/run/ScrutineeMethodLater.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodLater.expected" } },
+    .{ .name = "scrutinee-method-first", .path = "tests/corpus/run/ScrutineeMethodFirst.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodFirst.expected" } },
+    .{ .name = "single-member-group-receiver", .path = "tests/corpus/run/SingleMemberGroupReceiver.beni", .expect = .{ .prints = "tests/corpus/run/SingleMemberGroupReceiver.expected" } },
     .{ .name = "scc-annotated", .path = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.expected" } },
-    .{ .name = "rq1-merge", .path = "tests/corpus/check/good/ScrutineeMethodMergeVariant/Later.beni", .expect = .checks },
+    .{ .name = "scrutinee-merge-variant", .path = "tests/corpus/check/good/ScrutineeMethodMergeVariant/Later.beni", .expect = .checks },
     // An annotated member of a dispatch cycle instantiates (§6.6).
-    .{ .name = "ck70-annotated", .path = "tests/corpus/run/RecursiveDispatchAnnotated.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveDispatchAnnotated.expected" } },
+    .{ .name = "recursive-dispatch-annotated", .path = "tests/corpus/run/RecursiveDispatchAnnotated.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveDispatchAnnotated.expected" } },
     // The refusals: one diagnostic, the same in every order.
-    .{ .name = "ck70", .path = "tests/corpus/check/bad/RecursiveDispatchTwoTypes.beni", .expect = .{ .refused = .type_mismatch } },
-    .{ .name = "ck72", .path = "tests/corpus/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "evA", .path = "tests/corpus/check/bad/RecursiveGroupEvidenceReceiver/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "subA", .path = "tests/corpus/check/bad/RecursiveGroupSubWanted/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "rq1-d14", .path = "tests/corpus/check/bad/ScrutineeMethodMergeD14/Later.beni", .expect = .{ .refused = .kind_mismatch } },
-    // R7's reviews: a dot-call's field-or-method choice (CK-105), D14's
+    .{ .name = "recursive-dispatch-two-types", .path = "tests/corpus/check/bad/RecursiveDispatchTwoTypes.beni", .expect = .{ .refused = .type_mismatch } },
+    .{ .name = "group-receiver-needs-annotation", .path = "tests/corpus/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "group-evidence-receiver", .path = "tests/corpus/check/bad/RecursiveGroupEvidenceReceiver/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "group-sub-wanted", .path = "tests/corpus/check/bad/RecursiveGroupSubWanted/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "scrutinee-merge-refused", .path = "tests/corpus/check/bad/ScrutineeMethodMergeD14/Later.beni", .expect = .{ .refused = .kind_mismatch } },
+    // A dot-call's field-or-method choice, the recursive-group refusal's
     // hint naming one member or the final class and none for rule (a), a
     // merge during the root's boundary, and a refusal whose message shows
     // a type mid-solve (the same code and region in every order).
-    .{ .name = "rec1", .path = "tests/corpus/run/FieldCallThroughMember.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMember.expected" } },
-    .{ .name = "rec1c", .path = "tests/corpus/run/FieldCallThroughMemberCycle.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMemberCycle.expected" } },
-    .{ .name = "rec2", .path = "tests/corpus/run/FieldCallThroughValueRecursion.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueRecursion.expected" } },
-    .{ .name = "rec1v", .path = "tests/corpus/run/FieldCallThroughValueDemand.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueDemand.expected" } },
+    .{ .name = "field-call-through-member", .path = "tests/corpus/run/FieldCallThroughMember.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMember.expected" } },
+    .{ .name = "field-call-through-member-cycle", .path = "tests/corpus/run/FieldCallThroughMemberCycle.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMemberCycle.expected" } },
+    .{ .name = "field-call-through-value-recursion", .path = "tests/corpus/run/FieldCallThroughValueRecursion.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueRecursion.expected" } },
+    .{ .name = "field-call-through-value-demand", .path = "tests/corpus/run/FieldCallThroughValueDemand.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueDemand.expected" } },
     .{ .name = "deferred-field", .path = "tests/corpus/run/DeferredReceiverFieldCall.beni", .expect = .{ .prints = "tests/corpus/run/DeferredReceiverFieldCall.expected" } },
-    .{ .name = "t104", .path = "tests/corpus/check/bad/RecursiveGroupFieldCallTwoTypes.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "t102", .path = "tests/corpus/check/bad/RecursiveGroupRefusalRendering.beni", .expect = .{ .refused_region = .not_equatable } },
-    .{ .name = "hint2", .path = "tests/corpus/check/bad/RecursiveGroupHintOneMember.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "hint1", .path = "tests/corpus/check/bad/RecursiveGroupHintAllMembers.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "p3n", .path = "tests/corpus/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .type_mismatch } },
+    .{ .name = "group-field-call-two-types", .path = "tests/corpus/check/bad/RecursiveGroupFieldCallTwoTypes.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "group-refusal-rendering", .path = "tests/corpus/check/bad/RecursiveGroupRefusalRendering.beni", .expect = .{ .refused_region = .not_equatable } },
+    .{ .name = "hint-one-member", .path = "tests/corpus/check/bad/RecursiveGroupHintOneMember.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "hint-all-members", .path = "tests/corpus/check/bad/RecursiveGroupHintAllMembers.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "rule-a-no-recursion-hint", .path = "tests/corpus/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .type_mismatch } },
     .{ .name = "merge-at-boundary", .path = "tests/corpus/run/MergeAtBoundary", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/MergeAtBoundary/_expected.expected" } },
-    // R7's round-2 review: a dot-call joined with a scheme's requirement (X1),
-    // both halves of the rule (S2), a `number` receiver's method in a group
-    // (CK-106).
-    // Its message renders the record as it stood when met (§10.8, I9's scope).
+    // A dot-call joined with a scheme's requirement, both halves of the
+    // rule, a `number` receiver's method in a group. A refusal's message
+    // renders the record as it stood when met (§10.8).
     .{ .name = "joined-in-group", .path = "tests/corpus/check/bad/DeferredReceiverJoinedInGroup.beni", .expect = .{ .refused_region = .no_methods_on_shape } },
     .{ .name = "joined-p-first", .path = "tests/corpus/check/bad/DeferredReceiverJoinedRequirement/PFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
     .{ .name = "joined-q-first", .path = "tests/corpus/check/bad/DeferredReceiverJoinedRequirement/QFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
     .{ .name = "generalised", .path = "tests/corpus/check/bad/DeferredReceiverGeneralised.beni", .expect = .{ .refused = .no_methods_on_shape } },
     .{ .name = "recursive-twin", .path = "tests/corpus/run/DeferredReceiverRecursiveTwin.beni", .expect = .{ .prints = "tests/corpus/run/DeferredReceiverRecursiveTwin.expected" } },
-    .{ .name = "ck106", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroup.beni", .expect = .{ .refused = .unknown_method } },
-    .{ .name = "ck106-dispatch", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroupDispatch.beni", .expect = .{ .refused = .unknown_method } },
-    // R8a: derived contexts by fixpoint (checker-v2.md §11.2). A closed
-    // in-flight method (CK-67, its nested and permuted twins), the
-    // parametric refusal (CK-69), a re-entrant query (CK-74), the replayed
-    // wanted that merges the asker (CK-77), a derived query inside an own
-    // `eq`'s merged class (R7's S6), and `eq` and `compare` computed jointly
-    // over one type-level SCC (round 4 R8-2).
-    .{ .name = "ck67", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
-    .{ .name = "ck67-nested", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Nested.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
-    .{ .name = "ck67-permuted", .path = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted/_expected.expected" } },
-    .{ .name = "ck69", .path = "tests/corpus/check/bad/DerivedContextNeedsAnnotation", .module = "Main.beni", .expect = .{ .refused = .method_needs_annotation } },
-    .{ .name = "ck74", .path = "tests/corpus/check/bad/DerivedContextReentrant", .module = "Main.beni", .expect = .{ .refused = .type_mismatch } },
-    .{ .name = "ck77", .path = "tests/corpus/check/bad/DerivedContextMergesAsker", .module = "PickFirst.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "s6-in-flight-eq", .path = "tests/corpus/run/DerivedContextInFlightEq", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextInFlightEq/_expected.expected" } },
+    .{ .name = "number-receiver-in-group", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroup.beni", .expect = .{ .refused = .unknown_method } },
+    .{ .name = "number-receiver-in-group-dispatch", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroupDispatch.beni", .expect = .{ .refused = .unknown_method } },
+    // Derived contexts by fixpoint (checker-v2.md §11.2). A closed in-flight
+    // method (with its nested and permuted twins), the parametric refusal, a
+    // re-entrant query, the replayed wanted that merges the asker, a derived
+    // query inside an own `eq`'s merged class, and `eq` and `compare`
+    // computed jointly over one type-level SCC.
+    .{ .name = "closed-own-method", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
+    .{ .name = "closed-own-method-nested", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Nested.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
+    .{ .name = "closed-own-method-permuted", .path = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted/_expected.expected" } },
+    .{ .name = "derived-needs-annotation", .path = "tests/corpus/check/bad/DerivedContextNeedsAnnotation", .module = "Main.beni", .expect = .{ .refused = .method_needs_annotation } },
+    .{ .name = "derived-reentrant", .path = "tests/corpus/check/bad/DerivedContextReentrant", .module = "Main.beni", .expect = .{ .refused = .type_mismatch } },
+    .{ .name = "derived-merges-asker", .path = "tests/corpus/check/bad/DerivedContextMergesAsker", .module = "PickFirst.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "in-flight-eq", .path = "tests/corpus/run/DerivedContextInFlightEq", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextInFlightEq/_expected.expected" } },
     .{ .name = "joint-eq-compare", .path = "tests/corpus/run/DerivedContextJointMethods", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextJointMethods/_expected.expected" } },
-    // R8b: a pass that demands a group which merges down into the asker
-    // (CK-117); D1 inside the module and two modules away from the private
-    // `eq`, permuting the declaring and the wrapping module (CK-22); schema
+    // A pass that demands a group which merges down into the asker; a
+    // private `eq` used inside its module and two modules away, permuting
+    // the declaring and the wrapping module; schema
     // endpoints through the one fixpoint — an exclusion reached through a
     // `via` target that mentions the endpoint back, the same program
     // accepted, a record endpoint, and a comparison inside the schema's own
-    // group (CK-24, CK-118).
-    .{ .name = "ck117", .path = "tests/corpus/run/DerivedContextPassMergesDown", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextPassMergesDown/_expected.expected" } },
-    .{ .name = "d1-inside", .path = "tests/corpus/run/PrivateEqInsideModule", .module = "M.beni", .expect = .{ .prints = "tests/corpus/run/PrivateEqInsideModule/_expected.expected" } },
-    .{ .name = "d1-declaring", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "A.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
-    .{ .name = "d1-wrapping", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "B.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
-    .{ .name = "ck24-through-own", .path = "tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "ck24-in-flight", .path = "tests/corpus/check/bad/SchemaEndpointInFlight.beni", .expect = .{ .refused = .method_needs_annotation } },
-    // R8b's review round: a closed endpoint compared while its schema is in
+    // group.
+    .{ .name = "pass-merges-down", .path = "tests/corpus/run/DerivedContextPassMergesDown", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextPassMergesDown/_expected.expected" } },
+    .{ .name = "private-eq-inside-module", .path = "tests/corpus/run/PrivateEqInsideModule", .module = "M.beni", .expect = .{ .prints = "tests/corpus/run/PrivateEqInsideModule/_expected.expected" } },
+    .{ .name = "private-eq-third-module-declaring", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "A.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
+    .{ .name = "private-eq-third-module-wrapping", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "B.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
+    .{ .name = "schema-exclusion-through-own-type", .path = "tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "schema-endpoint-in-flight", .path = "tests/corpus/check/bad/SchemaEndpointInFlight.beni", .expect = .{ .refused = .method_needs_annotation } },
+    // A closed endpoint compared while its schema is in
     // flight is deferred (accepted, or refused once the group is done), an
     // encoded one is never in flight, and a ring closed only through `via`s
-    // is one unit (CK-119).
-    .{ .name = "ck24-in-flight-closed", .path = "tests/corpus/check/good/SchemaEndpointInFlightClosed.beni", .expect = .checks },
-    .{ .name = "ck24-in-flight-function", .path = "tests/corpus/check/bad/SchemaEndpointInFlightFunction.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "ck24-encoded-in-flight", .path = "tests/corpus/check/good/SchemaEncodedInFlight.beni", .expect = .checks },
-    .{ .name = "ck119-ring", .path = "tests/corpus/check/good/SchemaViaRing.beni", .expect = .checks },
-    // R8b's round-2 review: the §11.4 gate demands the schemas it reaches
-    // and defers one in flight (CK-120) — each use of the local fixture
-    // counted — and a run's own step budget (CK-125).
-    .{ .name = "ck120-local", .path = "tests/corpus/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni", .count = 2, .expect = .{ .refused = .not_equatable } },
-    .{ .name = "ck120-unchecked", .path = "tests/corpus/check/bad/EquatableMarkerUncheckedSchema.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "ck120-in-flight", .path = "tests/corpus/check/bad/EquatableMarkerInFlightSchema.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "ck118-joint", .path = "tests/corpus/check/good/SchemaViaMutualOwnType.beni", .expect = .checks },
-    .{ .name = "ck118-record", .path = "tests/corpus/check/good/SchemaRecordViaWrapped.beni", .expect = .checks },
-    // R14 (D5, checker-v2.md §8.4 *As built by R14*): a `let` helper with a
+    // is one unit.
+    .{ .name = "schema-endpoint-in-flight-closed", .path = "tests/corpus/check/good/SchemaEndpointInFlightClosed.beni", .expect = .checks },
+    .{ .name = "schema-endpoint-in-flight-function", .path = "tests/corpus/check/bad/SchemaEndpointInFlightFunction.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "schema-encoded-in-flight", .path = "tests/corpus/check/good/SchemaEncodedInFlight.beni", .expect = .checks },
+    .{ .name = "schema-via-ring", .path = "tests/corpus/check/good/SchemaViaRing.beni", .expect = .checks },
+    // The §11.4 gate demands the schemas it reaches and defers one in
+    // flight — each use of the local fixture counted — and a run's own step
+    // budget.
+    .{ .name = "marker-wrapped-endpoint-local", .path = "tests/corpus/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni", .count = 2, .expect = .{ .refused = .not_equatable } },
+    .{ .name = "marker-unchecked-schema", .path = "tests/corpus/check/bad/EquatableMarkerUncheckedSchema.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "marker-in-flight-schema", .path = "tests/corpus/check/bad/EquatableMarkerInFlightSchema.beni", .expect = .{ .refused = .not_equatable } },
+    .{ .name = "schema-via-mutual-own-type", .path = "tests/corpus/check/good/SchemaViaMutualOwnType.beni", .expect = .checks },
+    .{ .name = "schema-record-via-wrapped", .path = "tests/corpus/check/good/SchemaRecordViaWrapped.beni", .expect = .checks },
+    // Constrained `let` helpers (checker-v2.md §8.4): a `let` helper with a
     // dot-call's own requirement inside a merged group keeps its field call;
-    // `let` function bindings with evidence, recursive and mutual; the
-    // row-76 helper and a helper used at two types, across two modules.
-    .{ .name = "r14-field-merged", .path = "tests/corpus/run/LetFieldCallInMergedGroup.beni", .expect = .{ .prints = "tests/corpus/run/LetFieldCallInMergedGroup.expected" } },
-    .{ .name = "r14-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
-    .{ .name = "r14-polymorphic", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
-    // R15-fix-G (CK-175): two uses of an alias that drops its parameter,
+    // `let` function bindings with evidence, recursive and mutual; a
+    // polymorphic helper and a helper used at two types, across two modules.
+    .{ .name = "let-field-call-merged", .path = "tests/corpus/run/LetFieldCallInMergedGroup.beni", .expect = .{ .prints = "tests/corpus/run/LetFieldCallInMergedGroup.expected" } },
+    .{ .name = "let-evidence-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
+    .{ .name = "let-constrained-helper", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
+    // Two uses of an alias that drops its parameter,
     // met inside a recursive group, are one type in every order.
-    .{ .name = "ck175-group", .path = "tests/corpus/run/PhantomAliasMutualGroup.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasMutualGroup.expected" } },
+    .{ .name = "phantom-alias-mutual-group", .path = "tests/corpus/run/PhantomAliasMutualGroup.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasMutualGroup.expected" } },
     // Uses of an alias that drops its parameter, met in a recursive group,
     // with the names they show compared too; and an unannotated helper whose
     // dot-call requirement is answered by a derived method at several
@@ -188,12 +188,12 @@ const PermProgram = struct {
     /// whose declarations are permuted.
     path: []const u8,
     module: ?[]const u8 = null,
-    /// A project refused in ANOTHER file than the one permuted (R8b: D1's
-    /// comparison two modules away from the private `eq`): the one
+    /// A project refused in ANOTHER file than the one permuted (a
+    /// comparison two modules away from a private `eq`): the one
     /// diagnostic is asserted there, at the same text in every order.
     refused_in: ?[]const u8 = null,
     /// How many diagnostics the refusal is, all of the expected code:
-    /// exactly that many in every order (R8b's round-2 review).
+    /// exactly that many in every order.
     count: u32 = 1,
     expect: union(enum) {
         /// The oracle twin's stdout, as a file.
@@ -202,7 +202,7 @@ const PermProgram = struct {
         refused: @import("diagnostic").Code,
         /// One diagnostic of this code at the same source text in every
         /// order; its message may show a type as it stood when the refusal
-        /// was found (checker-v2.md §10.8, I9's scope).
+        /// was found (checker-v2.md §10.8).
         refused_region: @import("diagnostic").Code,
     },
 };
@@ -467,7 +467,7 @@ fn permuteRefused(s: *Scenario, p: PermProgram, code: @import("diagnostic").Code
     return null;
 }
 
-/// A permuted program's refusals in one file (R8b's round-2 review): exactly
+/// A permuted program's refusals in one file: exactly
 /// `count` diagnostics, every one of `code`, as their messages and the source
 /// text under their spans, sorted — so the same refusals in any order of
 /// declarations compare equal. Null when the count or a code differs.
@@ -547,12 +547,12 @@ fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []con
             return null;
         },
         .refused, .refused_region => |code| {
-            // R8a: a project's module refused in every order — one
+            // A project's module refused in every order — one
             // diagnostic of `code` in that module (another module of the
             // project may say its own), at the same source text in every
             // order, with the same message unless `refused_region`.
             const same_text = p.expect == .refused;
-            // R8b: the refusal may be in another file than the permuted one.
+            // The refusal may be in another file than the permuted one.
             const target = p.refused_in orelse module;
             const target_text: ?[]const u8 = if (p.refused_in) |f| try readRepo(a, try std.fs.path.join(a, &.{ p.path, f })) else null;
             var args: std.ArrayList([]const u8) = .empty;
@@ -662,8 +662,8 @@ test "one own method's messages print the same in every declaration order" {
 //     time (a demand at depth 2 500 leaves 5 900 units): what reaches the
 //     refusal is a chain of TWO demands each about 2 150 levels deep. Written
 //     with the user first, exactly one `nesting_too_deep`, at the second
-//     use, with the hint; with the methods first, it checks (I9's stated
-//     exception, §10.5).
+//     use, with the hint; with the methods first, it checks (the stated
+//     exception to order independence, §10.5).
 test "a chain of own methods just past the nesting budget is one nesting_too_deep" {
     var s = try Scenario.init("nesting budget");
     defer s.deinit();
@@ -748,8 +748,7 @@ const Scenario = struct {
         return s.arena_state.allocator();
     }
 
-    /// `args` as they are (the pending harness added `BENI_CHECKER`'s flag
-    /// here until R12 deleted it).
+    /// `args` as they are.
     fn argv(_: *Scenario, args: []const []const u8) ![]const []const u8 {
         return args;
     }
@@ -761,7 +760,7 @@ const Scenario = struct {
     /// from `wait4`'s rusage), and the wall clock only where the platform
     /// reports none. Every verdict below compares `ms`: a concurrent build on
     /// the same machine stretches the wall clock of the two points by
-    /// different amounts, and once turned CK-40's cubic 87 s / 162 s into a
+    /// different amounts, and can turn a cubic 87 s / 162 s into a
     /// ratio of 1.85 and a false GREEN. It cannot add CPU time the child did
     /// not spend, and `--jobs=1` everywhere keeps CPU time equal to work.
     fn timed(s: *Scenario, args: []const []const u8, kill_ms: i64) !?struct { ms: i64, wall_ms: i64, result: world.Result } {

@@ -1,4 +1,4 @@
--- CK-106: see NumberReceiverMethodInGroup.beni; the same through dispatch
+-- See NumberReceiverMethodInGroup.beni; the same through dispatch
 -- (`ma` and `mb` merge, checker-v2.md §10.4): `mb` passes `3` for `ma`'s `x`.
 type K
     = K Int

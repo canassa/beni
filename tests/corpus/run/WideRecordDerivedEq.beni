@@ -1,8 +1,8 @@
--- run: `==` on a record of 300 fields derives its `eq` and answers (CK-17).
--- On 7427828 the derivability walk gave up at 256 worklist entries, and a
--- derived use refused what it could not finish walking: NOT EQUATABLE,
--- "there is a function in there", on a record of `Int`s. The walk is
--- growable now, so width never decides the answer.
+-- run: `==` on a record of 300 fields derives its `eq` and answers.
+-- A derivability walk that gave up at a fixed number of worklist entries,
+-- with a derived use refusing what it could not finish walking, would say
+-- NOT EQUATABLE, "there is a function in there", on a record of `Int`s. The
+-- walk is growable, so width never decides the answer.
 import Node exposing (Program)
 
 

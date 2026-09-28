@@ -1,4 +1,4 @@
--- R2b review S3: see M.beni. `check/good` runs `check` without a platform,
+-- check/good: see M.beni. `check/good` runs `check` without a platform,
 -- so the uses are a plain value; `build_test.zig` builds and runs them.
 import M
 

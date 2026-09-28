@@ -1,8 +1,8 @@
--- CK-20: a rigid met more than once inside one derived shape is ONE
+-- A rigid met more than once inside one derived shape is ONE
 -- `missing_where_constraint` per rigid and method at the comparison, and two
--- rigids are two (checker-v2.md §9.2's rigid row, as built by R6a's review,
--- F4). On 68186fa v1 checks all three clean (CK-20); R6a's first round said
--- the same clause once per occurrence.
+-- rigids are two (checker-v2.md §9.2's rigid row). None of the three checks
+-- clean, and the same clause is not said once per occurrence.
+--
 f : a, a -> Bool
 f x y =
     ( x, x ) == ( y, y )

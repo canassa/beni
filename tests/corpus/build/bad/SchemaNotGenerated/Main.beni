@@ -1,4 +1,4 @@
--- S2 checks this declaration, but build stops before writing any output.
+-- `check` accepts this declaration, but build stops before writing any output.
 pub schema User =
     id : Int
 

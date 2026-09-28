@@ -1,8 +1,8 @@
--- CK-17: the `equatable` walk has no fixed budget, and it never answers
+-- The `equatable` walk has no fixed budget, and it never answers
 -- "unknown, so yes" (checker.md §5, §6.4; checker-v2.md §11.4). `r` has 300
 -- fields and one of them is a function, so `Basics.eq r r` is
--- `not_equatable`. On 7427828 the walk's 256-entry stack fills, the answer
--- is `.unknown`, `dischargeEquatable` accepts it, and the built program
+-- `not_equatable`. A walk whose fixed stack filled, answering `.unknown`,
+-- which `dischargeEquatable` then accepted, would build a program that
 -- prints `eq`. The control with two fields (`NarrowEq`) is NOT EQUATABLE at
 -- the first argument, the position below.
 

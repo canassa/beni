@@ -1,7 +1,7 @@
 -- run: `String`'s callback functions walk the string left to right
 -- (`checker.md` Appendix B). `map` and `filter` are `List.map`/`List.filter`
--- over `toList`, so they inherited the back-to-front order and are fixed by
--- the same change; `foldl`, `any` and `all` were already left to right, and
+-- over `toList`, so they walk in `List`'s order, first element first;
+-- `foldl`, `any` and `all` walk left to right on their own, and
 -- this pins them so that a later rewrite of `String` cannot lose it.
 -- `String.foldr` belongs to `CallbackOrderFoldr` and is right to left there.
 import Char

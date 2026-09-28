@@ -1,4 +1,4 @@
--- check/bad: the circle exists only in the DISPATCH table (queue slice 23,
+-- check/bad: the circle exists only in the DISPATCH table (
 -- `static-dispatch-spike.md` §1.4). `(Counter 1).bump 2` is a `method_call`,
 -- and a method call adds NO `Bir.refs` edge — which function it calls is not
 -- known until the checker has run — so a walk of `refs` alone sees `bumped`

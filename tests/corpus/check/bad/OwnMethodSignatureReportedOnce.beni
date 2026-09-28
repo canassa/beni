@@ -1,8 +1,8 @@
--- CK-168: a wrong own-method signature is one mistake. `pub eq : T, Int ->
--- Bool` is not `T, T -> Bool`, and both `==` below need `eq`. At 8b98464
--- the same TYPE MISMATCH ("`Main.eq` is not the method this call needs")
--- is reported once per use, two identical messages here, n for n uses.
--- Expected: one. Fixed by R15-fix-E: said once, at the method's
+-- A wrong own-method signature is one mistake. `pub eq : T, Int ->
+-- Bool` is not `T, T -> Bool`, and both `==` below need `eq`. The TYPE
+-- MISMATCH ("`Main.eq` is not the method this call needs") must not be
+-- reported once per use, n identical messages for n uses.
+-- Expected: one, said at the method's
 -- declaration, against the use-independent `T, T -> Bool`.
 type T
     = T Int

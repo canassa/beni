@@ -1,11 +1,11 @@
--- CK-37: a method a concrete type rejected is rejected in silence for every
+-- A method a concrete type rejected is rejected in silence for every
 -- later use on the same class, whatever order the class was merged in:
--- §9.5's flag is OR-merged on every union (checker-v2.md §9.5; as built by
--- R6a's review, S3). `x` and `y` become one `T` in both functions — through
+-- §9.5's flag is OR-merged on every union (checker-v2.md §9.5).
+-- `x` and `y` become one `T` in both functions — through
 -- `[ x, y ]` in `f1` and `[ y, x ]` in `f2` — so `y.foo ()` is `x.foo ()`'s
--- rejection again: ONE `unknown_method` per function. On 68186fa v1 reports
--- all four uses; R6a's first round kept the flag on the root at rejection
--- time and reported `f2`'s second (review F3), so the list's order changed
+-- rejection again: ONE `unknown_method` per function, not one per use.
+-- Keeping the flag on the root at rejection time would report `f2`'s
+-- second use, so the list's order would change
 -- the diagnostics.
 import T exposing (T)
 

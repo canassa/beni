@@ -1,8 +1,8 @@
--- CK-56: an Elm-style curried annotation `Int -> Int -> Int` on a
+-- An Elm-style curried annotation `Int -> Int -> Int` on a
 -- two-parameter function is one mistake, reported once, with a hint showing
 -- beni's n-ary form `Int, Int -> Int`; the failed annotation is then
--- poisoned, so the call `add 1 2` does not cascade (checker-v2.md §15.3,
--- R13). On 7427828 the body is printed as `a, b -> c` against the `+`, and a
+-- poisoned, so the call `add 1 2` does not cascade (checker-v2.md §15.3).
+-- The body is never printed as `a, b -> c` against the `+`, and no
 -- TOO MANY ARGS follows at the call.
 
 

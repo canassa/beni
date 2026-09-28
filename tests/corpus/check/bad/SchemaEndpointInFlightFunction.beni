@@ -1,10 +1,10 @@
--- CK-24: a CLOSED schema endpoint compared while its schema's group is in
--- flight is checked once the group is done (checker-v2.md §11.5 *as
--- amended by R8b's review*: deferred, as §11.2's closed in-flight branch
+-- A CLOSED schema endpoint compared while its schema's group is in
+-- flight is checked once the group is done (checker-v2.md §11.5:
+-- deferred, as §11.2's closed in-flight branch
 -- defers). `conv`'s target is inferred in the same group as the comparison,
 -- as `Int -> Int`, so `Loop.Type` holds a function, and the deferred check
--- refuses the `==` with `not_equatable` at its use. On 7427828 it checks
--- clean: the endpoint's properties are read as the last settle left them,
+-- refuses the `==` with `not_equatable` at its use. It must not check
+-- clean by reading the endpoint's properties as the last settle left them,
 -- before `conv`'s target exists.
 import Schema exposing (Conversion)
 

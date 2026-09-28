@@ -1,8 +1,8 @@
--- CK-03: a receiver made cyclic by `( y, y ) == y` must be caught by the
+-- A receiver made cyclic by `( y, y ) == y` must be caught by the
 -- occurs check before method resolution walks it (checker-v2.md §8.2, §9.5):
--- `infinite_type`, once per form, and the checker stops. On 7427828 the
--- resolver recurses `targetFor → fillPart → derivedUse` on the cyclic graph
--- and the check never finishes. Where each is reported is open (see the
+-- `infinite_type`, once per form, and the checker stops. A resolver that
+-- recursed `targetFor → fillPart → derivedUse` on the cyclic graph
+-- would never finish. Where each is reported is open (see the
 -- `.codes`).
 
 

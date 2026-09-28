@@ -1,5 +1,5 @@
--- A regression guard for checker v2 (R7, reviewer focus; checker-v2.md §6.6,
--- §10.6): CK-70's program with the method that is used at two types
+-- A regression guard (checker-v2.md §6.6,
+-- §10.6): a recursive dispatch program with the method that is used at two types
 -- ANNOTATED, `eq : Box a, Box a -> Bool`. A reference to an annotated
 -- member of a group that is checking instantiates its scheme and is never a
 -- back-edge, so `show` and `eq` do not merge, and `show` compares `Box Int`

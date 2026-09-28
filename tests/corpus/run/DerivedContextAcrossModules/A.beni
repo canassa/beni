@@ -1,4 +1,4 @@
--- CK-23: see Main.beni. `Tag`'s parameter is phantom: its published contexts
+-- See Main.beni. `Tag`'s parameter is phantom: its published contexts
 -- are empty.
 pub type Tag a
     = Tag Int

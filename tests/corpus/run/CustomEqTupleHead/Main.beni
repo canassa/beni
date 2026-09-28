@@ -1,4 +1,4 @@
--- CK-28: see H.beni.
+-- See H.beni.
 import H
 import Node exposing (Program)
 import Nocase

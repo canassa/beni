@@ -2,8 +2,8 @@
 --
 -- `indexes s ""` is `[]` — Elm's `_String_indexes` returns `Nil` whenever
 -- `sub.length < 1`, and `run/StringCodePoints.beni` already pins that. But
--- `contains` was WRITTEN over `indexes` (`case indexes str sub of [] -> …`),
--- so it inherited that rule and answered `False` for an empty needle. Every
+-- `contains` must not be WRITTEN over `indexes` (`case indexes str sub of
+-- [] -> …`): it would inherit that rule and answer `False` for an empty needle. Every
 -- ordinary definition of "contains" says the opposite: the empty string is a
 -- substring of every string, at position 0. Elm agrees — `_String_contains`
 -- is `str.indexOf(sub) > -1`, and `"abc".indexOf("")` is `0`, not `-1`. The
@@ -18,8 +18,8 @@
 -- empty needle with it.
 --
 -- `replace` and `split` share the empty-needle rule by construction:
--- `replace str "" after` is `join (split str "") after`, and commit 3edc718
--- made `split str ""` split into CODE POINTS. So `replace "abc" "" "-"` is
+-- `replace str "" after` is `join (split str "") after`, and
+-- `split str ""` splits into CODE POINTS. So `replace "abc" "" "-"` is
 -- `"a-b-c"` — the same answer JavaScript's `"abc".split("").join("-")` gives,
 -- which is what Elm's `replace` reduces to — and `replace "a😀b" "" "-"` is
 -- `"a-😀-b"`, where Elm would hand back two surrogate halves around a `-`.

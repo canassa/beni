@@ -1,9 +1,9 @@
--- CK-115: a call whose argument is already a mistake gets that one message.
+-- A call whose argument is already a mistake gets that one message.
 -- A requirement of the callee (`a.key`) whose receiver no checked argument
 -- determined asks nothing: no UNKNOWN METHOD ("I cannot tell which type `key`
 -- is being asked of") beside the TYPE MISMATCH or TOO MANY ARGS
--- (checker.md §8.7; checker-v2.md §7.1). R8a's review saw the extra message;
--- 3ff3ac5 prints the one message for each call below, so this is a guard.
+-- (checker.md §8.7; checker-v2.md §7.1). Each call below prints exactly one
+-- message; this guards against the extra one.
 type T
     = T Int
 

@@ -1,5 +1,5 @@
--- CK-86: Elm's `exposing (Box(..))` for a type whose constructor has the
--- type's own name. The hint (CK-47's, R1) lists the type and then every
+-- Elm's `exposing (Box(..))` for a type whose constructor has the
+-- type's own name. The hint for `(..)` lists the type and then every
 -- constructor, so it suggests `exposing (Box, Box)` — and that suggestion is
 -- itself refused, as DUPLICATE EXPOSED NAME. The form that works is
 -- `exposing (Box)`, which exposes the type and its same-named constructor

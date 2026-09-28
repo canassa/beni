@@ -1,5 +1,5 @@
-//! The acceptance matrix of M4 slice zero (`fast-compiler.md` §8's *The
-//! interface hash, and slice zero*, `plans/m4-slice-zero.md` §6).
+//! The acceptance matrix of the serialized interface and the cache
+//! (`fast-compiler.md` §8's interface hash, `plans/m4-slice-zero.md` §6).
 //!
 //! **The claim.** An incremental build's every output stream and output
 //! file must be byte-identical to a cold build of the same source tree. So
@@ -149,7 +149,7 @@ const Variant = struct {
 const variants = [_]Variant{
     .{ .label = "cold --jobs=1", .flags = &.{ "--jobs=1", "--no-cache" } },
     .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--no-cache", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
-    // The cache axis (`fast-compiler.md` §8, M4-1): a COLD-WITH-CACHE run at
+    // The cache axis (`fast-compiler.md` §8): a COLD-WITH-CACHE run at
     // `--jobs=1` into a fresh directory, then a WARM one at `--jobs=8`
     // against it. Both must be byte-identical to variant 0 on every stream
     // and every file written.
@@ -198,7 +198,7 @@ fn expandFlags(
 const Counters = struct {
     hits: u64 = 0,
     checked: u64 = 0,
-    /// M4-2's three, and the reason the warm run asserts anything at all
+    /// The front end's three, and the reason the warm run asserts anything at all
     /// beyond byte equality: a front end that ran and produced the same
     /// answer is indistinguishable from one that did not run.
     files: u64 = 0,
@@ -206,8 +206,8 @@ const Counters = struct {
     parsed: u64 = 0,
     lowered: u64 = 0,
     frontend_hits: u64 = 0,
-    /// v2's derived-context fixpoints (`derived_context_runs`, I10): a
-    /// warm run that checks no module derives nothing (R10).
+    /// The checker's derived-context fixpoints (`derived_context_runs`): a
+    /// warm run that checks no module derives nothing.
     derived: u64 = 0,
 };
 
@@ -273,7 +273,7 @@ fn expectCacheCounters(f: Fixture, v: Variant, variant: usize, baseline_exit: u8
         // A COLD run does all the front-end work, every file of it. This is
         // the floor the warm assertion below is measured against: without it
         // "the front end did not run" could be true because there was no
-        // front end to run (M4-2, `fast-compiler.md` §8).
+        // front end to run (`fast-compiler.md` §8).
         if (c.files == 0 or c.lexed != c.files or c.parsed != c.files or c.lowered != c.files) {
             std.debug.print(
                 "{s}/{s}: a cold run over {d} files lexed {d}, parsed {d} and lowered {d}\n",
@@ -296,7 +296,7 @@ fn expectCacheCounters(f: Fixture, v: Variant, variant: usize, baseline_exit: u8
         return error.MatrixDiffers;
     }
     // On a fixture that compiles, NOTHING is lexed, parsed or lowered. That
-    // is the slice's acceptance test, and it is a counter rather than a
+    // is the front-end cache's acceptance test, and it is a counter rather than a
     // timing on purpose.
     if (baseline_exit == 0 and c.lowered != 0) {
         std.debug.print(

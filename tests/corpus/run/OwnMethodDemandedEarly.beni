@@ -1,16 +1,16 @@
--- CK-63: an own untyped method used inside a `let` or a `case` above its
+-- An own untyped method used inside a `let` or a `case` above its
 -- definition checks: the use is deferred to the using group's boundary and
--- the method's group is checked when it is first demanded (owner decision
--- D3, checker-v2.md §10.2). Three shapes from the design review, each using
--- a method written further down: `pair` (round 1's `b6boxU`: `size` through
--- a `let` helper used at two types), `pairAnnotated` (`b6letann`: the same
--- helper with `g : a -> Int`) and `boxes` (round 2's `n3box`: `makeBox` in a
+-- the method's group is checked when it is first demanded (the owner's
+-- decision, checker-v2.md §10.2). Three shapes, each using
+-- a method written further down: `pair` (`size` through
+-- a `let` helper used at two types), `pairAnnotated` (the same
+-- helper with `g : a -> Int`) and `boxes` (`makeBox` in a
 -- `case` scrutinee, then `map2` in a `let` helper used at two types).
 -- Expected `1 1`, `1 1`, `4 3`.
 --
--- Oracle twin, run on 7427828: this file with `size`, `makeBox` and `map2`
--- moved above `pair` (round 1's `b6boxU2`, round 2's `n3boxR`) prints exactly
--- the expected three lines. As written, 7427828 refuses each use with
+-- Oracle twin: this file with `size`, `makeBox` and `map2`
+-- moved above `pair` prints exactly
+-- the expected three lines. As written, no use may be refused with
 -- METHOD NEEDS AN ANNOTATION.
 import Node exposing (Program)
 

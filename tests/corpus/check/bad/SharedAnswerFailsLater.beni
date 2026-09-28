@@ -1,7 +1,7 @@
 -- An `==` whose derived answer is SHARED with an earlier one on the same
 -- receiver (checker-v2.md §9.5's memo: `alias` of the first), when the
 -- first then fails, is one `not_equatable` and nothing else
--- (plans/checker-rewrite.md R6b, R6a's round-2 nit 2). The two `p == p`
+-- (a regression guard). The two `p == p`
 -- share `p`'s derived tuple answer; `apply x` makes `x` a function after
 -- both were answered, so the first's element fails and the second is left
 -- `answered`, an alias whose chain ends in a failed wanted. Elaboration

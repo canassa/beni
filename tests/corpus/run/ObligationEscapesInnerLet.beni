@@ -1,14 +1,14 @@
--- CK-05: a `tuple_index` or `interpolatable` obligation whose variable
+-- A `tuple_index` or `interpolatable` obligation whose variable
 -- belongs to an OUTER scope is not decided at an inner `let` (checker.md
 -- §6.4, checker-v2.md §8.5): `p.0` inside `f`'s `let` waits for `snd p` to
 -- make `p` a pair, and `${n}` inside `h`'s `let` waits for `String.length n`.
 -- Expected `3`, `3`, `3`, `n = x1`.
 --
--- Oracle twin, run on 7427828: the controls `g` and `k`, which index `p`
+-- Oracle twin: the controls `g` and `k`, which index `p`
 -- outside any `let`, print `3` and `3`; and this file with `f` annotated
 -- `( Int, Int ) -> Int` and `h` annotated `String -> String` prints `3`,
--- `3`, `3`, `n = x1`. As written, 7427828 refuses it: AMBIGUOUS TUPLE at
--- `p.0` and AMBIGUOUS INTERPOLATION at `${n}`.
+-- `3`, `3`, `n = x1`. As written, it must not be refused with AMBIGUOUS
+-- TUPLE at `p.0` or AMBIGUOUS INTERPOLATION at `${n}`.
 import Node exposing (Program)
 
 

@@ -1,9 +1,9 @@
--- CK-16: a record compared with `Basics.eq` whose field is later used as a
--- function is `not_equatable` AT THE COMPARISON (checker-v2.md §11.4 *As
--- built by R5*; R5's adversarial review, F7): the question is asked where
+-- A record compared with `Basics.eq` whose field is later used as a
+-- function is `not_equatable` AT THE COMPARISON (checker-v2.md §11.4): the
+-- question is asked where
 -- `r` meets the comparison's argument, not where `r` later becomes a record
--- (`r.x`). On checker v1 at 2bc9e22 the program checks clean: the flag on
--- `r` is dropped once `r` becomes a record whose field is still a variable.
+-- (`r.x`). The flag on `r` must survive `r` becoming a record whose field is
+-- still a variable, or the program would check clean.
 g r =
     let
         b =

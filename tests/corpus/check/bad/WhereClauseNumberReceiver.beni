@@ -1,12 +1,12 @@
--- CK-21: a `where` clause's method type is checked when the receiver is a
--- `number` literal, exactly as when it is an `Int` (owner decision D9,
+-- A `where` clause's method type is checked when the receiver is a
+-- `number` literal, exactly as when it is an `Int` (the owner's decision,
 -- checker-v2.md §9.3 step 2): the `number` bridge unifies the declared
 -- method type with the well-known `a, a -> Bool|Order` first. Each of the
 -- four calls declares a wrong result type (`String`, `Int`, `Int` through
 -- the promoted `g`, `Bool`), so each is a `type_mismatch` at the called
 -- name. The control, this file with every literal replaced by an `n : Int`,
--- reports exactly these four on 7427828. As written all four check clean, and
--- built, `f1 1 2` dies in `String.toUpper` and the others print `LT1`,
+-- reports exactly these four. Unchecked, all four would check clean, and
+-- built, `f1 1 2` would die in `String.toUpper` and the others print `LT1`,
 -- `EQ1` and `t`.
 
 

@@ -1,8 +1,8 @@
--- CK-50: the hint "`+`, `-`, `*` and `/` work on numbers only. To join text
+-- The hint "`+`, `-`, `*` and `/` work on numbers only. To join text
 -- use `++`" is for an arithmetic operator's operand, and none of these three
 -- mismatches has one: a list literal, a call and a list argument
--- (checker-v2.md §15.3, R13). On 7427828 all three print it — and for the
--- list it displaces the left-to-right hint.
+-- (checker-v2.md §15.3). None of them prints it — and for the list it
+-- would displace the left-to-right hint.
 
 
 add : Int, Int -> Int

@@ -1,5 +1,5 @@
--- CK-116: see Main.beni. `Odd`'s module declares a `pub eq` that is not
--- `T`'s type, and the module rule makes it `T`'s `eq` (R8b's review F6).
+-- See Main.beni. `Odd`'s module declares a `pub eq` that is not
+-- `T`'s type, and the module rule makes it `T`'s `eq`.
 pub type T
     = T Int
 

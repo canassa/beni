@@ -1,9 +1,9 @@
--- CK-138: an arrow function whose body begins with a record or tuple
--- literal followed by an access is emitted as an expression body. At
--- 8b98464 the build exits 0 and emits `(n$1) => { a: n$1, b: 1 }.a`,
--- which JavaScript parses as a block: loading the module is a
--- `SyntaxError: Unexpected token ':'` (release: `(d)=>{name:d}.name`). A
--- lambda has the same fault. Expected: the three values print. Oracle
+-- An arrow function whose body begins with a record or tuple
+-- literal followed by an access is emitted as an expression body, never
+-- `(n$1) => { a: n$1, b: 1 }.a`, which JavaScript parses as a block:
+-- loading the module would be a `SyntaxError: Unexpected token ':'`
+-- (release: `(d)=>{name:d}.name`), after a build that exited 0. A lambda
+-- is covered too. Expected: the three values print. Oracle
 -- twin: `first n = ( n, 1 ).0 + 0`, whose printed body starts with a call,
 -- runs and prints `3`; the backend must parenthesise an arrow body whose
 -- text starts with `{`.

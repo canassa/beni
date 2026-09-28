@@ -1,8 +1,8 @@
--- CK-70: (the twin) `RecursiveDispatchTwoTypes.beni` with `eq` written
+-- (the twin) `RecursiveDispatchTwoTypes.beni` with `eq` written
 -- before `show`: the same single `type_mismatch` at the second `Box`
 -- comparison, with the recursive-dispatch hint, because the refusal must
--- not depend on the declaration order (checker-v2.md §10.6). On 7427828 it
--- is METHOD NEEDS AN ANNOTATION, as in the other order.
+-- not depend on the declaration order (checker-v2.md §10.6). It is never
+-- METHOD NEEDS AN ANNOTATION, in either order.
 
 
 type K

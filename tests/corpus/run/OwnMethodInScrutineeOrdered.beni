@@ -1,8 +1,8 @@
--- A regression guard from the checker-v2 design review (round 2, N3; plans/
--- checker-rewrite.md §5.1): CK-63's `makeBox`/`map2` program with the
--- methods written FIRST (round 2's `n3boxR`). `makeBox` is called in a
+-- A regression guard: the `makeBox`/`map2` program with the
+-- methods written FIRST. `makeBox` is called in a
 -- `case` scrutinee and `map2` in a `let` helper used at two types, so the
--- result is `( Box 4, Box "3" )`. 7427828 gets this order right.
+-- result is `( Box 4, Box "3" )`. The methods written after is the
+-- harder order; this one must stay right.
 import Node exposing (Program)
 
 

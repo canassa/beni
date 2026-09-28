@@ -35,18 +35,17 @@ const testing = std.testing;
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// CK-41, promoted by R3 (2026-09-25): `Schemes.Writer.resetMemo` reallocated
-// and memset its memo to the store's EXACT size whenever the store had grown,
-// and `fillCtorTerms` grows the store before every constructor: O(constructors
-// × store). R3 put the writer on epoch marks with amortised growth. ONE `pub`
-// type with n constructors isolates it — a chain of n types (the catalogue's
-// program) also carries a per-type super-linear residue that is CK-75's, not
-// this one's. Calibration (ReleaseFast, CPU): on 050cd2d 2 000 / 3 000 / 4 000
-// / 6 000 / 8 000 constructors take 115 / 234 / 390 / 820 / 1 416 ms, a ratio
-// of 3.4 to 3.6 from 2 000 on; with amortised growth 2 000 / 4 000 / 8 000 /
-// 16 000 / 32 000 take 9 / 13 / 18 / 30 / 54 ms, 1.4 to 1.8. n = 4 000. On R3
-// itself: see the slice's *As built* note.
-test "CK-41: interface writing is linear in the number of constructors" {
+// `fillCtorTerms` grows the store before every constructor, so a scheme
+// writer whose memo is reallocated and cleared to the store's EXACT size
+// whenever the store grows is O(constructors × store). `Schemes.Writer` keeps
+// its memo on epoch marks with amortised growth. ONE `pub` type with n
+// constructors isolates it — a chain of n types also carries per-type work
+// that the declaration-count scenario below measures. Calibration
+// (ReleaseFast, CPU): the exact-size memo took 115 / 234 / 390 / 820 /
+// 1 416 ms at 2 000 / 3 000 / 4 000 / 6 000 / 8 000 constructors, a ratio of
+// 3.4 to 3.6 from 2 000 on; with amortised growth 2 000 / 4 000 / 8 000 /
+// 16 000 / 32 000 take 9 / 13 / 18 / 30 / 54 ms, 1.4 to 1.8. n = 4 000.
+test "interface writing is linear in the number of constructors" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -63,7 +62,7 @@ test "CK-41: interface writing is linear in the number of constructors" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try s.finish("CK-41", verdict);
+    try s.finish("interface writing per constructor", verdict);
 }
 
 /// `pub type Big = C0 Int | C1 Int | … ` with `count` constructors.
@@ -74,19 +73,17 @@ fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-96, found by R5's adversarial review and fixed in R5 (2026-09-25):
-// obligation rows riding on ONE variable. Every `${p}` and `p.0` attaches a
-// row to `p`, and R5 as first built joined `p`'s whole set, and lowered every
-// row on it, at each attach and each merge with a fresh variable: O(rows²)
-// (8 000 `${p}` took 31 s under `--checker=v2` against v1's 0.15 s). Checker
-// v2 only (v1 has no rows). Calibration: see R5's *As built*.
-test "CK-96: obligation rows on one variable cost linear time" {
+// Obligation rows riding on ONE variable. Every `${p}` and `p.0` attaches a
+// row to `p`; joining `p`'s whole set, and lowering every row on it, at each
+// attach and each merge with a fresh variable would be O(rows²) (8 000 `${p}`
+// took 31 s that way, where a linear checker takes 0.15 s).
+test "obligation rows on one variable cost linear time" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("R.beni", try rowsOnOne(s.arena(), 2_000));
     try s.w.write("R2.beni", try rowsOnOne(s.arena(), 4_000));
     const verdict = try s.ratioWith("R.beni", "R2.beni", 2_000, &.{});
-    try s.finish("CK-96", verdict);
+    try s.finish("obligation rows on one variable", verdict);
 }
 
 /// `pub f p = "${p}…" ++ …` and `pub g q = ( [ q.0, … ], snd q )`, `n` of
@@ -102,18 +99,17 @@ fn rowsOnOne(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-97, found by R5's adversarial review and fixed in R5 (2026-09-25): a
-// chain of merges of variables that each carry rows. `[ p1, …, pn, … ]`
-// merges a set of i rows into one of 1, n times; R5 as first built copied
-// both sets and re-lowered every row of the survivor at every merge,
-// O(rows × merges). Checker v2 only.
-test "CK-97: merging variables that carry obligation rows is linear" {
+// A chain of merges of variables that each carry rows. `[ p1, …, pn, … ]`
+// merges a set of i rows into one of 1, n times; copying both sets and
+// re-lowering every row of the survivor at every merge would be
+// O(rows × merges).
+test "merging variables that carry obligation rows is linear" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("M.beni", try mergeChain(s.arena(), 2_000));
     try s.w.write("M2.beni", try mergeChain(s.arena(), 4_000));
     const verdict = try s.ratioWith("M.beni", "M2.beni", 2_000, &.{});
-    try s.finish("CK-97", verdict);
+    try s.finish("merging variables that carry rows", verdict);
 }
 
 /// `pub f x1 … xn = ( [ "${x1}", … ], [ x1, …, xn, 1 ] )`.
@@ -129,18 +125,17 @@ fn mergeChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-98, found by R5's adversarial review and fixed in R5 (2026-09-25):
-// §8.1 step 3 scanned every open `?` of the module at every boundary, so a
-// declaration of n `let` bindings each holding an undecided `u?` cost
-// O(n²). Step 3 now reads the frame's own list, and a row that escaped moves
-// down once. Checker v2 only.
-test "CK-98: the `?` default step is linear in the open `?`s and the boundaries" {
+// §8.1 step 3 must not scan every open `?` of the module at every boundary,
+// or a declaration of n `let` bindings each holding an undecided `u?` costs
+// O(n²). Step 3 reads the frame's own list, and a row that escaped moves
+// down once.
+test "the `?` default step is linear in the open `?`s and the boundaries" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("D.beni", try openTries(s.arena(), 1_500));
     try s.w.write("D2.beni", try openTries(s.arena(), 3_000));
     const verdict = try s.ratioWith("D.beni", "D2.beni", 1_500, &.{});
-    try s.finish("CK-98", verdict);
+    try s.finish("the ? default step", verdict);
 }
 
 /// `pub f u = let a1 = u? … an = u? in Ok [ a1, …, an ]`.
@@ -154,16 +149,12 @@ fn openTries(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-03, CK-42 and CK-80 under checker v2, fixed by R6a (2026-09-25). Each is
-// still a pending scenario under v1 (`pending_test.zig`), which is frozen and
-// stays red; these are v2's twins, as CK-96 to CK-98 are v2-only.
-//
-// CK-03: `( y, y ) == y` makes the receiver cyclic. v2's eager drain runs the
+// `( y, y ) == y` makes the receiver cyclic. The eager drain runs the
 // resolver's cycle-safe derivability walk right after the node that closes
 // the cycle (checker-v2.md §9.5), so it is ONE `infinite_type` at the `==`
-// and the check ends: under 10 ms (ReleaseFast, CPU) on R6a, where v1 never
-// finishes. The bound is `pending_test.zig`'s, 500 ms.
-test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms" {
+// and the check ends: under 10 ms (ReleaseFast, CPU), where a checker without
+// that walk never finishes. The bound is 500 ms.
+test "a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("Cyclic.beni",
@@ -177,136 +168,131 @@ test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms" {
         \\
     );
     const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Cyclic.beni" }, 500, "infinite_type");
-    try s.finish("CK-03", verdict);
+    try s.finish("a cyclic receiver", verdict);
 }
 
-// CK-42: n declarations, each comparing its own nominal type with `==`. v2
+// n declarations, each comparing its own nominal type with `==`. The checker
 // finds a method by P3's index (one binary search), not a scan of the
 // declarations, and keeps no site lists. Its control (`x == x` on an `Int`)
-// is linear too — v2 has no capability re-settling, CK-75's residue — so the
-// scenario is the plain ratio of the nominal program; `pending_test.zig`'s
-// v1 scenario subtracts the control because v1's is not. Calibration
-// (ReleaseFast, CPU, R6a): the module's `check` event is 34 / 69 / 136 ms at
+// is linear too — nothing re-settles capabilities per group — so the
+// scenario is the plain ratio of the nominal program. Calibration
+// (ReleaseFast, CPU): the module's `check` event is 34 / 69 / 136 ms at
 // 8 000 / 16 000 / 32 000 declarations, and the control 23 / 46 / 93 ms, so n
-// = 8 000 keeps the fixed build clear of start-up.
-test "CK-42: nominal dispatch is linear in the number of declarations" {
+// = 8 000 keeps the build clear of start-up.
+test "nominal dispatch is linear in the number of declarations" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
     try s.w.write("E.beni", try generate(s.arena(), 8_000, nominal, 6));
     try s.w.write("E2.beni", try generate(s.arena(), 16_000, nominal, 6));
     const verdict = try s.ratioWith("E.beni", "E2.beni", 8_000, &.{});
-    try s.finish("CK-42", verdict);
+    try s.finish("nominal dispatch per declaration", verdict);
 }
 
-// CK-40 and CK-75 under checker v2, fixed by R8a (2026-09-26); still pending
-// scenarios under v1, which is frozen.
-//
-// CK-40: a module of `n` schemas. v1 settled every endpoint's properties
-// after every group holding a schema, each settle over the whole module:
-// cubic. v2 settles them when they are next READ, if a schema group finished
+// A module of `n` schemas. Settling every endpoint's properties after every
+// group holding a schema, each settle over the whole module, is cubic. The
+// checker settles them when they are next READ, if a schema group finished
 // since (`Solve.settleSchemas`) — never after each group — so a module that
-// compares nothing settles twice in all. On R8a (ReleaseFast, CPU) 300 / 600
-// schemas take 13 / 25 ms (ratio 1.9), where v1 takes 295 ms and over 737.
-test "CK-40: schema property settling is linear in the number of schemas" {
+// compares nothing settles twice in all. (ReleaseFast, CPU) 300 / 600
+// schemas take 13 / 25 ms (ratio 1.9), where settling after every group
+// took 295 ms and over 737.
+test "schema property settling is linear in the number of schemas" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("S.beni", try generate(s.arena(), 300, "pub schema S{d} = Int\n\n\n", 1));
     try s.w.write("S2.beni", try generate(s.arena(), 600, "pub schema S{d} = Int\n\n\n", 1));
     const verdict = try s.ratioWith("S.beni", "S2.beni", 300, &.{});
-    try s.finish("CK-40", verdict);
+    try s.finish("schema property settling", verdict);
 }
 
-// CK-75: n declarations, each a `type` and a function comparing two `Int`s.
-// v1's residue was its capability settling (`Types.settleDispatchCapabilities`
-// per module and after every method group) and its eager derivation block;
-// v2 settles nothing, and computes each type's derived contexts once, by a
-// unit's fixpoint, in P5 (R8a, checker-v2.md §11.2). On R8a (ReleaseFast,
-// CPU) 6 000 / 12 000 take 64 / 121 ms (ratio 1.9), where v1 takes 206 / 744.
-// Profiled first, as the brief asks: the module's `check` event is 44 / 87 ms,
-// `solve` and `constrain` 8 / 15 ms each — all linear — and `dep_digest` is
-// too small to show, so none of CK-75 is R10's. A cache directory shows
-// `cache_store` at 20 / 73 ms, super-linear: CK-107, a new finding (R10).
-test "CK-75: checking is linear in the number of declarations" {
+// n declarations, each a `type` and a function comparing two `Int`s.
+// Capability settling per module and after every method group, and an eager
+// derivation block, made this super-linear; the checker settles nothing, and
+// computes each type's derived contexts once, by a unit's fixpoint, in P5
+// (checker-v2.md §11.2). (ReleaseFast, CPU) 6 000 / 12 000 take 64 / 121 ms
+// (ratio 1.9), where the settling checker took 206 / 744. The module's
+// `check` event is 44 / 87 ms, `solve` and `constrain` 8 / 15 ms each — all
+// linear — and `dep_digest` is too small to show. The cache store's share is
+// the next scenario's.
+test "checking is linear in the number of declarations" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 6_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 12_000, control, 4));
     const verdict = try s.ratioWith("X.beni", "X2.beni", 6_000, &.{});
-    try s.finish("CK-75", verdict);
+    try s.finish("checking per declaration", verdict);
 }
 
-// CK-107, fixed by R10 (2026-09-27): writing a module's cache entry searched
-// the dispatch sidecar's `type_refs` table linearly once per derived row's
-// shape (`dispatch_bytes.Writer.typeRef`), so a module of n types wrote its
-// entry in O(n²), under both checkers. The two reference tables are indexed
-// by a hash map now, first-occurrence order kept, so no byte moved. CK-75's
-// program, with a fresh cache directory per run, timing the `cache_store`
-// event. Calibration (ReleaseFast, wall time of the event, R10): before, 20 /
-// 72 ms at 6 000 / 12 000 under both checkers (ratio 3.6); after, 4.4 / 8.1
-// ms (1.8). n = 12 000, so the event is long enough to time.
-test "CK-107: writing a module's cache entry is linear in its types" {
+// Writing a module's cache entry must not search the dispatch sidecar's
+// `type_refs` table linearly once per derived row's shape
+// (`dispatch_bytes.Writer.typeRef`), or a module of n types writes its entry
+// in O(n²). The two reference tables are indexed by a hash map, in
+// first-occurrence order. The previous scenario's program, with a fresh
+// cache directory per run, timing the `cache_store` event. Calibration
+// (ReleaseFast, wall time of the event): a linear search took 20 / 72 ms at
+// 6 000 / 12 000 (ratio 3.6); the index 4.4 / 8.1 ms (1.8). n = 12 000, so
+// the event is long enough to time.
+test "writing a module's cache entry is linear in its types" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
     try s.w.write("X.beni", try generate(s.arena(), 12_000, control, 4));
     try s.w.write("X2.beni", try generate(s.arena(), 24_000, control, 4));
-    try s.finish("CK-107", try s.storeRatio("X.beni", "X2.beni", 12_000));
+    try s.finish("writing a cache entry", try s.storeRatio("X.beni", "X2.beni", 12_000));
 }
 
-// CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n
-// deep — must cost its n distinct nodes, not its 2^n leaves. v2's
-// derivability verdict walks each `(node, method)` pair once, and a wanted on
-// a receiver already given a DERIVED answer for the same method is an alias
-// of it (checker-v2.md §9, *As built by R6a* as revised by its review). Calibration (ReleaseFast,
-// CPU, R6a): depth 9 / 18 / 36 / 72 all under 10 ms; v1 takes 190 ms at 18.
-test "CK-80: == on a value whose type is a doubling DAG is linear in its depth" {
+// `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n deep —
+// must cost its n distinct nodes, not its 2^n leaves. The derivability
+// verdict walks each `(node, method)` pair once, and a wanted on a receiver
+// already given a DERIVED answer for the same method is an alias of it
+// (checker-v2.md §9). Calibration (ReleaseFast, CPU): depth 9 / 18 / 36 / 72
+// all under 10 ms; a checker walking the tree takes 190 ms at 18.
+test "== on a value whose type is a doubling DAG is linear in its depth" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("N9.beni", try nestedPair(s.arena(), 9));
     try s.w.write("N18.beni", try nestedPair(s.arena(), 18));
     const verdict = try s.ratioWith("N9.beni", "N18.beni", 9, &.{});
-    try s.finish("CK-80", verdict);
+    try s.finish("== on a doubling DAG", verdict);
 }
 
-// CK-80's `build` half (R6b's reviews: structural N6, adversarial F3): the
-// same doubling DAG, BUILT. P6 writes each distinct answer of a site once
-// (checker-v2.md §13.1 as amended by R6b), and `Lower` binds a shared
-// evidence closure to a `const` once and reads it by name, so the emitted
-// JavaScript — and the time to write it — is linear in the depth. Before,
-// `Lower` expanded every shared term at every use: 487 KB of JavaScript at
-// depth 12 and 144 MB at 20 (×4 every two levels). Calibration
-// (ReleaseFast, CPU, R6b's review): depth 9 / 18 build in 6 / 11 ms; with the
-// binding off, 8 / 873 ms (ratio 109).
-test "CK-80: building == on a value whose type is a doubling DAG is linear in its depth" {
+// The same doubling DAG, BUILT. P6 writes each distinct answer of a site once
+// (checker-v2.md §13.1), and `Lower` binds a shared evidence closure to a
+// `const` once and reads it by name, so the emitted JavaScript — and the time
+// to write it — is linear in the depth. Expanding every shared term at every
+// use writes 487 KB of JavaScript at depth 12 and 144 MB at 20 (×4 every two
+// levels). Calibration (ReleaseFast, CPU): depth 9 / 18 build in 6 / 11 ms;
+// with the binding off, 8 / 873 ms (ratio 109).
+test "building == on a value whose type is a doubling DAG is linear in its depth" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("N9.beni", try nestedPairApp(s.arena(), 9));
     try s.w.write("N18.beni", try nestedPairApp(s.arena(), 18));
     const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out" };
     const verdict = try s.ratioOf(build, "N9.beni", "N18.beni", 9, &.{});
-    try s.finish("CK-80 build", verdict);
+    try s.finish("building == on a doubling DAG", verdict);
 }
 
-// CK-136 (R15's audit), fixed by R15-fix-B: the same doubling DAG with both
-// halves ONE type, `( x, x )` per level, so every level of the table is one
-// shared term named twice. `Lower.derivedBodiesExist` — the I7 re-check the
-// build runs before lowering a site — walked the table as a tree, 2^depth
-// visits, and `dump --stage=dispatch` printed it as a tree. Both judge a term
-// once now (`readTable`, and labels in the dump). Calibration (ReleaseFast,
-// CPU, this generator): on 1bec73c `build` takes 21 / 57 / 196 ms at depth
-// 20 / 22 / 24, ×4 every two levels, so depth 32 is about 50 s; fixed,
-// depth 32 / 64 build in 8 / 9 ms and dump in 22 / 22 ms, the process floor.
-test "CK-136: building and dumping == on a doubling DAG of one shared term is linear in its depth" {
+// The same doubling DAG with both halves ONE type, `( x, x )` per level, so
+// every level of the table is one shared term named twice.
+// `Lower.derivedBodiesExist` — the re-check that every derived body a site
+// names exists, which the build runs before lowering it — and
+// `dump --stage=dispatch` each judge a shared term once (`readTable`, and
+// labels in the dump); walked as a tree, it is 2^depth visits. Calibration
+// (ReleaseFast, CPU, this generator): walked as a tree, `build` takes 21 / 57
+// / 196 ms at depth 20 / 22 / 24, ×4 every two levels, so depth 32 is about
+// 50 s; judged once, depth 32 / 64 build in 8 / 9 ms and dump in 22 / 22 ms,
+// the process floor.
+test "building and dumping == on a doubling DAG of one shared term is linear in its depth" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("D32.beni", try sharedPairApp(s.arena(), 32));
     try s.w.write("D64.beni", try sharedPairApp(s.arena(), 64));
     const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out" };
-    try s.finish("CK-136 build", try s.ratioOf(build, "D32.beni", "D64.beni", 32, &.{}));
+    try s.finish("building a DAG of one shared term", try s.ratioOf(build, "D32.beni", "D64.beni", 32, &.{}));
     const dump: []const []const u8 = &.{ "dump", "--stage=dispatch", "--platform=node" };
-    try s.finish("CK-136 dump", try s.ratioOf(dump, "D32.beni", "D64.beni", 32, &.{}));
+    try s.finish("dumping a DAG of one shared term", try s.ratioOf(dump, "D32.beni", "D64.beni", 32, &.{}));
 }
 
 /// `d1 x = ( x, x )`, `dk x = d1 (d(k-1) x)` to `depth`, and a `main` that
@@ -320,20 +306,19 @@ fn sharedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-171 (R15-fix-C, found by R15-fix-A's review; promoted from
-// `pending_test.zig`): an alias DAG was expanded as a tree. `A0 = Int`,
-// `A{i} = ( A{i-1}, A{i-1} )` and one `f : A{n} -> A{n}`:
-// `Types.Builder.aliasBody` read each alias's body once per USE, 2^n
-// expansions for n declarations. `Builder.aliases` expands each `(alias,
-// argument roots)` once per read (checker-v2.md §7.4 *amended by
-// R15-fix-C*). Calibration (ReleaseFast, CPU): 346268b checks depth 9 / 18 in
-// 7 / 535 ms (ratio 76; 18 s at 18 in Debug); fixed, both at the floor.
-test "CK-171: an annotation over a doubling alias DAG is linear in its depth" {
+// An alias DAG must not be expanded as a tree. `A0 = Int`,
+// `A{i} = ( A{i-1}, A{i-1} )` and one `f : A{n} -> A{n}`: reading each
+// alias's body once per USE is 2^n expansions for n declarations.
+// `Builder.aliases` expands each `(alias, argument roots)` once per read
+// (checker-v2.md §7.4). Calibration (ReleaseFast, CPU): expanded per use,
+// depth 9 / 18 check in 7 / 535 ms (ratio 76; 18 s at 18 in Debug); once
+// per read, both at the floor.
+test "an annotation over a doubling alias DAG is linear in its depth" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("D9.beni", try aliasDag(s.arena(), 9));
     try s.w.write("D18.beni", try aliasDag(s.arena(), 18));
-    try s.finish("CK-171", try s.ratio("D9.beni", "D18.beni", 9));
+    try s.finish("an annotation over an alias DAG", try s.ratio("D9.beni", "D18.beni", 9));
 }
 
 /// `type alias A0 = Int`, `type alias A{i} = ( A{i-1}, A{i-1} )` up to
@@ -346,14 +331,14 @@ fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-101's timing twin (R6a's review, B2): `==` on a doubling DAG whose every
-// level passes two method boundaries that alternate the method — `A`'s `eq`
-// asks its payload for `compare`, `B`'s `compare` asks for `eq`. v2's
-// derivability verdict walks `(node, method)` pairs, each once per walk, so
-// the cost is the distinct pairs (checker-v2.md §9 *As built by R6a*, §18).
-// v1 recurses once per boundary with fresh marks and does not finish at depth
-// 9. Calibration (ReleaseFast, CPU, R6a's review): depth 9 / 18, 6 / 6 ms.
-test "CK-101: == across alternating method boundaries on a doubling DAG is linear in its depth" {
+// `==` on a doubling DAG whose every level passes two method boundaries that
+// alternate the method — `A`'s `eq` asks its payload for `compare`, `B`'s
+// `compare` asks for `eq`. The derivability verdict walks `(node, method)`
+// pairs, each once per walk, so the cost is the distinct pairs
+// (checker-v2.md §9, §18). A checker that recurses once per boundary with
+// fresh marks does not finish at depth 9. Calibration (ReleaseFast, CPU):
+// depth 9 / 18, 6 / 6 ms.
+test "== across alternating method boundaries on a doubling DAG is linear in its depth" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     for ([_][]const u8{ "A9", "A18" }) |dir| {
@@ -363,7 +348,7 @@ test "CK-101: == across alternating method boundaries on a doubling DAG is linea
     try s.w.write("A9/Main.beni", try alternatingDag(s.arena(), 9));
     try s.w.write("A18/Main.beni", try alternatingDag(s.arena(), 18));
     const verdict = try s.ratioWith("A9", "A18", 9, &.{});
-    try s.finish("CK-101", verdict);
+    try s.finish("== across alternating method boundaries", verdict);
 }
 
 const alternating_a =
@@ -401,7 +386,7 @@ fn alternatingDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     try out.appendSlice(arena, "\n    in\n    w == w\n");
     return out.items;
 }
-/// `pending_test.zig`'s `generate`, verbatim: `count` copies of `template`,
+/// `count` copies of `template`,
 /// `{d}` the index, `per` holes in each.
 fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u8, comptime per: usize) ![]const u8 {
     comptime std.debug.assert(std.mem.count(u8, template, "{d}") == per);
@@ -419,7 +404,7 @@ fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u
 }
 
 /// `w = f (f (… (f 1)))`, `depth` applications of `f x = ( x, [ x ] )`, and
-/// `w == w` (`pending_test.zig`'s `nestedPair`).
+/// `w == w`.
 fn nestedPair(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "f x =\n    ( x, [ x ] )\n\n\nv =\n    let\n        w =\n            ");
@@ -591,17 +576,16 @@ const Perf = struct {
         return .{ .green = false, .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
     }
     /// `ratioWith` on one `--self-profile` event of the file's own module
-    /// rather than the process (R8c, CK-93): for a finding in one phase whose
-    /// program also carries another phase's super-linear cost, a finding of
-    /// its own. The event's duration is wall time, of a `--jobs=1` run; each
+    /// rather than the process: for a claim about one phase whose program
+    /// also carries another phase's cost. The event's duration is wall time, of a `--jobs=1` run; each
     /// point the best of 3.
     fn eventRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8, extra: []const []const u8) !Verdict {
         return s.eventRatioOf(small, large, n, event, extra, small, large);
     }
 
     /// `eventRatio` where what is checked (a file or a directory) and the
-    /// file whose event is timed differ (CK-165: a project directory, and
-    /// its `Main`).
+    /// file whose event is timed differ (a project directory, and its
+    /// `Main`).
     fn eventRatioOf(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8, extra: []const []const u8, small_file: []const u8, large_file: []const u8) !Verdict {
         var ms: [2]f64 = undefined;
         for ([_][]const u8{ small, large }, [_][]const u8{ small_file, large_file }, &ms) |target, file, *slot| {
@@ -633,7 +617,7 @@ const Perf = struct {
         };
     }
 
-    /// `eventRatio` on the `cache_store` event (CK-107): a `--jobs=1` check
+    /// `eventRatio` on the `cache_store` event: a `--jobs=1` check
     /// into a FRESH cache directory every run, so every run writes the
     /// module's entry. The event is the whole serial store pass, not one
     /// file's. Each point the best of 3, wall time of the event.
@@ -668,8 +652,8 @@ const Perf = struct {
     }
 
     /// The file's own `check` event over its CONTROL's, the same number of
-    /// declarations each doing the cheapest form of the same work (CK-131,
-    /// converted by R12): not a ratio of sizes, so a constant factor added
+    /// declarations each doing the cheapest form of the same work: not a
+    /// ratio of sizes, so a constant factor added
     /// per use is what it sees. Each file the best of `runs`, interleaved (a
     /// loaded machine only adds time, and to both alike); green when the
     /// file costs ≤ `bound_pct` % of its control.
@@ -729,31 +713,26 @@ const Perf = struct {
     }
 };
 
-// CK-131, fixed by R9b (2026-09-27): 6 000 declarations each comparing
-// `( a, [ b ] ) < ( b, [ a ] )` over `Int` (`s_tup6000`, checker-v2.md §18)
-// checked at 1.6× v1: per derived position v2 made and stepped a wanted,
-// unified its method type again, instantiated `List.compare`'s scheme from
-// its interface, and walked the derivability of a shape it had proved in the
-// declaration before. The fixes (§18 *as measured by R9b*) answer a table
-// primitive whose method type already has the table's shape directly, take a
-// plain imported method's requirements without instantiating it, and keep
-// the derivability of a ground shape by its structure.
-//
-// Until R12 the scenario was v2 against v1 on one binary (≤ 1.25× v1, best
-// of 5). v1 is gone, so it is converted to the same program against its
-// control, `s_int6000` (`a < b`), on one checker: a constant factor per
-// derived position is still exactly what it sees. Calibration (R12,
-// ReleaseFast, this scenario on an idle machine, three rounds): 919f8be
-// (R9, the defect, `--checker=v2`) 287 / 292 / 299 %; R12 217 / 213 / 224 %;
-// v1 (7427828, and R9's default) 178–190 %. The bound, 250 %, is v1's ratio
-// with §18's 1.25 of room over it, near enough, about 12 % over R12 and 12 %
-// under R9.
-test "CK-131: a derived comparison per declaration checks within 2.5× its a < b control" {
+// 6 000 declarations each comparing `( a, [ b ] ) < ( b, [ a ] )` over `Int`
+// (`s_tup6000`, checker-v2.md §18), against its control, `s_int6000`
+// (`a < b`): a constant factor per derived position is exactly what it sees.
+// Per derived position a checker can make and step a wanted, unify its
+// method type again, instantiate `List.compare`'s scheme from its interface,
+// and walk the derivability of a shape it proved in the declaration before;
+// this one answers a table primitive whose method type already has the
+// table's shape directly, takes a plain imported method's requirements
+// without instantiating it, and keeps the derivability of a ground shape by
+// its structure (§18). Calibration (ReleaseFast, this scenario on an idle
+// machine, three rounds): the checker without those fixes 287 / 292 / 299 %;
+// with them 217 / 213 / 224 %; the old checker's 178–190 %. The bound,
+// 250 %, is the old checker's ratio with §18's 1.25 of room over it, near
+// enough, about 12 % over today's and 12 % under the unfixed one.
+test "a derived comparison per declaration checks within 2.5× its a < b control" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     try s.w.write("Tup.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    ( a, [ b ] ) < ( b, [ a ] )\n\n\n", 2));
     try s.w.write("IntLt.beni", try generate(s.arena(), 6_000, "f{d} : Int, Int -> Bool\nf{d} a b =\n    a < b\n\n\n", 2));
-    try s.finish("CK-131", try s.controlRatio("Tup.beni", "IntLt.beni", 5, 250));
+    try s.finish("a derived comparison per declaration", try s.controlRatio("Tup.beni", "IntLt.beni", 5, 250));
 }
 
 /// `nestedPair` as a program: `main` prints whether `v` holds.
@@ -765,30 +744,28 @@ fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-119 under checker v2, found and fixed by R8b's review round
-// (2026-09-26). A ring of `n` types closed through one schema's `via`
-// conversion: `M0 → M1 → … → M(n-1) → S.Type`, and `S`'s `via` target is
-// `M0`, with `==` on `M0` and `<` on `S.Type`. The ring's last link is a
-// mention only the `via` target makes, which the unit graph could not see
-// until R8b's review: every `M_i` was its own unit, a run that read the
-// approximation of a run below it made the runs above it `partial`, and a
-// partial run was never memoised, so each level re-ran the one above it —
-// exponential (on the R8b tree, Debug: 1.3 s at n = 5, 8.4 s at 6, and from
-// 7 on the step budget ran out inside a quiet run, which said a FALSE
-// `not_equatable`). Now `Contexts.complete` adds the `via` target's
-// mentions as edges before the unit runs, the ring is one unit, and it is
-// one joint fixpoint (checker-v2.md §11.5 *as amended by R8b's review*).
-// Calibration (ReleaseFast, CPU): see the scenario's detail line.
-test "CK-119: a ring of types closed through a `via` is one joint fixpoint, in linear time" {
+// A ring of `n` types closed through one schema's `via` conversion:
+// `M0 → M1 → … → M(n-1) → S.Type`, and `S`'s `via` target is `M0`, with `==`
+// on `M0` and `<` on `S.Type`. The ring's last link is a mention only the
+// `via` target makes. A unit graph blind to it makes every `M_i` its own
+// unit; a run that reads the approximation of a run below it makes the runs
+// above it `partial`, and a partial run is never memoised, so each level
+// re-runs the one above it — exponential (Debug: 1.3 s at n = 5, 8.4 s at 6,
+// and from 7 on the step budget ran out inside a quiet run, which said a
+// FALSE `not_equatable`). `Contexts.complete` adds the `via` target's
+// mentions as edges before the unit runs, so the ring is one unit and one
+// joint fixpoint (checker-v2.md §11.5). Calibration (ReleaseFast, CPU): see
+// the scenario's detail line.
+test "a ring of types closed through a `via` is one joint fixpoint, in linear time" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("V.beni", try viaRing(s.arena(), 4_000));
     try s.w.write("V2.beni", try viaRing(s.arena(), 8_000));
     const verdict = try s.ratioWith("V.beni", "V2.beni", 4_000, &.{});
-    try s.finish("CK-119", verdict);
+    try s.finish("a ring through a via", verdict);
 }
 
-/// CK-119's ring (R8b's structural review's generator).
+/// The ring of types closed through a `via`.
 fn viaRing(arena: std.mem.Allocator, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "import Schema exposing (Conversion)\n\n\nconv : Conversion Int M0\nconv =\n    Debug.todo \"x\"\n\n\n");
@@ -803,18 +780,16 @@ fn viaRing(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-125 under checker v2, found by R8b's round-2 review and fixed in it
-// (2026-09-26). Not a ratio: an answer that must not depend on declaration
-// order, measured here because a Debug build takes 26 s per order. `g`
-// makes 262 comparisons of a 4 000-field record — about the per-group step
-// budget (2²⁰) — and then `t == u` on `T = T R`; `h` is just `t == u`. On
-// R8b's first review round a derived-context run shared its asker's step
-// budget, so with `g` first `T`'s context ran out inside `g`, was memoised
-// permanently as `absent_budget`, and `h` — three lines — was refused with
-// `nesting_too_deep` too; with `h` first both checked. Now a run has a
-// budget of its own and a budget run out is never memoised
-// (checker-v2.md §11.5 *as amended by R8b's review rounds*).
-test "CK-125: a derived context's step budget is its own, in either declaration order" {
+// Not a ratio: an answer that must not depend on declaration order, measured
+// here because a Debug build takes 26 s per order. `g` makes 262 comparisons
+// of a 4 000-field record — about the per-group step budget (2²⁰) — and then
+// `t == u` on `T = T R`; `h` is just `t == u`. A derived-context run that
+// shared its asker's step budget would, with `g` first, run `T`'s context
+// out inside `g`, memoise it permanently as `absent_budget`, and refuse `h` —
+// three lines — with `nesting_too_deep` too; with `h` first both check. A
+// run has a budget of its own and a budget run out is never memoised
+// (checker-v2.md §11.5).
+test "a derived context's step budget is its own, in either declaration order" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("G.beni", try budgetOrders(s.arena(), true));
@@ -824,10 +799,10 @@ test "CK-125: a derived context's step budget is its own, in either declaration 
         try Perf.expectClean(run.result);
         try testing.expectEqualStrings("", std.mem.trim(u8, run.result.stderr, " \r\n"));
     }
-    try s.finish("CK-125", .{ .green = true, .detail = "both declaration orders check clean" });
+    try s.finish("a derived context's own step budget", .{ .green = true, .detail = "both declaration orders check clean" });
 }
 
-/// CK-125's program, `g` written first or `h` (R8b's round-2 review's probe).
+/// The step-budget program, `g` written first or `h`.
 fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "type alias R =\n    { f0 : Int\n");
@@ -852,15 +827,14 @@ fn budgetOrders(arena: std.mem.Allocator, g_first: bool) ![]const u8 {
     return out.items;
 }
 
-// CK-119's second shape, from R8b's round-2 review (S2): `n` schemas, each
-// with a `via` to its own `type`, each compared by its own function. Every
-// comparison reaches one new schema, so R8b's first review round rebuilt
-// every unit once per comparison — O(n²) time and memory (8 000 schemas:
-// 10.7 s and 11.6 GB, ReleaseFast). Now `Contexts.complete` walks only the
-// types not yet completed and merges units locally, so each type and each
-// `via` target is read once (checker-v2.md §11.5 *as amended by R8b's review
-// rounds*). The frontend's own cost at this size is CK-124's.
-test "CK-119: many schemas with `via`s, each compared, cost linear time" {
+// The ring's second shape: `n` schemas, each with a `via` to its own `type`,
+// each compared by its own function. Every comparison reaches one new schema,
+// so rebuilding every unit once per comparison is O(n²) time and memory
+// (8 000 schemas: 10.7 s and 11.6 GB, ReleaseFast). `Contexts.complete` walks
+// only the types not yet completed and merges units locally, so each type and
+// each `via` target is read once (checker-v2.md §11.5). The frontend's own
+// cost at this size is not this scenario's.
+test "many schemas with `via`s, each compared, cost linear time" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     const head = "import Schema exposing (Conversion)\n\n\n";
@@ -883,32 +857,32 @@ test "CK-119: many schemas with `via`s, each compared, cost linear time" {
     }
     // The comparisons' own cost — `complete`, the runs — over a control with
     // the same schemas and no comparison, whose frontend cost at this size
-    // is CK-124's (super-linear, and not this scenario's). Within 5 % of the
+    // is super-linear and not this scenario's. Within 5 % of the
     // control it is noise, and green.
     const small = @max(ms[0] - ms[1], 1);
     const large = ms[2] - ms[3];
     const green = large * 2 <= small * 5 or large * 20 <= ms[3];
-    try s.finish("CK-119 many", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms (5 % of the control: {d} ms), CPU time", .{ ms[0], ms[1], small, ms[2], ms[3], large, @divTrunc(ms[3], 20) }) });
+    try s.finish("many schemas with vias", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms (5 % of the control: {d} ms), CPU time", .{ ms[0], ms[1], small, ms[2], ms[3], large, @divTrunc(ms[3], 20) }) });
 }
 
-// CK-111, fixed by R8c (2026-09-26): `==` on a record literal nested d deep,
-// `uses` times. Each use resolves d nested positions, and v2 walked each
-// position's whole subtree twice more: the derivability walk (a `number`
-// leaf keeps every position non-ground, so nothing was memoised) and the
-// occurs walk `Resolve.step` runs on every structure. A position's walks now
-// read its parent's: `Resolve.State.derivable_open` holds a verdict proved
-// over variables until a variable is bound, and `State.proofs` carries the
-// parent's acyclicity proof to its positions. Calibration (ReleaseFast, CPU,
-// 64 uses): `b64342b`+CK-122 takes 9.6 s at d = 1 000 and 40 s at 2 000, a
-// ratio of 4.2; R8c 0.25 / 0.52 s, 2.1. d stays under 2 100, where the
-// unfixed build refused the literal (CK-114, which the abuse test holds).
-test "CK-111: derived == on a deeply nested record is linear per use" {
+// `==` on a record literal nested d deep, `uses` times. Each use resolves d
+// nested positions; walking each position's whole subtree twice more — the
+// derivability walk (a `number` leaf keeps every position non-ground, so
+// nothing is memoised) and the occurs walk `Resolve.step` runs on every
+// structure — is quadratic. A position's walks read its parent's:
+// `Resolve.State.derivable_open` holds a verdict proved over variables until
+// a variable is bound, and `State.proofs` carries the parent's acyclicity
+// proof to its positions. Calibration (ReleaseFast, CPU, 64 uses): walking
+// every subtree takes 9.6 s at d = 1 000 and 40 s at 2 000, a ratio of 4.2;
+// reading the parent's walks 0.25 / 0.52 s, 2.1. d stays under 2 100, the
+// depth bound the abuse test holds.
+test "derived == on a deeply nested record is linear per use" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("R.beni", try nestedRecord(s.arena(), 1_000, 64));
     try s.w.write("R2.beni", try nestedRecord(s.arena(), 2_000, 64));
     const verdict = try s.ratioWith("R.beni", "R2.beni", 1_000, &.{});
-    try s.finish("CK-111", verdict);
+    try s.finish("derived == on a nested record", verdict);
 }
 
 /// `mk` a record literal nested `depth` deep, and `uses` declarations
@@ -924,22 +898,20 @@ fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8
     return out.items;
 }
 
-// CK-112, fixed by R8c (2026-09-26): a type of n parameters. Lowering looked
-// each type variable up by a scan of the declaration's parameters, and the
-// type reader (`Types.Builder.typeVar`) by a scan of its scope: O(n²) in both
-// checkers. Lowering now indexes a declaration of more than 8 parameters by
-// name, and the reader takes a parameter's slot from the index lowering
-// recorded. v1 has a quadratic of its own beyond these two (21 s at 32 000),
-// and is frozen; the scenario is v2's. Calibration (ReleaseFast, CPU):
-// `b64342b`+CK-122 takes 0.21 s at 16 000 and 0.8 s at 32 000; R8c 40 / 70
-// ms.
-test "CK-112: a type of n parameters costs linear time" {
+// A type of n parameters. Looking each type variable up by a scan of the
+// declaration's parameters when lowering, and by a scan of its scope in the
+// type reader (`Types.Builder.typeVar`), is O(n²). Lowering indexes a
+// declaration of more than 8 parameters by name, and the reader takes a
+// parameter's slot from the index lowering recorded. Calibration
+// (ReleaseFast, CPU): the scans take 0.21 s at 16 000 and 0.8 s at 32 000;
+// the index 40 / 70 ms.
+test "a type of n parameters costs linear time" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("W.beni", try manyParams(s.arena(), 16_000));
     try s.w.write("W2.beni", try manyParams(s.arena(), 32_000));
     const verdict = try s.ratioWith("W.beni", "W2.beni", 16_000, &.{});
-    try s.finish("CK-112", verdict);
+    try s.finish("a type of n parameters", verdict);
 }
 
 /// `pub type W p0 … pn = W p0 … pn`.
@@ -953,26 +925,26 @@ fn manyParams(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-93, fixed by R8c (2026-09-26): `foo x0 = let x1 = [ x0 ] … xN = [ xN-1 ]
-// in List.length xN`. Every `let` boundary occurs-checks its header, and
-// xi's type holds the whole chain below it: O(N²). A boundary's run now
-// stamps what it proves (`Walk.Stacks.acyclic`) — the root and every flex in
+// `foo x0 = let x1 = [ x0 ] … xN = [ xN-1 ] in List.length xN`. Every `let`
+// boundary occurs-checks its header, and xi's type holds the whole chain
+// below it: O(N²) unless a boundary's run stamps what it proves (`Walk.Stacks.acyclic`) — the root and every flex in
 // the proved graph — and a later walk stops at a stamped root, until a
 // stamped flex is bound (the one change that can close a cycle). Each link
 // binds a fresh element variable, so the proofs hold down the chain.
 //
 // Measured on the module's `check` event, not the process: lowering the
 // `let` itself is quadratic in its bindings (`bir.Lower.lowerBindings`, a
-// scope scan per name), which is the frontend's (CK-127), not this finding.
-// Calibration (ReleaseFast, the event's wall time at --jobs=1): R8c's parent
-// takes 635 / 2 520 ms at N = 8 000 / 16 000 (4.0); R8c 9 / 15 ms (1.7).
-test "CK-93: a let chain whose types grow is linear to check" {
+// scope scan per name), which is the frontend's and timed below, not here.
+// Calibration (ReleaseFast, the event's wall time at --jobs=1): without the
+// stamps 635 / 2 520 ms at N = 8 000 / 16 000 (4.0); with them 9 / 15 ms
+// (1.7).
+test "a let chain whose types grow is linear to check" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     try s.w.write("L.beni", try letChain(s.arena(), 8_000));
     try s.w.write("L2.beni", try letChain(s.arena(), 16_000));
     const verdict = try s.eventRatio("L.beni", "L2.beni", 8_000, "check", &.{});
-    try s.finish("CK-93", verdict);
+    try s.finish("a let chain whose types grow", verdict);
 }
 
 // A chain of top-level bindings, each wrapping the one before (`x0 = 0`,
@@ -1008,23 +980,21 @@ fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
-// NEST-UNDER, R7's nesting scenario (S-3; checker-v2.md §10.2), claimed by
-// R7 and promoted from `pending_test.zig` at the cut-over (R11): chains of
-// own methods `m0 … mn` on one type, each calling the next, written in
-// REVERSE dependency order (`m0`, which needs `m1`, first), so checking `m0`
+// The nesting scenario (checker-v2.md §10.2): chains of own methods
+// `m0 … mn` on one type, each calling the next, written in REVERSE
+// dependency order (`m0`, which needs `m1`, first), so checking `m0`
 // nests `m1`, which nests `m2`, and so on. 40 chains of 250 and of 500
 // links, below the nesting budget, check in linear time. Each chain's depth
 // doubles with n; a nesting cost that grew with the depth — a queue or a
-// frame walk per nesting — reads as 4. Calibration (ReleaseFast, CPU): v2 on
-// R7 77 / 151 ms, a ratio of 1.96; v1 refused every link above its
-// definition (METHOD NEEDS AN ANNOTATION), red by its codes, not by time.
-test "NEST-UNDER: a reverse-ordered chain of own methods checks in linear time" {
+// frame walk per nesting — reads as 4. Calibration (ReleaseFast, CPU):
+// 77 / 151 ms, a ratio of 1.96.
+test "a reverse-ordered chain of own methods checks in linear time" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("C.beni", try chains(s.arena(), 40, 250));
     try s.w.write("C2.beni", try chains(s.arena(), 40, 500));
     const verdict = try s.ratioWith("C.beni", "C2.beni", 250, &.{});
-    try s.finish("NEST-UNDER", verdict);
+    try s.finish("a reverse-ordered chain of own methods", verdict);
 }
 
 /// `count` chains of `n + 1` own methods, chain `c` on type `Tc`:
@@ -1040,26 +1010,23 @@ fn chains(arena: std.mem.Allocator, count: usize, n: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-88 (found by R2c, 2026-09-25), fixed and promoted from
-// `pending_test.zig` by R12: one `case` of n integer literal branches was
-// emitted in time quadratic in n — `check` took 18 ms at 10 000 branches and
-// `build` 2.2 s, 8.6 s at 20 000 (ReleaseFast), all of it in the emit phase,
-// because `js/Decision.zig` compared every row with every other three times
-// over (the key set, the column choice's distinct count, the
-// specialisation). It groups rows by head in one pass now. Moved verbatim
-// (§2.5): n = 3 000 / 6 000, R2c's calibration. Measured on R12
-// (ReleaseFast, CPU): 190 / 800 ms before the fix (ratio 4.2), and after it
-// both points are the process floor; 20 000 branches build in 0.04 s where
-// they took 8.9. The shape half, the `switch` SpiderMonkey refused past
-// 65 046 labels, is `abuse_wide_test.zig`'s.
-test "CK-88: a case of n literal branches builds in time linear in n" {
+// One `case` of n integer literal branches must emit in time linear in n.
+// `js/Decision.zig` groups rows by head in one pass; comparing every row with
+// every other, three times over (the key set, the column choice's distinct
+// count, the specialisation), made `build` take 2.2 s at 10 000 branches and
+// 8.6 s at 20 000 (ReleaseFast) while `check` took 18 ms. n = 3 000 / 6 000.
+// (ReleaseFast, CPU): 190 / 800 ms with the pairwise comparison (ratio 4.2);
+// grouped, both points are the process floor, and 20 000 branches build in
+// 0.04 s. The shape half, the `switch` SpiderMonkey refused past 65 046
+// labels, is `abuse_wide_test.zig`'s.
+test "a case of n literal branches builds in time linear in n" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
     try s.w.write("C.beni", try bigCase(s.arena(), 3_000));
     try s.w.write("C2.beni", try bigCase(s.arena(), 6_000));
     const build = [_][]const u8{ "build", "--no-cache", "--jobs=1", "--library", "--platform=node", "--out=out", "--diagnostics=json" };
     const verdict = try s.ratioOf(&build, "C.beni", "C2.beni", 3_000, &.{});
-    try s.finish("CK-88", verdict);
+    try s.finish("a case of n literal branches", verdict);
 }
 
 /// `pub g k = case k of 0 -> 0; 1 -> 1; … _ -> -1` with `count` literal
@@ -1072,92 +1039,87 @@ fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.items;
 }
 
-// CK-95 (found by R4b's adversarial review, F8) and its duplicate CK-127
-// (R8c, measuring CK-93), fixed by R12: lowering a `let` to Bir was
-// quadratic in its binding count, before either checker saw it. Four scans of the whole block per binding: the shadowing check and
-// every name lookup walked the scope stack, which holds every binding of the
-// block from phase 1 on; `localOfInst` searched the declaration's locals
-// backwards for each `let_def`; and §7's initialisation check reset its
-// visited set and scanned every edge once per binding. The scope is indexed
-// by name past 64 entries now, the local is recorded where it is bound, and
-// the order check walks each binding's own edges. CK-93's program (a bracket
-// per binding, which the parser's depth guard releases; an operator in every
+// Lowering a `let` to Bir must be linear in its binding count, before the
+// checker sees it. Four scans of the whole block per binding would make it
+// quadratic: the shadowing check and every name lookup walking the scope
+// stack, which holds every binding of the block from phase 1 on;
+// `localOfInst` searching the declaration's locals backwards for each
+// `let_def`; and §7's initialisation check resetting its visited set and
+// scanning every edge once per binding. The scope is indexed by name past 64
+// entries, the local is recorded where it is bound, and the order check walks
+// each binding's own edges. The let-chain program above (a bracket per
+// binding, which the parser's depth guard releases; an operator in every
 // binding would be charged to the declaration, `Parse.depth`), timed on the
-// module's `lower` event as CK-127 asked. Calibration (R12, ReleaseFast):
-// see the detail line; the whole `check` was 0.12 / 0.45 s CPU at 10 000 /
-// 20 000 before (ratio 3.8).
-test "CK-95: a let of n chained bindings lowers in time linear in n" {
+// module's `lower` event. Calibration (ReleaseFast): see the detail line; the
+// whole `check` was 0.12 / 0.45 s CPU at 10 000 / 20 000 with the scans
+// (ratio 3.8).
+test "a let of n chained bindings lowers in time linear in n" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     try s.w.write("L.beni", try letChain(s.arena(), 20_000));
     try s.w.write("L2.beni", try letChain(s.arena(), 40_000));
     const verdict = try s.eventRatio("L.beni", "L2.beni", 20_000, "lower", &.{});
-    try s.finish("CK-95", verdict);
+    try s.finish("lowering a let of chained bindings", verdict);
 }
 
-// CK-143 (R15's audit; promoted from `pending_test.zig` by R15-fix-D):
-// `Types.find` was a linear scan of the declaring module's types, and
-// `Digest.collect` called it once per exported type (then deduplicated with a
-// linear `contains`), so the dependency digest — which runs with or without
-// a cache — was quadratic in a module's `pub` types. `find` is now a binary
-// search of a per-module name index (`Types.by_name`), and the digest's type
-// set a bit per type of the module. Independent `pub type A{i} = A{i} Int |
-// B{i}`, the `dep_digest` event of the file. Calibration (ReleaseFast): on
-// 8b98464, 38 / 149 ms at 8 000 / 16 000 types (ratio 3.9); fixed, 5.1 /
-// 10.1 ms. n = 8 000.
-test "CK-143: the dependency digest is linear in a module's pub types" {
+// `Digest.collect` looks up every exported type (`Types.find`) and
+// deduplicates the set, and the dependency digest runs with or without a
+// cache. With a linear scan for the lookup and a linear `contains` for the
+// set it is quadratic in a module's `pub` types; `find` is a binary search of
+// a per-module name index (`Types.by_name`), and the digest's type set a bit
+// per type of the module. Independent `pub type A{i} = A{i} Int | B{i}`, the
+// `dep_digest` event of the file. Calibration (ReleaseFast): with the scans,
+// 38 / 149 ms at 8 000 / 16 000 types (ratio 3.9); indexed, 5.1 / 10.1 ms.
+// n = 8 000.
+test "the dependency digest is linear in a module's pub types" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     const template = "pub type A{d}\n    = A{d} Int\n    | B{d}\n\n\n";
     try s.w.write("I.beni", try generate(s.arena(), 8_000, template, 3));
     try s.w.write("I2.beni", try generate(s.arena(), 16_000, template, 3));
-    try s.finish("CK-143", try s.eventRatio("I.beni", "I2.beni", 8_000, "dep_digest", &.{}));
+    try s.finish("the dependency digest per pub type", try s.eventRatio("I.beni", "I2.beni", 8_000, "dep_digest", &.{}));
 }
 
-// CK-143's publication half: `Types.resolveRefs` called the same `find` once
-// per `type_refs` row, in P8 for every miss and in `install` for every hit,
-// so publishing a CHAIN `pub type A{i} = A{i} Int A{i-1} | B{i}` was
-// quadratic. The `publish` event of the file. Calibration (ReleaseFast): on
-// 8b98464, 53 / 183 ms at 16 000 / 32 000 (ratio 3.5); fixed, 15.0 / 31.4
-// ms. n = 16 000.
-test "CK-143-publish: publishing a chain of pub types is linear" {
+// The publication half: `Types.resolveRefs` calls the same `find` once per
+// `type_refs` row, in P8 for every miss and in `install` for every hit, so a
+// linear `find` makes publishing a CHAIN `pub type A{i} = A{i} Int A{i-1} |
+// B{i}` quadratic. The `publish` event of the file. Calibration
+// (ReleaseFast): with a linear `find`, 53 / 183 ms at 16 000 / 32 000 (ratio
+// 3.5); indexed, 15.0 / 31.4 ms. n = 16 000.
+test "publishing a chain of pub types is linear" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     try s.w.write("C.beni", try typeChain(s.arena(), 16_000));
     try s.w.write("C2.beni", try typeChain(s.arena(), 32_000));
-    try s.finish("CK-143-publish", try s.eventRatio("C.beni", "C2.beni", 16_000, "publish", &.{}));
+    try s.finish("publishing a chain of pub types", try s.eventRatio("C.beni", "C2.beni", 16_000, "publish", &.{}));
 }
 
-// CK-164 (R15's audit; promoted from `pending_test.zig` by R15-fix-F): the
-// frontend's `resolve` asked, for EVERY qualified reference, whether its root
-// names a schema — a scan of the module's declarations and of every import's
-// `exposing` list — so a module's resolution was quadratic in its size.
-// `Resolve.Tables` answers from per-module sorted name tables, and
-// `Graph.lookup` is an array load rather than three hash probes (the perf
-// study's item 4). `pub s{i} : List Int -> List Int` / `s{i} xs = List.map
-// xs negate`, the file's `resolve` event. Calibration (ReleaseFast): on
-// 01d0f21, 51.9 / 204.8 ms at 8 000 / 16 000 (ratio 3.9); fixed, 3.5 / 6.5
-// ms. n = 8 000.
-test "CK-164: resolving qualified references is linear in their number" {
+// The frontend's `resolve` asks, for EVERY qualified reference, whether its
+// root names a schema; answered by a scan of the module's declarations and of
+// every import's `exposing` list, a module's resolution is quadratic in its
+// size. `Resolve.Tables` answers from per-module sorted name tables, and
+// `Graph.lookup` is an array load rather than three hash probes. `pub s{i} :
+// List Int -> List Int` / `s{i} xs = List.map xs negate`, the file's
+// `resolve` event. Calibration (ReleaseFast): with the scans, 51.9 / 204.8 ms
+// at 8 000 / 16 000 (ratio 3.9); with the tables, 3.5 / 6.5 ms. n = 8 000.
+test "resolving qualified references is linear in their number" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     const template = "pub s{d} : List Int -> List Int\ns{d} xs =\n    List.map xs negate\n\n\n";
     try s.w.write("Q.beni", try generate(s.arena(), 8_000, template, 2));
     try s.w.write("Q2.beni", try generate(s.arena(), 16_000, template, 2));
-    try s.finish("CK-164", try s.eventRatio("Q.beni", "Q2.beni", 8_000, "resolve", &.{}));
+    try s.finish("resolving qualified references", try s.eventRatio("Q.beni", "Q2.beni", 8_000, "resolve", &.{}));
 }
 
-// CK-165 (R15's audit; promoted from `pending_test.zig` by R15-fix-F):
-// lowering looked a qualified reference's alias up by scanning the import
-// table, and deduplicated a declaration's import edges by scanning the edges
-// it had, so a `Main` importing n modules and naming each was n². Lowering
-// now keeps the imports by alias and by module, and a declaration past 64
-// edges indexes them; the graph's per-module edge sets are stamps. A `Main`
-// importing n one-value modules `M{i}` and listing each `M{i}.v` once;
-// `Main`'s own `lower` event. Calibration (ReleaseFast): on 01d0f21, 24.4 /
-// 121.3 ms at 2 000 / 4 000 modules (ratio 5.0); fixed, 0.8 / 1.5 ms.
-// n = 2 000.
-test "CK-165: lowering a module is linear in its imports and their uses" {
+// Looking a qualified reference's alias up by scanning the import table, and
+// deduplicating a declaration's import edges by scanning the edges it has,
+// makes a `Main` importing n modules and naming each n². Lowering keeps the
+// imports by alias and by module, and a declaration past 64 edges indexes
+// them; the graph's per-module edge sets are stamps. A `Main` importing n
+// one-value modules `M{i}` and listing each `M{i}.v` once; `Main`'s own
+// `lower` event. Calibration (ReleaseFast): with the scans, 24.4 / 121.3 ms
+// at 2 000 / 4 000 modules (ratio 5.0); indexed, 0.8 / 1.5 ms. n = 2 000.
+test "lowering a module is linear in its imports and their uses" {
     var s = try Perf.init(.alone);
     defer s.deinit();
     for ([_]usize{ 2_000, 4_000 }) |n| {
@@ -1171,7 +1133,7 @@ test "CK-165: lowering a module is linear in its imports and their uses" {
         try main.appendSlice(s.arena(), "    ]\n");
         try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Main.beni", .{n}), main.items);
     }
-    try s.finish("CK-165", try s.eventRatioOf("D2000", "D4000", 2_000, "lower", &.{}, "D2000/Main.beni", "D4000/Main.beni"));
+    try s.finish("lowering a module's imports", try s.eventRatioOf("D2000", "D4000", 2_000, "lower", &.{}, "D2000/Main.beni", "D4000/Main.beni"));
 }
 
 /// `pub type A0 = A0 Int | B0`, then `pub type A{i} = A{i} Int A{i-1} | B{i}`

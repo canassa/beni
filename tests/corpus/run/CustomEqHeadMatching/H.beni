@@ -1,4 +1,4 @@
--- CK-27: a custom method's parts are matched by HEAD, not by index
+-- A custom method's parts are matched by HEAD, not by index
 -- (static-dispatch-spike.md §7.1, A.64; checker-v2.md §9.3 step 4):
 -- `H.eq` on `Holder (List a)` needs `a.eq`, the ELEMENT's `eq`, so `Main`'s
 -- derived `W` must pass `Nocase.Ci`'s `eq`, which ignores case. Structural
@@ -6,11 +6,11 @@
 -- ignored `H.eq` would print `False` where `True` is expected. Expected
 -- `True`, `False`, `True`, `False`.
 --
--- Oracle twin, run on 7427828: the direct comparisons, the first two lines
+-- Oracle twin: the direct comparisons, the first two lines
 -- of this very program, print `True`, `False`. The `W` lines are the same
--- two comparisons one wrapper down, so they must agree; on 7427828 the last
--- prints `True`, because the emitted code passes `List$eq` where `H.eq`
--- expects element equality (quantifier i paired with type argument i).
+-- two comparisons one wrapper down, so they must agree. Passing `List$eq`
+-- where `H.eq` expects element equality (quantifier i paired with type
+-- argument i) would make the last print `True`.
 pub type Holder a
     = Holder a
 

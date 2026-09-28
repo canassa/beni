@@ -1,18 +1,18 @@
--- CK-105: a dot-call on a parameter another member of its recursive group (here by value)
+-- A dot-call on a parameter another member of its recursive group (here by value)
 -- types, `x.combine 1`, is the field call in every declaration order: a
 -- dot-call whose receiver becomes a record before its constraint is
 -- generalised is the field call, whenever the record arrives
 -- (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26;
--- checker-v2.md I9). Before the amendment the choice was taken when the
--- node was first solved, so the orders where the record came in through an
--- in-flight call first built and printed `5`, and the others were
--- `no_methods_on_shape` (R7's adversarial review, F1).
--- The same through VALUE recursion, which predates R7's merges: `fa` written
--- first was refused (`fb` first was accepted). Expected `5`.
+-- checker-v2.md §10.8). Taking the choice when the node was first solved
+-- would make the orders where the record comes in through an in-flight
+-- call first build and print `5`, and the others
+-- `no_methods_on_shape`.
+-- The same through VALUE recursion: `fa` written
+-- first is the order at risk (`fb` first is the other). Expected `5`.
 --
--- Oracle twin, run on 8016030 under v1: this file with `fa : Int, { combine
+-- Oracle twin: this file with `fa : Int, { combine
 -- : Int -> Int } -> Int` and `fb : Int, Int -> Int` annotated prints `5`.
--- As written, v1 refuses it with UNKNOWN METHOD.
+-- As written, it must not be refused with UNKNOWN METHOD.
 import Node exposing (Program)
 
 

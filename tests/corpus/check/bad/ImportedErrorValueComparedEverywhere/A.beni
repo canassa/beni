@@ -1,8 +1,8 @@
--- CK-141's variants: every way `T` asks a method of `A`'s `<error>` value —
+-- More variants: every way `T` asks a method of `A`'s `<error>` value —
 -- `==` and `<` either way round, inside a list, a `Maybe`, a record and a
 -- tuple, in a function and a `let` helper, `List.sort`'s requirement, and
 -- a hand-written dot-call. Each wanted meets `err` and is `poisoned`: `A`'s
 -- one error is the whole output, and `T` is silent with no INTERNAL ERROR
--- (checker-v2.md §12.2 *Amended by R15-fix-A*).
+-- (checker-v2.md §12.2).
 pub f =
     1 + "x"

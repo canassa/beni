@@ -1,6 +1,6 @@
--- R8a's structural review, B1: the `equatable` flag `H.eq` puts on `Box`'s
+-- check/bad: the `equatable` flag `H.eq` puts on `Box`'s
 -- parameter is an entry of `Box`'s published context, so another module
--- comparing a `Mid.Box` of a function is refused, as v1 refuses it.
+-- comparing a `Mid.Box` of a function is refused.
 import H
 import Mid
 

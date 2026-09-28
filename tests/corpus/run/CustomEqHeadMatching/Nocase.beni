@@ -1,4 +1,4 @@
--- CK-27: see H.beni. `Ci`'s own `eq` ignores case, so structural equality
+-- See H.beni. `Ci`'s own `eq` ignores case, so structural equality
 -- and `Ci.eq` disagree on `Ci "a"` against `Ci "A"`.
 pub type Ci
     = Ci String

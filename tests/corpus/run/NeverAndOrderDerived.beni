@@ -1,16 +1,16 @@
--- CK-130: `Order`'s `compare` and both of `Never`'s methods are §3.2's
--- `derived` rows, and they must stay derived when v2 checks `core`
--- (`static-dispatch-spike.md` §3.2, `checker-v2.md` §22.1, R9).
+-- `Order`'s `compare` and both of `Never`'s methods are §3.2's
+-- `derived` rows, and they must stay derived when the checker checks `core`
+-- (`static-dispatch-spike.md` §3.2, `checker-v2.md` §22.1).
 --
 -- `core/Basics.beni` declares `Order` and `Never` beside `pub compare :
 -- number, number -> Order` and `pub foreign eq`, so the module rule alone
--- would make those values their methods. The table is consulted first. When
--- R9 made v2 check `core`, v2's derived-context fixpoint and its
--- publication read the module rule only, so `Basics`' record said
+-- would make those values their methods. The table is consulted first. A
+-- derived-context fixpoint and publication that read the module rule only
+-- would make `Basics`' record say
 -- `own_method` for `Order`'s `compare` and for `Never`'s `eq` and
--- `compare`: `LT < GT` in any other module was `no_methods_on_shape`
--- ("This type has no `compare`: Order"). Under v1, and under v2 before R9
--- (v1 wrote `core`'s record), each line below printed what it prints now.
+-- `compare`: `LT < GT` in any other module would be `no_methods_on_shape`
+-- ("This type has no `compare`: Order").
+--
 --
 -- Every use is outside `Basics` and reaches the rows through the record:
 -- `Order` directly, as a derived position (a `Maybe`, a tuple, a record, a

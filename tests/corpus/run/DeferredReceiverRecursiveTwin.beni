@@ -1,15 +1,15 @@
--- CK-105: the recursive twin of `check/bad/DeferredReceiverGeneralised`
--- (a regression guard; v1 miscompiles it):
+-- The recursive twin of `check/bad/DeferredReceiverGeneralised`
+-- (a regression guard):
 -- `f` calls `g` back, so `f` and `g` are one binding group, `g`'s record
 -- reaches `f`'s `x` before `f`'s constraint is generalised, and `x.combine
 -- n` is the field call (static-dispatch-spike.md §11 *Deferred receiver*,
 -- amended 2026-09-26). This pair pins the rule's non-local edge: a caller in
 -- the same recursive group decides what `x.m a` means, as HM's monomorphic
--- recursion lets a caller decide a parameter's type (R7's round-2 review,
--- S2). `g 1` is `f 1 { combine = \z -> z + 1 }`, which is `2`. Expected `2`.
+-- recursion lets a caller decide a parameter's type.
+-- `g 1` is `f 1 { combine = \z -> z + 1 }`, which is `2`. Expected `2`.
 --
--- v1 miscompiles it (CK-105): it passes `f` a `compare` evidence it does
--- not take, and the program prints `EQ`.
+-- Miscompiled, it would pass `f` a `compare` evidence it does
+-- not take, and the program would print `EQ`.
 import Node exposing (Program)
 
 

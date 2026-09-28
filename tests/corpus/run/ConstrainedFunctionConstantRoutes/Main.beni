@@ -1,4 +1,4 @@
--- CK-33 (R2b): every route by which a constrained value with no parameters
+-- run: every route by which a constrained value with no parameters
 -- is defined, referenced and called agrees on ONE calling convention
 -- (checker-v2.md §12.5; static-dispatch-spike.md §8.1, §8.2, A.85). A value
 -- whose TYPE is a function is defined `($m…, $p…) => …` and called flat;
@@ -10,13 +10,13 @@
 -- through `M`. The corpus also runs it under `--release`.
 -- A POINT-FREE member of a recursive group (`biggest = go`) is not a route:
 -- like its twin without the `where` it is a value on its own initialiser
--- circle, `cyclic_value` (language.md §7; R2b review B1,
+-- circle, `cyclic_value` (language.md §7;
 -- `check/bad/EvidenceFunctionConstantCycle*.beni`).
 --
--- Oracle twin, run on 84e3cb1: this project with every such value
+-- Oracle twin: this project with every such value
 -- eta-expanded (`top a b = maxOf a b`, and likewise each other one, `M.h`
--- and `M.lam` included) prints exactly the expected lines. As written,
--- 84e3cb1 builds with exit 0 and the program throws `TypeError` before it
+-- and `M.lam` included) prints exactly the expected lines. The failure
+-- this guards against builds with exit 0 and throws `TypeError` before it
 -- prints anything: a definition that takes its evidence curried is called
 -- flat, and hands back a function where a list was expected.
 import M

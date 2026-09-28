@@ -1,15 +1,15 @@
--- CK-43: a record alias's implicit constructor builds the record literal,
--- keys in canonical order (owner decision D12; language.md §0, Elm's
--- semantics; backend.md §4's record-alias-constructor row, written in R1).
--- Three shapes: adv's `rc3` (a field of a constructed `P`), `rc2` (fields,
+-- A record alias's implicit constructor builds the record literal,
+-- keys in canonical order (the owner's decision; language.md §0, Elm's
+-- semantics; backend.md §4's record-alias-constructor row).
+-- Three shapes: `rc3` (a field of a constructed `P`), `rc2` (fields,
 -- and a function taking `P`, beside a literal) and `rd5` (a saturated call
 -- and the partial `P 2 _`). Expected `A`, `a`, `1`, `a`, `b`, `a`, `b`.
 --
--- Oracle twin, run on 7427828: this file with every `P …` call written as
+-- Oracle twin: this file with every `P …` call written as
 -- the record literal (`{ x = 1, y = "a" }`, and `\y -> { x = 2, y = y }` for
--- `P 2 _`) prints exactly the expected seven lines. As written, 7427828
--- type-checks it, emits `{ $: "P", a: 1, b: "a" }` for `P 1 "a"`, and the
--- program dies in `String.toUpper` reading `.y` of that object.
+-- `P 2 _`) prints exactly the expected seven lines. Emitting a tagged
+-- `{ $: "P", a: 1, b: "a" }` for `P 1 "a"` would type-check and then
+-- die in `String.toUpper` reading `.y` of that object.
 import Node exposing (Program)
 
 

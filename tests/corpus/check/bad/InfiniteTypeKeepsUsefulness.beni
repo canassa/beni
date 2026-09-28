@@ -1,7 +1,7 @@
--- CK-04: the `case` binder `x` has an infinite type, and the `case` is still
--- checked for usefulness: exhaustiveness reads no solved type (CK-61), so an
--- `infinite_type` does not gate it (checker-v2.md §15.2, as amended by R4b's
--- review). v1 reports only the `redundant_pattern` (it misses the cycle).
+-- The `case` binder `x` has an infinite type, and the `case` is still
+-- checked for usefulness: exhaustiveness reads no solved type, so an
+-- `infinite_type` does not gate it (checker-v2.md §15.2). Both the cycle
+-- and the `redundant_pattern` are reported.
 m =
     case List.foldr [] [] List.intersperse of
         x ->

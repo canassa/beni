@@ -1,4 +1,4 @@
--- CK-28: the same head matching (static-dispatch-spike.md §7.1, A.64;
+-- The same head matching (static-dispatch-spike.md §7.1, A.64;
 -- checker-v2.md §9.3 step 4) for a head with TWO requirements:
 -- `H.eq : Holder ( a, b ), … where a.eq …, b.eq …` has two parts while
 -- `Holder` has one type argument, so an index-by-index mapping cannot even
@@ -7,11 +7,11 @@
 -- `H.eq` really receives `Ci.eq` for `b` — a structural `W` would say
 -- `False`. Expected `True`, `True`, `False`.
 --
--- Oracle twin, run on 7427828: the direct comparison, the first line of
+-- Oracle twin: the direct comparison, the first line of
 -- this program, compiles alone and prints `True`; the `W` lines are the same
--- comparison one wrapper down. As written, 7427828 refuses `W` with NOT
--- IMPLEMENTED YET, whose message ("a `Target.ext` carries no range of its
--- own") has been false since A.64.
+-- comparison one wrapper down. They must not be refused with NOT
+-- IMPLEMENTED YET: a `Target.ext` carries its own range of parts
+-- (A.64).
 pub type Holder a
     = Holder a
 

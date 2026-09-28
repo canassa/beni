@@ -1,4 +1,4 @@
--- R8a's structural review, B1, through a PUBLISHED context: see Main.beni.
+-- The `equatable` flag through a PUBLISHED context: see Main.beni.
 pub type Holder a
     = Holder a
 

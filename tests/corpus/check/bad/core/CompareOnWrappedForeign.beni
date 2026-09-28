@@ -10,8 +10,8 @@
 --
 -- `Hidden` is the control, and the second half of A.55: `Key` IS equatable,
 -- so `==` on a `Hidden` resolves — but through `Basics.eq`, the one
--- structural walk, and NOT by minting a derived row for a foreign type S5
--- has no body to emit.
+-- structural walk, and NOT by minting a derived row for a foreign type the
+-- backend has no body to emit.
 pub foreign type Handle
 
 

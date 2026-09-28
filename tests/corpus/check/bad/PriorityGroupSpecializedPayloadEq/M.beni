@@ -1,8 +1,8 @@
--- Row 72: `Holder.eq` is specialised to `Holder Int`, so `L`, which holds a
+-- `Holder.eq` is specialised to `Holder Int`, so `L`, which holds a
 -- `Holder String`, has no equality. The `==` sits in an unannotated `pub
--- compare`, which v1 checked first as a priority group; v2 has none (R11) and
+-- compare`, which is not checked ahead of the rest as a priority group:
 -- the `==` asks `L`'s derived context (checker-v2.md §11.2): `not_equatable`
--- here, never a comparison accepted on a first cut. Same region under both.
+-- here, never a comparison accepted early.
 import Holder
 
 

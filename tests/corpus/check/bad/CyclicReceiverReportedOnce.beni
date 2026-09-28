@@ -1,7 +1,7 @@
--- A regression guard for CK-37 (checker-v2.md §9.5; plans/checker-rewrite.md
--- §5.5): `x == [ x ]` makes `x`'s type contain itself. The resolver walk that
+-- A regression guard (checker-v2.md §9.5):
+-- `x == [ x ]` makes `x`'s type contain itself. The resolver walk that
 -- meets the cycle reports it ONCE, at the `==`, and poisons the cycle's root,
--- so the `<` on the same receiver adds nothing. Written as its structure,
--- `a = List a`, since R11 (CK-57); 7427828 printed `a  =  … a …`.
+-- so the `<` on the same receiver adds nothing. The cycle is written as its
+-- structure, `a = List a`, never as `a  =  … a …`.
 f x =
     x == [ x ] && x < [ x ]

@@ -1,11 +1,11 @@
--- CK-118: a type wrapping a RECORD schema endpoint compares (checker-v2.md
--- §11.5 *as built by R8b*): a record endpoint is an alias, and a `type` that
+-- A type wrapping a RECORD schema endpoint compares (checker-v2.md
+-- §11.5): a record endpoint is an alias, and a `type` that
 -- holds one is compared through its expansion, `{ f : Mine }` here, `Mine`
--- being an `Int` — with or without the `via`. On 7427828 it is NOT
--- EQUATABLE at `sameHolds`: the old checker answers `HoldsRec` from the
--- alias endpoint's session bits, not its expansion. The oracle twin writes
--- the expansion out, `type HoldsRec = HoldsRec { f : Mine }`, which both
--- checkers accept.
+-- being an `Int` — with or without the `via`. Answering `HoldsRec` from
+-- the alias endpoint's session bits, not its expansion, would make it NOT
+-- EQUATABLE at `sameHolds`. The oracle twin writes
+-- the expansion out, `type HoldsRec = HoldsRec { f : Mine }`, which is
+-- accepted.
 import Schema exposing (Conversion)
 
 

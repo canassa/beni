@@ -1,16 +1,16 @@
--- CK-65: a merge DURING the root's boundary (checker-v2.md §10.8, R7's
--- structural review B1). `f`'s `m?` is still undecided at `f`'s boundary, so
+-- A merge DURING the root's boundary (checker-v2.md §10.8).
+-- `f`'s `m?` is still undecided at `f`'s boundary, so
 -- step 3 defaults it to `Result`; that readies `m == m`, whose derived
 -- `Result` answer asks `Box`'s `eq` — this module's own, unannotated and
 -- unchecked — so its group is nested there, and its `\u -> f u` is a
 -- back-edge into `f`: `eq` merges into `f` while `f`'s boundary runs. The
 -- boundary must read its members after steps 1–3, or `eq`'s requirement
--- `a.eq` is never promoted and P6 reports internal errors. `K`'s `eq`
+-- `a.eq` is never promoted and elaboration reports internal errors. `K`'s `eq`
 -- compares modulo 10, so `Box (K 1) == Box (K 11)` is `custom`.
 --
--- Oracle twin, run on 8016030 under v1: this project with `eq : Box a, Box
+-- Oracle twin: this project with `eq : Box a, Box
 -- a -> Bool where a.eq : a, a -> Bool` annotated prints `custom`. As
--- written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+-- written, it must not be refused with METHOD NEEDS AN ANNOTATION.
 import Node exposing (Program)
 import K exposing (K)
 

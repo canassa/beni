@@ -1,20 +1,20 @@
--- CK-73: (the merge variant without D14's case; split per checker-rewrite.md
--- §5.5) `h`'s body calls `(K 0).f ()` and `f` is a method, so `f` and `h`
--- are recursive THROUGH DISPATCH and merge (D11). `g`, called at `Box Int`
+-- (the merge variant without the recursive-group refusal; `Sooner` is its
+-- twin) `h`'s body calls `(K 0).f ()` and `f` is a method, so `f` and `h`
+-- are recursive THROUGH DISPATCH and merge. `g`, called at `Box Int`
 -- and at `Box String` in `f`'s scrutinee, is in no cycle and must NOT be
 -- merged, so both `g` calls check and `g` stays generic. `Later` writes the
 -- methods after `f`; `Sooner` writes them first. Both check, and publish
--- the same schemes. The `let q` helper of R0's first version is gone: with
--- it the program is D14's refusal, `check/bad/ScrutineeMethodMergeD14/`.
+-- the same schemes. With a `let q` helper added the program is the
+-- recursive-group refusal, `check/bad/ScrutineeMethodMergeD14/`.
 --
 -- The interface golden is written by reasoning, since no build shows it:
 -- inside the merged group `f` and `h` are monomorphic, so each takes `()`
 -- for `u` from the other's call; `f` returns the pair `( 1, 2 )`, two
--- independent `number`s; `g : Box a, b -> number` stays generic. R7
--- confirms the rendering when it blesses.
+-- independent `number`s; `g : Box a, b -> number` stays generic.
 --
--- On 7427828: `Later` is METHOD NEEDS AN ANNOTATION at `y.h` and at both `g`
--- calls; `Sooner` is METHOD NEEDS AN ANNOTATION at `(K 0).f`, in `h`, above
+--
+-- Never METHOD NEEDS AN ANNOTATION: not at `y.h`, at the `g`
+-- calls, or at `(K 0).f`, in `h`, above
 -- `f`.
 type K
     = K Int

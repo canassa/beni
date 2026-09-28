@@ -1,12 +1,12 @@
--- CK-106: a `number` receiver's method inside a recursive binding group is
+-- A `number` receiver's method inside a recursive binding group is
 -- `unknown_method` at the use, in every declaration order (checker-v2.md
--- §10.8, R7's round-2 review, S3). `mb` passes the literal `3` for `ma`'s
+-- §10.8). `mb` passes the literal `3` for `ma`'s
 -- `x`, so `x` is a `number` never chosen between `Int` and `Float`, and
 -- nothing can answer `x.size ()`: outside a group the caller reports that
 -- (`unknown_method` at the instantiation); inside one, `mb`'s call is a
--- group call and §12.3's case 3 has no structural answer for `size`. Before
--- the fix v2 reported two `internal`s at `ma 0 3` (case 3, then I7); v1
--- reports an `internal` I7 at `x.size ()`.
+-- group call and §12.3's case 3 has no structural answer for `size`. It is
+-- never an `internal` (at `ma 0 3` or at `x.size ()`) from a wanted left
+-- unanswered or an evidence miscount.
 ma n x =
     if n > 0 then
         mb n

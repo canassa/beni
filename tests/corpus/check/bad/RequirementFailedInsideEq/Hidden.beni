@@ -1,4 +1,4 @@
--- CK-116: see Main.beni. A private wrapper whose derived `==` asks `Key`'s
+-- See Main.beni. A private wrapper whose derived `==` asks `Key`'s
 -- `key` through `Holder.eq`'s clause, decided at each use.
 import Holder
 import Key

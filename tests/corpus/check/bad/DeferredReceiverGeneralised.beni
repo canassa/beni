@@ -4,7 +4,7 @@
 -- own group's `x`, generalised into `f`'s scheme (`where a.combine`); `g` is
 -- in no group with `f`, so its record meets an instantiated requirement,
 -- which has no field accessor to be: `no_methods_on_shape` at `f n { … }`.
--- v1 says the same. The recursive twin, where `f` calls `g` back and the
+-- The recursive twin, where `f` calls `g` back and the
 -- record reaches `f` before it is generalised, is accepted:
 -- `tests/corpus/run/DeferredReceiverRecursiveTwin.beni`.
 f n x =

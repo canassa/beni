@@ -3,13 +3,13 @@
 -- `Key` is `equatable`, so `==` on a `Hidden` resolves — §3.4 says the
 -- marker means exactly "has an `eq`" and it is the bridge core leans on
 -- until §5.2. What answers it is `Basics.eq`, the one structural walk in
--- `core/Basics.js`; since R11 the table writes it as the `undetermined`
+-- `core/Basics.js`; the table writes it as the `undetermined`
 -- leaf, which `Lower` reads off the derived ancestor as `Basics.eq`
--- (checker-v2.md §12.2, CK-103), where v1 wrote `ext Basics eq`.
+-- (checker-v2.md §12.2).
 --
 -- What must NOT be here is a `derived eq M.Key` row: a `foreign type` has
--- no constructors to walk, so that row named a function S5 has nothing to
--- emit for. The golden's whole job is the row that is absent.
+-- no constructors to walk, so that row would name a function the backend
+-- has nothing to emit for. The golden's whole job is the row that is absent.
 pub equatable foreign type Key
 
 

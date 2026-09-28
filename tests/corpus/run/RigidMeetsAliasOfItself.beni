@@ -1,7 +1,7 @@
--- CK-173: a rigid type variable unifies with an alias that expands to it.
+-- A rigid type variable unifies with an alias that expands to it.
 -- `unwrapId : Id a -> a` returns its argument, whose type `Id a` IS `a`.
--- At 346268b unifying the rigid `a` with the alias `Id a` did not look
--- through the alias (`Unify.rigid`'s `.alias => false`): TYPE MISMATCH "The
+-- Unifying the rigid `a` with the alias `Id a` looks through the alias
+-- (`Unify.rigid`); not doing so is TYPE MISMATCH "The
 -- body is: Id a … should be: a". Expected: it builds and prints `3`.
 -- Oracle twin: `unwrapId : a -> a` prints the same.
 import Node exposing (Program)

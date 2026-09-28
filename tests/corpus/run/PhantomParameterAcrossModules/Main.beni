@@ -1,4 +1,4 @@
--- CK-23: see A.beni.
+-- See A.beni.
 import A
 import Node exposing (Program)
 

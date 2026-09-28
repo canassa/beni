@@ -1,9 +1,9 @@
 -- dispatch: what an `err` part means, and where the only ones a clean
 -- program produces come from.
 --
--- **A PIN, not a regression fixture.** This golden passes on `c63ae48` as
--- well: nothing in S5 moved it, and nothing was wrong with what it records.
--- It is here because the meaning of `err` is an invariant two slices lean
+-- **A PIN, not a regression fixture.** Nothing was wrong with what this
+-- golden records. It is here because the meaning of `err` is an invariant
+-- two phases lean
 -- on from opposite sides — the checker writes it, `Lower.structuralEq`
 -- reads it — and neither side states it anywhere else. A fixture that
 -- fails first would be a fixture for a bug; this one exists so that the
@@ -21,8 +21,8 @@
 -- constrains. `[] == []` compares two empty lists, so the element type is
 -- free, and `Nothing == Nothing` carries no payload.
 --
--- `crossed` used to be a second way, and is not any more (queue row 75,
--- static-dispatch-spike.md A.86): `Ok 1 == Err "a"` is a `Result String
+-- `crossed` used to be a second way, and is not any more
+-- (static-dispatch-spike.md A.86): `Ok 1 == Err "a"` is a `Result String
 -- Int`, but the RECEIVER (`Ok 1`) pins only `a` when the constraint is
 -- discharged, and `x` arrives from the argument afterwards. The part is
 -- now a PART SITE, answered when `x` is: `strict_eq`, not `err`. The same

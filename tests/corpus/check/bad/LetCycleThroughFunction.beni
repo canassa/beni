@@ -1,9 +1,9 @@
--- CK-46: `n = get ()` where `get` reads `n` is `n` defined in terms of
+-- `n = get ()` where `get` reads `n` is `n` defined in terms of
 -- itself through `get`, and the message names that cycle, `n → get → n`,
 -- rather than calling `n`'s own binding "further down this `let`" (the
--- direct path already says `.self`, `bir/Lower.zig:2417`). On 7427828 the
--- message is "Naming `get` here reads `n`, which is bound further down this
--- `let`, on line 15" — and line 15 is `n`'s own binding.
+-- direct path already says `.self`, `bir/Lower.zig`). It never says
+-- "Naming `get` here reads `n`, which is bound further down this
+-- `let`, on line 15" when line 15 is `n`'s own binding.
 
 
 value : Int

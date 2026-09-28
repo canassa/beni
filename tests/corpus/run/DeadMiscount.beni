@@ -1,15 +1,15 @@
--- CK-30: v1's evidence miscount in a declaration nothing reaches. `f` is an
--- unannotated recursive function with an `eq` constraint, and v1 passes the
--- recursive call `f x y (n - 1)` a different number of hidden arguments than
--- `f` takes (CK-30's miscount). `main` never uses `f`.
+-- An evidence miscount in a declaration nothing reaches. `f` is an
+-- unannotated recursive function with an `eq` constraint; a miscount would
+-- pass the recursive call `f x y (n - 1)` a different number of hidden
+-- arguments than `f` takes. `main` never uses `f`.
 --
--- On 9a931d7 this built and ran, printing `x`: `Lower` met the miscount only
--- on code dead-code elimination kept, and `f` was not kept. Since R2a the I7
--- assert (checker-v2.md §13.1) walks every declaration at `check` time and
--- refuses the program with INTERNAL ERROR at the recursive call — a decision
--- the manager took on purpose (review of R2a, S1): the table is wrong whether
--- or not it is emitted, and v2 removes the miscount. Expected, once v2 counts
--- correctly: it builds and prints `x`, exactly what 9a931d7 printed.
+-- Dead-code elimination would hide such a miscount from `Lower`, which meets
+-- only code it keeps. So the evidence-count assert
+-- (checker-v2.md §13.1) walks every declaration at `check` time and
+-- would refuse the program with INTERNAL ERROR at the recursive call: the
+-- table is wrong whether
+-- or not it is emitted. The checker counts
+-- correctly, so it builds and prints `x`.
 import Node exposing (Program)
 
 

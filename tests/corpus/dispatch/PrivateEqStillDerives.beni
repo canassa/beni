@@ -1,13 +1,13 @@
--- dispatch: a PRIVATE `eq` wins for this module's own uses, and since the
--- cut-over (R11) it is also `Id`'s `eq` for every other module, which
--- therefore cannot use it (D1, checker-v2.md §11.3; §3.3 step 1, §8.5).
+-- dispatch: a PRIVATE `eq` wins for this module's own uses, and it is
+-- also `Id`'s `eq` for every other module, which
+-- therefore cannot use it (checker-v2.md §11.3; §3.3 step 1, §8.5).
 --
 -- `sameMajor`'s `==` is a use INSIDE the declaring module, where §3.3 step
 -- 1 says "the declaring module's own value `name`, `pub` (or any, in the
 -- same module)" — so the site is `top eq` and the private declaration wins.
 --
--- Until R11 the table also held a `derived eq` row for `Id`, the function a
--- DEPENDENT reached by deriving over `Id`'s shape (checker v1). Under D1 the
+-- The table holds no `derived eq` row for `Id`, the function a
+-- DEPENDENT would reach by deriving over `Id`'s shape. The
 -- module rule makes the private value the `eq` of every type the module
 -- declares, `pub` or not, so no `eq` is derived for `Id` and none is
 -- written: a dependent that compares an `Id` — directly or inside a record,

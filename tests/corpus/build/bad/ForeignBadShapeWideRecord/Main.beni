@@ -1,8 +1,8 @@
--- CK-193: a `foreign` value of a record type with 65 fields, the last of
+-- A `foreign` value of a record type with 65 fields, the last of
 -- them a type variable, is as polymorphic as `foreign anything : a` and must
--- be refused (`boundary.md` §4, check 1). At 31dd4bd the shape check walked
--- the type on a 64-slot stack and answered "concrete" when it filled, so the
--- build exited 0. Oracle twin: the same record with three fields is refused.
+-- be refused (`boundary.md` §4, check 1), however wide the record: the shape
+-- check must not answer "concrete" when a fixed-size stack fills, which would
+-- let the build exit 0. Oracle twin: the same record with three fields is refused.
 import Bad
 import Prog exposing (Program)
 

@@ -1,13 +1,13 @@
--- CK-66: a binding group may quantify a variable that a caller's type does
+-- A binding group may quantify a variable that a caller's type does
 -- not mention: `g`'s element type needs `eq`, and `f`'s call `g []` fixes no
 -- element, so that call passes the `undetermined` leaf for `a.eq`
 -- (checker-v2.md §12.3 case 3). Expected `1`, `True`.
 --
--- Oracle twin, run on 7427828: this file with `f : Int -> Int` and
--- `g : List Int -> Bool` annotated prints `1`, `True`. As written, 7427828
--- refuses it with TYPE MISMATCH `number -> a` against `List b -> Bool` at
--- `g`: CK-09 reads `f`'s locals from `g`'s slice. With CK-09 fixed, v1's
--- group-call sites (CK-30) make it an internal error (round 2 N7).
+-- Oracle twin: this file with `f : Int -> Int` and
+-- `g : List Int -> Bool` annotated prints `1`, `True`. As written, reading
+-- `f`'s locals from `g`'s slice would refuse it with TYPE MISMATCH
+-- `number -> a` against `List b -> Bool` at `g`, and a wrong evidence count
+-- on the group call would make it an internal error.
 import Node exposing (Program)
 
 

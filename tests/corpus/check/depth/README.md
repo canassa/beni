@@ -15,7 +15,7 @@ without one, is a failure.
 | `ParserOk` / `ParserDeep` | `Parse.max_depth` (4096) | 4095 clean, 4096 reports |
 | `TypeParensOk` / `TypeParensDeep` | the same guard, reached through a **type** | 4095 clean, 4096 reports |
 | `RenderTruncatedDeep` | `Render.max_depth` (24) | truncates one type to `…` |
-| `RecordExtTruncatedDeep` | `Render.max_ext_links` (64), which checker v2 never reaches: its records are one node (`checker-v2.md` §4.1, since R11) | prints all 65 fields and stays OPEN (v1 elided the tail as `… \| `) |
+| `RecordExtTruncatedDeep` | `Render.max_ext_links` (64), which the checker never reaches: its records are one node (`checker-v2.md` §4.1) | prints all 65 fields and stays OPEN, never eliding the tail as `… \| ` |
 
 ## Why this kind exists
 
@@ -49,10 +49,10 @@ declined to decide does not lose a warning — it takes the tree's last edge
 and prints the wrong answer at exit 0.
 
 `PatternNestDeep.beni` is exactly that program: one branch, `Nothing`
-unmatched, and before queue slice 14 it compiled clean. The **work** budget
+unmatched, and it must never compile clean. The **work** budget
 has no pair here because the corpus walker cannot pass a flag per fixture and
-no `case` a file can hold comes near the default any more: queue slice 22 made
-a flat column set membership, so a table costs 2 steps a branch and the
+no `case` a file can hold comes near the default: a flat column is set
+membership, so a table costs 2 steps a branch and the
 default is 5 000 000 (`checker.md` §6.6). The pair for it is
 `blackbox_test.zig`'s `--pattern-budget` scenarios, which say the same thing
 in four lines. `PatternNestOk.beni` is now the costliest `case` in the whole

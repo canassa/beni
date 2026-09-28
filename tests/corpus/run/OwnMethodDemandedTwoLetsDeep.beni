@@ -1,5 +1,5 @@
--- CK-63: an own untyped method demanded two `let`s deep checks exactly as it
--- does written first (checker-v2.md §10.2, R7's reviewer focus): `size` is
+-- An own untyped method demanded two `let`s deep checks exactly as it
+-- does written first (checker-v2.md §10.2): `size` is
 -- first needed inside `g`, a `let` function inside `f`, a `let` function
 -- inside `outer`, so its group is nested in a fresh top-level-kind frame
 -- above three open frames. Its scheme, and `g`'s, must be the ones the
@@ -8,8 +8,8 @@
 -- `( g a, g "s" )` checks. `size`'s own `let` helper `h` is generalised
 -- in the nested frame. Expected `1 1`.
 --
--- Oracle twin, run on 8016030 under v1: this file with `size` written first
--- prints `1 1`. As written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+-- Oracle twin: this file with `size` written first
+-- prints `1 1`. As written, it must not be refused with METHOD NEEDS AN ANNOTATION.
 import Node exposing (Program)
 
 

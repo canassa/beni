@@ -1,20 +1,20 @@
--- CK-30: ordinary recursion through `==` or `<` builds. A call to a member
+-- Ordinary recursion through `==` or `<` builds. A call to a member
 -- of the same recursive group gets exactly the evidence its callee ends up
 -- taking (static-dispatch-spike.md §6.4, §7.2; checker-v2.md §12.3). Eight
--- forms, one per line group: `z1` (`countdown`), `z1t` (`growTo`, `String`
--- with no `number`), `ie7` (`sumDown`), `m1s` (`largest`), `m1b` (`sym` and
--- `symFlip`), `m1` (`findMax` and `step`, at `Int` and `String`) and `m2`
--- (`a1` and `b1`, two constraints). Expected `T`, `T`, `10`, `q`, `T`, `9`,
+-- forms, one per line group: `countdown`, `growTo` (`String`
+-- with no `number`), `sumDown`, `largest`, `sym` and
+-- `symFlip`, `findMax` and `step` (at `Int` and `String`), and
+-- `a1` and `b1` (two constraints). Expected `T`, `T`, `10`, `q`, `T`, `9`,
 -- `q`, `0`, `1`.
 --
--- Oracle twin, run on 7427828: this file with every recursive function
+-- Oracle twin: this file with every recursive function
 -- annotated (`countdown : Int -> Bool`, `growTo : String, String -> Bool`,
 -- `sumDown : Int -> Int`, `largest : List String, String -> String`,
 -- `sym`/`symFlip : Int, Int -> Bool`, `findMax : List a, a -> a` and
 -- `step : List a, a, a -> a` with `where a.compare : a, a -> Order`, and
 -- `a1`/`b1 : List a, List a -> Int` with `where a.eq : a, a -> Bool,
 -- a.compare : a, a -> Order`) prints exactly the expected nine lines. As
--- written, `check` exits 0 and `build` stops with INTERNAL ERROR "The
+-- written, `build` must not stop with INTERNAL ERROR "The
 -- hidden arguments of this call do not add up" at the recursive calls.
 import Node exposing (Program)
 

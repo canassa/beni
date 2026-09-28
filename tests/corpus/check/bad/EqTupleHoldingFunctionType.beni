@@ -3,9 +3,9 @@
 -- §6.3; checker-v2.md §9.5, THE derivability verdict). `h` is still a
 -- variable when the comparison is solved and becomes `Handler` only in the
 -- `then` branch, so the verdict is asked of a position that was a flex when
--- the shape was first walked. R6a's first round answered it from a
--- `walked` shortcut that never re-asked, and accepted this program (review
--- B1, probe W1).
+-- the shape was first walked. A `walked` shortcut that never re-asked would
+-- accept this program.
+--
 type Handler
     = Handler (Int -> Int)
 

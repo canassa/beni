@@ -13,10 +13,10 @@
 -- for `a` and a bare `strict_eq` for `b`, exit 0, and `run/TwoSlotsNested`
 -- is what that does to the answers.
 --
--- In the checker's flat BUILDER list (v1, `Dispatch.FlatSite`) the ORDER
+-- In the checker's flat BUILDER list (`Dispatch.FlatSite`) the ORDER
 -- of the slots is the tree and the `evidence_index` column is only the
 -- identity the checker's two deduplicating tables key on
--- (`Solve.joinConstraint`, `Solve.appendSite`). Since R2a that order is read
+-- (`Solve.joinConstraint`, `Solve.appendSite`). That order is read
 -- once, by `Dispatch.finish`'s converter, and the golden prints the TREE it
 -- builds (checker-v2.md §13.2): each `evidence` root with its arguments under
 -- it.

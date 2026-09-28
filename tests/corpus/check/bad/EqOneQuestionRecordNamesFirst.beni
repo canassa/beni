@@ -1,7 +1,7 @@
 -- check/bad: the symbol-order twin of `EqOneQuestionRecord.beni` — `fnf` is
 -- interned before `flexf` (the first declaration names it) — with the same
--- one `not_equatable` (checker-v2.md §11.4, I13; R5's structural review, B1).
--- The golden is checker v1's.
+-- one `not_equatable` (checker-v2.md §11.4): which failure is reported
+-- follows name text, never interning order.
 fnf =
     1
 

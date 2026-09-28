@@ -1,11 +1,11 @@
--- CK-76: the sub-wanted form. `combine`'s own requirement `a.mix` becomes a
+-- The sub-wanted form. `combine`'s own requirement `a.mix` becomes a
 -- sub-wanted on `r`, another recursive-group member's result, when
--- `(Box r).combine z` resolves inline; D14 (checker-v2.md §10.7, round 4)
--- lowers it, so `q` is monomorphic and `( q 1, q "s" )` is one
+-- `(Box r).combine z` resolves inline; the recursive-group rule (checker-v2.md
+-- §10.7) lowers it, so `q` is monomorphic and `( q 1, q "s" )` is one
 -- `kind_mismatch` at `q "s"` with the hint "Annotate `g`", in every order.
--- `FirstF` is round 4's `subA`, `FirstG` is `subB`. On 7427828 `check`
--- accepts both; `build` of `subA` is INTERNAL ERROR, and `subB` runs and
--- prints `{ a = Box K 1, b = Box K 1 }`.
+-- `FirstF` writes `f` first, `FirstG` writes `g` first. Accepting either
+-- would mean an INTERNAL ERROR at build in one order and
+-- `{ a = Box K 1, b = Box K 1 }` printed in the other.
 type K
     = K Int
 

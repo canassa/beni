@@ -1,9 +1,9 @@
--- R14's review B1 (checker-v2.md §8.4 *As built by R14*): D5 generalises a
+-- run (checker-v2.md §8.4): a `let` generalises a
 -- `let` function binding wherever the `let` stands — inside a lambda, a
 -- `case` branch or an `if` branch too. The generator marks a binder below a
--- lambda or branch `.ended` once its occurs check is placed; R14's first cut
--- read that as "not a header", so such a `let` held every constrained
--- variable and its helper was refused at its second type. `A`'s `eq` is
+-- lambda or branch `.ended` once its occurs check is placed; reading that
+-- as "not a header" would hold every constrained variable in such a `let`
+-- and refuse its helper at its second type. `A`'s `eq` is
 -- always `True` and `B`'s always `False`, so structural evidence would
 -- print differently: each `same` must receive its own type's `eq`.
 -- Expected `TF`, `TF`, `TF`, `TF`.

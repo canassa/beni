@@ -1,5 +1,5 @@
--- R14's review B2: the hint a `let` binding held over the 64-requirement cap
--- (static-dispatch-spike.md §10.11; checker-v2.md §8.4 *As built by R14*)
+-- check/bad: the hint a `let` binding held over the 64-requirement cap
+-- (static-dispatch-spike.md §10.11; checker-v2.md §8.4)
 -- gets when it is used at a second type: `h` has 65 requirements, so it is
 -- held whole, and `h "s" …` after `h 'a' …` is a `type_mismatch` whose hint
 -- says why (the cap) and what lifts it (a top-level declaration annotated

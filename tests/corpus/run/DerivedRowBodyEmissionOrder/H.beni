@@ -1,13 +1,13 @@
 -- A derived row's body names a value of its module declared AFTER the
--- constant that calls the row (CK-104; checker-v2.md §13.1, backend.md §5's
+-- constant that calls the row (checker-v2.md §13.1, backend.md §5's
 -- emission order). `main` is evaluated at load: it compares two `W`s, which
 -- runs `Main$W$$eq`, whose body passes `H.eq` the evidence `Main$key`. So
 -- `main` depends on `key` through the row, and emission order must put
--- `key` first. It did not — the order walked `refs` and the sites' own
--- terms but not the bodies of the rows they name — and the program built
--- with exit 0 under both checkers and threw `ReferenceError: Cannot access
--- 'Main$key' before initialization` at load (R6b's reviews: structural S5,
--- adversarial F2). Expected `T`.
+-- `key` first: an order that walked `refs` and the sites' own terms but
+-- not the bodies of the rows they name would build with exit 0 and
+-- throw `ReferenceError: Cannot access 'Main$key' before initialization`
+-- at load.
+-- Expected `T`.
 pub type Holder a
     = Holder a
 

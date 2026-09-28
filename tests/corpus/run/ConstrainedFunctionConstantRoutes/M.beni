@@ -1,4 +1,4 @@
--- CK-33 (R2b): the cross-module half of `Main.beni`. `h` is annotated and
+-- The cross-module half of `Main.beni`. `h` is annotated and
 -- point-free, `lam` annotated with a lambda body, `blank` a thunk: an
 -- importer sees only their types, and must call and reference each the way
 -- this module defines it (checker-v2.md §12.5).

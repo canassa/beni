@@ -2,7 +2,7 @@
 --
 -- `?` is the checker's other speculator (`checker.md` §6.5): it tries
 -- `Result` and then `Maybe` under a journal mark and rolls the loser back.
--- Since S3, `unify` can register obligations and raise messages from inside
+-- `unify` can register obligations and raise messages from inside
 -- that probe (`docs/design/static-dispatch-spike.md` §6.2, A.35), so the
 -- probe now rolls back the dispatch builder and the diagnostics too. This
 -- fixture puts the two together: the declaration must check clean and its

@@ -1,11 +1,11 @@
 -- check/good: a parameter extended by 65 functions, one more than
 -- `Render.max_ext_links`. Each `fN` adds a field to the same parameter and
--- passes it on, so `g`'s parameter is an open record of 65 fields. Checker v1
--- built it as a 65-link extension CHAIN and printed the tail as `…`; checker
--- v2 keeps a record normalised, one node (checker-v2.md §4.1, CK-08; since
--- R11), so it prints whole. The `.iface` golden is the assertion: the record
+-- passes it on, so `g`'s parameter is an open record of 65 fields. A record
+-- is kept normalised, one node (checker-v2.md §4.1), not a 65-link
+-- extension CHAIN whose tail would print as `…`, so it prints whole. The
+-- `.iface` golden is the assertion: the record
 -- stays OPEN, `{ r | … }` — printed closed it would be a different type, one
--- a caller may not pass extra fields to.
+-- a caller may not pass extra fields to. What
 -- the printer may not do when it gives up is drop the `| r`.
 f1 x =
     x.a1

@@ -1,4 +1,4 @@
--- CK-65: a back-edge BY VALUE merges (D11 as amended, checker-v2.md §10.4):
+-- A back-edge BY VALUE merges (checker-v2.md §10.4):
 -- `use` needs `T`'s `m` through dispatch, and `m`'s body calls `use` by
 -- value. The SCC order checks `use` first whatever the source order (`m`
 -- depends on it); `use` nests `m` at its demand, and `m`'s reference to
@@ -6,9 +6,9 @@
 -- frame into `use`'s, which generalises both at once: `main` uses `use` at
 -- `String` and at `Bool`. Expected `7 s`, `3`.
 --
--- Oracle twin, run on 8016030 under v1: this file with `use : Int, a -> (
+-- Oracle twin: this file with `use : Int, a -> (
 -- Int, a )` and `m : T, a -> ( Int, a )` annotated prints exactly the
--- expected lines. As written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+-- expected lines. As written, it must not be refused with METHOD NEEDS AN ANNOTATION.
 import Node exposing (Program)
 
 

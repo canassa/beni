@@ -4,7 +4,7 @@
 -- so the leaf is written only below one of the same method: under a value's
 -- evidence (`List.eq`'s element, a user `eq`'s `where`) it is `ext Basics
 -- eq` or `primitive num_compare`, at any depth. `run/UndeterminedUnderValueEvidence`
--- runs these. R6b's first P6 wrote the leaf there (review B1).
+-- runs these. Elaboration must not write the leaf there.
 pub type Pair a
     = Pair a Int
 

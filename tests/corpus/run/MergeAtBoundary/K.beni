@@ -1,4 +1,4 @@
--- CK-65: see Main.beni.
+-- See Main.beni.
 pub type K
     = K Int
 

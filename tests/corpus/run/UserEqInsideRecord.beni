@@ -1,13 +1,13 @@
 -- A user's own `pub eq`, reached from INSIDE a shape the compiler derived
 -- (`docs/design/static-dispatch-spike.md` §3.3, §9.2, A.46, A.60).
 --
--- This fixture was a `not_implemented` wall until S5. `core/Basics.js`'s
+-- `core/Basics.js`'s
 -- `eq` is one structural walk: it compares every reachable primitive with
 -- `===` and knows nothing about a `pub eq`. A derived `eq` does know —
 -- the checker put the method in the table as the field's part — and the two
 -- disagree here on purpose: `Id`'s `eq` compares the MAJOR number only, so
 -- `{ k = Id 1 2 } == { k = Id 1 99 }` is `True` by the table and `False` by
--- the walk. S4 could emit neither and refused; S5 emits the record shape's
+-- the walk. The backend emits the record shape's
 -- own function and hands it `M$eq` as the field's evidence.
 --
 -- The second line is the same record shape with a DIFFERENT element type,

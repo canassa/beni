@@ -1,9 +1,9 @@
--- A regression guard from the checker-v2 design review (round 3, B-3; plans/
--- checker-rewrite.md §5.4): CK-72's program with the recursive group's
+-- A regression guard: `check/bad/RecursiveGroupReceiverNeedsAnnotation`'s
+-- program with the recursive group's
 -- receiver-producing member ANNOTATED, `g : Int -> Box Int`, in both
--- declaration orders (`f`/`g`, round 3's `sccA`; `g2`/`f2`, `sccB`). The
+-- declaration orders (`f`/`g` and `g2`/`f2`). The
 -- annotation lets `q` instantiate the method at `1` and at `"s"`, so each
--- prints `Box 1` twice. 7427828 accepts both orders.
+-- prints `Box 1` twice.
 import Node exposing (Program)
 
 

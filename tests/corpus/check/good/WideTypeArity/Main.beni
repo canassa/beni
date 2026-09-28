@@ -1,9 +1,9 @@
--- CK-38: (queue row 71) a type's arity is not capped by the interface
+-- check/good: a type's arity is not capped by the interface
 -- record (language.md §4 states no limit; checker-v2.md §14.2, `u16`
 -- arity). `Wide` takes 256 type arguments, and `Main` applies it to 256:
--- the project checks, and `Main`'s `w` is published at the full type. On
--- 7427828 the imported arity saturates at 255 and `check` refuses `w` with
--- WRONG TYPE ARITY ("`Wide` takes 255 type arguments, but here it has 256").
+-- the project checks, and `Main`'s `w` is published at the full type. An
+-- imported arity that saturated at 255 would refuse `w` with WRONG TYPE
+-- ARITY ("`Wide` takes 255 type arguments, but here it has 256").
 import Wide
 
 

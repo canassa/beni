@@ -1,10 +1,10 @@
--- CK-190: a `let` chain of 64 single-use aliases, each binding the
+-- A `let` chain of 64 single-use aliases, each binding the
 -- one before it. Under `--release` backend.md §9 item 1 inlines every
--- link; at 31dd4bd the printer stopped following the substitutions after
--- 64 steps and printed a name whose binding had been dropped, which the
--- renamer then spelled as an unrelated top-level's short name: past 128
--- links the release build printed `7` (the value of `k`), a function's
--- source, or threw a ReferenceError. Expected: both builds print `42`
+-- link; the printer must follow the substitutions to the end: stopping
+-- after 64 steps would print a name whose binding had been dropped, which
+-- the renamer would then spell as an unrelated top-level's short name, and
+-- past 128 links the release build would print `7` (the value of `k`), a
+-- function's source, or throw a ReferenceError. Expected: both builds print `42`
 -- then `7`. Oracle twin: the development build, which inlines nothing.
 import Node exposing (Program)
 import String

@@ -1,4 +1,4 @@
--- CK-105: see PFirst.beni. The same module with `q = h x` written first.
+-- See PFirst.beni. The same module with `q = h x` written first.
 h a =
     a.combine 1
 

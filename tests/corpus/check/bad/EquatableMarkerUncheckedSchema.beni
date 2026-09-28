@@ -1,12 +1,12 @@
--- CK-120: explicit `Basics.eq` on a `type` holding a record schema endpoint
+-- Explicit `Basics.eq` on a `type` holding a record schema endpoint
 -- whose `via` target holds a function is `not_equatable` in EVERY
--- declaration order (checker-v2.md §11.4 *as amended by R8b's review
--- rounds*). Here `g` comes first, before anything has demanded `R`'s group:
+-- declaration order (checker-v2.md §11.4). Here `g` comes first, before
+-- anything has demanded `R`'s group:
 -- the gate demands every schema with a `via` it can reach (as the derived
--- contexts do), so `R`'s unfilled target never reads as "no function". R8b's
--- first review round built the gate without the demand, and it accepted
--- this order and refused the others (its round-2 review, B1). On 7427828
--- every order checks clean.
+-- contexts do), so `R`'s unfilled target never reads as "no function".
+-- A gate built without the demand would accept this order and refuse the
+-- others.
+--
 import Schema exposing (Conversion)
 
 

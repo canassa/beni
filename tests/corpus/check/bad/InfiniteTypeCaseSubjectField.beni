@@ -1,6 +1,6 @@
--- CK-04: `InfiniteTypeCaseSubject`'s cycle through ONE record field. Before
--- R4b's review v2 said `nesting_too_deep` ("more than 4200 levels", "give the
--- inner part a type alias") at `[ r, s ]` — wrong code, false advice. v1 reports at the body.
+-- `InfiniteTypeCaseSubject`'s cycle through ONE record field: an
+-- `infinite_type`, never `nesting_too_deep` ("more than 4200 levels", "give the
+-- inner part a type alias") at `[ r, s ]` — wrong code, false advice.
 g r s =
     case [ r, { a = r } ] of
         _ ->

@@ -1,4 +1,4 @@
--- CK-76: see FirstF.beni. The same module with `g` written first.
+-- See FirstF.beni. The same module with `g` written first.
 type K
     = K Int
 

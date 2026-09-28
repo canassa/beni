@@ -1,8 +1,8 @@
--- A regression guard from the checker-v2 design review (round 1, B7; plans/
--- checker-rewrite.md §5.1): CK-64's program in the order `eq`, `helper`,
--- `use` (round 1's `b7R`). `T`'s own `eq` compares modulo 10 through
--- `helper`, so `use 1 11` is `True` and `use 1 2` is `False`. 7427828 gets
--- this order right; checker-v2 must print the same in every order.
+-- A regression guard: an own `eq` reached through a helper, in the order
+-- `eq`, `helper`, `use`. `T`'s own `eq` compares modulo 10 through
+-- `helper`, so `use 1 11` is `True` and `use 1 2` is `False`. It must
+-- print the same in every order.
+--
 import Node exposing (Program)
 
 

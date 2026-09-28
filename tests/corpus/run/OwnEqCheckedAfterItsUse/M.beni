@@ -1,13 +1,13 @@
--- Queue row 75, D3 (checker-v2.md §10.2, R7): an unannotated `pub compare`
+-- run (checker-v2.md §10.2, the owner's decision): an unannotated `pub compare`
 -- is written before this module's unannotated `pub eq`, and both `==` on a
 -- `T` inside it — the direct one and the one reached through the record's
--- part — need that `eq`. 875f623 compiled both in silence: the first to
--- `undefined`, the second to a structural comparison that ignored `eq`.
--- Checker v1 then refused both with `method_needs_annotation` (this was
--- `check/bad/MethodNeedsAnnotation/` until the cut-over, R11). Checker v2
+-- part — need that `eq`. Neither may compile in silence to `undefined` or
+-- to a structural comparison that ignores `eq`, and neither is refused
+-- with `method_needs_annotation`. The checker
 -- checks `eq` at its first demand, so the program is valid and both
 -- comparisons use it: `eq` says `T m` equals `T n` when `m + 1 == n`, so
 -- `T 1 == T 2` is `True` where a structural comparison says `False`.
+--
 -- `first` and `second` are the same two comparisons as top-level values,
 -- also written above `eq`, so each answer is printed on its own line.
 pub type T

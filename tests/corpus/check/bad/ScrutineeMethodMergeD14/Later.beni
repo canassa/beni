@@ -1,16 +1,16 @@
--- CK-73: (the merge variant, as written by R0; split per checker-rewrite.md
--- §5.5) `h`'s body calls `(K 0).f ()` and `f` is a method, so `f` and `h`
--- are recursive THROUGH DISPATCH and merge (D11). `r` in `f`'s `case` is
--- `h`'s in-flight result, a group-level receiver, so D14 (checker-v2.md
--- §10.7) lowers `r.combine z`: `q` is monomorphic, and `( q 1, q "s" )` is
--- one `kind_mismatch` at `q "s"` with the hint "Annotate `h`". That holds in
+-- (the merge variant; `Sooner` is its twin)
+-- `h`'s body calls `(K 0).f ()` and `f` is a method, so `f` and `h`
+-- are recursive THROUGH DISPATCH and merge. `r` in `f`'s `case` is
+-- `h`'s in-flight result, a group-level receiver, so the recursive-group rule
+-- (checker-v2.md §10.7) lowers `r.combine z`: `q` is monomorphic, and
+-- `( q 1, q "s" )` is one `kind_mismatch` at `q "s"` with the hint
+-- "Annotate `h`". That holds in
 -- both orders — `Later` writes the methods after `f`, `Sooner` before —
 -- because the merge is found at `f`'s scrutinee, before the `let`, in both.
 -- The half that must CHECK is `check/good/ScrutineeMethodMergeVariant/`.
 --
--- On 7427828: `Later` is METHOD NEEDS AN ANNOTATION at `y.h` and at both `g`
--- calls, and an UNKNOWN METHOD at `r.combine`; `Sooner` is METHOD NEEDS AN
--- ANNOTATION at `(K 0).f`, in `h`, above `f`.
+-- Never METHOD NEEDS AN ANNOTATION at `y.h`, at the `g` calls or at
+-- `(K 0).f`, and never an UNKNOWN METHOD at `r.combine`.
 type K
     = K Int
 

@@ -1,5 +1,5 @@
 -- Ordinary recursion, self and mutual. Mutual recursion is a real stack
--- frame in M3a (`backend.md` §8 keeps it a stated limitation), so the
+-- frame (`backend.md` §8 keeps it a stated limitation), so the
 -- depths here are small on purpose.
 import Node exposing (Program)
 import String

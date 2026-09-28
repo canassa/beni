@@ -1,8 +1,8 @@
--- check/good: CK-122 across modules. `Models` exports aliases of its schemas'
+-- check/good: a schema endpoint alias across modules. `Models` exports aliases of its schemas'
 -- endpoints; reading one here expands its body in `Models`, whose schema
 -- endpoints come from `Models`' interface (a private tagged schema's from its
--- nominal type). Before the fix every comparison below was an `internal`
--- under both checkers, and `Models.H` a false NOT EQUATABLE.
+-- nominal type). No comparison below is an `internal`, and `Models.H` is
+-- not a false NOT EQUATABLE.
 import Models
 
 

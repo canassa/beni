@@ -1,12 +1,12 @@
--- CK-39: an imported record alias's implicit constructor builds the RECORD,
+-- An imported record alias's implicit constructor builds the RECORD,
 -- as in Elm (language.md §0; checker-v2.md §14.2, the record-alias
--- constructor rows; D12 for its representation). `P 1 "a"` is a
+-- constructor rows; the owner's decision for its representation). `P 1 "a"` is a
 -- `{ x : Int, y : String }`, so `.y` reads `"a"`. Expected `a`.
 --
--- Oracle twin, run on 7427828: this project with `p = { x = 1, y = "a" }`
--- in place of the constructor call prints `a`. As written, 7427828 refuses
--- it with TYPE MISMATCH "This is not a record with a `y` field: It is: `P`"
--- — `Schemes.instantiateCtor` types every imported constructor as a nominal.
+-- Oracle twin: this project with `p = { x = 1, y = "a" }`
+-- in place of the constructor call prints `a`. Typing every imported
+-- constructor as a nominal would refuse it with TYPE MISMATCH "This is not
+-- a record with a `y` field: It is: `P`".
 import Node exposing (Program)
 import Pt exposing (P)
 

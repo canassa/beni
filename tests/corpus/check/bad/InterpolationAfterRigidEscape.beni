@@ -1,10 +1,10 @@
--- CK-154: one mistake, one message. `g`'s annotation promises `a -> a`,
+-- One mistake, one message. `g`'s annotation promises `a -> a`,
 -- but its body returns the outer `x`: `rigid_mismatch`. Because of it, `x`
--- is never tied to `g 1`'s number, and at 8b98464 the interpolation `"${x}"`
--- is ALSO refused (AMBIGUOUS INTERPOLATION at `x`), a consequence of the
+-- is never tied to `g 1`'s number, and the interpolation `"${x}"` must not
+-- ALSO be refused (AMBIGUOUS INTERPOLATION at `x`): that is a consequence of the
 -- first error, not a second mistake. Without the annotation `x` is a number
 -- and the interpolation is fine. Expected: only the `rigid_mismatch`.
--- Fixed by R15-fix-E: a `${…}` decided at a rigid waits for its binder's
+-- A `${…}` decided at a rigid waits for its binder's
 -- boundary, where the escape poisons the rigid and settles it silently.
 f x =
     let

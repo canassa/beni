@@ -1,8 +1,8 @@
--- CK-172: a variable unified with an alias of itself is not an infinite
--- type. `wrap x : Id a` where `x : a`, and `Id a` IS `a`. At 346268b
--- unifying the flex `a` with the alias `Id a` bound `a` to the alias, whose
--- expansion is `a` itself: a cycle through the alias's expansion, then
--- INFINITE TYPE `a = Id a` at the binder. Expected: it builds and prints
+-- A variable unified with an alias of itself is not an infinite
+-- type. `wrap x : Id a` where `x : a`, and `Id a` IS `a`. Binding the flex
+-- `a` to the alias `Id a`, whose expansion is `a` itself, would make a
+-- cycle through the alias's expansion and report INFINITE TYPE `a = Id a`
+-- at the binder. Expected: it builds and prints
 -- `a` twice. Oracle twin: `g x = [ x, x ]` prints the same.
 import Node exposing (Program)
 

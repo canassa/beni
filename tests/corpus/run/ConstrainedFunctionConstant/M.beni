@@ -1,17 +1,17 @@
--- CK-33: a constrained declaration with no parameters whose type is a
+-- A constrained declaration with no parameters whose type is a
 -- function is defined, referenced and called under ONE calling convention
 -- (static-dispatch-spike.md §8.1, §8.2, A.85; checker-v2.md §12.5). `h =
 -- maxOf` here and in `Main`, `same = (==)` in `Main`, and `M.h` passed as a
 -- value to `List.foldl` must all behave as the functions they name.
 -- Expected `2`, `b`, `f`, `t`, `2`, `b`, `1`, `5`.
 --
--- Oracle twin, run on 7427828: this project with every such constant
+-- Oracle twin: this project with every such constant
 -- eta-expanded (`h a b = maxOf a b`, `same a b = a == b`, and `M.h` the same
--- way) prints exactly the expected eight lines. As written, 7427828 builds
--- with exit 0 and prints the JavaScript source text
--- `($p$1, $p$2) => Main$maxOf($m$0, $p$1, $p$2)` for `h 1 2`: the
--- definition takes the evidence curried, `($m$0) => value`, and the call
--- passes it flat, `h(ev, 1, 2)`. `same 1 2` prints `t`.
+-- way) prints exactly the expected eight lines. A definition that takes the
+-- evidence curried, `($m$0) => value`, called flat, `h(ev, 1, 2)`, would
+-- build with exit 0 and print the JavaScript source text
+-- `($p$1, $p$2) => Main$maxOf($m$0, $p$1, $p$2)` for `h 1 2`, and
+-- `same 1 2` would print `t`.
 pub maxOf : a, a -> a
     where a.compare : a, a -> Order
 maxOf a b =

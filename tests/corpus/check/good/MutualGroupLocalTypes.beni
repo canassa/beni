@@ -1,9 +1,9 @@
--- CK-09: (the interface form) two mutually recursive members whose
+-- (the interface form) two mutually recursive members whose
 -- parameters are used in different positions. Each member's locals are its
--- own (checker-v2.md §6.2, I11), so `u : a, b -> c` and
+-- own (checker-v2.md §6.2), so `u : a, b -> c` and
 -- `v : number, b, a -> c` — which the interface prints with its own letters,
--- `v : number, a, b -> c`. On 7427828 `u`'s locals are read from `v`'s slice
--- and the interface says `u : number, a -> b` and `v : number, a, number -> b`.
+-- `v : number, a, b -> c` — never `u : number, a -> b` and
+-- `v : number, a, number -> b`, which reading `u`'s locals from `v`'s slice gives.
 
 
 pub u x y =

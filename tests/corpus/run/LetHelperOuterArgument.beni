@@ -1,9 +1,9 @@
--- A regression guard from the checker-v2 design review (S-new-4; plans/
--- checker-rewrite.md §5.1): a `let` helper whose receiver is its OWN
+-- A regression guard: a `let` helper whose receiver is its OWN
 -- parameter and whose argument is the outer `x` — `g y = y.combine x` — is
--- used twice at `T`, so `f 5` is `( 6, 7 )`. 7427828 gets it right, and it
--- must stay green through R14, when constrained `let` helpers generalise
--- (D5).
+-- used twice at `T`, so `f 5` is `( 6, 7 )`. The helper generalises over
+-- its own receiver's requirement while the outer `x` stays the enclosing
+-- function's, so both uses resolve `combine` at `T` and read the same
+-- outer argument.
 import Node exposing (Program)
 
 

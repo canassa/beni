@@ -1,8 +1,8 @@
 -- check/good: a schema's ENCODED endpoint compared inside its own `via`
--- conversion (checker-v2.md §11.5 *as amended by R8b's review*): the encoded
+-- conversion (checker-v2.md §11.5): the encoded
 -- side holds no conversion target, so nothing is in flight for it and it
--- compares at once. R8b first refused it with `method_needs_annotation` (its
--- adversarial review, F5). v1 accepts it.
+-- compares at once, never refused with `method_needs_annotation`.
+--
 import Schema exposing (Conversion)
 
 

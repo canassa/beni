@@ -1,9 +1,9 @@
 //! The doc-example gate for `core/` (docs/design/checker.md Appendix B,
 //! frontend.md §7).
 //!
-//! `core/*.beni` documents itself with worked examples. Commit `6eca714`
+//! `core/*.beni` documents itself with worked examples. An audit once
 //! found nine that did not COMPILE — `abs -25` parses as `abs - 25`, a
-//! `Tuple2` beni never had, a bare `toString` — and the audit behind it
+//! `Tuple2` beni never had, a bare `toString` — and the same audit
 //! executed 188 of them by hand and found no wrong VALUE. Nothing stopped
 //! either kind of rot from coming back, and the nine corrected lines had no
 //! fixture. This is that fixture, for every example at once.

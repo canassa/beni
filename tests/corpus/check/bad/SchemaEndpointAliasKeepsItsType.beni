@@ -1,6 +1,6 @@
--- check/bad: CK-122. An alias of a schema endpoint is that endpoint, not a
--- hole: before the fix its body read as an `err`, which unifies with
--- anything, so both checkers accepted `r + 1` on it without a word. And a
+-- check/bad: an alias of a schema endpoint is that endpoint, not a
+-- hole: were its body read as an `err`, which unifies with
+-- anything, `r + 1` on it would be accepted without a word. And a
 -- refusal through the alias is the endpoint's own: `F`'s payload goes
 -- `via` a conversion to a function, so `F.Type` is not equatable.
 import Schema exposing (Conversion)

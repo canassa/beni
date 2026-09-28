@@ -1,14 +1,14 @@
--- CK-105: `ma` reaches `mb` by VALUE and `mb` reaches `ma` by dispatch, so
+-- `ma` reaches `mb` by VALUE and `mb` reaches `ma` by dispatch, so
 -- the SCC order checks `mb` first in every declaration order, and `mb`'s
 -- in-flight call types `ma`'s `x` only after `ma`'s `x.combine 1` was
--- solved. Before the *Deferred receiver* amendment (static-dispatch-spike.md
--- §11, 2026-09-26) every order refused it with `no_methods_on_shape`; the
--- record now arrives before the constraint is generalised, so it is the
--- field call. Expected `5`.
+-- solved. Under the *Deferred receiver* rule (static-dispatch-spike.md
+-- §11, amended 2026-09-26) the record arrives before the constraint is
+-- generalised, so it is the field call in every order, never
+-- `no_methods_on_shape`. Expected `5`.
 --
--- Oracle twin, run on 8016030 under v1: this file with `ma : K, { combine :
+-- Oracle twin: this file with `ma : K, { combine :
 -- Int -> Int } -> Int` and `mb : K, Int -> Int` annotated prints `5`. As
--- written, v1 refuses it.
+-- written, it must not be refused.
 import Node exposing (Program)
 
 

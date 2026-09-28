@@ -12,8 +12,8 @@
 -- The last two lines hand a derived function to a `where`-constrained
 -- generic as EVIDENCE, which is the other half of §8.2: a shape's `eq`
 -- takes evidence of its own, so it is not a value of two arguments until it
--- is eta-expanded (A.25). S4 refused every derived target in an evidence
--- slot, so those two lines are also what fails before this slice.
+-- is eta-expanded (A.25). A backend that refused every derived target in
+-- an evidence slot would fail exactly those two lines.
 --
 -- Line by line: the empty shape `()`, a two-element tuple, a record, an
 -- all-nullary type (a bare tag string, so `===`), a payload type down each

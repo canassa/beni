@@ -1,11 +1,11 @@
--- CK-16: one explicit `Basics.eq` whose argument holds a function and a type
+-- One explicit `Basics.eq` whose argument holds a function and a type
 -- with a function inside says `not_equatable` ONCE per comparison, not once
--- per part (checker-v2.md §11.4 *As built by R5*; R5's structural review, B1:
--- checker v2 as first built printed two per comparison), and it names the
+-- per part (checker-v2.md §11.4), and it names the
 -- FUNCTION: the walk visits a tuple's elements and a record's fields in
--- order, so `k : Int -> Int` is met before `Box`. Checker v1 at 2bc9e22 also
--- prints one per comparison, but says "That type does not support `==`",
--- the reason of `Box`, which its walk meets first.
+-- order, so `k : Int -> Int` is met before `Box`, and the message is not
+-- "That type does not support `==`", the reason of `Box`.
+--
+--
 type Box
     = Box (Int -> Int)
 

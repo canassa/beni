@@ -1,6 +1,6 @@
 -- run: a list literal longer than 32 elements is ONE flat array whose cells
 -- `reduceRight` builds (`backend.md` §4, *Emitted JavaScript nests only as
--- deep as the source*; CK-83). Up to 32 it is the nested cells it always was.
+-- deep as the source*). Up to 32 it is the nested cells it always was.
 -- What must not move is everything the program can see: the elements are
 -- evaluated in WRITTEN order (`language.md` §6) — the logs below — the list
 -- is the same list either way (`==`, length, patterns, `Debug.toString`),

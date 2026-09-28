@@ -2,9 +2,9 @@
 -- for (§3.1), so it is a `method_call` and `not_equatable` is reported at
 -- the OPERATOR, which is what §10.3 requires of every well-known call: "the
 -- `.m` token for a dot-call; the operator token for `<` and friends".
--- `(==) inc inc` underlines `(==)` at 13:6. Before S3 the shim reported it
--- against the first operand instead, which named a token the author did not
--- write the mistake at.
+-- `(==) inc inc` underlines `(==)` at 13:6 — not the first operand, a
+-- token the author did not write the mistake at.
+--
 pub inc : Int -> Int
 inc n =
     n

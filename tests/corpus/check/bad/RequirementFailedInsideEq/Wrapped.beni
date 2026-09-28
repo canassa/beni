@@ -1,4 +1,4 @@
--- CK-116: see Main.beni. A concrete payload: the derived context's own pass
+-- See Main.beni. A concrete payload: the derived context's own pass
 -- meets `Key.key` at the wrong type, so the reason rides on the answer here
 -- and on the published row in `Main`.
 import Holder

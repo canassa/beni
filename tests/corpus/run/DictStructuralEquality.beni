@@ -1,5 +1,5 @@
 -- What `==` on a `Dict` actually answers, printed rather than argued about
--- (`docs/design/static-dispatch-spike.md` §3.3, §8.5, §11; S6 decision
+-- (`docs/design/static-dispatch-spike.md` §3.3, §8.5, §11; decision
 -- O-5).
 --
 -- `Dict` is `pub opaque type Dict k v = Dict (Tree k v)` and module `Dict`

@@ -9,7 +9,7 @@
 --   `ext`      `xs.map f` is `List$map(xs, f)`, imported like any other
 --              cross-module reference
 --   `field`    `h.run 1` on a RECORD is `h.run(1)`, `language.md` §6.3
---              unchanged — the one row S4 did not have to change
+--              unchanged — a plain field call
 --   `evidence` `x.scale n` on a `where`-constrained variable is
 --              `$m$0(x, n)`: the hidden parameter IS the method
 import Node exposing (Program)

@@ -1,8 +1,8 @@
--- CK-49: when a list's element type comes from its CONTEXT, a mismatch in
+-- When a list's element type comes from its CONTEXT, a mismatch in
 -- its first element says so — "The 1st element of this list is not what the
 -- list needs … But this list needs its elements to be: String" — and not that
 -- it "does not match all the previous elements": there are none (checker.md
--- §8.7). On 7427828 both lists below get "The 1st element of this list does
+-- §8.7). Neither list below gets "The 1st element of this list does
 -- not match all the previous elements … previous elements are String".
 
 

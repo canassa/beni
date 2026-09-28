@@ -1,5 +1,5 @@
--- CK-04: `InfiniteTypeCaseSubject`'s cycle through a function. Before R4b's
--- review v2 said `nesting_too_deep` at `[ r, s ]`.
+-- `InfiniteTypeCaseSubject`'s cycle through a function: an `infinite_type`,
+-- never `nesting_too_deep` at `[ r, s ]`.
 g r s =
     case [ r, \x -> r ] of
         _ ->

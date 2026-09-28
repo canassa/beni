@@ -1,4 +1,4 @@
--- CK-116: see Main.beni. `key` returns a `String` where `Holder.eq`'s
+-- See Main.beni. `key` returns a `String` where `Holder.eq`'s
 -- clause asks for an `Int`.
 pub type Key
     = Key Int

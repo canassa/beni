@@ -6,8 +6,8 @@
 //! worst kind, because it cannot be reproduced from a clean checkout — and the
 //! thing that decides whether a module is re-checked is its key and nothing
 //! else. So the whole invalidation table is pinned here, against
-//! `--cache-keys`, with no cache directory in sight; the counters that follow
-//! in M1-f can then only confirm what this file already fixed.
+//! `--cache-keys`, with no cache directory in sight; the counters can then
+//! only confirm what this file already fixed.
 //!
 //! **What each scenario asserts is which keys MOVED**, by name, against a
 //! baseline of the same project — never "this key equals these 32 digits",
@@ -304,12 +304,10 @@ test "a key does not depend on --jobs, on argv order, or on the cwd it was run f
     // naming the same root explicitly cannot move a key.
     try expectMoved("--root=src", base, try keysOf(&w, arena, &.{ "--jobs=1", "--root=src", "src" }), &.{});
 
-    // **The same tree, spelled every way a person spells it.** Since
-    // `0bc5d89` every path is normalised lexically at enumeration, so `.`
-    // is a directory like any other and `src`, `./src`, `src/` and
-    // `$PWD/src` are one project — which makes this the strong form of the
-    // claim rather than the two-spelling version it was written as before
-    // that landed. A key carries the DOTTED MODULE NAME and never a path,
+    // **The same tree, spelled every way a person spells it.** Every path
+    // is normalised lexically at enumeration, so `.` is a directory like
+    // any other and `src`, `./src`, `src/` and `$PWD/src` are one project —
+    // which makes this the strong form of the claim. A key carries the DOTTED MODULE NAME and never a path,
     // so if any spelling reached the recipe, this is the row that says so.
     {
         const absolute = try w.projectSubPath(arena, "src");
@@ -337,7 +335,7 @@ test "a key does not depend on --jobs, on argv order, or on the cwd it was run f
 // The edit-scenario table (`plans/m4-1.md` §6.1)
 // ---------------------------------------------------------------------------
 
-test "row 1: nothing changed moves no key" {
+test "nothing changed moves no key" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -353,16 +351,14 @@ test "row 1: nothing changed moves no key" {
     try expectMoved("a rewrite with identical bytes", base, try baselineKeys(&w, arena), &.{});
 }
 
-test "row 2: a comment in Leaf moves LEAF ALONE — the cutoff" {
+test "a comment in Leaf moves LEAF ALONE — the cutoff" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The row M4-3 exists to change, and the before is in this file's
-    // history.** Under M4-1 a comment moved all three keys, because an
-    // importer's key carried its import's KEY. It now moves one: an import
+    // **The cutoff.** Were an importer's key to carry its import's KEY, a
+    // comment would move all three keys. It moves one: an import
     // contributes its `(interface hash, dependency digest)` pair, and a
-    // comment moves neither. `fast-compiler.md` §8 called this "the number
-    // M4-3 exists to fix"; this is the fix, asserted.
+    // comment moves neither (`fast-compiler.md` §8).
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -386,7 +382,7 @@ test "row 2: a comment in Leaf moves LEAF ALONE — the cutoff" {
     try expectMoved("a comment in Leaf, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
-test "row 3: the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
+test "the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -414,7 +410,7 @@ test "row 3: the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
     try expectMoved("an annotated body, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
-test "row 4: a pub signature in Leaf moves Leaf, Mid and Top, and its interface too" {
+test "a pub signature in Leaf moves Leaf, Mid and Top, and its interface too" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -463,17 +459,17 @@ test "row 4: a pub signature in Leaf moves Leaf, Mid and Top, and its interface 
     );
 }
 
-test "row 5: a PRIVATE type added to Leaf moves Leaf, Mid and Top but no interface" {
+test "a PRIVATE type added to Leaf moves Leaf, Mid and Top but no interface" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The interesting one** (`plans/m4-1.md` §6.1). M4-3's cutoff wants
-    // `Mid` to hit here, and may only do so once the declared-type sidecar of
+    // **The interesting one** (`plans/m4-1.md` §6.1). The cutoff would let
+    // `Mid` hit here only once the declared-type sidecar of
     // `plans/m4-slice-zero.md` §4 is defined and its hash is in `Mid`'s key:
     // `Mid`'s check reads `Leaf`'s settled `equatable`/`comparable` bits and
-    // its `declaresPubCompare`, none of which is in the record. In M4-1 the
-    // key moves, and this fixture is the "before" that makes M4-3's change
-    // visible rather than assumed.
+    // its `declaresPubCompare`, none of which is in the record. So the key
+    // moves, and this fixture makes any change to that visible rather than
+    // assumed.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -494,7 +490,7 @@ test "row 5: a PRIVATE type added to Leaf moves Leaf, Mid and Top but no interfa
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // `plans/m4-1.md` §6.1's row 5, KEPT through the cutoff: a `TypeId` is a
+    // `plans/m4-1.md` §6.1's private-type row, kept through the cutoff: a `TypeId` is a
     // whole-program dense index and adding a private type renumbers most of
     // the table, and nothing a dependent emits or reports carries one — so
     // the digest, which is keyed by NAME over the set the record names, does
@@ -505,7 +501,7 @@ test "row 5: a PRIVATE type added to Leaf moves Leaf, Mid and Top but no interfa
     try expectMoved("a private type, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
-test "row 6: a new unrelated file moves nothing that already existed" {
+test "a new unrelated file moves nothing that already existed" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -539,7 +535,7 @@ test "row 6: a new unrelated file moves nothing that already existed" {
     try expectMoved("a new unrelated file", base, try baselineKeys(&w, arena), &.{"app:Aardvark"});
 }
 
-test "row 7: Leaf's sibling .js moves Leaf, Mid and Top, and no interface" {
+test "Leaf's sibling .js moves Leaf, Mid and Top, and no interface" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -571,8 +567,8 @@ test "row 7: Leaf's sibling .js moves Leaf, Mid and Top, and no interface" {
     try expectMoved("Leaf's sibling .js, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
-test "row 7b: a sibling .js beside a module with no foreign is not in any key" {
-    // The converse of row 7, and the fixture that would catch a key hashing
+test "a sibling .js beside a module with no foreign is not in any key" {
+    // The converse of the sibling scenario above, and the fixture that would catch a key hashing
     // every neighbouring `.js` rather than the sibling of a module that
     // actually declares a `foreign`. `Emit.checkSiblings` reads a sibling
     // only for a module with a `foreign_value`, and the key has to agree:
@@ -589,7 +585,7 @@ test "row 7b: a sibling .js beside a module with no foreign is not in any key" {
     try expectMoved("a sibling beside a module with no foreign", base, try baselineKeys(&w, arena), &.{});
 }
 
-test "row 8: --platform adds the platform's modules and moves no existing key" {
+test "--platform adds the platform's modules and moves no existing key" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -629,7 +625,7 @@ test "row 8: --platform adds the platform's modules and moves no existing key" {
     try testing.expect(saw_platform);
 }
 
-test "row 9: --pattern-budget moves every module's key" {
+test "--pattern-budget moves every module's key" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -654,7 +650,7 @@ test "row 9: --pattern-budget moves every module's key" {
     try expectEveryKeyMoved("--pattern-budget", base, changed);
 }
 
-test "row 10: --cache-build-id moves every module's key, core included" {
+test "--cache-build-id moves every module's key, core included" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -682,15 +678,14 @@ test "row 10: --cache-build-id moves every module's key, core included" {
     try expectMoved("the same --cache-build-id twice", pretend, again, &.{});
 }
 
-test "row 10b: --checker is gone with v1, so it is refused and moves no key" {
+test "--checker is not an option, so it is refused and moves no key" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §14.3 (S22) made the checker id part of the compiler
-    // identity every key starts with, so the two checkers never shared an
-    // entry. R12 deleted v1, the hidden `--checker` and the id with them
-    // (key version 5): the flag is an ordinary unknown option now, refused
-    // before anything is read or written, and there is one key per module.
+    // There is one checker, so there is no checker id in the compiler
+    // identity every key starts with (key version 5): `--checker` is an
+    // ordinary unknown option, refused before anything is read or written,
+    // and there is one key per module.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -952,7 +947,7 @@ const Counters = struct {
     misses: u64 = 0,
     checked: u64 = 0,
     bytes: u64 = 0,
-    /// M4-2's three (`fast-compiler.md` §8): a phase that did not run is
+    /// The front end's three (`fast-compiler.md` §8): a phase that did not run is
     /// otherwise indistinguishable from a phase that ran fast.
     lexed: u64 = 0,
     parsed: u64 = 0,
@@ -960,8 +955,9 @@ const Counters = struct {
     files: u64 = 0,
     frontend_hits: u64 = 0,
     frontend_bytes: u64 = 0,
-    /// v2's derived-context fixpoints (`derived_context_runs`): the I10
-    /// witness, 0 when every module was installed from the cache.
+    /// The checker's derived-context fixpoints (`derived_context_runs`):
+    /// 0 when every module was installed from the cache, which is the
+    /// witness that a cache hit installs the published answer.
     derived: u64 = 0,
 };
 
@@ -1038,7 +1034,7 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    // `--no-cache` is what "plain" means since M4-3: with no flag at all the
+    // `--no-cache` is what "plain" means: with no flag at all the
     // cache is ON, in `.beni-cache/` beside the invocation, so a run meant as
     // the ORACLE has to say so. A `--no-cache` run that wrote anything would
     // stop being one.
@@ -1057,7 +1053,7 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // └─────────────────────────────────────────┘
     // A cold run hits nothing, checks everything, and writes an entry per
     // cacheable module — the app's three and core's, which is what makes
-    // even M4-1's narrow win worth having.
+    // even an unchanged-tree hit worth having.
     try testing.expectEqual(@as(u64, 0), cached.counters.hits);
     try testing.expectEqual(@as(u64, 0), plain.counters.hits);
     try testing.expect(cached.counters.misses >= 12);
@@ -1079,7 +1075,7 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
         try testing.expectEqual(@as(usize, "v1/".len + 2 + 1 + 30 + ".bec".len), f.len);
     }
     // The front-end artifacts share the directory and the fan-out under a
-    // SECOND key (M4-2): one `.bef` per FILE, beside one `.bec` per module.
+    // SECOND key: one `.bef` per FILE, beside one `.bec` per module.
     const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
     try testing.expect(artifacts.len > 0);
     for (artifacts) |f| {
@@ -1098,7 +1094,7 @@ test "a cold run lexes, parses and lowers every file and writes one artifact for
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // M2-e's assertion, and the floor the warm one is measured against: a
+    // The floor the warm assertion is measured against: a
     // COLD run does all the work, and the three counters say so. Without
     // them "the front end did not run" on a warm run would be a timing
     // rather than a fact (`fast-compiler.md` §8, `frontend.md` §6).
@@ -1147,7 +1143,7 @@ test "a file whose front end failed is never written, and its neighbours are" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // M4-1's "produced by a clean check" bit, one phase earlier and for the
+    // The module entry's "produced by a clean check" bit, one phase earlier and for the
     // same reason: a file that did not parse has a `Bir` the recovery
     // invented, and a later run that installed it would report the
     // recovery's guesses as facts.
@@ -1242,8 +1238,8 @@ test "a warm run lexes, parses and lowers NOTHING and says exactly the same thin
     // key, so there is nothing to rewrite.
     try testing.expectEqual(warm.counters.files, warm.counters.frontend_hits);
     try testing.expectEqual(@as(u64, 0), warm.counters.frontend_bytes);
-    // …and the modules were not re-checked either, which is M4-1 still
-    // holding with a loaded `Bir` under it.
+    // …and the modules were not re-checked either, which is the module
+    // cache still holding with a loaded `Bir` under it.
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
 
     // A cache written at one worker count and read at another is what would
@@ -1257,7 +1253,7 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The row M4-2 exists for.** A module key folds every import's key, so
+    // **Why a file key exists.** A module key folds every import's key, so
     // `Mid` and `Top` are re-CHECKED; a file key does not, so their front
     // ends are not re-run. `files_lowered = 1` is the whole claim, and the
     // module counters beside it are what say the two invalidations really
@@ -1297,10 +1293,10 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     try testing.expectEqual(@as(u64, 1), edited.counters.parsed);
     try testing.expectEqual(@as(u64, 1), edited.counters.lowered);
     try testing.expectEqual(edited.counters.files - 1, edited.counters.frontend_hits);
-    // ONE module re-checked — the leaf alone — since M4-3. Under M4-1 and
-    // M4-2 this was 3, because the module key folded its imports' KEYS and a
-    // body edit moved the leaf's; it now folds their `(interface hash,
-    // dependency digest)` pairs, and an ANNOTATED body edit moves neither.
+    // ONE module re-checked — the leaf alone. Were the module key to fold
+    // its imports' KEYS it would be 3, since a body edit moves the leaf's;
+    // it folds their `(interface hash, dependency digest)` pairs, and an
+    // ANNOTATED body edit moves neither.
     // The counters are what make "the two invalidations are different" a
     // fact: one file re-lowered, one module re-checked, and the importers
     // touched by neither.
@@ -1598,9 +1594,9 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
     try testing.expectEqualStrings(hidden_oracle.result.stdout, hidden.result.stdout);
     try testing.expectEqualStrings(hidden_oracle.result.stderr, hidden.result.stderr);
     try testing.expectEqual(@as(u64, 2), hidden.counters.checked);
-    // The two comparisons are `private_method` (D1, checker-v2.md §11.3):
-    // `Inner`'s `eq` is private, so `Outer`'s derived `eq` cannot use it
-    // (v1 said `not_equatable` here, until R12 deleted it). The warm build
+    // The two comparisons are `private_method` (checker-v2.md §11.3:
+    // private methods answer dispatch only inside their module): `Inner`'s
+    // `eq` is private, so `Outer`'s derived `eq` cannot use it. The warm build
     // still says exactly what the cold one says (above).
     const expected_hidden =
         \\[{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"},{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"}]
@@ -1612,7 +1608,7 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
 }
 
 test "a constrained function constant keeps one calling convention across warm rebuilds that edit its module" {
-    // CK-33 (R2b, checker-v2.md §12.5). `Leaf.h` takes evidence and has no
+    // checker-v2.md §12.5. `Leaf.h` takes evidence and has no
     // parameters but a function TYPE, so it is defined over its type's
     // arity and called flat; `Top` calls it, passes it to a fold, and
     // defines its own point-free `mine = Leaf.h`. The edits rewrite `h` as a
@@ -1834,7 +1830,7 @@ test "the interner-order fixture: a cache written over P is read over P plus a m
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // Slice zero §7.1's shape, aimed at M4-2's own hazard. A worker's local
+    // `plans/m4-slice-zero.md` §7.1's shape, aimed at the front-end cache's own hazard. A worker's local
     // symbol numbering depends on which files it took and in what order, so
     // an artifact that stored raw `Symbol` ids would be read against a
     // different numbering the moment a file is ADDED — and `Aardvark`, full
@@ -1915,12 +1911,12 @@ fn fileKeysOfAllowingErrors(w: *World, arena: std.mem.Allocator) ![]const Entry 
     return parseKeys(arena, r.stdout);
 }
 
-/// The `.bec` entries of a cache listing — M4-1's, one per MODULE.
+/// The `.bec` entries of a cache listing — the checker's, one per MODULE.
 fn entriesOnly(arena: std.mem.Allocator, files: []const []const u8) ![]const []const u8 {
     return withExtension(arena, files, ".bec");
 }
 
-/// The `.bef` front-end artifacts — M4-2's, one per FILE, under a different
+/// The `.bef` front-end artifacts — one per FILE, under a different
 /// key in the same fan-out.
 fn artifactsOnly(arena: std.mem.Allocator, files: []const []const u8) ![]const []const u8 {
     return withExtension(arena, files, ".bef");
@@ -2158,7 +2154,7 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // M4-1's whole demonstrable win: an unchanged tree, plus the nine core
+    // The module cache's plainest win: an unchanged tree, plus the nine core
     // modules and the platform, which are unchanged in every build anyone
     // will ever run.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -2184,19 +2180,13 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
 }
 
-// "A cache written under one checker is never read under the other"
-// (`checker-v2.md` §14.3, S22) crossed a cache between `--checker=v1` and
-// v2 in both directions. It went with v1 and the flag at R12: there is one
-// checker, and row 10b holds that the flag is refused.
-
 test "a comment re-checks ONE module — the counters' half of the cutoff" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The counters' half of the cutoff, and the number M4-3 existed to
-    // fix.** Under M4-1 a comment in `Leaf` re-checked `Mid` and `Top` too,
-    // because an importer's key carried its import's KEY; that fixture said
-    // "the day it changes, this says so", and this is the day. An import now
+    // **The counters' half of the cutoff.** Were an importer's key to carry
+    // its import's KEY, a comment in `Leaf` would re-check `Mid` and `Top`
+    // too. An import
     // contributes its `(interface hash, dependency digest)` pair, a comment
     // moves neither, and the importers are HITS.
     //
@@ -2391,7 +2381,7 @@ test "a cache written in one configuration and read in another: jobs, cwd, and c
         try testing.expectEqual(@as(u64, 0), warm.counters.checked);
     }
     // **One cache, every spelling of the same tree.** Nothing in the key or
-    // in the entry is a path, and since `0bc5d89` every path is normalised
+    // in the entry is a path, and every path is normalised
     // lexically at enumeration, so `src`, `./src`, `src/` and `$PWD/src` are
     // one project — which means an entry written under any one of them must
     // be HIT by all the others. That is the strong form of "a cache does not
@@ -2840,7 +2830,7 @@ test "a flag that is not in the key cannot change one byte of one entry" {
     // accident.
     //
     // The backend's three are the interesting ones. They are out of the key
-    // because no emitted byte is cached in M4-1, and nothing but this says
+    // because no emitted byte is cached, and nothing but this says
     // so out loud.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -2869,7 +2859,7 @@ test "a flag that is not in the key cannot change one byte of one entry" {
         // `--root` reaches the key through the module name and nowhere
         // else, so naming the root a module already has cannot move a byte.
         .{ .what = "--root", .a = &.{}, .b = &.{"--root=src"} },
-        // The backend's, all four: no emitted byte is cached in M4-1.
+        // The backend's, all four: no emitted byte is cached.
         .{ .what = "--out", .a = &.{"--out=outa"}, .b = &.{"--out=outb"}, .build = true },
         .{ .what = "--library", .a = &.{"--out=outc"}, .b = &.{ "--out=outd", "--library" }, .build = true },
         .{ .what = "--release", .a = &.{"--out=oute"}, .b = &.{ "--out=outf", "--release" }, .build = true },
@@ -3012,18 +3002,17 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `static-dispatch-spike.md` §9.2's wide form (A.87) across a module
-    // boundary, which nothing could reach until interface v3 (CK-38): past
+    // boundary, which needs interface v3's `u16` arity: past
     // 4 096 evidence entries a derived function takes ONE array `$m`, and
     // every caller packs the same count. `T` has 4 097 parameters, so
     // `Wide` emits `T`'s `eq` and `compare` in the wide form, and `Main` —
     // which counts the entries from what it imported — must pack 4 097.
-    // On 3487c12 the importer read the arity through a `u8` and called
+    // An importer that read the arity through a `u8` would call
     // `Wide$T$$eq` positionally: exit 0, then `TypeError: $m[0] is not a
     // function` at run time.
     //
     // Three passes over one cache directory, because the count a warm
-    // importer uses is the one the RECORD states (the cache matrix of
-    // `plans/checker-rewrite.md` R3's reviewer focus): cold (both checked),
+    // importer uses is the one the RECORD states: cold (both checked),
     // warm (neither), and partly warm (`Main` edited: `Wide` from the cache,
     // `Main` checked against the loaded record).
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -3052,7 +3041,7 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
         .{ .what = "warm, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected },
         .{ .what = "Main edited", .edit = ", show (y == y)", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
         .{ .what = "Main edited, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected ++ "True\n" },
-        // The DEPENDENCY edited while `Main` stays cached (R3's review, N6):
+        // The DEPENDENCY edited while `Main` stays cached:
         // a private value (one that adds no import: `helper : Int` would add
         // `Basics`, which moves the digest) leaves `Wide`'s record as it was,
         // so `Main` is cut
@@ -3197,7 +3186,7 @@ fn expectNoEntry(w: *World, files: []const []const u8, digits: []const u8) !void
 /// `--iface-hash`'s lines, in `--cache-keys`' shape, so the two can be
 /// compared by the same helper. Several rows above turn on the difference
 /// between the two quantities, and stating it in the fixture is what keeps
-/// M4-1's cost honest.
+/// the module key's cost honest.
 fn ifaceHashes(w: *World, arena: std.mem.Allocator) ![]const Entry {
     const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
     if (r.exit_code != 0) {
@@ -3212,14 +3201,14 @@ fn ifaceHashes(w: *World, arena: std.mem.Allocator) ![]const Entry {
 // ---------------------------------------------------------------------------
 //
 // **The point of every row below is the DIVERGENCE between the two key
-// columns**, which is why M4-2 needs a second key at all. A module key folds
+// columns**, which is why the front end needs a second key at all. A module key folds
 // every import's key, so a body edit in a leaf moves three of them; a file
 // key holds one file's lowering inputs and nothing else, so the same edit
 // moves one. The leaf re-lowers; its importers re-check WITHOUT re-lowering.
 //
 // Asserted against `--frontend-keys` here, before a byte reaches disk, in
 // exactly the way `--cache-keys` pins the module table above. The counters
-// that follow in M2-f can then only confirm what this file already fixed.
+// can then only confirm what this file already fixed.
 
 /// `beni check --frontend-keys <flags> <paths>`, parsed. One
 /// `<path> <32 hex digits>` line per FILE, sorted by path.
@@ -3297,18 +3286,18 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
     const base_files = try baselineFileKeys(&w, arena);
     const base_modules = try baselineKeys(&w, arena);
 
-    // Row 1: nothing. Rewritten with identical bytes, so a key that moved
+    // Nothing changed. Rewritten with identical bytes, so a key that moved
     // here would be one that read an mtime.
     try w.write(leaf_file, leaf_source);
-    try expectMoved("row 1, file keys", base_files, try baselineFileKeys(&w, arena), &.{});
+    try expectMoved("nothing changed, file keys", base_files, try baselineFileKeys(&w, arena), &.{});
 
     // `modules` is where the CUTOFF shows: a file-key move is a re-lowering
-    // and a module-key move is a re-check, and since M4-3 the second is far
+    // and a module-key move is a re-check, and the second is far
     // rarer than the first. Only the row that moves the interface hash
     // reaches the importers at all.
     const Row = struct { what: []const u8, source: []const u8, modules: []const []const u8 = &.{"app:Leaf"} };
     const rows = [_]Row{
-        // Row 2: a body edit.
+        // A body edit.
         .{ .what = "a body edit", .source =
         \\pub foreign twice : Int -> Int
         \\
@@ -3318,15 +3307,14 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
         \\    2
         \\
         },
-        // Row 3: a comment only. A comment is a token and `Bir` carries
+        // A comment only. A comment is a token and `Bir` carries
         // `doc_start`/`doc_end`, so the file key MUST move — and this row
         // pins that it moves for `Leaf` ALONE. What it costs is one file's
-        // lex, parse and lower; doing better needs a form-insensitive key,
-        // which is M4-3's question and not this slice's.
+        // lex, parse and lower; doing better needs a form-insensitive key.
         .{ .what = "a comment only", .source = "-- a comment nobody reads\n" ++ leaf_source },
-        // Row 4: whitespace only — every token `start` after it moves.
+        // Whitespace only — every token `start` after it moves.
         .{ .what = "whitespace only", .source = "\n" ++ leaf_source },
-        // Row 5: a `pub` signature — one ADDED, so `Mid` still compiles and
+        // A `pub` signature — one ADDED, so `Mid` still compiles and
         // the row measures the key rather than a type error.
         .{ .what = "a pub signature", .modules = &all_app, .source = leaf_source ++
             \\
@@ -3342,8 +3330,8 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
         const before_modules = try baselineKeys(&w, arena);
         try w.write(leaf_file, row.source);
         try expectMoved(row.what, before_files, try baselineFileKeys(&w, arena), &.{leaf_file});
-        // The divergence, stated on the same edit — and since M4-3 it runs
-        // the other way for three rows of four: one file key moves and no
+        // The divergence, stated on the same edit — and it runs the other
+        // way for three rows of four: one file key moves and no
         // module key but the leaf's own.
         try expectMoved(row.what, before_modules, try baselineKeys(&w, arena), row.modules);
     }
@@ -3391,7 +3379,7 @@ test "file-key rows 6 and 7: the name is an input and the path is not" {
         std.debug.print("`Twin` and `Leaf` share a file key though their module names differ\n", .{});
         return error.KeysCollided;
     }
-    // …and adding it moved nothing that already existed (row 14).
+    // …and adding it moved nothing that already existed.
     try expectMoved("a new unrelated file", base, with_twin, &.{"src/Twin.beni"});
 }
 
@@ -3421,8 +3409,8 @@ test "file-key rows 11 to 15: which flags reach lowering and which do not" {
         try keysOf(&w, arena, &.{ "--jobs=1", "--pattern-budget=5000", "src" }),
     );
 
-    // Row 15: a sibling `.js` is not a lowering input, so editing one moves
-    // no file key at all — and, since M4-3, only the declaring module's own
+    // A sibling `.js` is not a lowering input, so editing one moves
+    // no file key at all — and only the declaring module's own
     // key: the sibling hash is one of that module's OWN terms and no importer
     // can observe it through the record or the digest.
     try w.write("src/Leaf.js", "export const twice = (n) => n + n;\n");
@@ -3480,8 +3468,8 @@ fn expectEveryFileKeyMoved(what: []const u8, before: []const Entry, after: []con
     try testing.expect(saw_core);
 }
 
-// R8a (checker-v2.md §11.2, §14.2 *as amended by R8a*): under `--checker=v2`
-// a derived function's context is inferred (D4) and PUBLISHED, and a cache hit
+// checker-v2.md §11.2, §14.2: a derived function's context is inferred
+// (one entry per parameter that holds a value) and PUBLISHED, and a cache hit
 // installs the record without recomputing it. So an edit to the module that
 // declares a payload's method moves what a dependent's derived function
 // takes; the warm build must re-derive it and write exactly what a cold build
@@ -3502,7 +3490,7 @@ fn writeDerivedProject(w: *World, holder: []const u8) !void {
         \\
     );
     // `Outer`'s context is `(0, key)` with the first `H`, `(0, eq)` with the
-    // second; `Hidden` is private and reached only through `make` (CK-89).
+    // second; `Hidden` is private and reached only through `make`.
     try w.write("src/Outer.beni",
         \\import H
         \\
@@ -3624,24 +3612,24 @@ test "a warm build after an edit that moves a derived context writes what a cold
 }
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
-// │ R10: a warm rebuild after every edit of a dependency is a cold build    │
+// │ A warm rebuild after every edit of a dependency is a cold build         │
 // └─────────────────────────────────────────────────────────────────────────┘
 //
-// `plans/checker-rewrite.md` R10. Three modules — `M`, `N` importing it, and
+// Three modules — `M`, `N` importing it, and
 // `Main` importing both (none for a `check`-only case) — and a sequence of
 // versions of `M`. The first is built cold into a cache; then every later
 // version, and the first again, is built WARM over that same cache at
 // `--jobs=8` and cold with `--no-cache` at `--jobs=1`, and the two must agree
 // on the exit code, stdout, stderr and every byte written. What each version
 // must do is pinned too, so a case cannot pass by failing the same way twice.
-// A last warm build over the settled cache re-checks nothing and, under v2,
-// runs no derived-context fixpoint (I10).
+// A last warm build over the settled cache re-checks nothing and runs no
+// derived-context fixpoint: a cache hit installs the published answer.
 
 const EditCase = struct {
     name: []const u8,
     n: []const u8,
     /// Null for a case only `check` can run (a schema: `build` refuses one
-    /// before emit, schema.md S4).
+    /// before emit, schema.md).
     main: ?[]const u8 = null,
     /// `M`'s versions, the first built cold.
     states: []const State,
@@ -3767,37 +3755,32 @@ fn runEditCase(case: EditCase) !void {
     if (case.main != null and settled.result.exit_code == 0) try expectSameTree(&w, arena, "first", "settled");
 }
 
-test "adv's k1–k8: a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
-    // The adversarial review's cache probes (`plans/checker-rewrite.md` R10's
-    // exit). Until the cut-over (R11) `test-blackbox` ran them under v1 and
-    // `test-v2` under v2; no probe's outcome differed between the two.
+test "a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
     for (k_cases) |case| try runEditCase(case);
 }
 
 test "an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build" {
-    // R10's reviewer focus: a dependency whose derived context changes must
+    // A dependency whose derived context changes must
     // invalidate its dependents' EVIDENCE — the dispatch tables and the
     // JavaScript they emit — not only their types. Four ways to move one:
     // a function payload (the context goes `absent`, then `present` with
     // no entry, then absent through the parameter); a payload's own `eq`
-    // changing its `where` clause (the entry's method moves, CK-25's shape)
-    // and dropping it; the payload's method made private (D1: `private_method`,
-    // §11.3), removed, and a private `compare`; and a schema whose `via`
-    // target — a type in no record — gains a function and then a private `eq`
-    // (§11.5, the endpoint's `no_function` and derived rows). v1, deleted by
-    // R12, answered the `where` and `private` cases differently (D1, D4),
-    // and its warm check of the last edit of the schema case exited 0 where
-    // a cold one refused the program (CK-132, closed with v1).
+    // changing its `where` clause (the entry's method moves) and dropping
+    // it; the payload's method made private (`private_method`, §11.3),
+    // removed, and a private `compare`; and a schema whose `via` target — a
+    // type in no record — gains a function and then a private `eq` (§11.5,
+    // the endpoint's `no_function` and derived rows). The warm check of the
+    // last edit of the schema case must refuse the program as a cold one does.
     for (evidence_cases) |case| try runEditCase(case);
 }
 
-test "a cache hit installs the published derived contexts and runs no fixpoint (I10)" {
+test "a cache hit installs the published derived contexts and runs no fixpoint" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // checker-v2.md I10: "a cache hit installs the published answer" — the
+    // checker-v2.md §11.1: "a cache hit installs the published answer" — the
     // derived rows are read off the record, never recomputed. The witness is
-    // `derived_context_runs`, the fixpoints v2 ran: every module that
+    // `derived_context_runs`, the fixpoints the checker ran: every module that
     // declares a type runs at least one when it is checked, none when it is
     // installed. `Main` declares no type and compares `Outer`s, whose
     // context runs through `H` and `Keyed`: re-checking it alone must read
@@ -3850,7 +3833,7 @@ test "a cache hit installs the published derived contexts and runs no fixpoint (
 
 const k_cases = [_]EditCase{
     .{
-        .name = "k1: a custom eq and compare added to a dependency",
+        .name = "a custom eq and compare added to a dependency",
         .n =
         \\import M exposing (T)
         \\
@@ -3900,7 +3883,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k2: the custom eq and compare removed again",
+        .name = "the custom eq and compare removed again",
         .n =
         \\import M exposing (T)
         \\
@@ -3950,7 +3933,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k3: a dependency's function becomes constrained",
+        .name = "a dependency's function becomes constrained",
         .n =
         \\import M
         \\
@@ -3985,7 +3968,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k4: constructors reordered, which reorders the derived compare",
+        .name = "constructors reordered, which reorders the derived compare",
         .n =
         \\import M exposing (C, Red, Blue)
         \\
@@ -4021,7 +4004,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k5: a function payload makes the type non-equatable",
+        .name = "a function payload makes the type non-equatable",
         .n =
         \\import M exposing (C)
         \\
@@ -4057,7 +4040,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k6: a field added to a record alias",
+        .name = "a field added to a record alias",
         .n =
         \\import M
         \\
@@ -4099,7 +4082,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k7: an alias's expansion changed",
+        .name = "an alias's expansion changed",
         .n =
         \\import M exposing (Key)
         \\
@@ -4147,7 +4130,7 @@ const k_cases = [_]EditCase{
         },
     },
     .{
-        .name = "k8: an error in a dependency fixed",
+        .name = "an error in a dependency fixed",
         .n =
         \\import M
         \\

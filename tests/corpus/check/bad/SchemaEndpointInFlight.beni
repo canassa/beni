@@ -1,6 +1,6 @@
--- CK-24: a comparison of a PARAMETRIC schema endpoint made while the
--- schema's own group is in flight (checker-v2.md §11.2 *Blocked*, §11.5 *as
--- amended by R8b's review*). `conv` is unannotated and compares
+-- A comparison of a PARAMETRIC schema endpoint made while the
+-- schema's own group is in flight (checker-v2.md §11.2 *Blocked*,
+-- §11.5). `conv` is unannotated and compares
 -- `Page.Type`s, and `Page`'s `via` is `conv`, so `conv` and `Page` are one
 -- group: the endpoint's payload is `conv`'s target, which is being
 -- inferred at the comparison, and `Page` has a parameter, so its context's
@@ -8,8 +8,8 @@
 -- naming the schema and the conversion to annotate; annotating `conv` takes
 -- it out of the group and lifts it. A CLOSED endpoint in the same position
 -- is deferred and checked once the group is done
--- (`tests/corpus/check/good/SchemaEndpointInFlightClosed.beni`). On 7427828
--- it checks clean: the endpoint's properties are read as the last settle
+-- (`tests/corpus/check/good/SchemaEndpointInFlightClosed.beni`). It must
+-- not check clean by reading the endpoint's properties as the last settle
 -- left them, before `conv`'s target exists.
 import Schema exposing (Conversion)
 

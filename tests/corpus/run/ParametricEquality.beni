@@ -6,7 +6,7 @@
 -- the body that is one of those parameters is that hidden argument applied
 -- to the two values. Get the pairing wrong by one and the program still
 -- compiles: `Pair` would compare its second slot with the first type's `eq`
--- and answer nonsense. §9.4 calls that "the single most likely bug in S5",
+-- and answer nonsense. §9.4 calls that "the single most likely bug",
 -- which is why `Pair Int String` and `Result String Int` are both here —
 -- `Result x a` declares `Ok a` FIRST and quantifies `x` first, so `Ok` uses
 -- `$m$1` and `Err` uses `$m$0`, the one place the two orders disagree.
@@ -23,7 +23,7 @@
 -- two `List` lines are the other side of that — `List a` is a `foreign
 -- type` and no module derives a body for it (A.55, A.60), so an element
 -- type that is structural all the way down still routes to
--- `core/Basics.js`'s walk until §5.2 gives `List` a `pub foreign eq` in S6.
+-- `core/Basics.js`'s walk until §5.2 gives `List` a `pub foreign eq`.
 -- `Maybe Int` is structural, so the two agree, and the answers are here to
 -- say that the bridge is still right where it is still used.
 import Node exposing (Program)

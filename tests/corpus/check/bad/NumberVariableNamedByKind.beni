@@ -1,7 +1,7 @@
--- CK-94: a message never names a `number` variable `a` (checker.md §8.7).
--- `g`'s element is `cons`'s `a` merged with the literal's `number`; on
--- 3ff3ac5 the message read "This argument is: `List a` … One of those has to
--- be a number", which contradicts itself. Now: `List number`.
+-- A message never names a `number` variable `a` (checker.md §8.7).
+-- `g`'s element is `cons`'s `a` merged with the literal's `number`, so the
+-- message says `List number`, never "This argument is: `List a` … One of
+-- those has to be a number", which contradicts itself.
 g =
     1 :: []
 

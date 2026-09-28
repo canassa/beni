@@ -1,4 +1,4 @@
--- Queue row 75: a derived comparison's part whose type is still a variable
+-- A derived comparison's part whose type is still a variable
 -- when the comparison is solved gets its answer when the variable does —
 -- the method of the type it becomes (`Fn`, `Plain`), or the evidence the
 -- enclosing function is generalised over (`pair` below). Every equal pair

@@ -286,11 +286,10 @@ const Edit = struct {
     /// The file to rewrite and its new contents.
     path: []const u8 = "src/Leaf.beni",
     source: []const u8,
-    /// The skip decision, pinned (R10): modules re-checked by the warm build
+    /// The skip decision, pinned: modules re-checked by the warm build
     /// after the edit, and modules cut off. `--cache-keys` already predicts
-    /// the first; pinning it too made "v2 re-checks exactly what v1
-    /// re-checks" a fact while both checkers ran this table with these
-    /// numbers (until R12 deleted v1).
+    /// the first; pinning it too makes the number of re-checked modules a
+    /// fact the table states rather than a consequence of the key.
     rechecked: u64,
     cut_off: u64,
 };
@@ -418,7 +417,7 @@ const edits = [_]Edit{
         .source = mid_source ++ "\n\npub inferred x =\n    x + 1\n",
     },
     .{
-        .what = "add a private eq (§11.3, D1)",
+        .what = "add a private eq (§11.3: private methods answer only inside their module)",
         .rechecked = 4,
         .cut_off = 11,
         .source = leaf_source ++ "\n\neq : Hidden, Hidden -> Bool\neq a b =\n    True\n",

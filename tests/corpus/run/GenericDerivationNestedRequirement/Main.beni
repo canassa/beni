@@ -1,4 +1,4 @@
--- CK-25: see Holder.beni.
+-- See Holder.beni.
 import Holder
 import Keyed
 import Node exposing (Program)

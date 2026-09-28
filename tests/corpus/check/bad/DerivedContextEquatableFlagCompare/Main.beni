@@ -1,4 +1,4 @@
--- R8a's structural review, B1, the `compare` side: `W`'s derived `compare`
+-- The `compare` side of `DerivedContextEquatableFlag`: `W`'s derived `compare`
 -- goes through `H.compare`, whose `a` is `equatable`, so `W`'s `compare`
 -- context holds `(0, eq)` and `<` on a `W` of a function is refused.
 import H

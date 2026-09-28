@@ -1,6 +1,6 @@
 -- run: long operator chains, pipelines and nested calls, at lengths where
 -- `backend.md` §4's *Emitted JavaScript nests only as deep as the source*
--- changes their shape (CK-83), with every operand logged so that what the
+-- changes their shape, with every operand logged so that what the
 -- program can see is pinned:
 --
 --   `&&` / `||`   one flat run, `a && b && c`, where they printed as

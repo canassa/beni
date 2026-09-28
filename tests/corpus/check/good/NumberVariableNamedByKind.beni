@@ -1,9 +1,9 @@
--- CK-94: a variable of kind `number` prints as `number`, even when
+-- A variable of kind `number` prints as `number`, even when
 -- unification gave it another variable's name — `cons`'s `a`, met by the
--- literal's unnamed `number` (checker.md §8.7). On 3ff3ac5 the interface
--- read `g : List a`, `h : List a` and `f : a -> List a2`: the kind was kept
--- (`String.toUpper (List.head g …)` is still refused) and only its name was
--- wrong.
+-- literal's unnamed `number` (checker.md §8.7). The interface never reads
+-- `g : List a`, `h : List a` or `f : a -> List a2`: the kind is kept
+-- (`String.toUpper (List.head g …)` is refused) and so is its name.
+--
 pub g =
     1 :: []
 

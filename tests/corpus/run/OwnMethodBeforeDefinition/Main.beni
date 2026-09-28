@@ -1,4 +1,4 @@
--- CK-36: see Box.beni.
+-- See Box.beni.
 import Box
 import Node exposing (Program)
 import O1

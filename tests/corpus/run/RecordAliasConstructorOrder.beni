@@ -1,5 +1,5 @@
 -- run: a record alias's constructor builds the record with its keys sorted
--- (backend.md §4's record-alias row, D12, CK-43), and the sort moves the
+-- (backend.md §4's record-alias row), and the sort moves the
 -- KEYS, never the arguments: `Q (log "z") (log "a")` evaluates `zed`'s
 -- argument first, as written (language.md §6, evaluation order), exactly as
 -- the record literal `{ zed = …, alpha = … }` does. Nested, and partially
@@ -18,7 +18,7 @@ type alias Outer =
 
 
 -- Annotated, so the record is closed where `==` meets it: the same
--- comparison written inline after `q.zed` is CK-08's `no_methods_on_shape`.
+-- comparison written inline after `q.zed` is `no_methods_on_shape`.
 same : Q, Q -> Bool
 same a b =
     a == b

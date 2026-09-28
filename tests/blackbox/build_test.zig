@@ -361,7 +361,7 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // CLAUDE.md rule 5 and static-dispatch-spike.md §10, applied to the
-    // half S4 adds: the arguments a call passes are now a function of what
+    // dispatch: the arguments a call passes are a function of what
     // the CHECKER decided, and the checker runs the module DAG in parallel.
     // A site resolved against a module that happened to finish first, an
     // evidence order taken from variable identity rather than from the
@@ -1322,12 +1322,12 @@ test "check 4: a foreign typed through an alias counts the alias's parameters, a
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R2b's review, S2 (checker-v2.md §12.5, boundary.md §4 check 4 as
-    // amended). `isPos : IntPred` spells no arrow, but `IntPred` IS
-    // `Int -> Bool`, and every call of it is lowered by `Convention` as
-    // `isPos(x)`. Check 4 used to read the annotation's spelling, call it a
-    // VALUE, and refuse the one sibling that works, `(x) => …`, as "written
-    // as a function". It now asks the same `Convention`: one parameter.
+    // checker-v2.md §12.5, boundary.md §4 check 4 as amended. `isPos :
+    // IntPred` spells no arrow, but `IntPred` IS `Int -> Bool`, and every
+    // call of it is lowered by `Convention` as `isPos(x)`. Check 4 must not
+    // read the annotation's spelling, call it a VALUE, and refuse the one
+    // sibling that works, `(x) => …`, as "written as a function"; it asks
+    // the same `Convention`: one parameter.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeUserPlatform(&w);
@@ -2100,7 +2100,7 @@ test "a `?` nothing reaches is not lowered, so nothing it needs is emitted" {
     // This scenario was written when `?` was the construct that made that
     // observable — it raised a LOWERING diagnostic, and an unreachable
     // declaration containing one still built clean, which is the sharpest
-    // possible proof that nothing lowered it. `?` compiles as of M3b, so
+    // possible proof that nothing lowered it. `?` compiles now, so
     // what is left to observe is the emitted file: `parse` is the only
     // thing in this module that imports `String.toInt`, and neither the
     // declaration, nor its `?`, nor the import survives. The claim is
@@ -2185,12 +2185,11 @@ test "a project that does not check writes nothing" {
     try testing.expectEqualStrings("", r.stdout);
 }
 
-// CK-163 (`scenario/CK-163`, promoted by R15-fix-F): `build --out` only ever
-// added to the directory, so a module the program stopped using stayed in
-// `out/` beside it. `backend.md` §2, *The output directory holds what the last
+// `build --out` must not only ever add to the directory, or a module the
+// program stopped using would stay in `out/` beside it. `backend.md` §2, *The output directory holds what the last
 // build wrote*: a build removes what the previous one wrote and it did not,
 // through `_manifest.txt`, and touches nothing it never wrote.
-test "a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives (CK-163)" {
+test "a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2250,7 +2249,7 @@ test "a rebuild into the same --out holds exactly a fresh build's files, and a u
     try testing.expectEqualStrings(try w.read("fresh/_manifest.txt"), try w.read("out/_manifest.txt"));
 }
 
-test "a file beni wrote and the user then edited, or a record line leaving --out, is never removed (CK-163)" {
+test "a file beni wrote and the user then edited, or a record line leaving --out, is never removed" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2287,7 +2286,7 @@ test "a file beni wrote and the user then edited, or a record line leaving --out
     try testing.expect(std.mem.indexOf(u8, try w.read("out/_manifest.txt"), "Half.mjs") == null);
 }
 
-test "a refused build removes nothing and leaves the record as it was (CK-163)" {
+test "a refused build removes nothing and leaves the record as it was" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2321,18 +2320,18 @@ test "a refused build removes nothing and leaves the record as it was (CK-163)" 
     try testing.expectEqualStrings(record, try w.read("out/_manifest.txt"));
 }
 
-// CK-191 (`scenario/CK-191`, promoted by R15-fix-H): the stale pass compared
-// an old record's paths with the new build's byte for byte. A build writing
-// `Zz.mjs`, then one writing `ZZ.mjs`: on APFS and NTFS those names are ONE
-// file, the second build's write lands in it, and the stale pass read the
-// file just written, found the first build's hash (a `--release` module of
-// identical content has it) and deleted it. Linux cannot fold case, so the
+// The stale pass must not compare an old record's paths with the new
+// build's byte for byte. A build writing `Zz.mjs`, then one writing
+// `ZZ.mjs`: on APFS and NTFS those names are ONE file, the second build's
+// write lands in it, and a byte-for-byte pass would read the file just
+// written, find the first build's hash (a `--release` module of identical
+// content has it) and delete it. Linux cannot fold case, so the
 // case-folding file system is simulated the way it behaves: `ZZ.mjs` is made
 // a second name (a hard link) of `Zz.mjs` before the second build, so the
 // write goes into the one file under either name. `--out` is absolute so
 // that the harness's own folding check (`world.zig`), which would see the
 // two names, leaves this tree to the scenario.
-test "a stale path that is the same file as a written one under case folding is not removed (CK-191)" {
+test "a stale path that is the same file as a written one under case folding is not removed" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2367,10 +2366,10 @@ test "a stale path that is the same file as a written one under case folding is 
     try testing.expect(std.mem.indexOf(u8, record, " Zz.mjs\n") == null);
 }
 
-// CK-191's other half: where the two names are two files — Linux, and any
+// The other half: where the two names are two files — Linux, and any
 // case-sensitive file system — the older is stale like any other and goes,
 // so `--out` is still exactly what a fresh build writes.
-test "a stale path equal to a written one under case folding but another file is removed (CK-191)" {
+test "a stale path equal to a written one under case folding but another file is removed" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2404,7 +2403,7 @@ test "a stale path equal to a written one under case folding but another file is
 }
 
 /// Two projects that differ only by the case of one module's name, `Zz` and
-/// `ZZ`, with byte-identical `--release` output for it (CK-191). Both sort
+/// `ZZ`, with byte-identical `--release` output for it. Both sort
 /// after `Main`, so their one export gets the same short name; `Ab` and `AB`
 /// do not (`const b` against `const c`), and a hash would then tell them
 /// apart where APFS does not.
@@ -2416,11 +2415,10 @@ fn writeCaseRename(w: *World) !void {
     try w.write("two/Main.beni", "import Node exposing (Program)\nimport ZZ\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt ZZ.one ]\n");
 }
 
-// CK-192 (`scenario/CK-192`, promoted by R15-fix-H): a `_manifest.txt` in
-// `--out` that beni did not write read as an empty record and was
-// overwritten. `backend.md` §2: a file of that name that does not parse as
+// A `_manifest.txt` in `--out` that beni did not write must not read as an
+// empty record and be overwritten. `backend.md` §2: a file of that name that does not parse as
 // beni's record refuses the build before anything is written.
-test "a _manifest.txt beni did not write refuses the build and nothing is written (CK-192)" {
+test "a _manifest.txt beni did not write refuses the build and nothing is written" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2467,8 +2465,8 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `backend.md` §2: the refusal goes with M3c's first slice, and
-    // `--source-maps` keeps its own — in a `--release` build too, so the
+    // `backend.md` §2: `--release` is accepted, and
+    // `--source-maps` keeps its own refusal — in a `--release` build too, so the
     // pair exits 2 on the source-map line and writes nothing.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2800,8 +2798,8 @@ test "--source-maps is refused rather than silently writing no .map file" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // Positions ride in the IR from M3a (backend.md §9.6) but the VLQ
-    // encoder is M5 (§11), so the flag has nothing to do. Accepting it in
+    // Positions ride in the IR (backend.md §9.6) but the VLQ encoder does
+    // not exist yet (§11), so the flag has nothing to do. Accepting it in
     // silence is how a user believes they asked for a `.map` and got one;
     // `--release` is refused for the same reason.
     try testing.expectEqual(@as(u8, 2), r.exit_code);
@@ -3203,8 +3201,8 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `derived_bytes` is the whole point of M4's "grows per type x method"
-    // row, and it is worth something only if it counts DERIVED code and
+    // `derived_bytes` is the whole point of the output-size measurement's
+    // "grows per type x method" row (static-dispatch-spike.md), and it is worth something only if it counts DERIVED code and
     // nothing else. Two programs in one corpus root, and the pair is the
     // assertion:
     //
@@ -3302,7 +3300,7 @@ test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
     try testing.expectEqual(@as(u32, 1), derives.compare_functions);
     try testing.expectEqual(@as(u32, 1), derives.order_tables);
     // `Colour`'s `compare` reads a table and calls nothing, so it passes no
-    // depth and needs no `derived$deep` (backend.md §4, R8d).
+    // depth and needs no `derived$deep` (backend.md §4).
     try testing.expectEqual(@as(u32, 0), derives.engines);
     try testing.expect(derives.derived_bytes > 0);
     try testing.expect(derives.derived_bytes < derives.raw_bytes);
@@ -3337,7 +3335,7 @@ test "bench/size.mjs builds a root that declares no main behind a synthesised en
     // └─────────────────────────────────────────┘
     // `bench/corpus` is a library, not a program: no module in it declares
     // `main : Program`, so `beni build` refuses it and the script has to
-    // write an entry point of its own. That path is most of what M4 measures
+    // write an entry point of its own. That path is most of what the output-size measurement covers
     // on that corpus, and nothing else exercises it.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -3592,7 +3590,7 @@ const SizeProgram = struct {
     net_brotli_bytes: i64,
     derived_bytes: u64,
     derived_functions: u32,
-    // The per-method split M4 reports as three numbers and never as a sum
+    // The per-method split the output-size measurement reports as three numbers and never as a sum
     // (§11, A.38).
     eq_functions: u32,
     eq_bytes: u64,
@@ -3600,7 +3598,7 @@ const SizeProgram = struct {
     compare_bytes: u64,
     order_tables: u32,
     order_bytes: u64,
-    // `derived$deep`, the explicit-stack engine of backend.md §4 (R8d).
+    // `derived$deep`, the explicit-stack engine of backend.md §4.
     engines: u32,
     engine_bytes: u64,
 };
@@ -3682,12 +3680,12 @@ test "an unannotated pub function constant with a constraint builds and runs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R2b's review, S3 (static-dispatch-spike.md §10.10 as amended). The
+    // static-dispatch-spike.md §10.10 as amended. The
     // program of `check/good/ConstrainedPubFunctionConstant/`, built and
     // run: it cannot be a `run/` fixture, because every unannotated
     // constrained `pub` prints the informational `ambiguous_method_receiver`
-    // warning and a `run/` build must be silent. On 84e3cb1 all three `pub`
-    // values are `constrained_constant`.
+    // warning and a `run/` build must be silent. None of the three `pub`
+    // values may be refused as `constrained_constant`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("M.beni",

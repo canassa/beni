@@ -1,8 +1,8 @@
--- CK-55: a `where` clause that disagrees with the receiver's own method
+-- A `where` clause that disagrees with the receiver's own method
 -- names both: "The `where a.compare` clause of `f` does not match the
 -- `compare` of `Int`", then the clause's type and the method's, reported at
 -- the call, with the roles the right way round (static-dispatch-spike.md
--- §10.13; the `.where_clause` category). On 7427828 it is "Something is off
+-- §10.13; the `.where_clause` category) — not "Something is off
 -- here: This is: `Int, Int -> Int` But I need: `Int, Int -> Order`", naming
 -- neither the clause nor the method.
 

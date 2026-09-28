@@ -3,9 +3,9 @@
 -- (`docs/design/static-dispatch-spike.md` §3.1), a rigid variable carries
 -- exactly the constraints its `where` clause declares (§6.2 Rule U2), and
 -- the message is `missing_where_constraint` at the CALL that needs the
--- method — never at the annotation (§10.4). Before S3 this was
--- `not_equatable` with the `rigid_variable` reason, which said the type
--- could not be compared rather than what to write.
+-- method — never at the annotation (§10.4). Not `not_equatable` with the
+-- `rigid_variable` reason, which would say the type could not be compared
+-- rather than what to write.
 pub contains : a, List a -> Bool
 contains needle xs =
     List.any xs (\x -> x == needle)

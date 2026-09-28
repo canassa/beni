@@ -1,9 +1,9 @@
--- check/bad: CK-121. A definition followed by a SEPARATE annotation with a
+-- check/bad: a definition followed by a SEPARATE annotation with a
 -- `where` clause: the annotation has no definition (it does not follow
 -- one) and repeats the name. Both are the frontend's diagnostics; the checker
--- must add nothing and not fail. Checker v2 panicked (exit 134) in P6: the
--- bodyless annotation has no rigid reading, so no givens, and P6 asserted
--- it had them (`Module.elaborate`).
+-- must add nothing and not fail. The bodyless annotation has no rigid
+-- reading, so no givens, and elaboration (`Module.elaborate`) must not
+-- assert that it has them.
 less x y =
     x < y
 

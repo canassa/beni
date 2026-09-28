@@ -1,4 +1,4 @@
--- CK-33: see M.beni.
+-- See M.beni.
 import M
 import Node exposing (Program)
 

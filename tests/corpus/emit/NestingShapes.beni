@@ -1,5 +1,5 @@
 -- emit: the shapes `backend.md` §4 gives a long form so that its JavaScript
--- nests only as deep as the source (CK-83), each at the smallest size that
+-- nests only as deep as the source, each at the smallest size that
 -- shows it:
 --
 --   `short`  32 elements: nested cells, as every list literal was

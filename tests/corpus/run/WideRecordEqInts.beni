@@ -1,9 +1,9 @@
--- A regression guard from the checker-v2 design review (S9; plans/
--- checker-rewrite.md §5.1): `Basics.eq` on a 300-field record of numbers is
--- `True`. It pins the other side of CK-17: the `equatable` walk must stop
--- answering "unknown, so yes" past 256 entries WITHOUT refusing a record
--- that is comparable (R1 grows the walk instead of refusing on width).
--- 7427828 prints `eq`.
+-- A regression guard: `Basics.eq` on a 300-field record of numbers is
+-- `True`. It pins the other side of `WideRecordDerivedEq`: the `equatable`
+-- walk must not answer "unknown, so yes" past 256 entries, and must not
+-- refuse a record that is comparable either — it grows instead of refusing
+-- on width.
+-- Expected `eq`.
 import Node exposing (Program)
 
 

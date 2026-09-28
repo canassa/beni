@@ -1,11 +1,11 @@
--- CK-23: a type argument that no payload holds does not decide whether a
--- type compares (owner decision D4, checker-v2.md §11.2): `Tag a` holds only
+-- A type argument that no payload holds does not decide whether a
+-- type compares (the owner's decision, checker-v2.md §11.2): `Tag a` holds only
 -- an `Int`, so `Tag (Int -> Int)` answers `==` and `<` like any `Tag`.
 -- Expected `True`, `True`, as Elm prints.
 --
--- Oracle twin, run on 7427828: this file with `t : Tag Int` prints `True`,
--- `True`. As written, 7427828 refuses it with NOT EQUATABLE and NO METHODS
--- HERE: the capability walk pushes every type argument, held or not.
+-- Oracle twin: this file with `t : Tag Int` prints `True`,
+-- `True`. A capability walk that pushed every type argument, held or not,
+-- would refuse it with NOT EQUATABLE and NO METHODS HERE.
 import Node exposing (Program)
 
 

@@ -1,9 +1,9 @@
--- R2b review B1 (language.md §7; checker.md §6.7; checker-v2.md §12.5): a
+-- check/bad (language.md §7; checker.md §6.7; checker-v2.md §12.5): a
 -- `where` is a type annotation and does not turn a VALUE into a function.
 -- `h = compose h keep` is defined in terms of itself, so it is
 -- `cyclic_value` exactly as its twin without the `where` is, even though
--- the emitter defines it as an arrow over its type's parameter. On 84e3cb1
--- it checks clean and the built program overflows the stack
+-- the emitter defines it as an arrow over its type's parameter. A clean
+-- check here would build a program that overflows the stack
 -- (`RangeError`) on the first read.
 compose : (b -> c), (a -> b) -> (a -> c)
 compose f g =

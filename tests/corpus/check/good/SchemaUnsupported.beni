@@ -1,4 +1,4 @@
--- S2 checks a private schema even though it contributes no public interface.
+-- `check` accepts a private schema even though it contributes no public interface.
 -- The build corpus separately proves that emit still refuses its runners.
 schema User =
     { name : String }

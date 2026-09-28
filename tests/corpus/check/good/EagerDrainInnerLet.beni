@@ -1,12 +1,12 @@
--- CK-100: eager draining (checker-v2.md §9.1, round 3 B-1) resolves a
+-- Eager draining (checker-v2.md §9.1) resolves a
 -- wanted at the constraint node that binds its receiver, even inside a
 -- nested `let`, and what the resolution instantiates is tied to the use.
 -- `b.unbox ()` rides on the parameter `b` until `[ b, Box 3 ]`, inside `w`'s
 -- own `let`, binds it; `u` is then `b`'s element: `inner : Box number ->
--- ( number, List (Box number) )` (printed with `a`, CK-94). And round 3's
--- `rq2` (`run/ScrutineeMethodFirst`'s shape): `q` generalises and `pair :
--- Int -> ( Int, Int )`. On 68186fa v1 publishes `inner : Box a -> ( a2, List
--- (Box a) )` and `pair : Int -> ( a, b )`: the results are not tied to the
+-- ( number, List (Box number) )` (printed with `a`). And
+-- `run/ScrutineeMethodFirst`'s shape: `q` generalises and `pair :
+-- Int -> ( Int, Int )`. Never `inner : Box a -> ( a2, List (Box a) )` or
+-- `pair : Int -> ( a, b )`, which would leave the results untied to the
 -- methods' types. The oracle twins are the annotated `pair` of
 -- `check/bad/MethodResultTooGeneral` and the direct `u = unbox b ()`.
 type Box a

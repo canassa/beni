@@ -1,7 +1,7 @@
--- CK-57: a header whose type holds TWO cycles is one `infinite_type`, and every
+-- A header whose type holds TWO cycles is one `infinite_type`, and every
 -- cycle reachable from it is poisoned, so `h = g` and `k = g` add nothing
--- (checker-v2.md §8.2). Before R4b's review v2 reported `g`'s first cycle and
--- then the second at each of `h` and `k`. The cycle drawn is the first by
+-- (checker-v2.md §8.2), never the second cycle again at each of `h` and
+-- `k`. The cycle drawn is the first by
 -- field-name text; there are no fields here, so the first element's.
 n : Int
 n =

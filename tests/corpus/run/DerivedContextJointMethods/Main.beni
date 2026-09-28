@@ -1,6 +1,6 @@
--- A regression guard (R8a, CK-26): derived contexts computed JOINTLY for
--- `eq` and `compare` over one type-level SCC (checker-v2.md §11.2, round 4
--- R8-2). `X` and `Y` mention
+-- A regression guard: derived contexts computed JOINTLY for
+-- `eq` and `compare` over one type-level SCC (checker-v2.md §11.2).
+-- `X` and `Y` mention
 -- each other, so they are one unit. `X`'s `eq` holds an `H.Holder Y`, whose
 -- `eq` needs `Y`'s COMPARE; `Y`'s `compare` needs `X`'s `compare`, which
 -- needs `H.Holder Y`'s derived `compare` and so `Y`'s `compare` again. Every
@@ -8,8 +8,8 @@
 -- through `H.eq`, which is not structural: `XH (H.Holder (YLeaf 1))` "equals"
 -- `XH (H.Holder (YLeaf 2))` because 1 is not greater than 2, and not the
 -- other way round. The permutation scenario checks every order of the four
--- declarations here. On 7427828 (v1) it prints the same, through its
--- capability settle; v2 derives it by one fixpoint, in every order.
+-- declarations here. The contexts are derived by one fixpoint, so the
+-- output is the same in every order.
 import H
 import Node exposing (Program)
 

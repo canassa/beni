@@ -1,12 +1,12 @@
--- CK-142: a derived-row template too deep to publish is reported, not
+-- A derived-row template too deep to publish is reported, not
 -- published as a silent `<error>`. `A.eq` needs `a.foo` at a method type
 -- 509 tuples deep, which A's own writer and every reader accept. `B.W`'s
 -- derived `eq` row wraps that requirement in two more levels, past the
--- writer's 512. At 8b98464 `Facts.templateScheme` calls `writer.add` outside
--- the one publication routine: no `hasError` scan, and on `too_deep` it
--- publishes `<error>` with no `noteDeepDecl`. So `check A B` exits 0, and C
--- — a valid use — gets two INTERNAL ERRORs at `C.beni:15:23` (the Debug
--- binary panics on I7). Expected: B's row goes through `Publisher.scheme`
+-- writer's 512. `Facts.templateScheme` must go through the one publication
+-- routine — its `hasError` scan, and `noteDeepDecl` on `too_deep` — never
+-- publish `<error>` silently, which would let `check A B` exit 0 and give C
+-- — a valid use — two INTERNAL ERRORs at `C.beni:15:23` (an evidence
+-- miscount). Expected: B's row goes through `Publisher.scheme`
 -- and B reports NESTING TOO DEEP (the position is open: §14.1 does not yet
 -- say which region a row's failure names), and C, reading a poisoned row,
 -- says nothing. Oracle twin: at 508 tuples the program checks.

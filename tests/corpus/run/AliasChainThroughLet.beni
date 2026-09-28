@@ -1,8 +1,8 @@
--- CK-169: a `let` chain of 1 100 bindings through `wrap : a -> Id a`
--- builds a 1 100-link alias chain over `Int`. At 346268b
--- `TypeStore.resolved` stopped at 1 024 links and answered `err`, so the
--- `==` below was a `poisoned` wanted: `check` exited 0 and `build` said
--- INTERNAL ERROR ("I cannot tell what this call dispatches to"). Expected:
+-- A `let` chain of 1 100 bindings through `wrap : a -> Id a`
+-- builds a 1 100-link alias chain over `Int`. `TypeStore.resolved` must not
+-- stop at 1 024 links and answer `err`: the `==` below would be a
+-- `poisoned` wanted, `check` would exit 0 and `build` say INTERNAL ERROR
+-- ("I cannot tell what this call dispatches to"). Expected:
 -- it builds and prints `T`. Oracle twin: the same program with 1 000
 -- bindings prints `T`.
 import Node exposing (Program)

@@ -1,4 +1,4 @@
--- D5 (checker-v2.md §8.4 *As built by R14*, §12.3 case 2): a `let` function
+-- run (checker-v2.md §8.4, §12.3 case 2): a `let` function
 -- binding's evidence parameters `$l<inst>$<k>` (backend.md §4) are read by
 -- lexical capture, as a declaration's `$m$k` are (run/EvidenceCapture):
 --

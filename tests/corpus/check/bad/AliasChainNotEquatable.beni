@@ -1,9 +1,9 @@
--- CK-169: an alias chain longer than 1 024 links is not a silent `<error>`.
+-- An alias chain longer than 1 024 links is not a silent `<error>`.
 -- `deep`'s result is its argument under 400 `Id`s; three calls chain
--- 1 200 aliases, all naming `String -> Int`. At 346268b
--- `TypeStore.resolved` stopped at 1 024 links and answered `err`, and a
--- wanted on `err` is `poisoned` and reports nothing: `check` exits 0,
--- `build` says INTERNAL ERROR. Expected: NOT EQUATABLE, as with one call.
+-- 1 200 aliases, all naming `String -> Int`. Stopping at 1 024 links and
+-- answering `err` would make the wanted `poisoned`, reporting nothing:
+-- `check` would exit 0 and `build` say INTERNAL ERROR. Expected: NOT
+-- EQUATABLE, as with one call.
 import String
 
 

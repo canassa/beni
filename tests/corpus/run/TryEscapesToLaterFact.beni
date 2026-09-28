@@ -1,16 +1,16 @@
--- CK-62: a `?` whose variables escape its `let` is decided by a later fact of
--- the declaration they escape to, not defaulted at the `let` (owner decision
--- D2 as amended, checker-v2.md §8.1, §8.6) — the dispatch-free half of
--- `TryDecidedByLaterFacts`, whose `h` compares with `==` and so waits for
--- R6a. In `f` the `?` is on `g`'s parameter, `g`'s result is `k`'s, and only
+-- A `?` whose variables escape its `let` is decided by a later fact of
+-- the declaration they escape to, not defaulted at the `let` (the owner's
+-- decision as amended, checker-v2.md §8.1, §8.6) — the dispatch-free half of
+-- `TryDecidedByLaterFacts`, whose `h` compares with `==`.
+-- In `f` the `?` is on `g`'s parameter, `g`'s result is `k`'s, and only
 -- `Maybe.withDefault (k 5) 0`, after the `let`, says `Maybe`. In `h` the fact
 -- after `m?` (`List.isEmpty [ m ]`) says nothing about the shape, and the
 -- result `Just (…)` says `Maybe`. Expected `Just 2`, `Nothing`, `Just 2`, `6`.
 --
--- Oracle twin, run on checker v1 at 2bc9e22: this file with `f : (Int -> Maybe Int) -> (
+-- Oracle twin: this file with `f : (Int -> Maybe Int) -> (
 -- Maybe Int, Int )` and `h : Maybe Int -> Maybe Int` annotated prints exactly
--- the expected four lines. As written, v1 commits both `?` to `Result`
--- and refuses the file with TYPE MISMATCH `Maybe a` against `Result b c`.
+-- the expected four lines. Committing both `?` to `Result` at once would
+-- refuse the file with TYPE MISMATCH `Maybe a` against `Result b c`.
 import Node exposing (Program)
 
 

@@ -1,4 +1,4 @@
--- CK-175's guard (R15-fix-G): an alias whose parameter survives only into
+-- run: an alias whose parameter survives only into
 -- another alias that drops it drops it too. `Outer t = Tagged t` and
 -- `Tagged t = Int`, so `Outer String` and `Outer Bool` are both `Int`: the
 -- injectivity `Types.settleInjective` computes looks through the nested

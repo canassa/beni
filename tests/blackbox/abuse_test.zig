@@ -1,4 +1,4 @@
-//! Abuse scenarios (docs/design/frontend.md §8 "M1d",
+//! Abuse scenarios (docs/design/frontend.md §8,
 //! .claude/skills/write-tests/SKILL.md "Abuse scenarios are first-class").
 //!
 //! Hostile and degenerate source is a supported input, not an edge case. A
@@ -185,11 +185,11 @@ test "a record literal nested to the parser's limit checks and compares, one pas
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // CK-114: v2's solver spent two depth units a record level — the literal
-    // and its fields' conjunction — so past about 2 100 levels it said
-    // NESTING TOO DEEP ("more than 4200 levels") where v1 and the parser
-    // accept 4 095. Its record literal now spends one (`Solve.solveFields`),
-    // so the parser's own limit is the one limit: 4 095 levels check, and
+    // A record literal spends one depth unit per level in the solver
+    // (`Solve.solveFields`), not two (the literal and its fields'
+    // conjunction), or the solver would say NESTING TOO DEEP at about 2 100
+    // levels where the parser accepts 4 095. So the parser's own limit is
+    // the one limit: 4 095 levels check, and
     // compare (derivation, unification and resolution all that deep), and
     // 4 096 is the parser's one refusal.
     var w = try World.init(testing.allocator, testing.io);
@@ -640,8 +640,8 @@ test "lambdas nested past the limit report every shadowed parameter, then stop n
     // 4094 shadowings (every parameter but the outermost) and the single
     // nesting error that ended the parse: count, then first and last in
     // full, because 4095 whole structs is not an assertion anyone reads.
-    // One level fewer fits than before M2c, because the depth guard now
-    // charges a pattern ATOM too — a lambda's parameter is one — so that
+    // One level fewer fits than the raw source nesting suggests, because
+    // the depth guard charges a pattern ATOM too — a lambda's parameter is one — so that
     // the guard bounds the TREE every consumer walks and not just the
     // source nesting (see the deep-constructor-pattern scenario).
     try expectExited(r, 1);
@@ -1539,7 +1539,7 @@ test "a pathologically nested expression is EMITTED without a stack overflow, an
     // stack the checker uses. A segfault here would be the one failure mode
     // the house rules do not permit.
     //
-    // And the module has to LOAD (CK-83, R2c): 4 000 nested calls printed as
+    // And the module has to LOAD: 4 000 nested calls printed as
     // written are past every engine's parser — node throws `RangeError`
     // from about 1 550 — so `Lower` binds the chain to a `const` every
     // `nesting.spill` units (`backend.md` §4) and the program runs, in both
@@ -1583,12 +1583,12 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
     // can only nest — there is no flat form short of closure conversion
     // (`backend.md` §4, *Emitted JavaScript nests only as deep as the
     // source*). SpiderMonkey refuses a 252nd nested scope whatever the
-    // stack, and 171 functions with declaring bodies in a module (CK-83,
-    // R2c). So the emitter writes at most 128 nested scopes. Every dozen
+    // stack, and 171 functions with declaring bodies in a module. So the
+    // emitter writes at most 128 nested scopes. Every dozen
     // levels or so a lambda whose body has grown tall is bound to a `const`
     // (`lambda_spill`), and that body then declares something — one more
     // scope — so 119 functions build and run, and 120 are refused by name,
-    // with nothing written, where they used to build and throw
+    // with nothing written, rather than building a module that throws
     // `InternalError` at load in Firefox.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1729,11 +1729,9 @@ test "600 modules check identically at one worker and at eight, twice each" {
 // Degenerate constraint accumulation
 // ---------------------------------------------------------------------------
 
-// The chain's constraint-set counters (A.81: one merge per link, not one
-// per constraint) were v1's: its constraint sets and the six `--self-profile`
-// counters that measured them went with it at R12. The checker that stayed
-// records obligations as rows on their variables (`checker-v2.md` §4.5), and
-// `perf_test.zig`'s CK-96 and CK-97 scenarios hold those linear.
+// The checker records obligations as rows on their variables
+// (`checker-v2.md` §4.5), and `perf_test.zig`'s obligation-row scenarios
+// hold those linear.
 
 test "a chain past the inferred-constraint cap reports a bounded number of errors and finishes" {
     // ┌─────────────────────────────────────────┐
@@ -1835,17 +1833,15 @@ test "a constrained let helper used at `a` and `List a` checks, within seconds" 
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // Queue row 76, CK-37. Until R14 a constrained `let` helper was
-    // monomorphic (static-dispatch-spike.md §6.4 rule (a)), so `inner x y`
-    // and then `inner [ x ] [ y ]` made `x ~ List x`, and the method
-    // obligation on that cyclic receiver asked for the element's method
-    // forever: 875f623 panicked after 2^20 rounds (about 10 s), and the row
-    // 72 tree grew a million dispatch sites and never finished. From
-    // 7427828 to R13 it was one `infinite_type`. Under D5 (checker-v2.md
-    // §8.4 *As built by R14*) `inner` generalises — each body's requirement
-    // is an operator's, not a dot-call's own — so its two uses are two
-    // instantiations and every body checks: exit 0, no diagnostic. The limit
-    // is still the assertion: whatever the answer, it must come at once.
+    // Were a constrained `let` helper monomorphic (static-dispatch-spike.md
+    // §6.4 rule (a)), `inner x y` and then `inner [ x ] [ y ]` would make
+    // `x ~ List x`, and the method obligation on that cyclic receiver could
+    // ask for the element's method forever. Under the owner's decision that
+    // a constrained `let` generalises (checker-v2.md §8.4) `inner`
+    // generalises — each body's requirement is an operator's, not a
+    // dot-call's own — so its two uses are two instantiations and every
+    // body checks: exit 0, no diagnostic. The limit is still the assertion:
+    // whatever the answer, it must come at once.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const bodies = [_][]const u8{
@@ -1891,13 +1887,12 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `scenario/CK-140`, promoted by R15-fix-A. At 8b98464 the annotation
-    // expanded `A = ( A, A )` although resolution had refused it: the
-    // expansion doubled per level up to the builder's depth bound of 512,
-    // 16 s and 21 GB in ReleaseFast. The builder now refuses an alias met
-    // inside its own expansion (`Types.Builder.expanding`), so every form
-    // is one message at once. The 3 s limit is the assertion that nothing
-    // grew: the fixed check takes milliseconds.
+    // An annotation must not expand `A = ( A, A )` once resolution has
+    // refused it: the expansion would double per level up to the builder's
+    // depth bound of 512. The builder refuses an alias met inside its own
+    // expansion (`Types.Builder.expanding`), so every form is one message at
+    // once. The 3 s limit is the assertion that nothing grew: the check
+    // takes milliseconds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const sources = [_][]const u8{
@@ -2005,16 +2000,15 @@ test "a case over every constructor of a 2 000-constructor type checks, and the 
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `scenario/CK-167`, promoted by R15-fix-F. At 01d0f21 `C{i} x -> x` for
-    // every constructor of `type T = C0 Int | … | C1999 Int` was CASE TOO BIG
-    // TO CHECK: a constructor with arguments was not a key of the lookup
-    // table, and the general relation specialised the whole matrix per
-    // branch and per alternative, n² against a budget sized for exponential
-    // matrices. `C x` with wildcard arguments is now a key, and
-    // `ColumnIndex` answers "which rows share this head" in one pass. The
-    // same width must also answer a MISSING constructor, a REDUNDANT branch
-    // and branches the table cannot take (`C{i} 0`) — each of those went
-    // through the relation at 01d0f21 and ran out of budget too.
+    // `C{i} x -> x` for every constructor of `type T = C0 Int | … | C1999
+    // Int` must not be CASE TOO BIG TO CHECK: were a constructor with
+    // arguments not a key of the lookup table, the general relation would
+    // specialise the whole matrix per branch and per alternative, n²
+    // against a budget sized for exponential matrices. `C x` with wildcard
+    // arguments is a key, and `ColumnIndex` answers "which rows share this
+    // head" in one pass. The same width must also answer a MISSING
+    // constructor, a REDUNDANT branch and branches the table cannot take
+    // (`C{i} 0`) in linear time.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;

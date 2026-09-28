@@ -1,9 +1,9 @@
 -- check/good: return-type dispatch (`docs/design/static-dispatch-spike.md`
 -- §4). `a` is a type, not a value, so `a.decode s` is a dispatch on the type
 -- the caller chooses; the `where` clause is what makes it legal (§4.1) and
--- what gives the declaration its one evidence parameter (§7.2). Renamed from
--- `check/bad/TypeDispatchNotYet` when S3 landed: the program is now correct,
--- and the interface shows the constraint it carries.
+-- what gives the declaration its one evidence parameter (§7.2). The
+-- program is correct, and the interface shows the constraint it carries.
+--
 pub decode : String -> Result String a
     where a.decode : String -> Result String a
 decode s =

@@ -1,10 +1,10 @@
--- CK-11: a WARNING on a declaration does not switch off its exhaustiveness
+-- A WARNING on a declaration does not switch off its exhaustiveness
 -- and refutability checks — only a type ERROR does (checker.md §6.6,
 -- checker-v2.md §15.2). Both declarations are `pub` and unannotated with an
 -- inferred `a.eq`, so each gets the `ambiguous_method_receiver` warning, and
 -- each still gets its own error: `pick`'s `case` lacks `Blue`, and `size`'s
--- parameter pattern `(Circle r)` is refutable. On 7427828 only the two
--- warnings are printed and `check` exits 0; built, `pick 1 1 Blue` prints
+-- parameter pattern `(Circle r)` is refutable. Printing only the two
+-- warnings and exiting 0 would build a program where `pick 1 1 Blue` prints
 -- `green` and `size 1 1 (Square 7)` prints `7`. The same file without `pub`
 -- reports both errors, at the positions below.
 

@@ -44,6 +44,6 @@ the same switch.
 Bless with `BENI_WRITE_EXPECTED=1 zig build test-blackbox`; check the blessed
 golden against the fixture's intent comment before committing it.
 
-M2b adds the inferred scheme of every value to these goldens, so expect one
-churn of the whole directory when it lands. That is the point of keeping the
-interface dump narrow: the churn is readable.
+The inferred scheme of every value is in these goldens; the interface dump
+is kept narrow so that a change to it is readable.
+

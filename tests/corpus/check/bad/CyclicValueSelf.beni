@@ -3,7 +3,7 @@
 -- loads, so its own result cannot be part of computing it: `cyclic_value`,
 -- with nothing in between and a one-name circle.
 --
--- Until queue slice 23 this checked clean, built with exit 0 and emitted
+-- Checking this clean would build with exit 0 and emit
 -- `const CyclicValueSelf$x = Basics$add(CyclicValueSelf$x, 1);`, which throws
 -- `ReferenceError: Cannot access 'CyclicValueSelf$x' before initialization`
 -- the moment Node loads the module.

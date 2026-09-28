@@ -1,4 +1,4 @@
--- R2b review B1, the controls: `language.md` §7's rule refuses a VALUE on
+-- The controls: `language.md` §7's rule refuses a VALUE on
 -- its own initialiser's circle, and a value WRITTEN as a function is not
 -- one, `where` or no `where`. With a `where` on every declaration here:
 -- `countDown` recurses through its lambda body, `countUp` through its
@@ -6,8 +6,8 @@
 -- parameter list), and `twiceKeep = compose keep keep` names no circle at
 -- all. All are accepted and run (checker-v2.md §12.5: `lambda` and `params`
 -- defer, `applied` does not). `check/bad/EvidenceFunctionConstantCycle*` are
--- the refused forms. On 84e3cb1 `countDown`, `ping` and `twiceKeep` build
--- and print wrong answers (CK-33's curried definition).
+-- the refused forms. A curried definition would make `countDown`, `ping`
+-- and `twiceKeep` print wrong answers.
 import Node exposing (Program)
 
 

@@ -1,9 +1,9 @@
--- CK-69: a PARAMETRIC derived context that depends on a method still in
+-- A PARAMETRIC derived context that depends on a method still in
 -- flight cannot be computed, and says so: `W a`'s context depends on `T a`'s
 -- `key` (through `H.eq`'s `where a.key`), and `key`'s own body asks for `W`'s
 -- `eq`. That is `method_needs_annotation` naming `key`, in either
--- declaration order (owner decision D3 as amended, checker-v2.md §11.2). On
--- 7427828 it is NOT EQUATABLE `W a`, a refusal for the wrong reason.
+-- declaration order (the owner's decision as amended, checker-v2.md §11.2),
+-- never NOT EQUATABLE `W a`, a refusal for the wrong reason.
 pub type Holder a
     = Holder a
 

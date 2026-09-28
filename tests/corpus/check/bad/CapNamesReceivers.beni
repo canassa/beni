@@ -1,8 +1,8 @@
--- CK-58: the constraint-cap message names each constraint with its
+-- The constraint-cap message names each constraint with its
 -- receiver — `a1.eq`, `a2.eq`, … — not the bare method name
 -- (static-dispatch-spike.md §10.11; checker-v2.md §9.4, "with each receiver
 -- named"). `f` compares 70 parameters, one `eq` each, which is over the
--- cap of 64 inferred constraints. On 7427828 the message says "The first 5
+-- cap of 64 inferred constraints. The message never says "The first 5
 -- are `eq`, `eq`, `eq`, `eq` and `eq`".
 
 

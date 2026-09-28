@@ -1,13 +1,13 @@
--- check/good: CK-119's guard. A ring of six schemas, each with a `via` to
+-- check/good: a ring of six schemas, each with a `via` to
 -- its own `type`, each `type` holding the next schema's endpoint: every
 -- endpoint and every `Mine` is one strongly connected component, closed
 -- only through `via` targets, and nothing holds a function, so `same`
--- compares. R8b first built the unit graph without `via` mentions and
--- joined them lazily, which re-ran the ring exponentially and, from five
--- schemas on, ran out of the step budget inside a quiet run and said a
--- false `not_equatable` (R8b's reviews, B1 and F1). Now
+-- compares. Building the unit graph without `via` mentions and joining
+-- them lazily would re-run the ring exponentially and, from five
+-- schemas on, run out of the step budget inside a quiet run and say a
+-- false `not_equatable`. So
 -- `Contexts.complete` adds each `via` target's mentions as edges before
--- the ring runs, once. `test-perf`'s CK-119 holds the time.
+-- the ring runs, once. `test-perf` holds the time.
 import Schema exposing (Conversion)
 
 

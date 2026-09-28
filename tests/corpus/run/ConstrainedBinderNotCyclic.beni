@@ -1,9 +1,9 @@
--- A regression guard from the checker-v2 design review (round 1, B1; plans/
--- checker-rewrite.md §5.1): a variable whose only self-reference is through
+-- A regression guard: a variable whose only self-reference is through
 -- its own requirement — `x.eq : x, x -> Bool` — is not a cycle, and
 -- `Basics.eq` under an `==` on the same variables is not "a function
--- inside". 7427828 gets this right; checker-v2 must keep it (§8.2 walks
--- `structural` successors only).
+-- inside" (checker-v2.md §8.2 walks `structural` successors only).
+--
+--
 import Node exposing (Program)
 
 

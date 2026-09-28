@@ -1,8 +1,8 @@
 -- check/bad: the other half of the nested-`()` defect. `Just ()` matches
 -- every `Just`, because `()` has exactly one value, so the `Just _` below
 -- it can never run — the same answer `Just ( a, b )` then `Just _` gives.
--- Until the fix the relation could not specialise a nested unit at all and
--- this branch was reported as useful (checker.md §6).
+-- A relation that could not specialise a nested unit at all would report
+-- this branch as useful (checker.md §6).
 pub label : Maybe () -> Int
 label m =
     case m of

@@ -1,16 +1,16 @@
--- CK-31: each member of a mutually recursive group takes its evidence in
+-- Each member of a mutually recursive group takes its evidence in
 -- its OWN canonical order (static-dispatch-spike.md §7.2; checker-v2.md
 -- §12.1, §12.3): `f` compares its `x`s with `==` and `g` its `p`s with `<`,
 -- and each recursive call passes the callee's slots, not the caller's.
 -- Expected `True`, `True`, `True`, `False`.
 --
--- Oracle twin, run on 7427828: this file with `f` annotated
+-- Oracle twin: this file with `f` annotated
 -- `Int, a, a, b, b -> Bool where a.eq : a, a -> Bool, b.compare : b, b -> Order`
 -- and `g` annotated `Int, b, b, a, a -> Bool` with the same two clauses
--- prints the expected four lines. As written, 7427828 refuses it with four
--- TYPE MISMATCHes (CK-09 reads `f`'s locals from `g`'s slice); with CK-09
--- patched, both recursive calls are INTERNAL ERROR, because `g`'s `p1 < p2`
--- reads `g`'s `eq` slot (disp F6's patched binary).
+-- prints the expected four lines. Reading `f`'s locals from `g`'s slice
+-- would refuse it with four TYPE MISMATCHes; passing the caller's slots
+-- would make both recursive calls INTERNAL ERROR, because `g`'s `p1 < p2`
+-- reads `g`'s `eq` slot.
 import Node exposing (Program)
 
 

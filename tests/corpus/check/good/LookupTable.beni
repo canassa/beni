@@ -1,14 +1,14 @@
 -- check/good: a flat lookup table of 460 branches on `Int` literals plus a
 -- wildcard — ordinary code, generated (see tests/corpus/README.md).
 --
--- Until queue slice 22 this was REFUSED at the default budget. `isUseful`
--- ran every branch against the matrix of the branches above it, so a flat
--- `case` cost ~1.05·n² with no nesting at all, and 460 branches came to
--- 214 000 steps against a default of 200 000: `pattern_budget_exhausted` on
+-- A table like this must not be REFUSED at the default budget. Running
+-- every branch against the matrix of the branches above it would make a flat
+-- `case` cost ~1.05·n² with no nesting at all: 460 branches would come to
+-- 214 000 steps against a default of 200 000, `pattern_budget_exhausted` on
 -- a table with nothing wrong with it. `Exhaustive.Flat` makes a column of
--- literals a set-membership question, so this now costs 922 steps —
--- `checker.md` §6.6. The number of branches is the one the old note named
--- as the threshold, so this fixture fails the moment the fast path stops
+-- literals a set-membership question, so this costs 922 steps —
+-- `checker.md` §6.6. The number of branches is chosen to cross that
+-- threshold, so this fixture fails the moment the fast path stops
 -- reading a literal column.
 pub name : Int -> String
 name n =

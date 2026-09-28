@@ -1,4 +1,4 @@
--- CK-117: see Main.beni.
+-- See Main.beni.
 pub type Holder a
     = Holder a
 

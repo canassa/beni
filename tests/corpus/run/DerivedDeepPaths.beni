@@ -1,5 +1,5 @@
 -- run: every way one derived comparison reaches the next keeps the depth,
--- so none of them throws on deep data (CK-128, R8d; `backend.md` §4,
+-- so none of them throws on deep data (`backend.md` §4,
 -- *Derived comparisons do not grow the native stack*).
 --
 -- A depth that restarted anywhere along a cycle would never reach the limit,

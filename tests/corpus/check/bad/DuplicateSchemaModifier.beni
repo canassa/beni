@@ -1,4 +1,4 @@
--- S1 already diagnoses all four duplicate modifier families before checking.
+-- The frontend diagnoses all four duplicate modifier families before checking.
 import Schema exposing (Conversion)
 
 

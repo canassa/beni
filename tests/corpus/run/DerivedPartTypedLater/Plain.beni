@@ -1,5 +1,5 @@
--- The same shape without a function: 875f623 compared `v` structurally
--- and printed `not lt`, because the second fields differ.
+-- The same shape without a function: compared structurally, `v` would
+-- print `not lt`, because the second fields differ.
 pub type T
     = T Int Int
 

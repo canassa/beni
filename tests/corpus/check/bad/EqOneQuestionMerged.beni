@@ -1,11 +1,11 @@
--- CK-16: one explicit `Basics.eq` asks one question, and says "no" once
--- (checker-v2.md §11.4 *As built by R5*, I13; R5's structural review, B1).
+-- One explicit `Basics.eq` asks one question, and says "no" once
+-- (checker-v2.md §11.4; the first failure by name text is the one reported).
 -- The comparison's walk flags `x` and `y`; `[ x, y ]` merges them; `x 1`
 -- makes the merged variable a function. The two flags carry the same
 -- question, so ONE `not_equatable`, at the comparison's argument — not one
--- per flag (R5 as first built printed the same message twice). On checker v1
--- at 2bc9e22 the program checks clean: the walk accepts a variable inside a
--- structure (CK-16's own defect).
+-- per flag, and never a clean check: the walk must not accept a variable
+-- inside a structure.
+--
 h x y =
     let
         t =

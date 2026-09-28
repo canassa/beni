@@ -2,7 +2,7 @@
 -- (`docs/design/static-dispatch-spike.md` §6.4, §7.2, §8.1, §8.2).
 --
 -- `core/Dict.beni`'s `removeHelp` and `removeHelpEQGT` are this shape, and
--- they are the pair the C1 rewrite of §5.3 cannot avoid: each one's
+-- they are the pair the rewrite of §5.3 cannot avoid: each one's
 -- annotation promises `k.compare`, each one calls the other, and neither
 -- can be checked before the other. So the evidence parameter of §8.1 has to
 -- be on BOTH before either body is lowered, and the call each makes to the
@@ -15,8 +15,8 @@
 -- binding `undefined` and comparing against it. Neither is visible in
 -- `--stage=types`; both print the wrong answer here.
 --
--- **A PIN, not a regression test.** This shape already worked on `cb63a46`,
--- before S6a: it was added because nothing in the corpus covered it, not
+-- **A PIN, not a regression test.** It was added because nothing in the
+-- corpus covered this shape, not
 -- because anything broke. `appendSite`'s forwarding of a shared group's
 -- constraint (§6.4) and the evidence parameter on both headers are what it
 -- holds still, and they are the two things a change to §7.2's numbering

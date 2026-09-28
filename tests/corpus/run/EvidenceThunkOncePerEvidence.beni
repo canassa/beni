@@ -1,11 +1,11 @@
--- CK-85 (R8a; language.md §6 *Evaluation order*): a constrained value with no
+-- run (language.md §6 *Evaluation order*): a constrained value with no
 -- parameters and a non-function type — a thunk, `($m…) => value` — computes
 -- its value once per EVIDENCE, not at every read. `blank` is read three times
 -- at `Int`, once at `Colour` and once more at `Int`: its `Debug.log` fires at
 -- the first `Int` read, at the `Colour` one, and again at the second `Int`
 -- read, because the value kept is the last evidence's (`Lower.memoArrow`):
 -- `Int`'s `eq` is the module's `===` helper, `Colour`'s its derived function.
--- From R2b to R8a it fired at all five reads.
+-- It never fires at all five reads.
 import Node exposing (Program)
 
 

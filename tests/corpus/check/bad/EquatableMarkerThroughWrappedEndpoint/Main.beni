@@ -1,13 +1,13 @@
--- CK-120: explicit `Basics.eq` on a `type` that wraps a schema endpoint
+-- Explicit `Basics.eq` on a `type` that wraps a schema endpoint
 -- whose `via` target holds a function is `not_equatable` (checker-v2.md
--- §11.4 *as amended by R8b's review round*), in its own module and in an
+-- §11.4), in its own module and in an
 -- importer. The structural gate of a `type` is "no function reachable from
 -- its payloads", through its module's endpoints and their `via` targets —
 -- the same fact `==` reads off the derived contexts — and an importer reads
--- it from the record. On 7427828, and in v2 before R8b's review round, the
--- gate was the table-build bit ("no function in its declaration"), which
--- cannot see a `via` target: `==` on `Holds` was refused and `Basics.eq`
--- on it accepted, two answers to one question.
+-- it from the record. It is not the table-build bit ("no function in its
+-- declaration"), which cannot see a `via` target and would refuse `==` on
+-- `Holds` while accepting `Basics.eq` on it: two answers to one question.
+--
 import B
 
 

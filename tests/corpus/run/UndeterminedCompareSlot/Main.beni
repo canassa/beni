@@ -1,16 +1,16 @@
--- CK-103: a proven-undetermined answer in a `compare` slot is the structural
--- `compare`, never the `eq` leaf (checker-v2.md §12.2, §13.1 as amended by
--- R6b's review). `S.eq` asks its element for `compare`, and the element of
+-- A proven-undetermined answer in a `compare` slot is the structural
+-- `compare`, never the `eq` leaf (checker-v2.md §12.2, §13.1).
+-- `S.eq` asks its element for `compare`, and the element of
 -- `[ [] ]` is a type nothing determines; the record's derived `eq` is that
--- slot's nearest derived ancestor, so an `undetermined` leaf there is read by
--- `Lower` as `eq` and hands `List.compare` the Bool-valued `Basics.eq`. v1
--- wrote that leaf (`List$compare(Basics$eq, …)`, harmless at run time only
--- because no value of the element type exists), and since R6b's review the
--- I7 assert refuses it: v1's `check` is INTERNAL ERROR here. v2 writes
+-- slot's nearest derived ancestor, so an `undetermined` leaf there would be
+-- read by `Lower` as `eq` and hand `List.compare` the Bool-valued
+-- `Basics.eq` (`List$compare(Basics$eq, …)`, harmless at run time only
+-- because no value of the element type exists), and the evidence-count
+-- assert refuses that. The table writes
 -- `primitive num_compare`. Expected `yes`, `yes`.
 --
 -- Oracle twin: `run/UndeterminedUnderValueEvidence`'s `[ [] ] < [ [] ]`,
--- the same slot with no derived ancestor, which both checkers answer with
+-- the same slot with no derived ancestor, answered with
 -- `num_compare`.
 import Node exposing (Program)
 import S

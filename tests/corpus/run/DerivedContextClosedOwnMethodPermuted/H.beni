@@ -1,14 +1,14 @@
--- CK-104: `DerivedContextClosedOwnMethod` (CK-67) with each module's `key`
+-- `DerivedContextClosedOwnMethod` with each module's `key`
 -- declared LAST, after the value that calls it through `W`'s derived `eq`.
 -- `main` is a constant, evaluated at load: it calls `same`, whose `==` runs
 -- `Main$W$$eq`, whose body reads `Main$key`. Emission order must count what a
 -- derived row's body names (`Edges.termsEdges` through rows,
 -- `Lower.siteTops`), or `Main$key` is emitted after `main` and the program
 -- throws `ReferenceError: Cannot access 'Main$key' before initialization` at
--- load, having built with exit 0 (R6b's structural review S5, adversarial F2).
--- Expected `True`, `False`, `True`, `False`. Red on v1 for CK-67's reason
--- (NOT EQUATABLE: `key` is unannotated); `run/DerivedRowBodyEmissionOrder`
--- is the annotated twin both checkers build.
+-- load, having built with exit 0.
+-- Expected `True`, `False`, `True`, `False`. `key` is unannotated, and a
+-- derived context still reaches it; `run/DerivedRowBodyEmissionOrder`
+-- is the annotated twin.
 pub type Holder a
     = Holder a
 

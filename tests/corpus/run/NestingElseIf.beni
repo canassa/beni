@@ -1,5 +1,5 @@
 -- run: long `else if` chains, which `backend.md` §4's *Emitted JavaScript
--- nests only as deep as the source* writes flat (CK-83):
+-- nests only as deep as the source* writes flat:
 --
 --   `tailChain`   40 arms in a function's result: past `nesting.spill` an
 --                 `else` follows its `if` instead of nesting in it, since

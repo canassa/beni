@@ -1,10 +1,10 @@
--- CK-118: schema endpoints through the one fixpoint (checker-v2.md §11.5 *as
--- built by R8b*), every comparison accepted: `Loop`'s `via` target is
+-- Schema endpoints through the one fixpoint (checker-v2.md §11.5),
+-- every comparison accepted: `Loop`'s `via` target is
 -- `Mine`, which mentions `Loop.Type` back — a mention the unit graph cannot
 -- see, joined lazily (`Contexts.noteApprox`) — and `HoldsRec` wraps a record
 -- endpoint over `Mine`. `scenario/PERM` checks it in every declaration
--- order. On 7427828 `sameHolds` is NOT EQUATABLE (CK-118: a record endpoint
--- is answered from its session bits, not its expansion); every other
+-- order. A record endpoint is answered from its expansion, not its session
+-- bits, which would make `sameHolds` NOT EQUATABLE; every
 -- comparison checks.
 import Schema exposing (Conversion)
 

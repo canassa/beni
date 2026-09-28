@@ -1,11 +1,11 @@
--- CK-116: `==` refused because a method a derived `==` needs exists with the
+-- `==` refused because a method a derived `==` needs exists with the
 -- wrong type names that method and says why, instead of NOT EQUATABLE's
 -- "a function anywhere inside it rules the whole type out" — no function is
 -- involved in any of these (static-dispatch-spike.md §10.13). The reason is
 -- decided at the use (`hidden`, with both types), read off a derived
 -- context's answer (`Wrapped.local`) and off a published row (`wrapped`,
--- `wrap`). On 3ff3ac5 all four said "That type does not support `==`" with
--- the function hint.
+-- `wrap`) — never "That type does not support `==`" with the function
+-- hint for all four.
 import Hidden
 import Key
 import Odd

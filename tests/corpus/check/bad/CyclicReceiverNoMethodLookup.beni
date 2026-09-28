@@ -1,12 +1,12 @@
--- CK-03: a method used on a receiver that is already on a cycle is ONE
+-- A method used on a receiver that is already on a cycle is ONE
 -- `infinite_type` at the use, the cycle poisoned, and no method looked up on
--- its head (checker-v2.md §9.5, as built by R6a's review, F5): `x` is
+-- its head (checker-v2.md §9.5): `x` is
 -- `Maybe x` once `[ x, Just x ]` is solved, before `x.foo ()` and `x == x`.
--- On 68186fa v1 reports the cycle at the body and also `unknown_method`
--- (`Maybe` has no `foo`), the cycle's consequence. Known two-message case
--- (round-2 review, nit 1): with the method FIRST, `( x.foo (), x == Just x )`,
+-- No `unknown_method` follows (`Maybe` has no `foo`): that is the cycle's
+-- consequence. Known two-message case: with the method FIRST,
+-- `( x.foo (), x == Just x )`,
 -- the wanted is resolved on `Maybe a'` before the cycle closes, so its
--- `unknown_method` is honest then and both checkers give both messages.
+-- `unknown_method` is honest then and both messages are given.
 n x =
     ( [ x, Just x ], x.foo () )
 

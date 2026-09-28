@@ -1,9 +1,9 @@
--- CK-137, the `compare` and all-nullary variant: `<` on `Two.B` must not
+-- The `compare` and all-nullary variant: `<` on `Two.B` must not
 -- reuse `Two.A`'s resolution of `compare`. By the module rule `Two`'s one
 -- `pub compare : A, A -> Order` is `B`'s too, so `B1 < B2` is the
--- module-rule clash. At 8b98464 the resolution at `A` in `f` was memoised
--- per (module, value, method) without the receiver's type, and `g`'s
--- comparison called A's reversed `compare` on two `B`s.
+-- module-rule clash. A resolution at `A` in `f` memoised per (module,
+-- value, method) without the receiver's type would make `g`'s
+-- comparison call A's reversed `compare` on two `B`s.
 import Two
 
 

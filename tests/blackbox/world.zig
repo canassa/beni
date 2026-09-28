@@ -58,8 +58,7 @@ pub const entry_file = "out/_main.mjs";
 /// Wall-clock bound on one compiler run, unless `RunOptions` raises it.
 /// Generous: the point is to turn a hang into a failure, not to measure.
 ///
-/// **It is wall clock and not cpu time, and that is a compromise** (queue row
-/// 59). Wall clock cannot tell a hang from a run the scheduler parked: on
+/// **It is wall clock and not cpu time, and that is a compromise.** Wall clock cannot tell a hang from a run the scheduler parked: on
 /// Apple Silicon a single-threaded process can land on an efficiency core,
 /// and `check --jobs=1` over 5 000 empty modules was measured at 12.05,
 /// 24.29, 26.11, 59.16 and 61.16 s for identical deterministic work — with
@@ -75,7 +74,7 @@ pub const default_timeout_ms: i64 = 60_000;
 /// What a case gets when the thing being bounded is 5 000 files rather than a
 /// program: five times the worst run ever measured, so that no scheduling
 /// decision can reach it, and still a hang-detector. Raised from the default
-/// with a number in hand (queue row 59) and not before.
+/// with a number in hand and not before.
 pub const bulk_timeout_ms: i64 = 300_000;
 
 /// Largest stream the harness keeps. Beyond it the run fails loudly rather
@@ -463,7 +462,7 @@ pub const World = struct {
     /// collapsed into one, so a directory listing sees nothing wrong and
     /// only the emitted program misbehaves — which is how `main.mjs`
     /// against a module `Main`'s `Main.mjs` survived every green Linux run
-    /// until someone built on a Mac (queue row 58). On a case-SENSITIVE
+    /// until someone built on a Mac. On a case-SENSITIVE
     /// file system both files are there and this fires. That is the whole
     /// value: a Linux run catching a defect only a Mac can suffer, for one
     /// directory listing per build.
@@ -560,7 +559,7 @@ pub fn spawnAndCapture(
         // reads as the SIGABRT it was going to be. A Debug stack trace of an
         // overflowed stack takes longer to print than a case's timeout, so
         // without this one crash signed `timeout` or `crash=ABRT` by machine
-        // speed (R6a's round-2 review, S2).
+        // speed.
         return .{
             .cpu_ms = null,
             .exit_code = 255,
@@ -666,8 +665,7 @@ fn crashBanner(line: []const u8) bool {
 /// The list `tests/pending/` keeps beside its fixtures
 /// (`plans/checker-rewrite.md` §2.4), read by the corpus walker in pending
 /// mode and by `pending_test.zig`'s scenarios, so both apply rule (d) to the
-/// same records. (`CLAIMED`, the second list, and `RED`'s checker column
-/// went with v1 at R12.)
+/// same records.
 pub const pending = struct {
     /// One line of `tests/pending/RED`: the red signature a fixture (a
     /// repo-relative path) or a scenario (`scenario/<id>`) has.

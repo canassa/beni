@@ -1,10 +1,10 @@
 -- run: a `?` whose subject is an outer variable and whose target is a `let`
 -- definition's result: the target keeps its own success type polymorphic,
--- so `g` is used at two result types (checker-v2.md §4.5 *Amended by R5's
--- review*, D2 as amended in §21.1: the subject and the value go down to the
+-- so `g` is used at two result types (checker-v2.md §4.5,
+-- §21.1: the subject and the value go down to the
 -- target's rank, never the target to the subject's). The `?` is defaulted to
--- `Result` at `g`'s boundary, as v1 decides it. Checker v2 as first built
--- lowered the whole target to `u`'s rank and refused the program (CK-99).
+-- `Result` at `g`'s boundary. Lowering the whole target to `u`'s rank
+-- would refuse the program.
 import Node exposing (Program)
 
 

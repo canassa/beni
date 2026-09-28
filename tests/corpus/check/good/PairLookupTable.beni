@@ -2,13 +2,13 @@
 -- wildcard — a 40x45 grid, which is ordinary code (generated, see
 -- tests/corpus/README.md).
 --
--- Until queue slice 25 this was REFUSED at the default budget. The flat path
--- of slice 22 read one literal COLUMN and no more, so a TUPLE key went back
+-- A table like this must not be REFUSED at the default budget. A flat path
+-- that read one literal COLUMN and no more would send a TUPLE key back
 -- to `isUseful`, which specialises the matrix above every row twice over:
 -- ~2n squared, 6 587 936 steps here against a default of 5 000 000 —
 -- `pattern_budget_exhausted` on a table with nothing wrong with it. The key
--- path now unwraps the tuple and hashes the pair, so this costs 10 802 steps
--- (`checker.md` §6.6). The row count is what puts the old cost a third over
+-- path unwraps the tuple and hashes the pair, so this costs 10 802 steps
+-- (`checker.md` §6.6). The row count puts the unoptimised cost a third over
 -- the default, so this fixture fails the moment the key path stops reading a
 -- pair.
 pub cell : Int, Int -> Int

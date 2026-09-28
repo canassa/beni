@@ -1,11 +1,11 @@
--- CK-22: a private method answers dispatch only inside its own module
--- (owner decision D1, checker-v2.md §11.3). `T`'s `eq` compares modulo 10
+-- A private method answers dispatch only inside its own module
+-- (the owner's decision, checker-v2.md §11.3). `T`'s `eq` compares modulo 10
 -- and is private, so every comparison in `Main` that reaches it — through
 -- `Main`'s own derived `W`, a tuple, a record or a list — is
 -- `private_method` at its `==`, as the direct `M.T 1 == M.T 11` already is.
--- On 7427828 `M.inside (M.T 1) (M.T 11)` is `True`, the list is refused,
--- and the `W`, tuple and record comparisons build and print `False`: they
--- derive structurally and never ask whether `eq` is private. The same two
+-- Deriving structurally without asking whether `eq` is private would make
+-- `M.inside (M.T 1) (M.T 11)` `True` while the `W`, tuple and record
+-- comparisons build and print `False`: the same two
 -- values would compare differently in two places.
 pub type T
     = T Int

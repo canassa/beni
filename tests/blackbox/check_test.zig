@@ -3,11 +3,10 @@
 //!
 //! Boundary 1 throughout: the installed binary against a temp project,
 //! asserting diagnostics, exit codes and what did NOT land on disk. The
-//! scenarios exist because `--platform` was a `build` flag until this slice,
-//! so the one command whose job is "just type-check it" could not be pointed
-//! at any program that imports its platform for `Program` — which is every
-//! program, and what an editor, a pre-commit hook, CI, M4's daemon and M5's
-//! LSP all run.
+//! scenarios exist because without `--platform` on `check`, the one command
+//! whose job is "just type-check it" could not be pointed at any program
+//! that imports its platform for `Program` — which is every program, and
+//! what an editor, a pre-commit hook, CI, the daemon and the LSP all run.
 //!
 //! The load-bearing claim of the file is that `check --platform=X` and
 //! `build --platform=X` AGREE: the same diagnostics, byte for byte, up to the
@@ -250,7 +249,7 @@ test "dump --stage=interface --platform=node prints the interface of a program" 
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // The interface of a module whose exported type comes from the platform:
-    // unreachable before this slice, because the import did not resolve.
+    // unreachable without `--platform`, because the import does not resolve.
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqualStrings("", r.stderr);
     try testing.expectEqualStrings(
@@ -384,7 +383,7 @@ test "check --platform keeps its warnings and its exit code" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The measurement this slice unblocks: counting
+    // The measurement `check --platform` unblocks: counting
     // `ambiguous_method_receiver` over programs
     // (`static-dispatch-spike.md` §10.9, A.83) needed `build`, because
     // `check` could not load a program at all. A warning does not change an

@@ -1,4 +1,4 @@
-//! Black-box scenarios for the M0 CLI, the M1a lexer and the M1b parser
+//! Black-box scenarios for the CLI, the lexer and the parser
 //! (docs/design/frontend.md §1, §1.2, §8).
 //!
 //! Every scenario spawns the installed binary through `world.zig` and
@@ -565,7 +565,7 @@ test "--self-profile writes a Chrome trace with a read event per file and the co
     // hence the placeholder; the walk only ever picks up `.beni` files.)
     try w.write("nocore/PLACEHOLDER", "");
     // `--no-cache`, because the subject is EXACTLY which phases a run
-    // performs and the cache is on by default since M4-3: a cached run also
+    // performs and the cache is on by default: a cached run also
     // emits `frontend_load` and `frontend_store` per file, legitimately, and
     // a row that allowed them would stop saying "these and no others". What
     // a cached run's phases are is `cache_test.zig`'s counters.
@@ -635,7 +635,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The counters are what the M4 incrementality tests will assert
+    // The counters are what the incrementality tests assert
     // ("dependents were not re-checked"), so they have to be right before
     // there is anything to be incremental about. Three files, small enough
     // that every number can be stated and checked from the outside.
@@ -673,7 +673,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // └─────────────────────────────────────────┘
     try w.write("nocore/PLACEHOLDER", "");
     // `--no-cache`, because the subject is EXACTLY which phases a run
-    // performs and the cache is on by default since M4-3: a cached run also
+    // performs and the cache is on by default: a cached run also
     // emits `frontend_load` and `frontend_store` per file, legitimately, and
     // a row that allowed them would stop saying "these and no others". What
     // a cached run's phases are is `cache_test.zig`'s counters.
@@ -724,19 +724,19 @@ test "--self-profile records every phase of every file and every counter, exactl
     // (checker.md §9): they name the module's file but carry no byte count,
     // because what they measure is a graph and a constraint tree, not a
     // span of source. Per module and not per run, because "this module was
-    // not re-checked" is what M4's incrementality tests have to see.
+    // not re-checked" is what the incrementality tests have to see.
     var per_module_seen: [files.len][11]bool = @splat(@splat(false));
     var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
-    // `cache_load` and `dep_digest` are per MODULE from M4-3 on, not serial
+    // `cache_load` and `dep_digest` are per MODULE, not serial
     // passes: the key is finished, the entry is loaded and the two published
     // values are computed on the worker that claimed the module, because an
     // import's contribution exists only once that import has been checked
     // (`fast-compiler.md` §8). Both are emitted with or without a cache
     // directory, so that there is one code path rather than two. `derived`,
-    // `elaborate`, `publish` and `finish` are checker v2's P5, P6, P8 and P9
-    // (`checker-v2.md` §5), nested in `check`; they are here since v2 became
-    // the default checker (R11), and the scenario below pins their nesting.
+    // `elaborate`, `publish` and `finish` are the checker's P5, P6, P8 and P9
+    // (`checker-v2.md` §5), nested in `check`, and the scenario below pins
+    // their nesting.
     const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "elaborate", "publish", "finish", "cache_load", "dep_digest" };
     // `types` is serial and once per run (checker.md §5): numbering every
     // declared type and settling equatability. It is in the trace because
@@ -745,16 +745,16 @@ test "--self-profile records every phase of every file and every counter, exactl
     // trace the instrument.
     //
     // `cache_key` is serial too, and it is here on EVERY run and not only a
-    // cached one (`fast-compiler.md` §8). What it still does serially from
-    // M4-3 on is the part of the key that depends on nothing else in the
+    // cached one (`fast-compiler.md` §8). What it does serially is the part
+    // of the key that depends on nothing else in the
     // project — reading and hashing every source and every sibling `.js` —
     // with or without a cache directory, so that there is one code path
     // rather than two, and so that what it costs is a row in the trace rather
     // than a number nobody has.
     const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "types", "cache_key", "render" };
     var counters: [12]?u64 = @splat(null);
-    // v1's counters went with it (R12): `obligations` and the five
-    // `constraints_*` never reach the trace.
+    // The retired checker's counters, `obligations` and the five
+    // `constraints_*`, never reach the trace.
     var v1_counters: usize = 0;
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
@@ -805,16 +805,16 @@ test "--self-profile records every phase of every file and every counter, exactl
     // nothing outside the compiler can derive — they are literals, and a
     // change to either IR's shape is meant to show up here as a number to
     // look at rather than as silence.
-    // `modules`, `edges` and `interfaces` are the M2a additions: three
+    // `modules`, `edges` and `interfaces` are the module graph's: three
     // modules that import nothing, so no edge, and one interface each.
-    // The four checker counters are M2b's (checker.md §9). `main = 1` is
+    // The checker counters are checker.md §9's. `main = 1` is
     // one unification (the literal against the declaration's variable) and
     // one generalisation; `double x = x` is two more unifications (the
     // declaration against `p -> r`, then `r` against `p`), one
     // instantiation (the reference to `x`) and two generalisations (the
     // arrow and the variable under it). `type Color` declares no value and
-    // contributes nothing to any of them. The fourth, `obligations`, was
-    // v1's and is gone (R12).
+    // contributes nothing to any of them. A fourth, `obligations`, is no
+    // longer counted.
     try testing.expectEqual([12]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3, 3, 3, 1 }, counters);
     try testing.expectEqual(@as(usize, 0), v1_counters);
     try testing.expectEqual(@as(u64, 67), total_bytes);
@@ -826,7 +826,7 @@ test "--self-profile records P5, P6, P8 and P9 once per module, inside its check
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `checker-v2.md` §5: the phases after P4 each have an event nested in
-    // `check`, so no cost hides between events (R8c). The three modules of
+    // `check`, so no cost hides between events. The three modules of
     // the scenario above, with no core package mixed in.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1050,30 +1050,29 @@ test "an unreadable file is named identically across --jobs=1 and --jobs=8, twic
     }
 }
 
-test "diagnostics do not depend on which worker lexed which file, under load (CK-71)" {
+test "diagnostics do not depend on which worker lexed which file, under load" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // Promoted by hand from `pending_test.zig`'s `scenario/CK-71`
-    // (plans/checker-rewrite.md R1). Each worker interns into its own pool;
-    // until R1 the pools were merged in WORKER order, so a symbol's id
-    // followed the `next_file` race, and CK-07's `unifyRecord` names the
-    // field with the lower id. `Aaa` interns `qq`, `dd` and `bb`; `Main`'s
-    // `f g` fails on `pp` (inner `aa`) and `qq` (inner `bb`), and which one
-    // the message names followed the race: on 7427828 22 of 100 runs under
-    // load differed from the first. The ids are now input-derived
-    // (`Session.mergeInterners`), so every run names the same field.
+    // Each worker interns into its own pool; were the pools merged in
+    // WORKER order, a symbol's id would follow the `next_file` race, and
+    // `unifyRecord` names the field with the lower id. `Aaa` interns `qq`,
+    // `dd` and `bb`; `Main`'s `f g` fails on `pp` (inner `aa`) and `qq`
+    // (inner `bb`), and which one the message names would follow the race.
+    // The ids are input-derived (`Session.mergeInterners`), so every run
+    // names the same field.
     //
     // A race needs the scheduler to have a choice to make, and only a
-    // SATURATED machine gives it one. On 22daa5f, on a 32-thread machine:
-    // 0 of 60 runs flipped with 8 spinning threads, 0 of 60 with 16, 15 of
-    // 60 with 32. So there is one spinner per logical CPU, not a capped
-    // number — a cap of 8 made this test unable to go red at all there.
+    // SATURATED machine gives it one. On a 32-thread machine, with the
+    // merge in worker order: 0 of 60 runs flipped with 8 spinning threads,
+    // 0 of 60 with 16, 15 of 60 with 32. So there is one spinner per
+    // logical CPU, not a capped number — a cap of 8 made this test unable
+    // to go red at all there.
     //
-    // The arithmetic. Past the fix no run can differ, so this never fails
-    // spuriously. Before it, each run took the minority outcome with p
-    // between 0.18 (9 of 50, R1's reviewer) and 0.25 (15 of 60); R1's own
-    // stash run saw 41 of 49 runs differ from a minority first. The test
+    // The arithmetic. With input-derived ids no run can differ, so this
+    // never fails spuriously. With the merge in worker order, each run took
+    // the minority outcome with p between 0.18 (9 of 50) and 0.25 (15 of
+    // 60). The test
     // misses the race only if all `runs` agree, p^n + (1-p)^n, which for
     // n = 36 is at most 0.82^36 ≈ 8e-4 at p = 0.18 (and 3e-5 at 0.25).
     // n = 25 would be 7e-3 at 0.18, too often. Those rates were measured on
@@ -1147,9 +1146,9 @@ test "diagnostics do not depend on which worker lexed which file, under load (CK
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(usize, 0), differing);
-    // And the run is the one CK-07 is about: exit 1, one `missing_field`
-    // at `f g`, nothing on stdout. WHICH field it names is CK-07's (R4b);
-    // this test pins only that the name does not move.
+    // And the run is a record mismatch: exit 1, one `missing_field` at
+    // `f g`, nothing on stdout. WHICH field it names is the corpus's
+    // concern; this test pins only that the name does not move.
     try testing.expectEqual(@as(u8, 1), first.exit_code);
     try testing.expectEqualStrings("", first.stdout);
     try testing.expect(std.mem.indexOf(u8, first.stderr, "\"code\":\"missing_field\"") != null);
@@ -1716,7 +1715,7 @@ test "dump --stage=ast on a broken file prints placeholders in the tree, the err
 // The exit-code rule is the BINARY's — `frontend.md` §1 and `beni help` both
 // state it once, for every subcommand, and only a `warning` is exempt. Every
 // `dump` stage used to print a full `error` diagnostic on stderr and exit 0,
-// so a script, an editor or M5's LSP driving `dump` read a silent success
+// so a script, an editor or an LSP driving `dump` read a silent success
 // over a file the compiler had just refused. The dump is still printed: a
 // broken file is exactly the file someone runs `dump` on.
 test "every dump stage exits 1 over a file that produced an error, and still prints what it has" {
@@ -1766,7 +1765,7 @@ test "every dump stage exits 1 over a file that produced an error, and still pri
 }
 
 // ---------------------------------------------------------------------------
-// M1c: the formatter (language.md §9, frontend.md §1)
+// The formatter (language.md §9, frontend.md §1)
 // ---------------------------------------------------------------------------
 
 const ugly_module =
@@ -2168,7 +2167,7 @@ test "fmt --stdout needs exactly one file" {
 }
 
 // ---------------------------------------------------------------------------
-// M1c: lowering (docs/design/language.md §5–§8, frontend.md §1.2, §8).
+// Lowering (docs/design/language.md §5–§8, frontend.md §1.2, §8).
 // ---------------------------------------------------------------------------
 
 test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an operator as a core call" {
@@ -2377,7 +2376,7 @@ test "check reports a syntax error and a lowering error from one file in positio
 }
 
 // ---------------------------------------------------------------------------
-// M2a: the module graph, the core package, and cross-module resolution
+// The module graph, the core package, and cross-module resolution
 // (docs/design/checker.md §4).
 // ---------------------------------------------------------------------------
 
@@ -2745,7 +2744,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // report the operator compiled to `undefined(a, b)` and the build
     // exited 0.
     //
-    // `<` on `String` is the case S4 leaves: §3.2 gives it `primitive
+    // `<` on `String` is the case dispatch leaves to a primitive: §3.2 gives it `primitive
     // string_compare` and §8.3 emits `String$compare(a, b) === "LT"`,
     // because `<` on JavaScript strings is UTF-16 code-unit order and
     // `String.compare` is Unicode scalar order (A.26). `==` on `Int` is
@@ -2900,7 +2899,7 @@ test "resolution is identical at --jobs=1 and --jobs=8, on both streams" {
 }
 
 // ---------------------------------------------------------------------------
-// M2b — the type checker (checker.md §6, §8)
+// The type checker (checker.md §6, §8)
 // ---------------------------------------------------------------------------
 
 test "a type mismatch names the definition, shows both types and hints" {
@@ -3050,9 +3049,9 @@ test "a dozen checker diagnostics, each by code and span" {
             .path = "B.beni",
             .source = "selfApply f =\n    f f\n",
             .code = .infinite_type,
-            // At the binder `f` since the cut-over (R11): checker v2 runs the
-            // occurs check at every binder (CK-04, CK-57; `checker-v2.md` §6.3,
-            // §8.2), where v1 reported the body `f f` (2:5).
+            // At the binder `f`: the checker runs the occurs check at every
+            // binder (`checker-v2.md` §6.3, §8.2), not at the body `f f`
+            // (2:5).
             .start = .{ .line = 1, .col = 11 },
         },
         .{
@@ -3291,13 +3290,12 @@ test "a derived eq calls the user's own eq, across a module boundary" {
     // `Id`'s own `eq` compares only the major number, so `{ k = Id 1 2 } ==
     // { k = Id 1 99 }` is `True` by the table and `False` by the walk.
     //
-    // S4 could emit neither and refused (`backend.md` §1). S5 emits the
-    // record shape's own function, hands it `Id$eq` as the `k` field's
+    // The backend emits the record shape's own function, hands it `Id$eq` as the `k` field's
     // evidence, and the program prints the answer the table always had.
     // The single-module version of the same question is
     // `tests/corpus/run/UserEqInsideRecord.beni`; this one is here because
     // the method and the use are in DIFFERENT modules, so the part is an
-    // `ext` target and the import is the one S4 built.
+    // `ext` target and the import is the one dispatch lowering builds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Id.beni",
@@ -3383,8 +3381,6 @@ test "a derived eq calls the user's own eq, across a module boundary" {
 }
 
 test "a list whose elements have an eq of their own calls it, across a module boundary" {
-    // The wall S5 left standing, now down.
-    //
     // `List a` is a `foreign type`: it has no constructors, so no module
     // derives a body for it (A.55, A.60) and §5.2's `pub foreign eq` — the
     // one written in JavaScript against the emitter's cons cells (§9.5) —
@@ -3481,28 +3477,25 @@ test "a list whose elements have an eq of their own calls it, across a module bo
 }
 
 test "evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess" {
-    // Review of R2a, B1 (checker-v2.md §13.1). `w10` wraps its argument in
+    // checker-v2.md §13.1. `w10` wraps its argument in
     // 1 024 lists, so `{ a = w10 (T 1) } == …` compares a record whose one
     // field's evidence is `List.eq` nested 1 024 deep with `T`'s own `eq` —
     // which answers `True` whatever the payload — at the bottom.
     //
-    // R2a's first converter capped `parts` nesting at 1 024 and answered
+    // A converter that capped `parts` nesting at 1 024 would answer
     // anything deeper with the `undetermined` leaf: `Basics.eq` at the
-    // bottom, exit 0, and the program would print `structural` (this very
-    // library build emitted `List$eq(Basics$eq, …)` at the bottom). On
-    // `9a931d7` this library build was already right, and the reviewer's app
-    // build of the same program (`main` printing the answer) stopped with
-    // `internal` (the old walks' 32-level cap in `Reach`/`Edges`). The fix
-    // has no cap that writes a term, so the table and the emitted chain end
-    // in `T`'s `eq`.
+    // bottom, exit 0, and the program would print `structural`; a walk
+    // with a fixed depth cap in `Reach`/`Edges` would stop an app build of
+    // it with `internal`. There is no cap that writes a term, so the table
+    // and the emitted chain end in `T`'s `eq`.
     //
     // Not a `run/` fixture, because the claim is about the emitted chain as
     // much as the answer: the library build asserts the whole chain, and no
-    // structural answer anywhere in it. Until R2c it could not run at all —
-    // 1 024 nested evidence closures were past node's parser (CK-83) — and
-    // now every `nesting.spill`-tall closure is bound to a `const`
-    // (`backend.md` §4), so the app build of the same module runs too and
-    // prints what `T`'s `eq` answers.
+    // structural answer anywhere in it. 1 024 nested evidence closures
+    // printed as written are past node's parser, so every
+    // `nesting.spill`-tall closure is bound to a `const` (`backend.md` §4),
+    // and the app build of the same module runs too and prints what `T`'s
+    // `eq` answers.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
@@ -3538,7 +3531,7 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     const js = try w.read("out/Deep.mjs");
     // The chain, whole: one `List.eq` per level, `T`'s `eq` at the bottom,
-    // and no `Basics.eq` — the structural answer — anywhere. Since R8e a
+    // and no `Basics.eq` — the structural answer — anywhere. A
     // derived comparison calls `List.eq` as the runtime's `listEq`, which
     // takes a depth (backend.md §4, *Derived comparisons do not grow the
     // native stack*).
@@ -3572,8 +3565,8 @@ test "a constrained value in a part position is handed its own evidence" {
     // `Target.ext` carried none — so the record shape's derived function
     // was handed the bare name and called it with two arguments. Build
     // exit 0, `TypeError: Cannot read properties of undefined` at run
-    // time, which is the one outcome `backend.md` §1 forbids; S5 refused
-    // the program instead, which was honest and not enough.
+    // time, which is the one outcome `backend.md` §1 forbids; refusing
+    // the program instead would be honest and not enough.
     //
     // A `Target.ext` now carries a `parts` range of its own, filled from
     // the same rule `derived` uses: one target per constrained type
@@ -3635,7 +3628,7 @@ test "a constrained value in a part position is handed its own evidence" {
     try testing.expect(std.mem.indexOf(u8, main_js, "Lib$eq(Main$eq$prim,") != null);
 }
 
-test "a private eq wins inside its module and is private_method from every other (D1)" {
+test "a private eq wins inside its module and is private_method from every other" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3643,11 +3636,9 @@ test "a private eq wins inside its module and is private_method from every other
     // pass has to use the same ruler.
     //
     // `Ids.eq` is NOT `pub`. Inside `Ids` it wins — `sameMajor` compares
-    // the major number only. Until the cut-over (R11) `Main` then derived
-    // over `Id`'s shape, naming `Ids$Id$$eq`, and this scenario pinned that
-    // the declaring module wrote the row (it once did not: `SyntaxError` at
-    // load). Owner decision D1 (`checker-v2.md` §11.3, R8b) made a private
-    // method answer dispatch only inside its module while staying the method
+    // the major number only. The owner's decision that private methods
+    // answer dispatch only inside their module (`checker-v2.md` §11.3)
+    // makes a private method answer dispatch only there while staying the method
     // of every type the module declares, so `Main`'s comparison of a
     // `{ k : Id }` is `private_method` at its `==`, and nothing is written.
     // The same program without that comparison builds, and the private `eq`
@@ -3883,7 +3874,7 @@ test "a derived method of a submodule's namesake type does not collide with its 
 }
 
 test "a type that is not pub still exports the method another module derives for it" {
-    // A PIN, not a regression: this passes on `c63ae48` too. It is here
+    // A PIN, not a regression. It is here
     // because `Lower.exports` emits a nominal derived row whether or not
     // the type is `pub`, which reads like a leak until you have this
     // program in front of you.
@@ -4061,7 +4052,7 @@ test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
     // static-dispatch-spike.md §7.3: no symbol ids, no positions and no
     // module indices, and `derived` sorted by emitted name text and `sites`
     // by instruction BEFORE anything indexes them (§7.1, checker-v2.md §13.1,
-    // A.29). The table is what S4 and S5 lower from, so a byte that moves
+    // A.29). The table is what the backend lowers from, so a byte that moves
     // with `--jobs` is a program that changes with `--jobs`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4087,7 +4078,7 @@ test "a constraint that rode out on an inferred interface is reported without --
     // declaration's inferred scheme carries the constraints its body raised,
     // and that scheme IS the module's interface — so a body edit can change
     // what every importer is checked against (report 18 §2.3). The warning
-    // exists so plan §7's M3 churn measurement has something to count, and
+    // exists so the spike's interface-churn measurement has something to count, and
     // since A.83 it is ON BY DEFAULT, so the author hears about the suffix
     // when they create it rather than only under a flag.
     //
@@ -4283,14 +4274,14 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
 }
 
 // ---------------------------------------------------------------------------
-// M2d — the interface RECORD, not a view of it (checker.md §7,
+// The interface RECORD, not a view of it (checker.md §7,
 // fast-compiler.md §8.1)
 //
 // Every other determinism test in this file compares a printer's output,
 // and the two printers that show an interface both re-sort by name text —
 // so neither can see whether the BYTES of `terms`, `extra` and the
-// quantifier blocks depend on which worker interned which file. §8.1 has M4
-// hashing exactly those bytes, so the property has to be assertable about
+// quantifier blocks depend on which worker interned which file. §8.1 has the
+// cache hashing exactly those bytes, so the property has to be assertable about
 // them. `dump --stage=raw` exists for this and for nothing else.
 // ---------------------------------------------------------------------------
 
@@ -4377,7 +4368,7 @@ test "the interface record is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, raw[0], "  field alpha term=") != null);
     try testing.expect(std.mem.indexOf(u8, raw[0], "ctor 0 ") != null);
     // And the `where` blocks of static-dispatch-spike.md §6.5, which are
-    // the bytes S3 added to the record M4 will hash. They are written
+    // bytes of the record the cache hashes. They are written
     // SORTED BY NAME TEXT, never by symbol id, for exactly the reason the
     // record's fields are — so `compare` precedes `eq` here whatever order
     // the workers interned them in, and both an annotated `where` clause
@@ -4710,7 +4701,7 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §14.2, slice R3. What each row says, one type each:
+    // `checker-v2.md` §14.2. What each row says, one type each:
     // `Point` is an alias — no derived row, no bitset — whose constructor
     // names its fields in DECLARATION order (`y` before `x`: the record term
     // sorts them, the constructor does not); `Hidden` is opaque, and its
@@ -4719,18 +4710,18 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     // `eq` is `own_method` for every type of the module (the module rule,
     // decided before the function) while `compare` is derived; `Phantom`'s
     // `a` holds no value, so its bitset has `b` alone, and so does its
-    // derived context since the cut-over (R11: D4, CK-23 — v1's context had
-    // one entry per parameter); a derived row whose payload reaches no
-    // function says `no_function` (§14.2 *as amended by R8b*, which v1 never
-    // wrote); `HoldsValue` holds a `foreign type` with no
+    // derived context (a phantom parameter takes no evidence entry); a
+    // derived row whose payload reaches no function says `no_function`
+    // (§14.2 as amended); `HoldsValue` holds a `foreign type` with no
     // method, so neither row can be derived (`unanswerable`). The rest of
-    // the status vocabulary (§14.2 *As built*, N1) is pinned on core below.
+    // the status vocabulary (§14.2 *As built*) is pinned on core below.
     //
-    // And a parameter reached through a SCHEMA type (R3's review, S1): a
+    // And a parameter reached through a SCHEMA type: a
     // payload of `Page.Type a` (the module's own schema) or
-    // `Facts.Page.Type a` (an imported one) holds an `a`. The bitset was
-    // read with a reader that had no schema lookup, which read both as
-    // `err` and left the bit out — `payload={}`, the unsafe side for D10.
+    // `Facts.Page.Type a` (an imported one) holds an `a`. A bitset read
+    // with a reader that had no schema lookup would read both as `err` and
+    // leave the bit out — `payload={}`, the unsafe side for the rule that
+    // the equatable walk descends into payloads.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Facts.beni",
@@ -4966,7 +4957,7 @@ test "one level under the reading limit checks clean and publishes a real scheme
 
 // ---------------------------------------------------------------------------
 // The pattern-usefulness budget is the last guard that gave up in SILENCE
-// (`checker.md` §6.6, `backend.md` §7, queue slice 14)
+// (`checker.md` §6.6, `backend.md` §7)
 //
 // Deciding a `case` can cost exponentially much, so the analysis spends a
 // bounded amount of work on it. It used to report nothing when that ran out,
@@ -5195,8 +5186,7 @@ test "a `case` the checker could not decide never reaches the default-free decis
 }
 
 // ---------------------------------------------------------------------------
-// A FLAT lookup table is linear, not quadratic (`checker.md` §6.6, queue
-// slice 22)
+// A FLAT lookup table is linear, not quadratic (`checker.md` §6.6)
 //
 // The budget above was measured and found to refuse ordinary code: `isUseful`
 // ran every branch against the matrix of the branches above it, so a `case`
@@ -5325,12 +5315,12 @@ test "the flat path still names the redundant branch and the missing constructor
 }
 
 // ---------------------------------------------------------------------------
-// A PAIR-keyed lookup table is linear too (`checker.md` §6.6, queue slice 25)
+// A PAIR-keyed lookup table is linear too (`checker.md` §6.6)
 //
-// Slice 22 above read one literal COLUMN and no more, so `case ( a, b ) of
-// ( 1, 2 ) -> …` — a state machine's table, the most ordinary two-column code
-// there is — went straight back to `isUseful`, which specialises the matrix
-// above every row twice over: 2n². That met the default budget at about
+// A flat path that read one literal COLUMN and no more would send `case ( a,
+// b ) of ( 1, 2 ) -> …` — a state machine's table, the most ordinary
+// two-column code there is — straight back to `isUseful`, which specialises
+// the matrix above every row twice over: 2n². That met the default budget at about
 // 1 580 rows, which is still a table a person writes.
 //
 // The key path now unwraps every single-alternative constructor (a tuple is
@@ -5412,7 +5402,7 @@ test "a pair-keyed lookup table costs one probe a branch, not the square of the 
     const small = try w.run(&.{ "check", "--pattern-budget=4000", "Small.beni" });
     const big = try w.run(&.{ "check", "--pattern-budget=12000", "Big.beni" });
     const enums = try w.run(&.{ "check", "--pattern-budget=12000", "Enums.beni" });
-    // The path is not free, which is what keeps the refusal of queue slice 14
+    // The path is not free, which is what keeps the budget's refusal
     // reachable: one branch of one `case` still costs more than one step.
     const nothing = try w.run(&.{ "check", "--pattern-budget=1", "Small.beni" });
 
@@ -5539,7 +5529,7 @@ test "a pair row with a wildcard column falls back to the general relation" {
 }
 
 // ---------------------------------------------------------------------------
-// S3 — the module graph carries TYPE edges, and they are deterministic
+// The module graph carries TYPE edges, and they are deterministic
 // (`static-dispatch-spike.md` §6.8, `fast-compiler.md` §10, CLAUDE.md rule 5)
 //
 // A method call resolves in the module that DECLARES the receiver's type
@@ -5912,15 +5902,14 @@ test "schemas check and dump, while emit refuses before entry discovery and writ
     inline for (.{ "out1", "out2", "out3", "out4", "out5", "out6" }) |path| try testing.expect(!w.exists(path));
 }
 
-test "checker v2 writes the annotation escape and the infinite type as checker.md §8.5 specifies" {
+test "the checker writes the annotation escape and the infinite type as checker.md §8.5 specifies" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The two texts R4b wrote for v2 (`checker-v2.md` §15.3, S20): CK-01's
-    // escape, at the capture that tied `a` to `x`, and CK-57's infinite type
-    // written as its structure, at the binder `r`. Pinned whole, at both
-    // `--jobs`, because their fixtures in `tests/pending/` assert only codes
-    // and fragments until they are promoted at the cut-over.
+    // The two texts of `checker-v2.md` §15.3: the annotation escape, at the
+    // capture that tied `a` to `x`, and the infinite type written as its
+    // structure, at the binder `r`. Pinned whole, at both `--jobs`, because
+    // a fixture that asserts only codes and fragments cannot pin a text.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Texts.beni",
@@ -5973,7 +5962,7 @@ test "checker v2 writes the annotation escape and the infinite type as checker.m
 /// An `infinite_type` diagnostic at `line:col` over `width` bytes of `file`,
 /// its subject `about` ("for `w`" or "here") and its drawing.
 /// `p/Models.beni`'s `pub type alias PrivRecW = Nope`: the reported `err` two
-/// R8c scenarios below read through an imported alias.
+/// scenarios below read through an imported alias.
 fn unknownNope() diagnostic.Diagnostic {
     return .{
         .code = .unbound_type,
@@ -5994,19 +5983,18 @@ fn infiniteType(file: []const u8, line: u32, col: u32, width: u32, comptime abou
     };
 }
 
-test "R8c review B1: a merge that gives an `err` class structure voids the acyclicity proofs (checker v2)" {
+test "a merge that gives an `err` class structure voids the acyclicity proofs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §8.2 *as amended by R8c's review*. Unifying `( y4, w )`
+    // `checker-v2.md` §8.2 as amended. Unifying `( y4, w )`
     // with `( y7, w )`'s pieces merges a class that had become `err` (the
     // cycle through `y4` was poisoned) with a tuple: the merge gives the
     // `err` class structure — an edge no bind made — and closes `w = ( w, w )`.
-    // R8c's first stamps carried the proof onto the survivor, so the
-    // boundary's occurs walk stopped there: one INFINITE TYPE instead of two,
-    // and the cyclic type generalised into `f`'s scheme (a 1.4 GB type dump).
-    // Now a leaf given successors voids every proof (`TypeStore.gains`).
-    // The expectation is 5f18e23's v2 output (the reviewer's base).
+    // A stamp that carried the proof onto the survivor would stop the
+    // boundary's occurs walk there: one INFINITE TYPE instead of two, and
+    // the cyclic type generalised into `f`'s scheme (a 1.4 GB type dump).
+    // A leaf given successors voids every proof (`TypeStore.gains`).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6044,15 +6032,13 @@ test "R8c review B1: a merge that gives an `err` class structure voids the acycl
     try testing.expectEqualStrings("module Main\n  f : ? -> List ?\n    w : ?\n    y4 : ?\n    y7 : ?\n    y8 : ?\n", types.stdout);
 }
 
-test "R8c review B1: an infinite type through a schema alias's `err` is still refused (checker v2)" {
+test "an infinite type through a schema alias's `err` is still refused" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The same mechanism with an imported alias's `err` as the source: under
-    // R8c's first stamps this program was ACCEPTED (exit 0). The expectation
-    // is 5f18e23's v2 output. The source was CK-126's SILENT `err` (a private
-    // record schema through the alias) until R15-fix-D gave that endpoint its
-    // shape; it is now a dependency's reported one (`Nope`), which reads as
+    // The same mechanism with an imported alias's `err` as the source: a
+    // stamp that carried the proof would ACCEPT this program (exit 0). The
+    // source is a dependency's reported `err` (`Nope`), which reads as
     // `err` in `Main` the same way.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -6099,19 +6085,18 @@ test "R8c review B1: an infinite type through a schema alias's `err` is still re
     }), r.diagnostics);
 }
 
-test "R8c review B2: a cycle closed between a receiver's test and its positions' is found (checker v2)" {
+test "a cycle closed between a receiver's test and its positions' is found" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `k == x` resolves positions of `k`'s type. Between the receiver's cycle
     // test and a later position's, Rule U1 joins `x.eq y`'s wanted (`y ~ x`)
     // and the user `eq` on `P (Q b b)` binds `y ~ List x`: `x = List x`, with
-    // no demand in between. R8c's first "a position inherits its parent's
-    // proof" skipped the later test: a Debug panic (the self-check), and in
-    // ReleaseFast the INFINITE TYPE at another place. A proof is now voided by
-    // the bind itself (`TypeStore.gains`). The expectation is 5f18e23's v2
-    // output; the suite runs a ReleaseSafe binary, whose self-check is the
-    // Debug one.
+    // no demand in between. Were a position to inherit its parent's proof,
+    // the later test would be skipped: a Debug panic (the self-check), and
+    // in ReleaseFast the INFINITE TYPE at another place. A proof is voided
+    // by the bind itself (`TypeStore.gains`). The suite runs a ReleaseSafe
+    // binary, whose self-check is the Debug one.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6163,19 +6148,18 @@ test "R8c review B2: a cycle closed between a receiver's test and its positions'
     }), r.diagnostics);
 }
 
-test "R8c review round 2, B1: a record merge past a proved `err` row end voids the proofs (checker v2)" {
+test "a record merge past a proved `err` row end voids the proofs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `q : { a : Int | err }` (an imported alias's `err` as the row end:
-    // CK-126's silent one until R15-fix-D, a dependency's reported `Nope`
-    // since) is proved at its boundary. `p` unifies it with `{ a, b : List α }`: the
+    // `q : { a : Int | err }` (an imported alias's `err` as the row end: a
+    // dependency's reported `Nope`) is proved at its boundary. `p` unifies it with `{ a, b : List α }`: the
     // extra fields merge into the `err` row end, which absorbs them (the
     // survivor is `err`, so no leaf gained successors), yet the merged
     // record carries `b`, unwalked; then `α ~ List α` closes behind the
-    // proof. R8c's round-1 fix accepted the program (exit 0). The `err`
-    // rule (`TypeStore.touchesErr`) voids every proof on such a merge. The
-    // expectation is 5f18e23's v2 output (and v2 with no proof trusted).
+    // proof. Without the `err` rule the program would be accepted (exit 0).
+    // The `err` rule (`TypeStore.touchesErr`) voids every proof on such a
+    // merge, so the checker answers as it would with no proof trusted.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("p/Models.beni",
@@ -6228,7 +6212,7 @@ test "R8c review round 2, B1: a record merge past a proved `err` row end voids t
     }), r.diagnostics);
 }
 
-test "R8c review round 2, B2: an interior node that became `err` and then structure voids the proofs (checker v2)" {
+test "an interior node that became `err` and then structure voids the proofs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -6236,9 +6220,9 @@ test "R8c review round 2, B2: an interior node that became `err` and then struct
     // leaves, not its interior. The `bogus` list merges an interior node of
     // it with an `err`; `y`'s list then has `Unify.flat` write a tuple over
     // that `err` class, closing a cycle inside the proved graph with no
-    // proved node gaining successors. Round 1 generalised the cyclic type
-    // into `f`'s scheme. The expectation is 5f18e23's v2 output: one NAMING
-    // ERROR and `f : a -> ( ?, String )`.
+    // proved node gaining successors. The cyclic type must not generalise
+    // into `f`'s scheme: the answer is one NAMING ERROR and
+    // `f : a -> ( ?, String )`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6283,17 +6267,15 @@ test "R8c review round 2, B2: an interior node that became `err` and then struct
     try testing.expectEqualStrings("module Main\n  fst : ( a, b ) -> a\n    a : a\n  f : a -> ( ?, String )\n    v : a\n    q : ( ?, String )\n    z : Int\n    y : Int\n", types.stdout);
 }
 
-test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
+test "a mismatch over a shared or cyclic type prints a bounded message" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `x = ( x, x )` is a DAG the printer walked as a TREE: under
-    // `Render.max_depth` alone that is 2^24 leaves, 300 MB of stderr from a
-    // two-line program on both checkers (R4b's adversarial review, F1). The
-    // namer's node budget (`checker.md` §8.2) bounds one message. Since
-    // R15-fix-G (CK-177) the failure is the cycle's INFINITE TYPE, `a = ( a,
-    // a )`, and the printer elides a cycle where it repeats: a few hundred
-    // bytes where the mismatch printed 37 KB.
+    // `x = ( x, x )` is a DAG; walked as a TREE under `Render.max_depth`
+    // alone it is 2^24 leaves, 300 MB of stderr from a two-line program.
+    // The namer's node budget (`checker.md` §8.2) bounds one message. The
+    // failure is the cycle's INFINITE TYPE, `a = ( a, a )`, and the printer
+    // elides a cycle where it repeats: a few hundred bytes.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6319,16 +6301,15 @@ test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
     }
 }
 
-test "checker v2's library build of a module that declares a type writes the derived rows v1 writes" {
+test "a library build of a module that declares a type writes its derived rows" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §11.2 (R8a): P5 writes every type's `eq` and `compare`
+    // `checker-v2.md` §11.2: P5 writes every type's `eq` and `compare`
     // from its derived context, and a `--library` build exports them
-    // (`Reach.collectRoots`). Until R8a v2 refused this build; now it writes
-    // the same module v1 writes — `Colour`'s two parameterless rows, and
-    // `Pair`'s, whose context is one entry per parameter under D4 exactly as
-    // under v1's rule, since `Pair` compares both.
+    // (`Reach.collectRoots`): `Colour`'s two parameterless rows, and
+    // `Pair`'s, whose context is one entry per parameter that holds a
+    // value, since `Pair` compares both.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6390,16 +6371,15 @@ test "checker v2's library build of a module that declares a type writes the der
     }
 }
 
-test "a private type reached only through a pub alias body gets a hidden row: v2's importer passes the evidence its definition takes" {
+test "a private type reached only through a pub alias body gets a hidden row: the importer passes the evidence its definition takes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R8a's review, S2. An alias body is in no record, so no `type_refs` row
-    // of `A`'s names `Hidden`, and R8a's first draft wrote no hidden row for
-    // it: `Main` read "no row" as "the old checker wrote this record" and
-    // called `A$Hidden$$eq` with v1's ABI — two evidence arguments, one per
-    // parameter — while `A` defined it with D4's one (`a` is phantom).
-    // `Publish` now closes the hidden set over its own alias bodies, as
+    // An alias body is in no record, so no `type_refs` row of `A`'s names
+    // `Hidden`; without a hidden row for it, `Main` would call
+    // `A$Hidden$$eq` with two evidence arguments, one per parameter, while
+    // `A` defines it with one (`a` is phantom and takes no entry).
+    // `Publish` closes the hidden set over its own alias bodies, as
     // `cache/Digest.zig` closes its type set. No program can build a
     // `Hidden` value from outside `A`, so this is the emitted call, not a run.
     var w = try World.init(testing.allocator, testing.io);
@@ -6439,24 +6419,23 @@ test "a private type reached only through a pub alias body gets a hidden row: v2
     // └─────────────────────────────────────────┘
     const a = try w.read("lib/A.mjs");
     const main = try w.read("lib/Main.mjs");
-    // One evidence parameter, then the two values, then R8d's depth: `b` is
+    // One evidence parameter, then the two values, then the depth: `b` is
     // a position, so the function is no leaf (backend.md §4, *Derived
     // comparisons do not grow the native stack*).
     try testing.expect(std.mem.indexOf(u8, a, "A$Hidden$$eq = ($m$0, $x, $y, $d = 0) =>") != null);
     try testing.expect(std.mem.indexOf(u8, main, "A$Hidden$$eq(Main$eq$prim, x$1, y$2)") != null);
 }
 
-test "CK-108: a payload's equatable requirement survives a derived context under v2, for == and <, own and published" {
+test "a payload's equatable requirement survives a derived context, for == and <, own and published" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R8a's structural review, B1. `H.eq`'s body compares the `a`s with
-    // `Basics.eq`, so its scheme asks `equatable` of `a` as a FLAG, not as an
-    // `a.eq` clause. R8a's first draft read only open wanteds off a pass's
-    // markers, so `W`'s context was empty and v2 compared two functions.
-    // The corpus fixtures `check/bad/DerivedContextEquatableFlag*` pinned v1's
-    // text until R11 and pin v2's since (they name the function); this pins v2's code
-    // and place.
+    // `H.eq`'s body compares the `a`s with `Basics.eq`, so its scheme asks
+    // `equatable` of `a` as a FLAG, not as an `a.eq` clause. Reading only
+    // open wanteds off a pass's markers would leave `W`'s context empty and
+    // compare two functions. The corpus fixtures
+    // `check/bad/DerivedContextEquatableFlag*` pin the text (they name the
+    // function); this pins the code and place.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const holder_eq =

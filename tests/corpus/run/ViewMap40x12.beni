@@ -1,8 +1,8 @@
 -- run: a TEA-style `view`, 40 levels deep with 12 children a level and a
--- `List.map` lambda every level — the shape a UI is written in. Review of R2c, S1:
--- the lambdas' bodies nest inside the calls that hold them, so the emitter
+-- `List.map` lambda every level — the shape a UI is written in.
+-- The lambdas' bodies nest inside the calls that hold them, so the emitter
 -- binds the calls holding them to `const`s (`backend.md` §4) and it builds,
--- runs and loads in every browser, as it did before R2c.
+-- runs and loads in every browser.
 import Node exposing (Program)
 
 

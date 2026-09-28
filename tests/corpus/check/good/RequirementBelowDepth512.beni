@@ -1,10 +1,10 @@
--- CK-135: a `==` requirement whose variable sits below depth 512 of a type
+-- A `==` requirement whose variable sits below depth 512 of a type
 -- is still a requirement. `w10` doubles a tuple ten times, so `g`'s
--- parameter `t` is compared at a type 2^10 levels deep. At 8b98464
--- `Schemes.orderWalk` (the canonical requirement order) stops silently at
--- depth 512 and leaves `g`'s `eq` out of its list, while `Instantiate`
--- counts it: the Debug binary panics "an instantiation's requirement is
--- paired with no wanted" (ReleaseFast: INTERNAL ERROR). Expected: the
+-- parameter `t` is compared at a type 2^10 levels deep.
+-- `Schemes.orderWalk` (the canonical requirement order) must not stop
+-- silently at depth 512 and leave `g`'s `eq` out of its list while
+-- `Instantiate` counts it (an instantiation's requirement paired with no
+-- wanted: an INTERNAL ERROR). Expected: the
 -- module checks, as it does at `w9`, with nothing public. Oracle twin:
 -- the same file with `w9`/`u9` as the last pair checks clean.
 w1 x =

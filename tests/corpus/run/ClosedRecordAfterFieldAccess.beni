@@ -1,11 +1,11 @@
--- CK-08: a closed record stays closed after one of its fields is read, so
+-- A closed record stays closed after one of its fields is read, so
 -- `==` derives for it (static-dispatch-spike.md §6.3, closed-record row;
 -- checker-v2.md §9.3 step 5, `Walk.recordRow`). Expected `a`, `eq`.
 --
--- Oracle twin, run on 7427828: this file with the two list items swapped
--- (the comparison before the field read) prints `eq`, `a`. As written,
--- 7427828 refuses it with NO METHODS HERE: the field read leaves `p`'s type
--- a chain of extension links, and the closedness test reads only one link.
+-- Oracle twin: this file with the two list items swapped
+-- (the comparison before the field read) prints `eq`, `a`. As written, it
+-- must not be NO METHODS HERE: the field read must not leave `p`'s type a
+-- chain of extension links whose closedness test reads only one link.
 import Node exposing (Program)
 
 

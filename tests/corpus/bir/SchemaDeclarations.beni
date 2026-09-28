@@ -1,5 +1,5 @@
--- BIR: schema.md §2/§10. S1 preserves every source-level choice needed by
--- S2: visibility, parameters, qualified/nested operands, modifiers, external
+-- BIR: schema.md §2/§10. BIR preserves every source-level choice that name
+-- resolution needs: visibility, parameters, qualified/nested operands, modifiers, external
 -- names, discriminator/tags and an explicit recursive reference.
 import Conversions
 import Models

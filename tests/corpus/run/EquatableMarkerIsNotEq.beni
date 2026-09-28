@@ -1,13 +1,13 @@
--- CK-19: the `equatable` marker of an explicit `Basics.eq` is a structural
+-- The `equatable` marker of an explicit `Basics.eq` is a structural
 -- guarantee, never an `eq` method (static-dispatch-spike.md §3.4,
 -- checker-v2.md §11.4), so `x == y` on a `Ci` calls `Ci`'s own `eq`, which
 -- ignores case, whatever else the declaration says and in whatever order it
 -- says it. Expected `True` three times.
 --
--- Oracle twin, run on 7427828: the direct `Ci "a" == Ci "A"`, and
+-- Oracle twin: the direct `Ci "a" == Ci "A"`, and
 -- `markerAfter` (the same body with the two `let` statements swapped), both
--- print `True`. On 7427828 `markerFirst` prints `False`: the marker set
--- first on `x`'s variable answers the later `==` structurally.
+-- print `True`. `markerFirst` must too: a marker set first on `x`'s
+-- variable must not answer the later `==` structurally.
 import Node exposing (Program)
 
 

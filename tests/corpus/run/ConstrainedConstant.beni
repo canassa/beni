@@ -1,10 +1,10 @@
 -- An ANNOTATED constant of no parameters carrying a `where` clause
--- (`docs/design/static-dispatch-spike.md` §8.1, §8.2, §10.10, A.85; queue
--- row 57). It is the shape of `Dict.empty`: the requirement belongs to the
+-- (`docs/design/static-dispatch-spike.md` §8.1, §8.2, §10.10, A.85). It is
+-- the shape of `Dict.empty`: the requirement belongs to the
 -- TYPE and is carried for a later call, not used by the body.
 --
--- It built with exit 0 and threw `TypeError: Cannot read properties of
--- undefined (reading '$')` at LOAD. A reference to a constrained value is
+-- Compiled wrongly it builds with exit 0 and throws `TypeError: Cannot read
+-- properties of undefined (reading '$')` at LOAD. A reference to a constrained value is
 -- its eta-expansion (A.25), and at beni arity 0 an eta-expansion is a
 -- THUNK: `blankInts = () => blank(eq$prim)`, handed straight to
 -- `List.length`, while every consumer reads the name as the list it is

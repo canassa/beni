@@ -1,4 +1,4 @@
--- CK-23: see Main.beni. `Fn` holds a function behind a custom `eq`.
+-- See Main.beni. `Fn` holds a function behind a custom `eq`.
 pub type Fn
     = Fn (Int -> Int)
 

@@ -1,8 +1,8 @@
--- CK-01: after an escape is reported, what the body tied the rigid to — the
+-- After an escape is reported, what the body tied the rigid to — the
 -- lambda parameter `z` — is poisoned with it, so the application to `x` adds
--- no second message about `a` outside `g` (checker-v2.md §8.3). Before R4b's
--- review v2 added a TYPE MISMATCH at 16:9 naming `g`'s `a`; v1 reports only
--- that one, and misses the escape.
+-- no second message about `a` outside `g` (checker-v2.md §8.3): no TYPE
+-- MISMATCH at 16:9 naming `g`'s `a`, and the escape itself is not missed.
+--
 coerce : b -> String
 coerce x =
     (\z ->

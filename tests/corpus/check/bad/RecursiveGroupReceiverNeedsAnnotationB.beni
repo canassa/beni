@@ -1,8 +1,8 @@
--- CK-72: (the twin) `RecursiveGroupReceiverNeedsAnnotation.beni` with `g`
--- written first (round 3's `sccB`): the same single `kind_mismatch` at
--- `q "s"`, with the hint to annotate `g`, whatever the order. On 7427828
--- `check` exits 0, and `build` stops with INTERNAL ERROR "The hidden
--- arguments of this call do not add up".
+-- (the twin) `RecursiveGroupReceiverNeedsAnnotation.beni` with `g`
+-- written first: the same single `kind_mismatch` at
+-- `q "s"`, with the hint to annotate `g`, whatever the order — never a
+-- clean `check` followed by a `build` that stops with INTERNAL ERROR "The
+-- hidden arguments of this call do not add up".
 
 
 type Box a

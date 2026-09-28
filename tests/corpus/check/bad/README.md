@@ -12,15 +12,15 @@ fixture without a `.diag` is a failure, not a pass.
 The codes this kind covers are checker.md §8.1's, minus the arity family,
 which has its own kind (`check/args`, §8.3):
 
-- **M2a, the module graph and names** — `unknown_module`, `import_cycle`,
+- **The module graph and names** — `unknown_module`, `import_cycle`,
   `unknown_import_name`, `private_name`, `opaque_constructor`,
   `wrong_type_arity`, `recursive_alias`, plus the two `equatable` codes of
   Appendix A.
-- **M2b, inference** — `type_mismatch`, `rigid_mismatch`, `infinite_type`,
+- **Inference** — `type_mismatch`, `rigid_mismatch`, `infinite_type`,
   `kind_mismatch`, `missing_field`, `unknown_field`, `record_not_closed`,
   `not_equatable`, `not_interpolatable`, `ambiguous_interpolation`,
   `ambiguous_tuple`, `tuple_index_out_of_range`, `not_a_tuple`, `try_shape`.
-- **M2c, pattern usefulness** — `missing_patterns` and `redundant_pattern`
+- **Pattern usefulness** — `missing_patterns` and `redundant_pattern`
   (checker.md §6.6). These two are reported only for a declaration that
   type-checked, so a fixture for them must be otherwise correct — a `case`
   whose branches disagree produces `type_mismatch` and nothing else.

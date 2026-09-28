@@ -1,10 +1,10 @@
 -- check/bad: one explicit `Basics.eq` on a record holding a function and a
 -- variable later used as a function says `not_equatable` ONCE, whatever
--- order the interner gave the two field names (checker-v2.md §11.4, I13; R5's
--- structural review, B1: checker v2 as first built printed it twice when
+-- order the interner gave the two field names (checker-v2.md §11.4: the
+-- reported failure follows name text, never id order — it must not depend on whether
 -- `fnf` was interned before `flexf`). `flexf` is interned first here — the
 -- first declaration names it; `EqOneQuestionRecordNamesFirst` is the twin
--- that interns `fnf` first. The golden is checker v1's.
+-- that interns `fnf` first.
 flexf =
     1
 

@@ -1,4 +1,4 @@
--- CK-22: see A.beni. The comparison, two modules away from the private `eq`.
+-- See A.beni. The comparison, two modules away from the private `eq`.
 import B
 
 

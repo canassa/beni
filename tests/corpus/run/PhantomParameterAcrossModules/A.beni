@@ -1,14 +1,14 @@
--- CK-23: a phantom type argument that is a function blocks neither `==` nor
--- explicit `Basics.eq` ACROSS modules (checker-v2.md §11.4, D10; R8b's
--- reviewer focus): the marker walk reads an imported type's
+-- A phantom type argument that is a function blocks neither `==` nor
+-- explicit `Basics.eq` ACROSS modules (checker-v2.md §11.4, §21.1): the
+-- marker walk reads an imported type's
 -- `payload_params` — an opaque type's from its exported row, a private
--- type's reached through a published scheme from its hidden row (§14.2 *as
--- amended by R8a*; R8b reads the hidden one, which it set to every bit
--- before) — and descends only where a payload can hold a value. Expected
--- `True`, `False`, `True`, `True`, `False`. On 7427828 all five are NOT
--- EQUATABLE `Tag (Int -> Int)` / `Hid (Int -> Int)`. The oracle twin is
+-- type's reached through a published scheme from its hidden row
+-- (§14.2) — and descends only where a payload can hold a value. Expected
+-- `True`, `False`, `True`, `True`, `False` — never NOT EQUATABLE
+-- `Tag (Int -> Int)` / `Hid (Int -> Int)`. The oracle twin is
 -- the same project with `Int` for the phantom argument, which prints the
--- same five lines on 7427828.
+-- same five lines.
+--
 pub opaque type Tag a
     = Tag Int
 

@@ -1,5 +1,5 @@
 -- check/bad: a self-application, which needs a type that mentions itself.
--- The occurs check runs at every binder (checker-v2.md §6.3, CK-04; since
--- R11), so the report lands on the parameter `f`, written `a = a -> b`.
+-- The occurs check runs at every binder (checker-v2.md §6.3), so the report
+-- lands on the parameter `f`, written `a = a -> b`.
 apply f =
     f f

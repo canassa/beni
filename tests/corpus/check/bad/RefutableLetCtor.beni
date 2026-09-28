@@ -1,5 +1,5 @@
 -- check/bad: `let` was widened with parameters and by the same analysis (§7,
--- manager decision 2026-09-18) — `let (Boxed n) = b` is legal because `Boxed`
+-- decided 2026-09-18) — `let (Boxed n) = b` is legal because `Boxed`
 -- is its type's only constructor, and `let (Just v) = m` is
 -- refutable_let_pattern from the CHECKER, at 14:9, naming what is missing. A
 -- constructor nested inside an irrefutable tuple counts (23:19): the analysis

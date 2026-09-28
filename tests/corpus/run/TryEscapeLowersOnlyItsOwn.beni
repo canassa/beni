@@ -1,6 +1,6 @@
--- CK-62: a `let`-local `?` whose target escapes to the declaration lowers
+-- A `let`-local `?` whose target escapes to the declaration lowers
 -- only its own variables — its subject, its target's result and its value —
--- and nothing else young beside them (checker-v2.md §4.5, round 3's N-3):
+-- and nothing else young beside them (checker-v2.md §4.5):
 -- `twice`, in the same `let` as `v = u?`, is still generalised and used at
 -- two types, while `u` and `v` go down with the escaping target (`g`'s
 -- result is `k`'s) and the `?` is decided as `Maybe` by the `case` after the
@@ -8,12 +8,12 @@
 -- Expected `Just { a = { a = 1, b = 1 }, b = { a = "s", b = "s" } }` (how
 -- `Debug.toString` prints a pair of pairs) and `7`.
 --
--- Oracle twin, run on checker v1 at 2bc9e22: this file with `f : (( ( Int, Int ), (
+-- Oracle twin: this file with `f : (( ( Int, Int ), (
 -- String, String ) ) -> Maybe ( ( Int, Int ), ( String, String ) )) -> (
 -- Maybe ( ( Int, Int ), ( String, String ) ), Int )` and `g : Maybe Int ->
 -- Maybe ( ( Int, Int ), ( String, String ) )` annotated prints the
--- expected two lines. As written, v1 commits the `?` to `Result` and
--- refuses the file with TYPE MISMATCH `Maybe a` against `Result b c`.
+-- expected two lines. Committing the `?` to `Result` at once would
+-- refuse the file with TYPE MISMATCH `Maybe a` against `Result b c`.
 import Node exposing (Program)
 
 

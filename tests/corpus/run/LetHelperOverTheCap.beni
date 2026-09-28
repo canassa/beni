@@ -1,10 +1,10 @@
--- R14's review B2 (checker-v2.md §8.4 *As built by R14*): a `let` function
+-- run (checker-v2.md §8.4): a `let` function
 -- binding whose own requirements number more than `max_inferred_constraints`
--- (64, static-dispatch-spike.md §10.11) is HELD, as every constrained `let`
--- was before D5, not refused: at the top level an annotation lifts the cap,
+-- (64, static-dispatch-spike.md §10.11) is HELD monomorphic, not refused:
+-- at the top level an annotation lifts the cap,
 -- and a `let` annotation cannot carry a `where` clause, so a refusal would
--- have no escape hatch (CLAUDE.md rule 7). 7427828 and 3e924cc build this
--- program; R14's first cut refused it with TOO MANY INFERRED CONSTRAINTS.
+-- have no escape hatch (CLAUDE.md rule 7). It must not be TOO MANY
+-- INFERRED CONSTRAINTS.
 -- `h` has 65 parameters, each compared with itself, and is used once, at
 -- `Int`. Expected `True`.
 import Node exposing (Program)

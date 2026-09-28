@@ -1,4 +1,4 @@
--- S2: one module exports independent record, generic and tagged schema namespaces.
+-- One module exports independent record, generic and tagged schema namespaces.
 import Schema exposing (Conversion)
 import Conversions
 

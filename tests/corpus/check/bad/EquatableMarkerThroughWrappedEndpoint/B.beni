@@ -1,6 +1,6 @@
--- CK-120: see Main.beni. The declaring module: `Holds` wraps `Loop.Type`,
+-- See Main.beni. The declaring module: `Holds` wraps `Loop.Type`,
 -- whose `via` target holds a function; its record publishes `Holds`'s
--- §11.4 gate (`no_function`, §14.2 *as amended by R8b*).
+-- §11.4 gate (`no_function`, §14.2).
 import Schema exposing (Conversion)
 
 

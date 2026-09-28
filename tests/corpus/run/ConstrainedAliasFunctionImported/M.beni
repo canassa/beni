@@ -1,16 +1,16 @@
--- CK-84: a constrained function whose annotation names its type through an
+-- A constrained function whose annotation names its type through an
 -- ALIAS (`Pred a` for `a -> Bool`) takes as many parameters across a module
 -- boundary as inside one (checker-v2.md §12.5). The importer reads the arity
 -- from the interface, whose scheme body is an `alias` term; it has to look
 -- through it to the function, as the exporter's own `value_arity` does.
 -- Expected `2`, `t`, `1`, `f`, `2`, `t`, `2`, `t`.
 --
--- Oracle twin, run on 84e3cb1: this project with `Pred a` written out as
+-- Oracle twin: this project with `Pred a` written out as
 -- `a -> Bool` in the three annotations below and in `Main.mine` prints
--- exactly the expected lines. As written, 84e3cb1 builds with exit 0 and
--- the program throws `TypeError: isGood$2 is not a function`: `M.same` in
--- value position was lowered as a read of a constant, `M$same(eq)`, a call
--- with the element missing, instead of the closure `($p) => M$same(eq, $p)`.
+-- exactly the expected lines. Lowering `M.same` in value position as a
+-- read of a constant, `M$same(eq)` — a call with the element missing —
+-- instead of the closure `($p) => M$same(eq, $p)`, would build with exit 0
+-- and throw `TypeError: isGood$2 is not a function`.
 pub type alias Pred a =
     a -> Bool
 

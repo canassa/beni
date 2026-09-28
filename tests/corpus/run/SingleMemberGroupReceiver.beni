@@ -1,10 +1,10 @@
--- A regression guard from the checker-v2 design review (round 3; plans/
--- checker-rewrite.md §5.4, D14): a `let` helper whose receiver is the
+-- A regression guard (checker-v2.md §10.7): a `let` helper whose receiver is the
 -- enclosing single-member group's own parameter — `q z = x.combine z` — is
 -- generalised in `z`, so `q 1` and `q "s"` both check and `f (T 4)` is
--- `( 4, 4 )`. D14's refusal is for receivers from ANOTHER member of a
--- recursive group (CK-72); single-member groups are left alone. 7427828 gets
--- it right.
+-- `( 4, 4 )`. The recursive-group refusal is for receivers from ANOTHER
+-- member of a recursive group; single-member groups are left alone.
+--
+--
 import Node exposing (Program)
 
 

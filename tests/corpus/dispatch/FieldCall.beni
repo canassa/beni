@@ -1,8 +1,8 @@
 -- dispatch: the `field` target (§7.1, §8.3). A receiver whose type is known
 -- at the call and turns out to be a RECORD is a field call — `language.md`
 -- §6.3 unchanged — so `handler.run 1` means `(handler.run) 1` and the table
--- says `field`. That is the row S4 must keep lowering the way it does
--- today, and it is the difference between §1.2's resolution table and
+-- says `field`. That is the row the backend keeps lowering as a plain
+-- field call, and it is the difference between §1.2's resolution table and
 -- §6.3's discharge table: a constraint that was DEFERRED and only later met
 -- a record is `no_methods_on_shape` instead (§11's deferred-receiver row,
 -- `check/bad/MethodOnTuple` and the hint in §10.3).

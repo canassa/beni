@@ -1,5 +1,5 @@
 -- run: a derived comparison that recurses ACROSS two user modules keeps its
--- depth and does not throw on deep data (CK-128, R8d; `backend.md` §4,
+-- depth and does not throw on deep data (`backend.md` §4,
 -- *Derived comparisons do not grow the native stack*).
 --
 -- Every level of `U` is `Main`'s `U$$eq` → `Wrap`'s `Wrap$$eq` (another

@@ -1,14 +1,14 @@
--- CK-25: (queue row 73) a derived function takes one evidence parameter per
--- entry of its inferred CONTEXT (owner decision D4, checker-v2.md §11.2).
+-- run: a derived function takes one evidence parameter per
+-- entry of its inferred CONTEXT (the owner's decision, checker-v2.md §11.2).
 -- `Holder`'s own `eq` needs `a.key`, so `Main`'s `Outer a`, which holds a
 -- `Holder a`, derives `eq` with context `a.key` — not "`a.eq`, one per type
 -- parameter" — and both comparisons call `Holder.eq`, which compares keys
 -- only. Expected `True`, `True`.
 --
--- Oracle twin, run on 7427828: this project with `Outer` made monomorphic,
+-- Oracle twin: this project with `Outer` made monomorphic,
 -- `type Outer = Outer (Holder.Holder Keyed.Keyed)`, prints `True`, `True`.
--- As written, 7427828 refuses the second comparison with NOT EQUATABLE
--- `Outer Keyed`: the derived ABI asks `a.eq` of the parameter, and `Keyed`
+-- A derived ABI that asked `a.eq` of the parameter would refuse the second
+-- comparison with NOT EQUATABLE `Outer Keyed`, since `Keyed`
 -- has none.
 pub type Holder a
     = Holder a

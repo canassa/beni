@@ -8,19 +8,16 @@
 //! invalidation table is pinned as a fact about two hashes first, and the
 //! cutoff is then wired to hashes that are already under test.
 //!
-//! **Three rows fail before the digest exists**, and they are the reason it
-//! does. Row 10 is `plans/m4-3.md` §6.1's demonstrated miscompile — a private
-//! type's constructor payload becomes a function, the type stops being
-//! `equatable`, and the declaring module's interface hash does not move by one
-//! byte (measured here and in the plan: `app:Leaf 5c2c9081…` on both sides).
-//! Under checker v2 (the default since R11, the only one since R12) the record
-//! states it and the hash moves too (checker-v2.md §14.3 *as built by R10*).
-//! Row 13 is §6.2's — a `pub type alias` whose body no scheme of its own module
-//! mentions has its expansion nowhere in the record, and renaming a field of it
-//! leaves the hash at `3c04159f…` while an importer goes from exit 0 to
-//! `missing_field`. Row 16 is the derived set.
+//! **Some rows are the reason the digest exists.** A private type's
+//! constructor payload becomes a function (`plans/m4-3.md` §6.1): the type
+//! stops being `equatable`, which a record that did not state the bit would
+//! miss entirely. The record states it, so the hash moves too (checker-v2.md
+//! §14.3). A `pub type alias` whose body no scheme of its own module mentions
+//! (§6.2) has its expansion nowhere in the record, and renaming a field of it
+//! leaves the hash unmoved while an importer goes from exit 0 to
+//! `missing_field`. The derived set is the third.
 //!
-//! **And rows 4, 5, 9, 11, 12, 14 and 15 are the ones that must NOT be cut
+//! **And the rows whose hash moves are the ones that must NOT be cut
 //! off.** A table that only proved things are skipped would pass on a cache
 //! that never hits, so every row that must re-check names the modules it must
 //! re-check.
@@ -325,8 +322,8 @@ const nothing: []const []const u8 = &.{};
 /// **The digest's wave is transitive, and that is the trade `fast-compiler.md`
 /// §8 takes deliberately.** A digest folds each direct import's `(hash,
 /// digest)` pair, so a change that moves `Leaf`'s digest moves `Mid`'s and
-/// therefore `Side`'s and `Top`'s — exactly as M4-1's key is inductive over
-/// sources. *Rejected: an explicit reachability closure* — it is the same
+/// therefore `Side`'s and `Top`'s — exactly as a key of source hashes is
+/// inductive over sources. *Rejected: an explicit reachability closure* — it is the same
 /// answer computed twice, and the second computation is the one that can be
 /// wrong. What makes the trade pay is that a digest-visible change is RARE: a
 /// comment, whitespace, a private value and a private type move none of them,
@@ -394,12 +391,12 @@ test "the two flags do not depend on --jobs" {
 // §10.1's table
 // ---------------------------------------------------------------------------
 
-test "row 1: nothing changed moves no hash and no digest" {
+test "nothing changed moves no hash and no digest" {
     try runRow(.{ .what = "nothing", .hashes = nothing, .digests = nothing });
 }
 
-test "row 2: a comment, whitespace, a reorder and the sibling .js move neither" {
-    // Five rows of §10.1's row 2 in one test, because the assertion is the
+test "a comment, whitespace, a reorder and the sibling .js move neither" {
+    // Five edits of §10.1's table in one test, because the assertion is the
     // same and the project is the expensive part.
     try runRow(.{
         .what = "a comment",
@@ -421,7 +418,7 @@ test "row 2: a comment, whitespace, a reorder and the sibling .js move neither" 
     });
 }
 
-test "row 3: the body of an ANNOTATED pub value moves neither" {
+test "the body of an ANNOTATED pub value moves neither" {
     try runRow(.{
         .what = "an annotated body",
         .leaf = replace(leaf_source, "pub one : Int\none =\n    1", "pub one : Int\none =\n    2"),
@@ -430,7 +427,7 @@ test "row 3: the body of an ANNOTATED pub value moves neither" {
     });
 }
 
-test "row 5: a pub signature moves the HASH and not the digest" {
+test "a pub signature moves the HASH and not the digest" {
     // The row that must NOT be cut off, and the one `fast-compiler.md` §2's
     // < 60 ms budget is about. The digest does not move: a signature is the
     // module's PUBLIC face, which is exactly what the record is for.
@@ -448,7 +445,7 @@ test "row 5: a pub signature moves the HASH and not the digest" {
     });
 }
 
-test "row 6: adding a PRIVATE value moves neither" {
+test "adding a PRIVATE value moves neither" {
     try runRow(.{
         .what = "a private value",
         .leaf = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n",
@@ -457,8 +454,8 @@ test "row 6: adding a PRIVATE value moves neither" {
     });
 }
 
-test "row 7: a PRIVATE type nothing names moves neither" {
-    // `plans/m4-1.md` §6.1's row 5, kept: a `TypeId` is a whole-program dense
+test "a PRIVATE type nothing names moves neither" {
+    // `plans/m4-1.md` §6.1: a `TypeId` is a whole-program dense
     // index, so adding a private type renumbers most of the table — and
     // nothing a dependent emits or reports carries one.
     try runRow(.{
@@ -469,7 +466,7 @@ test "row 7: a PRIVATE type nothing names moves neither" {
     });
 }
 
-test "row 8: a PRIVATE type's constructor renamed, and one nullary constructor added" {
+test "a PRIVATE type's constructor renamed, and one nullary constructor added" {
     // The converse probes of `plans/m4-3.md` §6: the digest must not be WIDER
     // than it needs. A dependent cannot name a private type's constructors at
     // all — `Exhaustive.ctorUnion` and `Solve.allNullary` reach them only
@@ -488,7 +485,7 @@ test "row 8: a PRIVATE type's constructor renamed, and one nullary constructor a
     });
 }
 
-test "row 9: renaming a PRIVATE type a pub signature names moves both" {
+test "renaming a PRIVATE type a pub signature names moves both" {
     // The name IS in the record — a `type_refs` row — so the hash moves, and
     // the digest's own set is keyed by that name, so it moves too.
     try runRow(.{
@@ -499,7 +496,7 @@ test "row 9: renaming a PRIVATE type a pub signature names moves both" {
     });
 }
 
-test "row 10: a PRIVATE type's payload becomes a function — the digest moves and the hash does NOT" {
+test "a PRIVATE type's payload becomes a function — the digest moves and the hash does NOT" {
     // `plans/m4-3.md` §6.1, DEMONSTRATED. `Hidden` stops being `equatable`,
     // `Mid`'s `Leaf.make x == Leaf.make y` goes from exit 0 to `not_equatable`,
     // and the declaring module's record does not move by one byte: `Hidden` is
@@ -511,8 +508,7 @@ test "row 10: a PRIVATE type's payload becomes a function — the digest moves a
         .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
         // Under v1 NOT ONE interface hash in the project moved, so the digest
         // was the only thing in the build that could see this edit at all.
-        // Under v2, the one checker since R12, the record DOES state it
-        // (checker-v2.md §14.2 *as amended by R8a*): `make`'s scheme names
+        // The record DOES state it (checker-v2.md §14.2): `make`'s scheme names
         // `Hidden`, so `Hidden` has a `hidden_types` row, and its derived
         // `eq` and `compare` go from `present` to `function`. `Leaf`'s hash
         // moves, and no other: `Mid`'s record is still its annotation, because
@@ -524,7 +520,7 @@ test "row 10: a PRIVATE type's payload becomes a function — the digest moves a
     });
 }
 
-test "row 11: making a private type pub moves both" {
+test "making a private type pub moves both" {
     try runRow(.{
         .what = "a private type made pub",
         .leaf = replace(leaf_source, "type Hidden\n", "pub type Hidden\n"),
@@ -533,7 +529,7 @@ test "row 11: making a private type pub moves both" {
     });
 }
 
-test "row 12: a pub type alias a pub scheme names moves both" {
+test "a pub type alias a pub scheme names moves both" {
     try runRow(.{
         .what = "an alias body a scheme names",
         .leaf = replace(leaf_source, "pub type alias Count =\n    Int", "pub type alias Count =\n    Float"),
@@ -542,7 +538,7 @@ test "row 12: a pub type alias a pub scheme names moves both" {
     });
 }
 
-test "row 13: a pub type alias NO scheme names — the digest moves and the hash does NOT" {
+test "a pub type alias NO scheme names — the digest moves and the hash does NOT" {
     // `plans/m4-3.md` §6.2, DEMONSTRATED, and §4.2 finding 3 says no corpus in
     // the project reaches the code path at all: an `alias` term's range is its
     // arguments followed by the ACTUAL type, so an alias a `pub` value of the
@@ -565,7 +561,7 @@ test "row 13: a pub type alias NO scheme names — the digest moves and the hash
     });
 }
 
-test "row 14: a constructor added to a pub type Mid matches exhaustively moves the HASH" {
+test "a constructor added to a pub type Mid matches exhaustively moves the HASH" {
     // The importer now reports `missing_patterns`, which is what makes this a
     // row that must NOT be cut off. The digest does not move: a `pub` type's
     // constructors are in the record.
@@ -580,7 +576,7 @@ test "row 14: a constructor added to a pub type Mid matches exhaustively moves t
     });
 }
 
-test "row 19: a new unrelated module moves nothing that already existed" {
+test "a new unrelated module moves nothing that already existed" {
     try runRow(.{
         .what = "a new unrelated module",
         .add = .{ .path = "src/Zeta.beni", .contents = "pub zeta : Int\nzeta =\n    9\n" },
@@ -592,10 +588,11 @@ test "row 19: a new unrelated module moves nothing that already existed" {
 test "the digest wave is transitive, and a hash wave is not" {
     // The honest cost of an inductive digest (`fast-compiler.md` §8): a change
     // that moves one module's digest moves every module downstream of it. What
-    // makes it pay is that a digest-visible change is RARE — rows 2, 3, 6, 7
-    // and 8 above move nothing at all, and those are the edits the warm
-    // budgets are about. Stated as its own row so a future slice that narrows
-    // the digest has to change a test that says what it is narrowing.
+    // makes it pay is that a digest-visible change is RARE — a comment, an
+    // annotated body, a private value and a private type move nothing at all,
+    // and those are the edits the warm budgets are about. Stated as its own
+    // row so a change that narrows the digest has to change a test that says
+    // what it is narrowing.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -612,14 +609,14 @@ test "the digest wave is transitive, and a hash wave is not" {
 }
 
 // ---------------------------------------------------------------------------
-// The coarsening invariant (`plans/m4-3.md` §9 M3-e)
+// The coarsening invariant (`plans/m4-3.md` §9)
 // ---------------------------------------------------------------------------
 
 /// Both key blocks of one `check --cache-keys --cutoff-compare` run.
 ///
 /// `hashes` is the key the run USED — the cutoff recipe, `(interface hash,
-/// dependency digest)` per import — and `digests` is the TRANSITIVE key M4-1
-/// and M4-2 were driven by, computed beside it and stored nowhere. The field
+/// dependency digest)` per import — and `digests` is the TRANSITIVE key, the
+/// inductive digest, computed beside it and stored nowhere. The field
 /// names are `Pair`'s and mean something else here; `Keys` below reads better.
 fn keyPairOf(w: *World, arena: std.mem.Allocator, jobs: []const u8, expect_errors: bool) !Pair {
     const r = try w.runWith(
@@ -781,7 +778,7 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
     const before = try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
     try testing.expect(std.mem.indexOf(u8, before.stderr, "Pair a -> a where a.compare : a, a -> Order") != null);
 
-    // The alias BODY changes. `L`'s record cannot see it (row 13), and neither
+    // The alias BODY changes. `L`'s record cannot see an alias body, and neither
     // can the warning: it prints the alias by NAME.
     try w.write("src/L.beni",
         \\pub type alias Pair a =
@@ -847,17 +844,17 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
 }
 
 // ---------------------------------------------------------------------------
-// A private record schema behind a `pub` alias (CK-126, R15-fix-D)
+// A private record schema behind a `pub` alias
 // ---------------------------------------------------------------------------
 
-test "row 13 for a schema: a private record schema's field behind a pub alias moves the digest, and a cached importer sees it" {
+test "a private record schema's field behind a pub alias moves the digest, and a cached importer sees it" {
     // `S.Wrap`'s body names a PRIVATE record schema's endpoint. An importer
     // reads its shape from `S`'s schema plan (`Types.Builder.planEndpoint`),
     // which no interface record carries — so the digest is the one place the
-    // shape can move, as for a private alias (row 13). Before R15-fix-D the
-    // alias body digested the endpoint as `err` and its closure never reached
-    // the schema: editing the field moved nothing, and a warm check of `U`
-    // replayed its clean verdict against a shape that no longer existed.
+    // shape can move, as for a private alias. An alias body that digested the
+    // endpoint as `err`, with a closure that never reached the schema, would
+    // move nothing when the field is edited, and a warm check of `U` would
+    // replay its clean verdict against a shape that no longer exists.
 
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

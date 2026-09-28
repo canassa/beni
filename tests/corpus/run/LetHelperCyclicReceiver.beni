@@ -1,13 +1,13 @@
--- Queue row 76, CK-37 (checker-v2.md §20.4): until R14 a constrained `let`
--- helper was monomorphic (static-dispatch-spike.md §6.4 rule (a)), so the
--- two calls made `x ~ List x`. The `==` obligation on that cyclic receiver
--- asked for the element's `eq` forever — 875f623 panicked after about 10 s
--- and the row 72 tree never finished — and from 7427828 to R13 it was
--- `check/bad/LetHelperCyclicReceiver`, an `infinite_type` at the `==`.
--- Under D5 (§8.4 *As built by R14*) `inner`'s `eq` is an operator's, so
+-- run (checker-v2.md §20.4): a monomorphic constrained `let`
+-- helper (static-dispatch-spike.md §6.4 rule (a)) would make the
+-- two calls `x ~ List x`. The `==` obligation on that cyclic receiver
+-- would ask for the element's `eq` forever, or at best be an
+-- `infinite_type` at the `==`.
+-- A `let` generalises (§8.4): `inner`'s `eq` is an operator's, so
 -- `inner` generalises and its two uses are two instantiations: the program
 -- is valid and prints `True`, `False`. `abuse_test.zig` holds the
 -- time-bounded twin over four bodies.
+--
 import Node exposing (Program)
 
 

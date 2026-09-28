@@ -9,20 +9,20 @@ checker's answer to "which function does this method call call?", and it is
 the only place that answer is visible: a call resolved to the wrong function
 type-checks exactly as well as the right one, so `--stage=types` and
 `--stage=interface` cannot see the mistake and a `run/` fixture can only see
-it once S4 and S5 emit the call. A golden here is the contract those two
-slices lower against.
+it once the backend emits the call. A golden here is the contract the
+backend lowers against.
 
 The format carries **no symbol ids, no positions and no module indices** —
 every name is text — so reformatting a fixture leaves its golden untouched
 and `--jobs` cannot move a byte. `derived` lines are sorted by the emitted
-name text before anything indexes them (§7.1, A.29). Since slice R2a the
+name text before anything indexes them (§7.1, A.29). The
 format is `docs/design/checker-v2.md` §13.2's **v2**: one `site` line per
 instruction, its callee on the line and the callee's own arguments as `arg`
 lines under it, then one `evidence` line per root,
 and a term's own arguments printed under it, two spaces deeper — a tree
 printed as a tree, so there is no pre-order to reconstruct and no index
-column to misread (A.68's discussion is retired). Every golden was
-re-blessed once, in R2a, and reviewed against its v1 form.
+column to misread (A.68's discussion is retired).
+
 
 Both halves of a fixture matter. The `check` must be clean because a table
 describing a program the compiler rejected describes nothing; the golden is
@@ -39,12 +39,12 @@ a wrong golden here pins a wrong call.
 the emission-order sort; `DerivedShapesDistinctElements` pins that the
 evidence is per USE and not per function (A.46) — with shape-keyed evidence
 its second `t2` site loses its own argument lines and orders strings with
-JavaScript `<`. `ErrParts` is the `undetermined` leaf (v1's `err` part) — what a clean program makes
+JavaScript `<`. `ErrParts` is the `undetermined` leaf (the `err` part) — what a clean program makes
 one for, and what `Lower.partEq` may assume when it reads one.
 `AllNullaryEq` is A.18, `UserMethodWins` §3.3 step 1 and
 `PrivateEqStillDerives` the half of that step a `pub` makes the difference to — a private `eq`
 wins inside its own module and still leaves the derived row every dependent names (A.63),
-`FieldCall` the `field` target S4 must keep, `ImportedMethod` the `ext` and
+`FieldCall` the `field` target the backend must keep, `ImportedMethod` the `ext` and
 `ext_derived` targets across a module boundary, `ExtWithParts` §7.1's
 amendment — an `ext` in a PART position carries its own evidence range, so
 `Boxes.eq`, which takes one hidden argument, is not called one short
@@ -61,7 +61,7 @@ the breadth-first numbering and the depth-first reading part company and the
 emitted JavaScript is not the same either way — `run/TwoSlotsNested` is what
 it did to the answers.
 Both are now read in ONE place, `Dispatch.finish`'s converter (checker-v2.md
-§13.1, R2a), and their goldens show the trees it builds: a repeated or
+§13.1), and their goldens show the trees it builds: a repeated or
 misordered index would print as a different tree, not as a different
 number.
 

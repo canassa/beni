@@ -1,4 +1,4 @@
--- CK-126: a private record schema's endpoint, reached through another
+-- A private record schema's endpoint, reached through another
 -- module's `pub type alias`, has no shape in the importer. `Models.PrivRecW`
 -- expands, in `Models`, to `PrivRec.Type`; `PrivRec` is in no interface, so
 -- the importer reads the expansion as an `err` and `r + 1` is accepted in
