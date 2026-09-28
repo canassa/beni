@@ -20,6 +20,7 @@ pub const Profile = @import("Profile.zig");
 pub const Session = @import("Session.zig");
 pub const SourceStore = @import("SourceStore.zig");
 pub const platform = @import("platform.zig");
+pub const small_stack = @import("small_stack.zig");
 pub const Token = @import("lex/Token.zig");
 pub const Tokenizer = @import("lex/Tokenizer.zig");
 pub const lex = struct {

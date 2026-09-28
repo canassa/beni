@@ -576,3 +576,61 @@ test "the empty plan drops nothing and substitutes nothing" {
     try testing.expectEqual(@as(?Index, null), p.replacement(@enumFromInt(0)));
     try testing.expectEqual(@as(?Index, null), p.replacement(@enumFromInt(9999)));
 }
+
+const small_stack = @import("../small_stack.zig");
+
+/// Twice the depth a walk that recursed once per link fails at on
+/// `small_stack.size`: a `countExpr` that recursed into each `&&`'s operands
+/// finished 2 000 links on the Debug test binary and overflowed at 5 000.
+const deep_chain = 10_000;
+
+test "a function returning a && chain deeper than a recursive walk survives is planned down to its deepest link" {
+    // A derived `eq` is one left-nested `&&` as long as its record is wide.
+    // Every walk here keeps its own stack (`JsIr.pushOperands`), so the
+    // plan is made on `small_stack`'s few pages. The chain's deepest link
+    // reads a binding that has exactly one use, so the plan inlines it only
+    // if the counting walk and the scan for the use both reached the bottom.
+    try small_stack.run(planDeepChain, .{});
+}
+
+/// `function f(a) { const t = a; return t && a && … && a; }`.
+fn planDeepChain() !void {
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const a = try b.intern(.local(@enumFromInt(0)));
+    const t = try b.intern(.local(@enumFromInt(1)));
+    const f = try b.intern(.local(@enumFromInt(2)));
+    const value = try testNode(&b, .ident, a.int(), 0);
+    const bind = try testNode(&b, .const_decl, t.int(), value.int());
+    const use = try testNode(&b, .ident, t.int(), 0);
+    var chain = use;
+    for (1..deep_chain) |_| {
+        const operand = try testNode(&b, .ident, a.int(), 0);
+        const pair = try b.addRecord(JsIr.Binary{ .left = chain, .right = operand });
+        chain = try testNode(&b, .binary, @intFromEnum(pair), @intFromEnum(JsIr.BinaryOp.logical_and));
+    }
+    const ret = try testNode(&b, .return_stmt, chain.int(), 0);
+    const params = try b.addNames(&.{a});
+    const stmts = try b.addRange(&.{ bind, ret });
+    const func = try b.addRecord(JsIr.Func{
+        .params_start = params.start,
+        .params_end = params.end,
+        .body_start = stmts.start,
+        .body_end = stmts.end,
+    });
+    const decl = try testNode(&b, .func_decl, f.int(), @intFromEnum(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try run(arena_state.allocator(), &ir);
+    try testing.expect(plan.isDropped(bind));
+    try testing.expectEqual(@as(?Index, value), plan.replacement(use));
+    try testing.expect(!plan.isDropped(ret));
+}
+
+fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
+    return b.addNode(.{ .tag = tag, .pos = Node.no_pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+}

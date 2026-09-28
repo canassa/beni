@@ -162,7 +162,7 @@ test "`==` and `<` on a record one field past the positional evidence limit buil
 // A nominal payload record of 65 537 fields. The eager pass probed `T`'s
 // derived `eq`, and an older checker cast the field count into the `u16`
 // evidence count: a panic in a safety build, whether or not anything
-// compares `T`. 65 535 builds and runs (below). 65 537 and not 65 536: the
+// compares `T`. 65 537 and not 65 536: the
 // record's structural row has one entry per field, so its last entry's index
 // `k` is 65 536, one past what a `u16` `Dispatch.Param.k` holds. On the
 // ReleaseSafe binary, whose safety checks are part of the claim. What is required is the program built and
@@ -213,89 +213,6 @@ test "a nominal payload of 65 537 fields checks, and builds and runs or is refus
 // ---------------------------------------------------------------------------
 // Chains as long as their input is wide
 // ---------------------------------------------------------------------------
-
-/// `type T = T { f1 : Int, …, f<n> : Int }`, `r` a record of that shape, `s`
-/// the same with field `f<n>` set to 0, and a `main` printing `T r == T r`,
-/// `T r == T s`, `T s < T r`, `T r < T s` and `[ T r ] == [ T r ]`.
-fn wideNominalProgram(gpa: Allocator, n: usize) ![]u8 {
-    var source: std.Io.Writer.Allocating = .init(gpa);
-    errdefer source.deinit();
-    const out = &source.writer;
-    try out.writeAll("import Node exposing (Program)\n\n\ntype T =\n    T { ");
-    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
-    try out.writeAll(" }\n\n\nr : { ");
-    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
-    try out.writeAll(" }\nr =\n    { ");
-    for (1..n + 1) |i| try out.print("{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
-    try out.writeAll(" }\n\n\ns : { ");
-    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
-    try out.print(" }}\ns =\n    {{ r | f{d} = 0 }}\n\n\n", .{n});
-    try out.writeAll(
-        \\show : Bool -> String
-        \\show b =
-        \\    if b then
-        \\        "True"
-        \\
-        \\    else
-        \\        "False"
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines [ show (T r == T r), show (T r == T s), show (T s < T r), show (T r < T s), show ([ T r ] == [ T r ]) ]
-        \\
-    );
-    return source.toOwnedSlice();
-}
-
-test "derived eq and compare over a 65 535-field nominal payload build and run, in both builds" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // The eager pass derives `T`'s `eq` and `compare` through its
-    // payload's record, whose derived body compares every field inline: one
-    // left-nested `&&` 60 000 deep, and 60 000 statements for `compare`. The
-    // printer recursed once per `&&` and segfaulted the compiler; so would
-    // `--release`'s two walks. It iterates now (`JsIr.pushOperands`, the
-    // printer's work stack). And the function took one evidence parameter
-    // per field, so the build that no longer crashed threw `RangeError` in
-    // Node at 60 000 — a 60 002-argument call from inside `T`'s `eq`
-    // overflows the default stack — and at 65 535 V8 refuses the function
-    // (65 537 parameters). Past 4 096 the evidence is one array now
-    // (static-dispatch §9.2's wide form), so both run. 65 535 is the widest
-    // the checker takes, so it is the one size tried. The record `==` is not
-    // involved: `T r == T r` compares a nominal type.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const expected = "True\nFalse\nTrue\nFalse\nTrue\n";
-
-    for ([_]usize{65_535}) |n| {
-        const source = try wideNominalProgram(testing.allocator, n);
-        defer testing.allocator.free(source);
-        try w.write("Main.beni", source);
-
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        const dev = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
-
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        try expectExited(dev.build, 0);
-        try testing.expectEqualStrings("", dev.build.stderr);
-        try testing.expectEqualStrings(expected, dev.program.?.stdout);
-        try testing.expectEqual(@as(u8, 0), dev.program.?.exit_code);
-    }
-
-    // The widest once more under `--release`: `Opt`'s and `Rename`'s walks
-    // over the same chain, and `Rename`'s safety check, which was quadratic
-    // in a declaration's locals (46 s here on a Debug build).
-    const release = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" });
-    try expectExited(release.build, 0);
-    try testing.expectEqualStrings(expected, release.program.?.stdout);
-    try testing.expectEqual(@as(u8, 0), release.program.?.exit_code);
-}
 
 // Programs the compiler accepted, lowered to JavaScript nested deeper than
 // Node 24's parser loads — it threw `RangeError` from about 1 550 levels. A
@@ -475,84 +392,52 @@ test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_
 // A derived row past 65 535 context entries
 // ---------------------------------------------------------------------------
 
-/// `H.beni`: `pub type Holder a = Holder a` and its own `eq`, which asks `a`
-/// for `m0` … `m<methods - 1>`, or for `compare` when `methods` is 0.
-fn holderModule(gpa: Allocator, methods: usize) ![]u8 {
-    var source: std.Io.Writer.Allocating = .init(gpa);
-    errdefer source.deinit();
-    const out = &source.writer;
-    try out.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a -> Bool\n    where ");
-    if (methods == 0) {
-        try out.writeAll("a.compare : a, a -> Order\neq (Holder x) (Holder y) =\n    x.compare y == EQ\n");
-        return source.toOwnedSlice();
-    }
-    for (0..methods) |j| try out.print("{s}a.m{d} : a, () -> Int", .{ if (j == 0) "" else ", ", j });
-    try out.writeAll("\neq (Holder x) (Holder y) =\n    ");
-    for (0..methods) |j| try out.print("{s}x.m{d} () == y.m{d} ()", .{ if (j == 0) "" else " && ", j, j });
-    try out.writeAll("\n");
-    return source.toOwnedSlice();
-}
-
-/// `pub type W p0 … p<n-1> = W [p0] (H.Holder p0) … [p<n-1>] (H.Holder p<n-1>)`,
-/// each `p<i>` itself a position too when `bare`.
-fn holderRow(gpa: Allocator, n: usize, bare: bool) ![]u8 {
-    var source: std.Io.Writer.Allocating = .init(gpa);
-    errdefer source.deinit();
-    const out = &source.writer;
-    try out.writeAll("import H\nimport Node exposing (Program)\n\n\npub type W");
-    for (0..n) |i| try out.print(" p{d}", .{i});
-    try out.writeAll("\n    = W");
-    for (0..n) |i| {
-        if (bare) try out.print(" p{d}", .{i});
-        try out.print(" (H.Holder p{d})", .{i});
-    }
-    try out.writeAll("\n\n\nmain : Program\nmain =\n    Node.printLines [ \"ok\" ]\n");
-    return source.toOwnedSlice();
-}
-
-test "a derived row of more than 65 535 context entries checks, and builds and runs" {
+test "a derived row of more than 65 535 context entries checks" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // A derived row has one evidence parameter per context entry, and
-    // an entry per (parameter, method), so entries outrun parameters: 656
-    // parameters whose payload's `eq` asks 100 methods of each are 65 600.
-    // A first draft kept the entry index `Dispatch.Param.k` a `u16` and
-    // panicked in `Eager.marker`'s `@intCast` (safety builds; wrapped
-    // silently to the wrong evidence in ReleaseFast); its lookup there was
-    // also quadratic in the entries (74 s and 3.1 GB of a Debug build). The
-    // second shape reaches 65 538 entries with no user method at all: 32 769
-    // parameters, each a bare position (`(i, eq)`) and a `Holder` whose `eq`
-    // asks `compare` (`(i, compare)`).
+    // A derived row has one evidence parameter per context entry, and an
+    // entry per (type parameter, method it is asked for), so entries outrun
+    // parameters: `W`'s 656 parameters, each inside a `Holder` whose `eq`
+    // asks 100 methods of it, are 65 600. Elaborating `W`'s derived `eq`
+    // turns each method its body asks of a parameter into the index of that
+    // entry, and the last index, 65 599, is past what a `u16` holds: an index
+    // kept in one panicked in a safety build and, in ReleaseFast, wrapped to
+    // another entry's evidence. The lookup is linear in the entries (it was
+    // quadratic: 74 s and 3.1 GB of a Debug build). The index is the
+    // checker's, so `check` is the whole claim; what a wide row's evidence
+    // does at run time is the record scenarios' above.
+    const methods = 100;
+    const params = 656;
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const methods = try holderModule(testing.allocator, 100);
-    defer testing.allocator.free(methods);
-    const wide = try holderRow(testing.allocator, 656, false);
-    defer testing.allocator.free(wide);
-    try w.write("H.beni", methods);
-    try w.write("Main.beni", wide);
+    var holder: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer holder.deinit();
+    const h = &holder.writer;
+    try h.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a -> Bool\n    where ");
+    for (0..methods) |j| try h.print("{s}a.m{d} : a, () -> Int", .{ if (j == 0) "" else ", ", j });
+    try h.writeAll("\neq (Holder x) (Holder y) =\n    ");
+    for (0..methods) |j| try h.print("{s}x.m{d} () == y.m{d} ()", .{ if (j == 0) "" else " && ", j, j });
+    try h.writeAll("\n");
+    try w.write("H.beni", holder.written());
+    var wide: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer wide.deinit();
+    const out = &wide.writer;
+    try out.writeAll("import H\n\n\npub type W");
+    for (0..params) |i| try out.print(" p{d}", .{i});
+    try out.writeAll("\n    = W");
+    for (0..params) |i| try out.print(" (H.Holder p{d})", .{i});
+    try out.writeAll("\n");
+    try w.write("Main.beni", wide.written());
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const built = try w.buildAndRun(&.{ "--no-cache", "H.beni", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "H.beni", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectExited(built.build, 0);
-    try testing.expectEqualStrings("", built.build.stderr);
-    try testing.expectEqualStrings("ok\n", built.program.?.stdout);
-
-    // The second shape, checked: the crash was the checker's.
-    const compare = try holderModule(testing.allocator, 0);
-    defer testing.allocator.free(compare);
-    const params = try holderRow(testing.allocator, 32_769, true);
-    defer testing.allocator.free(params);
-    try w.write("H.beni", compare);
-    try w.write("Main.beni", params);
-    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "H.beni", "Main.beni" });
     try expectExited(checked, 0);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }

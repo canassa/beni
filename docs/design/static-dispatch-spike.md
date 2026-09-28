@@ -4456,5 +4456,7 @@ in WebKit), and 4 096 stays — for one call; under recursion a 4 096-wide posit
 about 13 levels deep in Node, which §9.2 records. *Why not the alternative* — a named refusal of the wide payload —
 rule 7: the program is valid and an array runs it; *or inlining the comparison into the nominal's
 body* — the row is shared by shape (A.11), and a caller of the eta-expanded row as evidence would
-still need its parameters. Fixture: `tests/blackbox/abuse_test.zig`, "derived eq and compare over a
-60 000- and a 65 535-field nominal payload build and run, in both builds".
+still need its parameters. Fixture: `tests/blackbox/abuse_wide_test.zig`, "== on a record builds
+and runs at the widest positional evidence and at a width that threw, never a runtime exception"
+(65 530 fields, the wide form run under Node); `--release`'s walks over a chain that deep are the
+unit tests of `src/js/Opt.zig` and `src/js/Rename.zig`.

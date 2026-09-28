@@ -496,3 +496,97 @@ test "the whole-program table hands out ordinals in call order and repeats itsel
     // learns that the module it imports from never exported one.
     try testing.expectEqual(@as(?u32, null), g.lookup(.{ .module = @enumFromInt(9), .base = @enumFromInt(9), .tag = 0 }));
 }
+
+const small_stack = @import("../small_stack.zig");
+
+/// Twice the depth a walk that recursed once per link fails at on
+/// `small_stack.size`: a `collectExpr` that recursed into each `&&`'s
+/// operands finished 2 000 links on the Debug test binary and overflowed at
+/// 5 000.
+const deep_chain = 10_000;
+
+test "a function returning a && chain deeper than a recursive walk survives is named down to its deepest link" {
+    // A derived `eq` is one left-nested `&&` as long as its record is wide.
+    // The collecting walk keeps its own stack (`JsIr.pushOperands`), so
+    // the names are assigned on `small_stack`'s few pages. The one local
+    // that only the chain's deepest link reads is the third name met in
+    // print order — after the function and its parameter — so it is given
+    // ordinal 2 only if the walk reached the bottom first.
+    try small_stack.run(nameDeepChain, .{});
+}
+
+/// `function f(a) { return z && a && … && a; }`.
+fn nameDeepChain() !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const gpa = arena_state.allocator();
+    var b: JsIr.Builder = .init(gpa);
+    const f = try b.intern(.local(@enumFromInt(0)));
+    const a = try b.intern(.local(@enumFromInt(1)));
+    const z = try b.intern(.local(@enumFromInt(2)));
+    var chain = try testNode(&b, .ident, z.int(), 0);
+    for (1..deep_chain) |_| {
+        const operand = try testNode(&b, .ident, a.int(), 0);
+        const pair = try b.addRecord(JsIr.Binary{ .left = chain, .right = operand });
+        chain = try testNode(&b, .binary, @intFromEnum(pair), @intFromEnum(JsIr.BinaryOp.logical_and));
+    }
+    const decl = try testFunc(&b, f, a, &.{try testNode(&b, .return_stmt, chain.int(), 0)});
+    const ir = try b.toOwned(try b.addRange(&.{decl}));
+
+    var globals: Globals = .{};
+    var m = try begin(gpa, &ir, &globals);
+    try m.enter(decl);
+    try testing.expectEqual(@as(?Failure, null), m.failure);
+    try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(a));
+    try testing.expectEqual(@as(?u32, 2), m.ordinal(z));
+}
+
+test "a declaration of 65 535 locals is named and self-checked in linear time" {
+    // A derived `compare` binds one `$o$<i>` per position of its record, so
+    // one declaration holds as many locals as the widest record has
+    // fields. The safety-build self-check once compared every pair of them,
+    // 46 s of a `--release` build at this width; it compares neighbours now,
+    // which is milliseconds.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const gpa = arena_state.allocator();
+    const width = 65_535;
+    var b: JsIr.Builder = .init(gpa);
+    const f = try b.intern(.local(@enumFromInt(0)));
+    const a = try b.intern(.local(@enumFromInt(1)));
+    const locals = try gpa.alloc(NameIndex, width);
+    const stmts = try gpa.alloc(Index, width);
+    for (locals, stmts, 0..) |*local, *stmt, i| {
+        local.* = try b.intern(.local(@enumFromInt(2 + i)));
+        stmt.* = try testNode(&b, .const_decl, local.int(), (try testNode(&b, .ident, a.int(), 0)).int());
+    }
+    const decl = try testFunc(&b, f, a, stmts);
+    const ir = try b.toOwned(try b.addRange(&.{decl}));
+
+    var globals: Globals = .{};
+    var m = try begin(gpa, &ir, &globals);
+    try m.enter(decl);
+    try testing.expectEqual(@as(?Failure, null), m.failure);
+    try testing.expectEqual(@as(?u32, 2), m.ordinal(locals[0]));
+    for (locals[0 .. width - 1], locals[1..]) |earlier, later| {
+        try testing.expect(m.ordinal(earlier).? < m.ordinal(later).?);
+    }
+}
+
+fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
+    return b.addNode(.{ .tag = tag, .pos = Node.no_pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+}
+
+/// `function <name>(<param>) { <body> }`.
+fn testFunc(b: *JsIr.Builder, name: NameIndex, param: NameIndex, body: []const Index) !Index {
+    const params = try b.addNames(&.{param});
+    const stmts = try b.addRange(body);
+    const func = try b.addRecord(JsIr.Func{
+        .params_start = params.start,
+        .params_end = params.end,
+        .body_start = stmts.start,
+        .body_end = stmts.end,
+    });
+    return testNode(b, .func_decl, name.int(), @intFromEnum(func));
+}
