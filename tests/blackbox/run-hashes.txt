@@ -1,6 +1,7 @@
 abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 d607fd2b4f4a8690bdb35987c2e979eb6e6513093ed105b5eee2cbc99c72ea46
-abuse_test.test.a recursive type of 4 096 parameters compares past the derived depth limit, positional #0 3d918ed6df58948dbd493ca427967a58e2058ac9a4f90255ae648df67551ce80
-abuse_test.test.a recursive type of 4 097 parameters compares past the derived depth limit, wide #0 e79261d26c1b5621db52ca0c4ddb88c3ece55d046dbb0d4cf06744600f9630e9
+abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 d912f61adf53b9ac4b5d48d148b412955bd9ae706dbb0d1709fe26dce2db9a86
+abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 3c9aac00d17f9bdd11edfe62b8649f0b2925536fea3c9242957f91f41930e98f
+abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 f114ff31ba67582af29a515a4b3d53adee4e479bfb007479230ded02a1794bea
 abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 a069858265884c860de2ef4c4f59a79ea721ed2567437267a22d3fa611502914
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 ab74052790df6719fcc5fc44fea5686a66f0b8f3786c8e00527835a7491d9cdb
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 bb4afd9acff8fac6557860b91f9dfc064d2a9032823d6ed4ede814dac47c0e5a

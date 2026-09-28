@@ -54,26 +54,24 @@ const nested = support.nested;
 // Deep nesting
 // ---------------------------------------------------------------------------
 
-test "a record literal nested to the parser's limit checks and compares, one past it is one nesting_too_deep" {
+test "a record literal nested to the parser's limit checks, one past it is one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // A record literal spends one depth unit per level in the solver
     // (`Solve.solveFields`), not two (the literal and its fields'
     // conjunction), or the solver would say NESTING TOO DEEP at about 2 100
-    // levels where the parser accepts 4 095. So the parser's own limit is
-    // the one limit: 4 095 levels check, and
-    // compare (derivation, unification and resolution all that deep), and
-    // 4 096 is the parser's one refusal.
+    // levels where the parser accepts 4 095; unification walks the literal's
+    // type as deep, against `Unify.max_depth`. So the parser's own limit is
+    // the one limit: 4 095 levels check, and 4 096 is the parser's one
+    // refusal. Comparing the literal is the next scenario.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
     for ([_]usize{ 4095, 4096 }) |depth| {
         const record = try nested(gpa, "{ x = ", "1", ", y = 0 }", depth);
         defer gpa.free(record);
-        const source = try std.mem.concat(gpa, u8, &.{ record, "\n\nsame =\n    main == main\n" });
-        defer gpa.free(source);
-        try w.write(if (depth == 4095) "Limit.beni" else "Past.beni", source);
+        try w.write(if (depth == 4095) "Limit.beni" else "Past.beni", record);
     }
 
     {
@@ -95,36 +93,75 @@ test "a record literal nested to the parser's limit checks and compares, one pas
     }
 }
 
-test "a recursive type of 4 096 parameters compares past the derived depth limit, positional" {
-    // 4 096 evidence parameters, positional: a call charges 1 + (2 × 4 096
-    // + 4 097) / 32 = 385 units, so the third level is past the limit and
-    // continues from the explicit stack, whose steps take the evidence as
-    // one array. Without the charge per 32 parameters the frames are so big
-    // that Node's `==` overflowed about 13 levels down; 20 levels threw
-    // `RangeError` with a charge of one unit a call.
-    try wideRecursiveTypeCompares(4096, "20");
-}
-
-test "a recursive type of 4 097 parameters compares past the derived depth limit, wide" {
-    // 4 097 parameters take the evidence as one array, and a call charges
-    // 1 + 4 098 / 32 = 129 units for the positions: the fifth level is the
-    // first past the limit of 400, so 5 levels reach the explicit stack in
-    // the array form and 4 do not.
-    try wideRecursiveTypeCompares(4097, "5");
-}
-
-/// A recursive type of `n` parameters, `levels` deep, compared.
-fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
+test "a record literal nested to the parser's limit compares" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The two evidence forms of static-dispatch-spike.md §9.2: 4 096
-    // parameters is the widest POSITIONAL derived function, 4 097 the
-    // narrowest that takes them as one array. Every parameter is a
+    // The same 4 095 levels, compared: deriving `eq` for the literal's type
+    // and resolving it recurse through every level of it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    const record = try nested(gpa, "{ x = ", "1", ", y = 0 }", 4095);
+    defer gpa.free(record);
+    const source = try std.mem.concat(gpa, u8, &.{ record, "\n\nsame =\n    main == main\n" });
+    defer gpa.free(source);
+    try w.write("Limit.beni", source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const limit = try w.run(&.{ "check", "--no-cache", "Limit.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(limit, 0);
+    try testing.expectEqual(@as(usize, 0), limit.diagnostics.len);
+}
+
+test "a recursive type of 256 parameters compares past the derived depth limit, positional" {
+    // 256 evidence parameters, positional: a call charges 1 + (2 × 256 +
+    // 257) / 32 = 25 units, so the 17th level is past the limit of 400 and
+    // continues from the explicit stack, whose steps take the evidence as
+    // one array. The frames are wide enough that 400 of them overflow
+    // Node's default stack: 1 000 levels threw `RangeError` with a charge of
+    // one unit a call, and with no explicit stack at all. The 4 096
+    // parameters of the widest positional form are no further branch, and
+    // cost the compiler sixteen times as much.
+    try wideRecursiveTypeCompares(256, "1000", .both);
+}
+
+// 4 097 parameters take the evidence as one array, and a call charges 1 +
+// 4 098 / 32 = 129 units for the positions: the fifth level is the first
+// past the limit of 400, so 5 levels reach the explicit stack in the array
+// form and 4 do not. `==` and `<` are derived functions of their own, and
+// each is its own scenario.
+test "a recursive type of 4 097 parameters compares with == past the derived depth limit, wide" {
+    try wideRecursiveTypeCompares(4097, "5", .equality);
+}
+
+test "a recursive type of 4 097 parameters compares with < past the derived depth limit, wide" {
+    try wideRecursiveTypeCompares(4097, "5", .ordering);
+}
+
+/// Which comparisons `wideRecursiveTypeCompares` makes.
+const Comparisons = enum { equality, ordering, both };
+
+/// A recursive type of `n` parameters, `levels` deep, compared.
+fn wideRecursiveTypeCompares(n: usize, levels: []const u8, comptime comparisons: Comparisons) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The two evidence forms of static-dispatch-spike.md §9.2: up to 4 096
+    // parameters a derived function takes them POSITIONALLY, and 4 097 is
+    // the narrowest that takes them as one array. Every parameter is a
     // position. The recursive position is the FIRST, so the comparison
     // recurses into it: in the last position it would be a tail self-call,
     // which loops and never grows the depth (`backend.md` §4, *Derived
-    // comparisons do not grow the native stack*).
+    // comparisons do not grow the native stack*). `cell` and `build` are
+    // not annotated: an annotation would write the type's parameters out
+    // four more times for the checker to read, and change nothing emitted.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -136,17 +173,27 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
     try params(gpa, &source, n, " p{d}");
     try source.appendSlice(gpa, ")");
     try params(gpa, &source, n, " p{d}");
-    try source.appendSlice(gpa, "\n    | End\n\n\ncell : Int, W");
-    try params(gpa, &source, n, " Int");
-    try source.appendSlice(gpa, " -> W");
-    try params(gpa, &source, n, " Int");
-    try source.appendSlice(gpa, "\ncell k rest =\n    Cell rest k");
+    try source.appendSlice(gpa, "\n    | End\n\n\ncell k rest =\n    Cell rest k");
     try params(gpa, &source, n - 1, " 0");
-    try source.appendSlice(gpa, "\n\n\nbuild : Int, Int, W");
-    try params(gpa, &source, n, " Int");
-    try source.appendSlice(gpa, " -> W");
-    try params(gpa, &source, n, " Int");
+    const equal =
+        \\        [ show (build 1000 1 End == build 1000 1 End)
+        \\        , show (build 1000 1 End == build 1000 2 End)
+        \\
+    ;
+    const less = "show (build 1000 1 End < build 1000 2 End)\n";
+    const shown = switch (comparisons) {
+        .equality => equal ++ "        ]\n",
+        .ordering => "        [ " ++ less ++ "        ]\n",
+        .both => equal ++ "        , " ++ less ++ "        ]\n",
+    };
+    const expected = switch (comparisons) {
+        .equality => "True\nFalse\n",
+        .ordering => "True\n",
+        .both => "True\nFalse\nTrue\n",
+    };
     const tail = try std.mem.replaceOwned(u8, gpa,
+        \\
+        \\
         \\
         \\build n last acc =
         \\    if n == 0 then
@@ -168,12 +215,8 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
         \\main : Program
         \\main =
         \\    Node.printLines
-        \\        [ show (build 1000 1 End == build 1000 1 End)
-        \\        , show (build 1000 1 End == build 1000 2 End)
-        \\        , show (build 1000 1 End < build 1000 2 End)
-        \\        ]
         \\
-    , "1000", levels);
+    ++ shown, "1000", levels);
     defer gpa.free(tail);
     try source.appendSlice(gpa, tail);
     try w.write("Main.beni", source.items);
@@ -185,7 +228,7 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
         // The cell that differs is the innermost one (`n == levels` is
         // built first), so every comparison walks every level. The
         // program's output is asserted as it runs.
-        const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = "True\nFalse\nTrue\n" });
+        const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = expected });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
@@ -294,67 +337,65 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
     }
 }
 
-test "the left-deep access and `?` spines the parser builds in a loop are depth-bounded too" {
+// `r.a.a.a…` and `r????…` are assembled by LOOPS in the parser
+// (`parsePostfix`, `parseAccessChain`), not by recursion, so they cost it no
+// stack — but they are real tree depth, and every consumer that walks the
+// tree recurses along them. Before `Parse.max_depth` counted them, an 8 KB
+// file of `r.a.a.a…` segfaulted both `check` and `dump --stage=ast`. 4 097
+// links each, one past the 4096 limit. The third such loop, an operator
+// chain, is `abuse_wide_test.zig`'s.
+test "the left-deep access spine the parser builds in a loop is depth-bounded too" {
+    try spineIsBounded("Access.beni", ".a", 8196, 2);
+}
+
+test "the left-deep `?` spine the parser builds in a loop is depth-bounded too" {
+    try spineIsBounded("Question.beni", "?", 4101, 1);
+}
+
+/// `f r = r` and 4 097 `piece`s: one `nesting_too_deep` at `col`, `width`
+/// bytes wide, from `check`, both dumps and `fmt`, none of them crashing.
+fn spineIsBounded(path: []const u8, piece: []const u8, col: u32, width: u32) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `r.a.a.a…` and `r????…` are assembled by LOOPS in the parser
-    // (`parsePostfix`, `parseAccessChain`), not by recursion, so they cost
-    // it no stack — but they are real tree depth, and every consumer that
-    // walks the tree recurses along them. Before `Parse.max_depth` counted
-    // them, an 8 KB file of `r.a.a.a…` segfaulted both `check` and `dump
-    // --stage=ast`. 4 097 links each, one past the 4096 limit. The third
-    // such loop, an operator chain, is `abuse_wide_test.zig`'s.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const cases = [_]struct { path: []const u8, head: []const u8, piece: []const u8, col: u32, width: u32 }{
-        .{ .path = "Access.beni", .head = "f r =\n    r", .piece = ".a", .col = 8196, .width = 2 },
-        .{ .path = "Question.beni", .head = "f r =\n    r", .piece = "?", .col = 4101, .width = 1 },
-    };
+    const source = try chain(testing.allocator, "f r =\n    r", piece, 4_097);
+    defer testing.allocator.free(source);
+    try w.write(path, source);
 
-    for (cases) |case| {
-        // ┌─────────────────────────────────────────┐
-        // │ EXECUTE                                 │
-        // └─────────────────────────────────────────┘
-        const source = try chain(testing.allocator, case.head, case.piece, 4_097);
-        defer testing.allocator.free(source);
-        try w.write(case.path, source);
-        const checked = try w.run(&.{ "check", case.path });
-        const ast = try w.runWith(&.{ "dump", "--stage=ast", case.path }, .{ .raw_diagnostics = true });
-        const bir = try w.runWith(&.{ "dump", "--stage=bir", case.path }, .{ .raw_diagnostics = true });
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", path });
+    const ast = try w.runWith(&.{ "dump", "--stage=ast", path }, .{ .raw_diagnostics = true });
+    const bir = try w.runWith(&.{ "dump", "--stage=bir", path }, .{ .raw_diagnostics = true });
 
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        // One diagnostic, at the first link past the limit, and nothing
-        // died from a signal — which is what a stack overflow looks like
-        // from out here.
-        try expectExited(checked, 1);
-        testing.expectEqualDeep(
-            &[_]diagnostic.Diagnostic{nestingTooDeep(case.path, 2, case.col, case.width)},
-            checked.diagnostics,
-        ) catch |err| {
-            std.debug.print("case {s}\n", .{case.path});
-            return err;
-        };
-        // The dumps recurse per node; they are the consumers that crashed.
-        // They print the tree they have and exit 1 for the error on stderr
-        // (`frontend.md` §1) — what matters here is that there IS a tree and
-        // the process exited at all.
-        for ([_]world.Result{ ast, bir }) |r| {
-            if (r.term != .exited) {
-                std.debug.print("{s}: dump did not exit normally: {any}\n", .{ case.path, r.term });
-                return error.CompilerDiedFromSignal;
-            }
-            try testing.expectEqual(@as(u8, 1), r.exit_code);
-            try testing.expect(r.stdout.len != 0);
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // One diagnostic, at the first link past the limit, and nothing died
+    // from a signal — which is what a stack overflow looks like from out
+    // here.
+    try expectExited(checked, 1);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{nestingTooDeep(path, 2, col, width)}, checked.diagnostics);
+    // The dumps recurse per node; they are the consumers that crashed. They
+    // print the tree they have and exit 1 for the error on stderr
+    // (`frontend.md` §1) — what matters here is that there IS a tree and the
+    // process exited at all.
+    for ([_]world.Result{ ast, bir }) |r| {
+        if (r.term != .exited) {
+            std.debug.print("{s}: dump did not exit normally: {any}\n", .{ path, r.term });
+            return error.CompilerDiedFromSignal;
         }
-
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY SIDE EFFECTS                     │
-        // └─────────────────────────────────────────┘
-        try expectFmtRefuses(&w, case.path, 1);
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expect(r.stdout.len != 0);
     }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectFmtRefuses(&w, path, 1);
 }
 
 test "a pattern with `as` and no name is a syntax error, not a panic" {
@@ -916,14 +957,15 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     // constraint and the chain costs one error per 65 links instead of the
     // n(n+1)/2 constraints and 3.7 GB report 19 §3 measured at n = 3000.
     //
-    // 131 links, just past two periods, so the recovery has to happen once
-    // and the cap is met again after it: the assertion is the EXACT count
-    // and the EXACT declarations, because "a bounded number" is only a claim
-    // if the bound is written down. No operator, no literal, no import, so
-    // `--core-root=nocore` holds and every number here is this file's.
+    // 66 links, one past a period, so the recovery has to happen: were link
+    // 65 to promote its set, link 66 would need 66 methods and be capped
+    // too. The assertion is the EXACT count and the EXACT declarations,
+    // because "a bounded number" is only a claim if the bound is written
+    // down. No operator, no literal, no import, so `--core-root=nocore`
+    // holds and every number here is this file's.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const links = 131;
+    const links = 66;
     // 65: the 64 the cap allows, plus the one that is over it.
     const period = 65;
 
@@ -955,8 +997,8 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), r.exit_code);
-    // One message per declaration and no more: ⌊131/65⌋ = 2 declarations are
-    // over the cap and the other 129 are unannotated `pub` declarations
+    // One message per declaration and no more: ⌊66/65⌋ = 1 declaration is
+    // over the cap and the other 65 are unannotated `pub` declarations
     // whose interface really did acquire a suffix (§10.9).
     try testing.expectEqual(@as(usize, links), r.diagnostics.len);
     var capped: usize = 0;
@@ -972,9 +1014,8 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
                 var name: [16]u8 = undefined;
                 const decl = try std.fmt.bufPrint(&name, "`f{d}`", .{period * capped});
                 try testing.expect(std.mem.indexOf(u8, d.message, decl) != null);
-                // The count is the set the link would have promoted, which
-                // is one over the cap every time — proof that the previous
-                // capped link handed on nothing.
+                // The count is the set the link would have promoted, one
+                // over the cap.
                 try testing.expect(std.mem.indexOf(u8, d.message, "needs 65 methods") != null);
             },
             .ambiguous_method_receiver => try testing.expectEqual(diagnostic.Severity.warning, d.severity),
@@ -1055,17 +1096,22 @@ test "a flat let past what a summed budget allows is accepted: its bindings are 
     // two deep: the parser's per-declaration budget summed the chain links of
     // every binding, one a binding. A `let`'s bindings and body, and a
     // `case`'s branches, are siblings (`Parse.Siblings`) and charge the
-    // deepest of them. 4 200 bindings, so a budget summed over them would be
-    // spent. Past the parser nothing is deep: a `let` lowers to ONE node
-    // holding its bindings, so `check` is the whole claim.
+    // deepest of them. 65 bindings of 64 links each, 4 160 in all, so a
+    // budget summed over them would be spent while the deepest is 64. Past
+    // the parser nothing is deep: a `let` lowers to ONE node holding its
+    // bindings, so `check` is the whole claim.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
     try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n");
-    for (1..4_201) |i| try src.print(gpa, "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
-    try src.appendSlice(gpa, "    in\n    x4200\n");
+    for (1..66) |i| {
+        try src.print(gpa, "        x{d} =\n            x{d}", .{ i, i - 1 });
+        for (0..64) |_| try src.appendSlice(gpa, " + 1");
+        try src.appendSlice(gpa, "\n\n");
+    }
+    try src.appendSlice(gpa, "    in\n    x65\n");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -1110,25 +1156,42 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
 }
 
-test "a case over every constructor of a 2 000-constructor type checks, and the other answers are linear too" {
+// `C{i} x -> x` for every constructor of `type T = C0 Int | … | C1999 Int`
+// must not be CASE TOO BIG TO CHECK: were a constructor with arguments not a
+// key of the lookup table, the general relation would specialise the whole
+// matrix per branch and per alternative, n² against a budget sized for
+// exponential matrices. `C x` with wildcard arguments is a key, and
+// `ColumnIndex` answers "which rows share this head" in one pass. The same
+// width must also answer a MISSING constructor, a REDUNDANT branch and
+// branches the table cannot take (`C{i} 0`) in linear time: one scenario
+// each.
+test "a case over every constructor of a 2 000-constructor type checks" {
+    try wideConstructorCase(.every);
+}
+
+test "a case missing the last of 2 000 constructors is one missing_patterns" {
+    try wideConstructorCase(.missing_last);
+}
+
+test "a case over 2 000 constructors and one more branch is one redundant_pattern" {
+    try wideConstructorCase(.redundant);
+}
+
+test "a case over 2 000 constructors with literal arguments and a default checks" {
+    try wideConstructorCase(.literals_then_default);
+}
+
+const WideCaseVariant = enum { every, missing_last, redundant, literals_then_default };
+
+fn wideConstructorCase(variant: WideCaseVariant) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `C{i} x -> x` for every constructor of `type T = C0 Int | … | C1999
-    // Int` must not be CASE TOO BIG TO CHECK: were a constructor with
-    // arguments not a key of the lookup table, the general relation would
-    // specialise the whole matrix per branch and per alternative, n²
-    // against a budget sized for exponential matrices. `C x` with wildcard
-    // arguments is a key, and `ColumnIndex` answers "which rows share this
-    // head" in one pass. The same width must also answer a MISSING
-    // constructor, a REDUNDANT branch and branches the table cannot take
-    // (`C{i} 0`) in linear time.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
     const n = 2_000;
-    const Variant = enum { every, missing_last, redundant, literals_then_default };
-    for ([_]Variant{ .every, .missing_last, .redundant, .literals_then_default }) |variant| {
+    {
         var src: std.ArrayList(u8) = .empty;
         defer src.deinit(gpa);
         try src.appendSlice(gpa, "type T\n    = C0 Int\n");
