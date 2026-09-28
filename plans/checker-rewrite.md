@@ -3129,6 +3129,39 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   row. `test-perf`'s "many schemas with vias" is borderline on both `d90ab5f` and the fix (red
   once in three on each). Pending: none.
 
+#### The final review's fixes (2026-09-29)
+
+- **Goal.** Fix the final checker review's findings, catalogued CK-202 to CK-209: alias names
+  inside structures (I9/D16), an alias DAG whose uses differ in their arguments (exponential),
+  and six diagnostics — a field of the wrong type read as a missing field, same-named types
+  unqualified, a multiline string's span, a pinned `==` through a helper blaming the wrong
+  function, a dot-call `.eq` refused as `==`, an unreadable output record read as a foreign file.
+- **As built (2026-09-29).** Base `b8b289a`. Red fixtures first, one commit, each checked red for
+  its recorded signature on the base with the gates green; then one commit per fix, promoting its
+  fixtures with it.
+  - **CK-203** (`⚡`): `Types.Builder.apply` keeps applied nominal types in the read's alias memo
+    by `(type, argument roots)`; `checker-v2.md` §7.4 *amended 2026-09-29*. The step-budget texts
+    stop claiming that a type which is only large keeps growing. `perf_test.zig` gains the
+    scenario (ratio 1.12 in instructions at depth 16 / 32).
+  - **CK-202** (`🧮`): the written/inferred alias distinction is deleted; every alias a
+    unification reaches may expand, a flex joins the alias class it meets, and a generalised
+    (shared schema) alias is never rewritten. Annotations print as written from readings nothing
+    unifies: the scheme, and `Decl.Member.display` for `dump --stage=types` (made only when the
+    run keeps its tables). `checker-v2.md` §7.1 *amended 2026-09-29*. No corpus message moved.
+  - **CK-204, 205, 208** (`🧮`): `Diagnostics.Reporter.mismatch` shows a present field's type,
+    `Render.qualifyClashes` qualifies same-named types, and `not_equatable`'s texts name `.eq` for
+    a dot-call wanted; `checker-v2.md` §15.3 *amended 2026-09-29*.
+  - **CK-206** (`🐛`): `Session.tokenSpan` spans a multiline literal's run of lines.
+  - **CK-207** (`🧮`): a use's own wanted whose pinned argument is still a flex waits for its
+    frame's boundary (`Instances.deferPinned`, `Solve.at_boundary`), locally and through a
+    published row; `checker-v2.md` §11.2 *amended 2026-09-29*. A new imported twin fixture.
+  - **CK-209** (`🐛`): `OutputRecord.read` answers `unreadable`; the build says `beni: cannot
+    read …`, exit 2; `backend.md` §2 *amended 2026-09-29*.
+- **Evidence.** Every fixture red on `b8b289a` for its recorded reason (`tests/pending/RED`,
+  that commit) and green with its fix; the two ordering tests are the pending scenarios' claims,
+  red on the base. The group step budget has no black-box test with a finite type: none within
+  the test budget reaches it once the DAG is shared. Pending: none.
+
 ---
 
 ## 4. CK → slice index
@@ -3170,6 +3203,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-I | CK-161 (`run/DotCall*`, under D15), CK-179 and CK-196 (`ordering_test.zig`), CK-194 (`perf_test.zig`), CK-195, 197 (`tests/corpus/check/bad/`) — CK-194 to CK-197 from the manager's residues | — | D15 and D16 recorded (`checker-v2.md` §21.1) |
 | R15-fix-J | CK-200 (`check/bad/StringLiteralMismatchSpan`), CK-201 (`ordering_test.zig`), CK-150 (`check/bad/LetValueConstrainedWideType`); CK-146, 149, 151, 152, 153, 155 to 158, 160 structural (asserts, deletions, a widened fence); CK-10, 14, 35 checked closed | — | CK-194's re-ranking recorded as a perf idea; `checker-v2.md` §7.5 and I14 amended (journal deleted) |
 | R15-fix-K | CK-144 (`perf_test.zig`; new `iface_test.zig`, `cache_test.zig`, `cutoff_test.zig` cases) | — | interface format 7: aliases named in terms, bodies on `type_refs` rows (`checker-v2.md` §14.2) |
+| the final review's fixes (2026-09-29) | CK-202 (`check/good/AliasNamesInsideStructures`, two `ordering_test.zig` tests), CK-203 (`perf_test.zig`), CK-204 to CK-208 (`tests/corpus/check/bad/`; CK-207 with a new imported twin), CK-209 (`build_test.zig`) | — | the written/inferred alias distinction deleted (`checker-v2.md` §7.1) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
