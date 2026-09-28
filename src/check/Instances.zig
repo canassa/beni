@@ -1043,7 +1043,7 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
         _ = try Walk.recordRow(st, rec, row, s.cx.gpa, &concatenated);
         const fields = try s.cx.scratch.dupe(TypeStore.Field, row.items);
         defer s.cx.scratch.free(fields);
-        std.mem.sort(TypeStore.Field, fields, s.cx.interner, fieldTextLess);
+        try TypeStore.sortByText(TypeStore.Field, s.cx.scratch, s.cx.interner, fields);
         const values = try s.cx.scratch.alloc(Var, fields.len);
         defer s.cx.scratch.free(values);
         for (fields, values) |f, *v| v.* = f.value;

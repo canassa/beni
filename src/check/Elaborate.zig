@@ -792,7 +792,7 @@ fn shapeOf(e: *Elaborate, receiver: Var, n: usize) Error!?Dispatch.Shape {
             var concatenated = false;
             if (flat == .record) _ = try Walk.recordRow(st, flat.record, &row, e.scratch, &concatenated);
             if (row.items.len != n) return e.failShape();
-            std.mem.sort(TypeStore.Field, row.items, cx.interner, fieldTextLess);
+            try TypeStore.sortByText(TypeStore.Field, e.scratch, cx.interner, row.items);
             const start: u32 = @intCast(e.symbols.items.len);
             for (row.items) |f| try e.symbols.append(e.gpa, f.name);
             return .{ .record = .{ .start = start, .len = @intCast(n) } };

@@ -910,7 +910,7 @@ fn gather(u: *Unify, rec: TypeStore.Structure.Record) Error!Gathered {
     var out: Gathered = .{ .fields = .empty, .end = undefined, .concatenated = false };
     out.end = try Walk.recordRow(u.store, rec, &out.fields, u.scratch, &out.concatenated);
     // A chain is two sorted runs concatenated; the merge-join needs one.
-    if (out.concatenated) std.mem.sort(TypeStore.Field, out.fields.items, {}, symbolLessThan);
+    if (out.concatenated) try TypeStore.sortById(TypeStore.Field, u.scratch, out.fields.items);
     return out;
 }
 
@@ -1012,7 +1012,7 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
     // field binds variables the next one is judged against, so the order is
     // part of a message's text, and a symbol id follows which other files
     // the project has.
-    if (!stopped and shared.items.len > 1) std.mem.sort(Shared, shared.items, u.interner, sharedTextLessThan);
+    if (!stopped and shared.items.len > 1) try TypeStore.sortByText(Shared, u.scratch, u.interner, shared.items);
     if (!stopped) for (shared.items) |pair| {
         u.problem = null;
         if (!try u.go(pair.a, pair.b)) {

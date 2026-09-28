@@ -865,7 +865,7 @@ pub const Field = struct { name: Symbol, value: Var };
 /// Append `fields`, sorting them by symbol id so unification can merge-join
 /// (see the header for why that order is never observable).
 pub fn addFields(store: *TypeStore, items: []Field) Allocator.Error!Range {
-    std.mem.sort(Field, items, {}, fieldLessThan);
+    try sortById(Field, store.gpa(), items);
     const start: u32 = @intCast(store.extra.items.len);
     try store.extra.ensureUnusedCapacity(store.gpa(), items.len * 2);
     for (items) |f| {
@@ -875,8 +875,133 @@ pub fn addFields(store: *TypeStore, items: []Field) Allocator.Error!Range {
     return .{ .start = start, .len = @intCast(items.len) };
 }
 
-fn fieldLessThan(_: void, a: Field, b: Field) bool {
-    return @intFromEnum(a.name) < @intFromEnum(b.name);
+// ---------------------------------------------------------------------------
+// Sorting a row by name. A wide record's row is sorted several times a
+// check, by symbol id for the merge-join and by name text wherever an order
+// is observable; a comparison sort of it, with the interner asked twice per
+// comparison, was a tenth of checking a record of 65 537 fields. These sort
+// integer keys with a stable radix sort instead, and give exactly what a
+// stable comparison sort gives.
+// ---------------------------------------------------------------------------
+
+/// Sort `items` (anything with a `name: Symbol`) by symbol id, equal ids
+/// kept in input order. A row that is sorted already is only scanned.
+pub fn sortById(comptime T: type, scratch: Allocator, items: []T) Allocator.Error!void {
+    if (sortedById(T, items)) return;
+    const keyed = try scratch.alloc(Keyed, items.len);
+    defer scratch.free(keyed);
+    for (items, keyed, 0..) |item, *k, i| k.* = .{ .key = @intFromEnum(item.name), .at = @intCast(i) };
+    const tmp = try scratch.alloc(Keyed, items.len);
+    defer scratch.free(tmp);
+    try permute(T, scratch, items, sortKeyed(keyed, tmp));
+}
+
+fn sortedById(comptime T: type, items: []const T) bool {
+    if (items.len < 2) return true;
+    for (items[0 .. items.len - 1], items[1..]) |a, b| {
+        if (@intFromEnum(a.name) > @intFromEnum(b.name)) return false;
+    }
+    return true;
+}
+
+/// Sort `items` (anything with a `name: Symbol`) by the names' TEXT in byte
+/// order, equal names kept in input order. The key is a name's first eight
+/// bytes read big-endian and zero-padded, which orders as the text does
+/// (a name holds no zero byte); names that share their first eight bytes
+/// are ordered by their whole text afterwards.
+pub fn sortByText(comptime T: type, scratch: Allocator, interner: *const InternPool.Global, items: []T) Allocator.Error!void {
+    if (items.len < 2) return;
+    const keyed = try scratch.alloc(Keyed, items.len);
+    defer scratch.free(keyed);
+    var sorted = true;
+    for (items, keyed, 0..) |item, *k, i| {
+        k.* = .{ .key = textPrefix(interner.slice(item.name)), .at = @intCast(i) };
+        if (i != 0 and sorted and textLess(interner, items, k.*, keyed[i - 1])) sorted = false;
+    }
+    if (sorted) return;
+    const tmp = try scratch.alloc(Keyed, items.len);
+    defer scratch.free(tmp);
+    const order = sortKeyed(keyed, tmp);
+    // Runs of one prefix, in input order: their whole text decides.
+    var start: usize = 0;
+    while (start < order.len) {
+        var end = start + 1;
+        while (end < order.len and order[end].key == order[start].key) end += 1;
+        if (end - start > 1) {
+            const Ctx = struct {
+                interner: *const InternPool.Global,
+                items: []const T,
+                fn lessThan(c: @This(), a: Keyed, b: Keyed) bool {
+                    return textLess(c.interner, c.items, a, b);
+                }
+            };
+            std.mem.sort(Keyed, order[start..end], Ctx{ .interner = interner, .items = items }, Ctx.lessThan);
+        }
+        start = end;
+    }
+    try permute(T, scratch, items, order);
+}
+
+/// Whether `a`'s name orders before `b`'s by text: the prefixes when they
+/// differ, the whole text when they do not.
+fn textLess(interner: *const InternPool.Global, items: anytype, a: Keyed, b: Keyed) bool {
+    if (a.key != b.key) return a.key < b.key;
+    return std.mem.lessThan(u8, interner.slice(items[a.at].name), interner.slice(items[b.at].name));
+}
+
+fn textPrefix(text: []const u8) u64 {
+    var bytes: [8]u8 = @splat(0);
+    const n = @min(text.len, bytes.len);
+    @memcpy(bytes[0..n], text[0..n]);
+    return std.mem.readInt(u64, &bytes, .big);
+}
+
+/// A sort key and the position in the row it came from.
+const Keyed = struct { key: u64, at: u32 };
+
+/// `keyed` sorted by key, equal keys in input order; the result is one of
+/// the two buffers. A short row is insertion-sorted; a long one is sorted
+/// by a byte-at-a-time radix sort that skips every byte all keys share.
+fn sortKeyed(keyed: []Keyed, tmp: []Keyed) []Keyed {
+    if (keyed.len <= 32) {
+        for (1..keyed.len) |i| {
+            const k = keyed[i];
+            var j = i;
+            while (j > 0 and keyed[j - 1].key > k.key) : (j -= 1) keyed[j] = keyed[j - 1];
+            keyed[j] = k;
+        }
+        return keyed;
+    }
+    var src = keyed;
+    var dst = tmp;
+    for (0..8) |pass| {
+        const shift: u6 = @intCast(pass * 8);
+        var counts: [256]u32 = @splat(0);
+        for (src) |k| counts[@as(u8, @truncate(k.key >> shift))] += 1;
+        if (counts[@as(u8, @truncate(src[0].key >> shift))] == src.len) continue;
+        var sum: u32 = 0;
+        for (&counts) |*c| {
+            const n = c.*;
+            c.* = sum;
+            sum += n;
+        }
+        for (src) |k| {
+            const digit: u8 = @truncate(k.key >> shift);
+            dst[counts[digit]] = k;
+            counts[digit] += 1;
+        }
+        const was = src;
+        src = dst;
+        dst = was;
+    }
+    return src;
+}
+
+/// Rewrite `items` so that position `i` holds what was at `order[i].at`.
+fn permute(comptime T: type, scratch: Allocator, items: []T, order: []const Keyed) Allocator.Error!void {
+    const was = try scratch.dupe(T, items);
+    defer scratch.free(was);
+    for (order, items) |o, *item| item.* = was[o.at];
 }
 
 pub fn fields(store: *const TypeStore, r: Range) []const Field {
