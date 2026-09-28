@@ -44,6 +44,26 @@ pub const Symbol = enum(u32) {
         return @enumFromInt(@intFromEnum(s));
     }
 
+    /// A hash map keyed by symbol, hashed by one multiplication. `std`'s
+    /// `AutoContext` runs Wyhash over the key's four bytes, and on a record
+    /// of 65 537 fields its per-field lookups were a tenth of lowering. A
+    /// symbol is a small integer, so the product's low bits (the slot) are
+    /// a permutation of the key's and its high bits (`std`'s fingerprint)
+    /// mix all of them.
+    pub fn Map(comptime V: type) type {
+        return std.HashMapUnmanaged(Symbol, V, HashContext, std.hash_map.default_max_load_percentage);
+    }
+
+    pub const HashContext = struct {
+        pub fn hash(_: HashContext, s: Symbol) u64 {
+            return @as(u64, @intFromEnum(s)) *% 0x9E37_79B9_7F4A_7C15;
+        }
+
+        pub fn eql(_: HashContext, a: Symbol, b: Symbol) bool {
+            return a == b;
+        }
+    };
+
     pub const Optional = enum(u32) {
         none = std.math.maxInt(u32),
         _,

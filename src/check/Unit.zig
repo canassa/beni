@@ -45,6 +45,19 @@ pub const Ctx = enum(u8) {
 
 pub const Key = struct { wanted: Evidence.WantedId, ctx: Ctx };
 
+/// `memo`'s hash: the wanted's index times an odd constant, the context in
+/// the bits the product leaves alone. `std`'s `AutoContext` runs Wyhash
+/// over the key, which was most of elaborating a record of 65 537 fields.
+const KeyContext = struct {
+    pub fn hash(_: KeyContext, k: Key) u64 {
+        return (@as(u64, @intFromEnum(k.wanted)) << 2 | @intFromEnum(k.ctx)) *% 0x9E37_79B9_7F4A_7C15;
+    }
+
+    pub fn eql(_: KeyContext, a: Key, b: Key) bool {
+        return a.wanted == b.wanted and a.ctx == b.ctx;
+    }
+};
+
 pub const Node = struct { term: Dispatch.Term, args: Dispatch.Range = .empty };
 
 pub const Pending = struct { node: u32, key: Key };
@@ -55,7 +68,7 @@ node_args: std.ArrayList(u32) = .empty,
 /// Each wanted's node. A site's unit is a handful of nodes, so the first
 /// `inline_len` are searched in `inline_keys` and only a larger unit hashes
 /// (hashing every unit cost a seventh of P6 on 6 000 tuple comparisons).
-memo: std.AutoHashMapUnmanaged(Key, u32) = .empty,
+memo: std.HashMapUnmanaged(Key, u32, KeyContext, std.hash_map.default_max_load_percentage) = .empty,
 inline_keys: [inline_len]Key = undefined,
 inline_nodes: [inline_len]u32 = undefined,
 /// Keys held inline, or `inline_len + 1` once they moved into `memo`.

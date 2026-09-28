@@ -344,7 +344,7 @@ const Facts = struct {
     writer: *Schemes.Writer,
     contexts: *Contexts,
     words: std.ArrayList(u32) = .empty,
-    slots: std.AutoHashMapUnmanaged(InternPool.Symbol, u32) = .empty,
+    slots: InternPool.Symbol.Map(u32) = .empty,
 
     fn deinit(f: *Facts) void {
         f.words.deinit(f.cx.gpa);

@@ -97,20 +97,20 @@ diagnostics: std.ArrayList(Diagnostics.Item) = .empty,
 
 // ---- Scratch (arena) ----
 /// Value namespace: top-level values and exposed lower names.
-values: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+values: Symbol.Map(NameEntry) = .empty,
 /// Constructor namespace: this file's constructors and exposed upper names.
-ctor_names: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+ctor_names: Symbol.Map(NameEntry) = .empty,
 /// Type namespace: this file's types and aliases and exposed upper names.
-types: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+types: Symbol.Map(NameEntry) = .empty,
 /// Schema namespace skeleton; resolution resolves members and imports.
-schemas: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+schemas: Symbol.Map(NameEntry) = .empty,
 /// The explicit imports by ALIAS, the first import to take an alias
 /// keeping it (a duplicate alias is reported and resolves to the first),
 /// and by MODULE, for `duplicate_import`. Every qualified reference asks
 /// which import its prefix names; a scan of the import table per reference
 /// would be O(imports × references).
-import_by_alias: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
-import_by_module: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+import_by_alias: Symbol.Map(u32) = .empty,
+import_by_module: Symbol.Map(u32) = .empty,
 /// The current declaration's import edges by key, once it has more than
 /// `indexed_refs` edges (`addRef`); `import_refs_start` is the
 /// `cur_refs_start` of the declaration it indexes.
@@ -122,7 +122,7 @@ scope: std.ArrayList(ScopeEntry) = .empty,
 /// The innermost scope entry of each name, while `scope_indexed`: set when
 /// the scope grows past `indexed_scope` and dropped when it shrinks to half
 /// of it.
-scope_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+scope_index: Symbol.Map(u32) = .empty,
 scope_indexed: bool = false,
 /// Enclosing definitions and lambdas, for `?` (§6.6).
 frames: std.ArrayList(Frame) = .empty,
@@ -140,7 +140,7 @@ type_params: ?[]const TokenIndex = null,
 /// `type_params` by name, first occurrence, when there are more than
 /// `indexed_params` of them: a scan per type variable would be O(n²) in the
 /// parameter count.
-type_param_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+type_param_index: Symbol.Map(u32) = .empty,
 /// The type variables already seen in the type expression being lowered,
 /// for the "first occurrence" half of the `equatable` rule (checker.md
 /// Appendix A). Cleared by `lowerRootType` per type expression, not per
@@ -718,7 +718,7 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
 /// one file — by two imports, or twice in one list — is
 /// `duplicate_exposed_name` at the second occurrence (§5.2); the first
 /// keeps the name, so uses resolve to one module.
-fn expose(l: *Lower, table: *std.AutoHashMapUnmanaged(Symbol, NameEntry), symbol: Symbol, entry: NameEntry) Allocator.Error!void {
+fn expose(l: *Lower, table: *Symbol.Map(NameEntry), symbol: Symbol, entry: NameEntry) Allocator.Error!void {
     const gop = try table.getOrPut(l.scratch_allocator, symbol);
     if (gop.found_existing) {
         try l.reportPair(.duplicate_exposed_name, entry.token, gop.value_ptr.token);
@@ -869,7 +869,7 @@ fn schemaTaggedNode(l: *const Lower, root: NodeIndex) ?NodeIndex {
 /// Register `symbol` declared at `token` in `table`, reporting a duplicate
 /// or a collision with an `exposing` name. The declaration always wins the
 /// slot: resolving to it is the more useful outcome after the report.
-fn declareName(l: *Lower, table: *std.AutoHashMapUnmanaged(Symbol, NameEntry), symbol: Symbol, token: TokenIndex, index: u32, duplicate: diagnostic.Code, check_exposed: bool) Allocator.Error!void {
+fn declareName(l: *Lower, table: *Symbol.Map(NameEntry), symbol: Symbol, token: TokenIndex, index: u32, duplicate: diagnostic.Code, check_exposed: bool) Allocator.Error!void {
     const gop = try table.getOrPut(l.scratch_allocator, symbol);
     if (gop.found_existing) {
         switch (gop.value_ptr.kind) {
@@ -1861,7 +1861,7 @@ const FieldNames = struct {
     few: [linear_limit]Symbol = undefined,
     len: usize = 0,
     /// Every name, once there are more than `linear_limit`.
-    set: std.AutoHashMapUnmanaged(Symbol, void) = .empty,
+    set: Symbol.Map(void) = .empty,
 
     fn deinit(f: *FieldNames, gpa: Allocator) void {
         f.set.deinit(gpa);
