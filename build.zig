@@ -359,15 +359,23 @@ fn compiler(
     target: std.Build.ResolvedTarget,
     mode: std.builtin.OptimizeMode,
 ) struct { beni: *std.Build.Module, exe: *std.Build.Step.Compile } {
+    // The ReleaseSafe compiler is built without debug info: it is the
+    // longest compile after a change under `src/` (the gates wait for it),
+    // and debug info is about a quarter of that time. Its safety checks are
+    // unaffected; a panic it hits prints no symbolised stack trace, so a
+    // crash is traced by re-running the command with `zig-out/bin/beni`.
+    const strip: ?bool = if (mode == .ReleaseSafe) true else null;
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
         .target = target,
         .optimize = mode,
+        .strip = strip,
     });
     const beni = b.createModule(.{
         .root_source_file = b.path("src/beni.zig"),
         .target = target,
         .optimize = mode,
+        .strip = strip,
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
     });
     beni.addImport("core_package", embedCore(b, core_dir));
@@ -379,6 +387,7 @@ fn compiler(
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = mode,
+            .strip = strip,
             .imports = &.{
                 .{ .name = "beni", .module = beni },
                 .{ .name = "diagnostic", .module = diagnostic },
