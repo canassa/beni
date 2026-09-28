@@ -88,37 +88,43 @@ fn wideEqProgram(gpa: std.mem.Allocator, n: usize) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "== on a record builds and runs at the widest positional evidence and at a width that threw, never a runtime exception" {
+// `==` on a record DERIVES one function with a parameter per field, and a
+// JavaScript call that wide overflows the engine's stack: under Node 24 a
+// 60 000- and a 65 530-field `r == r` built and then threw `RangeError`. Up
+// to 4 096 positions the evidence is positional; past it, one array
+// (`static-dispatch-spike.md` §9.2), so the width that threw no longer makes
+// a wide call. One scenario builds and runs the widest positional record,
+// one a width that threw; one past the positional limit is the scenario
+// after them.
+test "== on a record builds and runs at the widest positional evidence" {
+    try wideEqRuns(4_096);
+}
+
+test "== on a record of 65 530 fields, a width that threw, builds and runs" {
+    try wideEqRuns(65_530);
+}
+
+fn wideEqRuns(n: usize) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `==` on a record DERIVES one function with a parameter per field, and a
-    // JavaScript call that wide overflows the engine's stack: under Node 24
-    // a 60 000- and a 65 530-field `r == r` built and then threw `RangeError`.
-    // Up to 4 096 positions the evidence is positional; past it, one array
-    // (`static-dispatch-spike.md` §9.2), so the width that threw no longer
-    // makes a wide call: the widest positional record, and one of the
-    // widths that threw. One past the positional limit is the next scenario.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    const source = try wideEqProgram(testing.allocator, n);
+    defer testing.allocator.free(source);
+    try w.write("Wide.beni", source);
 
-    for ([_]usize{ 4_096, 65_530 }) |n| {
-        const source = try wideEqProgram(testing.allocator, n);
-        defer testing.allocator.free(source);
-        try w.write("Wide.beni", source);
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // The program's output is asserted as it runs.
+    const built = try w.buildAndRun(&.{ "--no-cache", "Wide.beni" }, .{ .stdout = "eq\n" });
 
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        // The program's output is asserted as it runs.
-        const built = try w.buildAndRun(&.{ "--no-cache", "Wide.beni" }, .{ .stdout = "eq\n" });
-
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        try expectExited(built, 0);
-        try testing.expectEqualStrings("", built.stderr);
-    }
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(built, 0);
+    try testing.expectEqualStrings("", built.stderr);
 }
 
 // `==` and `<` on a record one field past the positional evidence limit. The
@@ -210,107 +216,167 @@ test "a nominal payload of 65 537 fields checks, and builds and runs or is refus
 // Chains as long as their input is wide
 // ---------------------------------------------------------------------------
 
-// Programs the compiler accepted, lowered to JavaScript nested deeper than
-// Node 24's parser loads — it threw `RangeError` from about 1 550 levels. A
-// 2 000-element list literal (uncharged by the parser's budget; past 32
-// elements it is one flat array, `backend.md` §4, where it was once one
-// nested cell per element and also segfaulted the printer), and 2 000-term
-// `+` and `++` chains (under it). Every one builds and runs, printing its
-// length, in both builds. The three cases are three files of ONE project, built
-// in turn to the same `--out=out`: `build` compiles only the named entry's
-// import graph, and each build rewrites `out/_main.mjs` for its own entry
-// before it is run, so no case reads another's output.
-test "a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds" {
+// A 2 000-element list literal, which the compiler accepted and once lowered
+// to JavaScript nested deeper than Node 24's parser loads — it threw
+// `RangeError` from about 1 550 levels — one nested cell per element, which
+// also segfaulted the printer. The parser's budget does not charge list
+// elements; past 32 elements a list is one flat array (`backend.md` §4). It
+// builds and runs, printing its length, in each build. Operator chains are
+// the scenarios after it.
+test "a 2 000-element list builds and runs" {
+    try longListRuns("--no-cache");
+}
+
+test "a 2 000-element list builds and runs under --release" {
+    try longListRuns("--release");
+}
+
+fn longListRuns(flag: []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    const n = 2_000;
-    const Case = struct { head: []const u8, term: []const u8, op: []const u8, tail: []const u8, close: []const u8 };
-    const cases = [_]Case{
-        .{ .head = "xs : List Int\nxs =\n    [ ", .term = "1", .op = ", ", .tail = " ]", .close = "String.fromInt (List.length xs)" },
-        .{ .head = "xs : Int\nxs =\n    ", .term = "one", .op = " + ", .tail = "", .close = "String.fromInt xs" },
-        .{ .head = "xs : String\nxs =\n    ", .term = "a", .op = " ++ ", .tail = "", .close = "String.fromInt (String.length xs)" },
-    };
-    for (cases, 0..) |case, k| {
-        var text: std.ArrayList(u8) = .empty;
-        try text.appendSlice(a, "import Node exposing (Program)\n\n\none : Int\none =\n    1\n\n\na : String\na =\n    \"a\"\n\n\n");
-        try text.appendSlice(a, case.head);
-        for (0..n) |i| try text.print(a, "{s}{s}", .{ if (i == 0) "" else case.op, case.term });
-        try text.print(a, "{s}\n\n\nmain : Program\nmain =\n    Node.printLines [ {s} ]\n", .{ case.tail, case.close });
-        const file = try std.fmt.allocPrint(a, "Case{d}.beni", .{k});
-        try w.write(file, text.items);
+    var text: std.ArrayList(u8) = .empty;
+    try text.appendSlice(a, "import Node exposing (Program)\n\n\nxs : List Int\nxs =\n    [ ");
+    for (0..2_000) |i| try text.appendSlice(a, if (i == 0) "1" else ", 1");
+    try text.appendSlice(a, " ]\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (List.length xs) ]\n");
+    try w.write("Main.beni", text.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // The program's output is asserted as it runs.
+    const r = try w.buildAndRun(&.{ flag, "Main.beni" }, .{ .stdout = "2000\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 0);
+    try testing.expectEqualStrings("", r.stderr);
+}
+
+// The user's half: an operator chain a person writes. The parser charges
+// every operator to `Parse.max_depth`, so a chain is bounded before the
+// backend sees it: `&&` over `x == 3` reaches the budget at 1 366 terms
+// (three charges each), `++` at 2 049 (two) and `+` at 4 096 (one), and one
+// term past the widest is exactly one `nesting_too_deep`. Under it the chain
+// goes through check, both walks and the printer — and RUNS at the widest
+// the parser admits, in each build: `&&` prints as one flat run and
+// `+`/`++` are bound to a `const` every `nesting.spill` units (`backend.md`
+// §4), so no call nests one level per term (Node refuses such nesting from
+// about 1 550), and `--release`'s inlining never folds a spilled `const`
+// back into its user.
+const OperatorChain = struct {
+    head: []const u8,
+    term: []const u8,
+    op: []const u8,
+    width: usize,
+    tail: []const u8,
+    expected: []const u8,
+
+    const and_: OperatorChain = .{ .head = "x : Int\nx =\n    3\n\n\nb : Bool\nb =\n    ", .term = "x == 3", .op = " && ", .width = 1_365, .tail = "Node.printLines [ if b then \"yes\" else \"no\" ]", .expected = "yes\n" };
+    const plus: OperatorChain = .{ .head = "x : Int\nx =\n    1\n\n\nb : Int\nb =\n    ", .term = "x", .op = " + ", .width = 4_095, .tail = "Node.printLines [ String.fromInt b ]", .expected = "4095\n" };
+    const append: OperatorChain = .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 2_048, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "2048\n" };
+
+    /// The program whose `b` is the chain of `n` terms.
+    fn write(chain_: OperatorChain, w: *World, n: usize) !void {
+        var source: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer source.deinit();
+        try source.writer.print("import Node exposing (Program)\n\n\n{s}", .{chain_.head});
+        for (0..n) |i| try source.writer.print("{s}{s}", .{ if (i == 0) "" else chain_.op, chain_.term });
+        try source.writer.print("\n\n\nmain : Program\nmain =\n    {s}\n", .{chain_.tail});
+        try w.write("Main.beni", source.written());
+    }
+
+    /// At its widest, the chain builds and runs.
+    fn runs(chain_: OperatorChain, build: enum { dev, release }) !void {
+        // ┌─────────────────────────────────────┐
+        // │ PREPARE                             │
+        // └─────────────────────────────────────┘
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try chain_.write(&w, chain_.width);
 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-            // The program's output is asserted as it runs.
-            const r = try w.buildAndRun(&.{ flag, file }, .{ .stdout = "2000\n" });
+        // The program's output is asserted as it runs.
+        const expected: world.Expected = .{ .stdout = chain_.expected };
+        const r = switch (build) {
+            .dev => try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, expected),
+            .release => try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" }, expected),
+        };
 
-            // ┌─────────────────────────────────┐
-            // │ VERIFY OUTPUT                   │
-            // └─────────────────────────────────┘
-            try expectExited(r, 0);
-            try testing.expectEqualStrings("", r.stderr);
-        }
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r, 0);
     }
+
+    /// One term past its widest, the chain is one `nesting_too_deep`.
+    fn refused(chain_: OperatorChain) !void {
+        // ┌─────────────────────────────────────┐
+        // │ PREPARE                             │
+        // └─────────────────────────────────────┘
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try chain_.write(&w, chain_.width + 1);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r, 1);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        try testing.expect(!w.exists("wide"));
+    }
+};
+
+test "a written && chain runs at the widest the parser admits" {
+    try OperatorChain.and_.runs(.dev);
 }
 
-test "a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // The user's half: an operator chain a person writes. The
-    // parser charges every operator to `Parse.max_depth`, so a chain is
-    // bounded before the backend sees it: `&&` over `x == 3` reaches the
-    // budget at 1 366 terms (three charges each), `++` at 2 049 (two) and
-    // `+` at 4 096 (one), and one term past the widest is exactly one
-    // `nesting_too_deep`. Under it the chain goes through check, both walks
-    // and the printer — and RUNS at the widest the parser admits: `&&`
-    // prints as one flat run and `+`/`++` are bound to a `const` every
-    // `nesting.spill` units (`backend.md` §4), so no call nests one level
-    // per term (Node refuses such nesting from about 1 550).
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const Case = struct { head: []const u8, term: []const u8, op: []const u8, width: usize, tail: []const u8, expected: []const u8 };
-    const cases = [_]Case{
-        .{ .head = "x : Int\nx =\n    3\n\n\nb : Bool\nb =\n    ", .term = "x == 3", .op = " && ", .width = 1_365, .tail = "Node.printLines [ if b then \"yes\" else \"no\" ]", .expected = "yes\n" },
-        .{ .head = "x : Int\nx =\n    1\n\n\nb : Int\nb =\n    ", .term = "x", .op = " + ", .width = 4_095, .tail = "Node.printLines [ String.fromInt b ]", .expected = "4095\n" },
-        .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 2_048, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "2048\n" },
-    };
-    for (cases) |case| {
-        for ([_]usize{ case.width, case.width + 1 }) |n| {
-            var source: std.Io.Writer.Allocating = .init(testing.allocator);
-            defer source.deinit();
-            try source.writer.print("import Node exposing (Program)\n\n\n{s}", .{case.head});
-            for (0..n) |i| try source.writer.print("{s}{s}", .{ if (i == 0) "" else case.op, case.term });
-            try source.writer.print("\n\n\nmain : Program\nmain =\n    {s}\n", .{case.tail});
-            try w.write("Main.beni", source.written());
+test "a written && chain runs at the widest the parser admits under --release" {
+    try OperatorChain.and_.runs(.release);
+}
 
-            // ┌─────────────────────────────────┐
-            // │ EXECUTE                         │
-            // └─────────────────────────────────┘
-            if (n == case.width) {
-                // The programs' output is asserted as they run.
-                const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = case.expected });
-                const released = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" }, .{ .stdout = case.expected });
+test "a written && chain one term past the widest is one nesting_too_deep" {
+    try OperatorChain.and_.refused();
+}
 
-                // ┌─────────────────────────────┐
-                // │ VERIFY OUTPUT               │
-                // └─────────────────────────────┘
-                for ([_]world.Result{ ran, released }) |r| try expectExited(r, 0);
-                continue;
-            }
-            const refused = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Main.beni" });
-            try expectExited(refused, 1);
-            try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
-            try testing.expectEqual(diagnostic.Code.nesting_too_deep, refused.diagnostics[0].code);
-            try testing.expect(!w.exists("wide"));
-        }
-    }
+test "a written + chain runs at the widest the parser admits" {
+    try OperatorChain.plus.runs(.dev);
+}
+
+test "a written + chain runs at the widest the parser admits under --release" {
+    try OperatorChain.plus.runs(.release);
+}
+
+test "a written + chain one term past the widest is one nesting_too_deep" {
+    try OperatorChain.plus.refused();
+}
+
+test "a written ++ chain runs at the widest the parser admits" {
+    try OperatorChain.append.runs(.dev);
+}
+
+test "a written ++ chain runs at the widest the parser admits under --release" {
+    try OperatorChain.append.runs(.release);
+}
+
+test "a written ++ chain one term past the widest is one nesting_too_deep" {
+    try OperatorChain.append.refused();
 }
 
 // ---------------------------------------------------------------------------
@@ -327,38 +393,54 @@ fn wideParams(gpa: Allocator, n: usize) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_parameters" {
+// An arity is a `u16` in interface v3: as a `u8` it would saturate at 255 and
+// a 256-parameter type would be imported at the wrong width
+// (`check/good/WideTypeArity/`). §14.2's "a saturating cast becomes an error
+// at 65 535" is this: lowering refuses the 65 536th parameter, once, at that
+// parameter, so nothing downstream can saturate. The duplicate-parameter scan
+// is a sort, so the 65 536-parameter declaration costs no pairwise work, and
+// nothing reaches the checker's `@intCast` in `deriveOneParts` with a width
+// it cannot hold.
+test "a type of 65 535 parameters checks" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // An arity is a `u16` in interface v3: as a `u8` it would saturate at
-    // 255 and a 256-parameter type would be imported at the wrong width
-    // (`check/good/WideTypeArity/`). §14.2's "a saturating cast becomes an
-    // error at 65 535" is this: lowering refuses the 65 536th parameter,
-    // once, at that parameter, so nothing downstream can saturate. The
-    // duplicate-parameter scan is a sort, so the 65 536-parameter
-    // declaration costs no pairwise work, and nothing reaches the checker's
-    // `@intCast` in `deriveOneParts` with a width it cannot hold.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const widest = try wideParams(testing.allocator, 65_535);
     defer testing.allocator.free(widest);
-    const past = try wideParams(testing.allocator, 65_536);
-    defer testing.allocator.free(past);
     try w.write("Widest.beni", widest);
-    try w.write("Past.beni", past);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const ok = try w.run(&.{ "check", "--no-cache", "Widest.beni" });
-    const refused = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--out=past", "Past.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExited(ok, 0);
     try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
+}
+
+test "a type's 65 536th parameter is one too_many_type_parameters" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const past = try wideParams(testing.allocator, 65_536);
+    defer testing.allocator.free(past);
+    try w.write("Past.beni", past);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const refused = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--out=past", "Past.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
     try expectExited(refused, 1);
     // The 65 536th parameter is `a65535`, one past the space before it.
     const at: u32 = @intCast(std.mem.indexOf(u8, past, " a65535\n").? + 2);
@@ -443,8 +525,17 @@ test "a derived row of more than 65 535 context entries checks" {
 // rows are grouped by literal now, and a fan of more than 16 384 labels is
 // written as consecutive `switch`es over the same discriminant. The timing
 // half is in `perf_test.zig`; this is the shape half, at 16 400 branches:
-// just past one `switch`'s worth, so the fan must be split in two.
-test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs, in both builds" {
+// just past one `switch`'s worth, so the fan must be split in two. Each
+// build is its own scenario.
+test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs" {
+    try wideLiteralCase("--no-cache");
+}
+
+test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release" {
+    try wideLiteralCase("--release");
+}
+
+fn wideLiteralCase(flag: []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -467,7 +558,7 @@ test "a case of 16 400 literal branches builds as switches of at most 16 384 lab
     );
     try w.write("Main.beni", source.written());
 
-    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+    {
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘

@@ -5,24 +5,20 @@ abuse_test.test.a recursive type of 4 097 parameters compares with == past the d
 abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 a069858265884c860de2ef4c4f59a79ea721ed2567437267a22d3fa611502914
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 ab74052790df6719fcc5fc44fea5686a66f0b8f3786c8e00527835a7491d9cdb
 abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 bb4afd9acff8fac6557860b91f9dfc064d2a9032823d6ed4ede814dac47c0e5a
-abuse_wide_test.test.== on a record builds and runs at the widest positional evidence and at a width that threw, never a runtime exception #0 1d49cd64c18e45735014c9f3aff8c4d119c53ec0422d013ead220739044d88da
-abuse_wide_test.test.== on a record builds and runs at the widest positional evidence and at a width that threw, never a runtime exception #1 883e26d3dc5e953897cf61519cb87238bb87a4dfba1e55c93c6cb0034a9ea138
+abuse_wide_test.test.== on a record builds and runs at the widest positional evidence #0 1d49cd64c18e45735014c9f3aff8c4d119c53ec0422d013ead220739044d88da
+abuse_wide_test.test.== on a record of 65 530 fields, a width that threw, builds and runs #0 883e26d3dc5e953897cf61519cb87238bb87a4dfba1e55c93c6cb0034a9ea138
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 27898b5a7168951bdfe5454438723084016bf26da99f164914ed3fb3e3285c64
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #0 8b3f8651293726c17c44d34dece75e6274eba5c5acfb037ee179c3b9c03c842b
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #1 fe219bb7b2507b95da4a0a898c92d5a9970d14f1a42a7a9e9aae41af7754b395
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #2 7d095adab42e45a5790eb0323b9c09291f1139808499de7e79e398bcab9c1b81
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #3 3f37d649a20bc37d3f70dba4475ad6568b03c7f1ed5e7fc8ea82d994acfbef0c
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #4 dd2a5bdf10c474a5ec08b80e713719d3a2180a53d4354d6a152f5e9819e19304
-abuse_wide_test.test.a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds #5 66301c5b6364d1047e809bde5be58da94bda14cace9e8be5ef647984910aca00
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs, in both builds #0 25906cd9ed53836bbe50c744ff24fee61207577fba37eb1f51cd9aa3d2447b41
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs, in both builds #1 5d5de89e2dbd79f8ac29ed2d0da8e523f4387b579d511192fc64fd2c2327d145
+abuse_wide_test.test.a 2 000-element list builds and runs #0 3d079ac5d44527b60831b3394dce4a9319f909a047fb132c0006743155aad7d4
+abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 9a2d42648f14f5c7b02356db3f03e0c4df1ea741410ba128ab5fe9fa11fa84bf
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 25906cd9ed53836bbe50c744ff24fee61207577fba37eb1f51cd9aa3d2447b41
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 5d5de89e2dbd79f8ac29ed2d0da8e523f4387b579d511192fc64fd2c2327d145
 abuse_wide_test.test.a nominal payload of 65 537 fields checks, and builds and runs or is refused by name #0 2394408a2b641e917d23313c0b723fd78a8a57f0b82ed968eedabfa2b46d7d17
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #0 66cb383056406d923d29895b541a4b3c78812240e63ed8c92256e4041d000326
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #1 30de71fda4eb8b5a0a94f2cd6ba6a430af57d4061aae0235a7deabfec48ee389
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #2 c127d0df3f6051105384f7abdb4592672828bd3226375e6676f8b5fc4da771ca
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #3 52e0fe335d765fa5ee03fa1d896b2e139286c7bf0ee2efb01a5036b1afbc2675
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #4 135b9fe9082bbf5e76e789032193058aa119ad79ffa1af4ad34f387818c8d83d
-abuse_wide_test.test.a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep #5 4d3c214373bb06ed910647eac5c8343342958e83f6a244399f39d3b9889d2f2e
+abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 66cb383056406d923d29895b541a4b3c78812240e63ed8c92256e4041d000326
+abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 30de71fda4eb8b5a0a94f2cd6ba6a430af57d4061aae0235a7deabfec48ee389
+abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 c127d0df3f6051105384f7abdb4592672828bd3226375e6676f8b5fc4da771ca
+abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 52e0fe335d765fa5ee03fa1d896b2e139286c7bf0ee2efb01a5036b1afbc2675
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 135b9fe9082bbf5e76e789032193058aa119ad79ffa1af4ad34f387818c8d83d
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 4d3c214373bb06ed910647eac5c8343342958e83f6a244399f39d3b9889d2f2e
 blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 faeb027211c7585a6ab827f09c229884f8915d4d90cbe3d13ff87b75235e1c4d
 blackbox_test.test.a constrained value in a part position is handed its own evidence #0 ae56437af6286194bbbe28bdefac5374b255475e1f6947c3823f9275aad0ef43
 blackbox_test.test.a derived compare compiles, and so does List's #0 20687070d7fe3e895df73b798c317b4aa8cb98c0dfefcd5c98114e366c5be1aa
