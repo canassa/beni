@@ -140,36 +140,50 @@ test "a type error after the round trip is at the same line and column" {
     try expectSameInProject(&w, arena, &.{ "check", "--no-cache", "--diagnostics=json", abs });
 }
 
-test "a file with lex, parse and lower diagnostics replays them byte for byte" {
+/// A tab (lex), an unterminated declaration (parse) and a duplicate
+/// definition (lower), in one file, so all three waves are in one stream
+/// and their relative order is asserted with them; then the degenerate
+/// shapes: empty (no symbol to re-intern), comment-only, failed to parse.
+/// The tab is written as an escape because a Zig multiline literal may not
+/// hold one — which is the same reason `tab_in_source` exists.
+fn writeDegenerateFiles(w: *World) !void {
+    try w.write("src/Bad.beni", "pub one : Int\none =\n\t1\n\n\npub one : Int\none =\n    2\n");
+    try w.write("src/Empty.beni", "");
+    try w.write("src/Comment.beni", "-- nothing but a comment\n");
+    try w.write("src/Unparsed.beni", "pub x = = =\n");
+}
+
+test "lex, parse and lower diagnostics of several files replay byte for byte" {
     // The front end's diagnostics travel as the PROSE the phase rendered,
     // with positions rather than offsets, so a replay has to reproduce the
     // message, the severity, the span and the ORDER — and a run with the
     // flag renders from the replayed rows and not from the ones the phase
-    // made.
+    // made. The whole project in one check puts every file's replayed rows
+    // into one sorted stream, the degenerate files' included.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    try writeDegenerateFiles(&w);
 
-    // A tab (lex), an unterminated declaration (parse) and a duplicate
-    // definition (lower), in one file, so all three waves are in one stream
-    // and their relative order is asserted with them.
-    // The tab is written as an escape because a Zig multiline literal may not
-    // hold one — which is the same reason `tab_in_source` exists.
-    try w.write("src/Bad.beni", "pub one : Int\none =\n\t1\n\n\npub one : Int\none =\n    2\n");
-    try w.write("src/Empty.beni", "");
-    try w.write("src/Comment.beni", "-- nothing but a comment\n");
-    try w.write("src/Unparsed.beni", "pub x = = =\n");
+    // An oracle over a clean check would pass.
+    const plain = try w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), plain.exit_code);
+    try expectSameInProject(&w, arena, &.{ "check", "--no-cache", "--diagnostics=json", "src" });
+}
+
+test "a file with diagnostics, an empty one, a comment-only one and an unparsed one dump the same Bir" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDegenerateFiles(&w);
 
     for ([_][]const u8{ "src/Bad.beni", "src/Empty.beni", "src/Comment.beni", "src/Unparsed.beni" }) |path| {
-        const abs = try w.projectSubPath(arena, path);
-        try expectSameInProject(&w, arena, &.{ "dump", "--stage=bir", abs });
-        try expectSameInProject(&w, arena, &.{ "check", "--no-cache", "--diagnostics=json", abs });
+        try expectSameInProject(&w, arena, &.{ "dump", "--stage=bir", try w.projectSubPath(arena, path) });
     }
-    // And the whole project at once, which is the shape that puts several
-    // files' replayed rows into one sorted stream.
-    try expectSameInProject(&w, arena, &.{ "check", "--no-cache", "--diagnostics=json", "src" });
 }
 
 /// One command with and without the flag, with cwd = the world's project

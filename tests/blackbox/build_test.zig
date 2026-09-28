@@ -3383,23 +3383,19 @@ test "bench/churn.sh reports every edit class against both variants, counts a re
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // Two declarations, chosen so each column of the table has something in
-    // it. `bump` takes every edit: an integer literal for E1, `n + 1` on a
-    // parameter for E2, a parameter no `==` mentions for E3. `applyTwice`
-    // takes a FUNCTION, so E3's `f == f` is `not_equatable` — a rejection,
-    // which is the outcome `beni dump`'s exit code cannot see and which the
-    // script therefore has to read out of the JSON diagnostics.
+    // One declaration, chosen so each column of the table has something in
+    // it: an integer literal for E1, `n + 1` on a parameter for E2, and a
+    // FUNCTION as its first parameter, so E3's `f == f` is `not_equatable` —
+    // a rejection, which is the outcome `beni dump`'s exit code cannot see
+    // and which the script therefore has to read out of the JSON
+    // diagnostics. Every edit reruns the script's checks, so one
+    // declaration costs half what two did.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Tiny.beni",
-        \\pub bump : Int -> Int
-        \\bump n =
-        \\    n + 1
-        \\
-        \\
-        \\pub applyTwice : (Int -> Int), Int -> Int
-        \\applyTwice f n =
-        \\    f (f n)
+        \\pub bumpWith : (Int -> Int), Int -> Int
+        \\bumpWith f n =
+        \\    f (n + 1)
         \\
     );
     const arena = w.arena.allocator();
@@ -3422,32 +3418,37 @@ test "bench/churn.sh reports every edit class against both variants, counts a re
     try testing.expect(std.mem.indexOf(u8, r.stdout, "tree restored: yes") != null);
     try testing.expect(std.mem.indexOf(u8, r.stdout, "changed/accepted") != null);
 
-    // Every class against both variants, and every row over both
-    // declarations.
+    // Every class against both variants, and every row over the
+    // declaration.
     for ([_][]const u8{ "E1", "E2", "E3", "E3poly" }) |klass| {
         for ([_][]const u8{ "annotated", "unannotated" }) |variant| {
             const row = try churnRow(r.stdout, klass, variant);
-            try testing.expectEqual(@as(u32, 2), row.decls);
+            try testing.expectEqual(@as(u32, 1), row.decls);
             try testing.expectEqual(row.applied + row.skipped, row.decls);
         }
     }
-
+    // E1 and E2 apply and are accepted.
+    for ([_][]const u8{ "E1", "E2" }) |klass| {
+        const row = try churnRow(r.stdout, klass, "annotated");
+        try testing.expectEqual(@as(u32, 1), row.applied);
+        try testing.expectEqual(@as(u32, 1), row.accepted);
+    }
     // `f == f` on a function: refused by the checker, and counted as such.
     // Before the JSON classification this scored as a successful,
     // interface-preserving edit.
     const e3 = try churnRow(r.stdout, "E3", "annotated");
     try testing.expectEqual(@as(u32, 1), e3.rejected);
-    try testing.expectEqual(@as(u32, 2), e3.applied);
+    try testing.expectEqual(@as(u32, 1), e3.applied);
     // Neither parameter is annotated with a bare type variable, so the
     // polymorphic row has nothing to say about this module.
     const poly = try churnRow(r.stdout, "E3poly", "annotated");
-    try testing.expectEqual(@as(u32, 2), poly.skipped);
+    try testing.expectEqual(@as(u32, 1), poly.skipped);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // The corpus it was pointed at is byte-identical afterwards.
-    try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "    n + 1\n") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "    f (n + 1)\n") != null);
     try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "always") == null);
 }
 
