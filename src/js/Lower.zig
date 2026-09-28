@@ -493,6 +493,9 @@ const Lowerer = struct {
     /// `slotName`'s answers by slot, interned once: a wide constructor
     /// asks for each of its slots per use and per derived position.
     slot_names: std.ArrayList(Symbol.Optional) = .empty,
+    /// The three primitive comparators' names (`primitiveValue`), interned
+    /// the first time: a wide type names one per evidence slot.
+    prim_names: [3]JsIr.NameIndex = @splat(.none),
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -2932,18 +2935,23 @@ const Lowerer = struct {
         switch (prim) {
             .strict_eq => {
                 l.needs.eq_prim = true;
-                return l.ident(try l.synthesisedName("eq$prim"), p);
+                return l.ident(try l.primName(0, "eq$prim"), p);
             },
             .num_compare => {
                 l.needs.compare_prim = true;
-                return l.ident(try l.synthesisedName("compare$prim"), p);
+                return l.ident(try l.primName(1, "compare$prim"), p);
             },
             .char_compare => {
                 l.needs.compare_char = true;
-                return l.ident(try l.synthesisedName("compare$char"), p);
+                return l.ident(try l.primName(2, "compare$char"), p);
             },
             .string_compare => return l.stringCompare(p),
         }
+    }
+
+    fn primName(l: *Lowerer, slot: usize, base: []const u8) !JsIr.NameIndex {
+        if (l.prim_names[slot] == .none) l.prim_names[slot] = try l.synthesisedName(base);
+        return l.prim_names[slot];
     }
 
     /// `String.compare`, however this module reaches it.

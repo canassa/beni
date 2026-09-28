@@ -912,6 +912,16 @@ pub const Builder = struct {
     cols: NodeList.Slice = .empty,
     /// Recent answers of `intern`, one per slot (`intern`).
     recent: [recent_slots]Recent = @splat(.{ .key = undefined, .index = .none }),
+    /// A plain local name's index — no module and no tag, the case of every
+    /// field, property and parameter name — by its base symbol, in an
+    /// open-addressed table of `(symbol, index)` words: `std`'s map runs
+    /// generic code Zig's own backend compiles poorly, and a wide record
+    /// interns one such name per field. Never iterated, so its layout is
+    /// never observable; `name_index` keeps every other name.
+    locals: []u64 = &.{},
+    locals_count: usize = 0,
+
+    const local_empty: u64 = std.math.maxInt(u64);
 
     const recent_slots = 256;
     const Recent = struct { key: NameKey, index: NameIndex };
@@ -942,6 +952,7 @@ pub const Builder = struct {
         b.string_bytes.deinit(b.gpa);
         b.names.deinit(b.gpa);
         b.name_index.deinit(b.gpa);
+        b.gpa.free(b.locals);
     }
 
     /// Hand the finished module over. The builder is empty afterwards.
@@ -955,6 +966,8 @@ pub const Builder = struct {
         };
         b.name_index.clearRetainingCapacity();
         b.recent = @splat(.{ .key = undefined, .index = .none });
+        @memset(b.locals, local_empty);
+        b.locals_count = 0;
         b.cols = .empty;
         return ir;
     }
@@ -982,6 +995,7 @@ pub const Builder = struct {
     }
 
     pub fn intern(b: *Builder, n: Name) Allocator.Error!NameIndex {
+        if (n.module == .none and n.tag == Name.no_tag) return b.internLocal(n.base);
         const key: NameKey = .{ .module = @intFromEnum(n.module), .base = @intFromEnum(n.base), .tag = n.tag };
         // Most names a module interns are asked for again and again — the
         // parameters of a derived function once per position — so a small
@@ -1002,6 +1016,43 @@ pub const Builder = struct {
         got.value_ptr.* = index;
         slot.* = .{ .key = key, .index = index };
         return index;
+    }
+
+    /// `intern` of `Name.local(base)`, through `locals`.
+    fn internLocal(b: *Builder, base: Symbol) Allocator.Error!NameIndex {
+        if ((b.locals_count + 1) * 2 > b.locals.len) try b.growLocals();
+        const key: u32 = @intFromEnum(base);
+        const mask = b.locals.len - 1;
+        var i = localSlot(key, b.locals.len);
+        while (true) : (i = (i + 1) & mask) {
+            const word = b.locals[i];
+            if (word == local_empty) break;
+            if (@as(u32, @truncate(word >> 32)) == key) return @enumFromInt(@as(u32, @truncate(word)));
+        }
+        const index: u32 = @intCast(b.names.items.len);
+        try b.names.append(b.gpa, Name.local(base));
+        b.locals[i] = (@as(u64, key) << 32) | index;
+        b.locals_count += 1;
+        return @enumFromInt(index);
+    }
+
+    fn growLocals(b: *Builder) Allocator.Error!void {
+        const len = @max(64, b.locals.len * 2);
+        const slots = try b.gpa.alloc(u64, len);
+        @memset(slots, local_empty);
+        const mask = len - 1;
+        for (b.locals) |word| {
+            if (word == local_empty) continue;
+            var i = localSlot(@truncate(word >> 32), len);
+            while (slots[i] != local_empty) i = (i + 1) & mask;
+            slots[i] = word;
+        }
+        b.gpa.free(b.locals);
+        b.locals = slots;
+    }
+
+    fn localSlot(key: u32, len: usize) usize {
+        return @intCast(((@as(u64, key) *% 0x9E37_79B9_7F4A_7C15) >> 32) & (len - 1));
     }
 
     /// Append `text` and return its `(offset, length)`. Literal bytes are
