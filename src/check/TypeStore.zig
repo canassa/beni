@@ -658,7 +658,14 @@ fn gains(store: *TypeStore, v: Var, c: Content) void {
 pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
     store.record(v);
     if (store.tracks_proofs) {
-        store.touchesErr(store.cols.items(.content)[v.int()], c, c);
+        const before = store.cols.items(.content)[v.int()];
+        // An `err` no walk has proved is in no proved graph: `err` has no
+        // successors, and a proving walk proves every leaf it meets. Giving
+        // it content voids nothing. That is every copy `Instantiate` makes,
+        // which starts as `err` and is filled in, and which voided every
+        // proof at every instantiation: a `let` chain of 1 100 links walked
+        // its whole type again at every link.
+        if (before != .err or store.proved(v)) store.touchesErr(before, c, c);
         if (store.proved(v)) store.gains(v, c);
     }
     store.cols.items(.content)[v.int()] = c;
