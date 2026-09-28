@@ -12,7 +12,6 @@ abuse_wide_test.test.a 2 000-element list builds and runs #0 3d079ac5d44527b6083
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 9a2d42648f14f5c7b02356db3f03e0c4df1ea741410ba128ab5fe9fa11fa84bf
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 25906cd9ed53836bbe50c744ff24fee61207577fba37eb1f51cd9aa3d2447b41
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 5d5de89e2dbd79f8ac29ed2d0da8e523f4387b579d511192fc64fd2c2327d145
-abuse_wide_test.test.a nominal payload of 65 537 fields checks, and builds and runs or is refused by name #0 2394408a2b641e917d23313c0b723fd78a8a57f0b82ed968eedabfa2b46d7d17
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 66cb383056406d923d29895b541a4b3c78812240e63ed8c92256e4041d000326
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 30de71fda4eb8b5a0a94f2cd6ba6a430af57d4061aae0235a7deabfec48ee389
 abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 c127d0df3f6051105384f7abdb4592672828bd3226375e6676f8b5fc4da771ca

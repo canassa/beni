@@ -163,16 +163,18 @@ test "`==` and `<` on a record one field past the positional evidence limit buil
     try testing.expectEqualStrings("", built.stderr);
 }
 
-// A nominal payload record of 65 537 fields. The eager pass probed `T`'s
-// derived `eq`, and an older checker cast the field count into the `u16`
-// evidence count: a panic in a safety build, whether or not anything
-// compares `T`. 65 537 and not 65 536: the
-// record's structural row has one entry per field, so its last entry's index
-// `k` is 65 536, one past what a `u16` `Dispatch.Param.k` holds. On the
-// ReleaseSafe binary, whose safety checks are part of the claim. What is required is the program built and
-// run, printing its two answers, or a refusal by name — exit 1 with
-// diagnostics and not one of them `internal`; never a crash.
-test "a nominal payload of 65 537 fields checks, and builds and runs or is refused by name" {
+// A nominal payload record of 65 537 fields. The eager pass probes `T`'s
+// derived `eq` whether or not anything compares `T`, and an older checker
+// kept a derived row's context index in a `u16`: a panic in a safety build.
+// 65 537 and not 65 536: the record's structural row has one entry per
+// field, so its last entry's index is 65 536, one past what a `u16` holds.
+// On the ReleaseSafe binary, whose safety checks are part of the claim. The
+// index is the checker's, so `check` of the type alone is the whole claim:
+// with `Dispatch.ContextEntry.param` narrowed back to a `u16` it panics. A
+// build and a run of a comparison could not observe it anyway — every field
+// has the same evidence — and the width a program runs at is the record
+// scenarios' above.
+test "a nominal payload of 65 537 fields checks" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -182,34 +184,21 @@ test "a nominal payload of 65 537 fields checks, and builds and runs or is refus
     var text: std.Io.Writer.Allocating = .init(testing.allocator);
     defer text.deinit();
     const out = &text.writer;
-    try out.writeAll("import Node exposing (Program)\n\n\ntype T =\n    T { ");
+    try out.writeAll("type T =\n    T { ");
     for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
-    try out.writeAll(" }\n\n\nr =\n    { ");
-    for (1..n + 1) |i| try out.print("{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
-    try out.print(" }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if T r == T r then \"eq\" else \"ne\", if T r == T {{ r | f{d} = 0 }} then \"eq\" else \"ne\" ]\n", .{n});
+    try out.writeAll(" }\n");
     try w.write("Main.beni", text.written());
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const built = try w.run(&.{ "build", "--no-cache", "--jobs=1", "--platform=node", "--out=out", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expect(built.term == .exited);
-    if (built.exit_code == 0) {
-        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
-        try w.expectProgram(world.entry_file, .{ .stdout = "eq\nne\n" });
-    } else {
-        try expectExited(built, 1);
-        try testing.expect(built.diagnostics.len != 0);
-        for (built.diagnostics) |d| try testing.expect(d.code != .internal);
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY SIDE EFFECTS                 │
-        // └─────────────────────────────────────┘
-        try testing.expect(!w.exists("out"));
-    }
+    try expectExited(checked, 0);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }
 
 // ---------------------------------------------------------------------------
