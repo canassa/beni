@@ -47,6 +47,7 @@
 //! grows them; the scratch stacks come from the worker's arena.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const soa = @import("../soa.zig");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
@@ -228,11 +229,11 @@ pub fn parse(
 // Tokens and layout
 // ---------------------------------------------------------------------------
 
-fn col(p: *const Parse, i: TokenIndex) u32 {
+inline fn col(p: *const Parse, i: TokenIndex) u32 {
     return p.starts[i] - p.line_starts[p.lines[i]] + 1;
 }
 
-fn inBlock(p: *const Parse, i: TokenIndex) bool {
+inline fn inBlock(p: *const Parse, i: TokenIndex) bool {
     return i == p.head or p.col(i) > p.indent;
 }
 
@@ -240,7 +241,7 @@ fn inBlock(p: *const Parse, i: TokenIndex) bool {
 /// The lexer's zero-length marker for a string cut off by its line end
 /// (language.md §2.6) also reads as `eof`: nothing can follow it on the
 /// line, and only the string parser needs to see it (`atCutMarker`).
-fn peek(p: *const Parse) Tag {
+inline fn peek(p: *const Parse) Tag {
     if (!p.inBlock(p.tok_i) or p.atCutMarker()) return .eof;
     return p.tags[p.tok_i];
 }
@@ -260,12 +261,12 @@ fn peekAt(p: *const Parse, n: u32) Tag {
 }
 
 /// The raw tag of the next token, block or not.
-fn rawTag(p: *const Parse) Tag {
+inline fn rawTag(p: *const Parse) Tag {
     return p.tags[p.tok_i];
 }
 
 /// Consume the next token. Never consumes `eof`.
-fn next(p: *Parse) TokenIndex {
+inline fn next(p: *Parse) TokenIndex {
     std.debug.assert(p.tags[p.tok_i] != .eof);
     const i = p.tok_i;
     p.tok_i += 1;
@@ -415,7 +416,7 @@ fn pushScratch(p: *Parse, value: anytype) Allocator.Error!void {
         comptime_int => value,
         else => @compileError("scratch takes node or token indices"),
     };
-    try p.scratch.append(p.scratch_allocator, v);
+    try lists.push(u32, &p.scratch, p.scratch_allocator, v);
 }
 
 fn scratchSince(p: *const Parse, mark: usize) []const u32 {

@@ -48,6 +48,7 @@
 //! arena and is dropped by its reset.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const soa = @import("../soa.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
 const Allocator = std.mem.Allocator;
@@ -463,7 +464,7 @@ fn errorInst(l: *Lower, code: diagnostic.Code) Allocator.Error!Index {
 
 fn addSymbol(l: *Lower, symbol: Symbol) Allocator.Error!SymbolIndex {
     const i: u32 = @intCast(l.symbols.items.len);
-    try l.symbols.append(l.gpa, symbol);
+    try lists.push(Symbol, &l.symbols, l.gpa, symbol);
     return @enumFromInt(i);
 }
 
@@ -515,7 +516,7 @@ fn pushScratch(l: *Lower, value: anytype) Allocator.Error!void {
         .int => value,
         else => @compileError("unexpected scratch value type: " ++ @typeName(@TypeOf(value))),
     };
-    try l.list_scratch.append(l.scratch_allocator, word);
+    try lists.push(u32, &l.list_scratch, l.scratch_allocator, word);
 }
 
 fn scratchSince(l: *const Lower, mark: usize) []const u32 {

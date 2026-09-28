@@ -20,6 +20,7 @@
 //! depth.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const Allocator = std.mem.Allocator;
 const Dispatch = @import("Dispatch.zig");
 const Evidence = @import("Evidence.zig");
@@ -146,14 +147,14 @@ fn slot(u: *Unit, scratch: Allocator, key: Key) Error!*u32 {
 
 fn newWanted(u: *Unit, scratch: Allocator, key: Key) Error!u32 {
     const n: u32 = @intCast(u.nodes.items.len);
-    try u.nodes.append(scratch, .{ .term = .undetermined });
-    try u.pending.append(scratch, .{ .node = n, .key = key });
+    try lists.add(&u.nodes, scratch, .{ .term = .undetermined });
+    try lists.add(&u.pending, scratch, .{ .node = n, .key = key });
     return n;
 }
 
 pub fn leaf(u: *Unit, scratch: Allocator, t: Dispatch.Term) Error!u32 {
     const n: u32 = @intCast(u.nodes.items.len);
-    try u.nodes.append(scratch, .{ .term = t });
+    try lists.add(&u.nodes, scratch, .{ .term = t });
     return n;
 }
 
@@ -192,12 +193,12 @@ pub fn emit(
         const r = u.roots.items[ri];
         if (colour[r] != 0) continue;
         colour[r] = 1;
-        try stack.append(scratch, .{ .node = r, .cursor = u.nodes.items[r].args.len });
+        try lists.add(&stack, scratch, .{ .node = r, .cursor = u.nodes.items[r].args.len });
         while (stack.items.len > 0) {
             const top = &stack.items[stack.items.len - 1];
             if (top.cursor == 0) {
                 colour[top.node] = 2;
-                try post.append(scratch, top.node);
+                try lists.add(&post, scratch, top.node);
                 _ = stack.pop();
                 continue;
             }
@@ -207,7 +208,7 @@ pub fn emit(
             switch (colour[child]) {
                 0 => {
                     colour[child] = 1;
-                    try stack.append(scratch, .{ .node = child, .cursor = u.nodes.items[child].args.len });
+                    try lists.add(&stack, scratch, .{ .node = child, .cursor = u.nodes.items[child].args.len });
                 },
                 1 => return false,
                 else => {},
@@ -225,7 +226,7 @@ pub fn emit(
         var t = node.term;
         const start: u32 = @intCast(args.items.len);
         for (u.node_args.items[node.args.start..][0..node.args.len]) |child| {
-            try args.append(gpa, @enumFromInt(index[child]));
+            try lists.add(args, gpa, @enumFromInt(index[child]));
         }
         const range: Dispatch.Range = .{ .start = start, .len = node.args.len };
         switch (t) {
@@ -235,7 +236,7 @@ pub fn emit(
             .ext_derived => |*x| x.args = range,
             else => {},
         }
-        try terms.append(gpa, t);
+        try lists.add(terms, gpa, t);
     }
     for (u.roots.items) |r| try out.append(scratch, @enumFromInt(index[r]));
     return true;

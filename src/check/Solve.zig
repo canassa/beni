@@ -79,7 +79,7 @@ const Obligations = @import("Obligations.zig");
 const Report = @import("Report.zig");
 const Unify = @import("Unify.zig");
 const Walk = @import("Walk.zig");
-const lists = @import("lists.zig");
+const lists = @import("../lists.zig");
 const Tree = @import("constrain/Tree.zig");
 
 const Solve = @This();

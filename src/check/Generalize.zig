@@ -19,6 +19,7 @@
 //! and its order are `Solve.zig`'s.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
@@ -561,7 +562,7 @@ const Successor = struct {
             s.store.setMark(root, s.visit_mark);
             s.store.setRank(root, s.group_rank);
             break :blk s.group_rank;
-        } else return s.kids.append(s.gpa, root);
+        } else return lists.add(s.kids, s.gpa, root);
         if (s.maxes) s.max.* = @max(s.max.*, rank);
     }
 };

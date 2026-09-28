@@ -1042,15 +1042,15 @@ fn validOptionalInst(index: Inst.OptionalIndex, insts_len: u32) bool {
 
 // ---- Raw access -------------------------------------------------------------
 
-pub fn instTag(bir: *const Bir, inst: Inst.Index) Inst.Tag {
+pub inline fn instTag(bir: *const Bir, inst: Inst.Index) Inst.Tag {
     return bir.insts.items(.tag)[inst.int()];
 }
 
-pub fn instData(bir: *const Bir, inst: Inst.Index) Inst.Data {
+pub inline fn instData(bir: *const Bir, inst: Inst.Index) Inst.Data {
     return bir.insts.items(.data)[inst.int()];
 }
 
-pub fn symbol(bir: *const Bir, index: SymbolIndex) Symbol {
+pub inline fn symbol(bir: *const Bir, index: SymbolIndex) Symbol {
     return bir.symbols[@intFromEnum(index)];
 }
 

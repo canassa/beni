@@ -35,7 +35,7 @@ const Schemes = @import("Schemes.zig");
 const Context = @import("Context.zig");
 const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
-const lists = @import("lists.zig");
+const lists = @import("../lists.zig");
 const Evidence = @import("Evidence.zig");
 
 const Instantiate = @This();

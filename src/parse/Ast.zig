@@ -856,15 +856,15 @@ pub const empty: Ast = .{
 
 // ---- Raw access -------------------------------------------------------------
 
-pub fn nodeTag(tree: *const Ast, node: Node.Index) Node.Tag {
+pub inline fn nodeTag(tree: *const Ast, node: Node.Index) Node.Tag {
     return tree.nodes.items(.tag)[node.int()];
 }
 
-pub fn nodeMainToken(tree: *const Ast, node: Node.Index) TokenIndex {
+pub inline fn nodeMainToken(tree: *const Ast, node: Node.Index) TokenIndex {
     return tree.nodes.items(.main_token)[node.int()];
 }
 
-pub fn nodeData(tree: *const Ast, node: Node.Index) Node.Data {
+pub inline fn nodeData(tree: *const Ast, node: Node.Index) Node.Data {
     return tree.nodes.items(.data)[node.int()];
 }
 

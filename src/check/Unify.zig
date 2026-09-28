@@ -37,6 +37,7 @@
 //! the caller to report: `unify` never resolves and never reports.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
@@ -953,13 +954,13 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
         const na = @intFromEnum(fa.name);
         const nb = @intFromEnum(fb.name);
         if (na < nb) {
-            try only_a.append(u.scratch, fa);
+            try lists.add(&only_a, u.scratch, fa);
             i += 1;
         } else if (na > nb) {
-            try only_b.append(u.scratch, fb);
+            try lists.add(&only_b, u.scratch, fb);
             j += 1;
         } else {
-            try shared.append(u.scratch, .{ .name = fa.name, .a = fa.value, .b = fb.value });
+            try lists.add(&shared, u.scratch, .{ .name = fa.name, .a = fa.value, .b = fb.value });
             i += 1;
             j += 1;
         }

@@ -30,6 +30,7 @@
 //! successors through them.
 
 const std = @import("std");
+const lists = @import("../lists.zig");
 const Allocator = std.mem.Allocator;
 const TypeStore = @import("TypeStore.zig");
 const InternPool = @import("../InternPool.zig");
@@ -54,7 +55,7 @@ pub const Successors = enum {
 ///
 /// `owned` successors come from `owned`, which also reads the module's
 /// obligation table (§4.5); asking this function for them is a compile error.
-pub fn child(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
+pub inline fn child(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
     if (successors == .owned) @compileError("owned successors come from Walk.owned, which also reads the obligations riding on a variable (checker-v2.md §4.5)");
     return shape(store, root, n, successors);
 }
@@ -168,8 +169,8 @@ pub fn encodeGround(
     words.clearRetainingCapacity();
     stack.clearRetainingCapacity();
     var found: Ground = .{ .kept = true };
-    try words.append(gpa, first);
-    try stack.append(gpa, root);
+    try lists.add(words, gpa, first);
+    try lists.add(stack, gpa, root);
     while (stack.pop()) |v| {
         if (words.items.len > cap) return null;
         const flat = switch (store.resolvedContent(v)) {
@@ -177,14 +178,14 @@ pub fn encodeGround(
             .flex, .rigid, .err, .alias => return null,
         };
         switch (flat) {
-            .unit => try words.append(gpa, @intFromEnum(Tag.unit)),
-            .empty_record => try words.append(gpa, @intFromEnum(Tag.empty_record)),
+            .unit => try lists.add(words, gpa, @intFromEnum(Tag.unit)),
+            .empty_record => try lists.add(words, gpa, @intFromEnum(Tag.empty_record)),
             .func => return null,
             .tuple => |t| {
                 const elements = store.vars(t);
                 try words.appendSlice(gpa, &.{ @intFromEnum(Tag.tuple), @intCast(elements.len) });
                 var i = elements.len;
-                while (i > 0) : (i -= 1) try stack.append(gpa, elements[i - 1]);
+                while (i > 0) : (i -= 1) try lists.add(stack, gpa, elements[i - 1]);
             },
             .app => |a| {
                 if (a.type == .none) return null;
@@ -192,15 +193,15 @@ pub fn encodeGround(
                 const args = store.vars(a.args);
                 try words.appendSlice(gpa, &.{ @intFromEnum(Tag.app), a.type.int(), @intCast(args.len) });
                 var i = args.len;
-                while (i > 0) : (i -= 1) try stack.append(gpa, args[i - 1]);
+                while (i > 0) : (i -= 1) try lists.add(stack, gpa, args[i - 1]);
             },
             .record => |rec| {
                 const fields = store.fields(rec.fields);
                 try words.appendSlice(gpa, &.{ @intFromEnum(Tag.record), @intCast(fields.len) });
-                for (fields) |f| try words.append(gpa, @intFromEnum(f.name));
-                try stack.append(gpa, rec.ext);
+                for (fields) |f| try lists.add(words, gpa, @intFromEnum(f.name));
+                try lists.add(stack, gpa, rec.ext);
                 var i = fields.len;
-                while (i > 0) : (i -= 1) try stack.append(gpa, fields[i - 1].value);
+                while (i > 0) : (i -= 1) try lists.add(stack, gpa, fields[i - 1].value);
             },
         }
     }

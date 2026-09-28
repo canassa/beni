@@ -40,7 +40,7 @@ const Dispatch = @import("Dispatch.zig");
 const Schemes = @import("Schemes.zig");
 const TypeStore = @import("TypeStore.zig");
 const Walk = @import("Walk.zig");
-const lists = @import("lists.zig");
+const lists = @import("../lists.zig");
 
 const Evidence = @This();
 

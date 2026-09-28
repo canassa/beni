@@ -424,7 +424,7 @@ fn syncColumns(store: *TypeStore) void {
     };
 }
 
-pub fn count(store: *const TypeStore) u32 {
+pub inline fn count(store: *const TypeStore) u32 {
     return @intCast(store.descriptors.len);
 }
 
@@ -434,7 +434,7 @@ pub fn count(store: *const TypeStore) u32 {
 
 /// A new root with `content` at `rank`. The caller is responsible for
 /// putting it in the pool of that rank (`Solve` does).
-pub fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator.Error!Var {
+pub inline fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator.Error!Var {
     const v: Var = @enumFromInt(store.descriptors.len);
     // The capacity test inline and the growth out of line: every
     // variable the checker makes comes through here, and `append` made a
@@ -616,7 +616,7 @@ pub inline fn copy(store: *const TypeStore, v: Var) Var.Optional {
 }
 
 /// Whether `v` was proved acyclic in the current epoch.
-pub fn proved(store: *const TypeStore, v: Var) bool {
+pub inline fn proved(store: *const TypeStore, v: Var) bool {
     return v.int() < store.acyclic.items.len and store.acyclic.items[v.int()] == store.acyclic_epoch;
 }
 
@@ -703,7 +703,7 @@ pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
     store.col.content[v.int()] = c;
 }
 
-pub fn setRank(store: *TypeStore, v: Var, r: u32) void {
+pub inline fn setRank(store: *TypeStore, v: Var, r: u32) void {
     store.record(v);
     store.col.rank[v.int()] = r;
 }
@@ -712,15 +712,15 @@ pub fn setRank(store: *TypeStore, v: Var, r: u32) void {
 /// rolled back: a speculative unification that is undone leaves them
 /// stale, and every consumer stamps a FRESH mark (`nextMark`) or clears
 /// `copy` through its own touched-list before reading.
-pub fn setMark(store: *TypeStore, v: Var, m: u32) void {
+pub inline fn setMark(store: *TypeStore, v: Var, m: u32) void {
     store.col.mark[v.int()] = m;
 }
 
-pub fn setCopy(store: *TypeStore, v: Var, c: Var.Optional) void {
+pub inline fn setCopy(store: *TypeStore, v: Var, c: Var.Optional) void {
     store.col.copy[v.int()] = c;
 }
 
-fn setParent(store: *TypeStore, v: Var, parent: Var) void {
+inline fn setParent(store: *TypeStore, v: Var, parent: Var) void {
     store.record(v);
     store.col.parent[v.int()] = parent;
 }
@@ -861,7 +861,7 @@ pub fn addVars(store: *TypeStore, items: []const Var) Allocator.Error!Range {
     return .{ .start = start, .len = @intCast(items.len) };
 }
 
-pub fn vars(store: *const TypeStore, r: Range) []const Var {
+pub inline fn vars(store: *const TypeStore, r: Range) []const Var {
     return @ptrCast(store.extra.items[r.start..][0..r.len]);
 }
 
@@ -1011,7 +1011,7 @@ fn permute(comptime T: type, scratch: Allocator, items: []T, order: []const Keye
     for (order, items) |o, *item| item.* = was[o.at];
 }
 
-pub fn fields(store: *const TypeStore, r: Range) []const Field {
+pub inline fn fields(store: *const TypeStore, r: Range) []const Field {
     const words = store.extra.items[r.start..][0 .. r.len * 2];
     return @ptrCast(words);
 }
@@ -1111,8 +1111,12 @@ pub fn flagsOf(store: *const TypeStore, v: Var) Flags {
 
 /// Push `v`'s current descriptor, if a mark is outstanding. Called by every
 /// mutator; one predictable branch when nothing is speculating.
-fn record(store: *TypeStore, v: Var) void {
+inline fn record(store: *TypeStore, v: Var) void {
     if (store.depth == 0 or store.broken) return;
+    store.recordSlow(v);
+}
+
+fn recordSlow(store: *TypeStore, v: Var) void {
     // A journal that could not record a write can no longer undo one, so
     // the region is marked BROKEN rather than closed: `rollback` then
     // restores what it can and says so, and the bracket stays balanced —
