@@ -42,7 +42,16 @@
             pkgs.jq
           ];
 
+          # Every git worktree of this repository shares the main checkout's
+          # Zig cache. Cache keys hold build-root-relative paths, so a
+          # worktree whose sources match an earlier build reuses it instead
+          # of paying the single-threaded LLVM compile again. The cache is
+          # content-addressed and locked, so concurrent builds are safe; it
+          # is never collected, so delete it when it grows too large.
           shellHook = ''
+            if common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+              export ZIG_LOCAL_CACHE_DIR="$(dirname "$common")/.zig-cache"
+            fi
             echo "beni: zig $(zig version) · node $(node --version) · zls $(zls --version)"
           '';
         };
