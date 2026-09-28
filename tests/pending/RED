@@ -65,6 +65,5 @@ scenario/CK-144 superlinear
 # evidence limit at 4 097 fields, the narrowest width that takes the array,
 # in abuse_wide_test.zig, and the cross-module test as two warm builds after
 # a check, in cache_test.zig.
-# CK-200 (2026-09-28): a string literal's mismatch spans its opening quote
-# alone; written on d90ab5f.
-tests/pending/check/bad/StringLiteralMismatchSpan.beni exit=1 codes=type_mismatch×2 why=diag
+# CK-200 (2026-09-28): a string literal's mismatch spanned its opening quote
+# alone; written on d90ab5f, fixed and promoted the same day.

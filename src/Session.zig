@@ -44,6 +44,7 @@ const InternPool = @import("InternPool.zig");
 const Profile = @import("Profile.zig");
 const SourceStore = @import("SourceStore.zig");
 const Tokenizer = @import("lex/Tokenizer.zig");
+const Token = @import("lex/Token.zig");
 const LexDiagnostics = @import("lex/Diagnostics.zig");
 const Parse = @import("parse/Parse.zig");
 const ParseDiagnostics = @import("parse/Diagnostics.zig");
@@ -1760,7 +1761,9 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
 
 /// The span of `token` in `file`, from the token list the parser produced.
 /// This is what `Bir.Inst.main_token` buys: a resolution diagnostic points
-/// at an instruction, and an instruction points at the exact bytes.
+/// at an instruction, and an instruction points at the exact bytes. A string
+/// literal's opening quote stands for the whole literal: it spans to the
+/// closing quote.
 fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struct { diagnostic.Position, diagnostic.Position } {
     const line_starts = session.store.lineStarts(file);
     if (line_starts.len == 0) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
@@ -1770,8 +1773,25 @@ fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struc
     const starts = tokens.items(.start);
     const source = session.store.bytes(file);
     const start = starts[token];
-    const end = Tokenizer.tokenEnd(source, tags[token], start);
+    const end = if (tags[token] == .str_start)
+        stringLiteralEnd(source, tags, starts, token)
+    else
+        Tokenizer.tokenEnd(source, tags[token], start);
     return .{ diagnostic.position(line_starts, start), diagnostic.position(line_starts, end) };
+}
+
+/// Where the string literal opened by the `str_start` at `open` ends: just
+/// past its closing quote. A literal whose closing quote the lexer never
+/// produced (it met a line end, a nested string or the end of the file,
+/// each already a parse error) keeps the opening quote's own extent.
+fn stringLiteralEnd(source: [:0]const u8, tags: []const Token.Tag, starts: []const u32, open: u32) u32 {
+    var i = open + 1;
+    while (i < tags.len) : (i += 1) switch (tags[i]) {
+        .str_end => return Tokenizer.tokenEnd(source, .str_end, starts[i]),
+        .str_start, .invalid, .eof => break,
+        else => {},
+    };
+    return Tokenizer.tokenEnd(source, .str_start, starts[open]);
 }
 
 fn reportGraphDiagnostics(session: *Session) RunError!void {

@@ -2893,7 +2893,9 @@ fn lowerFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRange {
 }
 
 /// A string literal (§2.6): a `string` when it has no interpolation, else
-/// an `interp` of `chunk`s and expressions. Escapes are decoded here.
+/// an `interp` of `chunk`s and expressions. Escapes are decoded here. Both
+/// are stamped with the literal's opening quote, so a diagnostic about the
+/// literal starts there rather than at whatever its last part left.
 fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const s = l.tree.fullString(node);
     var has_interp = false;
@@ -2905,7 +2907,7 @@ fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         for (s.parts) |p| {
             if (l.tree.nodeTag(p) == .chunk) try decodeChunk(l.tokenText(l.tree.nodeMainToken(p)), l.gpa, &l.string_bytes);
         }
-        return l.addInst(.string, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset);
+        return l.addInstAt(s.start_token, .string, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset);
     }
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
@@ -2914,14 +2916,14 @@ fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             .chunk => {
                 const offset: u32 = @intCast(l.string_bytes.items.len);
                 try decodeChunk(l.tokenText(l.tree.nodeMainToken(p)), l.gpa, &l.string_bytes);
-                try l.pushScratch(try l.addInst(.chunk, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset));
+                try l.pushScratch(try l.addInstAt(l.tree.nodeMainToken(p), .chunk, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset));
             },
             .interp => try l.pushScratch(try l.lowerExpr(l.tree.operand(p))),
             else => {},
         }
     }
     const range = try l.addRange(l.scratchSince(mark));
-    return l.addInst(.interp, @intFromEnum(range.start), @intFromEnum(range.end));
+    return l.addInstAt(s.start_token, .interp, @intFromEnum(range.start), @intFromEnum(range.end));
 }
 
 // ---------------------------------------------------------------------------
