@@ -833,7 +833,7 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             .absent_private => return refusePrivate(s, id, @enumFromInt(answer.culprit), answer.method),
             .absent_requirement => return refuseRequirement(s, id, @enumFromInt(answer.culprit), answer.method, null),
             .absent_budget => {
-                try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget);
+                try Messages.derivedBudget(s.report, w.origin, root, w.method);
                 return Resolve.reject(s, id, true);
             },
             .absent_other, .own_method, .foreign => return refuseDerived(s, id, root, .opaque_type),

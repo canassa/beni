@@ -62,6 +62,9 @@ failed_patterns: std.DynamicBitSetUnmanaged = .{},
 current: ?u32 = null,
 /// Errors emitted, dropped ones included: what the plan gate reads.
 errors: u32 = 0,
+/// The `nesting_too_deep`s among them: a derived-context pass reads whether
+/// one was said while it ran, quiet or not (`Contexts.pass`).
+too_deep: u32 = 0,
 /// Per local of the module, what the generator bound it to: the texts name
 /// a callee from it (`Reporter.describe`).
 local_type: []Var.Optional = &.{},
@@ -117,6 +120,7 @@ pub fn deinit(r: *Report) void {
 pub fn emit(r: *Report, item: Item) Error!void {
     if (item.severity == .@"error") {
         r.errors += 1;
+        if (item.code == .nesting_too_deep) r.too_deep += 1;
         if (r.current) |d| {
             r.failed.set(d);
             if (item.code != .infinite_type) r.failed_patterns.set(d);

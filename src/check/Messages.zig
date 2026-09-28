@@ -252,6 +252,36 @@ pub fn resolutionBudget(r: *Report, region: Bir.Inst.Index, budget: u32) Error!v
     try r.emitText(.nesting_too_deep, region, null, text);
 }
 
+/// `nesting_too_deep` at a use of a derived `eq` or `compare` whose
+/// derived-context pass gave up (§11.2's `absent_budget`): its resolution
+/// ran out of steps, or a declaration it needed could not be checked
+/// nested where the pass stood. It is no answer about the type, so it never
+/// reads as "does not support".
+pub fn derivedBudget(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol) Error!void {
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const m = r.env.interner.slice(method);
+    w.print("I could not work out the derived `{s}` of this type:\n\n    ", .{m}) catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    w.writeAll(
+        \\
+        \\
+        \\Deriving it means checking what its parts need, and here that went deeper
+        \\than I will follow: a declaration it reaches would have to be checked nested
+        \\inside too many others, or the types its method calls are made on keep
+        \\growing. This is a limit of mine, not a fact about the type.
+        \\
+        \\Hint: annotate the methods this comparison reaches, so I can use their
+        \\annotations instead of checking their bodies here.
+        \\
+    ) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .nesting_too_deep, .module = r.module, .region = region, .message = message });
+}
+
 /// `nesting_too_deep` at a use whose own method's group would be checked
 /// here, nested (§10.2), past the budget of the whole frame stack: the use is
 /// refused, and the method's own group is checked where it stands.

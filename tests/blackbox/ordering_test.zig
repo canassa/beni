@@ -352,6 +352,67 @@ test "two deep demands in a row are refused once, and the other order checks" {
     try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "{s}; the other order checks", .{refused.detail}) });
 }
 
+// A derived `eq` worked out at the end of a chain that nearly spends the
+// budget: `W (H.Holder K)`'s pass needs `H.eq`'s requirement `a.key` of
+// `K`, whose own `key` is written below everything and is still unchecked,
+// and checking it there is refused. The pass is no answer about `W`: one
+// NESTING TOO DEEP at the `==`, never a NOT EQUATABLE saying `W` holds a
+// function (the refusal inside the pass went to its quiet report, and the
+// pass read on as if nothing had failed). The chain is 600 links, where the
+// comparison's own demand is admitted and the pass's is not.
+test "a derived eq whose pass is refused a nested check says so at the comparison" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    try w.write("H.beni",
+        \\pub type Holder a
+        \\    = Holder a
+        \\
+        \\
+        \\pub eq : Holder a, Holder a -> Bool
+        \\    where a.key : a, () -> Int
+        \\eq l r =
+        \\    case ( l, r ) of
+        \\        ( Holder x, Holder y ) ->
+        \\            x.key () == y.key ()
+        \\
+    );
+    const n = 600;
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import H\n\n\ntype T\n    = T Int\n\n\ntype K\n    = K Int\n\n\ntype W\n    = W (H.Holder K)\n\n\n");
+    for (0..n) |i| try main.print(a, "pub m{d} (T x) u =\n    (T x).m{d} ()\n\n\n", .{ i, i + 1 });
+    try main.print(a, "pub m{d} (T x) u =\n    W (H.Holder (K x)) == W (H.Holder (K 1))\n\n\n", .{n});
+    try main.appendSlice(a, "pub key (K v) u =\n    v\n");
+    try w.write("Main.beni", main.items);
+
+    const run = try w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", "H.beni", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), run.exit_code);
+    try testing.expectEqualStrings("", run.stdout);
+    const diags = try std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, std.mem.trim(u8, run.stderr, " \r\n"), .{});
+    // The comparison's line: 15 lines of header, 4 per link.
+    const line = 15 + 4 * n + 2;
+    try testing.expectEqualDeep(&[_]@import("diagnostic").Diagnostic{.{
+        .code = .nesting_too_deep,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = line, .col = 24 }, .end = .{ .line = line, .col = 26 } },
+        .title = "NESTING TOO DEEP",
+        .message =
+        \\I could not work out the derived `eq` of this type:
+        \\
+        \\    W
+        \\
+        \\Deriving it means checking what its parts need, and here that went deeper
+        \\than I will follow: a declaration it reaches would have to be checked nested
+        \\inside too many others, or the types its method calls are made on keep
+        \\growing. This is a limit of mine, not a fact about the type.
+        \\
+        \\Hint: annotate the methods this comparison reaches, so I can use their
+        \\annotations instead of checking their bodies here.
+        \\
+        ,
+    }}, diags);
+}
+
 /// `head` then `f (f (… inner …))`, `depth` calls deep.
 fn deepUse(arena: std.mem.Allocator, head: []const u8, inner: []const u8, depth: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;

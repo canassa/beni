@@ -1143,7 +1143,7 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
         r.markers = &.{};
     }
     const wanted_start: u32 = @intCast(s.evidence.wanteds.items.len);
-    const quiet_start = c.quiet_items.items.len;
+    const too_deep_start = s.report.too_deep;
     // An endpoint whose schema is in flight: its `via` targets are not
     // inferred yet (§11.5).
     const schema = endpointInFlight(s, t);
@@ -1166,11 +1166,10 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
     // permanently it IS the row's body, and P5 reads no payload again.
     c.runs.items[ri].bodies[slot] = .{ .markers = p.markers, .ids = ids, .set = true };
     // A budget that ran out inside the pass — the resolver's steps, or a
-    // nested check refused at demand — said so to the quiet report: the
-    // entry is no answer, and the use says it.
-    for (c.quiet_items.items[@min(quiet_start, c.quiet_items.items.len)..]) |item| {
-        if (item.code == .nesting_too_deep) return .{ .status = .absent_budget };
-    }
+    // nested check refused at demand — said so to the quiet report, which
+    // drops the message and counts it: the entry is no answer, and the use
+    // says it.
+    if (s.report.too_deep != too_deep_start) return .{ .status = .absent_budget };
     return c.collect(s, ri, t, p.markers, ids, wanted_start);
 }
 

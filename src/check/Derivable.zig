@@ -285,7 +285,7 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
             s.contexts.notePrivate(s, p.type_id, p.method);
             try Messages.privateMethod(s.report, w.origin, root, p.type_id, p.method);
         },
-        .budget => try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget),
+        .budget => try Messages.derivedBudget(s.report, w.origin, root, method),
         .requirement => |q| {
             s.contexts.noteRequirement(s, q.type_id, q.method);
             try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null, try payloadAt(s, q.site));
