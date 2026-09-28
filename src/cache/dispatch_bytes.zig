@@ -904,6 +904,7 @@ fn resolveType(l: *const Loaded, graph: *const Graph, types: *const Types, at: u
 const testing = std.testing;
 const TestProject = @import("../resolve/TestProject.zig");
 const Session = @import("../Session.zig");
+const fuzzing = @import("../fuzzing.zig");
 
 /// Two tables are equal in every byte the format carries. Symbols are
 /// compared as TEXT, because the point of the `strings` column is that two
@@ -1107,25 +1108,148 @@ test "a wrong magic, an unknown version and a short file are all BadSidecar" {
     try testing.expectError(error.BadSidecar, read(gpa, copy, &global));
 }
 
-// **The fuzz sweep**, `resolve/iface_bytes.zig`'s shape: a real sidecar's
-// bytes mutated exhaustively at every boundary and then at random, with
-// every mutation required to end in an error or in a table that `verify`
-// accepts. Deterministic, and run under `zig build test`, which is Debug, so
-// a read past a slice is a panic rather than a silent wrong answer.
+/// The module whose sidecar the mutation tests below start from: derived
+/// rows with a context and a nominal shape, parameter and derived terms, a
+/// requirement, and a reference to a type.
+const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
+    \\pub type Tree a
+    \\    = Leaf
+    \\    | Node (Tree a) a (Tree a)
+    \\
+    \\
+    \\pub sameTree : Tree Int, Tree Int -> Bool
+    \\sameTree a b =
+    \\    a == b
+    \\
+    \\
+    \\pub sameRecord : { name : String, value : Int }, { name : String, value : Int } -> Bool
+    \\sameRecord a b =
+    \\    a == b
+    \\
+    \\
+    \\pub bigger : a, a -> a
+    \\    where a.compare : a, a -> Order
+    \\bigger a b =
+    \\    if a < b then b else a
+    \\
+    \\
+    \\pub used : Int
+    \\used =
+    \\    bigger 1 2
+    \\
+};
+
+/// Where column `c`'s first row starts in `bytes`, from the column table.
+fn columnAt(bytes: []const u8, c: Column) u32 {
+    return std.mem.readInt(u32, bytes[header_bytes + @intFromEnum(c) * 8 ..][0..4], .little);
+}
+
+/// The length word of column `c` in the column table.
+fn columnLen(bytes: []u8, c: Column) *[4]u8 {
+    return bytes[header_bytes + @intFromEnum(c) * 8 + 4 ..][0..4];
+}
+
+test "each check the reader makes refuses the one mutation aimed at it" {
+    // One mutation per check `decode` makes on the rows this sidecar has,
+    // each applied alone to a copy of a sidecar that loads. The header and
+    // the tree rules `verify` states are the tests above and below; these
+    // are the column table, the strings and every row's own bytes.
+    var p = try TestProject.initWith(testing.allocator, &.{mutation_fixture}, .{ .phases = Session.check_phases });
+    defer p.deinit();
+    const gpa = testing.allocator;
+    const interner = &p.session.interner;
+    const table = &p.session.checked.dispatch[p.module("F").?.int()];
+    const bytes = try write(gpa, table, &p.session.graph, &p.session.checked.types, interner);
+    defer gpa.free(bytes);
+    {
+        var back = try read(gpa, bytes, interner);
+        back.deinit(gpa);
+    }
+    // Every row a mutation below lands in is there, and `tries` is empty.
+    for ([_]Column{ .terms, .decls, .derived, .type_refs }) |c| {
+        try testing.expect(std.mem.readInt(u32, columnLen(bytes, c), .little) != 0);
+    }
+    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, columnLen(bytes, .tries), .little));
+    const param: u32 = for (table.terms, 0..) |t, i| {
+        if (t == .param) break @intCast(i);
+    } else return error.TestUnexpectedResult;
+    try testing.expect(table.derived[0].shape == .nominal);
+
+    const terms = columnAt(bytes, .terms);
+    const param_row = terms + param * term_bytes;
+    const derived = columnAt(bytes, .derived);
+    const type_ref = columnAt(bytes, .type_refs);
+    const module_name = std.mem.readInt(u32, bytes[type_ref + 4 ..][0..4], .little);
+    const strings = columnAt(bytes, .strings);
+
+    const Mutation = struct {
+        what: []const u8,
+        /// Where to write, and the little-endian word or byte to write.
+        at: u32,
+        word: ?u32 = null,
+        byte: u8 = 0,
+        /// A second word, for a mutation that is two writes.
+        also: ?struct { at: u32, word: u32 } = null,
+    };
+    const tries_row = header_bytes + @intFromEnum(Column.tries) * 8;
+    const mutations = [_]Mutation{
+        // The first three go on the empty `tries`, so nothing but the column
+        // table's checks stands between them and a sidecar that loads; the
+        // third gives it one row, past the end of the file.
+        .{ .what = "a column that starts inside the header", .at = tries_row, .word = header_bytes },
+        .{ .what = "a column that starts off a four-byte boundary", .at = tries_row, .word = body_start + 1 },
+        .{ .what = "a column that runs past the end", .at = tries_row, .word = @intCast(bytes.len - 4), .also = .{ .at = tries_row + 4, .word = 1 } },
+        .{ .what = "a type reference's package no version defines", .at = type_ref, .byte = 0xff },
+        .{ .what = "a string offset past the strings", .at = type_ref + 4, .word = 0xffff_fff0 },
+        .{ .what = "a string whose length runs past the strings", .at = strings + module_name, .word = 0xffff },
+        .{ .what = "a term tag no version defines", .at = param_row, .byte = 0xff },
+        .{ .what = "a parameter term with arguments", .at = param_row + 16, .word = 1 },
+        .{ .what = "a parameter's binder no version defines", .at = param_row + 1, .byte = 0xff },
+        .{ .what = "a declaration's convention no version defines", .at = columnAt(bytes, .decls) + 10, .byte = 0xff },
+        .{ .what = "a derived kind no version defines", .at = derived, .byte = 0xff },
+        .{ .what = "a derived shape no version defines", .at = derived + 4, .byte = 0xff },
+        .{ .what = "a nominal shape naming a type reference past the table", .at = derived + 8, .word = 1 },
+    };
+    var loaded: usize = 0;
+    for (mutations) |m| {
+        const copy = try gpa.dupe(u8, bytes);
+        defer gpa.free(copy);
+        if (m.word) |w| std.mem.writeInt(u32, copy[m.at..][0..4], w, .little) else copy[m.at] = m.byte;
+        if (m.also) |a| std.mem.writeInt(u32, copy[a.at..][0..4], a.word, .little);
+        var back = read(gpa, copy, interner) catch |err| switch (err) {
+            error.BadSidecar => continue,
+            else => return err,
+        };
+        back.deinit(gpa);
+        std.debug.print("read back a sidecar with {s}\n", .{m.what});
+        loaded += 1;
+    }
+    try testing.expectEqual(@as(usize, 0), loaded);
+}
+
+// **The fuzz sweep**, opt-in (`zig build fuzz`, `fuzzing.zig`), in
+// `resolve/iface_bytes.zig`'s shape: the sidecar above mutated
+// exhaustively at every boundary and then at random, with every mutation
+// required to end in an error or in a table that `verify` accepts.
+// Deterministic, and Debug, so a read past a slice is a panic rather than a
+// silent wrong answer.
 
 /// Which part of the mutation sweep below a test runs: they are three tests so
 /// that the test runner's shards can run them at the same time.
 const SweepPart = enum { systematic, random_first, random_second };
 
 test "fuzz: a sidecar truncated or with a bit flipped never reads back as an unverified one" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedSidecarSweep(.systematic);
 }
 
 test "fuzz: a sidecar with random bytes overwritten never reads back as an unverified one, first seed" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedSidecarSweep(.random_first);
 }
 
 test "fuzz: a sidecar with random bytes overwritten never reads back as an unverified one, second seed" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedSidecarSweep(.random_second);
 }
 
@@ -1133,35 +1257,7 @@ test "fuzz: a sidecar with random bytes overwritten never reads back as an unver
 const random_writes = 15_000;
 
 fn mutatedSidecarSweep(part: SweepPart) !void {
-    var p = try TestProject.initWith(testing.allocator, &.{
-        .{ .path = "F.beni", .source =
-        \\pub type Tree a
-        \\    = Leaf
-        \\    | Node (Tree a) a (Tree a)
-        \\
-        \\
-        \\pub sameTree : Tree Int, Tree Int -> Bool
-        \\sameTree a b =
-        \\    a == b
-        \\
-        \\
-        \\pub sameRecord : { name : String, value : Int }, { name : String, value : Int } -> Bool
-        \\sameRecord a b =
-        \\    a == b
-        \\
-        \\
-        \\pub bigger : a, a -> a
-        \\    where a.compare : a, a -> Order
-        \\bigger a b =
-        \\    if a < b then b else a
-        \\
-        \\
-        \\pub used : Int
-        \\used =
-        \\    bigger 1 2
-        \\
-        },
-    }, .{ .phases = Session.check_phases });
+    var p = try TestProject.initWith(testing.allocator, &.{mutation_fixture}, .{ .phases = Session.check_phases });
     defer p.deinit();
 
     const gpa = testing.allocator;

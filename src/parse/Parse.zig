@@ -2931,6 +2931,7 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const fuzzing = @import("../fuzzing.zig");
 const InternPool = @import("../InternPool.zig");
 const dump_ast = @import("../dump/ast.zig");
 
@@ -4932,6 +4933,22 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
     } });
 }
 
+test "every loop that could run past the last token stops at it" {
+    // One input per check that stops a loop at `eof`, each ending inside
+    // that loop: resynchronising after an error inside a declaration and
+    // at the top level; a schema field whose name did not parse, and one
+    // whose value did not end; and the leftovers of a broken
+    // interpolation. Without its check, each consumes `eof` and reads past
+    // the tokens.
+    for ([_][:0]const u8{
+        "x = 1 )",
+        ") x",
+        "schema X = { : Int",
+        "schema X = { a : Int 5",
+        "x = \"${ b ) c",
+    }) |source| try checkArbitrary(source);
+}
+
 /// Token-shaped pieces (each a well-formed token, space or newline) and
 /// real grammar fragments; mixing them produces every kind of half-valid
 /// program the parser must survive.
@@ -4982,8 +4999,10 @@ const fragment_pieces = [_][]const u8{
 
 // PRNG-driven stand-in for the fuzzer (the toolchain's fuzz mode does not
 // build on 0.16.0): token soup and grammar fragments, mixed at random.
-// `BENI_STRESS_ITERATIONS` raises the count for a long run.
+// Opt-in (`zig build fuzz`, `fuzzing.zig`); the gates run the inputs above,
+// one per check. `BENI_STRESS_ITERATIONS` raises the count for a long run.
 test "stress: token soup and grammar fragments never panic and always yield a well-formed tree" {
+    try fuzzing.skipUnlessFuzzing();
     var iterations: usize = 2000;
     if (testing.environ.getAlloc(testing.allocator, "BENI_STRESS_ITERATIONS")) |value| {
         defer testing.allocator.free(value);

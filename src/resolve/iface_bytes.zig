@@ -953,6 +953,7 @@ fn isTypeRef(iface: *const Interface, word: u32) bool {
 const testing = std.testing;
 const TestProject = @import("TestProject.zig");
 const Session = @import("../Session.zig");
+const fuzzing = @import("../fuzzing.zig");
 
 /// Whether two records are equal in every byte that the format carries.
 /// Symbols are compared as TEXT, because the point of the column is that
@@ -1476,28 +1477,138 @@ test "a column offset past the end, and a strings record that overruns the blob"
     }
 }
 
-// **The fuzz test.** A real record's bytes, mutated exhaustively at every
-// place the format has a boundary, and then at random; every mutation must
-// end in an error or in a record that `verify` accepts, and never in an
-// out-of-bounds read. Run under `zig build test`, which is Debug, so
-// `std`'s own bounds checks are live and a read past a slice is a panic
-// rather than a silent wrong answer.
-//
-// Deterministic: a fixed seed, a fixed corpus and a fixed mutation
-// schedule, so a failure reproduces exactly.
+/// The module whose record the mutation tests below start from: types,
+/// constructors, schemes, terms and a reference to an imported type.
+const mutation_fixture: TestProject.Module = .{ .path = "F.beni", .source =
+    \\pub type Tree a
+    \\    = Leaf
+    \\    | Node (Tree a) a (Tree a)
+    \\
+    \\
+    \\pub type alias Named a =
+    \\    { name : String, value : a }
+    \\
+    \\
+    \\pub wrap : a -> Named a
+    \\wrap v =
+    \\    { name = "x", value = v }
+    \\
+    \\
+    \\pub compareBoth a b =
+    \\    a < b
+    \\
+    \\
+    \\pub pairUp : a, b -> ( a, b )
+    \\pairUp x y =
+    \\    ( x, y )
+    \\
+};
+
+/// Where column `c`'s first row starts in `bytes`, from the column table.
+fn columnAt(bytes: []const u8, c: Column) u32 {
+    return std.mem.readInt(u32, bytes[header_bytes + @intFromEnum(c) * 8 ..][0..4], .little);
+}
+
+/// The length word of column `c` in the column table.
+fn columnLen(bytes: []u8, c: Column) *[4]u8 {
+    return bytes[header_bytes + @intFromEnum(c) * 8 + 4 ..][0..4];
+}
+
+test "each check the reader makes refuses the one mutation aimed at it" {
+    // One mutation per check `decode` makes on the rows this record has,
+    // each applied alone to a copy of a record that loads. The header, the
+    // column table's bounds, the strings and a symbol index are the tests
+    // above; these are the rest. A byte a writer always leaves zero is
+    // refused so that one record has one encoding.
+    var p = try TestProject.initWith(testing.allocator, &.{mutation_fixture}, .{ .phases = Session.check_phases });
+    defer p.deinit();
+    const gpa = testing.allocator;
+    const interner = &p.session.interner;
+    const bytes = try write(gpa, &p.session.resolution.interfaces[p.module("F").?.int()], interner);
+    defer gpa.free(bytes);
+    {
+        var back = try read(gpa, bytes, interner);
+        back.deinit(gpa);
+    }
+    // Every row a mutation below lands in is there.
+    for ([_]Column{ .types, .ctors, .term_tags, .type_refs }) |c| {
+        try testing.expect(std.mem.readInt(u32, columnLen(bytes, c), .little) != 0);
+    }
+    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, columnLen(bytes, .hidden_types), .little));
+
+    const Mutation = struct {
+        what: []const u8,
+        column: Column,
+        /// The byte of the column's first row to overwrite, or null to
+        /// change the column table instead (`table`).
+        byte: ?u32 = null,
+        value: u8 = 0,
+        table: enum { none, offset_in_header, misaligned, one_short } = .none,
+    };
+    const mutations = [_]Mutation{
+        // The two offsets go on an empty column, so nothing but the offset
+        // check stands between them and a record that loads.
+        .{ .what = "a column that starts inside the header", .column = .hidden_types, .table = .offset_in_header },
+        .{ .what = "a column that starts off a four-byte boundary", .column = .hidden_types, .table = .misaligned },
+        .{ .what = "a term_lhs column shorter than the term tags", .column = .term_lhs, .table = .one_short },
+        .{ .what = "a term_rhs column shorter than the term tags", .column = .term_rhs, .table = .one_short },
+        .{ .what = "a type's flags past bit 2", .column = .types, .byte = 15, .value = 0x08 },
+        .{ .what = "a type's padding", .column = .types, .byte = 30, .value = 1 },
+        .{ .what = "a type kind no version defines", .column = .types, .byte = 14, .value = 0xff },
+        .{ .what = "an eq status no version defines", .column = .types, .byte = 28, .value = 0xff },
+        .{ .what = "a compare status no version defines", .column = .types, .byte = 29, .value = 0xff },
+        .{ .what = "a constructor's padding", .column = .ctors, .byte = 25, .value = 1 },
+        .{ .what = "a constructor result no version defines", .column = .ctors, .byte = 24, .value = 0xff },
+        .{ .what = "a term tag no version defines", .column = .term_tags, .byte = 0, .value = 0xff },
+        .{ .what = "a type reference's package no version defines", .column = .type_refs, .byte = 8, .value = 0xff },
+    };
+    var loaded: usize = 0;
+    for (mutations) |m| {
+        const copy = try gpa.dupe(u8, bytes);
+        defer gpa.free(copy);
+        switch (m.table) {
+            .none => copy[columnAt(copy, m.column) + m.byte.?] = m.value,
+            .offset_in_header => std.mem.writeInt(u32, copy[header_bytes + @intFromEnum(m.column) * 8 ..][0..4], header_bytes, .little),
+            .misaligned => std.mem.writeInt(u32, copy[header_bytes + @intFromEnum(m.column) * 8 ..][0..4], body_start + 1, .little),
+            .one_short => {
+                const len = columnLen(copy, m.column);
+                std.mem.writeInt(u32, len, std.mem.readInt(u32, len, .little) - 1, .little);
+            },
+        }
+        var back = read(gpa, copy, interner) catch |err| switch (err) {
+            error.BadRecord => continue,
+            else => return err,
+        };
+        back.deinit(gpa);
+        std.debug.print("read back a record with {s}\n", .{m.what});
+        loaded += 1;
+    }
+    try testing.expectEqual(@as(usize, 0), loaded);
+}
+
+// **The fuzz sweep**, opt-in (`zig build fuzz`, `fuzzing.zig`): the record
+// above, mutated exhaustively at every place the format has a boundary, and
+// then at random; every mutation must end in an error or in a record that
+// `verify` accepts, and never in an out-of-bounds read. Debug, so `std`'s
+// own bounds checks are live and a read past a slice is a panic rather than
+// a silent wrong answer. Deterministic: a fixed seed, a fixed corpus and a
+// fixed mutation schedule, so a failure reproduces exactly.
 /// Which part of the mutation sweep below a test runs: they are three tests so
 /// that the test runner's shards can run them at the same time.
 const SweepPart = enum { systematic, random_first, random_second };
 
 test "fuzz: a record truncated or with a bit flipped never reads back as an unverified one" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedRecordSweep(.systematic);
 }
 
 test "fuzz: a record with random bytes overwritten never reads back as an unverified one, first seed" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedRecordSweep(.random_first);
 }
 
 test "fuzz: a record with random bytes overwritten never reads back as an unverified one, second seed" {
+    try fuzzing.skipUnlessFuzzing();
     try mutatedRecordSweep(.random_second);
 }
 
@@ -1505,32 +1616,7 @@ test "fuzz: a record with random bytes overwritten never reads back as an unveri
 const random_writes = 15_000;
 
 fn mutatedRecordSweep(part: SweepPart) !void {
-    var p = try TestProject.initWith(testing.allocator, &.{
-        .{ .path = "F.beni", .source =
-        \\pub type Tree a
-        \\    = Leaf
-        \\    | Node (Tree a) a (Tree a)
-        \\
-        \\
-        \\pub type alias Named a =
-        \\    { name : String, value : a }
-        \\
-        \\
-        \\pub wrap : a -> Named a
-        \\wrap v =
-        \\    { name = "x", value = v }
-        \\
-        \\
-        \\pub compareBoth a b =
-        \\    a < b
-        \\
-        \\
-        \\pub pairUp : a, b -> ( a, b )
-        \\pairUp x y =
-        \\    ( x, y )
-        \\
-        },
-    }, .{ .phases = Session.check_phases });
+    var p = try TestProject.initWith(testing.allocator, &.{mutation_fixture}, .{ .phases = Session.check_phases });
     defer p.deinit();
 
     const gpa = testing.allocator;

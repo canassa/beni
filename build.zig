@@ -36,6 +36,9 @@
 //!                                 every test process timed, and write the
 //!                                 tables into plans/test-time-report.md
 //!                                 (`tests/time_report.zig`)
+//! And random exploration, not a gate either (`src/fuzzing.zig`):
+//!   zig build fuzz                the unit tests with their mutation sweeps
+//!                                 and stress loops on (`BENI_FUZZ=1`)
 //! And the benchmarks' own tests — benchmarks are not part of the gates:
 //!   zig build test-bench          the generators' unit tests, and the check
 //!                                 that beni accepts the benchmark's program
@@ -194,6 +197,20 @@ pub fn build(b: *std.Build) void {
     }
     test_step.dependOn(&runTests(b, diagnostic_tests).step);
     test_step.dependOn(&runTests(b, time_report_tests).step);
+
+    // The same unit tests with their random exploration on (`BENI_FUZZ=1`,
+    // `src/fuzzing.zig`): the byte-format mutation sweeps and the lexer's
+    // and parser's stress loops. The gates run one hand-picked input per
+    // check instead; this finds the input nobody picked, and is not a gate.
+    // `BENI_STRESS_ITERATIONS` in the environment raises the stress counts.
+    const fuzz_step = b.step("fuzz", "Run the unit tests with their random sweeps on (not a gate)");
+    for (0..unit_shards) |k| {
+        const run = runTests(b, beni_tests);
+        run.setEnvironmentVariable("BENI_FUZZ", "1");
+        run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
+        run.setName(b.fmt("run beni tests with fuzzing shard {d}/{d}", .{ k, unit_shards }));
+        fuzz_step.dependOn(&run.step);
+    }
 
     // The benchmarks' own tests: the generators' unit tests and the check
     // that beni accepts the cross-language benchmark's program. Benchmarks

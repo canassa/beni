@@ -872,6 +872,7 @@ fn invalidEnd(source: [:0]const u8, start: u32) u32 {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const fuzzing = @import("../fuzzing.zig");
 
 /// One expected token: what the dump shows, plus the interned text for
 /// identifier-like tags (checked against the interner) or the index value
@@ -1899,6 +1900,24 @@ test "fuzz: arbitrary bytes never panic, always end in eof, and every token slic
     } });
 }
 
+test "every scan that could run past the end of the file stops at it" {
+    // One input per check that stops a scan at the sentinel, each ending
+    // where that scan is: a string, and the chunk inside it; a string
+    // nested in an interpolation, bare and after a backslash; a character
+    // literal; an escape, and a `\u{` with no `}`; and a UTF-8 lead byte
+    // whose continuation bytes are missing. Without its check, each reads
+    // past the source or ends a token beyond it.
+    for ([_][:0]const u8{
+        "\"abc",
+        "\"${ \"",
+        "\"${ \"\\",
+        "'a",
+        "\"\\",
+        "\"\\u{",
+        "\xf0",
+    }) |source| try checkArbitrary(source);
+}
+
 /// Bytes that steer the state machine: string and interpolation delimiters,
 /// escapes, dots, dashes, line terminators, a tab, NUL, and UTF-8 lead and
 /// continuation bytes.
@@ -1906,9 +1925,11 @@ const steering_bytes = "\"\\$${}'-.0123456789eExu+-/|<>=:&_ \n\r\t\x00\x7f\xc3\x
 
 // The toolchain's fuzz mode is not available on 0.16.0 (its test runner
 // does not compile with `-ffuzz`), so this is the stand-in: PRNG-driven
-// inputs mixing valid pieces, steering bytes and noise. `BENI_STRESS_ITERATIONS`
-// raises the count for a long run (`zig build test -Doptimize=ReleaseSafe`).
+// inputs mixing valid pieces, steering bytes and noise. Opt-in (`zig build
+// fuzz`, `fuzzing.zig`); the gates run the corpus above, one input per
+// check. `BENI_STRESS_ITERATIONS` raises the count for a long run.
 test "stress: random mixes of valid pieces, steering bytes and noise never panic" {
+    try fuzzing.skipUnlessFuzzing();
     var iterations: usize = 3000;
     if (testing.environ.getAlloc(testing.allocator, "BENI_STRESS_ITERATIONS")) |value| {
         defer testing.allocator.free(value);

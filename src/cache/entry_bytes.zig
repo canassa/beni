@@ -286,6 +286,7 @@ pub fn readDiagnostics(gpa: Allocator, bytes: []const u8) ReadError![]Diagnostic
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+const fuzzing = @import("../fuzzing.zig");
 
 const sample_key: [16]u8 = .{ 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6 };
 
@@ -408,6 +409,11 @@ test "the six corrupt-entry shapes are each a miss" {
         std.mem.writeInt(u32, row[0..4], offset + 1, .little);
         try testing.expectError(error.BadEntry, read(copy));
         std.mem.writeInt(u32, row[0..4], offset, .little);
+
+        // An aligned offset that points into the header.
+        std.mem.writeInt(u32, row[0..4], header_bytes, .little);
+        try testing.expectError(error.BadEntry, read(copy));
+        std.mem.writeInt(u32, row[0..4], offset, .little);
     }
     // The entry is intact again, so the sweep above tested the mutations and
     // not a file it had quietly destroyed.
@@ -481,14 +487,16 @@ test "a diagnostics section whose row overruns its blob is a miss" {
     try testing.expectError(error.BadEntry, readDiagnostics(gpa, bytes[0..4]));
 }
 
-// **The fuzz sweep**, the shape `resolve/iface_bytes.zig` established: a real
-// entry's bytes mutated at every place the format has a boundary and then at
-// random, with every mutation required to end in an error or in an entry
-// whose sections are inside the file. Deterministic — a fixed seed, a fixed
-// corpus and a fixed schedule — so a failure reproduces exactly, and run
-// under `zig build test`, which is Debug, so a read past a slice is a panic
-// rather than a silent wrong answer.
+// **The fuzz sweep**, opt-in (`zig build fuzz`, `fuzzing.zig`), in the shape
+// `resolve/iface_bytes.zig` established: a real entry's bytes mutated at
+// every place the format has a boundary and then at random, with every
+// mutation required to end in an error or in an entry whose sections are
+// inside the file. Deterministic — a fixed seed, a fixed corpus and a fixed
+// schedule — so a failure reproduces exactly, and Debug, so a read past a
+// slice is a panic rather than a silent wrong answer. The gates run the
+// hand-picked cases above, one per check.
 test "fuzz: a mutated entry never reads back as one that leaves the file" {
+    try fuzzing.skipUnlessFuzzing();
     const gpa = testing.allocator;
     const diagnostics = try writeDiagnostics(gpa, &.{
         .{ .code = 11, .severity = 0, .has_token = true, .region = 3, .token = 4, .message = "a message with some length to it" },
