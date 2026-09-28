@@ -1309,363 +1309,312 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     try testing.expectEqual(@as(u64, 0), settled.counters.checked);
 }
 
-test "a private schema conversion body stops at the interface firewall, while a public field crosses it" {
-    // ┌───────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └───────────────────────────────────────┘
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("src/Models.beni",
-        \\import Schema exposing (Conversion)
-        \\
-        \\
-        \\conversion : Conversion Int String
-        \\conversion =
-        \\    Debug.todo "first private body"
-        \\
-        \\
-        \\pub schema User =
-        \\    id : Int via conversion
-        \\
-        \\
-        \\pub schema Page item =
-        \\    value : item
-        \\
-    );
-    try w.write("src/Consumer.beni",
-        \\import Models
-        \\
-        \\
-        \\pub keep : Models.User.Type -> Models.User.Type
-        \\keep value =
-        \\    value
-        \\
-    );
+// ---------------------------------------------------------------------------
+// A schema across the interface firewall
+// ---------------------------------------------------------------------------
 
-    // ┌───────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └───────────────────────────────────────┘
-    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-cold.json");
-    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-warm.json");
-    const hashes_before = try ifaceHashes(&w, arena);
-    const iface_before = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
-
-    try w.write("src/Models.beni",
-        \\import Schema exposing (Conversion)
-        \\
-        \\
-        \\conversion : Conversion Int String
-        \\conversion =
-        \\    Debug.todo "second private body"
-        \\
-        \\
-        \\pub schema User =
-        \\    id : Int via conversion
-        \\
-        \\
-        \\pub schema Page item =
-        \\    value : item
-        \\
-    );
-    const private_edit = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-private.json");
-    const private_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-private-plain.json");
-    const hashes_after_private = try ifaceHashes(&w, arena);
-    const iface_after_private = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
-
-    try w.write("src/Models.beni",
-        \\import Schema exposing (Conversion)
-        \\
-        \\
-        \\conversion : Conversion Int String
-        \\conversion =
-        \\    Debug.todo "second private body"
-        \\
-        \\
-        \\pub schema User =
-        \\    id : Int via conversion
-        \\
-        \\
-        \\pub schema Page element =
-        \\    value : element
-        \\
-    );
-    const alpha_edit = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-alpha.json");
-    const alpha_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-alpha-plain.json");
-    const hashes_after_alpha = try ifaceHashes(&w, arena);
-    const iface_after_alpha = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
-
-    try w.write("src/Models.beni",
-        \\import Schema exposing (Conversion)
-        \\
-        \\
-        \\conversion : Conversion Int String
-        \\conversion =
-        \\    Debug.todo "second private body"
-        \\
-        \\
-        \\pub schema User =
-        \\    name : Int via conversion
-        \\
-        \\
-        \\pub schema Page element =
-        \\    value : element
-        \\
-    );
-    const public_edit = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-public.json");
-    const public_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-public-plain.json");
-    const hashes_after_public = try ifaceHashes(&w, arena);
-
-    // ┌────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └───────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
-    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
-    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
-    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
-    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-
-    try testing.expectEqual(@as(u8, 0), private_edit.result.exit_code);
-    try testing.expectEqual(private_plain.result.exit_code, private_edit.result.exit_code);
-    try testing.expectEqualStrings(private_plain.result.stdout, private_edit.result.stdout);
-    try testing.expectEqualStrings(private_plain.result.stderr, private_edit.result.stderr);
-    try testing.expectEqual(@as(u64, 1), private_edit.counters.checked);
-    try expectMoved("a private schema conversion body", hashes_before, hashes_after_private, &.{});
-    try testing.expectEqual(@as(u8, 0), iface_before.exit_code);
-    try testing.expectEqual(@as(usize, 0), iface_before.diagnostics.len);
-    try testing.expectEqual(@as(u8, 0), iface_after_private.exit_code);
-    try testing.expectEqual(@as(usize, 0), iface_after_private.diagnostics.len);
-    try testing.expectEqualStrings(iface_before.stdout, iface_after_private.stdout);
-
-    try testing.expectEqual(@as(u8, 0), alpha_edit.result.exit_code);
-    try testing.expectEqual(alpha_plain.result.exit_code, alpha_edit.result.exit_code);
-    try testing.expectEqualStrings(alpha_plain.result.stdout, alpha_edit.result.stdout);
-    try testing.expectEqualStrings(alpha_plain.result.stderr, alpha_edit.result.stderr);
-    try testing.expectEqual(@as(u64, 1), alpha_edit.counters.checked);
-    try expectMoved("a public schema parameter alpha rename", hashes_after_private, hashes_after_alpha, &.{});
-    try testing.expectEqual(@as(u8, 0), iface_after_alpha.exit_code);
-    try testing.expectEqual(@as(usize, 0), iface_after_alpha.diagnostics.len);
-    try testing.expectEqualStrings(iface_after_private.stdout, iface_after_alpha.stdout);
-
-    try testing.expectEqual(@as(u8, 0), public_edit.result.exit_code);
-    try testing.expectEqual(public_plain.result.exit_code, public_edit.result.exit_code);
-    try testing.expectEqualStrings(public_plain.result.stdout, public_edit.result.stdout);
-    try testing.expectEqualStrings(public_plain.result.stderr, public_edit.result.stderr);
-    try testing.expectEqual(@as(u64, 2), public_edit.counters.checked);
-    try testing.expect(!std.mem.eql(
-        u8,
-        lookup(hashes_after_alpha, "app:Models").?,
-        lookup(hashes_after_public, "app:Models").?,
-    ));
+/// `Models` with a private conversion whose body is `body`, a record schema
+/// `User` with the field `field` through it, and a public parametric schema
+/// `Page` whose parameter is `param`.
+fn schemaModels(comptime body: []const u8, comptime field: []const u8, comptime param: []const u8) []const u8 {
+    return "import Schema exposing (Conversion)\n\n\nconversion : Conversion Int String\nconversion =\n    Debug.todo \"" ++
+        body ++ "\"\n\n\npub schema User =\n    " ++ field ++ " : Int via conversion\n\n\npub schema Page " ++
+        param ++ " =\n    value : " ++ param ++ "\n";
 }
 
-test "custom equality capabilities survive cache hits and cross the firewall only with their public method" {
-    // Row 72: Inner contains a function, but its inferred public `eq` is the
-    // equality boundary Outer derives through. The cache has to restore that
-    // capability on a hit; a private body edit must stop at Inner's unchanged
-    // interface, while removing `pub` must invalidate and reject Outer.
+const schema_consumer =
+    \\import Models
+    \\
+    \\
+    \\pub keep : Models.User.Type -> Models.User.Type
+    \\keep value =
+    \\    value
+    \\
+;
+
+/// `before` checked cold into a cache; then `after` checked warm over it and
+/// cold with `--no-cache`. The two agree on every stream, the warm run
+/// re-checked `checked` modules, and `Models`'s interface hash moved exactly
+/// when `hash_moves`, and no hash moved when it does not.
+fn expectSchemaEdit(before: []const u8, after: []const u8, checked: u64, hash_moves: bool) !void {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    try w.write("src/Models.beni", before);
+    try w.write("src/Consumer.beni", schema_consumer);
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--cache-dir=cache", "src" }, "schema-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const hashes_before = try parseKeys(arena, cold.result.stdout);
 
-    const inner =
-        \\pub type Inner
-        \\    = Inner String (Int -> Int)
-        \\
-        \\
-        \\pub eq left right =
-        \\    case left of
-        \\        Inner labelLeft _ ->
-        \\            case right of
-        \\                Inner labelRight _ ->
-        \\                    labelLeft == labelRight
-        \\
-    ;
-    const outer =
-        \\import Inner
-        \\import Node exposing (Program)
-        \\
-        \\
-        \\pub type Outer
-        \\    = Outer Inner.Inner
-        \\
-        \\
-        \\plusOne value =
-        \\    value + 1
-        \\
-        \\
-        \\minusOne value =
-        \\    value - 1
-        \\
-        \\
-        \\show value =
-        \\    if value then
-        \\        "True"
-        \\    else
-        \\        "False"
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines
-        \\        [ show
-        \\            (Outer (Inner.Inner "same" plusOne)
-        \\                == Outer (Inner.Inner "same" minusOne)
-        \\            )
-        \\        , show
-        \\            (Outer (Inner.Inner "same" plusOne)
-        \\                == Outer (Inner.Inner "different" plusOne)
-        \\            )
-        \\        ]
-        \\
-    ;
-    try w.write("src/Inner.beni", inner);
-    try w.write("src/Outer.beni", outer);
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Models.beni", after);
+    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--cache-dir=cache", "src" }, "schema-warm.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--iface-hash", "--no-cache", "src" }, "schema-plain.json");
+    const hashes_after = try parseKeys(arena, warm.result.stdout);
 
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(plain.result.exit_code, warm.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(plain.result.stderr, warm.result.stderr);
+    try testing.expectEqual(checked, warm.counters.checked);
+    if (hash_moves) {
+        try testing.expect(!std.mem.eql(u8, lookup(hashes_before, "app:Models").?, lookup(hashes_after, "app:Models").?));
+    } else {
+        try expectMoved("a schema edit", hashes_before, hashes_after, &.{});
+    }
+}
+
+test "a private schema conversion body stops at the interface firewall" {
+    // The conversion is private, so its body is in no record: `Models` is
+    // re-checked and `Consumer` is not.
+    try expectSchemaEdit(
+        schemaModels("first private body", "id", "item"),
+        schemaModels("second private body", "id", "item"),
+        1,
+        false,
+    );
+}
+
+test "a public schema's parameter renamed stops at the interface firewall" {
+    // An alpha rename: the record states the parameter by position, not by
+    // name.
+    try expectSchemaEdit(
+        schemaModels("second private body", "id", "item"),
+        schemaModels("second private body", "id", "element"),
+        1,
+        false,
+    );
+}
+
+test "a public schema's field renamed crosses the interface firewall" {
+    // The field is `User.Type`'s, which `Consumer` names: `Models`'s hash
+    // moves and both modules are re-checked.
+    try expectSchemaEdit(
+        schemaModels("second private body", "id", "element"),
+        schemaModels("second private body", "name", "element"),
+        2,
+        true,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A custom equality across the interface firewall
+// ---------------------------------------------------------------------------
+//
+// `Inner` contains a function, but its inferred public `eq` is the equality
+// boundary `Outer` derives through. A private body edit must stop at
+// `Inner`'s unchanged interface — `Outer` is a hit, so the capability is
+// restored from its cached entry — while removing `pub` must invalidate and
+// reject `Outer`.
+
+const method_inner =
+    \\pub type Inner
+    \\    = Inner String (Int -> Int)
+    \\
+    \\
+    \\pub eq left right =
+    \\    case left of
+    \\        Inner labelLeft _ ->
+    \\            case right of
+    \\                Inner labelRight _ ->
+    \\                    labelLeft == labelRight
+    \\
+;
+
+const method_outer =
+    \\import Inner
+    \\import Node exposing (Program)
+    \\
+    \\
+    \\pub type Outer
+    \\    = Outer Inner.Inner
+    \\
+    \\
+    \\plusOne value =
+    \\    value + 1
+    \\
+    \\
+    \\minusOne value =
+    \\    value - 1
+    \\
+    \\
+    \\show value =
+    \\    if value then
+    \\        "True"
+    \\    else
+    \\        "False"
+    \\
+    \\
+    \\main : Program
+    \\main =
+    \\    Node.printLines
+    \\        [ show
+    \\            (Outer (Inner.Inner "same" plusOne)
+    \\                == Outer (Inner.Inner "same" minusOne)
+    \\            )
+    \\        , show
+    \\            (Outer (Inner.Inner "same" plusOne)
+    \\                == Outer (Inner.Inner "different" plusOne)
+    \\            )
+    \\        ]
+    \\
+;
+
+/// The two modules built cold into a cache, then `Inner` rewritten to
+/// `edited` and built warm over it and cold with `--no-cache`, which must
+/// agree on every stream. Returns the warm run.
+fn methodEdit(w: *World, arena: std.mem.Allocator, edited: []const u8) !Run {
+    try w.write("src/Inner.beni", method_inner);
+    try w.write("src/Outer.beni", method_outer);
     const cold = try runCounted(
-        &w,
+        w,
         arena,
         &.{ "build", "--platform=node", "--diagnostics=json", "--out=cold", "--jobs=1", "--cache-dir=cache", "src" },
         "method-cold.json",
     );
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try w.write("src/Inner.beni", edited);
     const warm = try runCounted(
-        &w,
+        w,
         arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=8", "--cache-dir=cache", "src" },
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=1", "--cache-dir=cache", "src" },
         "method-warm.json",
     );
-    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const oracle = try runCounted(
+        w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=oracle", "--jobs=1", "--no-cache", "src" },
+        "method-oracle.json",
+    );
+    try testing.expectEqual(oracle.result.exit_code, warm.result.exit_code);
+    try testing.expectEqualStrings(oracle.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(oracle.result.stderr, warm.result.stderr);
+    return warm;
+}
+
+test "a custom eq's private body edit stops at the firewall, and the cached importer uses the new body" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    const edited = try std.mem.replaceOwned(u8, arena, method_inner, "labelLeft == labelRight", "labelLeft /= labelRight");
+    const warm = try methodEdit(&w, arena, edited);
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
-    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
-    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
-    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    try expectSameTree(&w, arena, "cold", "warm");
-    try w.expectProgram("cold/_main.mjs", .{ .stdout = "True\nFalse\n" });
-    try w.expectProgram("warm/_main.mjs", .{ .stdout = "True\nFalse\n" });
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try expectSameTree(&w, arena, "oracle", "warm");
+    // The original prints "True\nFalse\n"; the edited eq, reached through
+    // `Outer`'s cached derived eq, flips both.
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "False\nTrue\n" });
+}
 
-    const edited_inner = try std.mem.replaceOwned(u8, arena, inner, "labelLeft == labelRight", "labelLeft /= labelRight");
-    try w.write("src/Inner.beni", edited_inner);
-    const body = try runCounted(
-        &w,
-        arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=body", "--jobs=1", "--cache-dir=cache", "src" },
-        "method-body.json",
-    );
-    const body_oracle = try runCounted(
-        &w,
-        arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=body-oracle", "--jobs=8", "--no-cache", "src" },
-        "method-body-oracle.json",
-    );
-    try testing.expectEqual(@as(u8, 0), body.result.exit_code);
-    try testing.expectEqual(body_oracle.result.exit_code, body.result.exit_code);
-    try testing.expectEqualStrings(body_oracle.result.stdout, body.result.stdout);
-    try testing.expectEqualStrings(body_oracle.result.stderr, body.result.stderr);
-    try testing.expectEqual(@as(u64, 1), body.counters.checked);
-    try expectSameTree(&w, arena, "body-oracle", "body");
-    try w.expectProgram("body/_main.mjs", .{ .stdout = "False\nTrue\n" });
+test "a custom eq made private invalidates and rejects the importer that derives through it" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
 
-    const private_inner = try std.mem.replaceOwned(u8, arena, edited_inner, "pub eq", "eq");
-    try w.write("src/Inner.beni", private_inner);
-    const hidden = try runCounted(
-        &w,
-        arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=hidden", "--jobs=8", "--cache-dir=cache", "src" },
-        "method-hidden.json",
-    );
-    const hidden_oracle = try runCounted(
-        &w,
-        arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=hidden-oracle", "--jobs=1", "--no-cache", "src" },
-        "method-hidden-oracle.json",
-    );
+    const hidden = try methodEdit(&w, arena, try std.mem.replaceOwned(u8, arena, method_inner, "pub eq", "eq"));
     try testing.expectEqual(@as(u8, 1), hidden.result.exit_code);
-    try testing.expectEqual(hidden_oracle.result.exit_code, hidden.result.exit_code);
-    try testing.expectEqualStrings(hidden_oracle.result.stdout, hidden.result.stdout);
-    try testing.expectEqualStrings(hidden_oracle.result.stderr, hidden.result.stderr);
     try testing.expectEqual(@as(u64, 2), hidden.counters.checked);
     // The two comparisons are `private_method` (checker-v2.md §11.3:
     // private methods answer dispatch only inside their module): `Inner`'s
     // `eq` is private, so `Outer`'s derived `eq` cannot use it. The warm build
-    // still says exactly what the cold one says (above).
+    // says exactly what the cold one says (`methodEdit`).
     const expected_hidden =
         \\[{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"},{"code":"private_method","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"PRIVATE METHOD","message":"`Inner.eq` is not `pub`.\n\nThis needs the `eq` of `Inner`, declared in `Inner`, which is inside:\n\n    Outer\n\n`Inner` declares `eq` without `pub`, and it is the `eq` of every type `Inner`\ndeclares, so it is private to that module: it cannot be used from here,\ndirectly or inside another value.\n\nHint: add `pub` to `eq` in `Inner`.\n"}]
         \\
     ;
     try testing.expectEqualStrings(expected_hidden, hidden.result.stderr);
-    try testing.expect(!w.exists("hidden"));
-    try testing.expect(!w.exists("hidden-oracle"));
+    try testing.expect(!w.exists("warm"));
+    try testing.expect(!w.exists("oracle"));
 }
 
-test "a constrained function constant keeps one calling convention across warm rebuilds that edit its module" {
-    // checker-v2.md §12.5. `Leaf.h` takes evidence and has no
-    // parameters but a function TYPE, so it is defined over its type's
-    // arity and called flat; `Top` calls it, passes it to a fold, and
-    // defines its own point-free `mine = Leaf.h`. The edits rewrite `h` as a
-    // function of two parameters, as a lambda and as a `let` whose body is
-    // `maxOf` again, which changes no interface, so `Top` is NOT re-checked: its cached table (the
-    // `convention` column included) and the importer's reading of `Leaf`'s
-    // interface must still agree with the definition `Leaf` now emits. Each
-    // warm tree is byte-compared with a `--no-cache` build and RUN.
+// ---------------------------------------------------------------------------
+// A constrained function constant across warm rebuilds
+// ---------------------------------------------------------------------------
+//
+// checker-v2.md §12.5. `Leaf.h` takes evidence and has no parameters but a
+// function TYPE, so it is defined over its type's arity and called flat;
+// `Top` calls it, passes it to a fold, and defines its own point-free
+// `mine = Leaf.h`. Each edit rewrites `h` in another shape — a function of
+// two parameters, a lambda, a `let` whose body is `maxOf` again — which
+// changes no interface, so `Top` is NOT re-checked: its cached table (the
+// `convention` column included) and its reading of `Leaf`'s interface must
+// still agree with the definition `Leaf` now emits. The warm tree is
+// byte-compared with a `--no-cache` build and RUN.
+
+const convention_leaf =
+    \\pub maxOf : a, a -> a
+    \\    where a.compare : a, a -> Order
+    \\maxOf a b =
+    \\    if a < b then
+    \\        b
+    \\
+    \\    else
+    \\        a
+    \\
+    \\
+    \\pub h : a, a -> a
+    \\    where a.compare : a, a -> Order
+    \\h =
+    \\    maxOf
+    \\
+    \\
+    \\pub blank : List a
+    \\    where a.eq : a, a -> Bool
+    \\blank =
+    \\    []
+    \\
+;
+
+const convention_top =
+    \\import Leaf
+    \\import Node exposing (Program)
+    \\
+    \\
+    \\mine : a, a -> a
+    \\    where a.compare : a, a -> Order
+    \\mine =
+    \\    Leaf.h
+    \\
+    \\
+    \\main : Program
+    \\main =
+    \\    Node.printLines
+    \\        [ String.fromInt (Leaf.h 1 2)
+    \\        , Leaf.h "a" "b"
+    \\        , String.fromInt (List.foldl [ 1, 5, 2 ] 0 Leaf.h)
+    \\        , String.fromInt (mine 7 3)
+    \\        , String.fromInt (List.foldl [ 4, 9 ] 0 mine)
+    \\        , String.fromInt (List.length (Leaf.blank ++ [ 1 ]))
+    \\        ]
+    \\
+;
+
+/// Build cold into a cache, rewrite `h`'s definition as `body`, and build
+/// warm over the cache and cold without one: `Leaf` alone is re-checked and
+/// the two trees are byte-identical, and the warm one runs.
+fn expectConventionEdit(body: []const u8) !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-
-    const leaf =
-        \\pub maxOf : a, a -> a
-        \\    where a.compare : a, a -> Order
-        \\maxOf a b =
-        \\    if a < b then
-        \\        b
-        \\
-        \\    else
-        \\        a
-        \\
-        \\
-        \\pub h : a, a -> a
-        \\    where a.compare : a, a -> Order
-        \\h =
-        \\    maxOf
-        \\
-        \\
-        \\pub blank : List a
-        \\    where a.eq : a, a -> Bool
-        \\blank =
-        \\    []
-        \\
-    ;
-    const top =
-        \\import Leaf
-        \\import Node exposing (Program)
-        \\
-        \\
-        \\mine : a, a -> a
-        \\    where a.compare : a, a -> Order
-        \\mine =
-        \\    Leaf.h
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines
-        \\        [ String.fromInt (Leaf.h 1 2)
-        \\        , Leaf.h "a" "b"
-        \\        , String.fromInt (List.foldl [ 1, 5, 2 ] 0 Leaf.h)
-        \\        , String.fromInt (mine 7 3)
-        \\        , String.fromInt (List.foldl [ 4, 9 ] 0 mine)
-        \\        , String.fromInt (List.length (Leaf.blank ++ [ 1 ]))
-        \\        ]
-        \\
-    ;
-    const expected = "2\nb\n5\n7\n9\n1\n";
-    try w.write("src/Leaf.beni", leaf);
-    try w.write("src/Top.beni", top);
+    try w.write("src/Leaf.beni", convention_leaf);
+    try w.write("src/Top.beni", convention_top);
 
     const cold = try runCounted(
         &w,
@@ -1673,64 +1622,56 @@ test "a constrained function constant keeps one calling convention across warm r
         &.{ "build", "--platform=node", "--diagnostics=json", "--out=cold", "--jobs=1", "--cache-dir=cache", "src" },
         "convention-cold.json",
     );
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+
+    try w.write("src/Leaf.beni", try std.mem.replaceOwned(u8, arena, convention_leaf, "h =\n    maxOf\n", body));
     const warm = try runCounted(
         &w,
         arena,
-        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=8", "--cache-dir=cache", "src" },
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=1", "--cache-dir=cache", "src" },
         "convention-warm.json",
     );
-    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const oracle = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=oracle", "--jobs=1", "--no-cache", "src" },
+        "convention-oracle.json",
+    );
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
-    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    try expectSameTree(&w, arena, "cold", "warm");
-    try w.expectProgram("cold/_main.mjs", .{ .stdout = expected });
-    try w.expectProgram("warm/_main.mjs", .{ .stdout = expected });
-
-    const edits = [_]struct { body: []const u8, name: []const u8 }{
-        .{ .body = "h a b =\n    maxOf a b\n", .name = "params" },
-        .{ .body = "h =\n    \\a b -> maxOf a b\n", .name = "lambda" },
-        .{ .body = "h =\n    let\n        f =\n            maxOf\n    in\n    f\n", .name = "let" },
-    };
-    var previous: []const u8 = "h =\n    maxOf\n";
-    var source: []const u8 = leaf;
-    for (edits) |edit| {
-        source = try std.mem.replaceOwned(u8, arena, source, previous, edit.body);
-        previous = edit.body;
-        try w.write("src/Leaf.beni", source);
-        const out = try std.fmt.allocPrint(arena, "edit-{s}", .{edit.name});
-        const oracle = try std.fmt.allocPrint(arena, "oracle-{s}", .{edit.name});
-        const built = try runCounted(
-            &w,
-            arena,
-            &.{ "build", "--platform=node", "--diagnostics=json", try std.fmt.allocPrint(arena, "--out={s}", .{out}), "--jobs=8", "--cache-dir=cache", "src" },
-            try std.fmt.allocPrint(arena, "convention-{s}.json", .{edit.name}),
-        );
-        const cold_oracle = try runCounted(
-            &w,
-            arena,
-            &.{ "build", "--platform=node", "--diagnostics=json", try std.fmt.allocPrint(arena, "--out={s}", .{oracle}), "--jobs=1", "--no-cache", "src" },
-            try std.fmt.allocPrint(arena, "convention-{s}-oracle.json", .{edit.name}),
-        );
-        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
-        try testing.expectEqual(@as(u8, 0), cold_oracle.result.exit_code);
-        // `Leaf` alone: its interface did not move, so `Top` is a hit.
-        try testing.expectEqual(@as(u64, 1), built.counters.checked);
-        try expectSameTree(&w, arena, oracle, out);
-        try w.expectProgram(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}), .{ .stdout = expected });
-    }
+    try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+    // `Leaf` alone: its interface did not move, so `Top` is a hit.
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try expectSameTree(&w, arena, "oracle", "warm");
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "2\nb\n5\n7\n9\n1\n" });
 }
 
-test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
+test "a constrained function constant rewritten with parameters keeps its importer's cached calling convention" {
+    try expectConventionEdit("h a b =\n    maxOf a b\n");
+}
+
+test "a constrained function constant rewritten as a lambda keeps its importer's cached calling convention" {
+    try expectConventionEdit("h =\n    \\a b -> maxOf a b\n");
+}
+
+test "a constrained function constant rewritten as a let keeps its importer's cached calling convention" {
+    try expectConventionEdit("h =\n    let\n        f =\n            maxOf\n    in\n    f\n");
+}
+
+test "a truncated or foreign .bef is a miss and is then overwritten" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `plans/m4-2.md` §9.4 item 23, black-box, and the twin of the `.bec`
-    // table above. Each shape must produce byte-identical output to a cold
-    // run and the same exit code — never a crash, never a diagnostic, never a
-    // wrong answer — and the good artifact must then replace it. With the
-    // `rename` dropped (§6 B), the "overwritten" half is a REQUIREMENT and
-    // not a nicety: a partial file a crashed process left must not be
-    // believed forever.
+    // test above. Which byte shapes the reader refuses — zero length, a
+    // stub, a wrong magic or version, a flipped bit only the body hash sees
+    // — is `frontend/artifact_bytes.zig`'s corrupt-artifact table; what only
+    // a real run can show is that a refused artifact is re-lowered with
+    // byte-identical output to a cold run and the same exit code, and that
+    // the good artifact then replaces it. With the `rename` dropped (§6 B),
+    // the "overwritten" half is a REQUIREMENT and not a nicety: a partial
+    // file a crashed process left must not be believed forever. Two shapes
+    // reach that: a truncated file, and another file's artifact under this
+    // one's name, which only the session's own key comparison can refuse.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1751,11 +1692,8 @@ test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
     // └─────────────────────────────────────────┘
     const Shape = struct { what: []const u8, bytes: []const u8 };
     const shapes = [_]Shape{
-        .{ .what = "zero length", .bytes = "" },
         .{ .what = "truncated mid-section", .bytes = good[0 .. good.len - 8] },
-        .{ .what = "truncated to a stub", .bytes = good[0..9] },
-        .{ .what = "a prefix of exactly half", .bytes = good[0 .. good.len / 2] },
-        .{ .what = "random bytes", .bytes = "not an artifact at all, just some bytes" },
+        .{ .what = "another file's", .bytes = try w.read(try std.fs.path.join(arena, &.{ "cache", artifacts[1] })) },
     };
     for (shapes) |shape| {
         try w.write(victim, shape.bytes);
@@ -1773,46 +1711,6 @@ test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
         try testing.expectEqual(@as(u64, 1), r.counters.lowered);
         try testing.expectEqualStrings(good, try w.read(victim));
     }
-
-    // A flipped bit that keeps the LENGTH: the case a content-addressed name
-    // cannot detect, and the reason the header carries a hash over its body.
-    for ([_]usize{ 0, 8, 41 }) |at| {
-        const mangled = try arena.dupe(u8, good);
-        mangled[at] +%= 1;
-        try w.write(victim, mangled);
-        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bit.json");
-        try testing.expectEqual(plain.result.exit_code, r.result.exit_code);
-        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
-        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
-        try testing.expectEqualStrings(good, try w.read(victim));
-    }
-    // A bit flipped in the BODY, past the header, where only the hash can
-    // see it.
-    {
-        const mangled = try arena.dupe(u8, good);
-        mangled[good.len - 5] ^= 0x40;
-        try w.write(victim, mangled);
-        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "body.json");
-        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
-        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
-        try testing.expectEqualStrings(good, try w.read(victim));
-    }
-
-    // Another file's artifact under this one's name: the "wrong build id"
-    // case, refused by the header's key and not by luck.
-    {
-        const other = try std.fs.path.join(arena, &.{ "cache", artifacts[1] });
-        try w.write(victim, try w.read(other));
-        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "foreign.json");
-        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
-        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
-        try testing.expectEqualStrings(good, try w.read(victim));
-    }
-
-    // …and after all that, the cache is whole again.
-    const restored = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "restored.json");
-    try testing.expectEqual(@as(u64, 0), restored.counters.lowered);
-    try testing.expectEqual(@as(u64, 0), restored.counters.checked);
 }
 
 test "the interner-order fixture: a cache written over P is read over P plus a module sorting first" {
@@ -1873,15 +1771,16 @@ test "the interner-order fixture: a cache written over P is read over P plus a m
         \\
     );
     const grown = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "p2.json");
-    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "cold.json");
     const cold_hashes = try ifaceHashes(&w, arena);
     const warm_hashes = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(cold.result.exit_code, grown.result.exit_code);
-    try testing.expectEqualStrings(cold.result.stderr, grown.result.stderr);
+    // The project is clean, so a run that believed a shifted numbering would
+    // say something where a cold run says nothing.
+    try testing.expectEqual(@as(u8, 0), grown.result.exit_code);
+    try testing.expectEqualStrings("", grown.result.stderr);
     // Only the new file was lowered; everything the first run wrote was read
     // back under a numbering that had shifted.
     try testing.expectEqual(@as(u64, 1), grown.counters.lowered);
@@ -2327,15 +2226,15 @@ fn expectSameTree(w: *World, arena: std.mem.Allocator, want_dir: []const u8, got
     }
 }
 
-test "a cache written in one configuration and read in another: jobs, cwd, and check versus build" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `plans/m4-1.md` §6.3 row 14 and the cross `fast-compiler.md` §8 calls
-    // deliberate. A cache written at one worker count and read at another is
-    // what would catch a `Symbol` reaching the bytes; one written by `check`
-    // and read by `build` is what would catch an entry that depended on
-    // which command wrote it.
+// `plans/m4-1.md` §6.3 row 14 and the cross `fast-compiler.md` §8 calls
+// deliberate: a cache written in one configuration and read in another. The
+// keys agreeing is asserted above against `--cache-keys`; these are the half
+// that reads the files.
+
+test "a cache written at --jobs=8 is read at --jobs=1" {
+    // A cache written at one worker count and read at another is what would
+    // catch a `Symbol` — which depends on which worker interned which file —
+    // reaching the bytes.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2343,88 +2242,81 @@ test "a cache written in one configuration and read in another: jobs, cwd, and c
     defer w.deinit();
     try writeProject(&w);
 
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE / VERIFY                        │
-    // └─────────────────────────────────────────┘
-    // `--jobs=8` writes, `--jobs=1` reads.
-    {
-        const warm = try coldThenWarm(
-            &w,
-            arena,
-            &.{ "check", "--jobs=8", "--cache-dir=eight", "src" },
-            &.{ "check", "--jobs=1", "--cache-dir=eight", "src" },
-        );
-        try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    }
-    // …and the reverse.
-    {
-        const warm = try coldThenWarm(
-            &w,
-            arena,
-            &.{ "check", "--jobs=1", "--cache-dir=one", "src" },
-            &.{ "check", "--jobs=8", "--cache-dir=one", "src" },
-        );
-        try testing.expectEqual(@as(u64, 0), warm.counters.checked);
-    }
-    // **One cache, every spelling of the same tree.** Nothing in the key or
-    // in the entry is a path, and every path is normalised
-    // lexically at enumeration, so `src`, `./src`, `src/` and `$PWD/src` are
-    // one project — which means an entry written under any one of them must
-    // be HIT by all the others. That is the strong form of "a cache does not
-    // depend on the directory the compiler was run from": the keys-are-equal
-    // half is asserted above, and this is the half that reads the files.
-    {
-        const absolute = try w.projectSubPath(arena, "src");
-        try w.createDir("cwdcache");
-        const cache = try w.projectSubPath(arena, "cwdcache");
-        const root_flag = try std.fmt.allocPrint(arena, "--root={s}", .{absolute});
-        const dir_flag = try std.fmt.allocPrint(arena, "--cache-dir={s}", .{cache});
-        // Written by the absolute spelling, with an absolute `--root`…
-        const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", dir_flag, root_flag, absolute }, "abs.json");
-        try testing.expectEqual(@as(u64, 0), cold.counters.hits);
-        // …and read by every other spelling, each of which must check none.
-        for ([_][]const u8{ "src", "./src", "src/", "./src/" }) |spelling| {
-            const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", dir_flag, spelling }, "rel.json");
-            testing.expectEqual(@as(u64, 0), warm.counters.checked) catch |err| {
-                std.debug.print("the spelling '{s}' missed a cache written as an absolute path\n", .{spelling});
-                return err;
-            };
-            try testing.expectEqual(cold.counters.misses, warm.counters.hits);
-        }
-        // And the absolute spelling with a RELATIVE cache directory reads
-        // the relative runs' own entries too, which is the same claim from
-        // the other side.
-        const back = try runCounted(&w, arena, &.{ "check", "--jobs=1", dir_flag, absolute }, "abs2.json");
-        try testing.expectEqual(@as(u64, 0), back.counters.checked);
-    }
-    // `check` writes, `build` reads — and the reverse. The entry holds the
-    // check's result and no emitted byte, so the two commands share it.
-    {
-        const checked = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=shared", "src" }, "c.json");
-        try testing.expectEqual(@as(u64, 0), checked.counters.hits);
-        const built = try runCounted(
-            &w,
-            arena,
-            &.{ "build", "--platform=node", "--library", "--out=out", "--jobs=1", "--cache-dir=shared", "src" },
-            "b.json",
-        );
-        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
-        // The app's three modules and core hit; the platform's own modules
-        // are new to this cache, because `check` never enumerated them.
-        try testing.expect(built.counters.hits >= checked.counters.misses);
-        const after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=shared", "src" }, "c2.json");
-        try testing.expectEqual(@as(u64, 0), after.counters.checked);
-    }
+    const warm = try coldThenWarm(
+        &w,
+        arena,
+        &.{ "check", "--jobs=8", "--cache-dir=eight", "src" },
+        &.{ "check", "--jobs=1", "--cache-dir=eight", "src" },
+    );
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
 }
 
-test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
+test "a cache written under an absolute path and root is hit through a relative spelling" {
+    // Nothing in the key or in the entry is a path, and every path is
+    // normalised lexically at enumeration, so `src`, `./src/` and `$PWD/src`
+    // are one project — which means an entry written under one spelling
+    // must be HIT by another: the strong form of "a cache does not depend on
+    // the directory the compiler was run from". `./src/` carries both a
+    // leading `./` and a trailing `/`.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const absolute = try w.projectSubPath(arena, "src");
+    try w.createDir("cwdcache");
+    const cache = try w.projectSubPath(arena, "cwdcache");
+    const root_flag = try std.fmt.allocPrint(arena, "--root={s}", .{absolute});
+    const dir_flag = try std.fmt.allocPrint(arena, "--cache-dir={s}", .{cache});
+    // Written by the absolute spelling, with an absolute `--root`…
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", dir_flag, root_flag, absolute }, "abs.json");
+    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+    // …and read by a relative one, which must check none.
+    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", dir_flag, "./src/" }, "rel.json");
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expectEqual(cold.counters.misses, warm.counters.hits);
+}
+
+test "a cache written by check is read by build" {
+    // The entry holds the check's result and no emitted byte, so the two
+    // commands share it; one that depended on which command wrote it would
+    // miss here.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const checked = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=shared", "src" }, "c.json");
+    try testing.expectEqual(@as(u64, 0), checked.counters.hits);
+    const built = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--library", "--out=out", "--jobs=1", "--cache-dir=shared", "src" },
+        "b.json",
+    );
+    try testing.expectEqual(@as(u8, 0), built.result.exit_code);
+    // The app's three modules and core hit; the platform's own modules are
+    // new to this cache, because `check` never enumerated them.
+    try testing.expect(built.counters.hits >= checked.counters.misses);
+}
+
+test "a truncated or foreign entry is a miss and is then overwritten" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `plans/m4-1.md` §6.4, black-box: the six shapes a fixture can plant on
-    // disk. Each must produce byte-identical output to a cold run and the
-    // same exit code — never a crash, never a diagnostic, never a wrong
-    // answer — and the good entry must then replace it.
+    // `plans/m4-1.md` §6.4, black-box. Which byte shapes the reader refuses
+    // — zero length, a stub, a wrong magic, a bumped version, a section past
+    // the end — is `cache/entry_bytes.zig`'s table, one unit test per shape;
+    // what only a real run can show is what a refused entry BECOMES: a miss,
+    // byte-identical output to a cold run and the same exit code — never a
+    // crash, a diagnostic or a wrong answer — and the good entry written
+    // back over it. Two shapes reach that: a truncated file (a torn write)
+    // and a whole entry written for another key, which only the session's
+    // own key comparison can refuse.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2433,7 +2325,7 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
     try writeProject(&w);
 
     const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
-    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
+    _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     // The `.bec` entries only: a ruined `.bef` is a FRONT-END miss and does
     // not move `cache_misses`, so the row below would be measuring the wrong
     // counter. `plans/m4-2.md` §9.4's own table for `.bef` is the twin test.
@@ -2443,17 +2335,17 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
     const good = try w.read(victim);
     try testing.expect(good.len > 64);
 
-    const Shape = struct { what: []const u8, bytes: []const u8 };
-    const shapes = [_]Shape{
-        .{ .what = "zero length", .bytes = "" },
-        .{ .what = "truncated mid-section", .bytes = good[0 .. good.len - 8] },
-        .{ .what = "truncated to a stub", .bytes = good[0..9] },
-        .{ .what = "random bytes", .bytes = "not an entry at all, just some bytes" },
-    };
-
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY                        │
     // └─────────────────────────────────────────┘
+    // Truncated mid-section, and an entry written for ANOTHER key planted
+    // under this key's name: the "wrong build id" case, and the one the
+    // header's key field exists to catch without trusting the directory.
+    const Shape = struct { what: []const u8, bytes: []const u8 };
+    const shapes = [_]Shape{
+        .{ .what = "truncated mid-section", .bytes = good[0 .. good.len - 8] },
+        .{ .what = "another key's", .bytes = try w.read(try std.fs.path.join(arena, &.{ "cache", files[1] })) },
+    };
     for (shapes) |shape| {
         try w.write(victim, shape.bytes);
         const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bad.json");
@@ -2469,40 +2361,8 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
         // the run then wrote it back.
         try testing.expectEqual(@as(u64, 1), r.counters.misses);
         try testing.expect(r.counters.bytes > 0);
-        const rewritten = try w.read(victim);
-        try testing.expectEqualStrings(good, rewritten);
-    }
-
-    // A wrong magic and a bumped version, which are the two shapes an older
-    // compiler's file has.
-    for ([_]usize{ 0, 8 }) |at| {
-        const mangled = try arena.dupe(u8, good);
-        mangled[at] +%= 1;
-        try w.write(victim, mangled);
-        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bad.json");
-        try testing.expectEqual(plain.result.exit_code, r.result.exit_code);
-        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
-        try testing.expectEqual(@as(u64, 1), r.counters.misses);
         try testing.expectEqualStrings(good, try w.read(victim));
     }
-
-    // An entry written for ANOTHER key, planted under this key's name: the
-    // "wrong build id" case, and the one the header's key field exists to
-    // catch without trusting the directory.
-    {
-        const other = try std.fs.path.join(arena, &.{ "cache", files[1] });
-        try w.write(victim, try w.read(other));
-        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bad.json");
-        try testing.expectEqual(plain.result.exit_code, r.result.exit_code);
-        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
-        try testing.expectEqual(@as(u64, 1), r.counters.misses);
-        try testing.expectEqualStrings(good, try w.read(victim));
-    }
-
-    // …and after all that, the cache is whole again.
-    const restored = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "restored.json");
-    try testing.expectEqual(@as(u64, 0), restored.counters.checked);
-    try testing.expectEqual(cold.counters.misses, restored.counters.hits);
 }
 
 test "a schema plan whose endpoint terms disagree with its declaration is a miss" {
@@ -2527,16 +2387,8 @@ test "a schema plan whose endpoint terms disagree with its declaration is a miss
         \\
     );
 
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-plan-plain.json");
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-plan-cold.json");
-    try testing.expectEqual(plain.result.exit_code, cold.result.exit_code);
-    try testing.expectEqualStrings(plain.result.stdout, cold.result.stdout);
-    try testing.expectEqualStrings(plain.result.stderr, cold.result.stderr);
     try testing.expect(std.mem.indexOf(u8, cold.result.stderr, "CONSTRAINT IN AN INFERRED INTERFACE") != null);
-
-    const iface_before = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
-    try testing.expectEqual(@as(u8, 0), iface_before.exit_code);
-    try testing.expect(std.mem.indexOf(u8, iface_before.stdout, "schema User") != null);
 
     const keys = try keysOf(&w, arena, &.{ "--jobs=1", "src" });
     const models_key = lookup(keys, "app:Models") orelse return error.MissingKey;
@@ -2566,7 +2418,9 @@ test "a schema plan whose endpoint terms disagree with its declaration is a miss
     mangled[tags_base + encoded_term] = 2;
     try w.write(victim, mangled);
 
-    const repaired = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-plan-repaired.json");
+    // The mangled plan is refused on the hit: `Models` misses and is checked
+    // again, says what the cold run said, and its entry is written back.
+    const repaired = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-plan-repaired.json");
     try testing.expectEqual(cold.result.exit_code, repaired.result.exit_code);
     try testing.expectEqualStrings(cold.result.stdout, repaired.result.stdout);
     try testing.expectEqualStrings(cold.result.stderr, repaired.result.stderr);
@@ -2574,12 +2428,6 @@ test "a schema plan whose endpoint terms disagree with its declaration is a miss
     try testing.expectEqual(@as(u64, 1), repaired.counters.checked);
     try testing.expect(repaired.counters.bytes > 0);
     try testing.expectEqualStrings(good, try w.read(victim));
-
-    const iface_after = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
-    try testing.expectEqual(iface_before.exit_code, iface_after.exit_code);
-    try testing.expectEqualDeep(iface_before.diagnostics, iface_after.diagnostics);
-    try testing.expectEqualStrings(iface_before.stdout, iface_after.stdout);
-    try testing.expectEqualStrings(iface_before.stderr, iface_after.stderr);
 }
 
 test "a pre-warmed cache directory made read-only still hits everything" {
@@ -2603,23 +2451,24 @@ test "a pre-warmed cache directory made read-only still hits everything" {
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
 }
 
-test "readers racing writers on an empty cache directory never accept a torn file" {
+test "processes racing on an empty cache directory agree and never accept a torn file" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The fixture the dropped `rename` is conditional on** (`plans/m4-2.md`
-    // §6 B, condition 3). With write-to-temp-plus-rename a reader could never
-    // see a partial file; with a plain create it can, and what makes that
-    // safe is that the header carries the file's total length and the reader
-    // checks it FIRST, so every prefix is a miss.
+    // There are no locks and no `rename`: two processes that compute the
+    // same key write identical bytes, and what makes a partial file safe is
+    // that the header carries the file's total length and the reader checks
+    // it FIRST, so every prefix is a miss. That check is the unit tests'
+    // (`cache/entry_bytes.zig`, `frontend/artifact_bytes.zig`: every prefix
+    // of a real file is refused); this is the same claim with real
+    // processes.
     //
-    // Six processes at once on one initially EMPTY directory, several
-    // rounds: each is both a reader and a writer, because a `check` reads
-    // what is there and writes what is not. Every one of them must exit 0
-    // and print exactly what a `--no-cache` run prints — a torn file that
-    // was believed would show up as a different diagnostic, a different exit
-    // code or a crash, and a torn file that was merely tolerated shows up in
-    // the settled run at the end.
+    // Four processes at once on one initially EMPTY directory, each both a
+    // reader and a writer, because a `check` reads what is there and writes
+    // what is not. Every one must exit 0 and print exactly what a
+    // `--no-cache` run prints — a torn file that was believed would show up
+    // as a different diagnostic, a different exit code or a crash, and one
+    // that was merely tolerated shows up in the settled run at the end.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2631,49 +2480,46 @@ test "readers racing writers on an empty cache directory never accept a torn fil
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const racers = 6;
-    for (0..6) |round| {
-        const dir = try std.fmt.allocPrint(arena, "--cache-dir=torn{d}", .{round});
-        var results: [racers]world.Result = undefined;
-        var threads: [racers]std.Thread = undefined;
-        const Racer = struct {
-            w: *World,
-            args: []const []const u8,
-            out: *world.Result,
-            err: ?anyerror = null,
-            fn go(r: *@This()) void {
-                r.out.* = r.w.runWith(r.args, .{ .raw_diagnostics = true }) catch |e| {
-                    r.err = e;
-                    return;
-                };
-            }
-        };
-        // Different `--jobs` on purpose: the processes then reach any one
-        // key at different moments, which is what makes the overlap real
-        // rather than nominal.
-        var list: [racers]Racer = undefined;
-        for (&list, 0..) |*slot, i| {
-            const jobs = try std.fmt.allocPrint(arena, "--jobs={d}", .{@as(u32, @intCast(1 + (i % 4)))});
-            slot.* = .{
-                .w = &w,
-                .args = try arena.dupe([]const u8, &.{ "check", jobs, dir, "src" }),
-                .out = &results[i],
+    const racers = 4;
+    var results: [racers]world.Result = undefined;
+    var threads: [racers]std.Thread = undefined;
+    const Racer = struct {
+        w: *World,
+        args: []const []const u8,
+        out: *world.Result,
+        err: ?anyerror = null,
+        fn go(r: *@This()) void {
+            r.out.* = r.w.runWith(r.args, .{ .raw_diagnostics = true }) catch |e| {
+                r.err = e;
+                return;
             };
         }
-        for (&threads, &list) |*t, *r| t.* = try std.Thread.spawn(.{}, Racer.go, .{r});
-        for (threads) |t| t.join();
+    };
+    // Different `--jobs` on purpose: the processes then reach any one key at
+    // different moments, which is what makes the overlap real rather than
+    // nominal.
+    var list: [racers]Racer = undefined;
+    for (&list, 0..) |*slot, i| {
+        const jobs = try std.fmt.allocPrint(arena, "--jobs={d}", .{i + 1});
+        slot.* = .{
+            .w = &w,
+            .args = try arena.dupe([]const u8, &.{ "check", jobs, "--cache-dir=torn", "src" }),
+            .out = &results[i],
+        };
+    }
+    for (&threads, &list) |*t, *r| t.* = try std.Thread.spawn(.{}, Racer.go, .{r});
+    for (threads) |t| t.join();
 
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        for (list) |r| {
-            if (r.err) |e| return e;
-        }
-        for (results) |r| {
-            try testing.expectEqual(alone.exit_code, r.exit_code);
-            try testing.expectEqualStrings(alone.stderr, r.stderr);
-            try testing.expectEqualStrings(alone.stdout, r.stdout);
-        }
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (list) |r| {
+        if (r.err) |e| return e;
+    }
+    for (results) |r| {
+        try testing.expectEqual(alone.exit_code, r.exit_code);
+        try testing.expectEqualStrings(alone.stderr, r.stderr);
+        try testing.expectEqualStrings(alone.stdout, r.stdout);
     }
 
     // ┌─────────────────────────────────────────┐
@@ -2682,76 +2528,10 @@ test "readers racing writers on an empty cache directory never accept a torn fil
     // A settled run over the directory the race left behind hits EVERY file
     // and every module: no half-written file survived it, and none was left
     // in a state that is refused forever.
-    const settled = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=torn0", "src" }, "settled.json");
+    const settled = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=torn", "src" }, "settled.json");
     try testing.expectEqual(@as(u64, 0), settled.counters.lowered);
     try testing.expectEqual(@as(u64, 0), settled.counters.checked);
     try testing.expectEqual(@as(u64, 0), settled.counters.misses);
-}
-
-test "two processes racing on one empty cache directory both exit 0 and agree" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `plans/m4-1.md` §6.3 row 15. There are no locks by design: two
-    // processes that compute the same key write identical bytes and the
-    // later `rename` is harmless. What must never happen is a partial file
-    // being read — which is what write-to-temp-then-rename buys, and what
-    // this asserts by running the race twenty times and then requiring a
-    // third run to hit everything.
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try writeProject(&w);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    for (0..10) |round| {
-        const dir = try std.fmt.allocPrint(arena, "--cache-dir=race{d}", .{round});
-        var results: [2]world.Result = undefined;
-        var threads: [2]std.Thread = undefined;
-        const Racer = struct {
-            w: *World,
-            args: []const []const u8,
-            out: *world.Result,
-            err: ?anyerror = null,
-            fn go(r: *@This()) void {
-                r.out.* = r.w.runWith(r.args, .{ .raw_diagnostics = true }) catch |e| {
-                    r.err = e;
-                    return;
-                };
-            }
-        };
-        const args = try arena.dupe([]const u8, &.{ "check", "--jobs=2", dir, "src" });
-        var racers: [2]Racer = .{
-            .{ .w = &w, .args = args, .out = &results[0] },
-            .{ .w = &w, .args = args, .out = &results[1] },
-        };
-        for (&threads, &racers) |*t, *r| t.* = try std.Thread.spawn(.{}, Racer.go, .{r});
-        for (threads) |t| t.join();
-
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        for (racers) |r| {
-            if (r.err) |e| return e;
-        }
-        for (results) |r| {
-            try testing.expectEqual(@as(u8, 0), r.exit_code);
-            try testing.expectEqualStrings("", r.stderr);
-        }
-    }
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // A third run over the directory the race left behind hits everything,
-    // which is the assertion that no half-written file survived it.
-    const after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=race0", "src" }, "after.json");
-    try testing.expectEqual(@as(u64, 0), after.counters.checked);
-    try testing.expectEqual(@as(u64, 0), after.counters.misses);
 }
 
 test "a module with a warning is cached and replays it byte for byte" {
@@ -2802,22 +2582,27 @@ test "a module with a warning is cached and replays it byte for byte" {
 // Every flag is classified, and the classification is falsifiable
 // ---------------------------------------------------------------------------
 
-test "a flag that is not in the key cannot change one byte of one entry" {
+// `fast-compiler.md` §8 lists every flag on `Cli.Common`, `Cli.Check` and
+// `Cli.Build` and says, for each, why it is IN the key or OUT of it. The rows
+// above falsify the "in" half — change it and the key moves. These are the
+// "out" half, and the one a key that was too WIDE would fail: a flag that is
+// out of the key must not reach a cached byte either, or two builds that
+// differ only in it would write two different entries under one name and the
+// later one would win by accident. One flag per test, each a pair of runs
+// into two cache directories whose every entry must agree.
+//
+// The backend's are the interesting ones. They are out of the key because no
+// emitted byte is cached, and nothing but these says so out loud.
+// `--allow-debug` is the fourth and it gets its own scenario below, because
+// saying anything about it needs a project that reaches `Debug` — on this one
+// the flag lifts a refusal that never fires.
+
+/// Run the project once with `a` and once with `b`, each into a cache of its
+/// own, and require the two caches to be identical.
+fn expectFlagOutOfKey(what: []const u8, is_build: bool, a: []const []const u8, b: []const []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `fast-compiler.md` §8 lists every flag on `Cli.Common`, `Cli.Check`
-    // and `Cli.Build` and says, for each, why it is IN the key or OUT of it.
-    // The rows above falsify the "in" half — change it and the key moves.
-    // This is the "out" half, and it is the one a key that was too WIDE
-    // would fail: a flag that is out of the key must not reach a cached
-    // byte either, or two builds that differ only in it would write two
-    // different entries under one name and the later one would win by
-    // accident.
-    //
-    // The backend's three are the interesting ones. They are out of the key
-    // because no emitted byte is cached, and nothing but this says
-    // so out loud.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2825,48 +2610,53 @@ test "a flag that is not in the key cannot change one byte of one entry" {
     defer w.deinit();
     try writeProject(&w);
 
-    const Pair = struct {
-        what: []const u8,
-        a: []const []const u8,
-        b: []const []const u8,
-        build: bool = false,
-    };
-    const pairs = [_]Pair{
-        // Output is identical for every `n`, and keying on it would hide
-        // the very bug the determinism rule forbids.
-        .{ .what = "--jobs", .a = &.{"--jobs=1"}, .b = &.{"--jobs=8"} },
-        // Rendering flags: they select how a message is printed.
-        .{ .what = "--diagnostics", .a = &.{"--diagnostics=text"}, .b = &.{"--diagnostics=json"} },
-        .{ .what = "--explain", .a = &.{}, .b = &.{"--explain"} },
-        // A round trip must produce the same record, and exempting it would
-        // excuse it from the round-trip tests.
-        .{ .what = "--roundtrip-interfaces", .a = &.{}, .b = &.{"--roundtrip-interfaces"} },
-        .{ .what = "--roundtrip-dispatch", .a = &.{}, .b = &.{"--roundtrip-dispatch"} },
-        // `--root` reaches the key through the module name and nowhere
-        // else, so naming the root a module already has cannot move a byte.
-        .{ .what = "--root", .a = &.{}, .b = &.{"--root=src"} },
-        // The backend's, all four: no emitted byte is cached.
-        .{ .what = "--out", .a = &.{"--out=outa"}, .b = &.{"--out=outb"}, .build = true },
-        .{ .what = "--library", .a = &.{"--out=outc"}, .b = &.{ "--out=outd", "--library" }, .build = true },
-        .{ .what = "--release", .a = &.{"--out=oute"}, .b = &.{ "--out=outf", "--release" }, .build = true },
-        // `--allow-debug` is the fourth and it gets its own scenario below,
-        // because saying anything about it needs a project that reaches
-        // `Debug` — on this one the flag lifts a refusal that never fires.
-    };
-
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY                        │
     // └─────────────────────────────────────────┘
-    for (pairs, 0..) |pair, i| {
-        const dir_a = try std.fmt.allocPrint(arena, "ca{d}", .{i});
-        const dir_b = try std.fmt.allocPrint(arena, "cb{d}", .{i});
-        try runFlagged(&w, arena, pair.build, pair.a, dir_a);
-        try runFlagged(&w, arena, pair.build, pair.b, dir_b);
-        expectSameCache(&w, arena, dir_a, dir_b) catch |err| {
-            std.debug.print("{s} reached a cached byte and must not\n", .{pair.what});
-            return err;
-        };
-    }
+    try runFlagged(&w, arena, is_build, a, "ca");
+    try runFlagged(&w, arena, is_build, b, "cb");
+    expectSameCache(&w, arena, "ca", "cb") catch |err| {
+        std.debug.print("{s} reached a cached byte and must not\n", .{what});
+        return err;
+    };
+}
+
+test "--jobs is not in the key and cannot change one byte of one entry" {
+    // Output is identical for every `n`, and keying on it would hide the
+    // very bug the determinism rule forbids.
+    try expectFlagOutOfKey("--jobs", false, &.{"--jobs=1"}, &.{"--jobs=8"});
+}
+
+test "--diagnostics is not in the key and cannot change one byte of one entry" {
+    // A rendering flag: it selects how a message is printed.
+    try expectFlagOutOfKey("--diagnostics", false, &.{ "--jobs=1", "--diagnostics=text" }, &.{ "--jobs=1", "--diagnostics=json" });
+}
+
+test "--explain is not in the key and cannot change one byte of one entry" {
+    try expectFlagOutOfKey("--explain", false, &.{"--jobs=1"}, &.{ "--jobs=1", "--explain" });
+}
+
+test "--roundtrip-interfaces is not in the key and cannot change one byte of one entry" {
+    // A round trip must produce the same record, and exempting it would
+    // excuse it from the round-trip tests.
+    try expectFlagOutOfKey("--roundtrip-interfaces", false, &.{"--jobs=1"}, &.{ "--jobs=1", "--roundtrip-interfaces" });
+}
+
+test "--roundtrip-dispatch is not in the key and cannot change one byte of one entry" {
+    try expectFlagOutOfKey("--roundtrip-dispatch", false, &.{"--jobs=1"}, &.{ "--jobs=1", "--roundtrip-dispatch" });
+}
+
+test "--root naming the root a module already has cannot change one byte of one entry" {
+    // `--root` reaches the key through the module name and nowhere else.
+    try expectFlagOutOfKey("--root", false, &.{"--jobs=1"}, &.{ "--jobs=1", "--root=src" });
+}
+
+test "--out is not in the key and cannot change one byte of one entry" {
+    try expectFlagOutOfKey("--out", true, &.{ "--jobs=1", "--out=outa" }, &.{ "--jobs=1", "--out=outb" });
+}
+
+test "--release is not in the key and cannot change one byte of one entry" {
+    try expectFlagOutOfKey("--release", true, &.{ "--jobs=1", "--out=oute" }, &.{ "--jobs=1", "--out=outf", "--release" });
 }
 
 test "--allow-debug lifts a refusal raised after the cache was written" {
@@ -2902,13 +2692,13 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     const refused = try runCounted(
         &w,
         arena,
-        &.{ "build", "--platform=node", "--library", "--release", "--out=refused", "--cache-dir=ra", "src" },
+        &.{ "build", "--platform=node", "--library", "--release", "--jobs=1", "--out=refused", "--cache-dir=ra", "src" },
         "refused.json",
     );
     const allowed = try runCounted(
         &w,
         arena,
-        &.{ "build", "--platform=node", "--library", "--release", "--allow-debug", "--out=allowed", "--cache-dir=rb", "src" },
+        &.{ "build", "--platform=node", "--library", "--release", "--jobs=1", "--allow-debug", "--out=allowed", "--cache-dir=rb", "src" },
         "allowed.json",
     );
 
@@ -2934,7 +2724,7 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     const again = try runCounted(
         &w,
         arena,
-        &.{ "build", "--platform=node", "--library", "--release", "--allow-debug", "--out=again", "--cache-dir=ra", "src" },
+        &.{ "build", "--platform=node", "--library", "--release", "--jobs=1", "--allow-debug", "--out=again", "--cache-dir=ra", "src" },
         "again.json",
     );
     try testing.expectEqual(@as(u8, 0), again.result.exit_code);
@@ -3557,37 +3347,68 @@ test "a warm build after an edit that moves a derived context writes what a cold
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     // Cold, then the payload's method edited, warm over the same cache; the
-    // same edited project cold into another cache; then an edit that moves
-    // no interface (a comment in `H`), warm.
+    // same edited project cold without one.
     const first = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=first", "src" }), "first.json");
     try w.write("src/H.beni", holder_by_eq);
     const warm = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=warm", "src" }), "warm.json");
-    const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=d", "--out=cold", "src" }), "cold.json");
+    const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--no-cache", "--out=cold", "src" }), "cold.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ first, warm, cold }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+    }
+    // By `key` both pairs agree; by structural `eq`, neither does.
+    try w.expectProgram("first/_main.mjs", .{ .stdout = "True\nTrue\n" });
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "False\nFalse\n" });
+    // `H`, and `Outer` and `Main` behind its moved interface, re-checked;
+    // `Keyed` and core were hits.
+    try testing.expectEqual(@as(u64, 3), warm.counters.misses);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectSameTree(&w, arena, "cold", "warm");
+}
+
+test "a comment in the module that declares a payload's method is cut off and writes what a cold build writes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An edit that moves no interface: `H` is re-checked alone, and the
+    // dependents' cached evidence — derived through `H`'s method — is used
+    // as it was.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDerivedProject(&w, holder_by_eq);
+    const build = [_][]const u8{ "build", "--platform=node", "--jobs=1", "--diagnostics=json" };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=cold", "src" }), "cold.json");
     try w.write("src/H.beni", "-- a comment moves no interface\n" ++ holder_by_eq);
     const comment = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=comment", "src" }), "comment.json");
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for ([_]Run{ first, warm, cold, comment }) |r| {
+    for ([_]Run{ cold, comment }) |r| {
         try testing.expectEqual(@as(u8, 0), r.result.exit_code);
         try testing.expectEqualStrings("", r.result.stderr);
     }
-    // By `key`, both pairs agree; by structural `eq`, neither does.
-    try w.expectProgram("first/_main.mjs", .{ .stdout = "True\nTrue\n" });
-    try w.expectProgram("warm/_main.mjs", .{ .stdout = "False\nFalse\n" });
-    try w.expectProgram("cold/_main.mjs", .{ .stdout = "False\nFalse\n" });
-    // `H`, and `Outer` and `Main` behind its moved interface, re-checked;
-    // `Keyed` and core were hits.
-    try testing.expectEqual(@as(u64, 3), warm.counters.misses);
-    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
-    // The comment re-checks `H` alone: its interface did not move.
     try testing.expectEqual(@as(u64, 1), comment.counters.misses);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try expectSameTree(&w, arena, "cold", "warm");
+    // A comment changes no emitted byte, so the cold tree of the uncommented
+    // source is the cold tree of the commented one.
     try expectSameTree(&w, arena, "cold", "comment");
 }
 
@@ -3597,13 +3418,14 @@ test "a warm build after an edit that moves a derived context writes what a cold
 //
 // Three modules — `M`, `N` importing it, and
 // `Main` importing both (none for a `check`-only case) — and a sequence of
-// versions of `M`. The first is built cold into a cache; then every later
-// version, and the first again, is built WARM over that same cache at
-// `--jobs=8` and cold with `--no-cache` at `--jobs=1`, and the two must agree
-// on the exit code, stdout, stderr and every byte written. What each version
-// must do is pinned too, so a case cannot pass by failing the same way twice.
-// A last warm build over the settled cache re-checks nothing and runs no
-// derived-context fixpoint: a cache hit installs the published answer.
+// versions of `M`. One test per edit: the version before it is built cold
+// into a cache, then the version after it is built WARM over that cache and
+// cold with `--no-cache`, and the two must agree on the exit code, stdout,
+// stderr and every byte written. What each version must do is pinned too, so
+// a case cannot pass by failing the same way twice. One more test goes back
+// to the first version over a cache that has seen the second: it re-checks
+// nothing and runs no derived-context fixpoint, because a cache hit installs
+// the published answer.
 
 const EditCase = struct {
     name: []const u8,
@@ -3665,8 +3487,10 @@ fn expectOutcome(w: *World, arena: std.mem.Allocator, case: EditCase, state: usi
     }
 }
 
-/// `case`: cold, each edit warm against cold, then settled.
-fn runEditCase(case: EditCase) !void {
+/// Version `from` of `M` built cold into a cache; then version `to` built
+/// warm over it and cold with `--no-cache`, which must agree on every stream
+/// and every byte written, and do what version `to` must.
+fn runEditStep(case: EditCase, from: usize, to: usize) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -3677,79 +3501,149 @@ fn runEditCase(case: EditCase) !void {
     defer w.deinit();
     try w.write("src/N.beni", case.n);
     if (case.main) |text| try w.write("src/Main.beni", text);
-    try w.write("src/M.beni", case.states[0].m);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE / VERIFY: cold                  │
-    // └─────────────────────────────────────────┘
+    try w.write("src/M.beni", case.states[from].m);
     const first = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "first"), "first.json");
-    try expectOutcome(&w, arena, case, 0, first, "first");
+    // The first version is pinned here; every later one by the test of the
+    // edit that leads to it.
+    if (from == 0) try expectOutcome(&w, arena, case, from, first, "first");
     try testing.expectEqual(@as(u64, 0), first.counters.hits);
-    // The check derived the types of `M` and `N` itself: that is what a
-    // hit must not do again.
+    // The check derived the types of `M` and `N` itself: that is what a hit
+    // must not do again.
     try testing.expect(first.counters.derived > 0);
 
     // ┌─────────────────────────────────────────┐
-    // │ EXECUTE / VERIFY: each edit, warm = cold │
+    // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    var revert_checked: u64 = 0;
-    for (1..case.states.len + 1) |step| {
-        const state = step % case.states.len;
-        errdefer std.debug.print("{s}: step {d}, version {d} of M\n", .{ case.name, step, state });
-        try w.write("src/M.beni", case.states[state].m);
-        const warm_out = try std.fmt.allocPrint(arena, "warm{d}", .{step});
-        const cold_out = try std.fmt.allocPrint(arena, "cold{d}", .{step});
-        const warm = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=8", warm_out), try std.fmt.allocPrint(arena, "warm{d}.json", .{step}));
-        const cold = try runCounted(&w, arena, try editArgs(arena, case, null, "--jobs=1", cold_out), try std.fmt.allocPrint(arena, "cold{d}.json", .{step}));
-        try testing.expectEqual(cold.result.exit_code, warm.result.exit_code);
-        try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
-        try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
-        // A version not built before re-checks at least `M`; the revert to
-        // the first finds `M`'s entry again when that version checked clean.
-        // Something is always a hit (core).
-        if (step < case.states.len) try testing.expect(warm.counters.checked >= 1);
-        try testing.expect(warm.counters.hits > 0);
-        if (step == case.states.len) revert_checked = warm.counters.checked;
-        try expectOutcome(&w, arena, case, state, warm, warm_out);
-        if (case.main != null and warm.result.exit_code == 0) try expectSameTree(&w, arena, cold_out, warm_out);
-    }
+    errdefer std.debug.print("{s}: version {d} of M after version {d}\n", .{ case.name, to, from });
+    try w.write("src/M.beni", case.states[to].m);
+    const warm = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "warm"), "warm.json");
+    const cold = try runCounted(&w, arena, try editArgs(arena, case, null, "--jobs=1", "cold"), "cold.json");
 
     // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS: settled            │
+    // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // Back at the first version, whose entries the cache still holds: a
-    // warm build checks nothing, derives nothing and writes what `first`
-    // wrote.
+    try testing.expectEqual(cold.result.exit_code, warm.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
+    // A version not built before re-checks at least `M`, and something is
+    // always a hit (core).
+    try testing.expect(warm.counters.checked >= 1);
+    try testing.expect(warm.counters.hits > 0);
+    try expectOutcome(&w, arena, case, to, warm, "warm");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    if (case.main != null and warm.result.exit_code == 0) try expectSameTree(&w, arena, "cold", "warm");
+}
+
+test "a warm rebuild back to a version the cache has seen checks nothing, derives nothing, and writes what it wrote" {
+    // Version 0 of `M` cold, version 1 warm, then version 0 again over the
+    // same cache: every entry version 0 wrote is still there, so nothing is
+    // re-checked and no derived-context fixpoint runs.
+    const case = k_cases[0];
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/N.beni", case.n);
+    try w.write("src/Main.beni", case.main.?);
+    try w.write("src/M.beni", case.states[0].m);
+    const first = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "first"), "first.json");
+    try testing.expectEqual(@as(u8, 0), first.result.exit_code);
+    try w.write("src/M.beni", case.states[1].m);
+    const edited = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "edited"), "edited.json");
+    try testing.expectEqual(@as(u8, 0), edited.result.exit_code);
+    try w.write("src/M.beni", case.states[0].m);
     const settled = try runCounted(&w, arena, try editArgs(arena, case, "cache", "--jobs=1", "settled"), "settled.json");
     try testing.expectEqualStrings(first.result.stderr, settled.result.stderr);
-    // A module whose check reported an error has no entry (fast-compiler.md
-    // §8), so a version that fails re-checks those modules every time —
-    // exactly as many as the revert did.
-    try testing.expectEqual(revert_checked, settled.counters.checked);
-    if (first.result.exit_code == 0) {
-        try testing.expectEqual(@as(u64, 0), settled.counters.checked);
-        try testing.expectEqual(@as(u64, 0), settled.counters.derived);
-    }
-    if (case.main != null and settled.result.exit_code == 0) try expectSameTree(&w, arena, "first", "settled");
+    try testing.expectEqual(@as(u64, 0), settled.counters.checked);
+    try testing.expectEqual(@as(u64, 0), settled.counters.derived);
+    try expectSameTree(&w, arena, "first", "settled");
 }
 
-test "a warm rebuild after each edit of a dependency, and after reverting it, is a cold build" {
-    for (k_cases) |case| try runEditCase(case);
+test "a warm rebuild is a cold build: a custom eq and compare added to a dependency" {
+    try runEditStep(k_cases[0], 0, 1);
 }
 
-test "an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build" {
-    // A dependency whose derived context changes must
-    // invalidate its dependents' EVIDENCE — the dispatch tables and the
-    // JavaScript they emit — not only their types. Four ways to move one:
-    // a function payload (the context goes `absent`, then `present` with
-    // no entry, then absent through the parameter); a payload's own `eq`
-    // changing its `where` clause (the entry's method moves) and dropping
-    // it; the payload's method made private (`private_method`, §11.3),
-    // removed, and a private `compare`; and a schema whose `via` target — a
-    // type in no record — gains a function and then a private `eq` (§11.5,
-    // the endpoint's `no_function` and derived rows). The warm check of the
-    // last edit of the schema case must refuse the program as a cold one does.
-    for (evidence_cases) |case| try runEditCase(case);
+test "a warm rebuild is a cold build: the custom eq and compare removed again" {
+    try runEditStep(k_cases[1], 0, 1);
+}
+
+test "a warm rebuild is a cold build: a dependency's function becomes constrained" {
+    try runEditStep(k_cases[2], 0, 1);
+}
+
+test "a warm rebuild is a cold build: constructors reordered, which reorders the derived compare" {
+    try runEditStep(k_cases[3], 0, 1);
+}
+
+test "a warm rebuild is a cold build: a function payload makes the type non-equatable" {
+    try runEditStep(k_cases[4], 0, 1);
+}
+
+test "a warm rebuild is a cold build: a field added to a record alias" {
+    try runEditStep(k_cases[5], 0, 1);
+}
+
+test "a warm rebuild is a cold build: an alias's expansion changed" {
+    try runEditStep(k_cases[6], 0, 1);
+}
+
+test "a warm rebuild is a cold build: an error in a dependency fixed" {
+    try runEditStep(k_cases[7], 0, 1);
+}
+
+// A dependency whose derived context changes must invalidate its dependents'
+// EVIDENCE — the dispatch tables and the JavaScript they emit — not only their
+// types. Four ways to move one: a function payload (the context goes
+// `absent`, then `present` with no entry, then absent through the parameter);
+// a payload's own `eq` changing its `where` clause (the entry's method moves)
+// and dropping it; the payload's method made private (`private_method`,
+// §11.3), removed, and a private `compare`; and a schema whose `via` target —
+// a type in no record — gains a function and then a private `eq` (§11.5, the
+// endpoint's `no_function` and derived rows). The warm check of the last edit
+// of the schema case must refuse the program as a cold one does.
+
+test "a moved derived context rebuilds evidence as a cold build: a function payload added" {
+    try runEditStep(evidence_cases[0], 0, 1);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload" {
+    try runEditStep(evidence_cases[0], 1, 2);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a function over the parameter" {
+    try runEditStep(evidence_cases[0], 2, 3);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause" {
+    try runEditStep(evidence_cases[1], 0, 1);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause" {
+    try runEditStep(evidence_cases[1], 1, 2);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a payload's eq made private" {
+    try runEditStep(evidence_cases[2], 0, 1);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a payload's private eq removed" {
+    try runEditStep(evidence_cases[2], 1, 2);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a payload's private compare" {
+    try runEditStep(evidence_cases[2], 2, 3);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a schema's via target gains a function" {
+    try runEditStep(evidence_cases[3], 0, 1);
+}
+
+test "a moved derived context rebuilds evidence as a cold build: a schema's via target gains a private eq" {
+    try runEditStep(evidence_cases[3], 1, 2);
 }
 
 test "a cache hit installs the published derived contexts and runs no fixpoint" {

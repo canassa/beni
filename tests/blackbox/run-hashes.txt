@@ -62,45 +62,33 @@ build_test.test.check 4: every export form a sibling may use, at the right arity
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 b2f3dfdd25e234c7575b0d6aacc10038c95f1c4adb63d3157594659d19522f8d
 build_test.test.modules import each other through ESM, and the program runs #0 88ef3d66dcd52555d14e6001d536ac74cdba25c0e7ffa4579c4f8316002b155e
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 8eaa307c0e5193d966eba4f51fc799d319fd9e69ecaacea6655a37867cecc6f1
-cache_test.test.a constrained function constant keeps one calling convention across warm rebuilds that edit its module #0 e7d2230e6ce4310888537099cd270cf3e9177c507a472d99a16a1385f3922ac8
-cache_test.test.a constrained function constant keeps one calling convention across warm rebuilds that edit its module #1 08fdec66a063f9d3c135ba10ec982550ae7341b560c1ce98066fb799bd439bac
-cache_test.test.a constrained function constant keeps one calling convention across warm rebuilds that edit its module #2 99be1a20989069046fcba34fde5fa0a502fcf158034f7ac7f1dfffd286fd51fd
-cache_test.test.a constrained function constant keeps one calling convention across warm rebuilds that edit its module #3 2d91e7ca62655f4f0e7e0e7ab70924009e74737c055407f8d2d60ba24a1ff6ba
-cache_test.test.a constrained function constant keeps one calling convention across warm rebuilds that edit its module #4 d0afab02ff506cffe869593f8c64dd0d937a897a3c511e65ed1d921dc4af1e00
+cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 164f34d8eb90f40f16b0d5b0e8327293a3401d9a82e3e7466b513bf85351b578
+cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 8dcd0687e3c2ef12bab5ef5f1e41af7ff1c284063fb4cbd8c762787c1cc255c5
+cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 164f34d8eb90f40f16b0d5b0e8327293a3401d9a82e3e7466b513bf85351b578
+cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 b8d78d0daad3fdd097edaeb7cd7b569d7794650b0d5abaaa02cb297052f4a3b1
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 24c546ae48dd5f57f0ae81a8f2517f91f44f6e5c22b2bc660af4e427a88fbf21
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 a8be5299e75e22c29d9f45fbe56de98e603ecd84bdcd1c3cc15c59e9d0bf218c
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 05f56c9e7a228de674e415e45bd3fc369e6e1e49cc3a4cefe9d4e37a579000d3
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #1 6e62d8814dc0e02e73f7ec7c55ff62a8c803c6ff4e9ac572aa9372154bb09120
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 4e62825a6225531227112f8f0e5094e0d4578ea6427972ddcc3604472793bfc7
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 e42222b418d0ea6c635b11ea1eac2ceeac815f3cce6fa8d0479ab9c925734e88
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 79e1d2c5a5ca133672d8230afb13fcc3344c4fab61eda8c81d883c27b27fabc1
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 c53a3792a0e4c1a8ab03bf4308cd598958a507d614583f61076dfe7b89aa7ea1
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 de246fea97125d07b83a8d82d421d1c8b501e97dc07149107254d68ca79b6100
-cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #2 947d9d7f0eeda4e7b5277b80f35e8ed061bc16ba6e488ab3d9a9d46f7a4eefa4
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 752fb6b7381011005def0cd6227935ad1c97318aa5fa914e41219b2509d1dde2
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #0 9d5d6427487a0d759642ae33a074b4c06ac893f391e3dc3bbc3ef784f26afc12
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #1 9e0f6ee1a6d043ee078d84a9cf5fc59ffda9ef631174ce7150141dff81f0a907
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #10 8acbf17736ffa4e2ce6fdfda6ab5eeb5d931a1415982e675fee987dcefad3854
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #11 b40cb169ba3a487baaf270fa7da52bf852a29a59dafa1fa157806c8b505b03e1
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #12 26610f399b884511fc4cdb80c47ca508546c3c72f60e7448cc3dae6317dff988
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #13 8a0d616710896ca799401d1bd9185f7f08b97dc4dbad0e4eb78d5412ee099d05
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #14 7b9a57b251cacafeffbdeee1d26b9ca6a72049bc98abac4ed831ef26950aec8a
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #15 5b8372e6df99eb7569b253294ef60860cffc56c0c5931a88fc61a30fc8d428b3
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #16 ba9cb6ca57b9259d7272d153fa61be2e404dcc2226ed2a54b49b9e461e629222
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #17 1b22565589c6497ca703abccfa580aad8f7adebe8efa274edf104634da4a181b
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #18 c3981699107402d2a432c5fd4bf0942f397b1c12cc75489582e761063ec31ae7
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #19 5c7ae7421b8a3230a689ac94996caa7e1186cd2d53d869825f6c4fccb9cbf791
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #2 616fda492b2516a9d9f8108e16291339ffafce602f91e279aa628e6c221ef0d1
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #3 843a6d75428a1034e395271b1391e11a699c3471bb86de3712e82e255cb3fa2e
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #4 76dae8727f05153f4dde6dc6c1bb6871a9b38ffd5fcb0c32aea7d07c8ab2cba2
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #5 2d46634a35b75356c3fc4541754e3926ea495411bea0e9b3542813fbdf8bc796
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #6 fc9ec0d666cfc6d1a503841d159d967d98c681504d7b70bca018de9e5943cf9e
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #7 fcf30cb09fda3495bd280d91f81ca518e8bb1479f195afce78ebb4e53db52c36
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #8 3173980381ded7916ef11bc8304f94949ab19106df5a4df73467121409f5bb59
-cache_test.test.a warm rebuild after each edit of a dependency, and after reverting it, is a cold build #9 8235b1fe6a331fbaa603a66c5768ad45f18d2ccad0985277f858a7de5718f281
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #0 24c546ae48dd5f57f0ae81a8f2517f91f44f6e5c22b2bc660af4e427a88fbf21
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #1 aa2d0b0054925e81527f3e68c8ef66cd864f15847c4be0935577f5435823e513
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #2 6e2413be33370c9bc4976d407903680a52158a183848bc6758e88beff3903f98
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #3 05f56c9e7a228de674e415e45bd3fc369e6e1e49cc3a4cefe9d4e37a579000d3
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #4 4620c981d34afcf56ee0342e96fa57a2ab225329e3def5f03a5d03ccb270ec1f
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #5 a8edb7472895a696dc003cbdc1c4888534a0568e7b641352f02372ac625ff887
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #6 97ff2f9391c8a32a4d1ff67478348208a8c431eb37e009a3ba18d478e94c8c4a
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #7 e42222b418d0ea6c635b11ea1eac2ceeac815f3cce6fa8d0479ab9c925734e88
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #8 83396c5962c69e3a8af7b43e63376b8b6bc21afb00cf1ab96642d8e8a0490f8f
-cache_test.test.an edit that moves a dependency's derived context rebuilds its dependents' evidence exactly as a cold build #9 f4b9f024adebebb527fa18d85e9490ac729c33c1127d9ef9efa23e4d4fc90a5e
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 9d5d6427487a0d759642ae33a074b4c06ac893f391e3dc3bbc3ef784f26afc12
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 09ff373dd44a92b2dc46f761b0b963d06fccf9b6d71487610f38ef90cc4b4dbb
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 fc9ec0d666cfc6d1a503841d159d967d98c681504d7b70bca018de9e5943cf9e
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #1 fa1d84abaacf630789b3ee57f25e08048f9cc89743a79c4f85e29e4d255539d3
+cache_test.test.a warm rebuild is a cold build: a field added to a record alias #0 7b9a57b251cacafeffbdeee1d26b9ca6a72049bc98abac4ed831ef26950aec8a
+cache_test.test.a warm rebuild is a cold build: a function payload makes the type non-equatable #0 26610f399b884511fc4cdb80c47ca508546c3c72f60e7448cc3dae6317dff988
+cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #0 ba9cb6ca57b9259d7272d153fa61be2e404dcc2226ed2a54b49b9e461e629222
+cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #1 396c9a9ac65506339d1257a50d3e543c723df6a74144854412580a7790b9b04c
+cache_test.test.a warm rebuild is a cold build: an error in a dependency fixed #0 937dce4227f57730c72dc60284c808c5419cd712d8ef3339a0a65ab618af0c01
+cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #0 8235b1fe6a331fbaa603a66c5768ad45f18d2ccad0985277f858a7de5718f281
+cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #1 5d61d5df42652445c9519aa4dee3762686c30cb79a67e16618dac8c482f47f5b
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 843a6d75428a1034e395271b1391e11a699c3471bb86de3712e82e255cb3fa2e
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 52ad8d0d140195874f22b081006a9f5f7f80f67d9d9dc674e2e71eae349b5787
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #0 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #1 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #2 a078cf91c8865c5016f9f6269d7923a545782522f5aeae012fb8e0ea7e6e21e6
@@ -109,9 +97,6 @@ cache_test.test.an imported type of 4 097 parameters compares across modules in 
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #5 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #6 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds #7 85f6db30fe472e4d0edf51fae4c7c0ecd9bd31c1cbc415edff116beb2169d109
-cache_test.test.custom equality capabilities survive cache hits and cross the firewall only with their public method #0 399c0299ea6dfaa4cc7d27a54a1504368673d017fe6648f82d77fdeee6555ab9
-cache_test.test.custom equality capabilities survive cache hits and cross the firewall only with their public method #1 d50ba7b31b1eae818e8cf0ab810eeaff3bdfd2e517e0ef5eaae12267a4fe4c16
-cache_test.test.custom equality capabilities survive cache hits and cross the firewall only with their public method #2 e3adb82e3a51c50340105b1d45a690d26f0719902b23d30c0052a182584581e3
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 47a7a24a6de15a047673154e7a9d05f7d8eaba8cb04319896881618d4b85b531
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516
