@@ -939,11 +939,11 @@ against runs after them.
 ### The run
 
 - Command: `zig build gates`, exit 0.
-- Started: 2026-09-28 18:48 UTC.
+- Started: 2026-09-28 18:52 UTC.
 - Machine: AMD Ryzen 9 5950X 16-Core Processor, 32 hardware threads.
-- Load average (1, 5, 15 min): 1.61 3.45 3.31 at the start, 5.97 4.32 3.59 at the end.
-- Whole run: 6.8 s wall, 173.7 CPU-s (140.4 user + 33.4 sys).
-- In test processes: 172.5 CPU-s over 52 processes; outside them (the build runner, compiles, `zig fmt`): 1.2 CPU-s.
+- Load average (1, 5, 15 min): 6.11 5.21 4.05 at the start, 10.57 6.22 4.39 at the end.
+- Whole run: 8.6 s wall, 177.1 CPU-s (142.4 user + 34.7 sys).
+- In test processes: 175.9 CPU-s over 52 processes; outside them (the build runner, compiles, `zig fmt`): 1.2 CPU-s.
 
 CPU time (user + sys, from `getrusage` and `wait4`) is the stable metric.
 Under load, wall time stretches with whatever else the machine runs while
@@ -958,206 +958,208 @@ every process it reaped.
 
 | step | processes | tests | wall s | harness user s | harness sys s | children CPU s | **total CPU s** | harness max RSS MiB | child max RSS MiB | beni | node |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| corpus_test part check | 1 | 14 | 6.3 | 0.6 | 0.5 | 34.3 | **35.4** | 23 | 34 | 525 | 0 |
-| corpus_test part run_release | 1 | 14 | 4.9 | 0.5 | 0.6 | 22.5 | **23.6** | 22 | 24 | 251 | 0 |
-| corpus_test part run_dev | 1 | 14 | 3.8 | 0.6 | 0.6 | 21.4 | **22.5** | 25 | 24 | 251 | 0 |
-| cache_test | 4 | 87 | 6.0 | 1.0 | 0.6 | 14.1 | **15.7** | 25 | 34 | 280 | 0 |
-| blackbox_test | 6 | 120 | 4.7 | 0.8 | 0.7 | 13.2 | **14.7** | 24 | 21 | 322 | 0 |
-| corpus_test part parse | 1 | 14 | 3.3 | 0.7 | 0.7 | 10.6 | **12.0** | 20 | 34 | 567 | 0 |
-| abuse_wide_test | 3 | 20 | 4.8 | 0.7 | 0.2 | 7.4 | **8.4** | 24 | 135 | 21 | 0 |
-| unit_test | 12 | 512 | 1.3 | 5.9 | 1.2 | 0.0 | **7.1** | 104 | 0 | 0 | 0 |
-| abuse_test | 3 | 25 | 3.8 | 0.3 | 0.4 | 6.2 | **6.9** | 38 | 65 | 49 | 0 |
-| build_test | 3 | 51 | 3.8 | 0.4 | 0.4 | 5.5 | **6.2** | 25 | 19 | 79 | 0 |
-| run_hash_test | 1 | 8 | 6.3 | 0.1 | 0.0 | 4.9 | **5.0** | 22 | 55 | 0 | 0 |
-| corpus_test part build | 1 | 14 | 1.5 | 0.3 | 0.1 | 3.8 | **4.1** | 22 | 18 | 50 | 0 |
-| digest_test | 3 | 23 | 1.9 | 0.2 | 0.2 | 3.0 | **3.4** | 24 | 16 | 57 | 0 |
-| iface_test | 1 | 10 | 2.7 | 0.1 | 0.1 | 1.9 | **2.1** | 25 | 19 | 32 | 0 |
-| ordering_test | 2 | 11 | 1.5 | 0.1 | 0.1 | 1.5 | **1.7** | 25 | 44 | 15 | 0 |
-| check_test | 1 | 9 | 1.9 | 0.1 | 0.0 | 0.9 | **1.1** | 23 | 17 | 21 | 0 |
-| cutoff_test | 3 | 3 | 0.5 | 0.1 | 0.1 | 0.6 | **0.8** | 25 | 18 | 12 | 0 |
-| frontend_test | 1 | 5 | 1.2 | 0.0 | 0.0 | 0.7 | **0.8** | 22 | 17 | 24 | 0 |
-| time_report_test | 1 | 1 | 1.2 | 0.0 | 0.0 | 0.7 | **0.8** | 22 | 51 | 0 | 0 |
-| docs_test | 1 | 1 | 0.4 | 0.1 | 0.1 | 0.2 | **0.3** | 23 | 20 | 1 | 0 |
-| diagnostic_test | 1 | 4 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** | 18 | 0 | 0 | 0 |
-| coverage_unit_test | 1 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** | 18 | 0 | 0 | 0 |
-| **all** | 52 | 962 | 6.3 | 12.6 | 6.8 | 153.2 | **172.5** | | | 2557 | 0 |
+| corpus_test part check | 1 | 14 | 3.7 | 0.5 | 0.5 | 26.9 | **28.0** | 24 | 34 | 525 | 0 |
+| corpus_test part run_release | 1 | 14 | 4.5 | 0.6 | 0.6 | 24.5 | **25.8** | 22 | 24 | 251 | 0 |
+| corpus_test part run_dev | 1 | 14 | 4.5 | 0.6 | 0.6 | 24.3 | **25.6** | 22 | 24 | 251 | 0 |
+| blackbox_test | 6 | 120 | 4.6 | 0.9 | 0.6 | 14.3 | **15.9** | 24 | 21 | 322 | 0 |
+| corpus_test part parse | 1 | 14 | 3.7 | 0.8 | 0.8 | 13.3 | **14.9** | 23 | 35 | 567 | 0 |
+| cache_test | 4 | 87 | 3.2 | 0.8 | 0.5 | 11.5 | **12.9** | 24 | 33 | 280 | 0 |
+| abuse_wide_test | 3 | 20 | 4.4 | 0.6 | 0.2 | 8.5 | **9.4** | 23 | 135 | 21 | 0 |
+| unit_test | 12 | 512 | 1.4 | 6.6 | 1.3 | 0.0 | **8.0** | 104 | 0 | 0 | 0 |
+| abuse_test | 3 | 25 | 3.8 | 0.3 | 0.4 | 6.9 | **7.6** | 35 | 65 | 49 | 0 |
+| build_test | 3 | 51 | 3.4 | 0.3 | 0.4 | 5.6 | **6.3** | 24 | 18 | 79 | 0 |
+| run_hash_test | 1 | 8 | 6.1 | 0.1 | 0.0 | 5.2 | **5.3** | 22 | 55 | 0 | 0 |
+| corpus_test part build | 1 | 14 | 1.9 | 0.3 | 0.1 | 4.8 | **5.2** | 22 | 18 | 50 | 0 |
+| digest_test | 3 | 23 | 2.1 | 0.2 | 0.1 | 3.2 | **3.5** | 24 | 16 | 57 | 0 |
+| iface_test | 1 | 10 | 3.2 | 0.1 | 0.1 | 2.1 | **2.3** | 22 | 19 | 32 | 0 |
+| ordering_test | 2 | 11 | 1.0 | 0.1 | 0.1 | 1.4 | **1.6** | 24 | 42 | 15 | 0 |
+| check_test | 1 | 9 | 0.9 | 0.1 | 0.0 | 0.9 | **1.0** | 24 | 16 | 21 | 0 |
+| frontend_test | 1 | 5 | 1.2 | 0.0 | 0.0 | 0.8 | **0.9** | 21 | 17 | 24 | 0 |
+| time_report_test | 1 | 1 | 1.3 | 0.0 | 0.0 | 0.8 | **0.8** | 20 | 51 | 0 | 0 |
+| cutoff_test | 3 | 3 | 0.3 | 0.1 | 0.1 | 0.5 | **0.7** | 24 | 18 | 12 | 0 |
+| docs_test | 1 | 1 | 0.3 | 0.1 | 0.0 | 0.2 | **0.3** | 24 | 20 | 1 | 0 |
+| diagnostic_test | 1 | 4 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** | 21 | 0 | 0 | 0 |
+| coverage_unit_test | 1 | 2 | 0.0 | 0.0 | 0.0 | 0.0 | **0.0** | 19 | 0 | 0 | 0 |
+| **all** | 52 | 962 | 6.1 | 13.3 | 6.8 | 155.8 | **175.9** | | | 2557 | 0 |
 
 ### Per test
 
 The 60 most expensive of 906 tests by CPU. "Harness" is CPU in the test
-process, "children" in what it spawned.
+process, "children" in what it spawned; "M instr" the millions of
+instructions the test is held to its budget by (a corpus walker's tests
+count what their cases did not; "–" where the budget did not count them).
 
-| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | beni | node |
-|---:|---|---:|---:|---:|---:|---:|---:|
-| 1 | corpus_test · corpus: run | 4.8 | 2.1 | 43.9 | **45.9** | 502 | 0 |
-| 2 | corpus_test · corpus: check/bad | 2.6 | 0.6 | 17.6 | **18.2** | 267 | 0 |
-| 3 | corpus_test · corpus: check/good | 2.4 | 0.3 | 10.7 | **11.0** | 142 | 0 |
-| 4 | corpus_test · corpus: parse/bad | 1.8 | 0.3 | 7.7 | **8.0** | 119 | 0 |
-| 5 | corpus_test · corpus: dispatch | 0.9 | 0.2 | 3.8 | **4.0** | 62 | 0 |
-| 6 | corpus_test · corpus: fmt | 1.0 | 0.8 | 2.2 | **3.0** | 348 | 0 |
-| 7 | corpus_test · corpus: emit | 0.8 | 0.1 | 2.4 | **2.5** | 29 | 0 |
-| 8 | corpus_test · corpus: check/args | 0.2 | 0.1 | 1.4 | **1.5** | 40 | 0 |
-| 9 | abuse_wide_test · a derived row of more than 65 535 context entries checks | 1.5 | 0.0 | 1.1 | **1.1** | 1 | 0 |
-| 10 | abuse_wide_test · a nominal payload of 65 537 fields checks | 1.5 | 0.0 | 1.0 | **1.0** | 1 | 0 |
-| 11 | abuse_wide_test · a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs | 1.0 | 0.3 | 0.6 | **1.0** | 1 | 0 |
-| 12 | corpus_test · corpus: build/bad | 0.3 | 0.1 | 0.8 | **0.9** | 13 | 0 |
-| 13 | run_hash_test · recording writes no run hash for a program whose output does not match | 0.6 | 0.0 | 0.9 | **0.9** | 0 | 0 |
-| 14 | run_hash_test · a changed program with a stale run hash that prints the wrong thing fails | 1.3 | 0.0 | 0.8 | **0.9** | 0 | 0 |
-| 15 | run_hash_test · an edited golden makes a recorded run hash stale | 1.2 | 0.0 | 0.8 | **0.8** | 0 | 0 |
-| 16 | run_hash_test · a program whose output changed runs under Node though its golden still matches | 1.2 | 0.0 | 0.8 | **0.8** | 0 | 0 |
-| 17 | abuse_wide_test · a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release | 0.8 | 0.1 | 0.6 | **0.8** | 1 | 0 |
-| 18 | time_report_test · the time report of one corpus fixture has every table and names the fixture | 1.1 | 0.0 | 0.7 | **0.7** | 0 | 0 |
-| 19 | corpus_test · corpus: check/depth | 0.1 | 0.1 | 0.6 | **0.7** | 14 | 0 |
-| 20 | abuse_wide_test · a type's 65 536th parameter is one too_many_type_parameters | 0.8 | 0.0 | 0.7 | **0.7** | 1 | 0 |
-| 21 | abuse_wide_test · a type of 65 535 parameters checks | 0.9 | 0.0 | 0.7 | **0.7** | 1 | 0 |
-| 22 | corpus_test · corpus: build/bad-release | 0.4 | 0.1 | 0.6 | **0.7** | 8 | 0 |
-| 23 | abuse_test · a recursive type of 4 097 parameters compares with == past the derived depth limit, wide | 0.9 | 0.0 | 0.5 | **0.6** | 1 | 0 |
-| 24 | run_hash_test · a changed expectation in a scenario's code runs its recorded program under Node again | 0.5 | 0.0 | 0.5 | **0.6** | 0 | 0 |
-| 25 | abuse_test · a recursive type of 4 097 parameters compares with < past the derived depth limit, wide | 0.8 | 0.0 | 0.5 | **0.5** | 1 | 0 |
-| 26 | blackbox_test · schemas check and dump at every stage that resolves imports | 0.6 | 0.0 | 0.5 | **0.5** | 7 | 0 |
-| 27 | run_hash_test · a build whose run hash is recorded is not run under Node | 0.9 | 0.0 | 0.5 | **0.5** | 0 | 0 |
-| 28 | abuse_test · a record literal nested to the parser's limit compares | 0.5 | 0.0 | 0.5 | **0.5** | 1 | 0 |
-| 29 | blackbox_test · every stream of every command is byte-identical across --jobs=1 and --jobs=8, twice each | 0.7 | 0.1 | 0.4 | **0.5** | 72 | 0 |
-| 30 | corpus_test · corpus: parse/good | 0.1 | 0.2 | 0.3 | **0.5** | 69 | 0 |
-| 31 | blackbox_test · a pair-keyed lookup table costs one probe a branch, not the square of the branch count | 0.6 | 0.0 | 0.4 | **0.4** | 4 | 0 |
-| 32 | abuse_test · the left-deep `?` spine the parser builds in a loop is depth-bounded too | 0.6 | 0.1 | 0.4 | **0.4** | 4 | 0 |
-| 33 | ordering_test · two deep demands in a row are refused once, and the other order checks | 0.6 | 0.0 | 0.4 | **0.4** | 2 | 0 |
-| 34 | abuse_test · a deeply nested constructor pattern is bounded in every consumer of the tree | 0.7 | 0.1 | 0.3 | **0.4** | 3 | 0 |
-| 35 | cache_test · processes racing on an empty cache directory agree and never accept a torn file | 0.2 | 0.0 | 0.4 | **0.4** | 6 | 0 |
-| 36 | blackbox_test · the interface record is byte-identical at --jobs=1 and --jobs=8 | 0.4 | 0.0 | 0.4 | **0.4** | 4 | 0 |
-| 37 | cache_test · file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other | 0.4 | 0.0 | 0.4 | **0.4** | 21 | 0 |
-| 38 | abuse_test · the left-deep access spine the parser builds in a loop is depth-bounded too | 0.6 | 0.1 | 0.3 | **0.4** | 4 | 0 |
-| 39 | blackbox_test · a dozen checker diagnostics, each by code and span | 0.6 | 0.0 | 0.4 | **0.4** | 14 | 0 |
-| 40 | blackbox_test · the dispatch table is byte-identical at --jobs=1 and --jobs=8 | 0.5 | 0.0 | 0.4 | **0.4** | 4 | 0 |
-| 41 | abuse_test · a record literal nested to the parser's limit checks, one past it is one nesting_too_deep | 0.5 | 0.0 | 0.4 | **0.4** | 2 | 0 |
-| 42 | abuse_wide_test · a written + chain runs at the widest the parser admits under --release | 0.4 | 0.0 | 0.4 | **0.4** | 1 | 0 |
-| 43 | blackbox_test · a type declared elsewhere leaves an untouched module's interface bytes alone | 0.5 | 0.0 | 0.4 | **0.4** | 5 | 0 |
-| 44 | check.Instantiate · copy keeps sharing, shares what is not generalised, and walks a type deeper than a recursive copy survives | 0.4 | 0.4 | 0.0 | **0.4** | 0 | 0 |
-| 45 | digest_test · a comment, whitespace, a reorder and the sibling .js move neither | 0.7 | 0.0 | 0.3 | **0.4** | 6 | 0 |
-| 46 | cache_test · a key does not depend on --jobs, on argv order, or on the cwd it was run from | 0.6 | 0.0 | 0.3 | **0.3** | 13 | 0 |
-| 47 | corpus_test · corpus: bir | 0.1 | 0.1 | 0.2 | **0.3** | 30 | 0 |
-| 48 | blackbox_test · emit refuses a schema beside main before entry discovery, cold and warm, and writes nothing | 0.7 | 0.0 | 0.3 | **0.3** | 4 | 0 |
-| 49 | abuse_wide_test · a written + chain runs at the widest the parser admits | 0.4 | 0.0 | 0.3 | **0.3** | 1 | 0 |
-| 50 | blackbox_test · the key path still names the redundant pair and the missing combinations | 0.4 | 0.0 | 0.3 | **0.3** | 3 | 0 |
-| 51 | blackbox_test · every dump stage exits 0 over a clean file, with nothing on stderr | 0.5 | 0.0 | 0.3 | **0.3** | 8 | 0 |
-| 52 | cache_test · file-key rows 11 to 15: which flags reach lowering and which do not | 0.3 | 0.0 | 0.3 | **0.3** | 8 | 0 |
-| 53 | check.rules_test · only Walk, Unify and Instantiate read a type's children | 0.4 | 0.3 | 0.0 | **0.3** | 0 | 0 |
-| 54 | abuse_test · a case over every constructor of a 2 000-constructor type checks | 0.5 | 0.0 | 0.3 | **0.3** | 1 | 0 |
-| 55 | blackbox_test · evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess | 0.4 | 0.0 | 0.3 | **0.3** | 2 | 0 |
-| 56 | abuse_test · a case missing the last of 2 000 constructors is one missing_patterns | 0.4 | 0.0 | 0.3 | **0.3** | 1 | 0 |
-| 57 | abuse_test · a case over 2 000 constructors with literal arguments and a default checks | 0.3 | 0.0 | 0.3 | **0.3** | 1 | 0 |
-| 58 | abuse_test · a pathologically nested expression is EMITTED without a stack overflow, and RUNS | 0.4 | 0.0 | 0.3 | **0.3** | 1 | 0 |
-| 59 | blackbox_test · every dump stage exits 1 over a file that produced an error, and still prints what it has | 0.5 | 0.0 | 0.3 | **0.3** | 8 | 0 |
-| 60 | check.rules_test · the table's structural bits are read by their listed readers alone | 0.4 | 0.3 | 0.0 | **0.3** | 0 | 0 |
+| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | M instr | beni | node |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | corpus_test · corpus: run | 4.4 | 2.3 | 48.9 | **51.1** | 212 | 502 | 0 |
+| 2 | corpus_test · corpus: check/bad | 1.7 | 0.4 | 12.5 | **12.9** | 145 | 267 | 0 |
+| 3 | corpus_test · corpus: parse/bad | 2.2 | 0.3 | 9.9 | **10.2** | 140 | 119 | 0 |
+| 4 | corpus_test · corpus: check/good | 1.1 | 0.3 | 8.3 | **8.6** | 138 | 142 | 0 |
+| 5 | corpus_test · corpus: dispatch | 0.6 | 0.2 | 3.9 | **4.1** | 137 | 62 | 0 |
+| 6 | corpus_test · corpus: fmt | 0.9 | 0.9 | 2.7 | **3.5** | 138 | 348 | 0 |
+| 7 | corpus_test · corpus: emit | 0.8 | 0.2 | 2.9 | **3.1** | 137 | 29 | 0 |
+| 8 | corpus_test · corpus: check/args | 0.2 | 0.1 | 1.5 | **1.7** | 137 | 40 | 0 |
+| 9 | abuse_wide_test · a derived row of more than 65 535 context entries checks | 1.4 | 0.0 | 1.3 | **1.4** | 2713 | 1 | 0 |
+| 10 | corpus_test · corpus: build/bad | 0.4 | 0.1 | 1.1 | **1.3** | 136 | 13 | 0 |
+| 11 | abuse_wide_test · a nominal payload of 65 537 fields checks | 1.4 | 0.0 | 1.2 | **1.2** | 2825 | 1 | 0 |
+| 12 | run_hash_test · a changed program with a stale run hash that prints the wrong thing fails | 1.2 | 0.0 | 0.9 | **1.0** | 1704 | 0 | 0 |
+| 13 | run_hash_test · a program whose output changed runs under Node though its golden still matches | 1.4 | 0.0 | 0.9 | **0.9** | 1495 | 0 | 0 |
+| 14 | abuse_wide_test · a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release | 0.9 | 0.1 | 0.7 | **0.9** | 2150 | 1 | 0 |
+| 15 | corpus_test · corpus: build/bad-release | 0.5 | 0.1 | 0.8 | **0.9** | 135 | 8 | 0 |
+| 16 | abuse_wide_test · a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs | 0.8 | 0.3 | 0.6 | **0.8** | 2637 | 1 | 0 |
+| 17 | time_report_test · the time report of one corpus fixture has every table and names the fixture | 1.3 | 0.0 | 0.8 | **0.8** | 1459 | 0 | 0 |
+| 18 | run_hash_test · an edited golden makes a recorded run hash stale | 0.8 | 0.0 | 0.8 | **0.8** | 1710 | 0 | 0 |
+| 19 | abuse_wide_test · a type's 65 536th parameter is one too_many_type_parameters | 0.9 | 0.0 | 0.7 | **0.8** | 1602 | 1 | 0 |
+| 20 | abuse_wide_test · a type of 65 535 parameters checks | 0.8 | 0.0 | 0.7 | **0.8** | 1567 | 1 | 0 |
+| 21 | corpus_test · corpus: check/depth | 0.1 | 0.1 | 0.6 | **0.7** | 136 | 14 | 0 |
+| 22 | abuse_test · a recursive type of 4 097 parameters compares with == past the derived depth limit, wide | 1.0 | 0.0 | 0.6 | **0.7** | 1524 | 1 | 0 |
+| 23 | corpus_test · corpus: parse/good | 0.2 | 0.2 | 0.5 | **0.7** | 140 | 69 | 0 |
+| 24 | abuse_test · a recursive type of 4 097 parameters compares with < past the derived depth limit, wide | 0.8 | 0.1 | 0.6 | **0.7** | 1453 | 1 | 0 |
+| 25 | abuse_test · a record literal nested to the parser's limit compares | 0.8 | 0.0 | 0.6 | **0.6** | 1207 | 1 | 0 |
+| 26 | run_hash_test · a build whose run hash is recorded is not run under Node | 1.0 | 0.0 | 0.6 | **0.6** | 1184 | 0 | 0 |
+| 27 | run_hash_test · recording writes no run hash for a program whose output does not match | 0.4 | 0.0 | 0.6 | **0.6** | 1946 | 0 | 0 |
+| 28 | blackbox_test · every stream of every command is byte-identical across --jobs=1 and --jobs=8, twice each | 1.1 | 0.1 | 0.5 | **0.6** | 427 | 72 | 0 |
+| 29 | run_hash_test · a changed expectation in a scenario's code runs its recorded program under Node again | 0.6 | 0.0 | 0.6 | **0.6** | 1565 | 0 | 0 |
+| 30 | abuse_test · the left-deep `?` spine the parser builds in a loop is depth-bounded too | 0.7 | 0.1 | 0.4 | **0.5** | 409 | 4 | 0 |
+| 31 | abuse_test · the left-deep access spine the parser builds in a loop is depth-bounded too | 0.6 | 0.1 | 0.4 | **0.5** | 333 | 4 | 0 |
+| 32 | blackbox_test · a pair-keyed lookup table costs one probe a branch, not the square of the branch count | 0.5 | 0.0 | 0.5 | **0.5** | 949 | 4 | 0 |
+| 33 | blackbox_test · the interface record is byte-identical at --jobs=1 and --jobs=8 | 0.6 | 0.0 | 0.5 | **0.5** | 709 | 4 | 0 |
+| 34 | abuse_test · a deeply nested constructor pattern is bounded in every consumer of the tree | 0.5 | 0.1 | 0.4 | **0.5** | 353 | 3 | 0 |
+| 35 | blackbox_test · a dozen checker diagnostics, each by code and span | 0.8 | 0.0 | 0.4 | **0.5** | 808 | 14 | 0 |
+| 36 | abuse_test · a record literal nested to the parser's limit checks, one past it is one nesting_too_deep | 0.6 | 0.0 | 0.5 | **0.5** | 620 | 2 | 0 |
+| 37 | blackbox_test · the dispatch table is byte-identical at --jobs=1 and --jobs=8 | 0.4 | 0.0 | 0.4 | **0.5** | 687 | 4 | 0 |
+| 38 | blackbox_test · schemas check and dump at every stage that resolves imports | 0.4 | 0.0 | 0.4 | **0.5** | 986 | 7 | 0 |
+| 39 | blackbox_test · a type declared elsewhere leaves an untouched module's interface bytes alone | 0.5 | 0.0 | 0.4 | **0.4** | 693 | 5 | 0 |
+| 40 | check.rules_test · only Walk, Unify and Instantiate read a type's children | 0.5 | 0.4 | 0.0 | **0.4** | 1395 | 0 | 0 |
+| 41 | abuse_wide_test · a written + chain runs at the widest the parser admits | 0.5 | 0.0 | 0.4 | **0.4** | 486 | 1 | 0 |
+| 42 | abuse_wide_test · a written + chain runs at the widest the parser admits under --release | 0.7 | 0.0 | 0.4 | **0.4** | 535 | 1 | 0 |
+| 43 | blackbox_test · every dump stage exits 0 over a clean file, with nothing on stderr | 0.5 | 0.0 | 0.4 | **0.4** | 641 | 8 | 0 |
+| 44 | check.Instantiate · copy keeps sharing, shares what is not generalised, and walks a type deeper than a recursive copy survives | 0.4 | 0.4 | 0.0 | **0.4** | 340 | 0 | 0 |
+| 45 | corpus_test · corpus: bir | 0.1 | 0.2 | 0.2 | **0.4** | 136 | 30 | 0 |
+| 46 | blackbox_test · every dump stage exits 1 over a file that produced an error, and still prints what it has | 0.7 | 0.0 | 0.4 | **0.4** | 642 | 8 | 0 |
+| 47 | digest_test · a comment, whitespace, a reorder and the sibling .js move neither | 0.6 | 0.0 | 0.4 | **0.4** | 694 | 6 | 0 |
+| 48 | run_hash_test · recording writes no run hash for a scenario program that does not do what its test expects | 0.4 | 0.0 | 0.4 | **0.4** | 1156 | 0 | 0 |
+| 49 | abuse_wide_test · `==` and `<` on a record one field past the positional evidence limit build and run | 0.5 | 0.0 | 0.3 | **0.4** | 864 | 1 | 0 |
+| 50 | blackbox_test · a library build of a module that declares a type writes its derived rows | 0.4 | 0.0 | 0.4 | **0.4** | 714 | 4 | 0 |
+| 51 | ordering_test · two deep demands in a row are refused once, and the other order checks | 0.3 | 0.0 | 0.3 | **0.4** | 596 | 2 | 0 |
+| 52 | blackbox_test · evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess | 0.6 | 0.0 | 0.3 | **0.4** | 641 | 2 | 0 |
+| 53 | abuse_test · a case over every constructor of a 2 000-constructor type checks | 0.4 | 0.0 | 0.3 | **0.4** | 717 | 1 | 0 |
+| 54 | cache_test · processes racing on an empty cache directory agree and never accept a torn file | 0.1 | 0.0 | 0.3 | **0.4** | 767 | 6 | 0 |
+| 55 | cache_test · file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other | 0.3 | 0.0 | 0.3 | **0.3** | 1068 | 21 | 0 |
+| 56 | blackbox_test · the key path still names the redundant pair and the missing combinations | 0.3 | 0.0 | 0.3 | **0.3** | 650 | 3 | 0 |
+| 57 | fmt.Format · 4 000 nested parentheses, as deep as the parser admits, format without exhausting the stack | 0.3 | 0.3 | 0.0 | **0.3** | 632 | 0 | 0 |
+| 58 | check.rules_test · the table's structural bits are read by their listed readers alone | 0.3 | 0.3 | 0.0 | **0.3** | 1135 | 0 | 0 |
+| 59 | cache_test · a key does not depend on --jobs, on argv order, or on the cwd it was run from | 0.3 | 0.0 | 0.3 | **0.3** | 713 | 13 | 0 |
+| 60 | blackbox_test · `.` is a usable path for check, build and fmt, however it is spelled | 0.5 | 0.0 | 0.3 | **0.3** | 710 | 8 | 0 |
 
 **Distribution of tests by CPU:**
 
 | CPU per test | tests | total CPU s |
 |---|---:|---:|
-| under 10 ms | 455 | 0.8 |
-| 10 ms – 0.1 s | 167 | 9.9 |
-| 0.1 s – 1 s | 274 | 62.7 |
-| 1 s – 10 s | 7 | 21.2 |
-| 10 s or more | 3 | 75.2 |
+| under 10 ms | 447 | 0.8 |
+| 10 ms – 0.1 s | 160 | 8.8 |
+| 0.1 s – 1 s | 288 | 64.8 |
+| 1 s – 10 s | 8 | 24.8 |
+| 10 s or more | 3 | 74.3 |
 
 ### Per fixture
 
 The 60 most expensive of 1245 corpus cases by CPU: the walker thread's own
 time plus every process the case spawned.
 
-| # | fixture | kind | **CPU ms** | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
-|---:|---|---|---:|---:|---:|---:|---:|
-| 1 | tests/corpus/check/bad/LetOfManyBindings.beni | check_bad | **522** | 537 | 1.9 | 1 / 520 | 0 / 0 |
-| 2 | tests/corpus/check/good/RequirementBelowDepth512.beni | check_good | **327** | 542 | 3.3 | 2 / 324 | 0 / 0 |
-| 3 | tests/corpus/check/good/PairLookupTable.beni | check_good | **269** | 426 | 3.3 | 2 / 266 | 0 / 0 |
-| 4 | tests/corpus/run/AliasChainThroughLet.beni | run_dev | **267** | 477 | 4.0 | 1 / 263 | 0 / 0 |
-| 5 | tests/corpus/run/NestingLogicalStatements.beni | run_release | **251** | 276 | 4.7 | 1 / 246 | 0 / 0 |
-| 6 | tests/corpus/check/good/SixtyFourConstraints.beni | check_good | **247** | 467 | 5.6 | 3 / 242 | 0 / 0 |
-| 7 | tests/corpus/check/good/TypeOwnerEdges | check_good | **239** | 364 | 5.5 | 3 / 234 | 0 / 0 |
-| 8 | tests/corpus/check/good/WarningWithoutExplain.beni | check_good | **232** | 396 | 5.3 | 3 / 227 | 0 / 0 |
-| 9 | tests/corpus/check/good/ConstrainedPubFunctionConstant | check_good | **223** | 409 | 6.2 | 3 / 217 | 0 / 0 |
-| 10 | tests/corpus/check/good/DerivedNestedEvidence.beni | check_good | **219** | 377 | 5.1 | 3 / 214 | 0 / 0 |
-| 11 | tests/corpus/run/NestingLogicalStatements.beni | run_dev | **216** | 214 | 4.4 | 1 / 212 | 0 / 0 |
-| 12 | tests/corpus/check/good/InferredConstraint.beni | check_good | **214** | 286 | 4.6 | 3 / 210 | 0 / 0 |
-| 13 | tests/corpus/run/AliasChainThroughLet.beni | run_release | **213** | 331 | 2.7 | 1 / 210 | 0 / 0 |
-| 14 | tests/corpus/check/good/SchemaMembers | check_good | **197** | 370 | 3.9 | 2 / 193 | 0 / 0 |
-| 15 | tests/corpus/check/good/RecordExtChain.beni | check_good | **178** | 202 | 3.5 | 2 / 174 | 0 / 0 |
-| 16 | tests/corpus/run/ViewMapEvery3.beni | run_release | **173** | 193 | 7.4 | 1 / 165 | 0 / 0 |
-| 17 | tests/corpus/run/ReleaseAliasChain1000.beni | run_release | **170** | 186 | 3.9 | 1 / 166 | 0 / 0 |
-| 18 | tests/corpus/check/good/DeepInferredScheme.beni | check_good | **170** | 247 | 3.2 | 2 / 167 | 0 / 0 |
-| 19 | tests/corpus/check/good/WhereOnOtherParameterSameReceiver | check_good | **160** | 219 | 3.2 | 2 / 156 | 0 / 0 |
-| 20 | tests/corpus/check/good/WideTypeArity | check_good | **159** | 208 | 3.8 | 2 / 155 | 0 / 0 |
-| 21 | tests/corpus/check/good/SchemaEndpointAliasAcrossModules | check_good | **159** | 321 | 3.3 | 2 / 155 | 0 / 0 |
-| 22 | tests/corpus/check/good/LookupTable.beni | check_good | **158** | 180 | 3.2 | 2 / 155 | 0 / 0 |
-| 23 | tests/corpus/check/good/SchemaViaMutualOwnType.beni | check_good | **157** | 320 | 3.7 | 2 / 154 | 0 / 0 |
-| 24 | tests/corpus/check/good/SchemaWinsModuleAlias | check_good | **157** | 317 | 3.5 | 2 / 153 | 0 / 0 |
-| 25 | tests/corpus/check/good/SchemaViaRing.beni | check_good | **156** | 286 | 3.5 | 2 / 152 | 0 / 0 |
-| 26 | tests/corpus/check/good/AnnotatedManyConstraints.beni | check_good | **155** | 327 | 4.3 | 2 / 150 | 0 / 0 |
-| 27 | tests/corpus/build/bad-release/DebugManySites | build_bad_release | **154** | 273 | 7.0 | 2 / 147 | 0 / 0 |
-| 28 | tests/corpus/check/good/core/Foreign.beni | check_good | **154** | 231 | 3.3 | 2 / 151 | 0 / 0 |
-| 29 | tests/corpus/check/good/TwoSchemas | check_good | **154** | 225 | 3.7 | 2 / 150 | 0 / 0 |
-| 30 | tests/corpus/check/good/SharedType | check_good | **154** | 227 | 3.5 | 2 / 150 | 0 / 0 |
-| 31 | tests/corpus/build/bad-release/DebugToStringTwoModules | build_bad_release | **153** | 299 | 6.9 | 2 / 146 | 0 / 0 |
-| 32 | tests/corpus/check/good/ScrutineeMethodMergeVariant | check_good | **153** | 201 | 3.2 | 2 / 150 | 0 / 0 |
-| 33 | tests/corpus/build/bad-release/DebugLog | build_bad_release | **153** | 290 | 7.0 | 2 / 146 | 0 / 0 |
-| 34 | tests/corpus/build/bad-release/DebugTodo | build_bad_release | **151** | 323 | 7.0 | 2 / 144 | 0 / 0 |
-| 35 | tests/corpus/check/good/WhereConstrainedGeneric.beni | check_good | **151** | 200 | 3.3 | 2 / 148 | 0 / 0 |
-| 36 | tests/corpus/check/good/QualifiedAcrossModules | check_good | **151** | 329 | 3.2 | 2 / 148 | 0 / 0 |
-| 37 | tests/corpus/check/good/TwoConstraints.beni | check_good | **150** | 249 | 3.5 | 2 / 147 | 0 / 0 |
-| 38 | tests/corpus/check/good/TypeDispatch.beni | check_good | **150** | 248 | 3.6 | 2 / 146 | 0 / 0 |
-| 39 | tests/corpus/check/good/TwoModules | check_good | **150** | 236 | 3.4 | 2 / 146 | 0 / 0 |
-| 40 | tests/corpus/check/good/UserEqMethod.beni | check_good | **150** | 181 | 3.3 | 2 / 146 | 0 / 0 |
-| 41 | tests/corpus/check/good/SchemaEncodedInFlight.beni | check_good | **149** | 244 | 3.5 | 2 / 146 | 0 / 0 |
-| 42 | tests/corpus/check/good/ModulePrefixWinsSchemaRoot | check_good | **149** | 233 | 3.2 | 2 / 146 | 0 / 0 |
-| 43 | tests/corpus/run/WideTypeArityEq | run_release | **149** | 157 | 4.3 | 1 / 145 | 0 / 0 |
-| 44 | tests/corpus/check/good/SchemaEndpointAlias.beni | check_good | **149** | 289 | 2.9 | 2 / 146 | 0 / 0 |
-| 45 | tests/corpus/check/good/RecordAlias.beni | check_good | **149** | 202 | 3.3 | 2 / 145 | 0 / 0 |
-| 46 | tests/corpus/check/good/SchemaEndpointInFlightClosed.beni | check_good | **148** | 296 | 3.3 | 2 / 145 | 0 / 0 |
-| 47 | tests/corpus/check/good/GenericChain | check_good | **148** | 274 | 3.2 | 2 / 145 | 0 / 0 |
-| 48 | tests/corpus/check/good/RecordRows.beni | check_good | **148** | 263 | 3.3 | 2 / 145 | 0 / 0 |
-| 49 | tests/corpus/check/good/ConstructorSpecializedEqInference | check_good | **148** | 250 | 4.5 | 2 / 143 | 0 / 0 |
-| 50 | tests/corpus/check/good/NumericAliasLiterals | check_good | **148** | 232 | 2.9 | 2 / 145 | 0 / 0 |
-| 51 | tests/corpus/check/good/SchemaRecordViaWrapped.beni | check_good | **148** | 278 | 3.2 | 2 / 145 | 0 / 0 |
-| 52 | tests/corpus/run/ViewMap40x12.beni | run_release | **148** | 157 | 6.0 | 1 / 142 | 0 / 0 |
-| 53 | tests/corpus/check/good/Chain | check_good | **147** | 257 | 4.4 | 2 / 142 | 0 / 0 |
-| 54 | tests/corpus/check/good/QuestionWithConstraints.beni | check_good | **147** | 265 | 3.3 | 2 / 143 | 0 / 0 |
-| 55 | tests/corpus/check/good/SchemaTypeNameControl.beni | check_good | **147** | 267 | 3.6 | 2 / 143 | 0 / 0 |
-| 56 | tests/corpus/check/good/QuestionShapes.beni | check_good | **147** | 158 | 3.2 | 2 / 143 | 0 / 0 |
-| 57 | tests/corpus/check/good/Diamond | check_good | **146** | 250 | 3.1 | 2 / 143 | 0 / 0 |
-| 58 | tests/corpus/check/good/OpaqueAcrossModules | check_good | **146** | 239 | 3.1 | 2 / 143 | 0 / 0 |
-| 59 | tests/corpus/check/good/MethodOnImportedType | check_good | **146** | 227 | 3.0 | 2 / 143 | 0 / 0 |
-| 60 | tests/corpus/check/good/MethodInstantiatedPerUse | check_good | **145** | 240 | 3.3 | 2 / 142 | 0 / 0 |
+| # | fixture | kind | **CPU ms** | M instr | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
+|---:|---|---|---:|---:|---:|---:|---:|---:|
+| 1 | tests/corpus/check/bad/LetOfManyBindings.beni | check_bad | **384** | 627 | 395 | 1.2 | 1 / 383 | 0 / 0 |
+| 2 | tests/corpus/run/AliasChainThroughLet.beni | run_dev | **297** | 498 | 466 | 5.2 | 1 / 291 | 0 / 0 |
+| 3 | tests/corpus/run/AliasChainThroughLet.beni | run_release | **280** | 522 | 426 | 3.8 | 1 / 276 | 0 / 0 |
+| 4 | tests/corpus/run/NestingLogicalStatements.beni | run_release | **271** | 419 | 285 | 4.9 | 1 / 266 | 0 / 0 |
+| 5 | tests/corpus/run/NestingLogicalStatements.beni | run_dev | **258** | 400 | 277 | 5.2 | 1 / 253 | 0 / 0 |
+| 6 | tests/corpus/check/good/RequirementBelowDepth512.beni | check_good | **241** | 742 | 243 | 3.1 | 2 / 237 | 0 / 0 |
+| 7 | tests/corpus/check/good/PairLookupTable.beni | check_good | **215** | 557 | 195 | 3.2 | 2 / 211 | 0 / 0 |
+| 8 | tests/corpus/build/bad-release/DebugManySites | build_bad_release | **202** | 364 | 391 | 8.5 | 2 / 193 | 0 / 0 |
+| 9 | tests/corpus/build/bad-release/DebugToStringTwoModules | build_bad_release | **198** | 360 | 364 | 8.1 | 2 / 190 | 0 / 0 |
+| 10 | tests/corpus/build/bad-release/DebugLog | build_bad_release | **197** | 361 | 459 | 8.5 | 2 / 189 | 0 / 0 |
+| 11 | tests/corpus/build/bad-release/DebugTodo | build_bad_release | **194** | 360 | 346 | 8.7 | 2 / 186 | 0 / 0 |
+| 12 | tests/corpus/check/good/DerivedNestedEvidence.beni | check_good | **193** | 426 | 194 | 5.7 | 3 / 188 | 0 / 0 |
+| 13 | tests/corpus/check/good/InferredConstraint.beni | check_good | **188** | 422 | 187 | 6.1 | 3 / 182 | 0 / 0 |
+| 14 | tests/corpus/check/good/ConstrainedPubFunctionConstant | check_good | **185** | 434 | 185 | 6.5 | 3 / 178 | 0 / 0 |
+| 15 | tests/corpus/check/good/SixtyFourConstraints.beni | check_good | **179** | 453 | 181 | 4.0 | 3 / 175 | 0 / 0 |
+| 16 | tests/corpus/check/good/TypeOwnerEdges | check_good | **163** | 428 | 166 | 3.7 | 3 / 159 | 0 / 0 |
+| 17 | tests/corpus/check/good/WarningWithoutExplain.beni | check_good | **158** | 420 | 158 | 5.2 | 3 / 153 | 0 / 0 |
+| 18 | tests/corpus/parse/bad/LongLine.beni | parse_bad | **158** | 292 | 176 | 1.9 | 1 / 156 | 0 / 0 |
+| 19 | tests/corpus/check/good/DeepInferredScheme.beni | check_good | **156** | 305 | 158 | 3.8 | 2 / 152 | 0 / 0 |
+| 20 | tests/corpus/dispatch/JoinedConstraintNested.beni | dispatch | **148** | 291 | 150 | 3.9 | 2 / 144 | 0 / 0 |
+| 21 | tests/corpus/check/good/EqualityShapes.beni | check_good | **145** | 284 | 146 | 4.1 | 2 / 141 | 0 / 0 |
+| 22 | tests/corpus/dispatch/ExtWithParts | dispatch | **144** | 285 | 144 | 3.7 | 2 / 140 | 0 / 0 |
+| 23 | tests/corpus/run/NestingChains.beni | run_release | **143** | 244 | 171 | 5.5 | 1 / 138 | 0 / 0 |
+| 24 | tests/corpus/run/ViewMapEvery3.beni | run_release | **142** | 331 | 123 | 7.3 | 1 / 135 | 0 / 0 |
+| 25 | tests/corpus/dispatch/ImportedMethod | dispatch | **141** | 283 | 142 | 3.1 | 2 / 138 | 0 / 0 |
+| 26 | tests/corpus/check/good/CtorByName | check_good | **141** | 285 | 139 | 5.5 | 2 / 135 | 0 / 0 |
+| 27 | tests/corpus/dispatch/DerivedShapes.beni | dispatch | **140** | 285 | 144 | 5.8 | 2 / 134 | 0 / 0 |
+| 28 | tests/corpus/dispatch/LiteralEvidenceAcrossModules | dispatch | **139** | 284 | 141 | 3.9 | 2 / 135 | 0 / 0 |
+| 29 | tests/corpus/run/ReleaseAliasChain1000.beni | run_release | **139** | 253 | 142 | 3.3 | 1 / 135 | 0 / 0 |
+| 30 | tests/corpus/dispatch/LiteralEvidence.beni | dispatch | **138** | 284 | 138 | 4.3 | 2 / 134 | 0 / 0 |
+| 31 | tests/corpus/dispatch/Evidence.beni | dispatch | **138** | 284 | 140 | 5.0 | 2 / 133 | 0 / 0 |
+| 32 | tests/corpus/dispatch/DecodeIntoAcrossModules | dispatch | **138** | 287 | 137 | 5.2 | 2 / 132 | 0 / 0 |
+| 33 | tests/corpus/dispatch/JoinedConstraintSites.beni | dispatch | **137** | 285 | 137 | 4.3 | 2 / 133 | 0 / 0 |
+| 34 | tests/corpus/run/NestingChains.beni | run_dev | **137** | 238 | 162 | 5.8 | 1 / 131 | 0 / 0 |
+| 35 | tests/corpus/dispatch/UserEqInsideParametric.beni | dispatch | **137** | 286 | 141 | 3.2 | 2 / 133 | 0 / 0 |
+| 36 | tests/corpus/check/good/SchemaMembers | check_good | **136** | 357 | 136 | 3.4 | 2 / 133 | 0 / 0 |
+| 37 | tests/corpus/dispatch/QuestionShapes.beni | dispatch | **136** | 282 | 138 | 2.8 | 2 / 134 | 0 / 0 |
+| 38 | tests/corpus/run/ReleaseAliasChain1000.beni | run_dev | **136** | 254 | 139 | 4.2 | 1 / 132 | 0 / 0 |
+| 39 | tests/corpus/dispatch/FieldCall.beni | dispatch | **135** | 281 | 136 | 3.4 | 2 / 132 | 0 / 0 |
+| 40 | tests/corpus/dispatch/DerivedShapesDistinctElements.beni | dispatch | **135** | 285 | 134 | 4.9 | 2 / 130 | 0 / 0 |
+| 41 | tests/corpus/check/good/Diamond | check_good | **134** | 286 | 134 | 3.8 | 2 / 130 | 0 / 0 |
+| 42 | tests/corpus/run/ViewMap40x12.beni | run_release | **134** | 285 | 119 | 5.5 | 1 / 129 | 0 / 0 |
+| 43 | tests/corpus/check/good/RecordExtChain.beni | check_good | **134** | 351 | 136 | 3.5 | 2 / 130 | 0 / 0 |
+| 44 | tests/corpus/dispatch/DecodeInto.beni | dispatch | **134** | 288 | 134 | 4.9 | 2 / 129 | 0 / 0 |
+| 45 | tests/corpus/parse/bad/NestingTooDeep.beni | parse_bad | **133** | 158 | 236 | 2.0 | 1 / 131 | 0 / 0 |
+| 46 | tests/corpus/dispatch/ErrParts.beni | dispatch | **132** | 286 | 135 | 5.1 | 2 / 127 | 0 / 0 |
+| 47 | tests/corpus/dispatch/MethodCall.beni | dispatch | **132** | 282 | 134 | 3.6 | 2 / 128 | 0 / 0 |
+| 48 | tests/corpus/dispatch/TypeDispatch.beni | dispatch | **132** | 281 | 132 | 3.2 | 2 / 129 | 0 / 0 |
+| 49 | tests/corpus/dispatch/AllNullaryEq.beni | dispatch | **132** | 284 | 130 | 5.5 | 2 / 126 | 0 / 0 |
+| 50 | tests/corpus/dispatch/TwoSlotsNested.beni | dispatch | **130** | 286 | 131 | 3.3 | 2 / 127 | 0 / 0 |
+| 51 | tests/corpus/dispatch/NestedEvidenceIndices.beni | dispatch | **130** | 283 | 131 | 3.0 | 2 / 127 | 0 / 0 |
+| 52 | tests/corpus/check/good/AnnotatedManyConstraints.beni | check_good | **130** | 307 | 128 | 5.5 | 2 / 124 | 0 / 0 |
+| 53 | tests/corpus/dispatch/Conventions.beni | dispatch | **129** | 285 | 128 | 5.5 | 2 / 124 | 0 / 0 |
+| 54 | tests/corpus/run/NestingElseIf.beni | run_release | **128** | 218 | 139 | 6.2 | 1 / 122 | 0 / 0 |
+| 55 | tests/corpus/check/good/GenericChain | check_good | **128** | 285 | 128 | 4.2 | 2 / 124 | 0 / 0 |
+| 56 | tests/corpus/dispatch/Primitives.beni | dispatch | **128** | 282 | 129 | 2.6 | 2 / 125 | 0 / 0 |
+| 57 | tests/corpus/check/good/Inference.beni | check_good | **127** | 282 | 127 | 4.0 | 2 / 123 | 0 / 0 |
+| 58 | tests/corpus/check/good/EagerDrainInnerLet.beni | check_good | **126** | 284 | 127 | 3.3 | 2 / 123 | 0 / 0 |
+| 59 | tests/corpus/run/NestingElseIf.beni | run_dev | **126** | 216 | 129 | 5.1 | 1 / 121 | 0 / 0 |
+| 60 | tests/corpus/dispatch/NestedEvidenceParam.beni | dispatch | **125** | 286 | 125 | 3.5 | 2 / 122 | 0 / 0 |
 
 **Distribution of cases by CPU:**
 
 | CPU per case | cases | total CPU s |
 |---|---:|---:|
-| under 10 ms | 97 | 0.7 |
-| 10 ms – 30 ms | 2 | 0.0 |
-| 30 ms – 0.1 s | 999 | 74.4 |
-| 0.1 s – 0.3 s | 145 | 20.5 |
-| 0.3 s – 1 s | 2 | 0.8 |
+| under 10 ms | 79 | 0.7 |
+| 10 ms – 30 ms | 20 | 0.2 |
+| 30 ms – 0.1 s | 704 | 46.3 |
+| 0.1 s – 0.3 s | 441 | 50.7 |
+| 0.3 s – 1 s | 1 | 0.4 |
 | 1 s or more | 0 | 0.0 |
 
 **By kind** (a `run/` program is one case per part):
 
 | kind | cases | CPU s | mean ms | beni runs | node runs |
 |---|---:|---:|---:|---:|---:|
-| run_release | 251 | 23.5 | 93 | 251 | 0 |
-| run_dev | 251 | 22.3 | 89 | 251 | 0 |
-| check_bad | 267 | 18.1 | 68 | 267 | 0 |
-| check_good | 68 | 11.0 | 161 | 142 | 0 |
-| parse_bad | 119 | 7.9 | 67 | 119 | 0 |
-| dispatch | 31 | 3.9 | 126 | 62 | 0 |
-| fmt | 58 | 2.9 | 50 | 348 | 0 |
-| emit | 29 | 2.4 | 84 | 29 | 0 |
-| check_args | 40 | 1.5 | 37 | 40 | 0 |
-| build_bad | 13 | 0.9 | 66 | 13 | 0 |
-| check_depth | 14 | 0.7 | 47 | 14 | 0 |
-| build_bad_release | 4 | 0.6 | 153 | 8 | 0 |
-| parse_good | 69 | 0.4 | 6 | 69 | 0 |
-| bir | 30 | 0.3 | 9 | 30 | 0 |
-| regress | 1 | 0.1 | 79 | 1 | 0 |
+| run_release | 251 | 25.6 | 102 | 251 | 0 |
+| run_dev | 251 | 25.4 | 101 | 251 | 0 |
+| check_bad | 267 | 12.9 | 48 | 267 | 0 |
+| parse_bad | 119 | 10.1 | 85 | 119 | 0 |
+| check_good | 68 | 8.5 | 125 | 142 | 0 |
+| dispatch | 31 | 4.0 | 131 | 62 | 0 |
+| fmt | 58 | 3.5 | 60 | 348 | 0 |
+| emit | 29 | 3.0 | 103 | 29 | 0 |
+| check_args | 40 | 1.6 | 40 | 40 | 0 |
+| build_bad | 13 | 1.2 | 92 | 13 | 0 |
+| build_bad_release | 4 | 0.8 | 198 | 8 | 0 |
+| check_depth | 14 | 0.7 | 48 | 14 | 0 |
+| parse_good | 69 | 0.6 | 9 | 69 | 0 |
+| bir | 30 | 0.3 | 10 | 30 | 0 |
+| regress | 1 | 0.1 | 87 | 1 | 0 |
 
 ### Per tool
 
@@ -1166,30 +1168,30 @@ and `--jobs`.
 
 | tool | runs | user s | sys s | **CPU s** | wall s | CPU ms per run (mean / median) | minor faults per run | max RSS MiB |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| beni build --jobs=default | 676 | 52.0 | 8.8 | **60.9** | 91.6 | 90.0 / 87.8 | 2126 | 83 |
-| beni check --jobs=default | 698 | 39.9 | 7.4 | **47.3** | 67.2 | 67.8 / 66.2 | 1932 | 135 |
-| beni check --jobs=1 | 285 | 12.9 | 2.8 | **15.6** | 23.8 | 54.8 / 30.2 | 1547 | 107 |
-| beni dump --jobs=default | 512 | 9.3 | 3.0 | **12.3** | 22.7 | 24.0 / 6.6 | 838 | 37 |
-| beni build --jobs=1 | 96 | 5.1 | 1.1 | **6.1** | 7.9 | 64.0 / 56.6 | 1996 | 37 |
-| corpus_test | 9 | 2.9 | 0.9 | **3.8** | 5.1 | 425.7 / 396.0 | 14210 | 55 |
-| beni dump --jobs=1 | 39 | 1.1 | 0.2 | **1.3** | 1.8 | 34.0 / 3.2 | 845 | 17 |
-| run_hash_probe | 5 | 0.9 | 0.2 | **1.1** | 1.1 | 215.3 / 174.2 | 7801 | 54 |
-| beni check --jobs=8 | 23 | 0.7 | 0.4 | **1.1** | 1.3 | 46.0 / 30.2 | 2572 | 34 |
-| beni fmt --jobs=default | 148 | 0.4 | 0.5 | **0.9** | 2.4 | 6.2 / 6.2 | 417 | 28 |
-| beni dump --jobs=8 | 29 | 0.6 | 0.2 | **0.8** | 1.1 | 29.0 / 3.9 | 1069 | 19 |
-| beni build --jobs=8 | 13 | 0.5 | 0.2 | **0.7** | 1.0 | 56.9 / 42.0 | 2879 | 28 |
-| time-report | 1 | 0.4 | 0.3 | **0.7** | 1.1 | 710.6 / 710.6 | 41231 | 51 |
-| beni check --jobs=4 | 2 | 0.1 | 0.0 | **0.2** | 0.2 | 84.9 / 86.5 | 2295 | 17 |
-| beni check --jobs=2 | 4 | 0.1 | 0.0 | **0.1** | 0.2 | 27.9 / 12.3 | 1728 | 17 |
-| beni check --jobs=3 | 2 | 0.1 | 0.0 | **0.1** | 0.1 | 54.0 / 85.7 | 1530 | 16 |
-| beni fmt --jobs=8 | 12 | 0.0 | 0.0 | **0.1** | 0.1 | 4.6 / 3.3 | 429 | 6 |
-| beni fmt --jobs=1 | 12 | 0.0 | 0.0 | **0.0** | 0.1 | 3.2 / 2.6 | 320 | 5 |
-| run-hash-summary | 3 | 0.0 | 0.0 | **0.0** | 0.0 | 1.1 / 1.0 | 133 | 3 |
-| beni --help | 2 | 0.0 | 0.0 | **0.0** | 0.0 | 1.0 / 1.1 | 117 | 3 |
-| beni version | 2 | 0.0 | 0.0 | **0.0** | 0.0 | 0.8 / 0.8 | 121 | 3 |
-| beni help | 1 | 0.0 | 0.0 | **0.0** | 0.0 | 1.1 / 1.1 | 116 | 3 |
-| beni frobnicate | 1 | 0.0 | 0.0 | **0.0** | 0.0 | 0.8 / 0.8 | 118 | 3 |
-| **all** | 2575 | | | **153.2** | | | | |
+| beni build --jobs=default | 676 | 57.8 | 10.0 | **67.8** | 95.8 | 100.3 / 99.3 | 2126 | 85 |
+| beni check --jobs=default | 698 | 37.3 | 7.2 | **44.4** | 56.0 | 63.7 / 50.1 | 1932 | 135 |
+| beni check --jobs=1 | 285 | 11.7 | 2.6 | **14.3** | 17.2 | 50.3 / 33.4 | 1546 | 107 |
+| beni dump --jobs=default | 512 | 8.7 | 3.2 | **11.9** | 17.1 | 23.2 / 7.8 | 838 | 33 |
+| beni build --jobs=1 | 96 | 4.6 | 1.0 | **5.6** | 5.9 | 58.0 / 58.9 | 1995 | 38 |
+| corpus_test | 9 | 3.0 | 0.9 | **3.9** | 4.7 | 436.0 / 456.8 | 14200 | 55 |
+| beni dump --jobs=1 | 39 | 1.1 | 0.2 | **1.4** | 1.8 | 35.5 / 3.9 | 845 | 17 |
+| run_hash_probe | 5 | 1.0 | 0.2 | **1.2** | 1.2 | 247.0 / 207.6 | 7803 | 54 |
+| beni fmt --jobs=default | 148 | 0.4 | 0.6 | **1.1** | 2.6 | 7.3 / 7.3 | 417 | 33 |
+| beni check --jobs=8 | 23 | 0.7 | 0.4 | **1.1** | 1.0 | 45.7 / 34.1 | 2563 | 33 |
+| beni dump --jobs=8 | 29 | 0.7 | 0.3 | **1.0** | 1.2 | 33.6 / 4.6 | 1072 | 19 |
+| time-report | 1 | 0.5 | 0.3 | **0.8** | 1.3 | 812.6 / 812.6 | 41269 | 51 |
+| beni build --jobs=8 | 13 | 0.6 | 0.2 | **0.8** | 0.8 | 58.9 / 47.2 | 2874 | 27 |
+| beni check --jobs=4 | 2 | 0.2 | 0.0 | **0.2** | 0.2 | 92.1 / 109.4 | 2310 | 18 |
+| beni check --jobs=2 | 4 | 0.1 | 0.0 | **0.1** | 0.1 | 26.8 / 13.8 | 1712 | 17 |
+| beni check --jobs=3 | 2 | 0.1 | 0.0 | **0.1** | 0.1 | 44.8 / 69.3 | 1533 | 16 |
+| beni fmt --jobs=8 | 12 | 0.0 | 0.0 | **0.1** | 0.2 | 5.7 / 4.1 | 427 | 6 |
+| beni fmt --jobs=1 | 12 | 0.0 | 0.0 | **0.0** | 0.2 | 4.0 / 3.1 | 320 | 5 |
+| run-hash-summary | 3 | 0.0 | 0.0 | **0.0** | 0.0 | 1.1 / 1.1 | 132 | 3 |
+| beni version | 2 | 0.0 | 0.0 | **0.0** | 0.0 | 0.9 / 1.0 | 121 | 3 |
+| beni --help | 2 | 0.0 | 0.0 | **0.0** | 0.0 | 0.9 / 1.1 | 116 | 3 |
+| beni frobnicate | 1 | 0.0 | 0.0 | **0.0** | 0.0 | 1.2 / 1.2 | 118 | 3 |
+| beni help | 1 | 0.0 | 0.0 | **0.0** | 0.0 | 0.8 / 0.8 | 118 | 3 |
+| **all** | 2575 | | | **155.8** | | | | |
 
 ### Harness overhead against children
 
@@ -1199,25 +1201,25 @@ The test process's own CPU against its children's, per binary.
 
 | binary | harness user s | harness sys s | children CPU s | of which unrecorded | harness share |
 |---|---:|---:|---:|---:|---:|
-| unit_test | 5.9 | 1.2 | 0.0 | 0.0 | 100.0% |
-| corpus_test | 2.7 | 2.5 | 92.4 | 0.0 | 5.3% |
-| cache_test | 1.0 | 0.6 | 14.1 | 0.0 | 10.5% |
-| blackbox_test | 0.8 | 0.7 | 13.2 | 0.0 | 9.9% |
-| abuse_wide_test | 0.7 | 0.2 | 7.4 | 0.0 | 11.0% |
-| build_test | 0.4 | 0.4 | 5.5 | 0.0 | 11.9% |
-| abuse_test | 0.3 | 0.4 | 6.2 | 0.0 | 9.9% |
-| digest_test | 0.2 | 0.2 | 3.0 | 0.0 | 11.0% |
-| cutoff_test | 0.1 | 0.1 | 0.6 | 0.0 | 27.7% |
-| ordering_test | 0.1 | 0.1 | 1.5 | 0.0 | 12.7% |
-| iface_test | 0.1 | 0.1 | 1.9 | 0.0 | 9.2% |
-| docs_test | 0.1 | 0.1 | 0.2 | 0.0 | 48.2% |
-| check_test | 0.1 | 0.0 | 0.9 | 0.0 | 10.8% |
-| run_hash_test | 0.1 | 0.0 | 4.9 | 0.0 | 2.1% |
-| frontend_test | 0.0 | 0.0 | 0.7 | 0.0 | 11.8% |
-| time_report_test | 0.0 | 0.0 | 0.7 | 0.0 | 6.3% |
+| unit_test | 6.6 | 1.3 | 0.0 | 0.0 | 100.0% |
+| corpus_test | 2.9 | 2.7 | 93.9 | 0.0 | 5.6% |
+| blackbox_test | 0.9 | 0.6 | 14.3 | 0.0 | 9.5% |
+| cache_test | 0.8 | 0.5 | 11.5 | 0.0 | 10.6% |
+| abuse_wide_test | 0.6 | 0.2 | 8.5 | 0.0 | 9.4% |
+| abuse_test | 0.3 | 0.4 | 6.9 | 0.0 | 9.8% |
+| build_test | 0.3 | 0.4 | 5.6 | 0.0 | 11.5% |
+| digest_test | 0.2 | 0.1 | 3.2 | 0.0 | 9.9% |
+| ordering_test | 0.1 | 0.1 | 1.4 | 0.0 | 11.1% |
+| iface_test | 0.1 | 0.1 | 2.1 | 0.0 | 7.6% |
+| cutoff_test | 0.1 | 0.1 | 0.5 | 0.0 | 21.7% |
+| docs_test | 0.1 | 0.0 | 0.2 | 0.0 | 39.5% |
+| run_hash_test | 0.1 | 0.0 | 5.2 | 0.0 | 2.1% |
+| check_test | 0.1 | 0.0 | 0.9 | 0.0 | 10.1% |
+| frontend_test | 0.0 | 0.0 | 0.8 | 0.0 | 9.0% |
+| time_report_test | 0.0 | 0.0 | 0.8 | 0.0 | 3.7% |
 | diagnostic_test | 0.0 | 0.0 | 0.0 | 0.0 | 100.0% |
 | coverage_unit_test | 0.0 | 0.0 | 0.0 | 0.0 | 100.0% |
-| **all** | | | 153.2 | | 11.2% |
+| **all** | | | 155.8 | | 11.4% |
 
 ### Repeated invocations
 
@@ -1228,13 +1230,13 @@ same files. "Extra" is every run after the first.
 
 | command | runs | extra CPU ms |
 |---|---:|---:|
-| `beni dump --stage=graph --jobs=8 tests/corpus/check/good/TypeOwnerEdges` | 2 | 32 |
-| `beni dump --stage=graph --jobs=1 tests/corpus/check/good/TypeOwnerEdges` | 2 | 26 |
+| `beni dump --stage=graph --jobs=8 tests/corpus/check/good/TypeOwnerEdges` | 2 | 38 |
+| `beni dump --stage=graph --jobs=1 tests/corpus/check/good/TypeOwnerEdges` | 2 | 30 |
 
 **The same command apart from `--jobs`, `--no-cache`, `--cache-dir` and `--roundtrip-*`:** 3 extra runs, 0.1 CPU-s.
 
 | command | runs | extra CPU ms |
 |---|---:|---:|
-| `beni dump --stage=graph tests/corpus/check/good/TypeOwnerEdges` | 4 | 86 |
+| `beni dump --stage=graph tests/corpus/check/good/TypeOwnerEdges` | 4 | 102 |
 
 <!-- test-time-report:end -->
