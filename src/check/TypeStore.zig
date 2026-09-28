@@ -322,14 +322,6 @@ proof_voids: u64 = 0,
 /// (`check/Module.zig`); a store nothing checks in (an interface dump's,
 /// a test's) does not prove, and pays one branch per content write.
 tracks_proofs: bool = false,
-/// The alias classes a FLEX took its name from (checker-v2.md §7.1
-/// and §21.1): an inferred type's name, which the class
-/// shows only while every name it meets agrees, and which `Unify.expand`
-/// turns into the expansion when one does not. Every other alias node — an
-/// annotation's reading, an instantiation's copy — keeps its name for
-/// good: an annotation prints as written. Set on a class's root; a merge of
-/// two such classes keeps it (`Unify`).
-inferred_alias: std.DynamicBitSetUnmanaged = .{},
 /// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
 /// Never read outside that assert.
@@ -507,20 +499,6 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     // and a record's new rows reach it through a bind or an `err` (both void) (§8.2).
     if (carry and store.acyclic_epoch == epoch) store.prove(keep);
     return keep;
-}
-
-/// Whether root `v` is an alias class a flex took its name from
-/// (`inferred_alias`).
-pub fn isInferredAlias(store: *const TypeStore, v: Var) bool {
-    return v.int() < store.inferred_alias.bit_length and store.inferred_alias.isSet(v.int());
-}
-
-/// Mark root `v` an alias class a flex took its name from.
-pub fn markInferredAlias(store: *TypeStore, v: Var) Allocator.Error!void {
-    if (v.int() >= store.inferred_alias.bit_length) {
-        try store.inferred_alias.resize(store.gpa(), @max(store.count(), v.int() + 1, store.inferred_alias.bit_length * 2), false);
-    }
-    store.inferred_alias.set(v.int());
 }
 
 /// Alias root `alias` joins the class of `end`, the root its chain resolves

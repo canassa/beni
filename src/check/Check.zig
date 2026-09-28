@@ -82,8 +82,10 @@ pub const Module = struct {
     /// reading of the annotation and the body was checked against a RIGID
     /// reading, two structurally identical trees over different variables.
     /// Printing the scheme next to locals that belong to the other tree
-    /// would name the same `a` twice over, so the dump uses the tree the
-    /// locals are in.
+    /// would name the same `a` twice over, so the dump prints a third
+    /// reading over the rigid reading's variables, which nothing unifies:
+    /// the rigid reading's own alias names may have met others and show
+    /// their expansions (checker-v2.md §7.1).
     decl_display: []Var.Optional,
     /// Type per local, indexed exactly like `Bir.locals`.
     local_type: []Var.Optional,

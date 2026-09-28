@@ -82,12 +82,9 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
-    // Alias names met inside a structure, in two declaration orders and in
-    // two branch orders, and an unreadable `_manifest.txt` in `--out`. The
-    // alias DAG whose uses differ in their arguments (timed) was promoted into
-    // `perf_test.zig`.
-    .{ .name = "scenario/CK-202", .step = .fast },
-    .{ .name = "scenario/CK-202-branches", .step = .fast },
+    // An unreadable `_manifest.txt` in `--out`. Alias names met inside a
+    // structure were promoted into `ordering_test.zig`, and the alias DAG
+    // whose uses differ in their arguments (timed) into `perf_test.zig`.
     .{ .name = "scenario/CK-209", .step = .fast },
 };
 
@@ -128,35 +125,6 @@ test "pending: RED names fixtures and scenarios that exist" {
     }
     try testing.expectEqual(@as(usize, 0), stale);
 }
-
-// CK-202: `type alias Name = String`, `type alias Label = String`, `names :
-// List Name`, `labels : List Label`, and a recursive group `f` → `names`,
-// `g` → `labels`. The group's result meets `List Name` and `List Label`, so
-// it shows `List String` in every declaration order. Unfixed: `f : number ->
-// List Name` with `f` above `g`, `List Label` with `g` above `f`.
-test "CK-202: alias names inside a structure print the same in every declaration order" {
-    var s = try Scenario.init("CK-202");
-    defer s.deinit();
-    const f = "f n =\n    if n == 0 then\n        names\n\n    else\n        g (n - 1)\n\n\n";
-    const g = "g n =\n    if n == 0 then\n        labels\n\n    else\n        f (n - 1)\n\n\n";
-    try s.w.write("GF.beni", listNames ++ g ++ f);
-    try s.w.write("FG.beni", listNames ++ f ++ g);
-    try s.finish(try s.sameLine(&.{ "GF.beni", "FG.beni" }, "f", "f : number -> List String"));
-}
-
-// CK-202: the same two names met by an `if` in either branch order, `pick c =
-// if c then names else labels` and its twin with the branches swapped: both
-// are `Bool -> List String`. Unfixed: `List Name` and `List Label`.
-test "CK-202-branches: alias names inside a structure print the same in either branch order" {
-    var s = try Scenario.init("CK-202-branches");
-    defer s.deinit();
-    try s.w.write("NamesFirst.beni", listNames ++ "pick c =\n    if c then\n        names\n\n    else\n        labels\n");
-    try s.w.write("LabelsFirst.beni", listNames ++ "pick c =\n    if c then\n        labels\n\n    else\n        names\n");
-    try s.finish(try s.sameLine(&.{ "NamesFirst.beni", "LabelsFirst.beni" }, "pick", "pick : Bool -> List String"));
-}
-
-/// Two aliases of `String` and a list of each.
-const listNames = "type alias Name =\n    String\n\n\ntype alias Label =\n    String\n\n\nnames : List Name\nnames =\n    [ \"x\" ]\n\n\nlabels : List Label\nlabels =\n    [ \"y\" ]\n\n\n";
 
 // CK-209: a `_manifest.txt` in `--out` that cannot be read (mode 000) is an
 // I/O failure, reported as one — "beni: cannot read 'out/_manifest.txt':
@@ -340,30 +308,6 @@ const Scenario = struct {
         const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
         const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
-    }
-
-    /// Each of `files`' `dump --stage=types` prints the declaration `name`
-    /// as `expected`: `order-dependent` when two print it differently,
-    /// `stdout-differs` when they agree on another type.
-    fn sameLine(s: *Scenario, files: []const []const u8, name: []const u8, expected: []const u8) !Verdict {
-        const a = s.arena();
-        const lines = try a.alloc([]const u8, files.len);
-        const needle = try std.fmt.allocPrint(a, "\n  {s} : ", .{name});
-        for (files, lines) |file, *slot| {
-            const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
-            if (run.exit_code != 0) return s.failed(run);
-            const at = std.mem.indexOf(u8, run.stdout, needle) orelse
-                return .{ .green = false, .signature = "stdout-differs", .detail = try std.fmt.allocPrint(a, "no `{s}` in the dump of {s}", .{ name, file }) };
-            const end = std.mem.indexOfScalarPos(u8, run.stdout, at + 1, '\n') orelse run.stdout.len;
-            slot.* = run.stdout[at + 3 .. end];
-        }
-        var detail: std.ArrayList(u8) = .empty;
-        for (files, lines, 0..) |file, line, i| try detail.print(a, "{s}{s}: `{s}`", .{ if (i == 0) "" else "; ", file, line });
-        for (lines[1..]) |line| {
-            if (!std.mem.eql(u8, line, lines[0])) return .{ .green = false, .signature = "order-dependent", .detail = detail.items };
-        }
-        const green = std.mem.eql(u8, lines[0], expected);
-        return .{ .green = green, .signature = if (green) "" else "stdout-differs", .detail = detail.items };
     }
 
     /// A run's stderr as the diagnostics array (a run passes

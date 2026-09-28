@@ -47,6 +47,12 @@ pub const Member = struct {
     /// The rigid reading's variables, for a `type_dispatch` in the body
     /// (static-dispatch-spike.md §4.2).
     rigids: []const Types.Builder.Scoped = &.{},
+    /// What `dump --stage=types` prints for an annotated member: a second
+    /// reading of the annotation over the rigid reading's variables, which
+    /// nothing unifies, so it prints as written even where the rigid
+    /// reading's alias names met others and show their expansions
+    /// (checker-v2.md §7.1). Made only when the run keeps its tables.
+    display: Var.Optional = .none,
 };
 
 /// Read `d`'s `where` clause with `b` — the builder its annotation was read
@@ -128,6 +134,7 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
             const reading = try rigidReading(g, annotation, scheme, bir.symbol(d.name).toOptional(), d);
             m.check = reading.check.toOptional();
             m.rigids = reading.rigids;
+            if (g.cx.keep_display) m.display = (try displayReading(g, annotation, reading.rigids)).toOptional();
         } else {
             const v = try g.freshFlex();
             m.check = v.toOptional();
@@ -184,6 +191,20 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
         if (d.where_start != d.where_end) try g.evidence.registerGivens(g.gpa, g.cx.store, g.cx.interner, g.cx.scratch, check, @intFromEnum(g.decl));
     }
     return .{ .check = check, .rigids = if (top != null) try g.cx.scratch.dupe(Types.Builder.Scoped, b.scope.items) else &.{} };
+}
+
+/// `annotation` read again over `rigids`, the rigid reading's variables, for
+/// `dump --stage=types` (`Member.display`): the same tree over the same
+/// variables, so the locals the dump prints beside it name them alike, and
+/// no unification ever reaches it. Pooled like the rigid reading.
+fn displayReading(g: *Generator, annotation: Bir.Inst.Index, rigids: []const Types.Builder.Scoped) Error!Var {
+    const mark = g.storeMark();
+    var b = g.cx.builder(.rigid, g.rank);
+    defer b.deinit();
+    for (rigids) |scoped| try b.bind(scoped.name, scoped.v);
+    const v = try b.read(annotation);
+    try g.adoptSince(mark);
+    return v;
 }
 
 /// The body of a value declaration, checked against `target`. Its parameters

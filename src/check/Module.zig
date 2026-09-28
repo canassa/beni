@@ -143,6 +143,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .bir = bir,
         .schemas = &schemas,
         .too_deep = &too_deep,
+        .keep_display = in.keep != null,
     };
     var report: Report = undefined;
     try report.init(&cx, in.diagnostics, quiet, decl_scheme, local_type);

@@ -273,6 +273,50 @@ test "an inferred type names the same alias in every declaration order" {
     });
 }
 
+// The same rule inside a structure: `names : List Name`, `labels : List
+// Label` (both aliases of `String`) and a recursive group `g` → `labels`, `f`
+// → `names`. Its result meets `List Name` and `List Label`, so it shows `List
+// String`. `check/good/AliasNamesInsideStructures.beni` writes `f` above `g`
+// (and both branch orders of an `if`); this is the reverse, where the group
+// kept `List Label` and the written order `List Name`.
+test "alias names inside a structure show the expansion with the group reversed" {
+    var s = try Scenario.init("alias names inside a structure");
+    defer s.deinit();
+    const head = "type alias Name =\n    String\n\n\ntype alias Label =\n    String\n\n\nnames : List Name\nnames =\n    [ \"x\" ]\n\n\nlabels : List Label\nlabels =\n    [ \"y\" ]\n\n\n";
+    const g = "g n =\n    if n == 0 then\n        labels\n\n    else\n        f (n - 1)\n\n\n";
+    const f = "f n =\n    if n == 0 then\n        names\n\n    else\n        g (n - 1)\n";
+    try s.w.write("GF.beni", head ++ g ++ f);
+    const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", "GF.beni" }, .{ .raw_diagnostics = true });
+    if (run.exit_code != 0) return s.finish(try s.failed(run));
+    for ([_][]const u8{ "\n  f : number -> List String\n", "\n  g : number -> List String\n", "\n  names : List Name\n", "\n  labels : List Label\n" }) |line| {
+        if (std.mem.indexOf(u8, run.stdout, line) == null) return s.finish(.{
+            .green = false,
+            .signature = "order-dependent",
+            .detail = try std.mem.replaceOwned(u8, s.arena(), run.stdout, "\n", " | "),
+        });
+    }
+}
+
+// The same two names met by an `if`, in both branch orders, each the only
+// declaration of its module: `pick` is `Bool -> List String` either way. With
+// the first name kept, the two printed `List Name` and `List Label`.
+test "alias names met by an if show the expansion in either branch order" {
+    var s = try Scenario.init("alias names in two branch orders");
+    defer s.deinit();
+    const head = "type alias Name =\n    String\n\n\ntype alias Label =\n    String\n\n\nnames : List Name\nnames =\n    [ \"x\" ]\n\n\nlabels : List Label\nlabels =\n    [ \"y\" ]\n\n\n";
+    try s.w.write("NamesFirst.beni", head ++ "pick c =\n    if c then\n        names\n\n    else\n        labels\n");
+    try s.w.write("LabelsFirst.beni", head ++ "pick c =\n    if c then\n        labels\n\n    else\n        names\n");
+    for ([_][]const u8{ "NamesFirst.beni", "LabelsFirst.beni" }) |file| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        if (std.mem.indexOf(u8, run.stdout, "\n  pick : Bool -> List String\n") == null) return s.finish(.{
+            .green = false,
+            .signature = "order-dependent",
+            .detail = try std.mem.replaceOwned(u8, s.arena(), run.stdout, "\n", " | "),
+        });
+    }
+}
+
 // An own method whose type fits no use of two types of its module is one
 // mistake, said once at its declaration, after every use was checked
 // (`Instances.ownSignatures`): `type T`, `type V`, `pub eq : T, Int -> Bool`

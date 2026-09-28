@@ -41,6 +41,10 @@ schemas: *Schema.State,
 /// points at: sorted, deduplicated and
 /// reported once at the end of P8 (`Module.reportTooDeep`).
 too_deep: *std.ArrayList(TooDeep),
+/// The run keeps the module's tables for `dump --stage=types`: each
+/// annotated declaration gets a reading of its annotation that nothing
+/// unifies, which the dump prints (`constrain/Decl.zig`'s `Member.display`).
+keep_display: bool = false,
 
 /// One written or inferred type too deep to finish: where the message points,
 /// and the declaration whose failure bit it sets (§15.2).

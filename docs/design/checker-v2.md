@@ -837,6 +837,33 @@ expansion in a later message and in the dump of its locals. `ordering_test.zig` 
 recursive-group program in both orders, and `run/PhantomAliasUnifiesByExpansion` reversed, the
 order whose types once differed from the written one's.
 
+*Amended 2026-09-29: agree or expand at every depth.* The rows above held only at the top of
+a type. A WRITTEN name — an annotation's reading, an instantiation's copy — was never expanded,
+and two written names that met were both left as they were, so in `x : List Name`, `y : List
+Label` and a group whose result meets both, the result bound to one `List` node and showed
+whichever copy the structure's merge kept: `List Name` in one declaration order, `List Label` in
+the other, and the same for the two branch orders of an `if`, `Maybe Name` against `Maybe
+String`, and `Pair Name` against `Pair Label`. The distinction is gone:
+
+- **Every alias a unification reaches may expand**, written or inferred, at any depth: two
+  different names, two uses of a non-injective alias, or a name against an unnamed type show the
+  expansion; two uses of one injective name whose arguments unify are one class, keeping it; a
+  flex nothing rides on joins the alias's class (`Unify.takeName`), so one expansion reaches it.
+  `TypeStore.inferred_alias` is deleted.
+- **An annotation still prints as written**, because nothing that prints it is unified. The
+  interface prints the scheme (§6.6: copied at every use, never unified), and `dump --stage=types`
+  prints `Member.display`, a second reading of the annotation over the rigid reading's variables,
+  made only when the run keeps its tables — so the locals printed beside it name the same
+  variables. A `let` annotation prints from its scheme likewise.
+- **A generalised alias is never rewritten**: an annotation names a schema endpoint's shared type
+  without copying it (`Schema.State`), so a flex that meets one gets a node of its own with the
+  same content, and a generalised alias neither expands nor merges.
+
+Where the checked body's own reading showed a name in a message, it can now show the expansion
+after meeting a different name — the cost §21.1's D16 accepted, one level deeper. No corpus
+message changed. `check/good/AliasNamesInsideStructures.beni` holds the four shapes, and
+`ordering_test.zig` the group reversed and both branch orders.
+
 ### 7.2 Choice among failures is by text (I13)
 
 `unifyRecord` unifies every shared field and collects the failures. The one returned is the

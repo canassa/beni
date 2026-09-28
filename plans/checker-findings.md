@@ -5048,7 +5048,16 @@ with a red fixture on `b8b289a` before its fix.*
   `scenario/CK-202` (the recursive group in both orders) and `scenario/CK-202-branches` (both
   branch orders), red `order-dependent`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §7.1 *amended 2026-09-29*: the written/inferred
+  distinction is gone (`TypeStore.inferred_alias` deleted). Every alias a unification reaches may
+  expand, at any depth; a flex joins the class of the alias it meets (`Unify.takeName`); two
+  uses of one injective name merge. An annotation prints as written because what prints it is
+  never unified: the interface prints the scheme, and `dump --stage=types` a second reading over
+  the rigid reading's variables (`Decl.Member.display`, made only when the run keeps its tables).
+  A generalised alias — a schema endpoint's shared type — is never rewritten. No corpus message
+  changed. Promoted: `tests/corpus/check/good/AliasNamesInsideStructures.beni`; the two scenarios
+  into `ordering_test.zig` ("alias names inside a structure show the expansion with the group
+  reversed", "alias names met by an if show the expansion in either branch order").
 
 ### CK-203 — An alias DAG whose uses differ in their arguments is expanded as a tree
 
@@ -5366,7 +5375,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-199 | performance | K11 | `scenario/CK-199` | fixed by resizing to a check and two builds, promoted into `cache_test.zig` |
 | CK-200 | diagnostic-quality | K14 | promoted: `check/bad/StringLiteralMismatchSpan.beni` | R15-fix-J (fixed, promoted) |
 | CK-201 | diagnostic-quality | K9 | `ordering_test.zig` "a derived eq whose pass is refused a nested check …" | R15-fix-J (found and fixed) |
-| CK-202 | nondeterminism | K12 | `check/good/AliasNamesInsideStructures.beni`, `scenario/CK-202`, `scenario/CK-202-branches` | the final review's fixes |
+| CK-202 | nondeterminism | K12 | promoted: `check/good/AliasNamesInsideStructures.beni`; `ordering_test.zig` (two tests) | the final review's fixes (fixed) |
 | CK-203 | performance | K11 | promoted: `perf_test.zig` "an annotation over an alias DAG whose uses differ …" | the final review's fixes (fixed) |
 | CK-204 | diagnostic-quality | K13 | `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes |
 | CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |

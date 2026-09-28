@@ -280,7 +280,7 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
         .id = g,
         .recursive = indices.len > 1,
     }, &done);
-    for (dm) |m| gs.decl_display[m.decl] = m.check;
+    for (dm) |m| gs.decl_display[m.decl] = if (m.display != .none) m.display else m.check;
     if (ended == .merged) return .merged;
 
     gs.status[g] = .done;
