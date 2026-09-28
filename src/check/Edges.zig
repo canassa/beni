@@ -64,6 +64,7 @@ const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("Dispatch.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
+const U32Set = @import("../u32_set.zig").U32Set;
 
 pub const Error = Allocator.Error;
 
@@ -211,7 +212,7 @@ pub fn termsEdges(
     through_rows: bool,
 ) Error!void {
     if (roots.len == 0) return;
-    var seen: TermSet = .{};
+    var seen: U32Set = .{};
     defer seen.deinit(scratch);
     var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
     defer stack.deinit(scratch);
@@ -259,58 +260,6 @@ pub fn termsEdges(
         }
     }
 }
-
-/// `termsEdges`' set of the term indices it has walked: open addressing with
-/// linear probing over a power-of-two table, the slot taken from the high
-/// bits of one multiplication. `std`'s hash map hashed each index with
-/// Wyhash and ran generic code Zig's own backend compiles poorly: on a
-/// build of a type of 4 097 parameters it was a sixth of the whole build.
-/// Nothing iterates the set, so its layout is never observable.
-const TermSet = struct {
-    slots: []u32 = &.{},
-    count: usize = 0,
-
-    const empty = std.math.maxInt(u32);
-
-    fn deinit(s: *TermSet, gpa: Allocator) void {
-        gpa.free(s.slots);
-    }
-
-    /// Add `key`, which is never `empty`; true when it was there already.
-    fn insert(s: *TermSet, gpa: Allocator, key: u32) Error!bool {
-        if ((s.count + 1) * 4 > s.slots.len * 3) try s.grow(gpa);
-        const mask = s.slots.len - 1;
-        var i = slot(key, s.slots.len);
-        while (true) : (i = (i + 1) & mask) {
-            if (s.slots[i] == key) return true;
-            if (s.slots[i] == empty) {
-                s.slots[i] = key;
-                s.count += 1;
-                return false;
-            }
-        }
-    }
-
-    fn grow(s: *TermSet, gpa: Allocator) Error!void {
-        const len = @max(16, s.slots.len * 2);
-        const slots = try gpa.alloc(u32, len);
-        @memset(slots, empty);
-        const mask = len - 1;
-        for (s.slots) |key| {
-            if (key == empty) continue;
-            var i = slot(key, len);
-            while (slots[i] != empty) i = (i + 1) & mask;
-            slots[i] = key;
-        }
-        gpa.free(s.slots);
-        s.slots = slots;
-    }
-
-    fn slot(key: u32, len: usize) usize {
-        const bits: u6 = @intCast(std.math.log2_int(usize, len));
-        return @intCast((@as(u64, key) *% 0x9E37_79B9_7F4A_7C15) >> (63 - bits) >> 1);
-    }
-};
 
 // ---------------------------------------------------------------------------
 // Tests

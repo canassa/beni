@@ -48,6 +48,8 @@
 //! arena and is dropped by its reset.
 
 const std = @import("std");
+const soa = @import("../soa.zig");
+const U32Set = @import("../u32_set.zig").U32Set;
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const InternPool = @import("../InternPool.zig");
@@ -83,6 +85,8 @@ options: Options,
 
 // ---- Output columns (gpa) ----
 insts: Bir.InstList = .empty,
+/// Appends to `insts` without recomputing its columns per instruction.
+inst_appender: soa.Appender(Inst) = .{},
 extra: std.ArrayList(u32) = .empty,
 string_bytes: std.ArrayList(u8) = .empty,
 symbols: std.ArrayList(Symbol) = .empty,
@@ -423,7 +427,7 @@ fn tokenSymbol(l: *const Lower, token: TokenIndex) Symbol {
 /// instruction is left without a source position (see `Bir.Inst`).
 fn addInst(l: *Lower, tag: Inst.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
     const i: u32 = @intCast(l.insts.len);
-    try l.insts.append(l.gpa, .{ .tag = tag, .main_token = l.cur_token, .data = .{ .lhs = lhs, .rhs = rhs } });
+    try l.inst_appender.append(&l.insts, l.gpa, .{ .tag = tag, .main_token = l.cur_token, .data = .{ .lhs = lhs, .rhs = rhs } });
     return @enumFromInt(i);
 }
 
@@ -1861,7 +1865,7 @@ const FieldNames = struct {
     few: [linear_limit]Symbol = undefined,
     len: usize = 0,
     /// Every name, once there are more than `linear_limit`.
-    set: Symbol.Map(void) = .empty,
+    set: U32Set = .{},
 
     fn deinit(f: *FieldNames, gpa: Allocator) void {
         f.set.deinit(gpa);
@@ -1875,11 +1879,10 @@ const FieldNames = struct {
             f.len += 1;
             return false;
         }
-        if (f.set.count() == 0) {
-            for (f.few) |n| try f.set.put(gpa, n, {});
+        if (f.set.count == 0) {
+            for (f.few) |n| _ = try f.set.insert(gpa, @intFromEnum(n));
         }
-        const entry = try f.set.getOrPut(gpa, symbol);
-        return entry.found_existing;
+        return f.set.insert(gpa, @intFromEnum(symbol));
     }
 };
 

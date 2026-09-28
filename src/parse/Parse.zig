@@ -47,6 +47,7 @@
 //! grows them; the scratch stacks come from the worker's arena.
 
 const std = @import("std");
+const soa = @import("../soa.zig");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Token = @import("../lex/Token.zig");
@@ -122,6 +123,8 @@ comment_i: u32 = 0,
 lex_i: usize = 0,
 
 nodes: Ast.NodeList = .empty,
+/// Appends to `nodes` without recomputing its columns per node.
+node_appender: soa.Appender(Node) = .{},
 extra: std.ArrayList(u32) = .empty,
 errors: std.ArrayList(Diagnostics.Item) = .empty,
 module_doc: Ast.CommentRange = .empty,
@@ -346,7 +349,7 @@ fn assertProgress(p: *const Parse, before: TokenIndex) void {
 
 fn addNode(p: *Parse, node: Node) Allocator.Error!Index {
     const i: Index = @enumFromInt(p.nodes.len);
-    try p.nodes.append(p.gpa, node);
+    try p.node_appender.append(&p.nodes, p.gpa, node);
     return i;
 }
 
