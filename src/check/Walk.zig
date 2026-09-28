@@ -296,13 +296,15 @@ pub const Stacks = struct {
     ordered: std.ArrayList(OrderedFrame) = .empty,
     kids: std.ArrayList(Var) = .empty,
     fields: std.ArrayList(TypeStore.Field) = .empty,
-    /// Debug: `assertProved`'s colours and frames, reused across its calls:
-    /// a fresh map per call would make the Debug check of a 1 100-link
+    /// Debug: `assertProved`'s colours, one per store variable, the last
+    /// two values it handed out, and its frames, reused across its calls:
+    /// fresh ones per call would make the Debug check of a 1 100-link
     /// alias chain spend seconds allocating (`run/AliasChainThroughLet`).
-    assert_colours: std.AutoHashMapUnmanaged(Var, AssertColour) = .empty,
+    assert_marks: std.ArrayList(u32) = .empty,
+    assert_epoch: u32 = 0,
     assert_frames: std.ArrayList(Frame) = .empty,
     pub fn deinit(s: *Stacks, gpa: Allocator) void {
-        s.assert_colours.deinit(gpa);
+        s.assert_marks.deinit(gpa);
         s.assert_frames.deinit(gpa);
         s.frames.deinit(gpa);
         s.vars.deinit(gpa);
@@ -443,35 +445,45 @@ pub const Occurs = struct {
 fn assertProved(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var) Error!void {
     if (!std.debug.runtime_safety) return;
     if (store.proof_assert_work > assert_budget_floor + @as(u64, store.count()) * assert_budget_per_var) return;
-    const colours = &stacks.assert_colours;
-    colours.clearRetainingCapacity();
+    // The colours are marks of this walk's own, in a column beside the
+    // store's (it touches none of the store's marks), two fresh values per
+    // walk: a hash map of them was two thirds of the walk's cost.
+    const marks = &stacks.assert_marks;
+    if (marks.items.len < store.count()) try marks.appendNTimes(gpa, 0, store.count() - marks.items.len);
+    if (stacks.assert_epoch > std.math.maxInt(u32) - 2) {
+        @memset(marks.items, 0);
+        stacks.assert_epoch = 0;
+    }
+    const grey = stacks.assert_epoch + 1;
+    const black = stacks.assert_epoch + 2;
+    stacks.assert_epoch = black;
     const frames = &stacks.assert_frames;
     frames.clearRetainingCapacity();
     try frames.append(gpa, .{ .v = v, .cursor = 0 });
-    try colours.put(gpa, v, .grey);
-    defer store.proof_assert_work += colours.count();
+    marks.items[v.int()] = grey;
+    var visited: u32 = 1;
+    defer store.proof_assert_work += visited;
     while (frames.items.len > 0) {
-        if (colours.count() > assert_cap) return;
+        if (visited > assert_cap) return;
         const top = &frames.items[frames.items.len - 1];
         const next = child(store, top.v, top.cursor, .structural);
         top.cursor += 1;
         if (next) |c| {
             const r = store.find(c);
-            if (colours.get(r)) |colour| {
-                if (colour == .grey) std.debug.panic("a proved node reaches a cycle (checker-v2.md §8.2)", .{});
-                continue;
-            }
+            const colour = marks.items[r.int()];
+            if (colour == grey) std.debug.panic("a proved node reaches a cycle (checker-v2.md §8.2)", .{});
+            if (colour == black) continue;
             if (isLeaf(store, r)) continue;
-            try colours.put(gpa, r, .grey);
+            marks.items[r.int()] = grey;
+            visited += 1;
             try frames.append(gpa, .{ .v = r, .cursor = 0 });
             continue;
         }
-        try colours.put(gpa, top.v, .black);
+        marks.items[top.v.int()] = black;
         _ = frames.pop();
     }
 }
 
-const AssertColour = enum { grey, black };
 const assert_cap = 1024;
 const assert_budget_per_var = 16;
 const assert_budget_floor = 1 << 16;
