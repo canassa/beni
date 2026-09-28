@@ -58,8 +58,10 @@
 //!   zig build fuzz                the unit tests with their mutation sweeps
 //!                                 and stress loops on (`BENI_FUZZ=1`)
 //! And the benchmarks' own tests — benchmarks are not part of the gates:
-//!   zig build test-bench          the generators' unit tests, and the check
-//!                                 that beni accepts the benchmark's program
+//!   zig build test-bench          the generators' unit tests, the check that
+//!                                 beni accepts the benchmark's program, and
+//!                                 bench/size.mjs and bench/runtime.mjs on one
+//!                                 tiny program each
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -292,7 +294,7 @@ pub fn build(b: *std.Build) void {
     // The benchmarks' own tests: the generators' unit tests and the check
     // that beni accepts the cross-language benchmark's program. Benchmarks
     // are not part of the gates, so this step is not either.
-    const bench_test_step = b.step("test-bench", "Run the benchmark generators' tests (not a gate)");
+    const bench_test_step = b.step("test-bench", "Run the benchmarks' own tests: the generators and the size and runtime instruments (not a gate)");
     bench_test_step.dependOn(&runTests(b, gen_tests).step);
 
     // ---- ReleaseFast and ReleaseSafe compilers. ----
@@ -590,6 +592,11 @@ pub fn build(b: *std.Build) void {
     const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
     compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus", .budget = false }).step);
     bench_test_step.dependOn(compare_bb_step);
+    // The measurement instruments (`bench/size.mjs`, `bench/runtime.mjs`),
+    // each run on one tiny program so its output cannot rot unnoticed.
+    const bench_scripts_step = bb.fileStep("tests/blackbox/bench_test.zig");
+    bench_scripts_step.dependOn(&bb.run(bb.artifact("tests/blackbox/bench_test.zig"), .{ .root = "tests/corpus", .budget = false }).step);
+    bench_test_step.dependOn(bench_scripts_step);
 
     // ---- Where the test time goes. ----
     // `time-report` runs a step of this build again, in a child `zig build`,

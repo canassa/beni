@@ -223,7 +223,7 @@ zig build test            # hermetic unit tests
 zig build test-blackbox   # spawns a self-hosted ReleaseSafe beni (zig-out/safe/bin) against temp projects
 zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf/bin); not a gate
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
-zig build test-bench      # the benchmark generators' own tests; not a gate
+zig build test-bench      # the benchmarks' own tests (generators, size.mjs, runtime.mjs); not a gate
 zig build fuzz            # the unit tests with their random sweeps on; not a gate
 zig build coverage        # lines of src/ the black-box tests reach, under kcov (nix develop .#coverage); not a gate
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench

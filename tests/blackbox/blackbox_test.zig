@@ -4371,8 +4371,8 @@ test "a type declared elsewhere leaves an untouched module's interface bytes alo
     // approximately every type-introducing edit.
     //
     // The `--jobs` determinism tests cannot see this (it is not a scheduling
-    // difference) and `bench/churn.sh` cannot either (every one of its edit
-    // classes edits the declaration whose dump it diffs). This is the test
+    // difference), and neither can an edit of the declaration whose dump is
+    // diffed. This is the test
     // that can: four edit classes, none of them in `Zeta`, and `Zeta`'s
     // bytes must not move for any of them.
     var w = try World.init(testing.allocator, testing.io);

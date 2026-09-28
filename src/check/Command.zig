@@ -157,8 +157,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
 /// **Why it exists at all**: `dump --stage=raw` prints only the modules
 /// named on the command line, so core's and the platform's records are
 /// invisible to it — and the firewall's quantity is "did this record
-/// change?", which is a hash and not a dump. `bench/churn.sh` reports
-/// "importers re-checked" out of these lines.
+/// change?", which is a hash and not a dump.
 ///
 /// The package is part of the key because a module's identity is
 /// `(package, name)` and not the name alone (`Graph`'s header), and the

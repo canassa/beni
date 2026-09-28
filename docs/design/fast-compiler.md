@@ -779,10 +779,11 @@ today. At a measured 9.4 ms per small-fixture invocation the added axis is ~20 s
 This is the first test in the project that asserts the firewall's premise rather than assuming it:
 until it passes, every claim about a warm rebuild is unfalsifiable (`plans/m4-plan.md` §3.4).
 
-**And the firewall's first real measurement.** `bench/churn.sh` applies four mechanical edit classes
-and byte-diffs `dump --stage=raw` before and after, which counts changed bytes in one module's dump
-and cannot see a cross-module effect. With `--iface-hash` it reports "importers re-checked" by hash
-instead, and gains the edit class it could not express: **a type added to a module the observed one
+**And the firewall's first real measurement.** An interface-churn instrument (since retired;
+its result is `research/19` §4) applied four mechanical edit classes
+and byte-diffed `dump --stage=raw` before and after, which counts changed bytes in one module's dump
+and cannot see a cross-module effect. With `--iface-hash` it reported "importers re-checked" by hash
+instead, and gained the edit class it could not express: **a type added to a module the observed one
 does not import — expected 0**, which is what `TypeId` in the record used to make nonzero.
 
 **What the interface hash deliberately does not do**, each pointing at the decision that owns it: no cache

@@ -439,8 +439,7 @@ test "the firewall by hash: an edit elsewhere does not move a module's line" {
     // └─────────────────────────────────────────┘
     // checker.md §7's purity rule, stated as the quantity the firewall
     // actually uses. The same four cumulative edits `--stage=raw` is asked
-    // about, now asked of the hash — which is what `bench/churn.sh` reports
-    // and what a cache key will compare.
+    // about, now asked of the hash — which is what a cache key compares.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writePurityProject(&w);

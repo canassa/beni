@@ -3,11 +3,11 @@
 # `fast-compiler.md` §8's *Acceptance is the incremental-determinism matrix,
 # made sharp*).
 #
-# `bench/churn.sh`'s successor, and the same question one slice on. Churn asks
-# "does editing a body change the interface?"; this asks the sharper one the
-# cutoff is answerable by: **after an edit, is the incremental build
-# byte-identical to a cold one, AND was each module skipped exactly when the
-# enumeration says it may be?**
+# Where an interface-churn count asked "does editing a body change the
+# interface?", this asks the sharper question the cutoff is answerable
+# by: **after an edit, is the incremental build byte-identical to a cold
+# one, AND was each module skipped exactly when the enumeration says it may
+# be?**
 #
 # Byte-identity alone is satisfied by a cache that never hits. The criterion is
 # byte-identity AND the counter, and the predicted set is not hard-coded: it is
@@ -74,7 +74,7 @@ failures=0
 #
 # Every one is MECHANICAL and applied to a whole file, so it needs no parse:
 # a harness that had to understand the language would be a second compiler,
-# and `churn.sh` learned that the hard way.
+# and the interface-churn instrument before this learned that the hard way.
 #
 #   comment     prepend a comment line — no token of the program moves
 #   whitespace  append two blank lines
@@ -258,7 +258,7 @@ sweep() {
 }
 
 # `bench/corpus` carries two modules that do not resolve from a pristine root
-# — the exclusion `bench/churn.sh` makes for the same reason. They error, so
+# — excluded here for that reason. They error, so
 # they are uncacheable, so they are re-checked on every run whatever the
 # cutoff decides; leaving them in would make every scenario in the project
 # "fail" at warm0 for a reason the enumeration has nothing to say about.
