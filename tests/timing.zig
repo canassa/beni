@@ -1,6 +1,6 @@
 //! Opt-in timing records for the test suites, read by `zig build
-//! test-time-report` (`tests/time_report.zig`), and the CPU budget every
-//! test is held to (`budget_us`).
+//! test-time-report` (`tests/time_report.zig`), and the budget every test
+//! is held to (`budget_unit`).
 //!
 //! `BENI_TEST_TIMING=<dir>` turns it on. Every test process then writes one
 //! file, `<dir>/<binary>-<pid>.jsonl`, of one JSON `Record` per line: a
@@ -67,6 +67,10 @@ pub const Test = struct {
     /// The CPU of the processes the test spawned and reaped.
     child_user_us: u64,
     child_sys_us: u64,
+    /// The unit of the budget (`Unit`'s name), and what the test spent in
+    /// it, less what its cases were held to on their own.
+    budget_unit: []const u8 = "none",
+    spent: u64 = 0,
 };
 
 /// One corpus case, measured by the walker's worker that ran it.
@@ -80,6 +84,8 @@ pub const Fixture = struct {
     /// CPU of the worker thread that ran the case: the harness's own share.
     /// The case's compiler and Node runs are `child` records naming it.
     thread_cpu_us: u64,
+    /// What the case spent in the budget's unit, its children included.
+    spent: u64 = 0,
 };
 
 /// One process the harness spawned, measured when it was reaped.
@@ -127,21 +133,141 @@ var io: Io = undefined;
 var mutex: Io.Mutex = .init;
 var process_start: Io.Timestamp = undefined;
 
-/// The CPU budget of one test, in microseconds; 0 is none. The test runner
-/// reads it from `BENI_TEST_BUDGET_MS` (`zig build -Dtest-budget-ms=`,
-/// 1000 unless given) and fails a test that spends more: its own CPU and
-/// that of every process it spawned, user plus system time. A test that
-/// runs independent cases, the corpus walker, holds each case to the budget
-/// on its own and adds what the cases spent to `cases_cpu_us`; the rest of
-/// the test is held to the budget like any other.
-pub var budget_us: u64 = 0;
+/// What every test is held to: the test runner fails a test that spends
+/// more (`budget_limit` in `budget_unit`), its own work and that of every
+/// process it spawned. A test that runs independent cases, the corpus
+/// walker, holds each case to the budget on its own and adds what the cases
+/// spent to `cases_spent`; the rest of the test is held to the budget like
+/// any other.
+///
+/// The unit is retired user-space instructions, counted by the kernel for
+/// the thread and everything it creates (`Counter`): unlike CPU time, the
+/// count does not grow when other work shares the cores. Where a counter
+/// cannot be opened (`perf_event_paranoid` above 2, no PMU, not Linux),
+/// the runner falls back to CPU time, user plus system, and says so once.
+pub const Unit = enum { none, instructions, cpu_us };
+pub var budget_unit: Unit = .none;
+pub var budget_limit: u64 = 0;
 
-/// The variable the budget is read from, in milliseconds.
-pub const budget_env_var = "BENI_TEST_BUDGET_MS";
+/// The budget in instructions (`zig build -Dtest-budget=`, in millions),
+/// and the CPU time it corresponds to, the fallback.
+pub const budget_instructions_env_var = "BENI_TEST_BUDGET_INSTRUCTIONS";
+pub const budget_cpu_ms_env_var = "BENI_TEST_BUDGET_CPU_MS";
+var fallback_cpu_us: u64 = 0;
 
-/// The CPU of the cases the running test budgeted one by one (see
-/// `budget_us`), which the runner leaves out of the test's own sum.
-pub var cases_cpu_us: std.atomic.Value(u64) = .init(0);
+/// What the cases the running test budgeted one by one spent (see
+/// `budget_unit`), which the runner leaves out of the test's own sum.
+pub var cases_spent: std.atomic.Value(u64) = .init(0);
+
+/// The calling thread's instruction counter, opened by `openThreadCounter`.
+pub threadlocal var thread_counter: ?Counter = null;
+
+/// A count of the user-space instructions retired by the thread that
+/// opened it and by every thread and process that thread creates after,
+/// each added in when it exits. A process is added before its parent can
+/// reap it; a thread only shortly after a join returns (`awaitFolded`).
+pub const Counter = struct {
+    fd: i32,
+
+    pub fn open() ?Counter {
+        if (builtin.os.tag != .linux) return null;
+        const linux = std.os.linux;
+        var attr: linux.perf_event_attr = .{
+            .type = .HARDWARE,
+            .config = @intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS),
+            .flags = .{ .inherit = true, .exclude_kernel = true, .exclude_hv = true },
+        };
+        const rc = linux.perf_event_open(&attr, 0, -1, -1, linux.PERF.FLAG.FD_CLOEXEC);
+        if (linux.errno(rc) != .SUCCESS) return null;
+        return .{ .fd = @intCast(rc) };
+    }
+
+    pub fn read(c: Counter) u64 {
+        var value: u64 = 0;
+        _ = std.os.linux.read(c.fd, @ptrCast(&value), @sizeOf(u64));
+        return value;
+    }
+};
+
+/// Open the calling thread's counter when the budget counts instructions.
+/// When none can be opened, the budget falls back to CPU time, and the
+/// process says so once.
+pub fn openThreadCounter() void {
+    if (budget_unit != .instructions or thread_counter != null) return;
+    thread_counter = Counter.open() orelse {
+        fallBackToCpu();
+        return;
+    };
+}
+
+var fallback_mutex: Io.Mutex = .init;
+
+fn fallBackToCpu() void {
+    fallback_mutex.lockUncancelable(io);
+    defer fallback_mutex.unlock(io);
+    if (budget_unit != .instructions) return;
+    std.debug.print("the test budget counts CPU time here: no instruction counter could be opened (perf_event_open)\n", .{});
+    budget_unit = .cpu_us;
+    budget_limit = fallback_cpu_us;
+}
+
+/// What the running test has spent so far, in the budget's unit: the test
+/// thread's counter, or the process's and its reaped children's CPU.
+pub fn testSpent() u64 {
+    return switch (budget_unit) {
+        .none => 0,
+        .instructions => if (thread_counter) |c| c.read() else 0,
+        .cpu_us => cpu: {
+            const self = usage(.self);
+            const children = usage(.children);
+            break :cpu self.user_us + self.sys_us + children.user_us + children.sys_us;
+        },
+    };
+}
+
+/// What one worker of independent cases spent, in the budget's unit: a
+/// counter of its own for instructions, which counts the worker and the
+/// processes it spawns and not the threads its test made, or its thread's
+/// CPU and its reaped children's.
+pub const CaseMeter = struct {
+    counter: ?Counter,
+
+    pub fn open() CaseMeter {
+        return .{ .counter = if (budget_unit == .instructions) Counter.open() else null };
+    }
+
+    pub fn read(m: CaseMeter) u64 {
+        if (m.counter) |c| return c.read();
+        if (budget_unit == .instructions) return 0;
+        return @as(u64, @intCast(@max(0, @divTrunc(threadCpu().nanoseconds, std.time.ns_per_us)))) + thread_child_cpu_us;
+    }
+
+    pub fn close(m: CaseMeter) void {
+        if (m.counter) |c| _ = std.os.linux.close(c.fd);
+    }
+};
+
+/// Wait until the test thread's counter has grown by `at_least` since it
+/// read `start`: a joined thread's count is added to its creator's a moment
+/// after the join returns, and a read before that would charge it to the
+/// next test. Gives up after a second.
+pub fn awaitFolded(start: u64, at_least: u64) void {
+    if (budget_unit != .instructions) return;
+    const c = thread_counter orelse return;
+    var tries: u32 = 0;
+    while (c.read() -% start < at_least and tries < 10_000) : (tries += 1) {
+        const pause: std.os.linux.timespec = .{ .sec = 0, .nsec = 100 * std.time.ns_per_us };
+        _ = std.os.linux.nanosleep(&pause, null);
+    }
+}
+
+/// A number and its unit, for a failure message.
+pub fn describe(amount: u64) struct { value: u64, unit: []const u8 } {
+    return switch (budget_unit) {
+        .none, .instructions => .{ .value = amount / 1_000_000, .unit = "million instructions" },
+        .cpu_us => .{ .value = amount / std.time.us_per_ms, .unit = "ms of CPU" },
+    };
+}
 
 /// The CPU of every process the calling thread spawned and reaped, as
 /// `wait4` reported it: a case that runs on a thread of its own counts its
@@ -167,9 +293,16 @@ pub fn enabled() bool {
 pub fn open(the_io: Io, environ: std.process.Environ, argv0: []const u8) void {
     const a = std.heap.page_allocator;
     io = the_io;
-    const budget = envOr(environ, budget_env_var);
-    if (budget.len != 0) budget_us = std.time.us_per_ms * (std.fmt.parseUnsigned(u64, budget, 10) catch
-        std.debug.panic("{s} must be a whole number of milliseconds, got '{s}'", .{ budget_env_var, budget }));
+    const instructions = envNumber(environ, budget_instructions_env_var);
+    const cpu_ms = envNumber(environ, budget_cpu_ms_env_var);
+    fallback_cpu_us = cpu_ms * std.time.us_per_ms;
+    if (instructions != 0) {
+        budget_unit = .instructions;
+        budget_limit = instructions;
+    } else if (cpu_ms != 0) {
+        budget_unit = .cpu_us;
+        budget_limit = fallback_cpu_us;
+    }
     const dir_path = environ.getAlloc(a, env_var) catch return;
     if (dir_path.len == 0) return;
     process_start = Io.Clock.awake.now(io);
@@ -186,6 +319,14 @@ pub fn open(the_io: Io, environ: std.process.Environ, argv0: []const u8) void {
         .part = envOr(environ, "BENI_CORPUS_PART"),
         .perf_shard = envOr(environ, "BENI_PERF_SHARD"),
     } });
+}
+
+/// A whole number from the environment; unset or empty is 0.
+fn envNumber(environ: std.process.Environ, key: []const u8) u64 {
+    const text = envOr(environ, key);
+    if (text.len == 0) return 0;
+    return std.fmt.parseUnsigned(u64, text, 10) catch
+        std.debug.panic("{s} must be a whole number, got '{s}'", .{ key, text });
 }
 
 fn envOr(environ: std.process.Environ, key: []const u8) []const u8 {

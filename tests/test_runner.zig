@@ -13,16 +13,19 @@
 //!   - `--listen=-`: the `std.zig.Server` protocol the build runner speaks,
 //!     reporting the shard's tests as the binary's whole list.
 //!   - no argument: run the shard and print one line per test with its wall
-//!     and CPU time in milliseconds (`zig build` does not show them), then
-//!     a summary; exit 1 on any failure, leak or logged error.
+//!     and CPU time in milliseconds and what it spent against the budget
+//!     (`zig build` does not show them), then a summary; exit 1 on any
+//!     failure, leak or logged error.
 //!
-//! `BENI_TEST_BUDGET_MS=<ms>` is the CPU budget of every test: one that
-//! passes but spent more CPU than that, its own and every process's it
-//! spawned (user plus system, from `getrusage`), fails, named with its time.
-//! `build.zig` sets it on every run of the gates' binaries, 1000 unless
-//! `-Dtest-budget-ms=` says otherwise; unset or 0, nothing is enforced. A
-//! test that runs independent cases holds each to the budget instead
-//! (`timing.budget_us`).
+//! `BENI_TEST_BUDGET_INSTRUCTIONS=<n>` is the budget of every test: one
+//! that passes but retired more user-space instructions than that, its own
+//! and those of every thread and process it created, fails, named with its
+//! count (`timing.Counter`). Where no instruction counter can be opened the
+//! budget is `BENI_TEST_BUDGET_CPU_MS` of CPU time instead, user plus
+//! system from `getrusage`, and the process says so once. `build.zig` sets
+//! both on every run of the gates' binaries (`-Dtest-budget=`); unset,
+//! nothing is enforced. A test that runs independent cases holds each to
+//! the budget instead (`timing.budget_unit`).
 //!
 //! `--node-version=<text>` hands the black-box harness the Node version the
 //! build asked for once (`node_version`).
@@ -103,6 +106,9 @@ pub fn main(init: std.process.Init.Minimal) void {
 const test_stack_size = 256 * 1024 * 1024;
 
 fn runAll(init: std.process.Init.Minimal, listen: bool) void {
+    // On the thread the tests run on, so the count covers them and every
+    // thread and process they create.
+    timing.openThreadCounter();
     if (listen) {
         mainServer(init) catch |err| std.debug.panic("internal test runner failure: {t}", .{err});
     } else {
@@ -137,9 +143,11 @@ const Outcome = struct {
     status: enum { pass, skip, fail },
     /// Allocations the test left behind in `std.testing.allocator`.
     leaks: usize,
-    /// The CPU the test spent, its own and its children's, less what its
-    /// cases were held to on their own (`timing.cases_cpu_us`).
+    /// The CPU the test spent, its own and its children's.
     cpu_us: u64,
+    /// What the test spent in the budget's unit (`timing.budget_unit`),
+    /// less what its cases were held to on their own.
+    spent: u64,
 };
 
 /// Set up the per-test globals std's runner sets, run test `index`, tear
@@ -155,8 +163,9 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     log_err_count = 0;
     const test_fn = builtin.test_functions[index];
     timing.current_test = test_fn.name;
-    timing.cases_cpu_us.store(0, .monotonic);
+    timing.cases_spent.store(0, .monotonic);
     const started: Started = .now();
+    const spent_before = timing.testSpent();
     var status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
         .pass
     else |err| switch (err) {
@@ -170,19 +179,22 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     testing.io_instance.deinit();
     const leaks = testing.allocator_instance.detectLeaks();
     testing.allocator_instance.deinitWithoutLeakChecks();
-    const cpu_us = started.cpuUs() -| timing.cases_cpu_us.load(.monotonic);
-    // The budget (`timing.budget_us`): CPU, not wall time, so a loaded
-    // machine does not fail a test by running it slowly.
-    if (status == .pass and timing.budget_us != 0 and cpu_us > timing.budget_us) {
-        // The time first: the build runner cuts a long line.
-        std.debug.print("FAIL: {d} ms of CPU, over the {d} ms budget (its own and its children's): {s}\n", .{
-            cpu_us / std.time.us_per_ms, timing.budget_us / std.time.us_per_ms, test_fn.name,
+    const cpu_us = started.cpuUs();
+    const spent = (timing.testSpent() -% spent_before) -| timing.cases_spent.load(.monotonic);
+    // The budget (`timing.budget_unit`): instructions, which a loaded
+    // machine does not inflate, or CPU time where they cannot be counted.
+    if (status == .pass and timing.budget_unit != .none and spent > timing.budget_limit) {
+        const got = timing.describe(spent);
+        const limit = timing.describe(timing.budget_limit);
+        // The amount first: the build runner cuts a long line.
+        std.debug.print("FAIL: {d} {s}, over the budget of {d} (its own and its children's): {s}\n", .{
+            got.value, got.unit, limit.value, test_fn.name,
         });
         status = .fail;
     }
-    if (timing.enabled()) started.record(test_fn.name, status);
+    if (timing.enabled()) started.record(test_fn.name, status, spent);
     timing.current_test = "";
-    return .{ .status = status, .leaks = leaks, .cpu_us = cpu_us };
+    return .{ .status = status, .leaks = leaks, .cpu_us = cpu_us, .spent = spent };
 }
 
 /// The clocks at the start of a test, for its `timing.Test` record.
@@ -203,7 +215,7 @@ const Started = struct {
             (children.user_us -| s.children.user_us) + (children.sys_us -| s.children.sys_us);
     }
 
-    fn record(s: Started, name: []const u8, status: @FieldType(Outcome, "status")) void {
+    fn record(s: Started, name: []const u8, status: @FieldType(Outcome, "status"), spent: u64) void {
         const self = timing.usage(.self);
         const children = timing.usage(.children);
         timing.write(.{ .@"test" = .{
@@ -214,6 +226,8 @@ const Started = struct {
             .sys_us = self.sys_us -| s.self.sys_us,
             .child_user_us = children.user_us -| s.children.user_us,
             .child_sys_us = children.sys_us -| s.children.sys_us,
+            .budget_unit = @tagName(timing.budget_unit),
+            .spent = spent,
         } });
     }
 };
@@ -298,7 +312,8 @@ fn mainTerminal(init: std.process.Init.Minimal) void {
         const elapsed = start.durationTo(Io.Clock.awake.now(runner_io));
         const ms = @as(f64, @floatFromInt(elapsed.nanoseconds)) / std.time.ns_per_ms;
         const cpu_ms = @as(f64, @floatFromInt(outcome.cpu_us)) / std.time.us_per_ms;
-        std.debug.print("{d:>10.1} ms  {d:>10.1} ms CPU  {t}  {s}\n", .{ ms, cpu_ms, outcome.status, builtin.test_functions[index].name });
+        const spent = timing.describe(outcome.spent);
+        std.debug.print("{d:>10.1} ms  {d:>10.1} ms CPU  {d:>8} {s}  {t}  {s}\n", .{ ms, cpu_ms, spent.value, spent.unit, outcome.status, builtin.test_functions[index].name });
         switch (outcome.status) {
             .pass => passed += 1,
             .skip => skipped += 1,

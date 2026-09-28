@@ -349,13 +349,17 @@ fn walk(kind: Kind) !void {
     // one counter. Pending mode stays on one thread: its report is one line
     // per fixture, read in order.
     const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
+    const spent_before_workers = world.timing.testSpent();
     {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
         defer for (threads.items) |t| t.join();
-        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.work, .{ &walker, io }));
+        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.workOnThread, .{ &walker, io }));
         walker.work(io);
     }
+    // The joined workers' instructions reach this test's count a moment
+    // after the joins return; the runner must not read it before.
+    world.timing.awaitFolded(spent_before_workers, walker.thread_totals.load(.monotonic));
     const failures = walker.failures.load(.monotonic);
     if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
     // Only on failure: anything a passing test writes to stderr makes the
@@ -432,15 +436,30 @@ const Walker = struct {
     /// A worker that could not run a case at all (out of memory, a world
     /// it could not create): the kind fails whatever the cases said.
     fatal: std.atomic.Value(bool) = .init(false),
+    /// What the workers on threads of their own spent in the budget's
+    /// unit, each counted to its end (`timing.awaitFolded`).
+    thread_totals: std.atomic.Value(u64) = .init(0),
 
     fn work(wk: *Walker, io: std.Io) void {
-        wk.cases(io) catch |err| {
+        const meter: world.timing.CaseMeter = .open();
+        defer meter.close();
+        wk.cases(io, meter) catch |err| {
             std.debug.print("corpus worker: {t}\n", .{err});
             wk.fatal.store(true, .monotonic);
         };
     }
 
-    fn cases(wk: *Walker, io: std.Io) !void {
+    fn workOnThread(wk: *Walker, io: std.Io) void {
+        const meter: world.timing.CaseMeter = .open();
+        defer meter.close();
+        wk.cases(io, meter) catch |err| {
+            std.debug.print("corpus worker: {t}\n", .{err});
+            wk.fatal.store(true, .monotonic);
+        };
+        if (meter.counter != null) _ = wk.thread_totals.fetchAdd(meter.read(), .monotonic);
+    }
+
+    fn cases(wk: *Walker, io: std.Io, meter: world.timing.CaseMeter) !void {
         const gpa = testing.allocator;
         var arena_state: std.heap.ArenaAllocator = .init(gpa);
         defer arena_state.deinit();
@@ -456,6 +475,10 @@ const Walker = struct {
             const case: Case = .{ .arena = arena, .w = &w, .kind = wk.kind, .fixture = fixture, .bless = bless_this, .cfg = wk.cfg };
             // Timing (`tests/timing.zig`): the case's own record, and its
             // name on every child it spawns.
+            // The budget holds per case (`timing.budget_unit`): a kind is
+            // hundreds of independent cases, and one case is what a
+            // fixture costs.
+            const spent_start = meter.read();
             const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
             world.timing.current_fixture = path;
             defer {
@@ -466,13 +489,9 @@ const Walker = struct {
                     .path = path,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
+                    .spent = meter.read() -% spent_start,
                 } });
             }
-            // The CPU budget holds per case (`timing.budget_us`): a kind is
-            // hundreds of independent cases, and one case is what a
-            // fixture costs.
-            const thread_cpu_start = world.timing.threadCpu();
-            const child_cpu_start = world.timing.thread_child_cpu_us;
             switch (wk.cfg.mode) {
                 .strict => {
                     const passed = if (case.run()) |_| true else |err| failed: {
@@ -480,12 +499,13 @@ const Walker = struct {
                         _ = wk.failures.fetchAdd(1, .monotonic);
                         break :failed false;
                     };
-                    const cpu_us = world.timing.durationUs(thread_cpu_start.durationTo(world.timing.threadCpu())) +
-                        (world.timing.thread_child_cpu_us - child_cpu_start);
-                    _ = world.timing.cases_cpu_us.fetchAdd(cpu_us, .monotonic);
-                    if (passed and world.timing.budget_us != 0 and cpu_us > world.timing.budget_us) {
-                        std.debug.print("FAIL: {d} ms of CPU, over the {d} ms budget (the case's own and its children's): {s}/{s}\n", .{
-                            cpu_us / std.time.us_per_ms, world.timing.budget_us / std.time.us_per_ms, fixture.dir, fixture.name,
+                    const spent = meter.read() -% spent_start;
+                    _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
+                    if (passed and world.timing.budget_unit != .none and spent > world.timing.budget_limit) {
+                        const got = world.timing.describe(spent);
+                        const limit = world.timing.describe(world.timing.budget_limit);
+                        std.debug.print("FAIL: {d} {s}, over the budget of {d} (the case's own and its children's): {s}/{s}\n", .{
+                            got.value, got.unit, limit.value, fixture.dir, fixture.name,
                         });
                         _ = wk.failures.fetchAdd(1, .monotonic);
                     }
