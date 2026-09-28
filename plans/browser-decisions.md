@@ -165,13 +165,13 @@ against it** — the same position the sheet already takes on component librarie
 | **W26** | |
 | **W27** | |
 | **W28** | **Copy Solid 2** (2026-09-29). A message does not render at once: the update is staged and one **microtask flush** renders — so several renders per frame are possible, as in Solid 2 (R27 §3.1–§3.2), not one per frame as the sheet recommended. An explicit synchronous flush (Solid's `flush()`; e.g. `Browser.flush ()`) replaces Elm's `stopPropagation`-implies-sync for controlled inputs. Effects that must see the DOM run after the flush has written it, as Solid 2's split effect does (R27 §3.3). R26's two constraints stand: post-render work is `sync`, and the patch pass batches DOM reads before writes. |
-| **W29** | |
-| **W30** | |
-| **W31** | |
-| **W32** | |
+| **W29** | Solid 2's model: JSX compiles to cloned templates whose dynamic parts are functions the runtime wires up; how that meets TEA's `view` is settled with W25 (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
+| **W30** | Bare text children, as Solid 2 (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
+| **W31** | Lower-case tags are elements, Capitalised tags are components, as Solid 2 (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
+| **W32** | JSX and the template compilation ship together: JSX is the template compiler, as in Solid 2 (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
 | **JSX compiler** | **Copy Solid 2's JSX compiler** (2026-09-29): the reference implementation for how beni compiles JSX is dom-expressions' Rust compiler, `references/dom-expressions/packages/compiler` (OXC-based, ~24.5k lines of Rust) — its static-template extraction, hole classification, event handling and runtime calls are ported to Zig rather than designed afresh. The JSX items above (W29–W34) are answered in its terms. |
-| **W33** | |
-| **W34** | |
+| **W33** | Solid 2's list components (`For`, `Index`) instead of a keyed `Html` type (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
+| **W34** | Solid 2's event spelling and handling (delegated and native forms; the handler gets the event and calls `preventDefault` itself); payload types come from the platform's declarations (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
 | **W35** | |
 
 ---
