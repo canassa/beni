@@ -3611,7 +3611,11 @@ test "4 000 nested parentheses, as deep as the parser admits, format without exh
     try src.append(arena, '1');
     try src.appendNTimes(arena, ')', depth);
     try src.append(arena, '\n');
-    try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
+    // Idempotence alone: the AST dump indents each level, so at this depth
+    // it is quadratic text, and the structure check is the corpus's job.
+    const first = try runWith(arena, try arena.dupeZ(u8, src.items), false);
+    const again = try runWith(arena, try arena.dupeZ(u8, first.text), false);
+    try testing.expectEqualStrings(first.text, again.text);
 }
 
 /// Twice the length the formatter fails at when it measures a chain by

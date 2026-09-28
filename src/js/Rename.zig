@@ -542,16 +542,18 @@ fn nameDeepChain() !void {
     try testing.expectEqual(@as(?u32, 2), m.ordinal(z));
 }
 
-test "a declaration of 65 535 locals is named and self-checked in linear time" {
+test "a declaration of 16 384 locals is named and self-checked in linear time" {
     // A derived `compare` binds one `$o$<i>` per position of its record, so
     // one declaration holds as many locals as the widest record has
-    // fields. The safety-build self-check once compared every pair of them,
-    // 46 s of a `--release` build at this width; it compares neighbours now,
-    // which is milliseconds.
+    // fields, up to 65 535. The safety-build self-check once compared every
+    // pair of them, 46 s of a `--release` build at that width; it compares
+    // neighbours now. A quarter of the width is enough to tell the two
+    // apart: the all-pairs check takes this test far past the test CPU
+    // budget, the neighbour check a small part of it.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const gpa = arena_state.allocator();
-    const width = 65_535;
+    const width = 16_384;
     var b: JsIr.Builder = .init(gpa);
     const f = try b.intern(.local(@enumFromInt(0)));
     const a = try b.intern(.local(@enumFromInt(1)));

@@ -258,12 +258,19 @@ test "excerpts for many diagnostics in one file are found by resuming, not resca
     try render(&out.writer, diagnostics.items, .{ .context = @ptrCast(&text), .lookup = lookupOnly });
 
     // Every excerpt is the right line: a cursor that resumed from the
-    // wrong place would print a neighbour's text, not fail to print.
+    // wrong place would print a neighbour's text, not fail to print. The
+    // excerpts come in line order, so each is looked for after the last:
+    // searching the whole output for each would make this check the
+    // quadratic scan the renderer no longer is.
     var found: usize = 0;
+    var from: usize = 0;
     var needle: [32]u8 = undefined;
     for (0..lines) |i| {
         const want = try std.fmt.bufPrint(&needle, "\n{d}|x{d} = @\n", .{ i + 1, i });
-        if (std.mem.indexOf(u8, out.written(), want) != null) found += 1;
+        if (std.mem.indexOfPos(u8, out.written(), from, want)) |at| {
+            found += 1;
+            from = at + want.len - 1;
+        }
     }
     try std.testing.expectEqual(lines, found);
 }
