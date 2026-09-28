@@ -5135,7 +5135,10 @@ with a red fixture on `b8b289a` before its fix.*
 - **Expected** it spans the whole literal, the first `\\` to the end of the last line.
 - **Fixture** `check/bad/MultilineStringMismatchSpan.beni`, red `why=diag`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29): `Session.tokenSpan` spans a `multiline_line` to the end of the
+  last line of its run (`multilineLiteralEnd`: consecutive lines, the parser's rule). Every
+  diagnostic whose region is a multiline literal is affected; no other golden had one. Promoted:
+  `tests/corpus/check/bad/MultilineStringMismatchSpan.beni`.
 
 ### CK-207 — A pinned derived `==` reached through a helper blames the wrong function
 
@@ -5384,7 +5387,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-203 | performance | K11 | promoted: `perf_test.zig` "an annotation over an alias DAG whose uses differ …" | the final review's fixes (fixed) |
 | CK-204 | diagnostic-quality | K13 | promoted: `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes (fixed) |
 | CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
-| CK-206 | diagnostic-quality | K14 | `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes |
+| CK-206 | diagnostic-quality | K14 | promoted: `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes (fixed) |
 | CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |
 | CK-208 | diagnostic-quality | K13 | `check/bad/DotCallEqRefusal.beni` | the final review's fixes |
 | CK-209 | diagnostic-quality | K14 | `scenario/CK-209` | the final review's fixes |

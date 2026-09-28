@@ -1,0 +1,8 @@
+-- check/bad: a TYPE MISMATCH on a multiline `\\` string underlines the whole
+-- literal, its first marker to the end of its last line, as one on a quoted
+-- literal spans opening quote to closing quote — never its first line alone.
+label : Int
+label =
+    \\one
+    \\two
+    \\three

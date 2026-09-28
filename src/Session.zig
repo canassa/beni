@@ -1763,7 +1763,8 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
 /// This is what `Bir.Inst.main_token` buys: a resolution diagnostic points
 /// at an instruction, and an instruction points at the exact bytes. A string
 /// literal's opening quote stands for the whole literal: it spans to the
-/// closing quote.
+/// closing quote. So does a multiline literal's first line: it spans to the
+/// end of its last.
 fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struct { diagnostic.Position, diagnostic.Position } {
     const line_starts = session.store.lineStarts(file);
     if (line_starts.len == 0) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
@@ -1773,11 +1774,29 @@ fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struc
     const starts = tokens.items(.start);
     const source = session.store.bytes(file);
     const start = starts[token];
-    const end = if (tags[token] == .str_start)
-        stringLiteralEnd(source, tags, starts, token)
-    else
-        Tokenizer.tokenEnd(source, tags[token], start);
+    const end = switch (tags[token]) {
+        .str_start => stringLiteralEnd(source, tags, starts, token),
+        .multiline_line => multilineLiteralEnd(source, tags, starts, line_starts, token),
+        else => Tokenizer.tokenEnd(source, tags[token], start),
+    };
     return .{ diagnostic.position(line_starts, start), diagnostic.position(line_starts, end) };
+}
+
+/// Where the multiline literal whose first line is the `multiline_line` at
+/// `first` ends: the end of its last line. The literal is the run of
+/// `multiline_line`s on consecutive lines, the parser's rule (a blank line
+/// ends it).
+fn multilineLiteralEnd(source: [:0]const u8, tags: []const Token.Tag, starts: []const u32, line_starts: []const u32, first: u32) u32 {
+    var last = first;
+    var line = diagnostic.position(line_starts, starts[first]).line;
+    var i = first + 1;
+    while (i < tags.len and tags[i] == .multiline_line) : (i += 1) {
+        const next = diagnostic.position(line_starts, starts[i]).line;
+        if (next != line + 1) break;
+        last = i;
+        line = next;
+    }
+    return Tokenizer.tokenEnd(source, .multiline_line, starts[last]);
 }
 
 /// Where the string literal opened by the `str_start` at `open` ends: just

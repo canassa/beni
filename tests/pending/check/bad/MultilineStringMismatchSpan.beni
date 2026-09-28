@@ -1,8 +1,0 @@
--- CK-206: a TYPE MISMATCH on a multiline `\\` string underlines the whole
--- literal, its first marker to the end of its last line. The unfixed checker
--- underlines the first line alone.
-label : Int
-label =
-    \\one
-    \\two
-    \\three
