@@ -516,8 +516,8 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
 /// module's declarations and locals HAVE are walked: a derived-context pass
 /// (§11.2) rejects a payload's wanted against the variables of its own frame,
 /// which it discards, and that rejection is an answer ("not derivable"), not
-/// a hole. Debug only, as I7's panic is (§13.1): one walk over those types,
-/// each node once.
+/// a hole. Safety builds only, as the evidence check's panic is (§13.1):
+/// one walk over those types, each node once.
 fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, tables: []const []const Var.Optional) Error!void {
     const seen = store.nextMark();
     var stack: std.ArrayList(Var) = .empty;

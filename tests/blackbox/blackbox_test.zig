@@ -1076,8 +1076,9 @@ test "diagnostics do not depend on which worker lexed which file, under load (CK
     // stash run saw 41 of 49 runs differ from a minority first. The test
     // misses the race only if all `runs` agree, p^n + (1-p)^n, which for
     // n = 36 is at most 0.82^36 ≈ 8e-4 at p = 0.18 (and 3e-5 at 0.25).
-    // n = 25 would be 7e-3 at 0.18, too often. The load costs about 0.4 s
-    // a run on the Debug binary, so this test is about 15 s of the gate.
+    // n = 25 would be 7e-3 at 0.18, too often. Those rates were measured on
+    // a Debug binary; the suite now runs a ReleaseSafe one, whose shorter
+    // runs still race the same two files.
     //
     // On a machine whose scheduler never races the two files it cannot go
     // red, which is why `Session.zig`'s `mergeInterners` test, which hands
@@ -6109,7 +6110,8 @@ test "R8c review B2: a cycle closed between a receiver's test and its positions'
     // proof" skipped the later test: a Debug panic (the self-check), and in
     // ReleaseFast the INFINITE TYPE at another place. A proof is now voided by
     // the bind itself (`TypeStore.gains`). The expectation is 5f18e23's v2
-    // output; the Debug binary is the one this suite runs.
+    // output; the suite runs a ReleaseSafe binary, whose self-check is the
+    // Debug one.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",

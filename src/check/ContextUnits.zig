@@ -151,7 +151,7 @@ pub fn reach(c: *Contexts, stack: *std.ArrayList(u32), t: u32, stamp: u32) Error
 /// No cycle can pass through a type outside the region — a completed type
 /// reaches no type that gained an edge — so the region's components are the
 /// graph's. A unit in a run, or memoised permanently, never merges: every
-/// `via` its members reach was added before it ran (asserted in Debug); one
+/// `via` its members reach was added before it ran (asserted in a safety build); one
 /// memoised for its generation, past a schema then in flight, may.
 pub fn merge(c: *Contexts, region: []const u32, stamp: u32) Error!void {
     const scratch = c.cx.scratch;

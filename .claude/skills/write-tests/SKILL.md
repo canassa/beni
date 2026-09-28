@@ -21,9 +21,10 @@ smallest boundary that still represents it?* There are exactly three answers her
 
 ### Boundary 1 — the compiler binary (the default, ~80% of tests)
 
-`zig build test-blackbox`. The REAL installed binary (`./zig-out/bin/beni`) is
-spawned as a child process against a temp project directory, configured **only**
-through CLI flags, env vars and the files on disk. Inputs are `.beni` sources and
+`zig build test-blackbox`. The REAL compiler, built ReleaseSafe and installed
+at `./zig-out/safe/bin/beni` (`BENI_EXE`), is spawned as a child process
+against a temp project directory, configured **only** through CLI flags, env
+vars and the files on disk. Inputs are `.beni` sources and
 a manifest; outputs are the emitted JS, the diagnostics on stderr, the exit code,
 and whatever lands in the out dir and cache dir.
 

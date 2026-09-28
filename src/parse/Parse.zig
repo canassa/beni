@@ -38,7 +38,7 @@
 //! from the lexer are consumed as placeholders with no second diagnostic.
 //!
 //! Every loop consumes at least one token per iteration or breaks — the
-//! `assertProgress` calls check that in Debug — and every function returns
+//! `assertProgress` calls check that in a safety build — and every function returns
 //! at `eof`, so the parse terminates on any token sequence; the fuzz and
 //! stress tests at the bottom are the evidence.
 //!
@@ -334,7 +334,7 @@ fn setContext(p: *Parse, context: Context) Context {
     return previous;
 }
 
-/// Debug-only: a loop iteration that is about to loop again consumed at
+/// Safety builds only: a loop iteration that is about to loop again consumed at
 /// least one token, so every loop terminates at `eof`.
 fn assertProgress(p: *const Parse, before: TokenIndex) void {
     std.debug.assert(p.tok_i > before);

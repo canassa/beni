@@ -37,7 +37,6 @@
 //! the caller to report: `unify` never resolves and never reports.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
@@ -192,7 +191,7 @@ fn merge(u: *Unify, a: Var, b: Var, content: TypeStore.Content) Error!Var {
 /// ground `T`), but an older flex joined with anything of the pass would
 /// carry the pass's wanteds or bindings out of a frame whose variables are
 /// discarded. A group checked nested above the frame is its own current
-/// frame, and legitimately merges down (§10.4). O(1) per merge, Debug only.
+/// frame, and legitimately merges down (§10.4). O(1) per merge, safety builds only.
 fn assertContained(u: *Unify, a: Var, b: Var) void {
     const f = u.frame();
     if (f.kind != .fixpoint) return;
@@ -206,13 +205,13 @@ fn assertContained(u: *Unify, a: Var, b: Var) void {
     }
 }
 
-/// An invariant `unify` relies on (review S2, S8). `unify` never reports
-/// (§7.1): a debug build stops here, and a release build keeps the first
+/// An invariant `unify` relies on. `unify` never reports (§7.1): a safety
+/// build (Debug, ReleaseSafe) stops here, and any other keeps the first
 /// broken one in `fault` for the caller to report as `internal`, then takes
 /// the safe path (the caller's `continue` or `return`).
 fn invariant(u: *Unify, cond: bool, what: []const u8) bool {
     if (cond) return true;
-    if (builtin.mode == .Debug) std.debug.panic("checker v2 invariant: {s}", .{what});
+    if (std.debug.runtime_safety) std.debug.panic("checker v2 invariant: {s}", .{what});
     if (u.fault == null) u.fault = what;
     return false;
 }

@@ -2,8 +2,8 @@
 //! `pending_test.zig` once a slice turned them green (`plans/checker-rewrite.md`
 //! §2.5, *Promotion*). Run only by `zig build test-perf`, on the ReleaseFast
 //! compiler `zig-out/perf/bin/beni` (`BENI_EXE`), never by the three gates:
-//! rule 4 names those, and a timing claim measured on the Debug binary the
-//! gates run measures a different compiler than the one its sizes were
+//! rule 4 names those, and a timing claim measured on the ReleaseSafe binary
+//! the gates run measures a different compiler than the one its sizes were
 //! calibrated on (the manager's decision of 2026-09-25, when CK-41 became the
 //! first scenario to be promoted).
 //!
@@ -447,11 +447,12 @@ const Perf = struct {
         {
             var scratch: std.heap.ArenaAllocator = .init(testing.allocator);
             defer scratch.deinit();
-            // A timing scenario on the Debug binary would measure another
+            // A timing scenario on any other binary would measure another
             // compiler than the one its sizes were calibrated on.
-            if (std.mem.eql(u8, world.exePath(scratch.allocator()), world.exe_relative)) {
-                std.debug.print("perf_test.zig times the ReleaseFast compiler `zig build test-perf` installs (BENI_EXE), never {s}\n", .{world.exe_relative});
-                return error.PerfScenarioOnDebugBinary;
+            const exe = world.exePath(scratch.allocator());
+            if (!std.mem.endsWith(u8, exe, "perf/bin/beni")) {
+                std.debug.print("perf_test.zig times the ReleaseFast compiler `zig build test-perf` installs (BENI_EXE), never {s}\n", .{exe});
+                return error.PerfScenarioOnWrongBinary;
             }
         }
         return .{

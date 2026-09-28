@@ -523,7 +523,8 @@ fact.
 replacement environment; capture stdout and stderr fully; bounded waits; kill-and-reap on every
 exit path) minus sockets, plus a *project*: `World.init(gpa, io)` makes a temp directory;
 `world.write("src/Main.beni", source)` creates files; `world.run(&.{"check", "src"})` spawns
-`./zig-out/bin/beni` with cwd = the temp dir and returns `{exit_code, stdout, stderr,
+the binary under test (`BENI_EXE`: the ReleaseSafe `zig-out/safe/bin/beni` for every suite but
+the timing ones) with cwd = the temp dir and returns `{exit_code, stdout, stderr,
 diagnostics}` where `diagnostics` is the parsed JSON (the harness always passes
 `--diagnostics=json` unless a scenario opts out to test the text renderer);
 `world.read("out/x")`, `world.exists(path)`, `world.deinit()` removes the tree. Every scenario

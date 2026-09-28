@@ -218,13 +218,18 @@ the shape `foldl` was.
 ## Building
 
 ```sh
-zig build                 # install ./zig-out/bin/beni
+zig build                 # install ./zig-out/bin/beni (-Doptimize, Debug by default)
 zig build test            # hermetic unit tests
-zig build test-blackbox   # spawns the installed binary against temp projects
+zig build test-blackbox   # spawns a ReleaseSafe beni (zig-out/safe/bin) against temp projects
+zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf/bin); not a gate
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
 zig build --list-steps
 ```
+
+The black-box suites run the compiler built ReleaseSafe: every invariant
+check in `src/` is gated on `std.debug.runtime_safety`, never on
+`builtin.mode == .Debug`, so it runs there as it does in Debug.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than

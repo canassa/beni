@@ -34,12 +34,11 @@ const Allocator = std.mem.Allocator;
 pub const exe_relative = "zig-out/bin/beni";
 
 /// The binary under test: `BENI_EXE` (absolute, or relative to the repo
-/// root) when it is set and not empty, else `exe_relative`. Only
-/// `test-pending-perf` sets it, to the ReleaseFast compiler its timing
-/// scenarios measure
-/// (`plans/checker-rewrite.md` §2.5); `build.zig` pins it EMPTY on every
-/// other run, so a variable exported in a shell cannot point a gate at
-/// another binary (S11).
+/// root) when it is set and not empty, else `exe_relative` (a hand run of a
+/// test binary). `build.zig` sets it on every run: the ReleaseSafe compiler
+/// for the black-box and pending suites, the ReleaseFast one for the timing
+/// scenarios, so a variable exported in a shell cannot point a gate at
+/// another binary.
 pub fn exePath(arena: Allocator) []const u8 {
     const value = std.testing.environ.getAlloc(arena, "BENI_EXE") catch return exe_relative;
     return if (value.len == 0) exe_relative else value;

@@ -8,8 +8,8 @@ short version.
 
 ```sh
 zig build test-pending        # NOT a gate: the fixtures here and the non-timing scenarios, on
-                              # the Debug binary; passes when every one is red for its recorded
-                              # reason
+                              # the ReleaseSafe beni (zig-out/safe/bin/beni) the black-box
+                              # gate runs; passes when every one is red for its recorded reason
 zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
                               # (zig-out/perf/bin/beni); same rules
 zig build test-perf           # NOT a gate: the timing scenarios that were FIXED and promoted
@@ -17,13 +17,9 @@ zig build test-perf           # NOT a gate: the timing scenarios that were FIXED
                               # a red one fails the step
 ```
 
-`test-pending` runs at every commit. `test-pending-perf` (about 40 s since R8c, plus about 130 s when `src/`
-changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
-scenario covers (CK-164 and CK-165 from R15's audit until R15-fix-F promoted them, and CK-143 until R15-fix-D promoted it; none is pending now; none was pending from R12, which promoted CK-88, to R15; before it R3, R6a, R7, R8a and R12 for theirs),
-any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
-([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1). Wherever `test-pending-perf` runs,
-`test-perf` runs beside it (the manager's decision of 2026-09-25): a fixed timing scenario that
-turns red again is a regression, not a pending finding.
+`test-pending` runs at every commit. `test-pending-perf` runs in any change that touches what a
+timing scenario covers or the checker's hot paths, and wherever it runs, `test-perf` runs beside
+it: a fixed timing scenario that turns red again is a regression, not a pending finding.
 
 ## Layout
 

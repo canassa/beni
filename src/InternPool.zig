@@ -35,7 +35,6 @@
 //! when the identifier mix changes.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
 pub const Symbol = enum(u32) {
@@ -298,11 +297,10 @@ const Pool = struct {
         return pool.getOrPutHashed(gpa, Hasher.hash(bytes), bytes);
     }
 
-    /// `hash` must be `Hasher.hash(bytes)`. Checked in Debug only: the
-    /// check rehashes every identifier, which would double the interning
-    /// cost of ReleaseSafe builds for a bug that the hermetic suite catches.
+    /// `hash` must be `Hasher.hash(bytes)`, checked in a safety build (Debug,
+    /// ReleaseSafe) by hashing the identifier again.
     fn getOrPutHashed(pool: *Pool, gpa: Allocator, hash: u64, bytes: []const u8) Allocator.Error!Symbol {
-        if (builtin.mode == .Debug) std.debug.assert(hash == Hasher.hash(bytes));
+        if (std.debug.runtime_safety) std.debug.assert(hash == Hasher.hash(bytes));
         if (pool.slots.len == 0 or (pool.entries.len + 1) * 4 > pool.slots.len * 3) {
             try pool.grow(gpa);
         }

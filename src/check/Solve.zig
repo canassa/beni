@@ -59,7 +59,6 @@
 //! type `Instantiate.reference` reads from the Bir or an interface.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("Dispatch.zig");
@@ -254,13 +253,13 @@ pub fn poison(s: *Solve, v: Var) Error!void {
     }
 }
 
-/// An invariant the solver relies on (review S2, S8): false is a bug in the
-/// checker, never in the program. A debug build stops at it; a release build
+/// An invariant the solver relies on: false is a bug in the checker, never in
+/// the program. A safety build (Debug, ReleaseSafe) stops at it; any other
 /// reports `internal` at `region` and the caller takes its safe path, so a
 /// broken invariant is never a silent drop.
 pub fn expect(s: *Solve, cond: bool, region: Bir.Inst.Index, what: []const u8) Error!bool {
     if (cond) return true;
-    if (builtin.mode == .Debug) std.debug.panic("checker v2 invariant: {s}", .{what});
+    if (std.debug.runtime_safety) std.debug.panic("checker v2 invariant: {s}", .{what});
     try s.report.internal(region, what);
     return false;
 }

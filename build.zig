@@ -3,7 +3,7 @@
 //! Steps, all of which must stay green at the end of every milestone:
 //!   zig build                 install `beni`
 //!   zig build test            hermetic unit tests (no processes, no files)
-//!   zig build test-blackbox   spawns the INSTALLED binary; never folded into `test`
+//!   zig build test-blackbox   spawns a ReleaseSafe `beni`; never folded into `test`
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!
@@ -13,21 +13,23 @@
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
-//!                                 beni (promoted from test-pending-perf; §2.5)
+//!                                 beni (promoted from test-pending-perf)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
 //!   zig build compare             time them; results/<date>.json and README
 //!   zig build compare-smoke       size 1, both modes: acceptance only
-//! (`test-v2`, the corpus under `--checker=v2` while v1 was the default, was
-//! deleted at the cut-over, R11; v1 and `--checker` themselves at R12.)
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
 
-/// Where `test-pending-perf`'s ReleaseFast compiler is installed, under the
-/// prefix: apart from `bin/beni`, which every other test spawns.
+/// Where the ReleaseFast compiler the timing scenarios measure is installed,
+/// under the prefix: apart from `bin/beni`, the `-Doptimize` build.
 const perf_bin_dir = "perf/bin";
+
+/// Where the ReleaseSafe compiler every other black-box suite spawns is
+/// installed, under the prefix.
+const safe_bin_dir = "safe/bin";
 
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
@@ -125,56 +127,45 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(diagnostic_tests).step);
     test_step.dependOn(&b.addRunArtifact(gen_tests).step);
 
-    // ---- ReleaseFast compiler. ----
-    // Always ReleaseFast, whatever `-Doptimize` says: a Debug throughput number
-    // is not a number. These module instances are their own because a
-    // module's optimize mode is fixed at creation. Two roots use them: the
-    // bench harness, and a ReleaseFast `beni` that `test-pending-perf` times
-    // (installed apart, as `zig-out/perf/bin/beni`, so the Debug binary every
-    // other test spawns is untouched).
-    const bench_diagnostic = b.createModule(.{
-        .root_source_file = b.path("src/diagnostic.zig"),
-        .target = target,
-        .optimize = .ReleaseFast,
-    });
-    const bench_beni = b.createModule(.{
-        .root_source_file = b.path("src/beni.zig"),
-        .target = target,
-        .optimize = .ReleaseFast,
-        .imports = &.{.{ .name = "diagnostic", .module = bench_diagnostic }},
-    });
-    bench_beni.addImport("core_package", embedCore(b, core_dir));
-    bench_beni.addImport("platform_packages", embedPlatforms(b, platforms_dir));
-    // Its own options, because the id covers the optimize mode and the bench
-    // module is always ReleaseFast whatever `-Doptimize` says.
-    bench_beni.addImport("build_options", buildIdOptions(b, target, .ReleaseFast));
-    const perf_exe = b.addExecutable(.{
-        .name = "beni",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = .ReleaseFast,
-            .imports = &.{
-                .{ .name = "beni", .module = bench_beni },
-                .{ .name = "diagnostic", .module = bench_diagnostic },
-            },
-        }),
-    });
-    const perf_install = b.addInstallArtifact(perf_exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
+    // ---- ReleaseFast and ReleaseSafe compilers. ----
+    // Each has its own module instances, because a module's optimize mode is
+    // fixed at creation, and each is installed apart from the `-Doptimize`
+    // binary at `zig-out/bin/beni`.
+    //
+    // ReleaseFast, whatever `-Doptimize` says: a Debug throughput number is
+    // not a number. The bench harness links its library, and the timing
+    // scenarios of `test-perf` and `test-pending-perf` time its binary,
+    // `zig-out/perf/bin/beni`.
+    const fast = compiler(b, target, .ReleaseFast);
+    const bench_beni = fast.beni;
+    const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
+    // ReleaseSafe for every black-box suite that is not a timing claim,
+    // `zig-out/safe/bin/beni`: bounds, overflow and `unreachable` still trap,
+    // and every invariant check the compiler gates on
+    // `std.debug.runtime_safety` still runs, at a fraction of Debug's cost.
+    const safe = compiler(b, target, .ReleaseSafe);
+    const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_bin_dir } } });
 
     // ---- Black-box suite. ----
-    // Spawns `./zig-out/bin/beni`, so it depends on the install step and runs
-    // with cwd = repo root (the harness resolves the binary and the corpus
-    // relative to it). The blackbox modules import only `diagnostic`: reaching
-    // for an internal is a compile error, not a code-review finding.
+    // Spawns the ReleaseSafe `zig-out/safe/bin/beni` (the timing steps below
+    // spawn the ReleaseFast one), with cwd = repo root: the harness resolves
+    // the binary and the corpus relative to it. The blackbox modules import
+    // only `diagnostic`: reaching for an internal is a compile error, not a
+    // code-review finding.
     //
     // Every test binary is its own process, and the build runner runs them
     // in parallel; the corpus walker is further split into the parts of
     // `tests/blackbox/corpus_parts.zig`, one process each, so the step's wall
-    // time is no longer one binary walking every fixture twice
-    // (`plans/checker-rewrite.md` §2.4, *Parts*).
-    const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the installed binary)");
-    const bb: Blackbox = .{ .b = b, .target = target, .optimize = optimize, .diagnostic = diagnostic_mod };
+    // time is no longer one binary walking every fixture twice.
+    const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
+    const bb: Blackbox = .{
+        .b = b,
+        .target = target,
+        .optimize = optimize,
+        .diagnostic = diagnostic_mod,
+        .safe_install = &safe_install.step,
+        .perf_install = &perf_install.step,
+    };
     for ([_][]const u8{
         "tests/blackbox/blackbox_test.zig",
         "tests/blackbox/abuse_test.zig",
@@ -205,47 +196,32 @@ pub fn build(b: *std.Build) void {
         blackbox_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
     }
 
-    // ---- Pending fixtures (plans/checker-rewrite.md §2, checker-v2.md D13). ----
+    // ---- Pending fixtures (plans/checker-rewrite.md §2). ----
     // The red fixtures of `plans/checker-findings.md`, run by the corpus
     // walker in pending mode over `tests/pending/`, and the scenarios of
     // `pending_test.zig`. A fixture here is EXPECTED to be red: the step
     // fails only when one is malformed, green (promote it), or red for
-    // another reason than `tests/pending/RED`
-    // records. Never part of `test-blackbox`, so the three gates never run
-    // a red fixture.
+    // another reason than `tests/pending/RED` records. Never part of
+    // `test-blackbox`, so the three gates never run a red fixture.
     //
     // Two steps. `test-pending` runs the pending corpus and the scenarios
     // that measure no time (`BENI_PENDING_SCENARIOS=fast`), in parallel, on
-    // the Debug binary. `test-pending-perf` runs the timing scenarios
+    // the ReleaseSafe binary. `test-pending-perf` runs the timing scenarios
     // (`=perf`) on the ReleaseFast binary, because the budgets they guard
-    // are ReleaseFast budgets — and alone, one scenario after another: a
-    // ratio is CPU time, but a machine busy on every core still perturbs the
-    // caches and clocks it is measured on (§2.5).
-    //
-    // One run each. Until the cut-over (R11) each step ran twice — v1, the
-    // default, then `--checker=v2` — and `test-v2` ran the corpus and the
-    // determinism and incrementality scenarios under v2; R12 deleted v1,
-    // `--checker` and `BENI_CHECKER`.
+    // are ReleaseFast budgets.
     const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode, and the non-timing scenarios");
     pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending" }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
 
-    const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
-    const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });
-    perf_run.step.dependOn(&perf_install.step);
-    perf_step.dependOn(&perf_run.step);
+    const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
+    perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" }).step);
 
-    // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`):
-    // promoted out of `test-pending-perf` when a slice turns one green, and
-    // run on the same ReleaseFast compiler by the same ratio method — the
-    // manager's decision of 2026-09-25 (`plans/checker-rewrite.md` §2.5),
-    // when CK-41 was the first. NOT a gate (rule 4 names three); the manager
-    // runs it beside `test-pending-perf` before every commit.
-    const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
-    const fixed_perf_run = bb.run(bb.artifact("tests/blackbox/perf_test.zig"), .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni" });
-    fixed_perf_run.step.dependOn(&perf_install.step);
-    fixed_perf_step.dependOn(&fixed_perf_run.step);
+    // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`),
+    // on the same ReleaseFast compiler by the same ratio method. Not a gate:
+    // rule 4 names three.
+    const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler");
+    fixed_perf_step.dependOn(&bb.run(bb.artifact("tests/blackbox/perf_test.zig"), .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni" }).step);
 
     // ---- Bench. ----
     const bench_exe = b.addExecutable(.{
@@ -328,6 +304,44 @@ pub fn build(b: *std.Build) void {
         .exclude_paths = &.{"bench/compare/work"},
         .check = true,
     }).step);
+}
+
+/// The compiler at a fixed optimize mode, whatever `-Doptimize` says: its
+/// library module (the bench harness links the ReleaseFast one) and its
+/// executable. Every module is its own instance, because a module's optimize
+/// mode is fixed at creation, and the build id covers the mode.
+fn compiler(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    mode: std.builtin.OptimizeMode,
+) struct { beni: *std.Build.Module, exe: *std.Build.Step.Compile } {
+    const diagnostic = b.createModule(.{
+        .root_source_file = b.path("src/diagnostic.zig"),
+        .target = target,
+        .optimize = mode,
+    });
+    const beni = b.createModule(.{
+        .root_source_file = b.path("src/beni.zig"),
+        .target = target,
+        .optimize = mode,
+        .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
+    });
+    beni.addImport("core_package", embedCore(b, core_dir));
+    beni.addImport("platform_packages", embedPlatforms(b, platforms_dir));
+    beni.addImport("build_options", buildIdOptions(b, target, mode));
+    const exe = b.addExecutable(.{
+        .name = "beni",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = mode,
+            .imports = &.{
+                .{ .name = "beni", .module = beni },
+                .{ .name = "diagnostic", .module = diagnostic },
+            },
+        }),
+    });
+    return .{ .beni = beni, .exe = exe };
 }
 
 /// The `build_options` module, carrying the 16-byte compiler build id of
@@ -627,18 +641,19 @@ fn collectFiles(
 
 /// Every environment variable the black-box harness reads to decide what a
 /// run MEANS: the corpus walker's three knobs (`tests/blackbox/corpus_test.zig`'s
-/// `Config`, `plans/checker-rewrite.md` §2.4, S11), its part
-/// (`corpus_parts.zig`), which pending scenarios run (`pending_test.zig`) and
-/// which binary is under test (`world.zig`'s `exePath`). An empty value is
-/// the harness's "unset": every field but the root defaults to it.
+/// `Config`), its part (`corpus_parts.zig`), which pending scenarios run
+/// (`pending_test.zig`) and which binary is under test (`world.zig`'s
+/// `exePath`). An empty value is the harness's "unset": every field but the
+/// root and the binary defaults to it.
 const HarnessEnvironment = struct {
     root: []const u8,
     mode: []const u8 = "",
     timeout_ms: []const u8 = "",
     part: []const u8 = "",
     scenarios: []const u8 = "",
-    /// Relative to the install prefix; empty is `bin/beni`, the Debug build.
-    exe: []const u8 = "",
+    /// Relative to the install prefix: the ReleaseSafe compiler unless a
+    /// timing step names the ReleaseFast one.
+    exe: []const u8 = safe_bin_dir ++ "/beni",
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -648,6 +663,9 @@ const Blackbox = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     diagnostic: *std.Build.Module,
+    /// Installs `safe_bin_dir/beni` and `perf_bin_dir/beni`.
+    safe_install: *std.Build.Step,
+    perf_install: *std.Build.Step,
 
     fn artifact(bb: Blackbox, root: []const u8) *std.Build.Step.Compile {
         return bb.b.addTest(.{
@@ -660,21 +678,23 @@ const Blackbox = struct {
         });
     }
 
-    /// One process of `t`, after the install step, cwd = repo root, with
-    /// every variable of `env` set explicitly — whatever the developer's
-    /// shell exports: the Run step otherwise hands the child the build's
-    /// whole environment, and one stray `export BENI_CORPUS_MODE=pending`
-    /// would silently change what a gate means.
+    /// One process of `t`, after the compiler it spawns is installed, cwd =
+    /// repo root, with every variable of `env` set explicitly — whatever the
+    /// developer's shell exports: the Run step otherwise hands the child the
+    /// build's whole environment, and one stray `export
+    /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = bb.b.addRunArtifact(t);
-        r.step.dependOn(bb.b.getInstallStep());
+        const fast = std.mem.eql(u8, env.exe, perf_bin_dir ++ "/beni");
+        std.debug.assert(fast or std.mem.eql(u8, env.exe, safe_bin_dir ++ "/beni"));
+        r.step.dependOn(if (fast) bb.perf_install else bb.safe_install);
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
-        r.setEnvironmentVariable("BENI_EXE", if (env.exe.len == 0) "" else bb.b.getInstallPath(.prefix, env.exe));
+        r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, env.exe));
         return r;
     }
 };

@@ -44,7 +44,8 @@
 //! (none since R12 promoted CK-88) run in `zig build
 //! test-pending-perf`, on a ReleaseFast compiler (`BENI_EXE`), because the
 //! budgets they guard (`fast-compiler.md` §2) are ReleaseFast budgets; the
-//! rest run in `zig build test-pending`, on the Debug binary the gates run.
+//! rest run in `zig build test-pending`, on the ReleaseSafe binary the gates
+//! run.
 //! The `scenarios` table decides which; both steps apply rules (a)–(d).
 //!
 //! **Calibration (2026-09-25, ReleaseFast, CPU time, idle 32-core Linux).**
@@ -74,9 +75,9 @@ const pending_root = "tests/pending";
 ///   .perf  `zig build test-pending-perf`: a claim about TIME, measured on
 ///          the ReleaseFast compiler (`BENI_EXE`), alone, sized for it;
 ///   .fast  `zig build test-pending`: a claim about what the compiler SAYS,
-///          on the Debug binary the gates run — whose safety checks are part
-///          of the claim (CK-82's red is a Debug panic; in ReleaseFast the
-///          same overflow is silent undefined behaviour).
+///          on the ReleaseSafe binary the gates run — whose safety checks
+///          are part of the claim (an overflowing cast is a panic there; in
+///          ReleaseFast the same overflow is silent undefined behaviour).
 ///
 /// `BENI_PENDING_SCENARIOS` (`fast` or `perf`, pinned by `build.zig`) picks
 /// one; a scenario of the other is skipped. The table is the one place a
@@ -216,11 +217,12 @@ const Scenario = struct {
             defer scratch.deinit();
             const step = try selectedStep(scratch.allocator());
             if (step != entry.step) return error.SkipZigTest;
-            // A timing scenario on the Debug binary would measure another
+            // A timing scenario on any other binary would measure another
             // compiler than the one its sizes were calibrated on.
-            if (step == .perf and std.mem.eql(u8, world.exePath(scratch.allocator()), world.exe_relative)) {
-                std.debug.print("scenario/{s} is a timing scenario: it runs on the ReleaseFast compiler `zig build test-pending-perf` installs (BENI_EXE), never on {s}\n", .{ id, world.exe_relative });
-                return error.PerfScenarioOnDebugBinary;
+            const exe = world.exePath(scratch.allocator());
+            if (step == .perf and !std.mem.endsWith(u8, exe, "perf/bin/beni")) {
+                std.debug.print("scenario/{s} is a timing scenario: it runs on the ReleaseFast compiler `zig build test-pending-perf` installs (BENI_EXE), never on {s}\n", .{ id, exe });
+                return error.PerfScenarioOnWrongBinary;
             }
         }
         // A kill at the bound is an expected, recorded red signature here,

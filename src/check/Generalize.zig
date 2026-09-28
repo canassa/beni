@@ -24,7 +24,6 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const TypeStore = @import("TypeStore.zig");
 const Walk = @import("Walk.zig");
-const builtin = @import("builtin");
 const Messages = @import("Messages.zig");
 const Obligations = @import("Obligations.zig");
 const Solve = @import("Solve.zig");
@@ -244,10 +243,9 @@ pub fn popFrame(s: *Solve) void {
         if (s.ready.capacity != 0) s.spare.append(gpa, s.ready) catch s.ready.deinit(gpa);
         s.ready = .empty;
         s.ready_queue = Queue.none;
-        // Reused in a release build; never in Debug, where the `live`
-        // check of `Unify.enqueue` then catches a stale id at full strength
-        // (R7's review, S2).
-        if (builtin.mode != .Debug) s.free_queues.append(gpa, f.queue) catch {};
+        // Reused only outside a safety build: in one, the `live` check of
+        // `Unify.enqueue` then catches a stale id at full strength.
+        if (!std.debug.runtime_safety) s.free_queues.append(gpa, f.queue) catch {};
         if (s.frames.items.len != 0) takeReady(s, s.frame().queue);
     }
     f.deinit(gpa);

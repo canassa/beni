@@ -346,7 +346,7 @@ inferred_alias: std.DynamicBitSetUnmanaged = .{},
 /// and refuse to be read across a rollback, which could reuse an id for
 /// another type (CK-131, R9b).
 rollbacks: u32 = 0,
-/// Debug only: the nodes `Walk.assertProved` has visited in this store, so
+/// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
 /// (CK-133). Never read outside that assert.
 proof_assert_work: u64 = 0,
