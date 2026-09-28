@@ -389,15 +389,14 @@ fn readPlain(s: *Solve, type_id: Types.TypeId, entry: Types.Entry, value: Interf
     const a0 = iface.range(p0.rhs);
     const a1 = iface.range(p1.rhs);
     if (a0.len != a1.len or a0.len > 64 or a0.len != scheme.quantified_count) return null;
-    var seen: u64 = 0;
     var mask: u64 = 0;
     for (a0, a1, 0..) |t0, t1, i| {
         const v0 = iface.term(@enumFromInt(t0));
         const v1 = iface.term(@enumFromInt(t1));
-        if (v0.tag != .@"var" or v1.tag != .@"var" or v0.lhs != v1.lhs or v0.lhs >= scheme.quantified_count) return null;
-        const bit = @as(u64, 1) << @intCast(v0.lhs);
-        if (seen & bit != 0) return null;
-        seen |= bit;
+        // Argument `i` must be quantifier `i`: the sub-wanteds are made in
+        // argument order and must be the scheme's canonical order, so a
+        // scheme numbered any other way takes the slow path.
+        if (v0.tag != .@"var" or v1.tag != .@"var" or v0.lhs != v1.lhs or v0.lhs != i) return null;
         const q = iface.quantified(scheme, v0.lhs);
         if (q.kind != @intFromEnum(TypeStore.Kind.any) or q.equatable or q.constraints_len > 1) return null;
         if (q.constraints_len == 0) continue;
