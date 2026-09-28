@@ -101,22 +101,23 @@ reason this corpus does not rot the way Elm's did:
 - Abuse inputs are first-class: a hostile file must produce a diagnostic,
   never a panic, a hang or an OOM, and must leave no partial output behind.
 - Determinism, and the interface format: the walker in
-  `tests/blackbox/corpus_test.zig` passes no `--jobs` at all — it never did,
-  and this line used to claim otherwise. The cross is a separate binary,
-  `tests/blackbox/matrix_test.zig`: every fixture of every kind that runs the
-  checker is run {plain, `--roundtrip-interfaces`} × {`--jobs=1`,
-  `--jobs=8`}, and the exit code, stdout, stderr and every file written must
-  agree byte for byte (`fast-compiler.md` §8, `plans/m4-slice-zero.md` §6).
-- The corpus walker passes **`--no-cache`** to every `check` and `build`, and
-  so do `matrix_test.zig`'s first four variants. Since M4-3 the cache is on by
-  default (`frontend.md` §1) and these cases run with cwd = the repo root, so
-  without the flag ~576 fixtures would share one `.beni-cache/` that survives
-  between suite runs — and a golden compared against a run that may have hit an
-  entry written by a different case, or by yesterday's build, is a golden
-  compared against history. The CACHED path is covered where it can be
-  controlled instead: the matrix's last two variants run every one of these
-  fixtures cold-then-warm into a directory that is fresh per fixture and
-  byte-compare both, and `tests/blackbox/cutoff_test.zig` runs the edit
-  classes. `fmt` and `dump` take no cache flag at all and create no directory.
+  `tests/blackbox/corpus_test.zig` passes no `--jobs` at all. The `--jobs`,
+  round-trip and cache claims are made by a few hand-picked black-box tests,
+  each on a small project built to reach one branch, not by a sweep over this
+  corpus: `cache_test.zig` (a warm build is byte-identical to a cold one, a
+  cache written at `--jobs=1` is read at `--jobs=8`, and the counters of a
+  cold and a warm run), `iface_test.zig` (all three round trips on a build,
+  and an importer's diagnostics through the record), and `build_test.zig`
+  and `blackbox_test.zig` (a refused build, and every stream, at `--jobs=1`
+  and `--jobs=8`).
+- The corpus walker passes **`--no-cache`** to every `check` and `build`.
+  Since M4-3 the cache is on by default (`frontend.md` §1) and these cases
+  run with cwd = the repo root, so without the flag ~576 fixtures would share
+  one `.beni-cache/` that survives between suite runs — and a golden compared
+  against a run that may have hit an entry written by a different case, or by
+  yesterday's build, is a golden compared against history. The CACHED path
+  is covered where it can be controlled instead, by `cache_test.zig` and by
+  `tests/blackbox/cutoff_test.zig`'s edit classes. `fmt` and `dump` take no
+  cache flag at all and create no directory.
   `.beni-cache/` is in `.gitignore`: a cache is machine-local by policy and is
   never committed, and deleting it is always safe.

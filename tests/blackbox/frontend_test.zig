@@ -8,13 +8,9 @@
 //! directory in sight and no byte written to one. The cache's disk I/O is
 //! built on top of a format that is already known to be lossless.
 //!
-//! The matrix (`matrix_test.zig`) carries the bulk of the claim: its two
-//! round-tripped runs pass all three `--roundtrip-*` flags over every
-//! checker-driven fixture, so `check`, `build`, the emitted JavaScript, the
-//! `.iface` goldens and `--stage=raw` are all compared at no extra
-//! invocations. What is HERE is what the matrix cannot reach, because the
-//! kinds it does not run are exactly the ones that read the columns the
-//! artifact does not carry:
+//! A build through all three `--roundtrip-*` flags is `iface_test.zig`'s,
+//! on a project whose evidence crosses modules. What is HERE is the part of
+//! the claim that reads the columns the artifact does not carry:
 //!
 //!   * `dump --stage=bir` over every `bir/` and `parse/good` fixture — the
 //!     direct assertion, and the only one that prints the loaded record.
@@ -84,8 +80,8 @@ fn expectSame(w: *World, arena: std.mem.Allocator, args: []const []const u8) !vo
 /// One case of the sweep: a command to run twice, named by its fixture.
 const Case = struct { args: []const []const u8 };
 
-/// Cases pulled from one atomic counter, exactly as `matrix_test.zig` pulls
-/// fixtures and as the compiler's own workers pull files. ~380 invocation
+/// Cases pulled from one atomic counter, as the compiler's own workers pull
+/// files. ~380 invocation
 /// PAIRS at ~100 ms each would be four minutes serially; spread over eight
 /// workers it is seconds, and `zig build test-blackbox` already runs its test
 /// binaries concurrently, so the cost lands where it overlaps.

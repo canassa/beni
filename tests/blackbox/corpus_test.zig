@@ -991,9 +991,9 @@ const Case = struct {
     /// `.beni-cache/` that survives between suite runs — and a golden compared
     /// against a run that may have hit an entry written by a different case,
     /// or by yesterday's build, is a golden compared against history. The
-    /// cached path is covered where it can be controlled: `matrix_test.zig`'s
-    /// two cache variants run every one of these fixtures cold-then-warm into
-    /// a directory that is fresh per fixture, and byte-compare both.
+    /// cached path is covered where it can be controlled, by `cache_test.zig`
+    /// and `cutoff_test.zig`, each on a project of its own with a fresh cache
+    /// directory.
     ///
     /// `fmt` and `dump` are left alone: neither takes a cache flag at all
     /// (`frontend.md` §1), so passing one would be `unknown option` and exit 2.

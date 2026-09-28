@@ -2853,7 +2853,7 @@ test "a flag that is not in the key cannot change one byte of one entry" {
         .{ .what = "--diagnostics", .a = &.{"--diagnostics=text"}, .b = &.{"--diagnostics=json"} },
         .{ .what = "--explain", .a = &.{}, .b = &.{"--explain"} },
         // A round trip must produce the same record, and exempting it would
-        // excuse it from the acceptance matrix.
+        // excuse it from the round-trip tests.
         .{ .what = "--roundtrip-interfaces", .a = &.{}, .b = &.{"--roundtrip-interfaces"} },
         .{ .what = "--roundtrip-dispatch", .a = &.{}, .b = &.{"--roundtrip-dispatch"} },
         // `--root` reaches the key through the module name and nowhere

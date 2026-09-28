@@ -12,13 +12,12 @@
 //! quantity — "did this module's public face change?" — becomes something a
 //! test and a bench can both state.
 //!
-//! The corpus-wide version of the first assertion lives in
-//! `corpus_test.zig`, which runs every checker-driven fixture through the
-//! whole {plain, round-tripped} × {`--jobs=1`, `--jobs=8`} cross. What is
-//! here is what the corpus cannot say: the claims about the columns
-//! `dump --stage=raw` does not print, and the interner-order claim, which
-//! needs two runs over DIFFERENT file sets rather than one run of one
-//! fixture.
+//! Each claim is made on a small project built to reach it, not by a sweep
+//! over the corpus: the columns `dump --stage=raw` does not print, the
+//! encodings only a broken module produces, a build whose evidence crosses
+//! modules through all three round trips, an importer's diagnostic that
+//! prints types read back from a record, and the interner-order claim,
+//! which needs two runs over DIFFERENT file sets.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -675,4 +674,162 @@ test "a build's emitted JavaScript is byte-identical under --roundtrip-interface
             };
         }
     }
+}
+
+/// Two modules whose evidence crosses the boundary: `Shapes` declares a
+/// type with a derived `eq` and `compare`, a record alias with a parameter
+/// and a constrained generic, and `Main` compares `Shape`s with `==` and
+/// `<`, through `bigger`'s `where` clause and inside a `List`. The importer
+/// reads every one of those from the record, the dispatch sidecar and the
+/// front-end artifact, which are what the round-trip flags replace with
+/// copies read back from their bytes.
+fn writeDispatching(w: *World) !void {
+    try w.write("src/Shapes.beni",
+        \\pub type Shape
+        \\    = Circle Int
+        \\    | Rect Int Int
+        \\
+        \\
+        \\pub type alias Named a =
+        \\    { name : String, value : a }
+        \\
+        \\
+        \\pub bigger : a, a -> a
+        \\    where a.compare : a, a -> Order
+        \\bigger a b =
+        \\    if a < b then b else a
+        \\
+        \\
+        \\pub named : String, a -> Named a
+        \\named name value =
+        \\    { name = name, value = value }
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Node
+        \\import Shapes exposing (Named, Shape, Circle, Rect)
+        \\
+        \\
+        \\largest : Named Shape
+        \\largest =
+        \\    Shapes.named "largest" (Shapes.bigger (Circle 2) (Rect 3 4))
+        \\
+        \\
+        \\pub main : Node.Program
+        \\main =
+        \\    Node.printLines
+        \\        [ largest.name
+        \\        , if largest.value == Rect 3 4 then "rect" else "circle"
+        \\        , if [ Circle 1, Rect 1 1 ] == [ Circle 1, Rect 1 1 ] then "same" else "different"
+        \\        ]
+        \\
+    );
+}
+
+test "a build whose evidence crosses modules is byte-identical through all three round trips, and runs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The dispatch sidecar is the round trip whose loss shows up as a wrong
+    // PROGRAM rather than a wrong message, and the front-end artifact is the
+    // one whose loss would depend on history. So the claim is made on a
+    // build, over the whole output tree, and the round-tripped program is
+    // then run. `--jobs=8` against a `--jobs=1` baseline, so a byte moved
+    // by the worker count fails here too.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDispatching(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(
+        &.{ "build", "--platform=node", "--out=plain", "--jobs=1", "--no-cache", "src" },
+        .{ .raw_diagnostics = true },
+    );
+    const tripped = try w.runWith(&.{
+        "build",                  "--platform=node",      "--out=tripped",        "--jobs=8", "--no-cache",
+        "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend", "src",
+    }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", plain.stderr);
+    try testing.expectEqual(plain.exit_code, tripped.exit_code);
+    try testing.expectEqualStrings(plain.stdout, tripped.stdout);
+    try testing.expectEqualStrings(plain.stderr, tripped.stderr);
+
+    const want = try w.listFiles("plain");
+    const got = try w.listFiles("tripped");
+    try testing.expect(want.len > 1);
+    try testing.expectEqual(want.len, got.len);
+    for (want, got) |a, b| {
+        try testing.expectEqualStrings(a, b);
+        const want_bytes = try w.read(try std.fs.path.join(arena, &.{ "plain", a }));
+        const got_bytes = try w.read(try std.fs.path.join(arena, &.{ "tripped", b }));
+        testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+            std.debug.print("{s} differs between a plain build and a round-tripped one\n", .{a});
+            return err;
+        };
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // `Rect 3 4` is the bigger of the two — a derived `compare` orders by
+    // constructor first — and two equal lists compare equal element-wise.
+    const ran = try w.node("tripped/_main.mjs");
+    try testing.expectEqual(@as(u8, 0), ran.exit_code);
+    try testing.expectEqualStrings("largest\nrect\nsame\n", ran.stdout);
+    try testing.expectEqualStrings("", ran.stderr);
+}
+
+test "an importer's type error names the imported types identically through the round trip" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A diagnostic in an importer prints types it read from the exporter's
+    // record — here a parameterised alias and a custom type, both declared
+    // in `Shapes` — so a record that came back from its bytes subtly
+    // different would print a different message or blame a different span,
+    // where a clean project would still check.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDispatching(&w);
+    try w.write("src/Wrong.beni",
+        \\import Shapes exposing (Named, Shape, Circle, Rect)
+        \\
+        \\
+        \\wrong : Shape
+        \\wrong =
+        \\    Shapes.named "wrong" (Circle 7)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try expectSameThroughTheFormat(
+        &w,
+        &.{ "check", "--platform=node", "--diagnostics=json", "src" },
+        arena_state.allocator(),
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqualStrings("", checked.stdout);
+    // Captured from a run. Both types in the message are `Shapes`' own.
+    try testing.expectEqualStrings(
+        \\[{"code":"type_mismatch","severity":"error","span":{"file":"src/Wrong.beni","start":{"line":6,"col":5},"end":{"line":6,"col":17}},"title":"TYPE MISMATCH","message":"Something is off with the body of this definition:\n\nThe body is:\n\n    Named a\n\nBut the type annotation says it should be:\n\n    Shape\n"}]
+        \\
+    , checked.stderr);
 }

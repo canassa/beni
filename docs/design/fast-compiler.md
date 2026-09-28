@@ -923,6 +923,17 @@ written at one worker count and read at another is what would catch a `Symbol` r
 `plans/m4-plan.md` §4.5's "the counters did not move" is a claim about two runs at the same
 temperature.
 
+**The matrix has since been deleted** (the owner's decision, 2026-09-28): a sweep of every corpus
+fixture through every axis cost a third of the black-box suite and had, for a while, been asserting
+nothing about its dumps without anyone noticing. The same claims are made by a few hand-picked
+tests, each on a small project built to reach one branch: in `tests/blackbox/cache_test.zig`, *a warm
+build emits byte-identical JavaScript, and it runs* (cold at `--jobs=1`, warm at `--jobs=8`, over a
+generic, a derived `eq`/`compare` and a type crossing modules), *a cache written in one configuration
+and read in another*, *a cold run with --cache-dir writes entries* (`cache_hits = 0`) and *a second
+check of an unchanged tree re-checks nothing*; in `iface_test.zig`, the three round trips on a build
+and on an importer's diagnostics; and in `build_test.zig`, a refused build's diagnostics at both
+`--jobs`.
+
 **Explicitly not in the persistent cache**, each pointing at its owner: front-end artifacts on disk and the `stat`
 fast-path (the front-end artifacts); the firewall cutoff, and with it the declared-type sidecar of
 `plans/m4-slice-zero.md` §4 — the cutoff needs its definition and its hash, an incremental `Types` its bytes
@@ -1065,7 +1076,9 @@ the same family: every file's artifacts are serialized, deserialized and re-inst
 moment its per-file phase ends and before anything downstream reads them, so every dump, every
 diagnostic, every dispatch table and every emitted byte is built from artifacts that have been
 through the format. It is passed with its two siblings on the matrix's round-tripped runs, at no
-extra invocations.
+extra invocations. (The matrix is gone, see above; the warm-run counters are asserted by
+`cache_test.zig`'s *a warm run lexes, parses and lowers NOTHING*, and the three flags together by
+`iface_test.zig`'s build through all three round trips.)
 
 **Explicitly not in the front-end artifacts**, each pointing at its owner: the firewall cutoff, and with it the
 declared-type sidecar's definition and hash (below); the whole-program passes — `types`, `graph`,

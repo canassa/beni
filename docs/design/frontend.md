@@ -164,7 +164,7 @@ is built from artifacts that have been through the format. It is on `Common` lik
 because `dump` has to be able to take it: `dump --stage=tokens|ast|bir` is the lossless textual form
 of exactly these artifacts and is therefore the identity oracle the round trip is asserted against.
 An `ast` dump under the flag is unchanged by construction — the `Ast` is not among the artifacts
-(§3.5) — and that is a fact the acceptance matrix asserts rather than assumes. **`--frontend-keys`**
+(§3.5) — and that is a fact `frontend_test.zig` asserts rather than assumes. **`--frontend-keys`**
 is hidden too and is `--cache-keys`' twin: one `<path> <32 hex digits>` line per file on stdout,
 sorted by path, so an edit-scenario fixture can assert that a leaf's body edit moved that leaf's file
 key and no other — the claim the whole slice rests on — with no cache directory involved.
