@@ -479,7 +479,10 @@ pub const Outcome = enum { ok, reported, suppressed };
 pub fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Outcome {
     // A call's argument meeting its parameter is where a comparison's
     // `equatable` question is asked (§11.4).
-    const result = try s.unifier.unifyAt(expected, actual, region, category.tag == .call_arg);
+    const result = if (category.tag == .call_arg)
+        try s.unifier.unifyArgument(expected, actual, region)
+    else
+        try s.unifier.unify(expected, actual, region);
     try s.reportJoins();
     const problem = switch (result) {
         .ok => return .ok,

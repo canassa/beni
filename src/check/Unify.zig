@@ -117,10 +117,9 @@ join_failures: std.ArrayList(JoinFailure) = .empty,
 /// report as `internal`: never a silent drop.
 fault: ?[]const u8 = null,
 region: Bir.Inst.Index = @enumFromInt(0),
-/// Whether this unification is a call's argument meeting its parameter:
-/// where a flag from a comparison's scheme becomes that comparison's
-/// question (§11.4).
-argument: bool = false,
+/// The region `unifyArgument` asks a comparison's question at, until the
+/// first pair `go` examines takes it: only that top pair may ask (§11.4).
+question_at: ?Bir.Inst.Index = null,
 problem: ?Problem = null,
 /// The pairs of non-variables being unified, outermost first: the
 /// coinduction of §7.3. Each pair is stored in the order `(min, max)` of
@@ -136,16 +135,26 @@ lowered: std.ArrayList(Obligations.Id) = .empty,
 depth: u32 = 0,
 unifications: u64 = 0,
 
+/// Unify `a` with `b`. What it does depends on the two types alone.
 pub fn unify(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
-    return u.unifyAt(a, b, region, false);
+    return u.start(a, b, region, null);
 }
 
-/// `unify`, saying whether it is a call's argument against its parameter.
-pub fn unifyAt(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, argument: bool) Error!Result {
+/// A call's argument meeting its parameter (§11.4): `unify`, plus
+/// one rule about the top pair only. When `a` and `b` are both variables
+/// and their join carries a comparison's `equatable` flag with no open
+/// question on it, the question is created here, at `region`, on `a`'s root: a
+/// comparison's answer is reported at the call that compared, not where
+/// the variable later becomes a type. No pair below the top one asks.
+pub fn unifyArgument(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
+    return u.start(a, b, region, region);
+}
+
+fn start(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, question_at: ?Bir.Inst.Index) Error!Result {
     u.problem = null;
     u.region = region;
     u.depth = 0;
-    u.argument = argument;
+    u.question_at = question_at;
     if (try u.go(a, b)) return .ok;
     const problem = u.problem;
     u.problem = null;
@@ -437,6 +446,9 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     u.depth += 1;
     defer u.depth -= 1;
     if (u.depth > max_depth) return u.fail(.too_deep);
+    // `unifyArgument`'s question belongs to the top pair alone.
+    const question_at = u.question_at;
+    u.question_at = null;
 
     const st = u.store;
     const ra = st.find(a);
@@ -470,7 +482,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
             _ = try u.merge(ra, rb, .err);
             return true;
         },
-        .flex => |fa| u.flex(ra, fa, rb, cb),
+        .flex => |fa| u.flex(ra, fa, rb, cb, question_at),
         .rigid => |fa| u.rigid(ra, fa, rb, cb),
         .alias => unreachable, // `throughAlias`
         .structure => |sa| u.structure(ra, sa, rb, cb),
@@ -518,7 +530,7 @@ fn popActive(u: *Unify) void {
     }
 }
 
-fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content) Error!bool {
+fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content, question_at: ?Bir.Inst.Index) Error!bool {
     const st = u.store;
     switch (cb) {
         .err => {
@@ -551,14 +563,14 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
             if (st.rank(ra) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fa.obls));
             if (st.rank(rb) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fb.obls));
             joined.obls = try u.obligations.merged(u.gpa, fa.obls, fb.obls);
-            // A comparison's flag meeting its argument: the question is
-            // asked HERE, at the argument, and the row remembers it (§11.4:
-            // `Basics.eq r r`'s answer is reported at the
+            // `unifyArgument`'s top pair: a comparison's flag meeting its
+            // argument asks the question HERE, and the row remembers it
+            // (§11.4: `Basics.eq r r`'s answer is reported at the
             // comparison, not where `r` later becomes a record).
-            if (joined.equatable and u.argument and u.depth == 1 and u.obligations.openEquatable(joined.obls) == null) {
-                const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{ra}, 0, null);
+            if (question_at) |at| if (joined.equatable and u.obligations.openEquatable(joined.obls) == null) {
+                const id = try u.obligations.create(u.gpa, .equatable, at, &.{ra}, 0, null);
                 joined.obls = try u.obligations.with(u.gpa, joined.obls, id, true);
-            }
+            };
             // Neither side carries a wanted: the common case, and nothing
             // of Rule U1 to do.
             if (fa.constraints == .none and fb.constraints == .none) {
