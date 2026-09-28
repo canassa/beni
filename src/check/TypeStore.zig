@@ -292,6 +292,13 @@ pub const no_mark: u32 = 0;
 
 arena: Arena,
 descriptors: std.MultiArrayList(Descriptor) = .empty,
+/// `descriptors`' columns, kept in step with every change of its length or
+/// capacity (`syncColumns`). Every read and write of a column goes through
+/// it: `MultiArrayList.items` recomputes all six column addresses per call,
+/// and where the code generator does not fold that away — Zig's own
+/// backend, which builds the compiler the test suites run — it was a third
+/// of a deep type's check.
+cols: std.MultiArrayList(Descriptor).Slice = .empty,
 extra: std.ArrayList(u32) = .empty,
 /// Undo entries, newest last. Empty unless a `mark` is outstanding.
 journal: std.ArrayList(Entry) = .empty,
@@ -390,7 +397,13 @@ fn gpa(store: *TypeStore) Allocator {
 /// avoided growth is memory saved as well as time.
 pub fn reserve(store: *TypeStore, var_count: usize, extra_words: usize) Allocator.Error!void {
     try store.descriptors.ensureTotalCapacity(store.gpa(), var_count);
+    store.syncColumns();
     try store.extra.ensureTotalCapacity(store.gpa(), extra_words);
+}
+
+/// Re-read `cols` after `descriptors` grew, shrank or moved.
+fn syncColumns(store: *TypeStore) void {
+    store.cols = store.descriptors.slice();
 }
 
 pub fn count(store: *const TypeStore) u32 {
@@ -408,7 +421,10 @@ pub fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator
     // The capacity test inline and the growth out of line: every
     // variable the checker makes comes through here, and `append` made a
     // call for the test alone.
-    if (store.descriptors.len == store.descriptors.capacity) try store.descriptors.ensureUnusedCapacity(store.gpa(), 1);
+    if (store.descriptors.len == store.descriptors.capacity) {
+        try store.descriptors.ensureUnusedCapacity(store.gpa(), 1);
+        store.syncColumns();
+    }
     store.descriptors.appendAssumeCapacity(.{
         .parent = v,
         .rank = desc_rank,
@@ -417,6 +433,7 @@ pub fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator
         .copy = .none,
         .size = 1,
     });
+    store.cols.len = store.descriptors.len;
     return v;
 }
 
@@ -443,7 +460,7 @@ pub fn nextMark(store: *TypeStore) u32 {
 /// The representative of `v`, compressing the path walked. The ONLY place
 /// that walks parents; every other operation takes roots.
 pub fn find(store: *TypeStore, v: Var) Var {
-    const parents = store.descriptors.items(.parent);
+    const parents = store.cols.items(.parent);
     var root = v;
     while (parents[root.int()] != root) root = parents[root.int()];
     // Compress: point everything on the path straight at the root. Under a
@@ -474,15 +491,15 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
         store.setContent(a, survivor);
         return a;
     }
-    const sizes = store.descriptors.items(.size);
-    const ranks = store.descriptors.items(.rank);
+    const sizes = store.cols.items(.size);
+    const ranks = store.cols.items(.rank);
     const merged_rank = @min(ranks[a.int()], ranks[b.int()]);
     const keep, const drop = if (sizes[a.int()] >= sizes[b.int()]) .{ a, b } else .{ b, a };
     const total = sizes[a.int()] + sizes[b.int()];
     var carry = false;
     var epoch: u32 = 0;
     if (store.tracks_proofs) {
-        const contents = store.descriptors.items(.content);
+        const contents = store.cols.items(.content);
         store.touchesErr(contents[a.int()], contents[b.int()], survivor);
         const pa = store.proved(a);
         const pb = store.proved(b);
@@ -495,11 +512,11 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     }
     store.record(drop);
     store.record(keep);
-    const parents = store.descriptors.items(.parent);
+    const parents = store.cols.items(.parent);
     parents[drop.int()] = keep;
     sizes[keep.int()] = total;
     ranks[keep.int()] = merged_rank;
-    store.descriptors.items(.content)[keep.int()] = survivor;
+    store.cols.items(.content)[keep.int()] = survivor;
     // A class keeps a proof either side had, unless the merge voided every
     // proof: a proved flat structure's children were unified with the other
     // side's before the merge, a proved leaf that stays a leaf gains no edge,
@@ -530,12 +547,12 @@ pub fn markInferredAlias(store: *TypeStore, v: Var) Allocator.Error!void {
 /// alias reached `end` through it already.
 pub fn expandAlias(store: *TypeStore, alias: Var, end: Var) Var {
     std.debug.assert(alias != end and store.content(alias) == .alias);
-    const sizes = store.descriptors.items(.size);
-    const ranks = store.descriptors.items(.rank);
+    const sizes = store.cols.items(.size);
+    const ranks = store.cols.items(.rank);
     if (store.tracks_proofs) store.touchesErr(store.content(alias), store.content(end), store.content(end));
     store.record(alias);
     store.record(end);
-    store.descriptors.items(.parent)[alias.int()] = end;
+    store.cols.items(.parent)[alias.int()] = end;
     sizes[end.int()] += sizes[alias.int()];
     ranks[end.int()] = @min(ranks[alias.int()], ranks[end.int()]);
     return end;
@@ -551,19 +568,19 @@ pub fn get(store: *const TypeStore, v: Var) Descriptor {
 }
 
 pub fn content(store: *const TypeStore, v: Var) Content {
-    return store.descriptors.items(.content)[v.int()];
+    return store.cols.items(.content)[v.int()];
 }
 
 pub fn rank(store: *const TypeStore, v: Var) u32 {
-    return store.descriptors.items(.rank)[v.int()];
+    return store.cols.items(.rank)[v.int()];
 }
 
 pub fn mark(store: *const TypeStore, v: Var) u32 {
-    return store.descriptors.items(.mark)[v.int()];
+    return store.cols.items(.mark)[v.int()];
 }
 
 pub fn copy(store: *const TypeStore, v: Var) Var.Optional {
-    return store.descriptors.items(.copy)[v.int()];
+    return store.cols.items(.copy)[v.int()];
 }
 
 /// Whether `v` was proved acyclic in the current epoch.
@@ -634,22 +651,22 @@ fn touchesErrSlow(store: *TypeStore, before_a: Content, before_b: Content, after
 
 fn gains(store: *TypeStore, v: Var, c: Content) void {
     if (!hasSuccessors(c)) return;
-    const before = store.descriptors.items(.content)[v.int()];
+    const before = store.cols.items(.content)[v.int()];
     if (!hasSuccessors(before) or std.meta.activeTag(before) != std.meta.activeTag(c)) store.voidProofs();
 }
 
 pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
     store.record(v);
     if (store.tracks_proofs) {
-        store.touchesErr(store.descriptors.items(.content)[v.int()], c, c);
+        store.touchesErr(store.cols.items(.content)[v.int()], c, c);
         if (store.proved(v)) store.gains(v, c);
     }
-    store.descriptors.items(.content)[v.int()] = c;
+    store.cols.items(.content)[v.int()] = c;
 }
 
 pub fn setRank(store: *TypeStore, v: Var, r: u32) void {
     store.record(v);
-    store.descriptors.items(.rank)[v.int()] = r;
+    store.cols.items(.rank)[v.int()] = r;
 }
 
 /// `mark` and `copy` are scratch columns of one walk each and are never
@@ -657,16 +674,16 @@ pub fn setRank(store: *TypeStore, v: Var, r: u32) void {
 /// stale, and every consumer stamps a FRESH mark (`nextMark`) or clears
 /// `copy` through its own touched-list before reading.
 pub fn setMark(store: *TypeStore, v: Var, m: u32) void {
-    store.descriptors.items(.mark)[v.int()] = m;
+    store.cols.items(.mark)[v.int()] = m;
 }
 
 pub fn setCopy(store: *TypeStore, v: Var, c: Var.Optional) void {
-    store.descriptors.items(.copy)[v.int()] = c;
+    store.cols.items(.copy)[v.int()] = c;
 }
 
 fn setParent(store: *TypeStore, v: Var, parent: Var) void {
     store.record(v);
-    store.descriptors.items(.parent)[v.int()] = parent;
+    store.cols.items(.parent)[v.int()] = parent;
 }
 
 /// The content of `v`'s root, following aliases to their expansion. What
@@ -1000,6 +1017,7 @@ pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     }
     if (exact) {
         store.descriptors.shrinkRetainingCapacity(snapshot.vars);
+        store.syncColumns();
         store.extra.shrinkRetainingCapacity(snapshot.extra);
         store.constraints.shrinkRetainingCapacity(snapshot.constraints);
         store.constraint_sets.shrinkRetainingCapacity(snapshot.constraint_sets);
