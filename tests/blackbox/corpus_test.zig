@@ -56,6 +56,9 @@
 //! `Config`, and `tests/pending/README.md` for `.codes` and `RED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
 //! `test-blackbox` spreads the corpus over parallel processes.
+//! `BENI_CORPUS_ONLY=<substring>` (`zig build … -Dcorpus=<substring>`) runs
+//! only the fixtures whose repo-relative path contains it, in either mode;
+//! one that matches no fixture at all is a failure.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -292,6 +295,74 @@ fn walk(kind: Kind) !void {
     defer world.announce_timeouts = true;
     defer quiet = false;
     const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
+    const all = try fixturesOf(arena, &cfg, kind);
+    if (all.len == 0) {
+        if (cfg.is_default_root) std.debug.print("corpus {s} is empty\n", .{kind_dir});
+        return;
+    }
+    // `BENI_CORPUS_ONLY`: the fixtures whose path holds the text, and none
+    // of this kind's when none does — but a filter that matches no fixture
+    // of ANY kind fails, so a mistyped one cannot pass by running nothing.
+    const fixtures = if (cfg.only) |text| blk: {
+        if (!try anyFixtureMatches(arena, &cfg, text)) {
+            std.debug.print("BENI_CORPUS_ONLY (-Dcorpus) `{s}` matches no fixture under {s}\n", .{ text, cfg.root });
+            return error.CorpusFilterMatchesNothing;
+        }
+        var kept: std.ArrayList(Fixture) = .empty;
+        for (all) |fixture| {
+            if (try fixture.matches(arena, text)) try kept.append(arena, fixture);
+        }
+        break :blk kept.items;
+    } else all;
+    if (fixtures.len == 0) return;
+
+    // Pending mode never blesses: a golden there is the CORRECT output,
+    // written by hand, and the binary under test is the one known to be
+    // wrong. Blessing happens after promotion, under `tests/corpus/`.
+    var walker: Walker = .{
+        .kind = kind,
+        .cfg = &cfg,
+        .fixtures = fixtures,
+        .bless = blessing(gpa) and cfg.mode != .pending,
+        .bless_only = blessOnly(arena),
+    };
+    // Every case is independent — its own world, its own arena — so the
+    // cases are spread over a pool of workers, each pulling the next from
+    // one counter. Pending mode stays on one thread: its report is one line
+    // per fixture, read in order.
+    const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
+    {
+        var threads: std.ArrayList(std.Thread) = .empty;
+        defer threads.deinit(gpa);
+        defer for (threads.items) |t| t.join();
+        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.work, .{ &walker, io }));
+        walker.work(io);
+    }
+    const failures = walker.failures.load(.monotonic);
+    if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
+    // Only on failure: anything a passing test writes to stderr makes the
+    // build runner print `failed command` next to a step that succeeded,
+    // which reads as a broken suite to everyone who sees it.
+    if (failures != 0) {
+        std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind_dir, fixtures.len, failures });
+        return error.CorpusFailures;
+    }
+}
+
+/// Whether `text` is in the path of any fixture of any kind under the root.
+fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const u8) !bool {
+    for (std.enums.values(Kind)) |kind| {
+        for (try fixturesOf(arena, cfg, kind)) |fixture| {
+            if (try fixture.matches(arena, text)) return true;
+        }
+    }
+    return false;
+}
+
+/// Every fixture of `kind` under the root, in the order the walker runs
+/// them.
+fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const Fixture {
+    const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
     const core_dir = try std.fs.path.join(arena, &.{ kind_dir, "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
     // Under a root that is not the default one, a kind that does not exist
@@ -328,43 +399,7 @@ fn walk(kind: Kind) !void {
         try collect(arena, release_dir, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
     }
-
-    if (fixtures.items.len == 0) {
-        if (cfg.is_default_root) std.debug.print("corpus {s} is empty\n", .{kind_dir});
-        return;
-    }
-
-    // Pending mode never blesses: a golden there is the CORRECT output,
-    // written by hand, and the binary under test is the one known to be
-    // wrong. Blessing happens after promotion, under `tests/corpus/`.
-    var walker: Walker = .{
-        .kind = kind,
-        .cfg = &cfg,
-        .fixtures = fixtures.items,
-        .bless = blessing(gpa) and cfg.mode != .pending,
-        .bless_only = blessOnly(arena),
-    };
-    // Every case is independent — its own world, its own arena — so the
-    // cases are spread over a pool of workers, each pulling the next from
-    // one counter. Pending mode stays on one thread: its report is one line
-    // per fixture, read in order.
-    const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
-    {
-        var threads: std.ArrayList(std.Thread) = .empty;
-        defer threads.deinit(gpa);
-        defer for (threads.items) |t| t.join();
-        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.work, .{ &walker, io }));
-        walker.work(io);
-    }
-    const failures = walker.failures.load(.monotonic);
-    if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
-    // Only on failure: anything a passing test writes to stderr makes the
-    // build runner print `failed command` next to a step that succeeded,
-    // which reads as a broken suite to everyone who sees it.
-    if (failures != 0) {
-        std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind_dir, fixtures.items.len, failures });
-        return error.CorpusFailures;
-    }
+    return fixtures.items;
 }
 
 /// One kind's fixtures, pulled by the workers of `walk` from one counter.
@@ -437,6 +472,10 @@ const Config = struct {
     /// runs, or null for every part. `test-blackbox` runs each part in its
     /// own process, in parallel.
     part: ?Part,
+    /// `BENI_CORPUS_ONLY` (`zig build -Dcorpus=<text>`): run only the
+    /// fixtures whose repo-relative path contains the text, or every
+    /// fixture when null. Strict and pending mode alike.
+    only: ?[]const u8,
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture, pending mode only.
     red: []const world.pending.RedLine,
@@ -484,6 +523,7 @@ const Config = struct {
         var cfg: Config = .{
             .root = std.mem.trimEnd(u8, root, "/"),
             .part = part,
+            .only = envOr(arena, "BENI_CORPUS_ONLY"),
             .is_default_root = std.mem.eql(u8, std.mem.trimEnd(u8, root, "/"), default_root),
             .mode = mode,
             .timeout_ms = timeout_ms,
@@ -707,6 +747,13 @@ const Fixture = struct {
     /// Under `emit/release/`: `--release` is added to the argv, so the
     /// golden is a shape claim about §9's release optimiser.
     release: bool = false,
+
+    /// Whether `text` is in the fixture's repo-relative path, the path
+    /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
+    fn matches(fixture: Fixture, arena: std.mem.Allocator, text: []const u8) !bool {
+        const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
+        return std.mem.indexOf(u8, path, text) != null;
+    }
 };
 
 /// Append the `.beni` files directly under `dir`, sorted by name — plus,

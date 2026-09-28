@@ -8,6 +8,17 @@
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!   zig build gates           the three gates above, in one build graph
 //!
+//! Options that make a run cheaper while a change is being written (the tiers
+//! in CLAUDE.md, *Testing tiers*):
+//!   -Dquick               build the black-box compiler with Zig's self-hosted
+//!                         backend: still ReleaseSafe, compiled in seconds
+//!   -Dtest-filter=<text>  compile only the tests whose name contains <text>
+//!                         (repeatable), in every test binary a step builds
+//!   -Dcorpus=<text>       run only the corpus fixtures whose path contains
+//!                         <text>, in `test-blackbox` and `test-pending`
+//!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
+//! `gates` refuses the two filters: a gate runs everything.
+//!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
@@ -33,6 +44,11 @@ const perf_bin_dir = "perf/bin";
 /// installed, under the prefix.
 const safe_bin_dir = "safe/bin";
 
+/// Where the same compiler is installed when `-Dquick` builds it with Zig's
+/// self-hosted backend: its own directory, so switching between the two
+/// never overwrites the other's binary and each stays cached.
+const quick_bin_dir = "quick/bin";
+
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
 
@@ -56,6 +72,9 @@ const platforms_dir = "platforms";
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const quick = b.option(bool, "quick", "Build the black-box compiler with Zig's self-hosted backend: ReleaseSafe, every safety check kept, compiled in seconds instead of LLVM's minute") orelse false;
+    const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
+    const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
 
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
@@ -87,7 +106,7 @@ pub fn build(b: *std.Build) void {
     // "which compiler produced this entry". Computed here rather than by
     // hashing the installed binary at run time, which is correct and costs
     // ~2 ms of a 15 ms warm budget.
-    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize));
+    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -122,9 +141,10 @@ pub fn build(b: *std.Build) void {
     beni_mod.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
     beni_mod.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
 
-    const beni_tests = b.addTest(.{ .root_module = beni_mod, .test_runner = testRunner(b) });
-    const diagnostic_tests = b.addTest(.{ .root_module = diagnostic_mod });
+    const beni_tests = b.addTest(.{ .root_module = beni_mod, .test_runner = testRunner(b), .filters = test_filters });
+    const diagnostic_tests = b.addTest(.{ .root_module = diagnostic_mod, .filters = test_filters });
     const gen_tests = b.addTest(.{
+        .filters = test_filters,
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/gen.zig"),
             .target = target,
@@ -153,15 +173,19 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .ReleaseFast);
+    const fast = compiler(b, target, .ReleaseFast, .llvm);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
     // `zig-out/safe/bin/beni`: bounds, overflow and `unreachable` still trap,
     // and every invariant check the compiler gates on
     // `std.debug.runtime_safety` still runs, at a fraction of Debug's cost.
-    const safe = compiler(b, target, .ReleaseSafe);
-    const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_bin_dir } } });
+    // `-Dquick` builds it with the self-hosted backend instead, into
+    // `zig-out/quick/bin/beni`: the same safety checks in less optimised
+    // code, compiled in seconds where LLVM takes more than a minute.
+    const safe_dir = if (quick) quick_bin_dir else safe_bin_dir;
+    const safe = compiler(b, target, .ReleaseSafe, if (quick) .self_hosted else .llvm);
+    const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
 
     // ---- Black-box suite. ----
     // Spawns the ReleaseSafe `zig-out/safe/bin/beni` (the timing steps below
@@ -176,12 +200,19 @@ pub fn build(b: *std.Build) void {
     // (`tests/test_runner.zig`); the counts are sized so that no process
     // runs much longer than the binary's slowest test. The corpus walker is
     // split into the parts of `tests/blackbox/corpus_parts.zig` instead.
+    //
+    // Each file is also a step of its own, `test-blackbox-<file>` (the file
+    // name without `_test`, `_` spelled `-`), so a change can run the one
+    // suite it touches.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
     const bb: Blackbox = .{
         .b = b,
         .target = target,
         .optimize = optimize,
         .diagnostic = diagnostic_mod,
+        .filters = test_filters,
+        .corpus_only = corpus_only,
+        .safe_dir = safe_dir,
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
     };
@@ -203,17 +234,22 @@ pub fn build(b: *std.Build) void {
         // The walker's knobs are pinned on every binary, not only the
         // walker: `run.setEnvironmentVariable` is the one place a test's
         // environment is decided.
-        bb.runSharded(blackbox_step, bb.artifact(suite[0]), .{ .root = "tests/corpus" }, suite[1]);
+        const file_step = bb.fileStep(suite[0]);
+        bb.runSharded(file_step, bb.artifact(suite[0]), .{ .root = "tests/corpus" }, suite[1]);
+        blackbox_step.dependOn(file_step);
     }
     // The corpus's knobs (`plans/checker-rewrite.md` §2.4), pinned EMPTY —
     // which the walker reads as unset — so a variable exported in the
     // developer's shell (`BENI_CORPUS_MODE=pending zig build test-blackbox`)
     // cannot turn the gate into something else; only the part differs per
-    // process.
+    // process. The one knob the build line sets is `BENI_CORPUS_ONLY`, from
+    // `-Dcorpus`, which `gates` refuses.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
+    const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
     for (std.enums.values(corpus_parts.Part)) |part| {
-        blackbox_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
+        corpus_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
     }
+    blackbox_step.dependOn(corpus_step);
 
     // ---- Pending fixtures (plans/checker-rewrite.md §2). ----
     // The red fixtures of `plans/checker-findings.md`, run by the corpus
@@ -234,7 +270,7 @@ pub fn build(b: *std.Build) void {
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
-    perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" }).step);
+    perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`),
     // on the same ReleaseFast compiler by the same ratio method. Not a gate:
@@ -246,9 +282,9 @@ pub fn build(b: *std.Build) void {
     // the large traces, and in Debug that was half the step.
     const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler");
     const perf_test = bb.artifactAt("tests/blackbox/perf_test.zig", .ReleaseSafe);
-    const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni", .perf_shard = "wall" });
+    const wall_perf = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = "wall" });
     for (0..perf_shards) |k| {
-        const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni", .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }) });
+        const shard = bb.run(perf_test, .{ .root = "tests/corpus", .exe = .fast, .perf_shard = b.fmt("cpu:{d}/{d}", .{ k, perf_shards }) });
         wall_perf.step.dependOn(&shard.step);
     }
     fixed_perf_step.dependOn(&wall_perf.step);
@@ -288,6 +324,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .filters = test_filters,
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/compare/gen/main.zig"),
             .target = target,
@@ -314,6 +351,8 @@ pub fn build(b: *std.Build) void {
     // project at seed 1, size 1, both modes, must check.
     const compare_lib = b.createModule(.{ .root_source_file = b.path("bench/compare/gen/lib.zig"), .target = target, .optimize = optimize });
     const compare_bb = b.addTest(.{
+        .name = "compare_gen_test",
+        .filters = test_filters,
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/blackbox/compare_gen_test.zig"),
             .target = target,
@@ -324,7 +363,9 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    blackbox_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
+    const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
+    compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
+    blackbox_step.dependOn(compare_bb_step);
 
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
@@ -340,7 +381,14 @@ pub fn build(b: *std.Build) void {
     // One build graph instead of three chained invocations: the unit tests
     // and the formatting check run while the black-box suites do, and the
     // compilers they share are built once.
+    //
+    // A filter would make a green gate say nothing about the tests it left
+    // out, so a filtered `gates` fails before it runs anything.
     const gates_step = b.step("gates", "Run test, test-blackbox and fmt-check concurrently");
+    if (test_filters.len != 0 or corpus_only.len != 0) {
+        gates_step.dependOn(&b.addFail("`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step").step);
+        return;
+    }
     gates_step.dependOn(test_step);
     gates_step.dependOn(blackbox_step);
     gates_step.dependOn(fmt_step);
@@ -352,21 +400,34 @@ fn testRunner(b: *std.Build) std.Build.Step.Compile.TestRunner {
     return .{ .path = b.path("tests/test_runner.zig"), .mode = .server };
 }
 
+/// Which code generator compiles a `compiler`.
+const Backend = enum {
+    llvm,
+    /// Zig's own backend: a compile of seconds instead of LLVM's minute, and
+    /// slower code. Safety checks are decided by the optimize mode, not by
+    /// the backend, so a ReleaseSafe build still carries every one.
+    self_hosted,
+};
+
 /// The compiler at a fixed optimize mode, whatever `-Doptimize` says: its
 /// library module (the bench harness links the ReleaseFast one) and its
 /// executable. Every module is its own instance, because a module's optimize
-/// mode is fixed at creation, and the build id covers the mode.
+/// mode is fixed at creation, and the build id covers the mode and the
+/// backend.
 fn compiler(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     mode: std.builtin.OptimizeMode,
+    backend: Backend,
 ) struct { beni: *std.Build.Module, exe: *std.Build.Step.Compile } {
-    // The ReleaseSafe compiler is built without debug info: it is the
+    // The LLVM ReleaseSafe compiler is built without debug info: it is the
     // longest compile after a change under `src/` (the gates wait for it),
     // and debug info is about a quarter of that time. Its safety checks are
     // unaffected; a panic it hits prints no symbolised stack trace, so a
-    // crash is traced by re-running the command with `zig-out/bin/beni`.
-    const strip: ?bool = if (mode == .ReleaseSafe) true else null;
+    // crash is traced by re-running the command with `zig-out/bin/beni` or
+    // under `-Dquick`, whose self-hosted build keeps its debug info because
+    // there it costs little.
+    const strip: ?bool = if (mode == .ReleaseSafe and backend == .llvm) true else null;
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
         .target = target,
@@ -382,9 +443,10 @@ fn compiler(
     });
     beni.addImport("core_package", embedCore(b, core_dir));
     beni.addImport("platform_packages", embedPlatforms(b, platforms_dir));
-    beni.addImport("build_options", buildIdOptions(b, target, mode));
+    beni.addImport("build_options", buildIdOptions(b, target, mode, backend));
     const exe = b.addExecutable(.{
         .name = "beni",
+        .use_llvm = backend == .llvm,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -402,13 +464,17 @@ fn compiler(
 /// The `build_options` module, carrying the 16-byte compiler build id of
 /// `docs/design/fast-compiler.md` §8 — the cache key's term for "which
 /// compiler produced this entry" (`src/build_id.zig` has what it is for).
+///
+/// `backend` is null for the `-Doptimize` build, which leaves the choice to
+/// Zig's default for the mode.
 fn buildIdOptions(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    backend: ?Backend,
 ) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize));
+    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend));
     return options.createModule();
 }
 
@@ -418,7 +484,8 @@ const build_id_recipe: []const u8 = "BENIBUILDID\x00v1";
 
 /// `SipHash128(1, 3)` — the compiler's one hash function
 /// (`src/resolve/iface_bytes.zig`) — over the recipe tag, the Zig version
-/// string, the optimize mode, the target triple and every file under `src/`:
+/// string, the optimize mode, the target triple, the backend when it is the
+/// self-hosted one, and every file under `src/`:
 /// path then bytes, in sorted path order, each preceded by its length so that
 /// two different splits of the same concatenation cannot agree.
 ///
@@ -432,12 +499,16 @@ fn compilerBuildId(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    backend: ?Backend,
 ) [16]u8 {
     var hasher = std.hash.SipHash128(1, 3).init(&@as([16]u8, @splat(0)));
     feed(&hasher, build_id_recipe);
     feed(&hasher, @import("builtin").zig_version_string);
     feed(&hasher, @tagName(optimize));
     feed(&hasher, target.result.zigTriple(b.allocator) catch @panic("OOM"));
+    // Only the self-hosted build adds a term, so every other id is what it
+    // was before the term existed.
+    if (backend == .self_hosted) feed(&hasher, "self_hosted");
 
     var paths: std.ArrayList([]const u8) = .empty;
     collectAll(b, "src", "", &paths);
@@ -695,7 +766,7 @@ fn collectFiles(
 }
 
 /// Every environment variable the black-box harness reads to decide what a
-/// run MEANS: the corpus walker's three knobs (`tests/blackbox/corpus_test.zig`'s
+/// run MEANS: the corpus walker's knobs (`tests/blackbox/corpus_test.zig`'s
 /// `Config`), its part (`corpus_parts.zig`), which pending scenarios run
 /// (`pending_test.zig`), which timing scenarios run (`perf_test.zig`) and
 /// which binary is under test (`world.zig`'s
@@ -713,9 +784,9 @@ const HarnessEnvironment = struct {
     /// `tests/test_runner.zig`'s `BENI_TEST_SHARD` (`k/n`): which of the
     /// binary's tests this process runs.
     shard: []const u8 = "",
-    /// Relative to the install prefix: the ReleaseSafe compiler unless a
-    /// timing step names the ReleaseFast one.
-    exe: []const u8 = safe_bin_dir ++ "/beni",
+    /// The compiler under test: the ReleaseSafe one unless a timing step
+    /// names the ReleaseFast one.
+    exe: enum { safe, fast } = .safe,
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -725,9 +796,27 @@ const Blackbox = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     diagnostic: *std.Build.Module,
-    /// Installs `safe_bin_dir/beni` and `perf_bin_dir/beni`.
+    /// `-Dtest-filter`, given to every test binary.
+    filters: []const []const u8,
+    /// `-Dcorpus`, pinned as `BENI_CORPUS_ONLY` on every run.
+    corpus_only: []const u8,
+    /// Where the ReleaseSafe compiler is installed under the prefix:
+    /// `safe_bin_dir`, or `quick_bin_dir` under `-Dquick`.
+    safe_dir: []const u8,
+    /// Install `<safe_dir>/beni` and `perf_bin_dir/beni`.
     safe_install: *std.Build.Step,
     perf_install: *std.Build.Step,
+
+    /// `test-blackbox-<file>`: the step that runs one black-box test file.
+    fn fileStep(bb: Blackbox, root: []const u8) *std.Build.Step {
+        var name = bb.b.dupe(std.fs.path.stem(root));
+        if (std.mem.endsWith(u8, name, "_test")) name = name[0 .. name.len - "_test".len];
+        std.mem.replaceScalar(u8, name, '_', '-');
+        return bb.b.step(
+            bb.b.fmt("test-blackbox-{s}", .{name}),
+            bb.b.fmt("Run the black-box tests of {s} only", .{root}),
+        );
+    }
 
     fn artifact(bb: Blackbox, root: []const u8) *std.Build.Step.Compile {
         return bb.artifactAt(root, bb.optimize);
@@ -740,6 +829,7 @@ const Blackbox = struct {
             // summary say which suite a run is.
             .name = std.fs.path.stem(root),
             .test_runner = testRunner(bb.b),
+            .filters = bb.filters,
             .root_module = bb.b.createModule(.{
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,
@@ -756,18 +846,24 @@ const Blackbox = struct {
     /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = bb.b.addRunArtifact(t);
-        const fast = std.mem.eql(u8, env.exe, perf_bin_dir ++ "/beni");
-        std.debug.assert(fast or std.mem.eql(u8, env.exe, safe_bin_dir ++ "/beni"));
-        r.step.dependOn(if (fast) bb.perf_install else bb.safe_install);
+        r.step.dependOn(switch (env.exe) {
+            .safe => bb.safe_install,
+            .fast => bb.perf_install,
+        });
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
+        r.setEnvironmentVariable("BENI_CORPUS_ONLY", bb.corpus_only);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
-        r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, env.exe));
+        const exe_dir = switch (env.exe) {
+            .safe => bb.safe_dir,
+            .fast => perf_bin_dir,
+        };
+        r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, bb.b.fmt("{s}/beni", .{exe_dir})));
         r.setName(bb.b.fmt("run {s}{s}{s}{s}{s}{s}{s}", .{
             t.name,
             if (env.part.len != 0) " part " else "",
