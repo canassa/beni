@@ -2,7 +2,7 @@
 -- every comparison accepted: `Loop`'s `via` target is
 -- `Mine`, which mentions `Loop.Type` back — a mention the unit graph cannot
 -- see, joined lazily (`Contexts.noteApprox`) — and `HoldsRec` wraps a record
--- endpoint over `Mine`. `scenario/PERM` checks it in every declaration
+-- endpoint over `Mine`. It checks in every declaration
 -- order. A record endpoint is answered from its expansion, not its session
 -- bits, which would make `sameHolds` NOT EQUATABLE; every
 -- comparison checks.

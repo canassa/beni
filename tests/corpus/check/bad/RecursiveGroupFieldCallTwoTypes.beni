@@ -3,7 +3,7 @@
 -- every order (static-dispatch-spike.md §11 *Deferred receiver*, amended
 -- 2026-09-26), and inside the group `x` is monomorphic: `h 1` and `h "s"`
 -- cannot both hold. One `kind_mismatch` at `h "s"`, byte-identical in every
--- declaration order (`scenario/PERM`), never a code that depends on the
+-- declaration order, never a code that depends on the
 -- order.
 type K
     = K Int

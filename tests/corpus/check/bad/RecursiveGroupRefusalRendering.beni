@@ -3,7 +3,7 @@
 -- MESSAGE shows the type as it stands when the refusal is found, which in a
 -- recursive group depends on how far the other member had got: `a -> a` in
 -- the orders that write `ma` first, `a -> b` in the others (checker-v2.md
--- §10.8: declaration order decides neither code nor region). `scenario/PERM` holds it to one code and
+-- §10.8: declaration order decides neither code nor region). every order has one code and
 -- one region, not one text.
 type K
     = K Int

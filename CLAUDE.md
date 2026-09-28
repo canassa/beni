@@ -372,8 +372,8 @@ change under `src/` waits for), so a crash it hits is traced by re-running
 the command with `zig-out/bin/beni`, or the step without `-Dllvm`. An input a
 black-box test generates is the smallest that reaches the limit or the
 defect it is about — one past a cap, or the size that failed before a fix,
-not ten times past it — and a declaration-order test tries a fixed set of
-orders (written, reversed, a few seeded shuffles), never every permutation.
+not ten times past it — and a declaration-order test writes the order that
+failed before its fix, never a sweep of orders.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than

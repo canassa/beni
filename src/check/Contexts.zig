@@ -1472,9 +1472,9 @@ pub fn settled(c: *const Contexts, type_id: Types.TypeId) bool {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: a supplement (CLAUDE.md rule 3). The behaviour is `scenario/PERM`'s
-// derived-context programs and the `check/bad/DerivedContext*` fixtures in both
-// declaration orders; what is here is the memo's generation rule alone.
+// Tests: a supplement (CLAUDE.md rule 3). The behaviour is the
+// `DerivedContext*` corpus fixtures, several in both declaration orders; what
+// is here is the memo's generation rule alone.
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;

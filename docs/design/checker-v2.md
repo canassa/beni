@@ -834,8 +834,8 @@ is published and dumped from its own reading, which is written and never expands
 prints `Name`. The accepted cost: a parameter that took its annotation's name and then met the
 expansion — `String.length p` on `p : Name`, or a field access on a record alias — shows the
 expansion in a later message and in the dump of its locals. `ordering_test.zig` checks the
-recursive-group program in both orders, and `PERM` now runs `run/PhantomAliasUnifiesByExpansion`
-too.
+recursive-group program in both orders, and `run/PhantomAliasUnifiesByExpansion` reversed, the
+order whose types once differed from the written one's.
 
 ### 7.2 Choice among failures is by text (I13)
 
@@ -1996,8 +1996,8 @@ checks, whatever order they are written in.
   - Merging depends only on which top-level groups form a cycle through value or dispatch edges to
     unannotated declarations. That is a function of the program.
   - The remaining choices are made in id order.
-  - The permutation scenarios of `ordering_test.zig` test this over every counterexample the
-    design reviews found.
+  - Every counterexample the design reviews found is a corpus fixture in the order that failed;
+    where that was not the written order, `ordering_test.zig` writes the one that was.
   - **One stated exception:** the nesting budget of §10.2. A generated pair of very deep
     declarations, or a long reverse-ordered chain, can reach it in one order and not the other.
 - **Deterministic (rule 5).** Everything above is per module, single-threaded, and ordered by

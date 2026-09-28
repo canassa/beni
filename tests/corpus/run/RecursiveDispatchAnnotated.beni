@@ -3,8 +3,8 @@
 -- ANNOTATED, `eq : Box a, Box a -> Bool`. A reference to an annotated
 -- member of a group that is checking instantiates its scheme and is never a
 -- back-edge, so `show` and `eq` do not merge, and `show` compares `Box Int`
--- and `Box String` with the one `eq`. Checked in every declaration order by
--- the permutation scenario (`scenario/PERM`). Expected `a`, `b`.
+-- and `Box String` with the one `eq`. `ordering_test.zig` checks it with
+-- its declarations reversed, the order that once failed. Expected `a`, `b`.
 import Node exposing (Program)
 
 

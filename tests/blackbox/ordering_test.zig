@@ -16,228 +16,127 @@ const testing = std.testing;
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// Every program below is a regression fixture of an order-dependence the
-// checker once had. For each, a fixed set of orders of its top-level
-// declarations — the written one, the reversed one and three shuffles seeded
-// by the program's position in the list — must do what the program's oracle
-// twin says:
-//
-//   - `prints`: build, exit 0 and print the twin's output ("every order
-//     prints the same" would pass if every order failed alike);
-//   - `checks`: `check` exits 0;
-//   - `refused`: exactly one diagnostic, of the code named, byte-identical
-//     in every order — the same message, and the same source text under its
-//     span.
-//
-// For `prints` and `checks`, `dump --stage=types` must also be the same in
-// every order tried (each declaration's block, whatever its position): a
-// group nested at its first demand, however deep, gets the types it gets
-// written first.
-//
-// The orders of one single-file program are packed into one build: each is a
-// module `PermPxK` whose `main` became `pub lines : List String`, and a
-// `Main` prints every module's lines in order, so one build and one run
-// check them all (a failing order is named by the file its diagnostic is
-// in). A project's module is permuted one build per order.
-const perm_programs = [_]PermProgram{
-    // An own method used before its definition, in three modules.
-    .{ .name = "o1", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "O1.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
-    .{ .name = "row75", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "Row75.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
-    .{ .name = "box", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "Box.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
-    // Recursion with a comparison and its seven siblings, a miscount of
-    // dead declarations, and a mutual group's evidence order.
-    .{ .name = "recursion-with-comparison", .path = "tests/corpus/run/RecursionWithComparison.beni", .expect = .{ .prints = "tests/corpus/run/RecursionWithComparison.expected" } },
-    .{ .name = "dead", .path = "tests/corpus/run/DeadMiscount.beni", .expect = .{ .prints = "tests/corpus/run/DeadMiscount.expected" } },
-    .{ .name = "mutual-group-evidence-order", .path = "tests/corpus/run/MutualGroupEvidenceOrder.beni", .expect = .{ .prints = "tests/corpus/run/MutualGroupEvidenceOrder.expected" } },
-    // An own method demanded early, through a value prefix, by a mutual
-    // dispatch, and from a group variable outside its caller.
-    .{ .name = "demanded-early", .path = "tests/corpus/run/OwnMethodDemandedEarly.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodDemandedEarly.expected" } },
-    .{ .name = "twolets", .path = "tests/corpus/run/OwnMethodDemandedTwoLetsDeep.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodDemandedTwoLetsDeep.expected" } },
-    .{ .name = "own-method-value-prefix", .path = "tests/corpus/run/OwnMethodValuePrefix.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefix.expected" } },
-    .{ .name = "mutual-dispatch", .path = "tests/corpus/run/MutualDispatchMethods.beni", .expect = .{ .prints = "tests/corpus/run/MutualDispatchMethods.expected" } },
-    .{ .name = "group-variable-outside-caller", .path = "tests/corpus/run/GroupVariableOutsideCaller.beni", .expect = .{ .prints = "tests/corpus/run/GroupVariableOutsideCaller.expected" } },
-    // Merges of three and four methods, and a member that demands its
-    // cycle at two nodes (§23 items 1 and 8).
-    .{ .name = "three", .path = "tests/corpus/run/OwnMethodThreeCycle.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodThreeCycle.expected" } },
-    .{ .name = "four", .path = "tests/corpus/run/OwnMethodFourCycle.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodFourCycle.expected" } },
-    .{ .name = "twice", .path = "tests/corpus/run/OwnMethodCycleDemandedTwice.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodCycleDemandedTwice.expected" } },
-    .{ .name = "value-back-edge", .path = "tests/corpus/run/OwnMethodValueBackEdge.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValueBackEdge.expected" } },
-    .{ .name = "nest-after-default", .path = "tests/corpus/check/good/NestAfterDefault.beni", .expect = .checks },
-    // The §6 guards.
-    .{ .name = "annotated-or-first", .path = "tests/corpus/run/OwnMethodAnnotatedOrFirst.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodAnnotatedOrFirst.expected" } },
-    .{ .name = "value-prefix", .path = "tests/corpus/run/OwnMethodValuePrefixOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefixOrdered.expected" } },
-    .{ .name = "in-scrutinee", .path = "tests/corpus/run/OwnMethodInScrutineeOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodInScrutineeOrdered.expected" } },
-    // A method on a scrutinee written later or first, a single-member
-    // group's receiver, an annotated recursive group's receiver; and the
-    // merge variant, whose nested group must not drain its demander's queue.
-    .{ .name = "scrutinee-method-later", .path = "tests/corpus/run/ScrutineeMethodLater.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodLater.expected" } },
-    .{ .name = "scrutinee-method-first", .path = "tests/corpus/run/ScrutineeMethodFirst.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodFirst.expected" } },
-    .{ .name = "single-member-group-receiver", .path = "tests/corpus/run/SingleMemberGroupReceiver.beni", .expect = .{ .prints = "tests/corpus/run/SingleMemberGroupReceiver.expected" } },
-    .{ .name = "scc-annotated", .path = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.expected" } },
-    .{ .name = "scrutinee-merge-variant", .path = "tests/corpus/check/good/ScrutineeMethodMergeVariant/Later.beni", .expect = .checks },
-    // An annotated member of a dispatch cycle instantiates (§6.6).
-    .{ .name = "recursive-dispatch-annotated", .path = "tests/corpus/run/RecursiveDispatchAnnotated.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveDispatchAnnotated.expected" } },
-    // The refusals: one diagnostic, the same in every order.
-    .{ .name = "recursive-dispatch-two-types", .path = "tests/corpus/check/bad/RecursiveDispatchTwoTypes.beni", .expect = .{ .refused = .type_mismatch } },
-    .{ .name = "group-receiver-needs-annotation", .path = "tests/corpus/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "group-evidence-receiver", .path = "tests/corpus/check/bad/RecursiveGroupEvidenceReceiver/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "group-sub-wanted", .path = "tests/corpus/check/bad/RecursiveGroupSubWanted/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "scrutinee-merge-refused", .path = "tests/corpus/check/bad/ScrutineeMethodMergeD14/Later.beni", .expect = .{ .refused = .kind_mismatch } },
-    // A dot-call's field-or-method choice, the recursive-group refusal's
-    // hint naming one member or the final class and none for rule (a), a
-    // merge during the root's boundary, and a refusal whose message shows
-    // a type mid-solve (the same code and region in every order).
-    .{ .name = "field-call-through-member", .path = "tests/corpus/run/FieldCallThroughMember.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMember.expected" } },
-    .{ .name = "field-call-through-member-cycle", .path = "tests/corpus/run/FieldCallThroughMemberCycle.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughMemberCycle.expected" } },
-    .{ .name = "field-call-through-value-recursion", .path = "tests/corpus/run/FieldCallThroughValueRecursion.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueRecursion.expected" } },
-    .{ .name = "field-call-through-value-demand", .path = "tests/corpus/run/FieldCallThroughValueDemand.beni", .expect = .{ .prints = "tests/corpus/run/FieldCallThroughValueDemand.expected" } },
-    .{ .name = "deferred-field", .path = "tests/corpus/run/DeferredReceiverFieldCall.beni", .expect = .{ .prints = "tests/corpus/run/DeferredReceiverFieldCall.expected" } },
-    .{ .name = "group-field-call-two-types", .path = "tests/corpus/check/bad/RecursiveGroupFieldCallTwoTypes.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "group-refusal-rendering", .path = "tests/corpus/check/bad/RecursiveGroupRefusalRendering.beni", .expect = .{ .refused_region = .not_equatable } },
-    .{ .name = "hint-one-member", .path = "tests/corpus/check/bad/RecursiveGroupHintOneMember.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "hint-all-members", .path = "tests/corpus/check/bad/RecursiveGroupHintAllMembers.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "rule-a-no-recursion-hint", .path = "tests/corpus/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .type_mismatch } },
-    .{ .name = "merge-at-boundary", .path = "tests/corpus/run/MergeAtBoundary", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/MergeAtBoundary/_expected.expected" } },
-    // A dot-call joined with a scheme's requirement, both halves of the
-    // rule, a `number` receiver's method in a group. A refusal's message
-    // renders the record as it stood when met (§10.8).
-    .{ .name = "joined-in-group", .path = "tests/corpus/check/bad/DeferredReceiverJoinedInGroup.beni", .expect = .{ .refused_region = .no_methods_on_shape } },
-    .{ .name = "joined-p-first", .path = "tests/corpus/check/bad/DeferredReceiverJoinedRequirement/PFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
-    .{ .name = "joined-q-first", .path = "tests/corpus/check/bad/DeferredReceiverJoinedRequirement/QFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
-    .{ .name = "generalised", .path = "tests/corpus/check/bad/DeferredReceiverGeneralised.beni", .expect = .{ .refused = .no_methods_on_shape } },
-    .{ .name = "recursive-twin", .path = "tests/corpus/run/DeferredReceiverRecursiveTwin.beni", .expect = .{ .prints = "tests/corpus/run/DeferredReceiverRecursiveTwin.expected" } },
-    .{ .name = "number-receiver-in-group", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroup.beni", .expect = .{ .refused = .unknown_method } },
-    .{ .name = "number-receiver-in-group-dispatch", .path = "tests/corpus/check/bad/NumberReceiverMethodInGroupDispatch.beni", .expect = .{ .refused = .unknown_method } },
-    // Derived contexts by fixpoint (checker-v2.md §11.2). A closed in-flight
-    // method (with its nested and permuted twins), the parametric refusal, a
-    // re-entrant query, the replayed wanted that merges the asker, a derived
-    // query inside an own `eq`'s merged class, and `eq` and `compare`
-    // computed jointly over one type-level SCC.
-    .{ .name = "closed-own-method", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
-    .{ .name = "closed-own-method-nested", .path = "tests/corpus/run/DerivedContextClosedOwnMethod", .module = "Nested.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethod/_expected.expected" } },
-    .{ .name = "closed-own-method-permuted", .path = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextClosedOwnMethodPermuted/_expected.expected" } },
-    .{ .name = "derived-needs-annotation", .path = "tests/corpus/check/bad/DerivedContextNeedsAnnotation", .module = "Main.beni", .expect = .{ .refused = .method_needs_annotation } },
-    .{ .name = "derived-reentrant", .path = "tests/corpus/check/bad/DerivedContextReentrant", .module = "Main.beni", .expect = .{ .refused = .type_mismatch } },
-    .{ .name = "derived-merges-asker", .path = "tests/corpus/check/bad/DerivedContextMergesAsker", .module = "PickFirst.beni", .expect = .{ .refused = .kind_mismatch } },
-    .{ .name = "in-flight-eq", .path = "tests/corpus/run/DerivedContextInFlightEq", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextInFlightEq/_expected.expected" } },
-    .{ .name = "joint-eq-compare", .path = "tests/corpus/run/DerivedContextJointMethods", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextJointMethods/_expected.expected" } },
-    // A pass that demands a group which merges down into the asker; a
-    // private `eq` used inside its module and two modules away, permuting
-    // the declaring and the wrapping module; schema
-    // endpoints through the one fixpoint — an exclusion reached through a
-    // `via` target that mentions the endpoint back, the same program
-    // accepted, a record endpoint, and a comparison inside the schema's own
-    // group.
-    .{ .name = "pass-merges-down", .path = "tests/corpus/run/DerivedContextPassMergesDown", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextPassMergesDown/_expected.expected" } },
-    .{ .name = "private-eq-inside-module", .path = "tests/corpus/run/PrivateEqInsideModule", .module = "M.beni", .expect = .{ .prints = "tests/corpus/run/PrivateEqInsideModule/_expected.expected" } },
-    .{ .name = "private-eq-third-module-declaring", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "A.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
-    .{ .name = "private-eq-third-module-wrapping", .path = "tests/corpus/check/bad/PrivateEqThroughThirdModule", .module = "B.beni", .refused_in = "C.beni", .expect = .{ .refused = .private_method } },
-    .{ .name = "schema-exclusion-through-own-type", .path = "tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "schema-endpoint-in-flight", .path = "tests/corpus/check/bad/SchemaEndpointInFlight.beni", .expect = .{ .refused = .method_needs_annotation } },
-    // A closed endpoint compared while its schema is in
-    // flight is deferred (accepted, or refused once the group is done), an
-    // encoded one is never in flight, and a ring closed only through `via`s
-    // is one unit.
-    .{ .name = "schema-endpoint-in-flight-closed", .path = "tests/corpus/check/good/SchemaEndpointInFlightClosed.beni", .expect = .checks },
-    .{ .name = "schema-endpoint-in-flight-function", .path = "tests/corpus/check/bad/SchemaEndpointInFlightFunction.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "schema-encoded-in-flight", .path = "tests/corpus/check/good/SchemaEncodedInFlight.beni", .expect = .checks },
-    .{ .name = "schema-via-ring", .path = "tests/corpus/check/good/SchemaViaRing.beni", .expect = .checks },
-    // The §11.4 gate demands the schemas it reaches and defers one in
-    // flight — each use of the local fixture counted — and a run's own step
-    // budget.
-    .{ .name = "marker-wrapped-endpoint-local", .path = "tests/corpus/check/bad/EquatableMarkerThroughWrappedEndpointLocal.beni", .count = 2, .expect = .{ .refused = .not_equatable } },
-    .{ .name = "marker-unchecked-schema", .path = "tests/corpus/check/bad/EquatableMarkerUncheckedSchema.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "marker-in-flight-schema", .path = "tests/corpus/check/bad/EquatableMarkerInFlightSchema.beni", .expect = .{ .refused = .not_equatable } },
-    .{ .name = "schema-via-mutual-own-type", .path = "tests/corpus/check/good/SchemaViaMutualOwnType.beni", .expect = .checks },
-    .{ .name = "schema-record-via-wrapped", .path = "tests/corpus/check/good/SchemaRecordViaWrapped.beni", .expect = .checks },
-    // Constrained `let` helpers (checker-v2.md §8.4): a `let` helper with a
-    // dot-call's own requirement inside a merged group keeps its field call;
-    // `let` function bindings with evidence, recursive and mutual; a
-    // polymorphic helper and a helper used at two types, across two modules.
-    .{ .name = "let-field-call-merged", .path = "tests/corpus/run/LetFieldCallInMergedGroup.beni", .expect = .{ .prints = "tests/corpus/run/LetFieldCallInMergedGroup.expected" } },
-    .{ .name = "let-evidence-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
-    .{ .name = "let-constrained-helper", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
-    // Two uses of an alias that drops its parameter,
-    // met inside a recursive group, are one type in every order.
-    .{ .name = "phantom-alias-mutual-group", .path = "tests/corpus/run/PhantomAliasMutualGroup.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasMutualGroup.expected" } },
-    // Uses of an alias that drops its parameter, met in a recursive group,
-    // with the names they show compared too; and an unannotated helper whose
-    // dot-call requirement is answered by a derived method at several
-    // types, written above or below its uses.
-    .{ .name = "phantom alias uses in a recursive group", .path = "tests/corpus/run/PhantomAliasUnifiesByExpansion.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasUnifiesByExpansion.expected" } },
-    .{ .name = "a dot-call helper answered by derived methods", .path = "tests/corpus/run/DotCallDerivedThroughHelper.beni", .expect = .{ .prints = "tests/corpus/run/DotCallDerivedThroughHelper.expected" } },
-};
+// The checker's order-dependence regressions are corpus fixtures, and almost
+// every one of them failed as written: the corpus walker's own case is its
+// regression test. The programs below are the exception. Each checked, built
+// or was refused correctly as written and went wrong only with its top-level
+// declarations in another order — in every case here, the reverse of the
+// written one — so each test writes that order and asserts what the
+// fixture asserts as written. Top-level comments are dropped; nothing else
+// about the program changes.
 
-// The programs are split over four tests, each taking every fourth one, so
-// that a sharded run of this binary spreads them over processes.
-test "every order-dependence regression program does what its twin says in a fixed set of orders, first quarter" {
-    try permuteQuarter(0);
+// An own method written below the annotated function whose parameter
+// receives it, called from a `let` helper used at two types: the method's
+// group is checked when it is first demanded, and the helper still
+// generalises. It was refused with NOT IMPLEMENTED YET.
+test "a let helper at two types calls an own method written below it, reversed, and prints the same" {
+    try expectReversedPrints("tests/corpus/run/SingleMemberGroupReceiver.beni", "tests/corpus/run/SingleMemberGroupReceiver.expected");
 }
 
-test "every order-dependence regression program does what its twin says in a fixed set of orders, second quarter" {
-    try permuteQuarter(1);
+// A recursive group's annotated receiver, in both member orders, calling an
+// own method written below the group. It was refused with NOT IMPLEMENTED
+// YET at each call.
+test "an annotated recursive group calls an own method written below it, reversed, and prints the same" {
+    try expectReversedPrints("tests/corpus/run/RecursiveGroupAnnotatedReceiver.beni", "tests/corpus/run/RecursiveGroupAnnotatedReceiver.expected");
 }
 
-test "every order-dependence regression program does what its twin says in a fixed set of orders, third quarter" {
-    try permuteQuarter(2);
+// A dispatch cycle `show` → `eq` → `show` through an annotated `eq`, with
+// `eq` written above `show` and both above the types they use. It was
+// refused with NOT IMPLEMENTED YET at the comparisons.
+test "a dispatch cycle through an annotated eq written above its caller, reversed, prints the same" {
+    try expectReversedPrints("tests/corpus/run/RecursiveDispatchAnnotated.beni", "tests/corpus/run/RecursiveDispatchAnnotated.expected");
 }
 
-test "every order-dependence regression program does what its twin says in a fixed set of orders, fourth quarter" {
-    try permuteQuarter(3);
-}
-
-/// The programs of `perm_programs` whose index is `quarter` modulo four.
-fn permuteQuarter(quarter: usize) !void {
-    var s = try Scenario.init("declaration orders");
+// A wrapper of a schema endpoint that reaches a function type only through
+// a `via` conversion's own target type. Reversed, the endpoint's properties
+// were settled before the target was inferred and the comparison checked
+// clean; it must be the written order's one `not_equatable`, the same
+// message at the same source text.
+test "a schema endpoint's exclusion through its via target is the same refusal reversed" {
+    var s = try Scenario.init("a schema endpoint's exclusion, reversed");
     defer s.deinit();
-    var programs: usize = 0;
-    var orders: usize = 0;
-    for (perm_programs, 0..) |p, i| {
-        if (i % 4 != quarter) continue;
-        programs += 1;
-        const outcome = try permuteProgram(&s, p, i);
-        switch (outcome) {
-            .orders => |n| orders += n,
-            .red => |v| return s.finish(v),
-        }
-    }
-    try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} programs, {d} orders", .{ programs, orders }) });
+    const a = s.arena();
+    const path = "tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni";
+    const written = try source(a, path, .written);
+    const reversed = try source(a, path, .reversed);
+    try s.w.write("Written.beni", written);
+    try s.w.write("Reversed.beni", reversed);
+    const run = try s.w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", "--platform=node", "Written.beni", "Reversed.beni" }, .{ .raw_diagnostics = true });
+    const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
+    const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return s.finish(try s.failed(run));
+    const want = (refusals(diags, "Written.beni", written, .not_equatable)) orelse return s.finish(try s.failed(run));
+    const got = (refusals(diags, "Reversed.beni", reversed, .not_equatable)) orelse return s.finish(try s.failed(run));
+    const same = std.mem.eql(u8, want.message, got.message) and std.mem.eql(u8, want.text, got.text);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=1 differs", .detail = "the reversed order's refusal differs from the written order's" });
 }
 
-const PermProgram = struct {
-    name: []const u8,
-    /// A single-file fixture, or a project directory with `module` the file
-    /// whose declarations are permuted.
-    path: []const u8,
-    module: ?[]const u8 = null,
-    /// A project refused in ANOTHER file than the one permuted (a
-    /// comparison two modules away from a private `eq`): the one
-    /// diagnostic is asserted there, at the same text in every order.
-    refused_in: ?[]const u8 = null,
-    /// How many diagnostics the refusal is, all of the expected code:
-    /// exactly that many in every order.
-    count: u32 = 1,
-    expect: union(enum) {
-        /// The oracle twin's stdout, as a file.
-        prints: []const u8,
-        checks,
-        refused: @import("diagnostic").Code,
-        /// One diagnostic of this code at the same source text in every
-        /// order; its message may show a type as it stood when the refusal
-        /// was found (checker-v2.md §10.8).
-        refused_region: @import("diagnostic").Code,
-    },
-};
+// Schema endpoints through the derived-context fixpoint whose `via` target
+// mentions the endpoint back, or which wrap a record endpoint. Reversed,
+// both stopped the checker with the invariant "an item was readied for a
+// frame that is gone".
+test "a schema via a mutually recursive own type checks reversed" {
+    try expectReversedChecks("tests/corpus/check/good/SchemaViaMutualOwnType.beni");
+}
 
-/// Seeded shuffles tried per program, beside the written and the reversed
-/// order.
-const shuffles = 3;
+test "a type wrapping a record schema endpoint checks reversed" {
+    try expectReversedChecks("tests/corpus/check/good/SchemaRecordViaWrapped.beni");
+}
 
-/// A source file split at its top-level declarations: the `import` lines, and
-/// each declaration with its annotation. Top-level comments are dropped.
-const Split = struct { imports: []const u8, decls: []const []const u8 };
+// Uses of an alias that drops its parameter, met in a recursive group: the
+// group's result is one type whichever use it meets first. Reversed, `f`
+// and `g` were inferred `number -> Int` where the written order says
+// `number -> Tagged String`; every declaration's type must be the written
+// order's.
+test "an alias that drops its parameter names the same types reversed" {
+    var s = try Scenario.init("a phantom alias in a recursive group, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/run/PhantomAliasUnifiesByExpansion.beni";
+    try s.w.write("Written.beni", try source(a, path, .written));
+    try s.w.write("Reversed.beni", try source(a, path, .reversed));
+    var blocks: [2][]const u8 = undefined;
+    for ([_][]const u8{ "Written.beni", "Reversed.beni" }, &blocks) |file, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--platform=node", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        slot.* = try declBlocks(a, run.stdout);
+    }
+    const same = std.mem.eql(u8, blocks[0], blocks[1]);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=0 types-differ", .detail = if (same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "written: {s} reversed: {s}", .{ blocks[0], blocks[1] }), "\n", " | ") });
+}
 
-fn splitDecls(arena: std.mem.Allocator, text: []const u8) !Split {
+/// `path`'s program with its declarations reversed builds, and prints
+/// exactly `twin`.
+fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {
+    var s = try Scenario.init(path);
+    defer s.deinit();
+    const a = s.arena();
+    try s.w.write("Main.beni", try source(a, path, .reversed));
+    const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (built.exit_code != 0) return s.finish(try s.failed(built));
+    const program = try s.w.node(world.entry_file);
+    const expected = try readRepo(a, twin);
+    const same = program.exit_code == 0 and std.mem.eql(u8, program.stdout, expected);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=0 stdout-differs", .detail = if (same) "" else program.stdout[0..@min(program.stdout.len, 300)] });
+}
+
+/// `path`'s program with its declarations reversed checks clean.
+fn expectReversedChecks(comptime path: []const u8) !void {
+    var s = try Scenario.init(path);
+    defer s.deinit();
+    try s.w.write("Main.beni", try source(s.arena(), path, .reversed));
+    const run = try s.w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (run.exit_code != 0 or std.mem.trim(u8, run.stderr, " \r\n").len != 0) return s.finish(try s.failed(run));
+}
+
+fn readRepo(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    return Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+}
+
+/// A fixture's program rebuilt from its `import` lines and its top-level
+/// declarations (each with its annotation), in the written order or
+/// reversed. Top-level comments are dropped.
+fn source(arena: std.mem.Allocator, path: []const u8, order: enum { written, reversed }) ![]const u8 {
+    const text = try readRepo(arena, path);
     var imports: std.ArrayList(u8) = .empty;
     var decls: std.ArrayList([]const u8) = .empty;
     var current: std.ArrayList(u8) = .empty;
@@ -272,172 +171,15 @@ fn splitDecls(arena: std.mem.Allocator, text: []const u8) !Split {
         try current.append(arena, '\n');
     }
     if (current.items.len != 0) try decls.append(arena, std.mem.trimEnd(u8, current.items, "\n"));
-    return .{ .imports = imports.items, .decls = decls.items };
-}
-
-/// `main : Program` / `main = Node.printLines X` made `pub lines : List
-/// String` / `lines = X`, so a packing `Main` can print it.
-fn asLines(arena: std.mem.Allocator, decl: []const u8) ![]const u8 {
-    if (!std.mem.startsWith(u8, decl, "main ")) return decl;
-    const a = try std.mem.replaceOwned(u8, arena, decl, "main : Program", "pub lines : List String");
-    const b = try std.mem.replaceOwned(u8, arena, a, "\nmain =", "\nlines =");
-    return std.mem.replaceOwned(u8, arena, b, "Node.printLines", "");
-}
-
-/// The orders tried for `n` declarations: the written one, the reversed one,
-/// and `shuffles` shuffles seeded by the program's index, without
-/// repeats (a program of one or two declarations has fewer).
-fn declOrders(arena: std.mem.Allocator, n: usize, seed: u64) ![]const []const usize {
-    var out: std.ArrayList([]const usize) = .empty;
-    const written = try arena.alloc(usize, n);
-    for (written, 0..) |*slot, i| slot.* = i;
-    try out.append(arena, written);
-    const reversed = try arena.dupe(usize, written);
-    std.mem.reverse(usize, reversed);
-    try appendNew(arena, &out, reversed);
-    var prng: std.Random.DefaultPrng = .init(seed);
-    for (0..shuffles) |_| {
-        const shuffled = try arena.dupe(usize, written);
-        prng.random().shuffle(usize, shuffled);
-        try appendNew(arena, &out, shuffled);
+    if (order == .reversed) std.mem.reverse([]const u8, decls.items);
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, imports.items);
+    for (decls.items) |d| {
+        try out.appendSlice(arena, "\n\n");
+        try out.appendSlice(arena, d);
+        try out.append(arena, '\n');
     }
     return out.items;
-}
-
-fn appendNew(arena: std.mem.Allocator, out: *std.ArrayList([]const usize), order: []const usize) !void {
-    for (out.items) |seen| if (std.mem.eql(usize, seen, order)) return;
-    try out.append(arena, order);
-}
-
-const PermOutcome = union(enum) { orders: usize, red: Verdict };
-
-fn readRepo(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
-    return Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
-}
-
-/// Program `p`'s orders, tried (`perm_programs`' comment); `index` names its
-/// modules and seeds its shuffles.
-fn permuteProgram(s: *Scenario, p: PermProgram, index: usize) !PermOutcome {
-    const a = s.arena();
-    const source_path = if (p.module) |m| try std.fs.path.join(a, &.{ p.path, m }) else p.path;
-    const split = try splitDecls(a, try readRepo(a, source_path));
-    const orders = try declOrders(a, split.decls.len, index);
-    const files = try a.alloc([]const u8, orders.len);
-    const texts = try a.alloc([]const u8, orders.len);
-    for (orders, files, texts, 0..) |order, *file, *text, k| {
-        var out: std.ArrayList(u8) = .empty;
-        try out.appendSlice(a, split.imports);
-        for (order) |d| {
-            try out.appendSlice(a, "\n\n");
-            try out.appendSlice(a, if (p.module == null and p.expect == .prints) try asLines(a, split.decls[d]) else split.decls[d]);
-            try out.append(a, '\n');
-        }
-        text.* = out.items;
-        file.* = if (p.module) |m| m else try std.fmt.allocPrint(a, "Perm{d}x{d}.beni", .{ index, k });
-    }
-    const red = if (p.module) |module|
-        try permuteProject(s, p, module, files, texts, orders)
-    else switch (p.expect) {
-        .prints => |twin| try permutePrints(s, p, index, twin, files, texts, orders),
-        .checks => try permuteChecks(s, p, files, texts, orders),
-        .refused => |code| try permuteRefused(s, p, code, true, files, texts, orders),
-        .refused_region => |code| try permuteRefused(s, p, code, false, files, texts, orders),
-    };
-    if (red) |v| return .{ .red = v };
-    return .{ .orders = orders.len };
-}
-
-fn redAt(s: *Scenario, p: PermProgram, order: []const usize, v: Verdict, total: usize) !Verdict {
-    return .{ .green = false, .signature = v.signature, .detail = try std.fmt.allocPrint(s.arena(), "{s} (of {d} orders), order {any}: {s}", .{ p.name, total, order, v.detail[0..@min(v.detail.len, 600)] }) };
-}
-
-/// The order whose module a build's first diagnostic is in.
-fn failingOrder(built: world.Result, files: []const []const u8) usize {
-    var best: usize = 0;
-    var at: usize = std.math.maxInt(usize);
-    for (files, 0..) |f, k| {
-        const pos = std.mem.indexOf(u8, built.stderr, f) orelse continue;
-        if (pos < at) {
-            at = pos;
-            best = k;
-        }
-    }
-    return best;
-}
-
-/// Every order of a single-file program in one build: `PermMain<i>` prints
-/// each order's `lines`, so the run must print the twin's output once per
-/// order.
-fn permutePrints(s: *Scenario, p: PermProgram, index: usize, twin: []const u8, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
-    const a = s.arena();
-    for (files, texts) |f, t| try s.w.write(f, t);
-    var main: std.ArrayList(u8) = .empty;
-    try main.appendSlice(a, "import Node exposing (Program)\n");
-    for (0..files.len) |k| try main.print(a, "import Perm{d}x{d}\n", .{ index, k });
-    try main.appendSlice(a, "\n\nmain : Program\nmain =\n    Node.printLines\n        (List.concat\n            [ ");
-    for (0..files.len) |k| {
-        if (k != 0) try main.appendSlice(a, "            , ");
-        try main.print(a, "Perm{d}x{d}.lines\n", .{ index, k });
-    }
-    try main.appendSlice(a, "            ]\n        )\n");
-    const entry = try std.fmt.allocPrint(a, "PermMain{d}.beni", .{index});
-    try s.w.write(entry, main.items);
-    const out_dir = try std.fmt.allocPrint(a, "out{d}", .{index});
-    var args: std.ArrayList([]const u8) = .empty;
-    try args.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", try std.fmt.allocPrint(a, "--out={s}", .{out_dir}), entry });
-    try args.appendSlice(a, files);
-    const built = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
-    if (built.exit_code != 0) {
-        const k = failingOrder(built, files);
-        return try redAt(s, p, orders[k], try s.failed(built), files.len);
-    }
-    const program = try s.w.nodeWith(try std.fmt.allocPrint(a, "{s}/_main.mjs", .{out_dir}), world.bulk_timeout_ms);
-    if (program.exit_code != 0) return try redAt(s, p, orders[0], .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=0 program-exit={d}", .{program.exit_code}), .detail = std.mem.trim(u8, program.stderr[0..@min(program.stderr.len, 160)], " \r\n") }, files.len);
-    const expected = try readRepo(a, twin);
-    for (orders, 0..) |o, k| {
-        const at = k * expected.len;
-        if (program.stdout.len < at + expected.len or !std.mem.eql(u8, program.stdout[at..][0..expected.len], expected)) {
-            return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, files.len);
-        }
-    }
-    if (program.stdout.len != expected.len * files.len) return try redAt(s, p, orders[0], .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, files.len);
-    return try sameTypes(s, p, files, orders);
-}
-
-/// Every order checks, and has the same types.
-fn permuteChecks(s: *Scenario, p: PermProgram, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
-    const a = s.arena();
-    for (files, texts) |f, t| try s.w.write(f, t);
-    var args: std.ArrayList([]const u8) = .empty;
-    try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
-    try args.appendSlice(a, files);
-    const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
-    if (run.exit_code != 0 or std.mem.trim(u8, run.stderr, " \r\n").len != 0) {
-        return try redAt(s, p, orders[failingOrder(run, files)], try s.failed(run), files.len);
-    }
-    return try sameTypes(s, p, files, orders);
-}
-
-/// `dump --stage=types` of every order tried: each declaration's block the
-/// same, wherever it is written.
-fn sameTypes(s: *Scenario, p: PermProgram, files: []const []const u8, orders: []const []const usize) !?Verdict {
-    const a = s.arena();
-    var first: ?[]const u8 = null;
-    for (0..files.len) |k| {
-        const run = try s.w.runWith(try s.argv(&.{ "dump", "--stage=types", "--platform=node", files[k] }), .{ .raw_diagnostics = true });
-        if (run.exit_code != 0) return try redAt(s, p, orders[k], try s.failed(run), files.len);
-        const blocks = try declBlocks(a, run.stdout);
-        if (first) |f| {
-            if (!std.mem.eql(u8, f, blocks)) {
-                var at: usize = 0;
-                while (at < f.len and at < blocks.len and f[at] == blocks[at]) at += 1;
-                const from = std.mem.lastIndexOfScalar(u8, f[0..at], '\n') orelse 0;
-                const detail = try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "dump --stage=types differs from the written order's: {s} vs {s}", .{ f[from..@min(f.len, from + 90)], blocks[from..@min(blocks.len, from + 90)] }), "\n", " | ");
-                return try redAt(s, p, orders[k], .{ .green = false, .signature = "exit=0 types-differ", .detail = detail }, files.len);
-            }
-        } else first = blocks;
-    }
-    return null;
 }
 
 /// A types dump's declaration blocks, sorted and joined, without its
@@ -466,58 +208,18 @@ fn declBlocks(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
     return out.items;
 }
 
-/// Every order refused with one diagnostic of `code`, byte-identical: the
-/// same message, and the same text under its span.
-fn permuteRefused(s: *Scenario, p: PermProgram, code: @import("diagnostic").Code, same_text: bool, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
-    const a = s.arena();
-    for (files, texts) |f, t| try s.w.write(f, t);
-    var args: std.ArrayList([]const u8) = .empty;
-    try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
-    try args.appendSlice(a, files);
-    const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
-    const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
-    const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, orders[0], try s.failed(run), files.len);
-    var reference: ?Refusals = null;
-    for (files, texts, orders) |f, t, o| {
-        const got = (try refusals(a, diags, f, t, code, p.count)) orelse return try redAt(s, p, o, try s.failed(run), files.len);
-        if (reference) |r| {
-            if ((same_text and !std.mem.eql(u8, r.message, got.message)) or !std.mem.eql(u8, r.text, got.text)) {
-                return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×{d} differs", .{ code, p.count }), .detail = "the diagnostics differ from the written order's" }, files.len);
-            }
-        } else reference = got;
-    }
-    return null;
-}
-
-/// A permuted program's refusals in one file: exactly
-/// `count` diagnostics, every one of `code`, as their messages and the source
-/// text under their spans, sorted — so the same refusals in any order of
-/// declarations compare equal. Null when the count or a code differs.
+/// A file's refusals: exactly one diagnostic, of `code`, as its message and
+/// the source text under its span. Null when the count or the code differs.
 const Refusals = struct { message: []const u8, text: []const u8 };
 
-fn refusals(a: std.mem.Allocator, diags: []const @import("diagnostic").Diagnostic, file: []const u8, source: []const u8, code: @import("diagnostic").Code, count: u32) !?Refusals {
-    var pairs: std.ArrayList([2][]const u8) = .empty;
+fn refusals(diags: []const @import("diagnostic").Diagnostic, file: []const u8, text: []const u8, code: @import("diagnostic").Code) ?Refusals {
+    var found: ?Refusals = null;
     for (diags) |d| {
         if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), file)) continue;
-        if (d.code != code) return null;
-        try pairs.append(a, .{ spanText(source, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col), d.message });
+        if (d.code != code or found != null) return null;
+        found = .{ .message = d.message, .text = spanText(text, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col) };
     }
-    if (pairs.items.len != count) return null;
-    std.mem.sort([2][]const u8, pairs.items, {}, struct {
-        fn lessThan(_: void, x: [2][]const u8, y: [2][]const u8) bool {
-            const o = std.mem.order(u8, x[0], y[0]);
-            return if (o != .eq) o == .lt else std.mem.lessThan(u8, x[1], y[1]);
-        }
-    }.lessThan);
-    var message: std.ArrayList(u8) = .empty;
-    var text: std.ArrayList(u8) = .empty;
-    for (pairs.items) |pr| {
-        try text.appendSlice(a, pr[0]);
-        try text.append(a, 0);
-        try message.appendSlice(a, pr[1]);
-        try message.append(a, 0);
-    }
-    return .{ .message = message.items, .text = text.items };
+    return found;
 }
 
 /// The source text from `line:col` to `end_line:end_col` (1-based, the end
@@ -533,70 +235,6 @@ fn offsetOf(text: []const u8, line: usize, col: usize) ?usize {
     var l: usize = 1;
     while (l < line) : (l += 1) at = (std.mem.indexOfScalarPos(u8, text, at, '\n') orelse return null) + 1;
     return @min(at + col - 1, text.len);
-}
-
-/// A project's module in every order, one build each: the project's other
-/// files as they are.
-fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
-    const a = s.arena();
-    _ = files;
-    var dir = try Io.Dir.cwd().openDir(testing.io, p.path, .{ .iterate = true });
-    defer dir.close(testing.io);
-    var names: std.ArrayList([]const u8) = .empty;
-    var it = dir.iterate();
-    while (try it.next(testing.io)) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
-        const name = try a.dupe(u8, entry.name);
-        try names.append(a, name);
-        if (std.mem.eql(u8, name, module)) continue;
-        try s.w.write(name, try readRepo(a, try std.fs.path.join(a, &.{ p.path, name })));
-    }
-    switch (p.expect) {
-        .prints => |twin_path| {
-            const twin = try readRepo(a, twin_path);
-            var sources: std.ArrayList([]const u8) = .empty;
-            try sources.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out" });
-            try sources.appendSlice(a, names.items);
-            for (texts, orders) |t, o| {
-                try s.w.write(module, t);
-                const built = try s.w.runWith(try s.argv(sources.items), .{ .raw_diagnostics = true });
-                if (built.exit_code != 0) return try redAt(s, p, o, try s.failed(built), texts.len);
-                const program = try s.w.node(world.entry_file);
-                if (program.exit_code != 0 or !std.mem.eql(u8, program.stdout, twin)) {
-                    return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, texts.len);
-                }
-            }
-            return null;
-        },
-        .refused, .refused_region => |code| {
-            // A project's module refused in every order — one
-            // diagnostic of `code` in that module (another module of the
-            // project may say its own), at the same source text in every
-            // order, with the same message unless `refused_region`.
-            const same_text = p.expect == .refused;
-            // The refusal may be in another file than the permuted one.
-            const target = p.refused_in orelse module;
-            const target_text: ?[]const u8 = if (p.refused_in) |f| try readRepo(a, try std.fs.path.join(a, &.{ p.path, f })) else null;
-            var args: std.ArrayList([]const u8) = .empty;
-            try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
-            try args.appendSlice(a, names.items);
-            var reference: ?Refusals = null;
-            for (texts, orders) |t, o| {
-                try s.w.write(module, t);
-                const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
-                const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
-                const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, o, try s.failed(run), texts.len);
-                const got = (try refusals(a, diags, target, target_text orelse t, code, p.count)) orelse return try redAt(s, p, o, try s.failed(run), texts.len);
-                if (reference) |ref| {
-                    if ((same_text and !std.mem.eql(u8, ref.message, got.message)) or !std.mem.eql(u8, ref.text, got.text)) {
-                        return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×{d} differs", .{ code, p.count }), .detail = "the diagnostics differ from the written order's" }, texts.len);
-                    }
-                } else reference = got;
-            }
-            return null;
-        },
-        .checks => unreachable,
-    }
 }
 
 // The name an inferred type shows is the same in every declaration order

@@ -1,5 +1,5 @@
--- See A.beni. The wrapper module: it declares several things, so
--- `scenario/PERM` can permute them and the published row must not move.
+-- See A.beni. The wrapper module: it declares several things, and
+-- the order they are written in must not move the published row.
 import A
 
 

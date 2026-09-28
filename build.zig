@@ -287,7 +287,7 @@ pub fn build(b: *std.Build) void {
         .{ "tests/blackbox/docs_test.zig", 1 },
         .{ "tests/blackbox/frontend_test.zig", 1 },
         .{ "tests/blackbox/iface_test.zig", 1 },
-        .{ "tests/blackbox/ordering_test.zig", 4 },
+        .{ "tests/blackbox/ordering_test.zig", 2 },
     }) |suite| {
         // The walker's knobs are pinned on every binary, not only the
         // walker: `run.setEnvironmentVariable` is the one place a test's

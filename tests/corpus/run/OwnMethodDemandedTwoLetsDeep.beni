@@ -3,8 +3,8 @@
 -- first needed inside `g`, a `let` function inside `f`, a `let` function
 -- inside `outer`, so its group is nested in a fresh top-level-kind frame
 -- above three open frames. Its scheme, and `g`'s, must be the ones the
--- other order gives — `dump --stage=types` is compared across orders by the
--- permutation scenario (`scenario/PERM`) — and `g` still generalises, so
+-- other order gives — `dump --stage=types` is the same in every
+-- declaration order — and `g` still generalises, so
 -- `( g a, g "s" )` checks. `size`'s own `let` helper `h` is generalised
 -- in the nested frame. Expected `1 1`.
 --

@@ -241,8 +241,10 @@ a panic, a hang, or an OOM — and must leave no partial output behind.
 Size every generated input to the smallest that reaches what it is about: one
 level past a nesting cap, one entry past a width limit, and for a regression
 the size that failed before the fix — never ten times past. A declaration-order
-test tries a fixed set of orders (the written one, the reversed one, a few
-seeded shuffles, and any order a defect needed), never every permutation.
+test writes the order that failed before its fix (a corpus fixture, when that
+is the written order; `ordering_test.zig`, when it is another), and the
+written twin only when the assertion compares against it — never a sweep of
+orders.
 
 ## Fixtures: capture, don't invent
 
