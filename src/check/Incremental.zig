@@ -21,6 +21,7 @@ const Key = @import("../cache/Key.zig");
 const Digest = @import("../cache/Digest.zig");
 const Check = @import("Check.zig");
 const Driver = @import("Driver.zig");
+const Report = @import("Report.zig");
 
 const Error = Check.Error;
 
@@ -219,8 +220,9 @@ pub fn verifyReads(d: *Driver, m: Graph.Index, recorder: *const reads.Recorder) 
             d.interner.slice(d.graph.moduleName(bad.read)),
         },
     );
-    errdefer d.gpa.free(message);
-    try d.per_module[m.int()].append(d.gpa, .{
+    // The module's list grows only through `Report.appendTo` (§15.1); an
+    // `internal` is kept even in a quiet module.
+    try Report.appendTo(d.gpa, &d.per_module[m.int()], false, .{
         .code = .internal,
         .module = m,
         .region = @enumFromInt(0),

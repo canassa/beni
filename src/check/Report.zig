@@ -32,6 +32,7 @@ const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const EnvFile = @import("Env.zig");
 const Context = @import("Context.zig");
+const U32Set = @import("../u32_set.zig").U32Set;
 
 const Report = @This();
 
@@ -65,6 +66,9 @@ errors: u32 = 0,
 /// The `nesting_too_deep`s among them: a derived-context pass reads whether
 /// one was said while it ran, quiet or not (`Contexts.pass`).
 too_deep: u32 = 0,
+/// The regions of the errors in `items` about this module: what
+/// `hasErrorAt` answers from, filled where `items` grows.
+error_regions: U32Set = .{},
 /// Per local of the module, what the generator bound it to: the texts name
 /// a callee from it (`Reporter.describe`).
 local_type: []Var.Optional = &.{},
@@ -90,6 +94,7 @@ pub fn init(
     r.* = .{ .gpa = cx.gpa, .module = cx.module, .items = items, .quiet = quiet, .local_type = local_type };
     r.failed = try .initEmpty(cx.gpa, cx.bir.decls.len);
     r.failed_patterns = try .initEmpty(cx.gpa, cx.bir.decls.len);
+    for (items.items) |item| try r.noteError(item);
     r.env = .{
         .scratch = cx.scratch,
         .store = cx.store,
@@ -111,6 +116,7 @@ pub fn deinit(r: *Report) void {
     r.staged.deinit(r.gpa);
     r.failed.deinit(r.gpa);
     r.failed_patterns.deinit(r.gpa);
+    r.error_regions.deinit(r.gpa);
     r.monomorphic.deinit(r.env.scratch);
     r.late.deinit(r.gpa);
 }
@@ -126,7 +132,18 @@ pub fn emit(r: *Report, item: Item) Error!void {
             if (item.code != .infinite_type) r.failed_patterns.set(d);
         }
     }
+    const kept = !r.quiet or item.code == .internal;
+    if (kept) r.noteError(item) catch |err| {
+        r.gpa.free(item.message);
+        return err;
+    };
     return appendTo(r.gpa, r.items, r.quiet, item);
+}
+
+/// Record `item`'s region when it is an error about this module.
+fn noteError(r: *Report, item: Item) Error!void {
+    if (item.module != r.module or item.severity != .@"error") return;
+    _ = try r.error_regions.insert(r.gpa, @intFromEnum(item.region));
 }
 
 /// The list half of `emit`, for the one caller that has no `Report` yet — P0's
@@ -411,12 +428,8 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
     try r.flush();
 }
 
-/// Whether this module already has an error at `region`: an error path's
-/// question (a scan), so one use is not refused twice for one receiver
-/// (`Instances.noMethodsAs`).
+/// Whether this module's list already holds an error at `region`, so one
+/// use is not refused twice for one receiver (`Instances.noMethodsAs`).
 pub fn hasErrorAt(r: *const Report, region: Bir.Inst.Index) bool {
-    for (r.items.items) |item| {
-        if (item.module == r.module and item.region == region and item.severity == .@"error") return true;
-    }
-    return false;
+    return r.error_regions.contains(@intFromEnum(region));
 }
