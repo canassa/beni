@@ -282,7 +282,7 @@ pub fn build(b: *std.Build) void {
         .{ "tests/blackbox/build_test.zig", 3 },
         .{ "tests/blackbox/cache_test.zig", 4 },
         .{ "tests/blackbox/check_test.zig", 1 },
-        .{ "tests/blackbox/cutoff_test.zig", 4 },
+        .{ "tests/blackbox/cutoff_test.zig", 3 },
         .{ "tests/blackbox/digest_test.zig", 3 },
         .{ "tests/blackbox/docs_test.zig", 1 },
         .{ "tests/blackbox/frontend_test.zig", 1 },

@@ -3737,6 +3737,10 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   R11 no build reaches v1's path by default.
 - **Status** closed by R12 (2026-09-27): v1 is deleted. Its v2 side stays in the gates
   (`cutoff_test.zig`'s row, no longer `v2_only`, and `cache_test.zig`'s schema case).
+  *2026-09-28:* the `cutoff_test.zig` row is gone — that file now keeps one edit per branch of the
+  cut-off decision, and a private `eq` moves the module's interface hash, the branch its pub
+  signature edit covers. `cache_test.zig`'s schema case and its private-method evidence cases are
+  the regression.
 
 ### CK-133 — The Debug check of an acyclicity proof re-walks the proved graph at every stop: 31 s on a 4 095-level record
 

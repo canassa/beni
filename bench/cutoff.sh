@@ -22,10 +22,10 @@
 #   warm2  build; byte-identical to cold again
 #
 # **The bounded subset is `tests/blackbox/cutoff_test.zig`** and runs in every
-# gate: §10.1's five-module project against every edit class of the table,
-# including both DEMONSTRATED miscompiles. This script is the full cross over
-# every module of every project, it is a documented command rather than a gate,
-# and its wall time is reported. Over ten minutes on the reference machine it
+# gate: one edit per branch of the cut-off decision on §10.1's five-module
+# project, the digest-only one a DEMONSTRATED miscompile. This script is the
+# full cross over every module of every project, it is a documented command
+# rather than a gate, and its wall time is reported. Over ten minutes on the reference machine it
 # samples with a fixed stride, seeded and printed, exactly as §10.2 specifies
 # the fallback rather than discovering it.
 #

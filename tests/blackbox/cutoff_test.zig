@@ -32,13 +32,22 @@
 //! **What this file is, against the full cross.** `bench/cutoff.sh` runs the
 //! same loop over every module of `bench/corpus`, `core` under `--core-root`
 //! and the `tests/corpus/` directory fixtures — thousands of builds, a
-//! documented command with a stated budget. What runs in every gate is this:
-//! the five-module project of §10.1 against every edit class of the table, and
-//! it is representative on the one axis that matters — **it contains both
-//! DEMONSTRATED miscompiles** (a private type whose payload becomes a function,
-//! and a `pub type alias` whose body no scheme mentions) **and at least one
-//! instance of every edit class**, which is what the full cross would be run to
-//! discover and is not what it would be run to re-discover every commit.
+//! documented command with a stated budget. What runs in every gate is one
+//! edit per branch of the cut-off decision (`cache/Key.zig`: a module's key
+//! is its own terms plus, per import, that import's interface hash and
+//! dependency digest):
+//!
+//!   * its own source moves and no import's pair does: the edited module is
+//!     re-checked and its importers are cut off;
+//!   * an import's interface hash moves: its importers are re-checked, and
+//!     theirs through their digests;
+//!   * an import's digest moves and its hash does not: its importers are
+//!     re-checked all the same — the demonstrated miscompile of a `pub type
+//!     alias` no scheme names, which a warm build accepted and a cold one
+//!     refuses.
+//!
+//! WHICH edits move a hash or a digest is `digest_test.zig`'s subject, row by
+//! row; what is here is the decision those moves drive.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -60,6 +69,10 @@ const leaf_source =
     \\
     \\pub type alias Pair =
     \\    { a : Int }
+    \\
+    \\
+    \\pub type alias Coord =
+    \\    ( Int, Int )
     \\
     \\
     \\pub type Tag
@@ -84,7 +97,7 @@ const leaf_sibling =
 ;
 
 const mid_source =
-    \\import Leaf exposing (Blue, Pair, Red, Tag)
+    \\import Leaf exposing (Blue, Coord, Pair, Red, Tag)
     \\
     \\
     \\pub same : Int, Int -> Bool
@@ -110,6 +123,11 @@ const mid_source =
     \\pub passThrough : Pair -> Pair
     \\passThrough p =
     \\    p
+    \\
+    \\
+    \\pub column : Coord -> Int
+    \\column ( x, y ) =
+    \\    x
     \\
 ;
 
@@ -289,245 +307,108 @@ const Edit = struct {
     /// The skip decision, pinned: modules re-checked by the warm build
     /// after the edit, and modules cut off. `--cache-keys` already predicts
     /// the first; pinning it too makes the number of re-checked modules a
-    /// fact the table states rather than a consequence of the key.
+    /// fact the test states rather than a consequence of the key.
     rechecked: u64,
     cut_off: u64,
 };
 
-/// **Every edit class of `plans/m4-3.md` §10.2, and at least one instance of
-/// each.** The comment-only, whitespace-only, annotated-body,
-/// unannotated-body-whose-scheme-moves, add/remove a private value, add/
-/// remove/rename a private TYPE, change a private type's constructors
-/// (INCLUDING the payload-becomes-a-function case), make a private type `pub`,
-/// add a `pub` value, change a `pub` signature, change a type alias's body
-/// (INCLUDING the alias-nobody-mentions case), add a constructor to a `pub`
-/// type an importer matches exhaustively, change a `where` clause, add a `pub
-/// compare`, touch a sibling `.js`, reorder declarations, reorder imports.
-const edits = [_]Edit{
-    .{ .what = "comment only", .rechecked = 1, .cut_off = 14, .source = "-- a new comment\n" ++ leaf_source },
-    .{ .what = "whitespace only", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\n" },
-    .{ .what = "annotated body", .rechecked = 1, .cut_off = 14, .source = replace(leaf_source, "pub one : Int\none =\n    1", "pub one : Int\none =\n    2") },
-    .{ .what = "add a private value", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n" },
-    .{ .what = "add a private type", .rechecked = 1, .cut_off = 14, .source = leaf_source ++ "\n\ntype Unmentioned\n    = U Int\n" },
-    // Written out rather than built by two nested `replace`s: a nested call
-    // is not reliably folded at comptime, and a row whose edit silently did
-    // nothing would pass for the wrong reason.
-    .{ .what = "rename a private type a pub signature names", .rechecked = 4, .cut_off = 11, .source =
-    \\pub foreign twice : Int -> Int
-    \\
-    \\
-    \\type Secret
-    \\    = H Int
-    \\    | Extra Int
-    \\
-    \\
-    \\pub type alias Pair =
-    \\    { a : Int }
-    \\
-    \\
-    \\pub type Tag
-    \\    = Red
-    \\    | Blue
-    \\
-    \\
-    \\pub make : Int -> Secret
-    \\make x =
-    \\    H x
-    \\
-    \\
-    \\pub one : Int
-    \\one =
-    \\    1
-    \\
-    },
-    .{
-        .what = "rename a private type's constructor",
-        .rechecked = 1,
-        .cut_off = 14,
-        .source = replace(leaf_source, "    | Extra Int", "    | Additional Int"),
-    },
-    .{
-        .what = "a private type's payload becomes a function (§6.1)",
+// ---------------------------------------------------------------------------
+// One edit per branch of the decision
+// ---------------------------------------------------------------------------
+
+test "a comment in Leaf re-checks Leaf alone: no import's pair moved, so its importers are cut off" {
+    try differential(.{ .what = "comment only", .rechecked = 1, .cut_off = 14, .source = "-- a new comment\n" ++ leaf_source });
+}
+
+test "a pub signature in Leaf moves its interface hash and re-checks every module downstream" {
+    // `Mid` sees `Leaf`'s hash move; `Top` and `Side` see `Mid`'s digest
+    // move, because a digest carries its imports' pairs.
+    try differential(.{ .what = "change a pub signature", .rechecked = 4, .cut_off = 11, .source = replace(leaf_source, "pub one : Int", "pub one : Float") });
+}
+
+test "an alias body no scheme names moves only Leaf's digest, and Mid is re-checked and refuses" {
+    // `Coord` is named by no scheme of `Leaf`, so `Leaf`'s record, and
+    // with it its hash, does not move; `Mid`'s `column` expands it and now
+    // returns a `Float` its annotation calls `Int`. Were the key to fold
+    // the hash alone, `Mid` would hit, and the warm build would exit 0
+    // where a cold one reports the mismatch.
+    try differential(.{
+        .what = "change an alias body no scheme names",
         .rechecked = 4,
         .cut_off = 11,
-        .source = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
-    },
-    .{ .what = "make a private type pub", .rechecked = 4, .cut_off = 11, .source = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },
-    .{ .what = "add a pub value", .rechecked = 4, .cut_off = 11, .source = leaf_source ++ "\n\npub extra : Int\nextra =\n    2\n" },
-    .{ .what = "change a pub signature", .rechecked = 4, .cut_off = 11, .source = replace(leaf_source, "pub one : Int", "pub one : Float") },
-    .{
-        .what = "change an alias body no scheme names (§6.2)",
-        .rechecked = 4,
-        .cut_off = 11,
-        .source = replace(leaf_source, "pub type alias Pair =\n    { a : Int }", "pub type alias Pair =\n    { z : Int }"),
-    },
-    .{
-        .what = "add a constructor to a pub type an importer matches",
-        .rechecked = 4,
-        .cut_off = 11,
-        .source = replace(leaf_source, "pub type Tag\n    = Red\n    | Blue", "pub type Tag\n    = Red\n    | Blue\n    | Green"),
-    },
-    .{
-        .what = "add a pub compare",
-        .rechecked = 4,
-        .cut_off = 11,
-        .source = leaf_source ++ "\n\npub compare : Hidden, Hidden -> Order\ncompare a b =\n    case ( a, b ) of\n        _ ->\n            EQ\n",
-    },
-    .{ .what = "touch a sibling .js", .rechecked = 1, .cut_off = 14, .path = "src/Leaf.js", .source = "export const twice = (n) => n + n;\n" },
-    .{ .what = "reorder declarations", .rechecked = 4, .cut_off = 11, .source =
-    \\pub foreign twice : Int -> Int
-    \\
-    \\
-    \\type Hidden
-    \\    = H Int
-    \\    | Extra Int
-    \\
-    \\
-    \\pub type alias Pair =
-    \\    { a : Int }
-    \\
-    \\
-    \\pub type Tag
-    \\    = Red
-    \\    | Blue
-    \\
-    \\
-    \\pub one : Int
-    \\one =
-    \\    1
-    \\
-    \\
-    \\pub make : Int -> Hidden
-    \\make x =
-    \\    H x
-    \\
-    },
-    .{
-        .what = "reorder imports",
-        .rechecked = 3,
-        .cut_off = 9,
-        .path = "src/Mid.beni",
-        .source = replace(mid_source, "import Leaf exposing (Blue, Pair, Red, Tag)", "import Leaf exposing (Blue, Pair, Red, Tag)\nimport Top"),
-    },
-    .{
-        .what = "an UNANNOTATED body whose inferred scheme moves",
-        .rechecked = 3,
-        .cut_off = 12,
-        .path = "src/Mid.beni",
-        .source = mid_source ++ "\n\npub inferred x =\n    x + 1\n",
-    },
-    .{
-        .what = "add a private eq (§11.3: private methods answer only inside their module)",
-        .rechecked = 4,
-        .cut_off = 11,
-        .source = leaf_source ++ "\n\neq : Hidden, Hidden -> Bool\neq a b =\n    True\n",
-    },
-};
+        .source = replace(leaf_source, "pub type alias Coord =\n    ( Int, Int )", "pub type alias Coord =\n    ( Float, Int )"),
+    });
+}
 
 // ---------------------------------------------------------------------------
 // The loop
 // ---------------------------------------------------------------------------
 
-// The edit classes are split over four tests, each taking every fourth one,
-// so that a sharded run of this binary spreads them over processes.
-test "the differential harness: every edit class, byte-identical AND cut off exactly, first quarter" {
-    try differentialQuarter(0);
-}
+/// `plans/m4-3.md` §10.2's loop over one edit: cold, warm0, the edit and
+/// warm1 against a cold build of the edited tree, the revert and warm2.
+fn differential(edit: Edit) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
 
-test "the differential harness: every edit class, byte-identical AND cut off exactly, second quarter" {
-    try differentialQuarter(1);
-}
+    // ┌─────────────────────────────────────────┐
+    // │ cold, then warm0                        │
+    // └─────────────────────────────────────────┘
+    const cold = try run(&w, arena, "cache", "cold.json");
+    const cold_dumps = try dumps(&w, arena);
+    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
 
-test "the differential harness: every edit class, byte-identical AND cut off exactly, third quarter" {
-    try differentialQuarter(2);
-}
-
-test "the differential harness: every edit class, byte-identical AND cut off exactly, fourth quarter" {
-    try differentialQuarter(3);
-}
-
-/// The edit classes of `edits` whose index is `quarter` modulo four.
-fn differentialQuarter(quarter: usize) !void {
-    var table: std.ArrayList(u8) = .empty;
-    defer table.deinit(testing.allocator);
-
-    for (edits, 0..) |edit, index| {
-        if (index % 4 != quarter) continue;
-        var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-        defer arena_state.deinit();
-        const arena = arena_state.allocator();
-        var w = try World.init(testing.allocator, testing.io);
-        defer w.deinit();
-        try writeProject(&w);
-
-        // ┌─────────────────────────────────────────┐
-        // │ cold, then warm0                        │
-        // └─────────────────────────────────────────┘
-        const cold = try run(&w, arena, "cache", "cold.json");
-        const cold_dumps = try dumps(&w, arena);
-        try testing.expectEqual(@as(u64, 0), cold.counters.hits);
-
-        const warm0 = try run(&w, arena, "cache", "warm0.json");
-        try expectSameRun("warm0", cold, warm0);
-        if (warm0.counters.checked != 0) {
-            std.debug.print("{s}: warm0 re-checked {d} modules\n", .{ edit.what, warm0.counters.checked });
-            return error.WarmRunReChecked;
-        }
-
-        // ┌─────────────────────────────────────────┐
-        // │ apply, warm1 against a COLD of the same │
-        // └─────────────────────────────────────────┘
-        const original = try arena.dupe(u8, try w.read(edit.path));
-        try w.write(edit.path, edit.source);
-        const warm1 = try run(&w, arena, "cache", "warm1.json");
-        const warm1_dumps = try dumps(&w, arena);
-        const cold1 = try run(&w, arena, null, "cold1.json");
-        try expectSameRun(edit.what, cold1, warm1);
-
-        // **The assertion that matters.** The cache re-checked exactly the
-        // modules whose key moved — computed from `--cache-keys`, so a new
-        // edit class needs no new expectation. An importer skipped when its
-        // key moved would be a stale answer; one re-checked when it did not
-        // would be a cache doing nothing.
-        const predicted = try keysMoved(cold.stdout, warm1.stdout);
-        if (warm1.counters.checked != predicted) {
-            std.debug.print(
-                "{s}: {d} modules re-checked, {d} keys moved\n",
-                .{ edit.what, warm1.counters.checked, predicted },
-            );
-            return error.WrongModulesReChecked;
-        }
-        const total = warm1.counters.hits + warm1.counters.misses;
-        try table.print(testing.allocator, "  {s: <52} re-checked {d: >2}, cut off {d: >2}\n", .{
-            edit.what,
-            warm1.counters.checked,
-            total - warm1.counters.checked,
-        });
-        if (warm1.counters.checked != edit.rechecked or total - warm1.counters.checked != edit.cut_off) {
-            std.debug.print(
-                "{s}: re-checked {d}, cut off {d}; the table says {d} and {d}\n",
-                .{ edit.what, warm1.counters.checked, total - warm1.counters.checked, edit.rechecked, edit.cut_off },
-            );
-            return error.SkipDecisionMoved;
-        }
-
-        // ┌─────────────────────────────────────────┐
-        // │ revert, warm2 back to cold              │
-        // └─────────────────────────────────────────┘
-        try w.write(edit.path, original);
-        const warm2 = try run(&w, arena, "cache", "warm2.json");
-        try expectSameRun("warm2", cold, warm2);
-        try testing.expectEqualStrings(cold_dumps, try dumps(&w, arena));
-        // The edited state displaced some entries; the revert re-checks
-        // exactly those, and the warm run AFTER it re-checks nothing.
-        const settled = try run(&w, arena, "cache", "settled.json");
-        try expectSameRun("settled", cold, settled);
-        try testing.expectEqual(@as(u64, 0), settled.counters.checked);
-        // A dump of the edited tree is not compared against the reverted one:
-        // it is compared above, against a COLD build of the edited tree, which
-        // is the only honest baseline.
-        _ = warm1_dumps;
+    const warm0 = try run(&w, arena, "cache", "warm0.json");
+    try expectSameRun("warm0", cold, warm0);
+    if (warm0.counters.checked != 0) {
+        std.debug.print("{s}: warm0 re-checked {d} modules\n", .{ edit.what, warm0.counters.checked });
+        return error.WarmRunReChecked;
     }
 
-    std.debug.print("\nthe skip-decision table (edit class × modules), edit classes {d} mod 4:\n{s}\n", .{ quarter, table.items });
+    // ┌─────────────────────────────────────────┐
+    // │ apply, warm1 against a COLD of the same │
+    // └─────────────────────────────────────────┘
+    const original = try arena.dupe(u8, try w.read(edit.path));
+    try w.write(edit.path, edit.source);
+    const warm1 = try run(&w, arena, "cache", "warm1.json");
+    const cold1 = try run(&w, arena, null, "cold1.json");
+    try expectSameRun(edit.what, cold1, warm1);
+
+    // **The assertion that matters.** The cache re-checked exactly the
+    // modules whose key moved — computed from `--cache-keys`. An importer
+    // skipped when its key moved would be a stale answer; one re-checked
+    // when it did not would be a cache doing nothing.
+    const predicted = try keysMoved(cold.stdout, warm1.stdout);
+    if (warm1.counters.checked != predicted) {
+        std.debug.print(
+            "{s}: {d} modules re-checked, {d} keys moved\n",
+            .{ edit.what, warm1.counters.checked, predicted },
+        );
+        return error.WrongModulesReChecked;
+    }
+    const total = warm1.counters.hits + warm1.counters.misses;
+    if (warm1.counters.checked != edit.rechecked or total - warm1.counters.checked != edit.cut_off) {
+        std.debug.print(
+            "{s}: re-checked {d}, cut off {d}; the test says {d} and {d}\n",
+            .{ edit.what, warm1.counters.checked, total - warm1.counters.checked, edit.rechecked, edit.cut_off },
+        );
+        return error.SkipDecisionMoved;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ revert, warm2 back to cold              │
+    // └─────────────────────────────────────────┘
+    try w.write(edit.path, original);
+    const warm2 = try run(&w, arena, "cache", "warm2.json");
+    try expectSameRun("warm2", cold, warm2);
+    try testing.expectEqualStrings(cold_dumps, try dumps(&w, arena));
+    // The edited state displaced some entries; the revert re-checks
+    // exactly those, and the warm run AFTER it re-checks nothing.
+    const settled = try run(&w, arena, "cache", "settled.json");
+    try expectSameRun("settled", cold, settled);
+    try testing.expectEqual(@as(u64, 0), settled.counters.checked);
 }
