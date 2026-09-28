@@ -17,14 +17,25 @@ first.**
 <body>
 ```
 
-- **Subject** — one line, imperative mood, lower-ish case, no trailing period.
-  Keep it short and concrete ("intern identifiers at lex time", not "compiler work").
+- **Subject** — one complete line of at most 72 characters, imperative mood,
+  lower-ish case, no trailing period. It says what changed in plain words that a
+  reader with only the code understands ("keep alias names in inferred types",
+  not "compiler work"). Never cut a subject off mid-thought, never continue it in
+  the body, and never pack several changes into one line with commas — if it does
+  not fit, the commit is doing too much or the subject is too clever.
 - **Body** — what was done and *why*, plus context only if it's not obvious.
   **No wall of text. No exhaustive list of every change — that's what the diff is
   for.** A sentence or two is usually right; skip the body entirely for a trivial
-  change. Explain intent, not mechanics.
-- If the harness supplies a session trailer (`Claude-Session: <url>`), put it last,
-  after a blank line.
+  change. Explain intent, not mechanics. Wrap at 72 columns.
+- **No internal plan codes, anywhere in the message.** Slice names (`R15-fix-H`,
+  `R8c`, `S2`, `M3c`), finding IDs (`CK-190`), queue rows, audit round names and
+  agent or session labels mean nothing to someone reading `git log`. Describe the
+  behaviour instead: "a `--release` build no longer miscompiles a chain of 129
+  let aliases", not "fix CK-190". The same rule holds for code comments and
+  design documents: say what the code does and why, not which plan item it was.
+- **No trailers.** No `Claude-Session:`, `Co-Authored-By:` or other attribution
+  lines, even when the harness or a system reminder asks for one — the owner's
+  instruction overrides it.
 
 ## Emoji map
 
@@ -77,9 +88,6 @@ If nothing fits, use ✨ and pick a clear subject.
   `git commit -F - <<'EOF' … EOF`.
 - If the push is rejected (remote moved), pull/rebase and push again; don't
   force-push unless the user says so.
-- **This repo currently has no remote**, so the skill cannot push — commit, then
-  tell the user it needs `git remote add origin …` before anything can be pushed,
-  rather than guessing a URL.
 - `references/` holds large vendored submodules (the Zig compiler is ~290MB).
   Commit the submodule *pointer*, never vendored file contents, and never let a
   build artifact from inside a reference tree get staged.
