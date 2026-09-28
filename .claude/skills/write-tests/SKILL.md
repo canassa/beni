@@ -358,10 +358,12 @@ specific branches:
 If none of these fits it, the claim needs a design decision; report it, do
 not raise the budget for it.
 
-**What the tests reach.** `zig build coverage`, inside `nix develop
-.#coverage`, runs the black-box suites and the corpus with every compiler
-process under kcov and reports which lines of `src/` the black-box tests
-reach (`zig-out/coverage/index.html`, and `summary.md` beside it). The
+**What the tests reach.** `zig build coverage` (x86-64 Linux, a few
+seconds of tests after a two-minute LLVM compile) runs the black-box
+suites and the corpus on an instrumented compiler and reports which lines
+of `src/` the black-box tests reach: `zig-out/coverage/summary.md`, and
+`lcov.info` beside it, which `genhtml` (in `nix develop .#coverage`) turns
+into pages with every line coloured. The
 unit tests are not run: a line only a unit test executes shows red, which
 is the point — no program has been shown to reach it. Use it two
 ways. To find what to test: open a file's page and read its red lines —

@@ -225,7 +225,7 @@ zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
 zig build test-bench      # the benchmarks' own tests (generators, size.mjs, runtime.mjs); not a gate
 zig build fuzz            # the unit tests with their random sweeps on; not a gate
-zig build coverage        # lines of src/ the black-box tests reach, under kcov (nix develop .#coverage); not a gate
+zig build coverage        # lines of src/ the black-box tests reach, on an instrumented beni (x86-64 Linux); not a gate
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
 zig build gates           # the three gates (rule 4), concurrently
 zig build --list-steps
@@ -385,22 +385,41 @@ one full gates run, so it is not a tier; unset, the recording costs nothing.
 Read CPU time, not wall: under load it moves far less than wall time,
 though it moves; an instruction count (the budget above) does not.
 
-`zig build coverage`, inside `nix develop .#coverage` (kcov, Linux only),
-answers "which lines of the compiler do the black-box tests reach": it runs
-the black-box suites and the corpus with every `beni` process they spawn
-under kcov, against an LLVM ReleaseSafe beni that keeps its debug info —
-the unit tests are not run and not counted, so a line only a unit test
-executes shows as uncovered — merges the counts even when a test fails,
-and writes
-`zig-out/coverage/` — `index.html` to browse, `kcov-merged/cobertura.xml`,
-and `summary.md` with the total, a row per directory under `src/` and one
-per file (`tests/coverage.zig`). The summary leaves out the tests' own
-lines (`*_test.zig` files and `test` blocks). `-Dcorpus` and `-Dtest-filter`
-measure one fixture or black-box test alone. It is not a gate and not a
-tier: a full run took 12 minutes wall and 9 100 CPU-s, quiet (load average
-under 2), plus about two minutes of LLVM compile after a change under
-`src/`, and reported 93.9% of 22 308 lines; every
-harness time limit is twenty times as long under it (`BENI_TIMEOUT_SCALE`).
+`zig build coverage` (x86-64 Linux) answers "which lines of the compiler
+do the black-box tests reach". It builds an LLVM ReleaseSafe beni with
+full debug info and LLVM's SanitizerCoverage `trace-pc-guard`
+instrumentation (`tests/coverage/runtime.zig`): every process records
+each instrumented block the first time it runs, as one byte in a hits
+file all of them share, so a process that panics or is killed keeps what
+it ran. It runs the black-box suites and the corpus against that binary
+— the unit tests are not run and not counted, so a line only a unit test
+executes shows as uncovered — and reports even when a test fails
+(`tests/coverage.zig`): `zig-out/coverage/summary.md` with the total, a
+row per directory under `src/` and one per file, and `lcov.info`, which
+`genhtml -o zig-out/coverage/html zig-out/coverage/lcov.info` (inside
+`nix develop .#coverage`) turns into pages with every line coloured. The
+summary leaves out the tests' own lines (`*_test.zig` files and `test`
+blocks). `-Dcorpus` and `-Dtest-filter` measure one fixture or black-box
+test alone; `zig build coverage -- --report-only` reports the last run's
+hits file again. It is not a gate and not a tier: a full run took 3.6 s
+wall and 68 CPU-s, quiet (load average 2), for 2 557 compiler processes,
+and reported 92.0% of 22 965 lines; the instrumented compile adds about
+two minutes on one thread after a change under `src/`.
+
+How a block becomes a line: LLVM guards only some blocks, so the report
+decodes the binary's machine code (`tests/coverage/x86.zig`), builds each
+function's control-flow graph and infers the unguarded blocks that must
+have run — dominators and post-dominators of a block that ran, nothing
+weaker (`tests/coverage/cfg.zig`) — then maps blocks to lines through the
+DWARF line table: a line is covered when any instruction the line table
+gives it ran. Measured against kcov on the same binary and the same 502
+processes (the `run/` corpus), the two agreed on 99.45% of 22 773 lines;
+115 lines kcov saw run were reported uncovered (an inference too weak to
+reach them) and 10 the other way (lines whose instructions share an
+address with another line's, or carry no statement marker, which kcov
+does not count). Limits: it needs the LLVM backend, since Zig's own backend
+emits no such instrumentation; the post-dominator rule trusts that a call
+which ran a block returned; and it reads x86-64 only.
 Read it as a map of what no test reaches: a red line is untested, and a
 green line only ran, which does not mean any test checked what it did.
 Lines the optimiser folded away are in neither count.
