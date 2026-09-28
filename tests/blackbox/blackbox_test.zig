@@ -5699,8 +5699,7 @@ test "schema field recovery keeps the next sibling and top-level declaration" {
         \\  (schema_decl Broken
         \\    (schema_record
         \\      (schema_field badTail
-        \\        (schema_operand Int
-        \\          (schema_operand nonsense)))
+        \\        (error unexpected_token))
         \\      (schema_field kept
         \\        (schema_operand String))))
         \\  (definition after
@@ -5970,6 +5969,18 @@ test "checker v2 writes the annotation escape and the infinite type as checker.m
 
 /// An `infinite_type` diagnostic at `line:col` over `width` bytes of `file`,
 /// its subject `about` ("for `w`" or "here") and its drawing.
+/// `p/Models.beni`'s `pub type alias PrivRecW = Nope`: the reported `err` two
+/// R8c scenarios below read through an imported alias.
+fn unknownNope() diagnostic.Diagnostic {
+    return .{
+        .code = .unbound_type,
+        .severity = .@"error",
+        .span = .{ .file = "p/Models.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 9 } },
+        .title = "UNKNOWN TYPE",
+        .message = "I cannot find a `Nope` type.\n\nIt is not declared in this module, listed in an `exposing` list, or part of the\nprelude. Check the spelling, or expose it from an import.",
+    };
+}
+
 fn infiniteType(file: []const u8, line: u32, col: u32, width: u32, comptime about: []const u8, comptime drawing: []const u8) diagnostic.Diagnostic {
     return .{
         .code = .infinite_type,
@@ -6034,19 +6045,17 @@ test "R8c review B1: an infinite type through a schema alias's `err` is still re
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The same mechanism with CK-126's silent `err` as the source: under R8c's
-    // first stamps this program was ACCEPTED (exit 0). The expectation is
-    // 5f18e23's v2 output. When CK-126 is fixed `PrivRecW` stops being an
-    // `err`, and this expectation may name it differently.
+    // The same mechanism with an imported alias's `err` as the source: under
+    // R8c's first stamps this program was ACCEPTED (exit 0). The expectation
+    // is 5f18e23's v2 output. The source was CK-126's SILENT `err` (a private
+    // record schema through the alias) until R15-fix-D gave that endpoint its
+    // shape; it is now a dependency's reported one (`Nope`), which reads as
+    // `err` in `Main` the same way.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("p/Models.beni",
-        \\schema PrivRec =
-        \\    z : Int
-        \\
-        \\
         \\pub type alias PrivRecW =
-        \\    PrivRec.Type
+        \\    Nope
         \\
     );
     try w.write("p/Main.beni",
@@ -6081,6 +6090,7 @@ test "R8c review B1: an infinite type through a schema alias's `err` is still re
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
         infiniteType("p/Main.beni", 6, 5, 3, "for `z`", "a = ( a, PrivRecW )"),
+        unknownNope(),
     }), r.diagnostics);
 }
 
@@ -6151,8 +6161,9 @@ test "R8c review round 2, B1: a record merge past a proved `err` row end voids t
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `q : { a : Int | err }` (CK-126's silent `err` as the row end) is
-    // proved at its boundary. `p` unifies it with `{ a, b : List α }`: the
+    // `q : { a : Int | err }` (an imported alias's `err` as the row end:
+    // CK-126's silent one until R15-fix-D, a dependency's reported `Nope`
+    // since) is proved at its boundary. `p` unifies it with `{ a, b : List α }`: the
     // extra fields merge into the `err` row end, which absorbs them (the
     // survivor is `err`, so no leaf gained successors), yet the merged
     // record carries `b`, unwalked; then `α ~ List α` closes behind the
@@ -6162,12 +6173,8 @@ test "R8c review round 2, B1: a record merge past a proved `err` row end voids t
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("p/Models.beni",
-        \\schema PrivRec =
-        \\    z : Int
-        \\
-        \\
         \\pub type alias PrivRecW =
-        \\    PrivRec.Type
+        \\    Nope
         \\
     );
     try w.write("p/Main.beni",
@@ -6211,6 +6218,7 @@ test "R8c review round 2, B1: a record merge past a proved `err` row end voids t
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
         infiniteType("p/Main.beni", 21, 9, 1, "for `r`", "a = List a"),
+        unknownNope(),
     }), r.diagnostics);
 }
 

@@ -915,6 +915,12 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
     // Past the depth guard no further field is tried: each would walk to the
     // guard again (review B1).
     const stopped = if (kept) |k| k == .too_deep else false;
+    // Shared fields are unified in NAME-TEXT order, not the merge-join's
+    // symbol-id order (§7.2 *amended by R15-fix-D*, CK-145): unifying one
+    // field binds variables the next one is judged against, so the order is
+    // part of a message's text, and a symbol id follows which other files
+    // the project has.
+    if (!stopped and shared.items.len > 1) std.mem.sort(Shared, shared.items, u.interner, sharedTextLessThan);
     if (!stopped) for (shared.items) |pair| {
         u.problem = null;
         if (!try u.go(pair.a, pair.b)) {
@@ -924,13 +930,9 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
         }
     };
     u.problem = kept;
-    if (kept == null and failures.items.len != 0) {
-        var best = failures.items[0];
-        for (failures.items[1..]) |f| {
-            if (std.mem.lessThan(u8, u.interner.slice(f.name), u.interner.slice(best.name))) best = f;
-        }
-        u.problem = best.problem;
-    }
+    // The fields were tried in text order: the first failure is the smallest
+    // by text (§7.2).
+    if (kept == null and failures.items.len != 0) u.problem = failures.items[0].problem;
     if (!ok) return false;
 
     // Normalised on merge (§4.1): the survivor is ONE record, every field
@@ -950,6 +952,10 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
 }
 
 const Shared = struct { name: Symbol, a: Var, b: Var };
+
+fn sharedTextLessThan(interner: *const InternPool.Global, a: Shared, b: Shared) bool {
+    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+}
 
 fn freshRecord(u: *Unify, fields: []const TypeStore.Field, ext: Var) Error!Var {
     const copied = try u.scratch.dupe(TypeStore.Field, fields);

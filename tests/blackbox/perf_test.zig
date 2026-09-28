@@ -1008,3 +1008,45 @@ test "CK-95: a let of n chained bindings lowers in time linear in n" {
     const verdict = try s.eventRatio("L.beni", "L2.beni", 20_000, "lower", &.{});
     try s.finish("CK-95", verdict);
 }
+
+// CK-143 (R15's audit; promoted from `pending_test.zig` by R15-fix-D):
+// `Types.find` was a linear scan of the declaring module's types, and
+// `Digest.collect` called it once per exported type (then deduplicated with a
+// linear `contains`), so the dependency digest — which runs with or without
+// a cache — was quadratic in a module's `pub` types. `find` is now a binary
+// search of a per-module name index (`Types.by_name`), and the digest's type
+// set a bit per type of the module. Independent `pub type A{i} = A{i} Int |
+// B{i}`, the `dep_digest` event of the file. Calibration (ReleaseFast): on
+// 8b98464, 38 / 149 ms at 8 000 / 16 000 types (ratio 3.9); fixed, 5.1 /
+// 10.1 ms. n = 8 000.
+test "CK-143: the dependency digest is linear in a module's pub types" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const template = "pub type A{d}\n    = A{d} Int\n    | B{d}\n\n\n";
+    try s.w.write("I.beni", try generate(s.arena(), 8_000, template, 3));
+    try s.w.write("I2.beni", try generate(s.arena(), 16_000, template, 3));
+    try s.finish("CK-143", try s.eventRatio("I.beni", "I2.beni", 8_000, "dep_digest", &.{}));
+}
+
+// CK-143's publication half: `Types.resolveRefs` called the same `find` once
+// per `type_refs` row, in P8 for every miss and in `install` for every hit,
+// so publishing a CHAIN `pub type A{i} = A{i} Int A{i-1} | B{i}` was
+// quadratic. The `publish` event of the file. Calibration (ReleaseFast): on
+// 8b98464, 53 / 183 ms at 16 000 / 32 000 (ratio 3.5); fixed, 15.0 / 31.4
+// ms. n = 16 000.
+test "CK-143-publish: publishing a chain of pub types is linear" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("C.beni", try typeChain(s.arena(), 16_000));
+    try s.w.write("C2.beni", try typeChain(s.arena(), 32_000));
+    try s.finish("CK-143-publish", try s.eventRatio("C.beni", "C2.beni", 16_000, "publish", &.{}));
+}
+
+/// `pub type A0 = A0 Int | B0`, then `pub type A{i} = A{i} Int A{i-1} | B{i}`
+/// up to `count`.
+fn typeChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub type A0\n    = A0 Int\n    | B0\n\n\n");
+    for (1..count + 1) |i| try out.print(arena, "pub type A{d}\n    = A{d} Int A{d}\n    | B{d}\n\n\n", .{ i, i, i - 1, i });
+    return out.items;
+}

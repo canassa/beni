@@ -847,6 +847,75 @@ test "an ambiguous_method_receiver warning names an imported TYPE, and moves onl
 }
 
 // ---------------------------------------------------------------------------
+// A private record schema behind a `pub` alias (CK-126, R15-fix-D)
+// ---------------------------------------------------------------------------
+
+test "row 13 for a schema: a private record schema's field behind a pub alias moves the digest, and a cached importer sees it" {
+    // `S.Wrap`'s body names a PRIVATE record schema's endpoint. An importer
+    // reads its shape from `S`'s schema plan (`Types.Builder.planEndpoint`),
+    // which no interface record carries — so the digest is the one place the
+    // shape can move, as for a private alias (row 13). Before R15-fix-D the
+    // alias body digested the endpoint as `err` and its closure never reached
+    // the schema: editing the field moved nothing, and a warm check of `U`
+    // replayed its clean verdict against a shape that no longer existed.
+
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", manifest);
+    try w.write("src/beni.json", manifest);
+    const schema_before =
+        \\schema Hidden =
+        \\    z : Int
+        \\
+        \\
+        \\pub type alias Wrap =
+        \\    Hidden.Type
+        \\
+    ;
+    try w.write("src/S.beni", schema_before);
+    try w.write("src/U.beni",
+        \\import S
+        \\
+        \\
+        \\field : S.Wrap -> Int
+        \\field r =
+        \\    r.z
+        \\
+    );
+    const before = try pairOf(&w, arena, false);
+    const cold = try w.runWith(&.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/S.beni", comptime replace(schema_before, "    z : Int", "    z : String"));
+    const after = try pairOf(&w, arena, true);
+    const warm = try w.runWith(&.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
+    const fresh = try w.runWith(&.{ "check", "--jobs=1", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // `S`'s record is unmoved (the schema is private, the alias row has no
+    // body); its digest moves, and `U`'s folds it.
+    try expectSet("a private schema's field", try movedBetween(arena, before.hashes, after.hashes), nothing);
+    try expectSet("a private schema's field", try movedBetween(arena, before.digests, after.digests), &.{ "app:S", "app:U" });
+    // The warm run re-checks `U` and says what a cold run says: `r.z` is
+    // now a `String` where `field` promises an `Int`.
+    try testing.expectEqual(@as(u8, 1), fresh.exit_code);
+    try testing.expect(std.mem.indexOf(u8, fresh.stderr, "TYPE MISMATCH") != null);
+    try testing.expectEqual(fresh.exit_code, warm.exit_code);
+    try testing.expectEqualStrings(fresh.stderr, warm.stderr);
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

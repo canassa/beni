@@ -4,7 +4,11 @@
 -- is published, so `Use` gets a TYPE MISMATCH saying `y` must be `Int` —
 -- one mistake, two messages, the second about a type nobody wrote.
 -- Expected: the UNEXPECTED TOKEN only. (The `type alias` twin, `{ x : Int,
--- y : String ) }`, recovers the fields as written, which is not this.)
+-- y : String ) }`, recovers the fields as written, which is not this.) `Q`
+-- is the brace form of the same mistake (R15-fix-D).
 pub schema P =
     x : Int
     y : Int -> Int
+
+
+pub schema Q = { x : Int, y : Int -> Int }

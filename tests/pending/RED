@@ -15,18 +15,12 @@
 # schema alias across modules: the schema slices S3/S4) and CK-88 (timing, R12).
 # R12 (2026-09-27) deleted v1, and with it this file's checker column (every
 # line said `v2`); CK-88 was fixed and promoted into perf_test.zig.
-# R13 (2026-09-27) promoted the twelve diagnostic-quality fixtures; CK-126 is
+# R13 (2026-09-27) promoted the twelve diagnostic-quality fixtures; CK-126 was
 # the one left.
-tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules crash=ABRT
 # R15's audit (2026-09-27): red fixtures of every behavioural finding, written
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
 # R15-fix-A (2026-09-28) fixed and promoted CK-135, 137, 139, 140, 141 and 142.
-scenario/CK-143 slow
-scenario/CK-143-publish slow
 scenario/CK-144 superlinear
-tests/pending/check/bad/RecordUnifyFieldOrderOtherFile exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/bad/FailedDeclarationPublishedType exit=1 codes=no_methods_on_shape×1,type_mismatch×1 why=code
-tests/pending/check/bad/SchemaParseErrorRecovered exit=1 codes=type_mismatch×1,unexpected_token×1 why=code
 tests/pending/check/bad/InterpolationAfterRigidEscape.beni exit=1 codes=ambiguous_interpolation×1,rigid_mismatch×1 why=code
 tests/pending/run/DerivedOverSpecialisedEq dev: exit=1 codes=not_equatable×1
 tests/pending/run/DotCallCompareDerivedUnannotated.beni dev: exit=1 codes=unknown_method×1
@@ -42,3 +36,6 @@ tests/pending/check/bad/OwnMethodSignatureReportedOnce.beni exit=1 codes=type_mi
 # expanded as a tree), and writing their fixtures found CK-172 to CK-174
 # (`Unify`'s alias rows). Written and checked on 346268b; all six fixed and
 # promoted by R15-fix-C (scenario/CK-171 into perf_test.zig).
+# R15-fix-D (2026-09-28) fixed and promoted CK-126 (its line above, the
+# last of R0–R14's, is gone), CK-143 (both scenarios, into perf_test.zig),
+# CK-145, CK-147 and CK-148.

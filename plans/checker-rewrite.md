@@ -2769,6 +2769,57 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     annotation is its own read — and linear bytes need alias references by name in interface terms
     (an interface version), which is its own slice.
 
+#### R15-fix-D — The last pre-R15 red, the type table's scan, and three order- or recovery-dependent texts (added by the manager, 2026-09-28)
+
+- **Goal.** Fix CK-126 (a private record schema's endpoint through another module's alias: a
+  silent `err`, a Debug panic since R15-fix-C), CK-143 (`Types.find` and the digest's dedupe:
+  quadratic publication and `dep_digest`), CK-145 (a record mismatch's text follows other files),
+  CK-147 (a failed declaration's published type follows declaration order) and CK-148 (a schema
+  body's parse error publishes the recovered schema), each structurally, each fixture promoted
+  with its fix.
+- **As built (2026-09-28).** Base `e14f2cb` (R15-fix-C). Spec: `checker-v2.md` §7.2, §11.5 (and
+  §12.2's table row), §14.1 and §18, each *amended by R15-fix-D*. None needed an owner decision or
+  a format bump.
+  - **CK-145.** `Unify.record` unified the shared fields in the merge-join's symbol-id order, and
+    unifying one binds what the next is judged against, so the §7.2 "smallest failure by text"
+    rule chose among failures whose existence was already order-dependent. The shared fields are
+    now sorted by name text before the loop (the record stays in symbol order for the join); the
+    first failure is the smallest by text. Name text, not declaration order: a record type is
+    unordered and prints in text order.
+  - **CK-143.** `Types.by_name`: each module's range of the table sorted by `(name, id)`, built
+    with the table; `find` is a binary search (the first declaration of a duplicate name, as the
+    scan). `Digest.IdSet`: the type set's membership is a bit per type of the module — every id
+    pushed is the module's own — not a linear `contains`, and not a hash map keyed by a dense id
+    (`fast-compiler.md` §5 rule 5). Both scenarios promoted verbatim into `perf_test.zig`.
+  - **CK-147.** `Publish.publishedRoot`: an unannotated value whose failure bit is set publishes
+    `<error>`; an annotated one keeps its P2 scheme. The first reader of `Report.failed` (CK-146's
+    item 1).
+  - **CK-148.** A schema field whose value does not end where a field ends (`y : Int -> Int`) kept
+    the prefix that parsed; now its value is the parser placeholder (`Parse.parseSchemaField`,
+    `parseLayoutSchemaField` through `finishLayoutField(.error_type)`), with the same message at
+    the same position. The endpoints read `err`, so every member and constructor publishes
+    `<error>` — as an annotation that did not parse does (`f : Int -> ) Int` publishes
+    `<error>`). `type alias` fields keep their recovery. The fixture gained the brace form.
+  - **CK-126.** Not the interface row the finding proposed: the declaring module's
+    `SchemaPlan` already holds every schema, private ones included, with each endpoint in
+    interface terms, and is installed on a cache hit. `Types.plans` (borrowed, one slot per module)
+    and `Builder.planEndpoint` instantiate a private record endpoint from it under the alias's
+    arguments, as a `pub` one is from its member scheme (a parameterised schema checked against
+    its `pub` twin: identical messages). The read is `types_alias_body` (row 12). **The digest
+    had the same hole one level down:** `type_body` wrote a schema endpoint head as `err` and its
+    closure never collected one, so editing the private schema's field moved no digest and a warm
+    check kept the importer's old verdict (reproduced before the digest half was written). It now
+    spells the head through `Types.headId` and collects local endpoints, whose expansion the
+    digest's worklist already wrote from the plan. The digest's bytes change only for modules
+    whose alias bodies name schemas: keys move, no stale hit, so `digest_version` stays 2.
+  - **Evidence.** Fixture-first against a separately built `e14f2cb` binary: `PrivateRecord…`
+    panics (`assertErrorsReported`), `FailedDeclaration…` adds Main's TYPE MISMATCH,
+    `SchemaParseErrorRecovered` adds two TYPE MISMATCHes (layout and brace), and
+    `RecordUnifyFieldOrderOtherFile` prints `{ zp : String, zq : String }`; `digest_test.zig`
+    "row 13 for a schema" (new) panics on `e14f2cb` and needs both halves of the CK-126 fix.
+    `test-pending-perf` on the fix: CK-143 `dep_digest` 5.1 / 10.1 ms (ratio 2.00), CK-143-publish
+    15.0 / 31.4 ms (2.09).
+
 ---
 
 ## 4. CK → slice index
@@ -2802,6 +2853,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-B | CK-136 (`run/EvidenceDagBuildDepth32`; new `dispatch/SharedEvidenceDag`, `perf_test.zig` "CK-136"), CK-138 (`run/ArrowBodyStartsWithRecord`; new `run/ArrowBodyLeftmostBrace`) | — | perf study item 1 (the emitter's specifier table) |
 | R15-fix-A | CK-135, 137, 139, 141, 142 (`tests/corpus/`), CK-140 (`abuse_test.zig`) | — | — |
 | R15-fix-C | CK-169, 170, 172, 173, 174 (`tests/corpus/`), CK-171 (`perf_test.zig`) — all six found and fixed in the slice | — | the `err`-producer audit and its Debug check (`checker-v2.md` §12.2); CK-144 not fixed (the interface writer) |
+| R15-fix-D | CK-126, 145, 147, 148 (`tests/corpus/check/bad/`; CK-126 also `digest_test.zig` "row 13 for a schema"), CK-143 (`perf_test.zig`, both scenarios) | — | the digest's schema-endpoint hole (found and fixed with CK-126); `Report.failed` gets its reader (CK-146 item 1) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

@@ -1,2 +1,0 @@
-# `Lib`'s own error; `Main` reads a poisoned `ma` and is silent.
-no_methods_on_shape Lib.beni:22:13

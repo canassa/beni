@@ -64,7 +64,7 @@ pub fn fill(in: Input) Error!void {
     errdefer gpa.free(values);
     for (values, 0..) |*v, i| {
         const decl = prov.valueDecl(i);
-        const root = if (decl) |d| (if (d.int() < in.decl_scheme.len) in.decl_scheme[d.int()].unwrap() else null) else null;
+        const root = if (decl) |d| publishedRoot(cx.bir, in.report, in.decl_scheme, d) else null;
         v.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.values));
@@ -107,6 +107,21 @@ pub fn fill(in: Input) Error!void {
     gpa.free(ref_ids.*);
     ref_ids.* = &.{};
     ref_ids.* = try in.types.resolveRefs(gpa, iface, cx.graph);
+}
+
+/// What a value declaration publishes (§14.1 *amended by R15-fix-D*,
+/// CK-147): a function of the declaration alone. An ANNOTATED one publishes
+/// its P2 scheme, the annotation as written, failed or not. An UNANNOTATED
+/// one whose failure bit is set (I12, `Report.failed`) publishes `<error>`:
+/// its inferred type is whatever the solver had reached when the error
+/// stopped it, which depends on the order the module's declarations were
+/// checked in, and a dependent checked against it would get a verdict that
+/// follows that order (I9). The error is this module's, so the dependent is
+/// silent against the `<error>` (a `poisoned` wanted, §12.2).
+fn publishedRoot(bir: *const Bir, report: *const Report, decl_scheme: []const Var.Optional, d: Bir.DeclIndex) ?Var {
+    if (d.int() >= decl_scheme.len) return null;
+    if (bir.decl(d).annotation == .none and d.int() < report.failed.bit_length and report.failed.isSet(d.int())) return null;
+    return decl_scheme[d.int()].unwrap();
 }
 
 /// The one routine (§14.1).

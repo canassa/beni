@@ -278,7 +278,7 @@ fn writeAt(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, inst: Bir.Inst.
             @as(Bir.Inst.Index, @enumFromInt(data.lhs)),
             depth,
         ),
-        .type_top, .ext_type => return named(gpa, out, cx, t, data, &.{}, depth),
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type => return named(gpa, out, cx, t, data, &.{}, depth),
         .type_app => {
             const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
             const head: Bir.Inst.Index = @enumFromInt(data.lhs);
@@ -297,11 +297,12 @@ fn named(
     args: []const Bir.Inst.Index,
     depth: u32,
 ) Allocator.Error!void {
-    const id: Types.TypeId = switch (t) {
-        .type_top => cx.types.ofDecl(cx.module, @enumFromInt(data.lhs)),
-        .ext_type => cx.types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
-        else => .none,
-    };
+    // A schema endpoint is a named type like any other (R15-fix-D, CK-126):
+    // it was `err` here, so an alias whose body names a schema's `Type`
+    // digested alike whatever it named, and a private record schema's
+    // endpoint — read through the alias from the plan — could change
+    // under a cached dependent.
+    const id: Types.TypeId = Types.headId(cx.types, cx.module, t, data);
     const who = cx.types.named(id) orelse return tag(gpa, out, .err);
     try tag(gpa, out, .named);
     try out.append(gpa, @intFromEnum(who.package));
@@ -427,8 +428,8 @@ fn collectAt(
     const t = bir.instTag(inst);
     const data = bir.instData(inst);
     switch (t) {
-        .type_top => {
-            const id = cx.types.ofDecl(cx.module, @enumFromInt(data.lhs));
+        .type_top, .schema_type_top => {
+            const id = Types.headId(cx.types, cx.module, t, data);
             if (id != .none) try out.append(gpa, id);
         },
         .type_fn => {
@@ -451,8 +452,9 @@ fn collectAt(
         },
         .type_app => {
             const head: Bir.Inst.Index = @enumFromInt(data.lhs);
-            if (bir.instTag(head) == .type_top) {
-                const id = cx.types.ofDecl(cx.module, @enumFromInt(bir.instData(head).lhs));
+            const head_tag = bir.instTag(head);
+            if (head_tag == .type_top or head_tag == .schema_type_top) {
+                const id = Types.headId(cx.types, cx.module, head_tag, bir.instData(head));
                 if (id != .none) try out.append(gpa, id);
             }
             for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |a| {

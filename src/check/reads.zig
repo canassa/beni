@@ -70,7 +70,7 @@ pub const Kind = enum(u8) {
     /// translation; what a dependent reads through it is the type at
     /// interface slot `i`, which the record states by name (`R`).
     types_of_interface,
-    /// §3.2 row 11 — `Types.find`'s name scan over another module's whole
+    /// §3.2 row 11 — `Types.find`'s name lookup in another module's whole
     /// declaration list, which is how a `type_refs` row resolves. The NAME is
     /// in the record (`R`); what the scan yields is `types_entry`.
     types_find,

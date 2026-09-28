@@ -309,6 +309,7 @@ pub fn run(
     const plans = try gpa.alloc(SchemaPlan, modules);
     @memset(plans, .empty);
     check.plans = plans;
+    check.types.plans = plans;
 
     var kept: std.ArrayList(Module) = .empty;
     // Each kept `Module` owns an arena and three tables. On the OOM path

@@ -21,6 +21,8 @@ is not reproduced (a guard). Still red: CK-126 (the schema slices), CK-37's rest
 **R15 (2026-09-27)**, the audit of the finished checker at `8b98464`, added CK-135 to CK-168 (*R15's
 audit*, before the summary table): 22 behavioural findings with red fixtures or scenarios under
 `tests/pending/`, and 12 structural ones with none. All are the R15-fix slices'.
+**R15-fix-D (2026-09-28)** fixed CK-126 (the last pre-R15 red), CK-143, CK-145, CK-147 and CK-148;
+each fixture is promoted, CK-143's two scenarios into `test-perf`.
 
 ## Sources
 
@@ -3547,6 +3549,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Note** (R15-fix-C, 2026-09-28) the Debug check `Module.assertErrorsReported` (§12.2 *amended
   by R15-fix-C*) catches this silent `err`: the fixture's red is `crash=ABRT` in Debug; release
   still accepts it.
+- **Status** fixed by R15-fix-D (2026-09-28), `checker-v2.md` §11.5 *amended by R15-fix-D*: not an
+  interface row — the endpoint is read from the declaring module's schema plan, which holds
+  private schemas and is installed on a cache hit (`Types.Builder.planEndpoint`). The digest had
+  the same hole one level down (an alias body digested a schema endpoint as `err`, so editing the
+  private schema moved no digest and a cached importer kept its verdict): `type_body` now names
+  endpoints (`digest_test.zig`, "row 13 for a schema"). Promoted into `tests/corpus/check/bad/`.
 
 ### CK-127 — Lowering a `let` of many bindings is quadratic
 
@@ -3997,6 +4005,11 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   (`publish`, chain, n = 16 000), both `test-pending-perf`, red `slow` (3.8 and 3.8 on the red
   pass).
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-D (2026-09-28), `checker-v2.md` §18 *amended by R15-fix-D*:
+  `Types.by_name` (each module's range sorted by `(name, id)`) makes `find` a binary search, and
+  `Digest.IdSet` is a bit per type of the module (not a hash set: `fast-compiler.md` §5 rule 5). 8
+  000 / 16 000 types: `dep_digest` 5.1 / 10.1 ms; a 16 000 / 32 000 chain: `publish` 15.0 / 31.4
+  ms. Both scenarios promoted into `perf_test.zig` (`test-perf`).
 
 ### CK-144 — Interface terms expand every alias body: an alias chain is quadratic in bytes
 
@@ -4032,6 +4045,9 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   rendered from the pre-unification types.
 - **Fixture** `check/bad/RecordUnifyFieldOrderOtherFile/`, red `why=message`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-D (2026-09-28), `checker-v2.md` §7.2 *amended by R15-fix-D*: shared
+  fields are unified in name-text order (`Unify.record`), so the first failure is the smallest by
+  text and the message does not depend on other files. Promoted into `tests/corpus/check/bad/`.
 
 ### CK-146 — Residue of the region- and code-keyed recovery
 
@@ -4047,6 +4063,8 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   save/restore (all correct today).
 - **Fixture** none: structural, none reachable as a wrong result today.
 - **Slice** R15-fix.
+- **Note** (R15-fix-D, 2026-09-28) item (1) is closed: `Publish.publishedRoot` reads
+  `Report.failed` (CK-147's fix). Items (2) to (5) stand.
 
 ### CK-147 — A failed declaration is published with its partially solved, order-dependent type
 
@@ -4063,6 +4081,10 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   silent.
 - **Fixture** `check/bad/FailedDeclarationPublishedType/`, red `why=code`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-D (2026-09-28), `checker-v2.md` §14.1 *amended by R15-fix-D*: an
+  unannotated value whose failure bit is set publishes `<error>` (`Publish.publishedRoot`, the
+  reader of `Report.failed` CK-146 (1) asked for); an annotated one keeps its P2 scheme. Promoted
+  into `tests/corpus/check/bad/`.
 
 ### CK-148 — A parse error in a schema body publishes the recovered schema
 
@@ -4078,6 +4100,11 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** the UNEXPECTED TOKEN only: a schema whose body did not parse is poisoned.
 - **Fixture** `check/bad/SchemaParseErrorRecovered/`, red `why=code`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-D (2026-09-28), `checker-v2.md` §14.1 *amended by R15-fix-D*: a
+  schema field whose value does not end where a field ends has the parser placeholder as its value
+  (`Parse.parseSchemaField`, `parseLayoutSchemaField`; message and position unchanged), so the
+  schema reads `err` and publishes `<error>`, consistently with an annotation that did not parse.
+  The fixture gained the brace form (`Q`). Promoted into `tests/corpus/check/bad/`.
 
 ### CK-149 — The I15 Debug assert does not exist
 
@@ -4541,7 +4568,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-123 | unsound-runtime (no runtime path yet) | K1 | — | schema S3/S4 owner |
 | CK-124 | performance | K14 | — | unassigned (frontend) |
 | CK-125 | valid-program-rejected | K12 | `test-perf` "CK-125" | R8b (found and fixed by its round-2 review) |
-| CK-126 | unsound-runtime (no runtime path yet) | K7 | `check/bad/PrivateRecordSchemaAliasAcrossModules/` (pending, red under both) | unassigned (found by R8c) |
+| CK-126 | unsound-runtime (no runtime path yet) | K7 | promoted: `check/bad/PrivateRecordSchemaAliasAcrossModules/`; `digest_test.zig` "row 13 for a schema" | R15-fix-D (fixed; found by R8c) |
 | CK-127 | performance | K14 | CK-95's | R12 (fixed as CK-95's duplicate; found by R8c) |
 | CK-128 | unsound-runtime (a runtime exception on deep data) | K14 | `tests/corpus/run/DerivedDeep*`, `abuse_test.zig` (CK-128) | R8d (fixed; owner 2026-09-26; found by R8c) |
 | CK-129 | diagnostic-quality | K13 | `check/bad/ExposingSameNameConstructor/` (CK-86's) | R13 (fixed as CK-86; found by R8d) |
@@ -4558,12 +4585,12 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-140 | compiler-crash-or-hang | K3 | `scenario/CK-140` | R15-fix |
 | CK-141 | compiler-crash-or-hang | K9 | `check/bad/ImportedErrorValueCompared/` | R15-fix |
 | CK-142 | compiler-crash-or-hang | K9 | `check/bad/DerivedRowTemplateTooDeep/` | R15-fix |
-| CK-143 | performance | K11 | `scenario/CK-143`, `scenario/CK-143-publish` (`test-pending-perf`) | R15-fix |
+| CK-143 | performance | K11 | `perf_test.zig` "CK-143", "CK-143-publish" (`test-perf`) | R15-fix-D (fixed) |
 | CK-144 | performance | K11 | `scenario/CK-144` | R15-fix |
-| CK-145 | diagnostic-quality | K12 | `check/bad/RecordUnifyFieldOrderOtherFile/` | R15-fix |
+| CK-145 | diagnostic-quality | K12 | promoted: `check/bad/RecordUnifyFieldOrderOtherFile/` | R15-fix-D (fixed) |
 | CK-146 | latent | K9 | — (structural) | R15-fix |
-| CK-147 | valid-program-rejected | K9 | `check/bad/FailedDeclarationPublishedType/` | R15-fix |
-| CK-148 | diagnostic-quality | K14 | `check/bad/SchemaParseErrorRecovered/` | R15-fix |
+| CK-147 | valid-program-rejected | K9 | promoted: `check/bad/FailedDeclarationPublishedType/` | R15-fix-D (fixed) |
+| CK-148 | diagnostic-quality | K14 | promoted: `check/bad/SchemaParseErrorRecovered/` | R15-fix-D (fixed) |
 | CK-149 | latent | K2 | — (structural) | R15-fix |
 | CK-150 | latent | K3 | — (structural) | R15-fix |
 | CK-151 | latent | K9 | — (structural) | R15-fix |

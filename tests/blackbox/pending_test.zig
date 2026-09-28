@@ -90,9 +90,8 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // already in `perf_test.zig` (R6a, R8a). CK-88, the last, went to
     // `perf_test.zig` when R12 fixed it. The table was empty until R15's
     // audit (2026-09-27) added the findings below; R15-fix-A promoted
-    // CK-140 into `abuse_test.zig`, and R15-fix-C CK-171 into `perf_test.zig`.
-    .{ .name = "scenario/CK-143", .step = .perf },
-    .{ .name = "scenario/CK-143-publish", .step = .perf },
+    // CK-140 into `abuse_test.zig`, R15-fix-C CK-171 and R15-fix-D CK-143
+    // (both halves) into `perf_test.zig`.
     .{ .name = "scenario/CK-144", .step = .fast },
     .{ .name = "scenario/CK-163", .step = .fast },
     .{ .name = "scenario/CK-164", .step = .perf },
@@ -121,38 +120,6 @@ fn selectedStep(arena: std.mem.Allocator) !Step {
 
 // (CK-88, the last of R0–R12's, was fixed and promoted into `perf_test.zig`
 // by R12. The ones below are R15's audit, 2026-09-27.)
-
-// CK-143: `Types.find` is a linear scan of the declaring module's types, and
-// `Digest.collect` calls it once per exported type (then deduplicates with a
-// linear `contains`), so the dependency digest — which runs with or without
-// a cache — is quadratic in a module's `pub` types. Independent
-// `pub type A{i} = A{i} Int | B{i}`, the `dep_digest` event of the file.
-// Calibration (ReleaseFast, 8b98464, R15 red pass): 8 000 / 16 000 / 32 000
-// types take 38 / 149 / 571 ms of `dep_digest` (ratio 3.9) against a `check`
-// of 29 / 57 / 115 ms. No reference fix. n = 8 000.
-test "CK-143: the dependency digest is linear in a module's pub types" {
-    var s = try Scenario.init("CK-143");
-    defer s.deinit();
-    const template = "pub type A{d}\n    = A{d} Int\n    | B{d}\n\n\n";
-    try s.w.write("I.beni", try generate(s.arena(), 8_000, template, 3));
-    try s.w.write("I2.beni", try generate(s.arena(), 16_000, template, 3));
-    try s.finish(try s.eventRatio("I.beni", "I2.beni", 8_000, "dep_digest"));
-}
-
-// CK-143's publication half: `Types.resolveRefs` calls the same linear
-// `find` once per `type_refs` row, in P8 for every miss and in `install` for
-// every hit, so publishing a CHAIN `pub type A{i} = A{i} Int A{i-1} | B{i}`
-// is quadratic. The `publish` event of the file. Calibration (ReleaseFast,
-// 8b98464): 8 000 / 16 000 / 32 000 take 32 / 53 / 183 ms (the ratio is
-// 1.7, then 3.5: the scan only dominates from about 16 000). No reference
-// fix. n = 16 000.
-test "CK-143-publish: publishing a chain of pub types is linear" {
-    var s = try Scenario.init("CK-143-publish");
-    defer s.deinit();
-    try s.w.write("C.beni", try typeChain(s.arena(), 16_000));
-    try s.w.write("C2.beni", try typeChain(s.arena(), 32_000));
-    try s.finish(try s.eventRatio("C.beni", "C2.beni", 16_000, "publish"));
-}
 
 // CK-144: an interface term expands every alias body inside every scheme,
 // so a chain of nested record aliases is quadratic in BYTES (and in
@@ -315,15 +282,6 @@ fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u
         }
         try out.appendSlice(arena, rest);
     }
-    return out.items;
-}
-
-/// `pub type A0 = A0 Int | B0`, then `pub type A{i} = A{i} Int A{i-1} | B{i}`
-/// up to `count`.
-fn typeChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub type A0\n    = A0 Int\n    | B0\n\n\n");
-    for (1..count + 1) |i| try out.print(arena, "pub type A{d}\n    = A{d} Int A{d}\n    | B{d}\n\n\n", .{ i, i, i - 1, i });
     return out.items;
 }
 

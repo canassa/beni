@@ -938,13 +938,12 @@ fn parseSchemaRecord(p: *Parse) Allocator.Error!Index {
             continue;
         }
         if (p.peek() == .r_brace or p.peek() == .eof) break;
+        // Only a field whose NAME did not parse leaves a tail here
+        // (`parseSchemaField` consumes a parsed field's own).
         var item = p.itemAt(.unexpected_token);
         item.context = .record;
         item.construct = .field_name;
         _ = try p.report(item);
-        // Schema records promise sibling recovery at comma/brace (§2),
-        // which generic delimiter recovery cannot provide because it skips
-        // to the closing brace. Consume the broken field's tail only.
         while (p.peek() != .comma and p.peek() != .r_brace and p.peek() != .eof) _ = p.next();
         if (p.eat(.comma) == null) break;
         p.assertProgress(before);
@@ -969,10 +968,24 @@ fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
         return bad;
     };
     _ = try p.expectToken(.colon);
-    const operand = try p.parseSchemaOperand();
+    var operand = try p.parseSchemaOperand();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
+    if (p.peek() != .comma and p.peek() != .r_brace and p.peek() != .eof) {
+        // The field's value did not end where a field ends: what was
+        // written is not a schema field, so its value is the placeholder
+        // (CK-148), never the prefix that happened to parse. Schema records
+        // promise sibling recovery at comma/brace (§2), which generic
+        // delimiter recovery cannot provide because it skips to the closing
+        // brace: consume the broken field's tail only.
+        var item = p.itemAt(.unexpected_token);
+        item.context = .record;
+        item.construct = .field_name;
+        operand = try p.errorNode(.error_type, item);
+        while (p.peek() != .comma and p.peek() != .r_brace and p.peek() != .eof) _ = p.next();
+        p.shrinkScratch(mark);
+    }
     const modifiers = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaField{
         .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
@@ -999,14 +1012,19 @@ fn parseLayoutSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Ind
     const colon = try p.expectToken(.colon);
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
-    const operand = if (colon != null and p.atLayoutFieldHeadAfter(colon.?))
+    var operand = if (colon != null and p.atLayoutFieldHeadAfter(colon.?))
         try p.parseLayoutSchemaRecord()
     else blk: {
         const value = try p.parseSchemaOperand();
         while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
         break :blk value;
     };
-    try p.finishLayoutField();
+    // A tail means the value is not what was written: the placeholder
+    // (CK-148), as in the brace form (`parseSchemaField`).
+    if (try p.finishLayoutField(.error_type)) |bad| {
+        operand = bad;
+        p.shrinkScratch(mark);
+    }
     const modifiers = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaField{
         .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
@@ -1803,20 +1821,24 @@ fn parseLayoutTypeField(p: *Parse) Allocator.Error!Index {
         try p.parseLayoutTypeRecord()
     else
         try p.parseType();
-    try p.finishLayoutField();
+    _ = try p.finishLayoutField(null);
     return p.unary(.record_type_field, name, type_expr);
 }
 
 /// Anything left to the right of a field after its body is malformed field
 /// tail. Preserve a later-line field head for the block loop so it can issue
 /// the alignment diagnostic; otherwise recover at the aligned sibling.
-fn finishLayoutField(p: *Parse) Allocator.Error!void {
-    if (p.peek() == .eof or p.atLaterLayoutFieldHead()) return;
+fn finishLayoutField(p: *Parse, placeholder: ?Node.Tag) Allocator.Error!?Index {
+    if (p.peek() == .eof or p.atLaterLayoutFieldHead()) return null;
     var item = p.itemAt(.unexpected_token);
     item.context = .record;
     item.construct = .field_name;
-    _ = try p.report(item);
+    const bad: ?Index = if (placeholder) |tag| try p.errorNode(tag, item) else blk: {
+        _ = try p.report(item);
+        break :blk null;
+    };
     p.recover();
+    return bad;
 }
 
 /// RecordTypeFields := lower_ident ':' Type (',' lower_ident ':' Type)*

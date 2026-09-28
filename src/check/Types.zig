@@ -55,6 +55,7 @@ const SourceStore = @import("../SourceStore.zig");
 const TypeStore = @import("TypeStore.zig");
 const reads = @import("reads.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
+const SchemaPlan = @import("SchemaPlan.zig");
 
 const Types = @This();
 
@@ -114,6 +115,11 @@ entries: []Entry,
 /// Borrowed session interface slots, used to map schema member references
 /// back to their endpoint identity.
 interfaces: []const Interface,
+/// Borrowed, the session's schema plans, one slot per module, filled when
+/// that module's check (or its cache hit) finishes, before any dependent
+/// starts: a private record schema's endpoint is read from it (CK-126,
+/// `Builder.planEndpoint`).
+plans: []const SchemaPlan = &.{},
 /// Owned. `by_decl[module][decl] = TypeId`, `.none` for a value
 /// declaration. One flat array with per-module offsets, so nothing is
 /// keyed by a name and nothing is a map.
@@ -137,6 +143,13 @@ schema_offsets: []u32,
 /// declared types, `pub` and private alike — the range `resolveRefs`
 /// searches by name.
 entry_offsets: []u32,
+/// Owned, parallel to `entries`: each module's range of it (`entry_offsets`)
+/// holds that range's ids sorted by `(name, id)`, so `find` is a binary
+/// search, not a scan (CK-143: publication and the dependency digest each
+/// call it once per type reference, which made both quadratic in a
+/// module's types). The duplicate name of a refused redeclaration finds
+/// the first declaration, as the scan did.
+by_name: []TypeId,
 /// Owned, one slice per module: `ref_ids[m][r]` is the `TypeId` module
 /// `m`'s interface `type_refs[r]` names in THIS session.
 ///
@@ -197,6 +210,7 @@ pub const empty: Types = .{
     .by_schema = &.{},
     .schema_offsets = &.{},
     .entry_offsets = &.{},
+    .by_name = &.{},
     .ref_ids = &.{},
     .well_known = .{},
 };
@@ -215,6 +229,7 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
     for (types.ref_ids) |ids| gpa.free(ids);
     gpa.free(types.ref_ids);
     gpa.free(types.entry_offsets);
+    gpa.free(types.by_name);
     types.* = empty;
 }
 
@@ -358,9 +373,11 @@ pub fn refIds(types: *const Types, m: Graph.Index) []const TypeId {
 /// A reference is resolved by NAME against the declaring module's whole
 /// declaration list rather than against its interface, because a `pub`
 /// signature may name a PRIVATE type (`pub make : Hidden`) and that type is
-/// in no interface. The scan is linear in one module's declared types and
-/// runs once per module per build, not once per use; the `checker.md` §4.5
-/// rule is about the per-use path, which `ref_ids` keeps free of names.
+/// in no interface. Each lookup is a binary search of the declaring module's
+/// `by_name` range (CK-143: the scan it replaced made this quadratic in a
+/// module's types) and runs once per reference per build, not once per use;
+/// the `checker.md` §4.5 rule is about the per-use path, which `ref_ids`
+/// keeps free of names.
 ///
 /// A reference that names no module or no type of it yields `.none` — the
 /// same poisoned id the term carried before, so a record M4 mapped from
@@ -391,10 +408,23 @@ pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Packa
     if (m.int() + 1 >= types.entry_offsets.len) return .none;
     const from = types.entry_offsets[m.int()];
     const to = types.entry_offsets[m.int() + 1];
-    for (types.entries[from..to], from..) |e, i| {
-        if (e.name == type_name) return @enumFromInt(i);
-    }
+    const sorted = types.by_name[from..to];
+    const Ctx = struct {
+        entries: []const Entry,
+        name: Symbol,
+        fn order(cx: @This(), id: TypeId) std.math.Order {
+            return std.math.order(@intFromEnum(cx.name), @intFromEnum(cx.entries[id.int()].name));
+        }
+    };
+    const at = std.sort.lowerBound(TypeId, sorted, Ctx{ .entries = types.entries, .name = type_name }, Ctx.order);
+    if (at < sorted.len and types.entries[sorted[at].int()].name == type_name) return sorted[at];
     return .none;
+}
+
+fn nameLessThan(entries: []const Entry, a: TypeId, b: TypeId) bool {
+    const na = @intFromEnum(entries[a.int()].name);
+    const nb = @intFromEnum(entries[b.int()].name);
+    return na < nb or (na == nb and a.int() < b.int());
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +589,9 @@ pub fn build(
     types.schema_offsets = schema_offsets;
     types.entry_offsets = entry_offsets;
     types.ref_ids = ref_ids;
+    types.by_name = try gpa.alloc(TypeId, types.entries.len);
+    for (types.by_name, 0..) |*slot, i| slot.* = @enumFromInt(i);
+    for (0..modules) |i| std.mem.sort(TypeId, types.by_name[entry_offsets[i]..entry_offsets[i + 1]], types.entries, nameLessThan);
 
     // The table of §3.2 FIRST: `settleEquatable` settles `comparable`
     // alongside `equatable`, and a `Char` is comparable because the table
@@ -854,7 +887,7 @@ const BodyWalk = struct {
 };
 
 /// The `TypeId` a resolved type reference names.
-fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data: Bir.Inst.Data) TypeId {
+pub fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data: Bir.Inst.Data) TypeId {
     return switch (tag) {
         .type_top => types.ofDecl(module, @enumFromInt(data.lhs)),
         .ext_type => types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
@@ -1170,9 +1203,11 @@ pub const Builder = struct {
                     }
                     // A private schema is in no interface. Its tagged
                     // endpoint is a nominal type, whole in its `TypeId`;
-                    // a record endpoint's shape is not (CK-126).
+                    // a record endpoint's shape is its module's resolved
+                    // schema plan's (CK-126).
                     const id = b.types.ofSchemaDecl(b.module, @enumFromInt(data.lhs), endpoint);
                     if (id != .none and b.types.entry(id).kind == .adt) break :blk id;
+                    if (try b.planEndpoint(@enumFromInt(data.lhs), endpoint, args)) |v| return v;
                 }
                 break :blk .none;
             },
@@ -1181,6 +1216,48 @@ pub const Builder = struct {
         };
         if (id == .none) return b.store.freshErr(b.varRank());
         return b.apply(id, args);
+    }
+
+    /// A PRIVATE schema's record endpoint, met in another module's alias
+    /// body (CK-126; `checker-v2.md` §11.5 *amended by R15-fix-D*): read
+    /// from the declaring module's resolved schema plan, whose
+    /// `program_term`/`encoded_term` are the endpoint written in interface
+    /// terms, the same bytes an interface scheme would hold. The interface
+    /// lists `pub` schemas only, so the plan is the one record of the shape
+    /// that outlives the declaring module's check — and a cache hit
+    /// installs it too (`Incremental.install`). The dependency digest
+    /// already carries the expansion (`Digest.schemaEndpointExpansion`),
+    /// which is what makes this read `types_alias_body`'s row 12.
+    ///
+    /// `null` when the module has no plan: it had an error, so the importer
+    /// has a dependency's message and the `err` the caller makes is
+    /// downstream of it (§12.2's table).
+    fn planEndpoint(b: *Builder, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, args: []const Var) Error!?Var {
+        if (b.module.int() >= b.types.plans.len) return null;
+        const plan = &b.types.plans[b.module.int()];
+        // Definitions are appended in declaration order (`SchemaPlanBuild`).
+        const Ctx = struct {
+            fn order(want: Bir.DeclIndex, def: SchemaPlan.Definition) std.math.Order {
+                return std.math.order(want.int(), def.decl.int());
+            }
+        };
+        const at = std.sort.lowerBound(SchemaPlan.Definition, plan.definitions, decl, Ctx.order);
+        if (at >= plan.definitions.len or plan.definitions[at].decl != decl) return null;
+        const def = plan.definitions[at];
+        const root = if (endpoint == .type) def.program_term else def.encoded_term;
+        if (root.int() >= plan.terms.len) return null;
+        reads.note(.types_alias_body, b.module);
+        var view = Interface.empty;
+        view.terms = plan.terms;
+        view.extra = plan.type_extra;
+        view.type_refs = plan.type_refs;
+        view.symbols = plan.symbols;
+        const ids = try b.scratch.alloc(TypeId, plan.type_refs.len);
+        defer b.scratch.free(ids);
+        for (plan.type_refs, ids) |ref, *slot| {
+            slot.* = b.types.find(b.graph, ref.package, view.symbol(ref.module), view.symbol(ref.name));
+        }
+        return try InterfaceTerms.instantiateRoot(&view, ids, b.store, root, args, b.rank, b.scratch);
     }
 
     /// A schema endpoint of another module, from its interface's scheme.

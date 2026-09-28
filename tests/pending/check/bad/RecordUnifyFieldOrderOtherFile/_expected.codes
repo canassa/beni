@@ -1,2 +1,0 @@
-# The text `check M.beni` gives alone.
-type_mismatch M.beni:11:8 contains "{ zp : Int, zq : Int }" lacks "{ zp : String, zq : String }"

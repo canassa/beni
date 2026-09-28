@@ -265,7 +265,7 @@ pub fn collect(
 
     // 1. The type set: the record's `types` table, plus every `type_refs` row
     //    that names THIS module, closed under alias bodies (see the header).
-    var ids: std.ArrayList(Types.TypeId) = .empty;
+    var ids: IdSet = try .init(scratch, s.types, m);
     defer ids.deinit(scratch);
     for (iface.types) |row| {
         try pushId(scratch, &ids, s, package, module_name, iface.symbol(row.name));
@@ -281,8 +281,8 @@ pub fn collect(
     var local: std.ArrayList(Types.TypeId) = .empty;
     defer local.deinit(scratch);
     var at: usize = 0;
-    while (at < ids.items.len) : (at += 1) {
-        const id = ids.items[at];
+    while (at < ids.items.items.len) : (at += 1) {
+        const id = ids.items.items[at];
         const e = s.types.entry(id);
         if (e.kind != .alias) continue;
         if (e.schema_endpoint) {
@@ -304,8 +304,8 @@ pub fn collect(
     }
 
     // 2. One row per type, sorted by name TEXT.
-    const rows = try scratch.alloc(Type, ids.items.len);
-    for (ids.items, rows) |id, *row| {
+    const rows = try scratch.alloc(Type, ids.items.items.len);
+    for (ids.items.items, rows) |id, *row| {
         const e = s.types.entry(id);
         const name = s.interner.slice(e.name);
         var body: []const u8 = &.{};
@@ -367,7 +367,7 @@ pub fn collect(
                 .nominal => |id| id,
                 else => continue,
             };
-            if (!contains(ids.items, id)) continue;
+            if (!ids.has(id)) continue;
             const who = s.types.named(id) orelse continue;
             try derived.append(scratch, .{
                 .kind = row.kind,
@@ -448,7 +448,7 @@ fn bodyContext(s: Session, e: Types.Entry, bir: *const Bir, d: Bir.Decl) type_bo
 
 fn pushId(
     scratch: Allocator,
-    ids: *std.ArrayList(Types.TypeId),
+    ids: *IdSet,
     s: Session,
     package: SourceStore.Package,
     module_name: InternPool.Symbol,
@@ -459,17 +459,52 @@ fn pushId(
     return push(scratch, ids, id);
 }
 
-fn push(scratch: Allocator, ids: *std.ArrayList(Types.TypeId), id: Types.TypeId) Allocator.Error!void {
-    if (contains(ids.items, id)) return;
-    try ids.append(scratch, id);
+fn push(scratch: Allocator, ids: *IdSet, id: Types.TypeId) Allocator.Error!void {
+    return ids.add(scratch, id);
 }
 
-fn contains(ids: []const Types.TypeId, id: Types.TypeId) bool {
-    for (ids) |seen| {
-        if (seen == id) return true;
+/// The digest's type set: the ids in first-pushed order, and one bit per type
+/// of the module for membership (CK-143: the linear `contains` it replaced
+/// made the digest quadratic in a module's types). Every id pushed is the
+/// module's own (`Types.find` of its own name, `type_body.collectLocal*`), so
+/// the bits cover the module's range of the table; an id outside it would be
+/// a broken invariant, and is ignored rather than trusted.
+const IdSet = struct {
+    items: std.ArrayList(Types.TypeId) = .empty,
+    from: u32,
+    bits: std.DynamicBitSetUnmanaged,
+
+    fn init(gpa: Allocator, types: *const Types, m: Graph.Index) Allocator.Error!IdSet {
+        const offsets = types.entry_offsets;
+        const in_range = m.int() + 1 < offsets.len;
+        const from: u32 = if (in_range) offsets[m.int()] else 0;
+        const to: u32 = if (in_range) offsets[m.int() + 1] else 0;
+        return .{ .from = from, .bits = try .initEmpty(gpa, to - from) };
     }
-    return false;
-}
+
+    fn deinit(set: *IdSet, gpa: Allocator) void {
+        set.items.deinit(gpa);
+        set.bits.deinit(gpa);
+    }
+
+    fn slot(set: *const IdSet, id: Types.TypeId) ?usize {
+        if (id == .none or id.int() < set.from) return null;
+        const at = id.int() - set.from;
+        return if (at < set.bits.bit_length) at else null;
+    }
+
+    fn has(set: *const IdSet, id: Types.TypeId) bool {
+        const at = set.slot(id) orelse return false;
+        return set.bits.isSet(at);
+    }
+
+    fn add(set: *IdSet, gpa: Allocator, id: Types.TypeId) Allocator.Error!void {
+        const at = set.slot(id) orelse return;
+        if (set.bits.isSet(at)) return;
+        set.bits.set(at);
+        try set.items.append(gpa, id);
+    }
+};
 
 /// Whether the record exposes this type WITHOUT its constructors. Read from the
 /// record because that is where the fact lives; a private type is in no `types`

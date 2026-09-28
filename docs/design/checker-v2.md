@@ -885,6 +885,17 @@ untouched.
 smallest by field **name text**, not by symbol id. For the one-failure case, which is the common
 one, the cost is zero.
 
+*Amended by R15-fix-D (2026-09-28, CK-145).* Choosing the reported failure by text was not
+enough: the fields are **unified** in an order too, and unifying one binds variables the next is
+judged against. `{ zp = y, zq = y }` against `{ zp : Int, zq : String }` fails at `zq` if `zp` went
+first (`y` is `Int` by then) and at `zp` otherwise, and the merge-join walked shared fields in
+symbol-id order — which follows which OTHER files the project interns (a module importing nothing
+changed the argument's text from `{ zp : Int, zq : Int }` to `{ zp : String, zq : String }`). The
+shared fields are now unified in **name-text order** (`Unify.record` sorts them before the loop;
+the stored record stays in symbol order, which the merge-join needs), so the first failure is the
+smallest by text and a message is a function of the program. Name text, not declaration order: a
+record type is unordered (`checker.md` §7), and it is the order every record prints in.
+
 ### 7.3 Depth
 
 `unify` recurses on structure. Its guard stays `Parse.max_depth + 104` (`checker.md` §5). The guard
@@ -2933,6 +2944,29 @@ the shared reader and so for both checkers:
 The interface is unchanged: an alias row never prints a body (`alias RW`, like `alias Q` for
 `type alias Q = P`); a record alias's row prints only its constructor.
 
+*Amended by R15-fix-D (2026-09-28, CK-126).* **A private record schema's endpoint is read from
+its module's schema plan**, not from an interface row, and the interface is still unchanged. The
+plan (`SchemaPlan`, `schema.md` A.6) already holds every schema of the module, private ones
+included, with each endpoint written in interface terms (`program_term`, `encoded_term`); it is
+built at the end of the declaring module's check, installed on a cache hit, and complete before
+any dependent starts. So the third bullet above now reads: a private **tagged** endpoint is its
+nominal type; a private **record** endpoint is instantiated from the plan
+(`Types.Builder.planEndpoint`), under the alias's arguments, exactly as a `pub` one is from its
+member scheme — `PrivRecW` is `{ z : Int }` in the importer as in its module, and `r + 1` is a
+TYPE MISMATCH. When the declaring module has no plan it had an error, and the importer's `err`
+is downstream of that message (§12.2's table). *Rejected:* an interface row for private endpoints
+a `pub` alias names (CK-126's first proposal) — an interface version bump to carry what the plan
+already carries; and refusing the alias — a valid program rejected, which buys no guarantee
+(rule 7).
+
+The read is `types_alias_body` (`reads.zig`, `plans/m4-3.md` §3.2 row 12), and the digest covers
+it: `type_body` now spells a schema endpoint head as the named type it is and collects a local
+one into the digest's type set, whose worklist already writes an endpoint's expansion from the
+plan (`Digest.schemaEndpointExpansion`). Before, the alias body digested the endpoint as `err`,
+so editing the private schema's field moved no digest and a cached importer kept its old verdict
+(`digest_test.zig`, "row 13 for a schema"). The digest's bytes change only for a module whose
+alias body names a schema — a key that moves, never a stale hit — so `digest_version` stays 2.
+
 ---
 
 ## 12. Evidence and elaboration
@@ -3016,7 +3050,7 @@ downstream of a message already written:
 | `TypeStore.resolved`'s guard | **removed** (it was the silent one) |
 | `Builder.read` past `max_depth` | sets `too_deep`; `readAnnotation` reports `nesting_too_deep`, and so do `Publish`'s constructor reading, `Contexts` (`null` → at the use) and `Instantiate.ownCtor`; `Marker`'s and `Publish`'s second reading of the same constructor arguments are covered by the first |
 | `Builder.read`'s other tags, `named` with no type, `apply` at a wrong arity or inside its own expansion, `aliasBody` with no body | an earlier phase reported (unresolved name, parser placeholder, `wrong_type_arity`, `recursive_alias`, `import_cycle`, a parse error): the module is quiet, or the alias's module is a dependency with an error |
-| `Builder.named`, a private record schema's endpoint through another module's alias | **not covered**: CK-126, still pending; the check below catches it in Debug (its red is now `crash=ABRT`) |
+| `Builder.named`, a private record schema's endpoint through another module's alias | **not covered**: CK-126, still pending; the check below catches it in Debug (its red is now `crash=ABRT`). *Covered since R15-fix-D:* the endpoint is read from the declaring module's plan (§11.5 *amended by R15-fix-D*); `err` only when that module has no plan, which is when it had an error |
 | `Builder.schemaMember`, `InterfaceTerms`/`Schemes` readers (`.err` term, a scheme `none`, a depth past the writer's bound) | the dependency's message: its publisher reported the `<error>` (§14.1 *amended by R15-fix-A*) or the depth (`nesting_too_deep` at the same bound); an index out of range is a malformed record, which no compiler-written interface is |
 | P2 and a `let`'s Elm-curried annotation (`Module`, `constrain/Decl`) | reported at the body (CK-56) |
 | `Schema.State` placeholders and malformed-plan rows | never read (a declaration that is not a schema), or the parser/resolution reported; `copyHelp` past 512 levels is the publisher's `nesting_too_deep` for a published endpoint (CK-13) — a private one deeper is a residual for the schema slices, with no runtime path |
@@ -3508,6 +3542,32 @@ resolve, a wrong arity, a recursive alias: each reported) keeps `no_terms`, so a
 poisons as a whole, and no `<error>` term is ever published inside a constructor's type. An
 importer that instantiates a row whose scheme is `<error>` answers the wanted `poisoned` (§12.2
 *amended by R15-fix-A*), in silence: its publisher said why.
+
+*Amended by R15-fix-D (2026-09-28, CK-147, CK-148).* **What a declaration publishes is a function
+of the declaration alone** (I9). `fill` published every `decl_scheme` that was not `err`, failure
+bit or not, and an unannotated declaration's scheme is whatever the solver had reached when its
+error stopped it — which depends on the order its group met the module's other declarations. In
+source order `ma : K, { combine : number -> number } -> number2`, reversed `… -> number`, and a
+dependent's verdict followed. As built (`Publish.publishedRoot`), before the routine runs:
+
+- an **annotated** value publishes its P2 scheme — the annotation as written — failed or not, as
+  it always did (a body's parse error or type error leaves its callers held to the promise);
+- an **unannotated** value whose failure bit is set (I12: `Report.failed`, which a group's
+  failure sets for every member, §15.2) publishes **`<error>`**. The message is this module's, so
+  a dependent's use is `poisoned`, silent (§12.2 *amended by R15-fix-A*). This gives
+  `Report.failed` the reader CK-146 (1) found missing.
+
+A written type the parser could not read publishes `<error>` the same way, because its reader
+builds `err` from the placeholder (§12.2's table, "parser placeholder"): `f : Int -> ) Int`
+publishes `f : <error>`. CK-148 was the one declaration kind whose parse error left **no**
+placeholder: a schema field whose value did not end where a field ends (`y : Int -> Int`, in the
+layout or the brace form) kept the prefix that parsed (`y : Int`), and that schema was published
+and checked against — one mistake, two messages, the second about a type nobody wrote. The parser
+now makes the field's value the placeholder (`Parse.parseSchemaField`,
+`parseLayoutSchemaField`; the message and its position are unchanged), so the endpoints read
+`err` and every member and constructor of the schema publishes `<error>`. A `type alias` field
+keeps its recovery: `{ x : Int, y : String ) }` is a complete field and a stray closer, and its
+users' mismatches are their own.
 
 ### 14.2 Interface v3
 
@@ -4122,6 +4182,18 @@ The whole process keeps what v2 costs outside the check line (its `resolve` phas
 under `perf` than `7427828`'s, with `Graph.lookup`'s hash no longer inlined; the bench's own
 `resolve` line did not show it, so no finding is filed). The ablation column was measured before
 the two changes not kept were taken out.
+
+*Amended by R15-fix-D (2026-09-28, CK-143).* **No name lookup on the type table is a scan.**
+`Types.find` — the one name lookup, which resolves a `type_refs` row (`resolveRefs`, once per row
+at P8 and at a cache hit's install) and the dependency digest's type set (`Digest.collect`, once
+per exported type) — scanned the declaring module's types, so publication and the digest were
+quadratic in a module's types. `Types.by_name` is each module's range of the table sorted by
+`(name, id)`, built with the table, and `find` a binary search (`fast-compiler.md` §5 rule 5: a
+dense id indexes an array, and this is the sorted index of one; no map). The digest's set
+membership is a bit per type of the module (`Digest.IdSet`), not a linear `contains`. ReleaseFast:
+`dep_digest` over 8 000 / 16 000 independent types 38 / 149 ms → 5.1 / 10.1 ms; `publish` of a
+16 000 / 32 000 chain 53 / 183 ms → 15.0 / 31.4 ms (`test-perf` "CK-143", "CK-143-publish"). The
+duplicate name of a refused redeclaration still finds the first declaration, as the scan did.
 
 ---
 
