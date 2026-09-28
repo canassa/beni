@@ -164,7 +164,7 @@ against it** — the same position the sheet already takes on component librarie
 | **W25** | |
 | **W26** | |
 | **W27** | |
-| **W28** | |
+| **W28** | **Copy Solid 2** (2026-09-29). A message does not render at once: the update is staged and one **microtask flush** renders — so several renders per frame are possible, as in Solid 2 (R27 §3.1–§3.2), not one per frame as the sheet recommended. An explicit synchronous flush (Solid's `flush()`; e.g. `Browser.flush ()`) replaces Elm's `stopPropagation`-implies-sync for controlled inputs. Effects that must see the DOM run after the flush has written it, as Solid 2's split effect does (R27 §3.3). R26's two constraints stand: post-render work is `sync`, and the patch pass batches DOM reads before writes. |
 | **W29** | |
 | **W30** | |
 | **W31** | |
