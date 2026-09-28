@@ -3162,6 +3162,41 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   red on the base. The group step budget has no black-box test with a finite type: none within
   the test budget reaches it once the DAG is shared. Pending: none.
 
+#### The last review's fixes (2026-09-29)
+
+- **Goal.** Fix the last checker review's findings, catalogued CK-210 to CK-214: a schema
+  endpoint meeting itself shows its expansion (D16), a safety build's proof re-walk is quadratic
+  on a wide alias DAG, a symbolic link in `--out` is written through, a failed record write names
+  the directory, and NOT EQUATABLE names `==` for a `where` requirement and for `Basics.eq`.
+- **As built (2026-09-29).** Base `8f78224`. Red fixtures first, one commit, each checked red for
+  its recorded signature with `test-pending` green; then one commit per fix, promoting its
+  fixtures with it.
+  - **CK-211** (`⚡`): `Resolve.step` checks a proved receiver with `Walk.assertProved`, under
+    its store-wide budget; the untrusting 64-level occurs walk and `Occurs.trusts` are deleted.
+    `checker-v2.md` §8.2 *amended 2026-09-29*. Depth 60: 14.3 s → 4.8 s ReleaseSafe. Into
+    `abuse_test.zig` at depth 24: 6.5 billion instructions before, 2.3 after (budget 4.3).
+  - **CK-210** (`🧮`): two uses of one alias keep the name when their arguments unify
+    (injective) or are already the same types with no flex below (`Unify.sameArguments`, 64
+    pairs); a zero-argument alias and a schema endpoint always agree, and so does a
+    non-injective `Tagged String` met twice. `checker-v2.md` §7.1 and D16 *amended 2026-09-29*.
+    No corpus message moved.
+  - **CK-212, 213** (`🐛`): `Emit.refuseLinks` refuses, before any write, the first symbolic link
+    on the way to every path the build writes (`OutputRecord.firstLink`), with
+    `unknown_output_record` naming it; `Emit.writeRecord` names `--out` only when creating it
+    fails and the record's path otherwise. `backend.md` §2 and `language.md`'s catalogue row
+    *amended 2026-09-29*. Three `build_test.zig` tests, red on the base.
+  - **CK-214** (`🧮`): `not_equatable`'s texts take `DispatchTexts.EqUse` and name the use as
+    written — a method call by spelling, a `where` requirement "`.eq`, which `h` requires", the
+    §11.4 marker by the `Basics.eq`/`Basics.neq` call its question records
+    (`Obligations.Row.call`). The fixture found the same fault in `type_mismatch` (`Basics.eq 1
+    "a"` named `(==)`), fixed in `Reporter.operatorCallee` with a new fixture. Fourteen goldens
+    moved from `==` to `Basics.eq` or the requirement. `checker-v2.md` §15.3 *amended again
+    2026-09-29*, which also records that a body using both `x.eq x` and `x == x` names its
+    promoted requirement after the first in source order.
+- **Evidence.** Every fixture red on `8f78224` for its recorded reason (`tests/pending/RED`, the
+  fixtures commit) and green with its fix; the three `build_test.zig` tests and the new
+  `BasicsEqCalledByName` red on a `8f78224` binary. Pending: none.
+
 ---
 
 ## 4. CK → slice index
@@ -3204,6 +3239,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-J | CK-200 (`check/bad/StringLiteralMismatchSpan`), CK-201 (`ordering_test.zig`), CK-150 (`check/bad/LetValueConstrainedWideType`); CK-146, 149, 151, 152, 153, 155 to 158, 160 structural (asserts, deletions, a widened fence); CK-10, 14, 35 checked closed | — | CK-194's re-ranking recorded as a perf idea; `checker-v2.md` §7.5 and I14 amended (journal deleted) |
 | R15-fix-K | CK-144 (`perf_test.zig`; new `iface_test.zig`, `cache_test.zig`, `cutoff_test.zig` cases) | — | interface format 7: aliases named in terms, bodies on `type_refs` rows (`checker-v2.md` §14.2) |
 | the final review's fixes (2026-09-29) | CK-202 (`check/good/AliasNamesInsideStructures`, two `ordering_test.zig` tests), CK-203 (`perf_test.zig`), CK-204 to CK-208 (`tests/corpus/check/bad/`; CK-207 with a new imported twin), CK-209 (`build_test.zig`) | — | the written/inferred alias distinction deleted (`checker-v2.md` §7.1) |
+| the last review's fixes (2026-09-29) | CK-210 (`check/good/SchemaEndpointMeetsItself`), CK-211 (`abuse_test.zig`), CK-212 and CK-213 (`build_test.zig`, three tests), CK-214 (`check/bad/EqRefusalNamesTheUse`; new `check/bad/BasicsEqCalledByName`) | — | `Occurs.trusts` deleted; `unknown_output_record` widened to symbolic links (`backend.md` §2) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
