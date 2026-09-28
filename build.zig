@@ -488,9 +488,10 @@ pub fn build(b: *std.Build) void {
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`),
     // on the same ReleaseFast compiler by the same ratio method. Not a gate:
-    // rule 4 names three. The scenarios judged on a ratio of CPU times run in
+    // rule 4 names three. The scenarios judged on a ratio of retired
+    // instructions (CPU time where none can be counted) run in
     // `perf_shards` processes at once; the few judged on the wall time of a
-    // `--self-profile` event, or on a small difference of CPU times, run in
+    // `--self-profile` event, or on a small difference of two costs, run in
     // one process after them, alone (`perf_test.zig`'s `Run`). The
     // harness is built ReleaseSafe: it generates the large inputs and parses
     // the large traces, and in Debug that was half the step.

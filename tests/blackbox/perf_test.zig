@@ -5,22 +5,25 @@
 //! claim measured on the ReleaseSafe binary the gates run measures a
 //! different compiler than the one its sizes were calibrated on.
 //!
-//! The method is `pending_test.zig`'s, unchanged, so a scenario moves between
-//! the two files verbatim:
+//! The method is `pending_test.zig`'s, so a scenario moves between the two
+//! files verbatim, with one change of unit:
 //!
-//!   * **a ratio**, time(2n) / time(n) ≤ 2.5 — linear with head-room;
+//!   * **a ratio**, cost(2n) / cost(n) ≤ 2.5 — linear with head-room;
 //!     quadratic is about 4 and cubic about 8 — because a ratio holds across
 //!     machines where an absolute bound does not;
-//!   * **each point the best of 3 runs**, since a loaded machine only ever
-//!     ADDS time;
-//!   * **time is the child compiler's CPU time** (user + system, `wait4`'s
-//!     rusage), every run `--jobs=1`; the wall clock only kills a run, at
-//!     twice the bound.
+//!   * **cost is the retired user-space instructions** of the child
+//!     compiler (`Perf.Unit`), every run `--jobs=1`: they repeat run to run
+//!     whatever else shares the cores, so one run is a point. Where no
+//!     counter opens it is the child's CPU time (user + system, `wait4`'s
+//!     rusage), and each point the best of 3 runs, since a loaded machine
+//!     only ever ADDS time; the wall clock only kills a run, at twice the
+//!     bound.
 //!
-//! The scenarios judged on a ratio of CPU times run in several processes at
-//! once (a `--jobs=1` child's CPU time is its own work, whatever runs beside
+//! The scenarios judged on a ratio of counts run in several processes at
+//! once (a `--jobs=1` child's count is its own work, whatever runs beside
 //! it); the few judged on the wall time of a `--self-profile` event, or on a
-//! small difference of CPU times, run alone, after them (`Run`, `inShard`).
+//! small difference of two counts, which in CPU time would be load's, run
+//! alone, after them (`Run`, `inShard`).
 //!
 //! Unlike a pending scenario, a red verdict here FAILS the step: the
 //! scenario was green when it was promoted, and red is a regression.
@@ -424,13 +427,13 @@ const Verdict = struct {
 };
 
 /// Whether a scenario may share the machine with others. A ratio of two
-/// `--jobs=1` children's CPU times is their own work, whatever runs beside
-/// them, so `.concurrent` scenarios are spread over several processes at
-/// once. The duration of a `--self-profile` event is wall time inside the
-/// child, which a busy machine stretches, and a small difference of two large
-/// CPU times is within the noise that cores shared with other work add to
-/// each; those scenarios are `.alone`, in a process of their own after the
-/// others.
+/// `--jobs=1` children's costs (`Perf.Unit`) is their own work, whatever
+/// runs beside them, so `.concurrent` scenarios are spread over several
+/// processes at once. The duration of a `--self-profile` event is wall time
+/// inside the child, which a busy machine stretches, and a small difference
+/// of two large costs, where they fall back to CPU time, is within the noise
+/// that cores shared with other work add to each; those scenarios are
+/// `.alone`, in a process of their own after the others.
 const Run = enum { concurrent, alone };
 
 /// `.concurrent` scenarios met so far in this process, in declaration order.
@@ -490,22 +493,48 @@ const Perf = struct {
         return s.arena_state.allocator();
     }
 
-    /// One compiler run: its CPU time, or null when it was killed at
-    /// `kill_ms` of WALL time. The wall clock stands in only where the
-    /// platform reports no rusage.
-    fn timed(s: *Perf, args: []const []const u8, kill_ms: i64) !?struct { ms: i64, result: world.Result } {
+    /// What a run's cost is counted in. Retired user-space instructions
+    /// (`world.timing.Counter`, the unit of the gates' test budget) repeat
+    /// run to run within a few parts in a million, whatever else shares the
+    /// cores: one run is a point, and a ratio or a difference of two is
+    /// exact. Where no counter opens (`perf_event_paranoid` above 2, no PMU,
+    /// not Linux), the cost is CPU time in milliseconds, which load moves: each
+    /// point is then the best of 3.
+    const Unit = enum { instructions, cpu_ms };
+
+    /// One compiler run: its cost (`Unit`) and its CPU time, or null when it
+    /// was killed at `kill_ms` of WALL time. The counter also counts this
+    /// thread from the spawn to the reap, a constant well under a million
+    /// beside the child's tens of millions. The wall clock stands in for CPU
+    /// time only where the platform reports no rusage.
+    fn timed(s: *Perf, args: []const []const u8, kill_ms: i64) !?struct { cost: u64, unit: Unit, ms: i64, result: world.Result } {
+        const counter = world.timing.Counter.open();
+        defer if (counter) |c| {
+            _ = std.os.linux.close(c.fd);
+        };
         const start = Io.Timestamp.now(testing.io, .awake);
         const result = s.w.runWith(args, .{ .raw_diagnostics = true, .timeout_ms = kill_ms }) catch |err| switch (err) {
             error.CompilerTimeout => return null,
             else => return err,
         };
         const wall_ms = start.durationTo(Io.Timestamp.now(testing.io, .awake)).toMilliseconds();
-        return .{ .ms = result.cpu_ms orelse wall_ms, .result = result };
+        const ms = result.cpu_ms orelse wall_ms;
+        if (counter) |c| return .{ .cost = c.read(), .unit = .instructions, .ms = ms, .result = result };
+        return .{ .cost = @intCast(@max(ms, 0)), .unit = .cpu_ms, .ms = ms, .result = result };
     }
 
-    /// time(2n) / time(n) ≤ 2.5, each the best of 3 `check --jobs=1` runs:
-    /// `pending_test.zig`'s `ratioOf`, with a failed compile an error rather
-    /// than a red signature.
+    /// `amount` of `unit`, for a detail line.
+    fn show(s: *Perf, amount: u64, unit: Unit) ![]const u8 {
+        return switch (unit) {
+            .instructions => std.fmt.allocPrint(s.arena(), "{d}.{d} M instructions", .{ amount / 1_000_000, amount / 100_000 % 10 }),
+            .cpu_ms => std.fmt.allocPrint(s.arena(), "{d} ms of CPU", .{amount}),
+        };
+    }
+
+    /// cost(2n) / cost(n) ≤ 2.5 of `check --jobs=1` runs (`Unit`):
+    /// `pending_test.zig`'s `ratioOf`, judged in instructions where they
+    /// can be counted, with a failed compile an error rather than a red
+    /// signature.
     fn ratio(s: *Perf, small: []const u8, large: []const u8, n: usize) !Verdict {
         return s.ratioWith(small, large, n, &.{});
     }
@@ -528,33 +557,40 @@ const Perf = struct {
         try large_list.append(s.arena(), large);
         const small_args = small_list.items;
         const large_args = large_list.items;
-        var best_small: i64 = std.math.maxInt(i64);
+        var small_cost: u64 = std.math.maxInt(u64);
+        var small_ms: i64 = std.math.maxInt(i64);
+        var unit: Unit = .instructions;
         for (0..3) |_| {
             const run = try s.timed(small_args, world.bulk_timeout_ms) orelse {
                 std.debug.print("n={d} did not finish within {d} ms\n", .{ n, world.bulk_timeout_ms });
                 return error.PerfRunTimedOut;
             };
             try s.expectAnswered(run.result);
-            best_small = @min(best_small, run.ms);
+            small_cost = @min(small_cost, run.cost);
+            small_ms = @min(small_ms, run.ms);
+            unit = run.unit;
+            if (unit == .instructions) break;
         }
-        // Killed at twice the bound of wall time, judged on CPU time; one run
-        // under the bound is the best of 3.
-        const bound: i64 = @divTrunc(best_small * 5, 2);
-        var best_large: ?i64 = null;
+        // Killed at twice the bound, in wall time from n's CPU time: a run
+        // far past the bound is cut short, and judged red if every one is.
+        const bound = small_cost * 5 / 2;
+        const kill_ms = @max(@divTrunc(small_ms * 5, 2) * 2, 1_000);
+        var best_large: ?u64 = null;
         for (0..3) |_| {
-            const run = try s.timed(large_args, @max(bound * 2, 1_000)) orelse continue;
+            const run = try s.timed(large_args, kill_ms) orelse continue;
             try s.expectAnswered(run.result);
-            best_large = @min(best_large orelse run.ms, run.ms);
-            if (run.ms <= bound) break;
+            if (run.unit != unit) return error.PerfCounterLost;
+            best_large = @min(best_large orelse run.cost, run.cost);
+            if (unit == .instructions or run.cost <= bound) break;
         }
-        const large_ms = best_large orelse return .{
+        const large_cost = best_large orelse return .{
             .green = false,
-            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n > {d} ms (2.5×) on 3 of 3 runs, CPU time", .{ n, best_small, bound }),
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {s}; 2n killed at {d} ms of wall time on 3 of 3 runs", .{ n, try s.show(small_cost, unit), kill_ms }),
         };
-        const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
+        const hundredths = large_cost * 100 / @max(small_cost, 1);
         return .{
-            .green = large_ms <= bound,
-            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 }),
+            .green = large_cost <= bound,
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {s}; 2n: {s}; ratio {d}.{d:0>2}", .{ n, try s.show(small_cost, unit), try s.show(large_cost, unit), hundredths / 100, hundredths % 100 }),
         };
     }
 
@@ -844,25 +880,36 @@ test "many schemas with `via`s, each compared, cost linear time" {
         const body = if (cmp) try generate(s.arena(), n, measured, 11) else try generate(s.arena(), n, control, 11);
         try s.w.write(file, try std.mem.concat(s.arena(), u8, &.{ head, body }));
     }
-    // Each file the best of 3, the four interleaved: a load that comes and
-    // goes adds time to a file and its control alike, where four blocks of
-    // three runs would hand it to one of them.
-    var ms = [_]i64{std.math.maxInt(i64)} ** 4;
+    // Counted in instructions, one run of each file is exact. In CPU time
+    // each file is the best of 3, the four interleaved: a load that comes
+    // and goes adds time to a file and its control alike, where four blocks
+    // of three runs would hand it to one of them.
+    var cost = [_]u64{std.math.maxInt(u64)} ** 4;
+    var unit: Perf.Unit = .instructions;
     for (0..3) |_| {
-        for ([_][]const u8{ "M.beni", "X.beni", "M2.beni", "X2.beni" }, &ms) |file, *slot| {
+        for ([_][]const u8{ "M.beni", "X.beni", "M2.beni", "X2.beni" }, &cost) |file, *slot| {
             const run = (try s.timed(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", file }, world.bulk_timeout_ms)) orelse return error.PerfRunTimedOut;
             try Perf.expectClean(run.result);
-            slot.* = @min(slot.*, run.ms);
+            slot.* = @min(slot.*, run.cost);
+            unit = run.unit;
         }
+        if (unit == .instructions) break;
     }
     // The comparisons' own cost — `complete`, the runs — over a control with
     // the same schemas and no comparison, whose frontend cost at this size
-    // is super-linear and not this scenario's. Within 5 % of the
-    // control it is noise, and green.
-    const small = @max(ms[0] - ms[1], 1);
-    const large = ms[2] - ms[3];
-    const green = large * 2 <= small * 5 or large * 20 <= ms[3];
-    try s.finish("many schemas with vias", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms (5 % of the control: {d} ms), CPU time", .{ ms[0], ms[1], small, ms[2], ms[3], large, @divTrunc(ms[3], 20) }) });
+    // is super-linear and not this scenario's. That extra is a few percent
+    // of each run — 13 to 26 ms of CPU beside 170 to 400 — and the noise in
+    // a difference of two CPU times is of its size: judged in CPU time the
+    // verdict went red about once in three runs, so a CPU-time verdict also
+    // calls anything within 5 % of the control noise, and green.
+    // In instructions the difference is exact: 58.5 M at n and 118.2 M at
+    // 2n (2.02), and with a unit rebuild at each schema met put back,
+    // 5 044 M and 20 047 M (3.97), the control unmoved (ReleaseFast).
+    const small = @max(cost[0] -| cost[1], 1);
+    const large = cost[2] -| cost[3];
+    const green = large * 2 <= small * 5 or (unit == .cpu_ms and large * 20 <= cost[3]);
+    const hundredths = large * 100 / small;
+    try s.finish("many schemas with vias", .{ .green = green, .detail = try std.fmt.allocPrint(s.arena(), "extra at n=4000: {s}; at 2n: {s}; ratio {d}.{d:0>2}", .{ try s.show(small, unit), try s.show(large, unit), hundredths / 100, hundredths % 100 }) });
 }
 
 // `==` on a record literal nested d deep, `uses` times. Each use resolves d
@@ -952,8 +999,8 @@ test "a let chain whose types grow is linear to check" {
 // copies and walks. Checking must stay linear in the chain's length, or
 // refuse the first binder past `Unify.max_depth` once with
 // `nesting_too_deep` and the rest in silence (checker-v2.md §7.3); it may
-// never run out of memory. 5 000 and 10 000 links, time(2n) / time(n) ≤
-// 2.5, CPU time.
+// never run out of memory. 5 000 and 10 000 links, cost(2n) / cost(n) ≤
+// 2.5 (`Perf.Unit`).
 test "a chain of ever deeper bindings is linear or nesting_too_deep" {
     var s = try Perf.init(.concurrent);
     defer s.deinit();
