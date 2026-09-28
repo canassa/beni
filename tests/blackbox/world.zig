@@ -22,7 +22,8 @@
 //!   - `Child.wait(io) -> Term` (`Child.zig:134`).
 //!   - `File.readStreaming(io, &.{buf})` — one read (`Io/File.zig:474`).
 //!   - `std.posix.poll(fds, timeout_ms)` (`posix.zig:1003`).
-//!   - `std.testing.tmpDir` under `.zig-cache/tmp` (`testing.zig:634`).
+//!   - `std.testing.TmpDir`, made under `/dev/shm` by `projectDir`, or by
+//!     `std.testing.tmpDir` under `.zig-cache/tmp` (`testing.zig:634`).
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
@@ -121,6 +122,37 @@ pub const RunOptions = struct {
     timeout_ms: i64 = default_timeout_ms,
 };
 
+/// Where a world's projects live when the machine has a memory file
+/// system: one directory per user under `/dev/shm`. Every compiler run
+/// writes its project, often a cache and an output tree there, and on a
+/// disk file system under a concurrent load a few hundred runs per suite
+/// stalled for seconds on those writes. Nothing a scenario asserts depends
+/// on which file system it is.
+const memory_root = "/dev/shm";
+
+/// A fresh temporary project directory: under `memory_root` when there is
+/// one, else `std.testing.tmpDir`'s `.zig-cache/tmp/` in the working
+/// directory. Either way it is a `TmpDir`, removed by its `cleanup`; the
+/// memory root also keeps it out of the worktree, so a tree a failed run
+/// leaves behind cannot stop `git worktree remove`.
+fn projectDir(io: Io) std.testing.TmpDir {
+    if (@import("builtin").os.tag != .linux) return std.testing.tmpDir(.{});
+    var name_buffer: [32]u8 = undefined;
+    const name = std.fmt.bufPrint(&name_buffer, "beni-test-{d}", .{std.os.linux.getuid()}) catch unreachable;
+    var root = Io.Dir.openDirAbsolute(io, memory_root, .{}) catch return std.testing.tmpDir(.{});
+    defer root.close(io);
+    const parent = root.createDirPathOpen(io, name, .{}) catch return std.testing.tmpDir(.{});
+    var random_bytes: [12]u8 = undefined;
+    io.random(&random_bytes);
+    var tmp: std.testing.TmpDir = .{ .dir = undefined, .parent_dir = parent, .sub_path = undefined };
+    _ = std.base64.url_safe.Encoder.encode(&tmp.sub_path, &random_bytes);
+    tmp.dir = parent.createDirPathOpen(io, &tmp.sub_path, .{}) catch {
+        parent.close(io);
+        return std.testing.tmpDir(.{});
+    };
+    return tmp;
+}
+
 pub const World = struct {
     gpa: Allocator,
     io: Io,
@@ -140,7 +172,7 @@ pub const World = struct {
     node_exe: ?[]const u8,
 
     pub fn init(gpa: Allocator, io: Io) !World {
-        var tmp = std.testing.tmpDir(.{});
+        var tmp = projectDir(io);
         errdefer tmp.cleanup();
         const exe = exe: {
             var scratch: std.heap.ArenaAllocator = .init(gpa);
@@ -250,8 +282,9 @@ pub const World = struct {
 
     /// Undo `makeDirUnwritable`. **Every caller must `defer` this**, and not
     /// for tidiness: `deinit`'s cleanup cannot unlink anything inside a 0555
-    /// directory, so a scenario that leaves one leaves a tree behind in
-    /// `.zig-cache/tmp/` that `git worktree remove` then refuses to delete.
+    /// directory, so a scenario that leaves one leaves a tree behind in the
+    /// temporary root — which, when that is `.zig-cache/tmp/`, `git worktree
+    /// remove` then refuses to delete.
     /// Silent on failure, because a test that already failed must not fail
     /// again on the way out.
     pub fn restoreDirMode(world: *World, rel_path: []const u8) void {
