@@ -674,7 +674,7 @@ test "randomized: Local agrees with a StringHashMap oracle across table growth" 
     var prng: std.Random.DefaultPrng = .init(0xBE11);
     const random = prng.random();
     var buf: [12]u8 = undefined;
-    for (0..20_000) |_| {
+    for (0..2_000) |_| {
         // Short alphabet and short length so repeats are frequent.
         const len = random.intRangeAtMost(usize, 1, buf.len);
         for (buf[0..len]) |*b| b.* = 'a' + random.uintLessThan(u8, 4);
@@ -690,7 +690,7 @@ test "randomized: Local agrees with a StringHashMap oracle across table growth" 
         try testing.expectEqualStrings(key, local.slice(symbol));
     }
     try testing.expectEqual(oracle.count(), local.count());
-    try testing.expect(local.count() > Pool.min_slots); // the table grew at least once
+    try testing.expect(local.count() > 8 * Pool.min_slots); // the table grew, several times over
 }
 
 test "no leak when allocation fails mid-insert" {

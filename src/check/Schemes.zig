@@ -1448,9 +1448,15 @@ fn renderOf(
 }
 
 test "a random solved type renders the same after a round trip through the interface" {
-    // 256 shapes rather than one: the properties this is looking for —
+    // 32 shapes rather than one: the properties this is looking for —
     // field order, quantifier numbering, sharing — need a type that has
     // several of each before they can differ.
+    for (0..32) |seed| try expectRoundTrip(seed);
+}
+
+// Opt-in (`zig build fuzz`, `fuzzing.zig`): eight times the shapes.
+test "stress: 256 random solved types render the same after a round trip through the interface" {
+    try @import("../fuzzing.zig").skipUnlessFuzzing();
     for (0..256) |seed| try expectRoundTrip(seed);
 }
 

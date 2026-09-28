@@ -1427,8 +1427,10 @@ test "fuzz: arbitrary bytes as two modules never panic and always resolve in bou
 // build on 0.16.0), mirroring `Lower`'s: corpus fixtures with lines
 // dropped, duplicated and swapped, PAIRED so cross-module resolution —
 // imports, cycles, interfaces — is what gets the mutated input.
-// `BENI_STRESS_ITERATIONS` raises the count for a long run.
+// Opt-in (`zig build fuzz`, `fuzzing.zig`); the gates resolve every
+// fixture as written, above. `BENI_STRESS_ITERATIONS` raises the count.
 test "stress: mutated corpus fixtures resolve in pairs without a panic" {
+    try @import("../fuzzing.zig").skipUnlessFuzzing();
     var iterations: usize = 200;
     if (testing.environ.getAlloc(testing.allocator, "BENI_STRESS_ITERATIONS")) |value| {
         defer testing.allocator.free(value);

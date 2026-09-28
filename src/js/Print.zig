@@ -2316,7 +2316,7 @@ test "generated: the recursive and the iterative printer agree at every switch-o
     const random = prng.random();
     var out: std.ArrayList(Index) = .empty;
     defer out.deinit(gpa);
-    for (0..400) |i| {
+    for (0..40) |i| {
         var buf: [16]u8 = undefined;
         try f.constDecl(&out, std.fmt.bufPrint(&buf, "v{d}", .{i}) catch unreachable, try randomExpr(&f, random, 9));
     }

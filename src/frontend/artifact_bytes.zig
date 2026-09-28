@@ -1088,6 +1088,28 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
         ok.deinit(gpa);
     }
 
+    // A flipped body byte that every structural check lets through — it
+    // loads once the hash is recomputed — is still a miss with the hash as
+    // the writer left it: the body hash alone refuses it, which is what a
+    // flipped bit on a disk looks like.
+    {
+        var at: usize = hashed_from;
+        const slack = while (at < copy.len) : (at += 1) {
+            copy[at] ^= 0x5A;
+            reseal(copy);
+            if (read(gpa, copy, sample_key)) |loaded_const| {
+                var loaded = loaded_const;
+                loaded.deinit(gpa);
+                break at;
+            } else |_| {}
+            copy[at] ^= 0x5A;
+        } else return error.NoByteLoadsWhenResealed;
+        @memcpy(copy[40..56], bytes[40..56]);
+        try expectMiss(gpa, copy, "a body byte flipped under the hash as written");
+        copy[slack] ^= 0x5A;
+        reseal(copy);
+    }
+
     // A section offset or length past the end, a length chosen to wrap 32
     // bits, and a misaligned offset. The body hash would catch these too, so
     // it is recomputed after each mutation — the point is that the BOUNDS
@@ -1139,9 +1161,10 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
 // `resolve/iface_bytes.zig` established and `cache/entry_bytes.zig` repeated:
 // one real artifact, every byte flipped in turn and set to `0x00` and
 // `0xFF`, with every outcome either a load `verify` accepts or a refusal —
-// never a trap, never a read past the buffer. Deterministic, bounded, and run
-// under `zig build test`, which is Debug, so a read past a slice is a panic
-// rather than a silent wrong answer.
+// never a trap, never a read past the buffer. Deterministic and bounded, in
+// Debug so a read past a slice is a panic rather than a silent wrong answer;
+// opt-in (`zig build fuzz`, `fuzzing.zig`): the gates run the corrupt-artifact
+// table above, one hand-picked shape per check.
 //
 // **It runs twice, and the two halves answer two different questions.**
 //
@@ -1157,6 +1180,7 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
 // bytes were written for this key, not that the disk kept them — and it is
 // why `body_hash` is in the header at all.
 test "fuzz: every mutation is refused, and with the hash resealed some still load" {
+    try @import("../fuzzing.zig").skipUnlessFuzzing();
     const gpa = testing.allocator;
     var sample = try Sample.init(gpa);
     defer sample.deinit(gpa);

@@ -4752,8 +4752,10 @@ test "fuzz: arbitrary bytes never panic and always lower in bounds" {
 // PRNG-driven stand-in for the fuzzer (the toolchain's fuzz mode does not
 // build on 0.16.0): corpus fixtures with random lines dropped, duplicated
 // and swapped, so half-valid programs of every shape reach lowering.
-// `BENI_STRESS_ITERATIONS` raises the count for a long run.
+// Opt-in (`zig build fuzz`, `fuzzing.zig`); the gates lower every
+// fixture as written, above. `BENI_STRESS_ITERATIONS` raises the count.
 test "stress: mutated corpus fixtures never panic and always lower in bounds" {
+    try @import("../fuzzing.zig").skipUnlessFuzzing();
     var iterations: usize = 500;
     if (testing.environ.getAlloc(testing.allocator, "BENI_STRESS_ITERATIONS")) |value| {
         defer testing.allocator.free(value);

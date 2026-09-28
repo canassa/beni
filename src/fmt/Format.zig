@@ -3708,8 +3708,11 @@ const stress_imports = [_][]const u8{
 // imports — between them. Every module parses clean by construction, so
 // the formatter must round-trip it (PRNG-driven, like the parser's
 // stress test: the toolchain's fuzz mode does not build on 0.16.0).
+// Opt-in (`zig build fuzz`, `fuzzing.zig`); the gates run the one module
+// below that holds every construct with every kind of trivia.
 // `BENI_STRESS_ITERATIONS` raises the count for a long run.
 test "stress: random modules of every construct round-trip" {
+    try @import("../fuzzing.zig").skipUnlessFuzzing();
     var iterations: usize = 300;
     if (testing.environ.getAlloc(testing.allocator, "BENI_STRESS_ITERATIONS")) |value| {
         defer testing.allocator.free(value);
@@ -3757,4 +3760,31 @@ test "stress: random modules of every construct round-trip" {
             return err;
         };
     }
+}
+
+test "one module of every stress construct, each behind every kind of trivia, round-trips" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(arena, "--!Module doc.\n--! More.\n\n-- a plain comment at the top\n");
+    for (stress_imports) |import_line| try src.appendSlice(arena, import_line);
+    for (stress_decls, 0..) |template, k| {
+        try src.appendNTimes(arena, '\n', k % 4);
+        try src.appendSlice(arena, "-- a comment before the declaration\n--|Doc.\n--| More doc.\n");
+        var rest = template;
+        while (std.mem.indexOf(u8, rest, "{d}")) |at| {
+            try src.appendSlice(arena, rest[0..at]);
+            try src.print(arena, "{d}", .{k});
+            rest = rest[at + 3 ..];
+        }
+        try src.appendSlice(arena, rest);
+        if (k % 2 == 0) {
+            // A trailing comment on the declaration's last line.
+            src.items.len -= 1;
+            try src.appendSlice(arena, " -- trailing\n");
+        }
+    }
+    try src.appendSlice(arena, "\n-- at the end\n");
+    try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
 }
