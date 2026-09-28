@@ -334,6 +334,34 @@ fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
+// An alias DAG whose uses differ in their arguments: `A0 a = Maybe a`, `A{i}
+// a = ( A{i-1} a, A{i-1} (List a) )`, read by one `f : A{n} Int -> Int`. Its
+// distinct types are the `A{i} (List^k Int)`, about n²/2 of them. Expanding
+// once per `(alias, argument roots)` is not enough when every body read
+// builds its `List a` afresh: no pair repeats, and the DAG is read as a tree,
+// 2^n. `Builder.apply` builds each applied type once per `(type, argument
+// roots)` in a read, as it expands each alias once. Calibration (ReleaseFast,
+// CPU): depth 16 checks in 144 ms and depth 32 does not finish within 360
+// ms, when the applications are built afresh; 6 / 6 ms, the floor, when
+// they are shared.
+test "an annotation over an alias DAG whose uses differ in their arguments is not exponential" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("D16.beni", try argumentDag(s.arena(), 16));
+    try s.w.write("D32.beni", try argumentDag(s.arena(), 32));
+    try s.finish("an annotation over an alias DAG with arguments", try s.ratio("D16.beni", "D32.beni", 16));
+}
+
+/// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
+/// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
+fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
+    try out.print(arena, "f : A{d} Int -> Int\nf _ =\n    1\n", .{depth});
+    return out.items;
+}
+
 // `==` on a doubling DAG whose every level passes two method boundaries that
 // alternate the method — `A`'s `eq` asks its payload for `compare`, `B`'s
 // `compare` asks for `eq`. The derivability verdict walks `(node, method)`

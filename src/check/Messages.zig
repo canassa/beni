@@ -233,20 +233,22 @@ fn firstArg(store: *TypeStore, v: Var) ?Var {
 
 /// `nesting_too_deep` when one top-level group's method resolution takes
 /// more than `budget` steps (§9.5): the receiver types it builds
-/// nest further than the checker follows. It shares the code with the
+/// nest further than the checker follows, or are finite and simply too
+/// many, and the text claims neither. It shares the code with the
 /// parser's and the type printer's limit for the same reason they share it:
-/// the program is deeper than the compiler reads, and naming an inner part
+/// the program is larger than the compiler reads, and naming an inner part
 /// fixes it.
 pub fn resolutionBudget(r: *Report, region: Bir.Inst.Index, budget: u32) Error!void {
-    var buf: [512]u8 = undefined;
+    var buf: [640]u8 = undefined;
     const text = std.fmt.bufPrint(&buf,
         \\Working out which methods these declarations call took more than {d}
         \\steps, which is more than I will take for one group of declarations.
         \\
-        \\The types their method calls are made on nest deeper and deeper as I follow
-        \\them. I gave up here, so I cannot check this group or anything that uses
-        \\it. An annotation with a `where` clause on the declaration usually stops
-        \\the growth.
+        \\The types their method calls are made on are too many, or too large, for me
+        \\to follow: they may keep growing as I follow them, or simply be very big. I
+        \\gave up here, so I cannot check this group or anything that uses it. When a
+        \\type keeps growing, an annotation with a `where` clause on the declaration
+        \\usually stops it.
         \\
     , .{budget}) catch unreachable;
     try r.emitText(.nesting_too_deep, region, null, text);
@@ -271,8 +273,8 @@ pub fn derivedBudget(r: *Report, region: Bir.Inst.Index, shown: Var, method: Sym
         \\
         \\Deriving it means checking what its parts need, and here that went deeper
         \\than I will follow: a declaration it reaches would have to be checked nested
-        \\inside too many others, or the types its method calls are made on keep
-        \\growing. This is a limit of mine, not a fact about the type.
+        \\inside too many others, or the types its method calls are made on are too
+        \\many or keep growing. This is a limit of mine, not a fact about the type.
         \\
         \\Hint: annotate the methods this comparison reaches, so I can use their
         \\annotations instead of checking their bodies here.

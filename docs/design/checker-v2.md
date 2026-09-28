@@ -959,6 +959,18 @@ differ, and a poison of one must not reach the other). `==` over the depth-64 DA
 0.2 s (Debug). The same chain's interface terms, which expand every alias body, are a different
 place — the interface writer — and are not changed by this.
 
+*Amended 2026-09-29: an applied type is built once per read too.* The memo
+above keys an alias by its arguments' ROOTS, and an alias body that applies a type to its
+parameter — `A{i} a = ( A{i-1} a, A{i-1} (List a) )` — built a fresh `List a` at every read of
+the body, so `A{i-1} (List a)` never met the same root twice and the DAG was a tree again:
+`f : A20 Int -> Int` took 3.7 s and 2.3 GB, `type Box = Box (A20 Int)` 7.8 s. `Builder.apply`
+now keeps an applied nominal type in the same memo, `(type, argument roots) → the app
+variable`, so one type applied to one argument is one variable in a read, and the aliases over it
+meet one root. A read then costs its distinct types — here about N²/2, `A{i} (List^k Int)` — and
+depth 32 checks at the process floor. Sharing an application is sound for the reason sharing an
+alias is: one type written twice is one type, and unification would merge the two anyway. A type
+applied to nothing is a leaf and is not memoised. `perf_test.zig` holds the scenario.
+
 ### 7.5 Speculation (I14)
 
 `TypeStore.Snapshot` is `{ journal_len, vars, extra, want_links, obl_links, wanteds, obligations,

@@ -83,11 +83,11 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
     // Alias names met inside a structure, in two declaration orders and in
-    // two branch orders; an alias DAG whose uses differ in their arguments
-    // (timed); and an unreadable `_manifest.txt` in `--out`.
+    // two branch orders, and an unreadable `_manifest.txt` in `--out`. The
+    // alias DAG whose uses differ in their arguments (timed) was promoted into
+    // `perf_test.zig`.
     .{ .name = "scenario/CK-202", .step = .fast },
     .{ .name = "scenario/CK-202-branches", .step = .fast },
-    .{ .name = "scenario/CK-203", .step = .perf },
     .{ .name = "scenario/CK-209", .step = .fast },
 };
 
@@ -157,36 +157,6 @@ test "CK-202-branches: alias names inside a structure print the same in either b
 
 /// Two aliases of `String` and a list of each.
 const listNames = "type alias Name =\n    String\n\n\ntype alias Label =\n    String\n\n\nnames : List Name\nnames =\n    [ \"x\" ]\n\n\nlabels : List Label\nlabels =\n    [ \"y\" ]\n\n\n";
-
-// CK-203: an alias DAG whose uses differ in their arguments, `A0 a = Maybe
-// a`, `A{i} a = ( A{i-1} a, A{i-1} (List a) )`, read by one annotation `f :
-// A{n} Int -> Int`. Its distinct types are the `A{i} (List^k Int)`, about
-// n²/2 of them, but every body read built a fresh `List a`, so no
-// `(alias, argument roots)` pair repeated and the DAG was expanded as a tree:
-// 2^n. Unfixed (ReleaseSafe, CPU): depth 14 / 16 check in 0.24 / 0.93 s, and
-// depth 20 in 3.7 s ReleaseFast.
-test "CK-203: an alias DAG whose uses differ in their arguments is read in polynomial time" {
-    var s = try Scenario.init("CK-203");
-    defer s.deinit();
-    const n = 16;
-    try s.w.write("D16.beni", try argumentDag(s.arena(), n));
-    try s.w.write("D32.beni", try argumentDag(s.arena(), 2 * n));
-    try s.finish(try s.ratioOf(
-        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "D16.beni" },
-        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "D32.beni" },
-        n,
-    ));
-}
-
-/// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
-/// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
-fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
-    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
-    try out.print(arena, "f : A{d} Int -> Int\nf _ =\n    1\n", .{depth});
-    return out.items;
-}
 
 // CK-209: a `_manifest.txt` in `--out` that cannot be read (mode 000) is an
 // I/O failure, reported as one — "beni: cannot read 'out/_manifest.txt':

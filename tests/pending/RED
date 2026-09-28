@@ -73,7 +73,6 @@
 tests/pending/check/good/AliasNamesInsideStructures.beni exit=0 iface-differs
 scenario/CK-202 order-dependent
 scenario/CK-202-branches order-dependent
-scenario/CK-203 slow
 tests/pending/check/bad/RecordFieldType.beni exit=1 codes=type_mismatch×2 why=message
 tests/pending/check/bad/RecordFieldTypeAcrossModules exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/SameNameTypesQualified exit=1 codes=type_mismatch×2 why=message

@@ -5067,7 +5067,19 @@ with a red fixture on `b8b289a` before its fix.*
   type too — that the types were too many or too large to follow — not that they keep growing.
 - **Fixture** `scenario/CK-203` (`test-pending-perf`, depth 16 / 32), red `slow`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §7.4 *amended 2026-09-29*: `Types.Builder.apply`
+  keeps an applied nominal type in the read's alias memo by `(type, argument roots)`, so the
+  aliases over one `List a` meet one root. ReleaseFast: depth 16 and 32 check in 6 ms each (144 ms
+  and a kill before); at depth 20 the annotation, `Box` and `==` all take under 10 ms, and `Box` at
+  depth 80 checks in about 20 ms. Promoted into `perf_test.zig` ("an annotation over an alias DAG
+  whose uses differ in their arguments is not exponential"). The step-budget text
+  (`Messages.resolutionBudget`) now says the types are "too many, or too large … they may keep
+  growing … or simply be very big", and the derived-budget text says "too many or keep growing".
+  No program within the test budget reaches the group step budget with a finite type now that
+  the DAG is shared (a three-way DAG of 37 000 distinct types stays under it), so the new text
+  has no black-box test; `ordering_test.zig` holds the derived-budget one's. A ReleaseSafe build
+  is much slower than ReleaseFast on such DAGs (7 s against 0.07 s for the three-way DAG at depth
+  40): its safety-only proof re-walks, not a defect users meet.
 
 ### CK-204 — A field of the wrong type is reported as a missing field
 
@@ -5355,7 +5367,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-200 | diagnostic-quality | K14 | promoted: `check/bad/StringLiteralMismatchSpan.beni` | R15-fix-J (fixed, promoted) |
 | CK-201 | diagnostic-quality | K9 | `ordering_test.zig` "a derived eq whose pass is refused a nested check …" | R15-fix-J (found and fixed) |
 | CK-202 | nondeterminism | K12 | `check/good/AliasNamesInsideStructures.beni`, `scenario/CK-202`, `scenario/CK-202-branches` | the final review's fixes |
-| CK-203 | performance | K11 | `scenario/CK-203` | the final review's fixes |
+| CK-203 | performance | K11 | promoted: `perf_test.zig` "an annotation over an alias DAG whose uses differ …" | the final review's fixes (fixed) |
 | CK-204 | diagnostic-quality | K13 | `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes |
 | CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
 | CK-206 | diagnostic-quality | K14 | `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes |

@@ -1027,6 +1027,11 @@ pub const Builder = struct {
     /// `copy` memo makes the same DAGs). Owned by the outermost builder of
     /// a read; the builders `aliasBody` makes for bodies borrow it
     /// (`shared`), so one read shares across modules too.
+    ///
+    /// A nominal type applied to arguments is kept here too, by `(type,
+    /// argument roots)`. Without it an alias body such as `( A a, A (List a)
+    /// )` builds a new `List a` at every read of the body, the alias over it
+    /// never meets the same root twice, and the DAG is a tree again.
     aliases: AliasMemo = .empty,
     shared: ?*AliasMemo = null,
     /// Leave every alias this read meets unexpanded: an `alias` variable
@@ -1348,10 +1353,11 @@ pub const Builder = struct {
     pub fn apply(b: *Builder, id: TypeId, args: []const Var) Error!Var {
         const e = b.types.entry(id);
         if (args.len != e.arity) return b.store.freshErr(b.varRank());
-        if (e.kind != .alias) {
-            return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = try b.store.addVars(args) } } }, b.varRank());
+        if (e.kind != .alias and args.len == 0) {
+            return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = .empty } } }, b.varRank());
         }
-        // Expanded already in this read (`aliases`). An entry is
+        // Built already in this read (`aliases`): an alias expanded, or a
+        // type applied, to the same argument roots. An alias's entry is
         // made only once its expansion is finished, so an alias inside its
         // own expansion is never found here and reaches the test below.
         const key = try b.scratch.alloc(u32, args.len + 1);
@@ -1360,6 +1366,11 @@ pub const Builder = struct {
         const table = b.memo();
         if (table.get(key)) |v| {
             b.scratch.free(key);
+            return v;
+        }
+        if (e.kind != .alias) {
+            const v = try b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = try b.store.addVars(args) } } }, b.varRank());
+            try table.put(b.scratch, key, v);
             return v;
         }
         // Inside its own expansion: recursive, and reported (`expanding`).

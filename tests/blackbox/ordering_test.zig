@@ -403,8 +403,8 @@ test "a derived eq whose pass is refused a nested check says so at the compariso
         \\
         \\Deriving it means checking what its parts need, and here that went deeper
         \\than I will follow: a declaration it reaches would have to be checked nested
-        \\inside too many others, or the types its method calls are made on keep
-        \\growing. This is a limit of mine, not a fact about the type.
+        \\inside too many others, or the types its method calls are made on are too
+        \\many or keep growing. This is a limit of mine, not a fact about the type.
         \\
         \\Hint: annotate the methods this comparison reaches, so I can use their
         \\annotations instead of checking their bodies here.
