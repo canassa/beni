@@ -56,6 +56,16 @@
           '';
         };
 
+        # `nix develop .#coverage`: the default shell plus kcov, which
+        # `zig build coverage` runs every test under. Its own shell because
+        # kcov and its closure are several hundred megabytes that no other
+        # step needs. kcov is Linux-only: elsewhere this is the default
+        # shell, and `zig build coverage` reports that kcov is missing.
+        coverage = pkgs.mkShell {
+          inputsFrom = [ default ];
+          packages = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.kcov ];
+        };
+
         # `nix develop .#compare`: the default shell plus every compiler the
         # cross-language benchmark times (docs/design/compare-bench.md §8).
         compare =

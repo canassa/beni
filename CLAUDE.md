@@ -225,6 +225,7 @@ zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
 zig build test-bench      # the benchmark generators' own tests; not a gate
 zig build fuzz            # the unit tests with their random sweeps on; not a gate
+zig build coverage        # line coverage of src/ under kcov (nix develop .#coverage); not a gate
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
 zig build gates           # the three gates (rule 4), concurrently
 zig build --list-steps
@@ -347,6 +348,24 @@ fixture, tool, harness overhead and repeated commands — into
 (`tests/time_report.zig`; `-- --out=- --top=N` to print instead). It costs
 one full gates run, so it is not a tier; unset, the recording costs nothing.
 Read CPU time, not wall: under load only CPU time is stable.
+
+`zig build coverage`, inside `nix develop .#coverage` (kcov, Linux only),
+answers "which lines of the compiler do the tests execute": it runs the
+black-box suites, the corpus and the unit tests with every `beni` and
+unit-test process under kcov, against an LLVM ReleaseSafe beni that keeps
+its debug info, merges the counts even when a test fails, and writes
+`zig-out/coverage/` — `index.html` to browse, `kcov-merged/cobertura.xml`,
+and `summary.md` with the total, a row per directory under `src/` and one
+per file (`tests/coverage.zig`). The summary leaves out the tests' own
+lines (`*_test.zig` files and `test` blocks). `-Dcorpus` and `-Dtest-filter`
+measure one fixture or test alone (a filter recompiles the LLVM unit-test
+binary, about two minutes). It is not a gate and not a tier: a full run
+took 11 minutes wall and 9 100 CPU-s, quiet (load average under 2), after
+about two minutes of LLVM compile following a change under `src/`; every
+harness time limit is twenty times as long under it (`BENI_TIMEOUT_SCALE`).
+Read it as a map of what no test reaches: a red line is untested, and a
+green line only ran, which does not mean any test checked what it did.
+Lines the optimiser folded away are in neither count.
 
 **The suites run Node only on JavaScript they have not verified.** Each
 `tests/corpus/run/` fixture carries a `.run-hash` (`_expected.run-hash` in a

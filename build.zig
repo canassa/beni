@@ -41,6 +41,13 @@
 //!                                 every test process timed, and write the
 //!                                 tables into plans/test-time-report.md
 //!                                 (`tests/time_report.zig`)
+//! And which lines the tests execute, not a gate either; needs kcov, from
+//! `nix develop .#coverage`:
+//!   zig build coverage            run the black-box suites, the corpus and
+//!                                 the unit tests under kcov and write the
+//!                                 merged report into zig-out/coverage/
+//!                                 (`tests/coverage.zig`); takes -Dcorpus
+//!                                 and -Dtest-filter
 //! And random exploration, not a gate either (`src/fuzzing.zig`):
 //!   zig build fuzz                the unit tests with their mutation sweeps
 //!                                 and stress loops on (`BENI_FUZZ=1`)
@@ -79,6 +86,37 @@ const unit_shards = 12;
 
 /// The same for the compare generator's unit tests.
 const compare_shards = 2;
+
+/// The black-box test files `test-blackbox` runs besides the corpus walker,
+/// each with the number of processes it is split into. `test-run-hashes`
+/// records them and `coverage` measures them.
+const blackbox_suites = [_]struct { []const u8, u32 }{
+    .{ "tests/blackbox/blackbox_test.zig", 6 },
+    .{ "tests/blackbox/abuse_test.zig", 3 },
+    .{ "tests/blackbox/abuse_wide_test.zig", 4 },
+    .{ "tests/blackbox/build_test.zig", 3 },
+    .{ "tests/blackbox/cache_test.zig", 4 },
+    .{ "tests/blackbox/check_test.zig", 1 },
+    .{ "tests/blackbox/cutoff_test.zig", 3 },
+    .{ "tests/blackbox/digest_test.zig", 3 },
+    .{ "tests/blackbox/docs_test.zig", 1 },
+    .{ "tests/blackbox/frontend_test.zig", 1 },
+    .{ "tests/blackbox/iface_test.zig", 1 },
+    .{ "tests/blackbox/ordering_test.zig", 2 },
+};
+
+/// Where `coverage-run` installs its compiler, and the wrapper the suites
+/// spawn in its place, under the prefix.
+const coverage_bin_dir = "coverage-work/bin";
+const coverage_wrapper_dir = "coverage-work/wrapper";
+
+/// Where every process run under kcov leaves its counts, under the prefix:
+/// one directory each, merged by `tests/coverage.zig` and kept until the
+/// next run, so `zig build coverage -- --report-only` can report it again.
+const coverage_raw_dir = "coverage-work/raw";
+
+/// Where the merged report goes, under the prefix.
+const coverage_report_dir = "coverage";
 
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
@@ -202,6 +240,18 @@ pub fn build(b: *std.Build) void {
     }
     test_step.dependOn(&runTests(b, diagnostic_tests).step);
     test_step.dependOn(&runTests(b, time_report_tests).step);
+    // The coverage report's own logic (`tests/coverage.zig`), which needs no
+    // kcov to test.
+    const coverage_tests = b.addTest(.{
+        .name = "coverage_unit_test",
+        .filters = test_filters,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/coverage.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&runTests(b, coverage_tests).step);
 
     // The same unit tests with their random exploration on (`BENI_FUZZ=1`,
     // `src/fuzzing.zig`): the byte-format mutation sweeps and the lexer's
@@ -232,7 +282,7 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .ReleaseFast, .llvm);
+    const fast = compiler(b, target, .ReleaseFast, .llvm, .default);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
@@ -245,7 +295,7 @@ pub fn build(b: *std.Build) void {
     // `zig-out/safe-llvm/bin/beni`: the same safety checks in the shipped
     // code generator's output.
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
-    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted);
+    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
 
     // ---- Black-box suite. ----
@@ -308,20 +358,7 @@ pub fn build(b: *std.Build) void {
     const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, &.{});
     blackbox_step.dependOn(&gate_summary.step);
     // The suites `test-run-hashes` records, with their process counts.
-    const suites = [_]struct { []const u8, u32 }{
-        .{ "tests/blackbox/blackbox_test.zig", 6 },
-        .{ "tests/blackbox/abuse_test.zig", 3 },
-        .{ "tests/blackbox/abuse_wide_test.zig", 4 },
-        .{ "tests/blackbox/build_test.zig", 3 },
-        .{ "tests/blackbox/cache_test.zig", 4 },
-        .{ "tests/blackbox/check_test.zig", 1 },
-        .{ "tests/blackbox/cutoff_test.zig", 3 },
-        .{ "tests/blackbox/digest_test.zig", 3 },
-        .{ "tests/blackbox/docs_test.zig", 1 },
-        .{ "tests/blackbox/frontend_test.zig", 1 },
-        .{ "tests/blackbox/iface_test.zig", 1 },
-        .{ "tests/blackbox/ordering_test.zig", 2 },
-    };
+    const suites = blackbox_suites;
     var suite_tests: [suites.len]*std.Build.Step.Compile = undefined;
     for (suites, &suite_tests) |suite, *t| {
         // The walker's knobs are pinned on every binary, not only the
@@ -575,6 +612,112 @@ pub fn build(b: *std.Build) void {
         blackbox_step.dependOn(smoke_step);
     }
 
+    // ---- Line coverage (`tests/coverage.zig`). ----
+    // `coverage` runs `coverage-run` in a child `zig build` and merges what
+    // it collected even when a test failed, as `test-time-report` does. The
+    // child builds a compiler with full debug info and a wrapper
+    // (`tests/coverage_wrapper.zig`) that runs it under kcov, points every
+    // black-box suite's `BENI_EXE` at the wrapper, and runs the unit tests
+    // under kcov themselves. Neither step is a gate.
+    const kcov_path: ?[]const u8 = b.findProgram(&.{"kcov"}, &.{}) catch null;
+    const coverage_step = b.step("coverage", "Run the test suites under kcov and report which lines of src/ they execute, into zig-out/coverage/ (not a gate; needs `nix develop .#coverage`)");
+    const coverage_run_step = b.step("coverage-run", "The test suites with every compiler process under kcov, without the report; `coverage` runs it (not a gate)");
+    if (kcov_path) |kcov| {
+        const src_dir = b.pathFromRoot("src");
+        const raw_dir = b.getInstallPath(.prefix, coverage_raw_dir);
+        // The compiler measured is the LLVM ReleaseSafe build with its debug
+        // info kept. kcov reads line tables through elfutils, which finds
+        // none in what Zig's self-hosted backend emits for this program, so
+        // that build reports nothing. An LLVM Debug build reports more lines,
+        // but marks the body of an `if` that did not run as run: the jump
+        // that skips it carries the body's line. The optimised build's line
+        // table leaves out lines that were folded or merged away, and runs
+        // under kcov about fifteen times faster.
+        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full);
+        const beni_install = b.addInstallArtifact(measured.exe, .{ .dest_dir = .{ .override = .{ .custom = coverage_bin_dir } } });
+        const wrapper_options = b.addOptions();
+        wrapper_options.addOption([]const u8, "kcov", kcov);
+        wrapper_options.addOption([]const u8, "include_path", src_dir);
+        wrapper_options.addOption([]const u8, "raw_dir", raw_dir);
+        wrapper_options.addOption([]const u8, "beni", b.getInstallPath(.prefix, coverage_bin_dir ++ "/beni"));
+        // Named `beni`, like what it stands in for: the harness names a
+        // spawned tool by its file name.
+        const wrapper = b.addExecutable(.{
+            .name = "beni",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/coverage_wrapper.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "coverage_options", .module = wrapper_options.createModule() }},
+            }),
+        });
+        const wrapper_install = b.addInstallArtifact(wrapper, .{ .dest_dir = .{ .override = .{ .custom = coverage_wrapper_dir } } });
+        wrapper_install.step.dependOn(&beni_install.step);
+
+        var cbb = bb;
+        cbb.safe_dir = coverage_wrapper_dir;
+        cbb.safe_install = &wrapper_install.step;
+        // A compiler under kcov runs several times slower than without it,
+        // and every time limit in the harness guards against a hang, not a
+        // speed: under coverage each is twenty times as long.
+        const timeout_scale = "20";
+
+        // `-Dcorpus` measures the chosen fixtures alone; without it, every
+        // black-box file runs too, and the unit tests.
+        if (corpus_only.len == 0) {
+            for (blackbox_suites) |suite| {
+                cbb.runSharded(coverage_run_step, cbb.artifact(suite[0]), .{ .root = "tests/corpus", .timeout_scale = timeout_scale }, suite[1]);
+            }
+        }
+        for (std.enums.values(corpus_parts.Part)) |part| {
+            coverage_run_step.dependOn(&cbb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .timeout_scale = timeout_scale }).step);
+        }
+
+        if (corpus_only.len == 0) {
+            // The unit tests, built by LLVM with debug info like the
+            // compiler, each process run under kcov directly: the build
+            // runner still speaks the test protocol to the binary through it.
+            measured.beni.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
+            measured.beni.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
+            const unit = b.addTest(.{ .name = "unit_test", .root_module = measured.beni, .test_runner = testRunner(b), .filters = test_filters, .use_llvm = true });
+            const diag = b.addTest(.{ .name = "diagnostic_test", .root_module = measured.diagnostic, .test_runner = testRunner(b), .filters = test_filters, .use_llvm = true });
+            for (0..unit_shards) |k| {
+                const run = underKcov(b, kcov, src_dir, b.fmt("{s}/unit-{d}", .{ raw_dir, k }), unit);
+                run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
+                run.setName(b.fmt("run beni tests under kcov shard {d}/{d}", .{ k, unit_shards }));
+                coverage_run_step.dependOn(&run.step);
+            }
+            coverage_run_step.dependOn(&underKcov(b, kcov, src_dir, b.fmt("{s}/diagnostic", .{raw_dir}), diag).step);
+        }
+
+        const coverage_exe = b.addExecutable(.{
+            .name = "coverage",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/coverage.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const run = b.addRunArtifact(coverage_exe);
+        run.addArgs(&.{
+            b.fmt("--kcov={s}", .{kcov}),
+            b.fmt("--src={s}", .{src_dir}),
+            b.fmt("--raw={s}", .{raw_dir}),
+            b.fmt("--out={s}", .{b.getInstallPath(.prefix, coverage_report_dir)}),
+        });
+        if (b.args) |args| run.addArgs(args);
+        run.addArgs(&.{ "--", b.graph.zig_exe, "build", "coverage-run" });
+        run.addArgs(child_build_args);
+        run.setCwd(b.path("."));
+        run.stdio = .inherit;
+        run.has_side_effects = true;
+        coverage_step.dependOn(&run.step);
+    } else {
+        const missing = b.addFail("kcov is not on PATH: run `zig build coverage` inside `nix develop .#coverage` (Linux only)");
+        coverage_step.dependOn(&missing.step);
+        coverage_run_step.dependOn(&missing.step);
+    }
+
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
     fmt_step.dependOn(&b.addFmt(.{
@@ -643,6 +786,17 @@ fn runTests(b: *std.Build, t: *std.Build.Step.Compile) *std.Build.Step.Run {
     return run;
 }
 
+/// A run of the test binary `t` under kcov, collecting the lines of `src`
+/// it executes into `out`: the build runner speaks the test protocol to the
+/// binary through kcov, which passes the standard streams through.
+fn underKcov(b: *std.Build, kcov: []const u8, src: []const u8, out: []const u8, t: *std.Build.Step.Compile) *std.Build.Step.Run {
+    const run = b.addSystemCommand(&.{ kcov, "--collect-only", b.fmt("--include-path={s}", .{src}), out });
+    run.addArtifactArg(t);
+    run.enableTestRunnerMode();
+    run.has_side_effects = true;
+    return run;
+}
+
 /// `tests/test_runner.zig`: std's runner plus `BENI_TEST_SHARD`, which lets
 /// one test binary run as several processes.
 fn testRunner(b: *std.Build) std.Build.Step.Compile.TestRunner {
@@ -668,7 +822,8 @@ fn compiler(
     target: std.Build.ResolvedTarget,
     mode: std.builtin.OptimizeMode,
     backend: Backend,
-) struct { beni: *std.Build.Module, exe: *std.Build.Step.Compile } {
+    debug_info: DebugInfo,
+) Compiler {
     // The LLVM ReleaseSafe compiler (`-Dllvm`) is built without debug info:
     // it is the longest compile after a change under `src/`, and debug info
     // is about a quarter of that time. Its safety checks are unaffected; a
@@ -676,7 +831,10 @@ fn compiler(
     // by re-running the command with `zig-out/bin/beni` or without `-Dllvm`,
     // whose self-hosted build keeps its debug info because there it costs
     // little.
-    const strip: ?bool = if (mode == .ReleaseSafe and backend == .llvm) true else null;
+    const strip: ?bool = switch (debug_info) {
+        .full => false,
+        .default => if (mode == .ReleaseSafe and backend == .llvm) true else null,
+    };
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
         .target = target,
@@ -707,8 +865,23 @@ fn compiler(
             },
         }),
     });
-    return .{ .beni = beni, .exe = exe };
+    return .{ .beni = beni, .diagnostic = diagnostic, .exe = exe };
 }
+
+/// What `compiler` builds.
+const Compiler = struct {
+    beni: *std.Build.Module,
+    diagnostic: *std.Build.Module,
+    exe: *std.Build.Step.Compile,
+};
+
+/// Whether a `compiler` keeps its debug info.
+const DebugInfo = enum {
+    /// Whatever suits the mode and backend (see `compiler`).
+    default,
+    /// Always, for a tool that maps machine code back to source lines.
+    full,
+};
 
 /// The `build_options` module, carrying the 16-byte compiler build id of
 /// `docs/design/fast-compiler.md` §8 — the cache key's term for "which
@@ -1025,6 +1198,9 @@ const HarnessEnvironment = struct {
     root: []const u8,
     mode: []const u8 = "",
     timeout_ms: []const u8 = "",
+    /// `world.zig`'s `BENI_TIMEOUT_SCALE`: what every child's time limit
+    /// is multiplied by. Only `coverage` sets it.
+    timeout_scale: []const u8 = "",
     part: []const u8 = "",
     scenarios: []const u8 = "",
     /// `perf_test.zig`'s `BENI_PERF_SHARD`: which of its scenarios this
@@ -1111,6 +1287,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
         r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
+        r.setEnvironmentVariable("BENI_TIMEOUT_SCALE", env.timeout_scale);
         r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
         r.setEnvironmentVariable("BENI_CORPUS_ONLY", bb.corpus_only);
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);

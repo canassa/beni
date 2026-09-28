@@ -629,6 +629,18 @@ pub fn spawnAndCapture(
     return spawnAndCaptureIn(arena, io, argv, cwd, timeout_ms, &env);
 }
 
+/// What every child's time limit is multiplied by: `BENI_TIMEOUT_SCALE`, a
+/// whole number, or 1 when it is unset or empty. `zig build coverage` sets
+/// it, because a compiler under kcov runs many times slower and a limit
+/// there guards against a hang, not a speed; `build.zig` pins it empty
+/// everywhere else.
+fn timeoutScale(arena: Allocator) i64 {
+    const text = std.testing.environ.getAlloc(arena, "BENI_TIMEOUT_SCALE") catch return 1;
+    if (text.len == 0) return 1;
+    const scale = std.fmt.parseUnsigned(u16, text, 10) catch std.debug.panic("BENI_TIMEOUT_SCALE must be a whole number, got '{s}'", .{text});
+    return @max(scale, 1);
+}
+
 /// `spawnAndCapture` with the environment `env` instead of an empty one: for
 /// a harness tool that runs `zig build` and needs the dev shell's `PATH` and
 /// Zig cache variables.
@@ -658,7 +670,7 @@ pub fn spawnAndCaptureIn(
 
     var stdout: std.ArrayList(u8) = .empty;
     var stderr: std.ArrayList(u8) = .empty;
-    if (try drain(arena, io, &child, &stdout, &stderr, timeout_ms) == .crash_banner) {
+    if (try drain(arena, io, &child, &stdout, &stderr, timeout_ms *| timeoutScale(arena)) == .crash_banner) {
         // Zig's crash handler ends every panic and fault in `abort()`: the
         // child is killed at its banner (the deferred `kill`), and the run
         // reads as the SIGABRT it was going to be. A Debug stack trace of an

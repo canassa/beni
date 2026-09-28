@@ -330,6 +330,19 @@ not its wall column. A spawn that bypasses `World` (a bare
 `std.process.run`) is invisible to it except as "unrecorded" child CPU, so
 spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 
+**What the tests reach.** `zig build coverage`, inside `nix develop
+.#coverage`, runs the black-box suites, the corpus and the unit tests with
+every compiler process under kcov and reports which lines of `src/` ran
+(`zig-out/coverage/index.html`, and `summary.md` beside it). Use it two
+ways. To find what to test: open a file's page and read its red lines —
+an error path, a `switch` arm, a branch of the checker no fixture reaches
+is a missing test, and the fixture that reaches it goes in the corpus like
+any other. To check a deletion: a test or fixture you remove should leave
+the total and the file's count where they were; if either drops, something
+only it reached is now untested. `-Dcorpus=<path>` or `-Dtest-filter=<name>`
+measures one fixture or test alone. A covered line ran; it does not mean an
+assertion checked what it did — that is still the test's job.
+
 ## Checklist before reporting done
 
 - [ ] Right boundary: the binary, unless it is a semantics question (run the JS) or
