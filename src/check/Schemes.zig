@@ -27,6 +27,7 @@ const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
+const Evidence = @import("Evidence.zig");
 const int_hash = @import("int_hash.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
@@ -176,6 +177,7 @@ pub const Writer = struct {
         // them in.
         const body = try w.writeVar(v);
         try w.writeConstraints();
+        if (std.debug.runtime_safety and !w.too_deep) try Evidence.assertWrittenOrder(w.store, w.interner, w.gpa, v, w.pending_roots.items);
         const count = w.quantified_count;
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);

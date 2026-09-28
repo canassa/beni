@@ -439,6 +439,23 @@ pub fn givensOf(e: *const Evidence, decl: u32) []const Given {
 // The canonical order (§12.1)
 // ---------------------------------------------------------------------------
 
+/// Safe builds: `written`, the quantifiers `Schemes.Writer` numbered while
+/// writing `scheme`, are `Schemes.quantifierOrder`'s roots in its order. An
+/// importer pairs evidence by that order and the callee by the numbering,
+/// so a disagreement would be a silent miscompile; here it is a panic. Only
+/// a scheme with a requirement pays for the second walk.
+pub fn assertWrittenOrder(store: *TypeStore, interner: *const InternPool.Global, gpa: Allocator, scheme: Var, written: []const Var) Error!void {
+    for (written) |root| {
+        if (!Walk.constraints(store.flagsOf(root)).isEmpty()) break;
+    } else return;
+    var order: std.ArrayList(Var) = .empty;
+    defer order.deinit(gpa);
+    try Schemes.quantifierOrder(store, interner, scheme, &order, gpa);
+    if (!std.mem.eql(Var, order.items, written)) {
+        std.debug.panic("a scheme's quantifiers were numbered in another order than its canonical one ({d} written, {d} in order)", .{ written.len, order.items.len });
+    }
+}
+
 /// One requirement of a scheme: the quantifier (a root), its index in
 /// `Schemes.Writer`'s discovery order, its method, and the constraint's
 /// position in the store's table.
