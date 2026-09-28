@@ -2416,6 +2416,43 @@ test "a _manifest.txt beni did not write refuses the build and nothing is writte
     try testing.expectEqualStrings("_manifest.txt", left[0]);
 }
 
+// A `_manifest.txt` in `--out` that cannot be read (mode 000) says nothing
+// about whose it is: the build reports the read failure, as it does for a
+// source it cannot read, and writes nothing. It was reported as a file
+// "that does not begin with `beni-manifest 1`", which nobody could tell.
+test "an unreadable _manifest.txt refuses the build as a read failure and nothing is written" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try w.write("out/_manifest.txt", "beni-manifest 1\n");
+    if (!try w.makeUnreadable("out/_manifest.txt")) {
+        std.debug.print("skipping: chmod 000 did not make the file unreadable (running as root?)\n", .{});
+        return;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("beni: cannot read 'out/_manifest.txt': AccessDenied\n", r.stderr);
+    try testing.expectEqualStrings("", r.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const left = try w.listFiles("out");
+    try testing.expectEqual(@as(usize, 1), left.len);
+    try testing.expectEqualStrings("_manifest.txt", left[0]);
+}
+
 test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -98,6 +98,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
             const failure = session.io_failure.?;
             return fail(stderr, "beni: cannot write '{s}': {t}", .{ failure.path, failure.err });
         },
+        error.OutputRecordUnreadable => {
+            const failure = session.io_failure.?;
+            return fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err });
+        },
     };
     defer result.deinit(gpa);
     session.profile.end(0, emit_token, .emit, beni_profile.Event.no_file, @intCast(result.bytes_written));

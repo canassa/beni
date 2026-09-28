@@ -46,10 +46,13 @@ pub const Previous = union(enum) {
     /// beni's record: the entries it lists that stay inside `--out`.
     record: []const Entry,
     /// A file of that name that is not beni's record — the header is not
-    /// `beni-manifest 1`, a line is not `<16 hex digits> <path>`, or it
-    /// cannot be read at all. Somebody else's file, which a build must
-    /// neither overwrite nor act on.
+    /// `beni-manifest 1`, or a line is not `<16 hex digits> <path>`.
+    /// Somebody else's file, which a build must neither overwrite nor act
+    /// on.
     unrecognised,
+    /// A file of that name that could not be read: why. Whose it is cannot
+    /// be told, so the build reports the failure and writes nothing.
+    unreadable: anyerror,
 };
 
 /// Read the previous build's record. Paths point into `arena`.
@@ -64,7 +67,7 @@ pub fn read(arena: Allocator, io: Io, out_dir: []const u8) Allocator.Error!Previ
     const text = fs_read.readFileAlloc(io, Io.Dir.cwd(), path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.FileNotFound, error.NotDir => return .none,
-        else => return .unrecognised,
+        else => return .{ .unreadable = err },
     };
     return parse(arena, text);
 }

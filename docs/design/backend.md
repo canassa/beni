@@ -223,6 +223,12 @@ is still only skipped, never refused: the manifest is beni's, edited, and the on
 out is acting on that line. With no manifest at all — the first build into a directory, or a
 directory from before this rule — nothing is removed.
 
+*Amended 2026-09-29.* A `_manifest.txt` that exists and **cannot be read** is no longer called
+somebody else's: whose it is cannot be told, and `unknown_output_record`'s "does not begin with
+`beni-manifest 1`" was a claim nobody could check. The build fails as it does for any file it
+cannot read — `beni: cannot read 'out/_manifest.txt': AccessDenied`, exit 2 — still before the
+first byte is written, and `--out` is left as it was.
+
 **Deploying `--out`.** `_manifest.txt` is served next to the modules unless the deploy excludes
 it; it lists the path and a content hash of every file the build wrote (modules, copied
 siblings, the runtime and the entry file), and nothing else. *(Added 2026-09-28.)*

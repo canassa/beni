@@ -204,6 +204,9 @@ pub const Result = struct {
 pub const Error = error{
     /// A file could not be written. `io_failure` says which.
     OutputPath,
+    /// `--out`'s record exists and could not be read. `io_failure` says
+    /// why.
+    OutputRecordUnreadable,
 } || Allocator.Error;
 
 /// Check the platform contract and emit. `scratch` is an arena the caller
@@ -1725,6 +1728,13 @@ const Emitter = struct {
         switch (try OutputRecord.read(e.scratch, e.session.io, e.options.out_dir)) {
             .none => return &.{},
             .record => |entries| return entries,
+            // A file that cannot be read says nothing about whose it is:
+            // the read failure is the answer, as for any file beni reads,
+            // and nothing is written.
+            .unreadable => |err| {
+                e.io_failure.* = .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name }), .err = err };
+                return error.OutputRecordUnreadable;
+            },
             .unrecognised => {
                 const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name });
                 try e.reportInFile(

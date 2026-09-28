@@ -82,10 +82,6 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
-    // An unreadable `_manifest.txt` in `--out`. Alias names met inside a
-    // structure were promoted into `ordering_test.zig`, and the alias DAG
-    // whose uses differ in their arguments (timed) into `perf_test.zig`.
-    .{ .name = "scenario/CK-209", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -124,25 +120,6 @@ test "pending: RED names fixtures and scenarios that exist" {
         }
     }
     try testing.expectEqual(@as(usize, 0), stale);
-}
-
-// CK-209: a `_manifest.txt` in `--out` that cannot be read (mode 000) is an
-// I/O failure, reported as one — "beni: cannot read 'out/_manifest.txt':
-// AccessDenied", exit 2, as an unreadable source is — and nothing is written.
-// Unfixed: UNKNOWN FILE IN THE OUTPUT DIRECTORY, "This file does not begin
-// with `beni-manifest 1`", which nobody can check, the file being unreadable.
-test "CK-209: an unreadable _manifest.txt in --out is reported as a read failure" {
-    var s = try Scenario.init("CK-209");
-    defer s.deinit();
-    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
-    try s.w.write("out/_manifest.txt", "beni-manifest 1\n");
-    if (!try s.w.makeUnreadable("out/_manifest.txt")) return error.SkipZigTest;
-    const run = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
-    const expected = "beni: cannot read 'out/_manifest.txt': AccessDenied\n";
-    if (run.exit_code != 2 or !std.mem.eql(u8, run.stderr, expected)) return s.finish(try s.failed(run));
-    const left = try s.w.listFiles("out");
-    const nothing_written = left.len == 1 and std.mem.eql(u8, left[0], "_manifest.txt");
-    try s.finish(.{ .green = nothing_written, .signature = if (nothing_written) "" else "stale-files", .detail = "the read failure is reported" });
 }
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
