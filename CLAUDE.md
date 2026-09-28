@@ -303,9 +303,10 @@ started): shared cores raise both numbers, the wall time most.
 Why the LLVM compile cannot be made cheaper: about 95% of it is LLVM's O3
 passes and machine-code generation, and Zig 0.16 runs them on one thread for
 the whole program, with no flag to split or parallelise them; incremental
-compilation does not shorten them either. Every git worktree shares the main
-checkout's Zig cache (the dev shell sets `ZIG_LOCAL_CACHE_DIR`), so a
-worktree whose sources match an earlier build reuses it in seconds.
+compilation does not shorten them either. Do not share one Zig cache between
+git worktrees (for example with `ZIG_LOCAL_CACHE_DIR`): with Zig 0.16 a
+worktree was handed a stale test binary built from another worktree's
+sources, and a gates run went green over two real failures.
 
 Only when relevant:
 
