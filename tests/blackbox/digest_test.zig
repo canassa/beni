@@ -639,89 +639,82 @@ fn keyPairOf(w: *World, arena: std.mem.Allocator, jobs: []const u8, expect_error
     };
 }
 
-test "the coarsening invariant: an unmoved OLD key never moves the NEW one" {
-    // **The one direction that must hold**, over every edit class of the table
-    // above, at both `--jobs`. The cutoff key is COARSER than the transitive
-    // one and may never be finer: the old key is inductively every source byte
-    // that can reach this module's check, so two builds whose old keys agree
-    // have identical sources for the whole reachable set — and identical
-    // sources give identical records and identical digests.
-    //
-    // A violation would mean the new key depends on something the old one did
-    // not, which is impossible unless a term is wrong. It is the only thing
-    // that could make the cutoff unsound toward a WRONG ANSWER rather than
-    // toward a slow build, and it is the reason the two recipes run side by
-    // side for one commit before the switch.
-    //
-    // The other direction is not asserted here and must not be: it IS the
-    // cutoff, and what validates it is output identity.
-    const edits = [_]struct { what: []const u8, leaf: []const u8, errors: bool = false }{
-        .{ .what = "a comment", .leaf = "-- a new comment\n" ++ leaf_source },
-        .{ .what = "whitespace", .leaf = leaf_source ++ "\n\n" },
-        .{ .what = "a private value", .leaf = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n" },
-        .{ .what = "a private type", .leaf = leaf_source ++ "\n\ntype Unmentioned\n    = U Int\n" },
-        .{ .what = "a pub signature", .leaf = replace(leaf_source, "pub one : Int", "pub one : Float") },
-        .{ .what = "a new pub value", .leaf = leaf_source ++ "\n\npub extra : Int\nextra =\n    2\n" },
-        .{
-            .what = "a private payload becomes a function",
-            .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
-            .errors = true,
-        },
-        .{
-            .what = "an alias body no scheme names",
-            .leaf = replace(leaf_source, "pub type alias Pair =\n    ( Int, Int )", "pub type alias Pair =\n    ( Float, Int )"),
-            .errors = true,
-        },
-        .{ .what = "a private type made pub", .leaf = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },
-    };
+// **The one direction that must hold**: the cutoff key is COARSER than the
+// transitive one and may never be finer. The old key is inductively every
+// source byte that can reach this module's check, so two builds whose old keys
+// agree have identical sources for the whole reachable set — and identical
+// sources give identical records and identical digests.
+//
+// A violation would mean the new key depends on something the old one did
+// not, which is impossible unless a term is wrong. It is the only thing that
+// could make the cutoff unsound toward a WRONG ANSWER rather than toward a
+// slow build, and it is the reason the two recipes run side by side.
+//
+// The other direction is not asserted here and must not be: it IS the cutoff,
+// and what validates it is output identity (`cutoff_test.zig`). One edit per
+// kind of move the table above names: one that moves neither the hash nor the
+// digest, one that moves the hash, one that moves the digest alone, and one
+// that moves both.
 
-    for ([_][]const u8{ "--jobs=1", "--jobs=8" }) |jobs| {
-        for (edits) |edit| {
-            var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-            defer arena_state.deinit();
-            const arena = arena_state.allocator();
-            var w = try World.init(testing.allocator, testing.io);
-            defer w.deinit();
-            try writeProject(&w);
+/// Check the project, apply `leaf` to `Leaf`, check it again, and require that
+/// no module whose TRANSITIVE key stayed put saw its cutoff key move. With
+/// `must_cut_off`, the other direction must happen too: some module's
+/// transitive key moved while its cutoff key did not.
+fn expectCoarser(what: []const u8, leaf: []const u8, errors: bool, must_cut_off: bool) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
 
-            const before = try keyPairOf(&w, arena, jobs, false);
-            try w.write("src/Leaf.beni", edit.leaf);
-            const after = try keyPairOf(&w, arena, jobs, edit.errors);
+    const before = try keyPairOf(&w, arena, "--jobs=1", false);
+    try w.write("src/Leaf.beni", leaf);
+    const after = try keyPairOf(&w, arena, "--jobs=1", errors);
 
-            // `hashes` is the key IN USE (the cutoff recipe) and `digests` is
-            // the TRANSITIVE key beside it — see `keyPairOf`.
-            var cut_off: usize = 0;
-            for (before.digests) |old| {
-                const old_now = lookup(after.digests, old.name) orelse continue;
-                if (!std.mem.eql(u8, old.digits, old_now)) continue; // transitive key moved: says nothing
-                const new_before = lookup(before.hashes, old.name).?;
-                const new_after = lookup(after.hashes, old.name).?;
-                if (std.mem.eql(u8, new_before, new_after)) continue;
-                std.debug.print(
-                    "{s} {s}: {s}'s TRANSITIVE key did not move and its key DID ({s} -> {s})\n",
-                    .{ jobs, edit.what, old.name, new_before, new_after },
-                );
-                return error.CutoffKeyIsFiner;
-            }
-            // And the direction the invariant does NOT assert is the cutoff
-            // itself, so it had better happen: a comment in `Leaf` must move
-            // the transitive keys of `Mid`, `Side` and `Top` and leave their
-            // real keys alone. Counted rather than named, because which
-            // modules are cut off is §10.1's table's business and this test's
-            // job is only to prove the two recipes are not the same function.
-            for (before.digests) |old| {
-                const old_now = lookup(after.digests, old.name) orelse continue;
-                if (std.mem.eql(u8, old.digits, old_now)) continue;
-                const new_before = lookup(before.hashes, old.name).?;
-                const new_after = lookup(after.hashes, old.name).?;
-                if (std.mem.eql(u8, new_before, new_after)) cut_off += 1;
-            }
-            if (std.mem.eql(u8, edit.what, "a comment") and cut_off == 0) {
-                std.debug.print("{s}: a comment cut NOTHING off\n", .{jobs});
-                return error.NothingWasCutOff;
-            }
+    // `hashes` is the key IN USE (the cutoff recipe) and `digests` is the
+    // TRANSITIVE key beside it — see `keyPairOf`.
+    var cut_off: usize = 0;
+    for (before.digests) |old| {
+        const old_now = lookup(after.digests, old.name) orelse continue;
+        const new_before = lookup(before.hashes, old.name).?;
+        const new_after = lookup(after.hashes, old.name).?;
+        if (!std.mem.eql(u8, old.digits, old_now)) {
+            if (std.mem.eql(u8, new_before, new_after)) cut_off += 1;
+            continue;
         }
+        if (std.mem.eql(u8, new_before, new_after)) continue;
+        std.debug.print(
+            "{s}: {s}'s TRANSITIVE key did not move and its key DID ({s} -> {s})\n",
+            .{ what, old.name, new_before, new_after },
+        );
+        return error.CutoffKeyIsFiner;
     }
+    // Counted rather than named, because which modules are cut off is
+    // §10.1's table's business and this test's job is only to prove the two
+    // recipes are not the same function.
+    if (must_cut_off and cut_off == 0) {
+        std.debug.print("{s}: cut NOTHING off\n", .{what});
+        return error.NothingWasCutOff;
+    }
+}
+
+test "the coarsening invariant, on a comment: an unmoved OLD key never moves the NEW one, and some are cut off" {
+    // A comment in `Leaf` moves the transitive keys of `Mid`, `Side` and
+    // `Top` and must leave their real keys alone.
+    try expectCoarser("a comment", "-- a new comment\n" ++ leaf_source, false, true);
+}
+
+test "the coarsening invariant, on a pub signature: an unmoved OLD key never moves the NEW one" {
+    try expectCoarser("a pub signature", replace(leaf_source, "pub one : Int", "pub one : Float"), false, false);
+}
+
+test "the coarsening invariant, on a private payload made a function: an unmoved OLD key never moves the NEW one" {
+    try expectCoarser("a private payload becomes a function", replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"), true, false);
+}
+
+test "the coarsening invariant, on a private type made pub: an unmoved OLD key never moves the NEW one" {
+    try expectCoarser("a private type made pub", replace(leaf_source, "type Hidden\n", "pub type Hidden\n"), false, false);
 }
 
 // ---------------------------------------------------------------------------
