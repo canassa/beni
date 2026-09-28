@@ -970,7 +970,14 @@ fn nameOf(e: *Elaborate, r: Row) Error![]const u8 {
         .record => |range| blk: {
             var out: std.ArrayList(u8) = .empty;
             try out.print(e.scratch, "{s}${s}$r", .{ module, kind });
-            for (e.symbols.items[range.start..][0..range.len]) |name| try out.print(e.scratch, "${s}", .{interner.slice(name)});
+            // One append per field, not a format per field: a record's
+            // name is as long as its row, 65 537 fields for the widest.
+            for (e.symbols.items[range.start..][0..range.len]) |name| {
+                const text = interner.slice(name);
+                try out.ensureUnusedCapacity(e.scratch, text.len + 1);
+                out.appendAssumeCapacity('$');
+                out.appendSliceAssumeCapacity(text);
+            }
             break :blk out.items;
         },
     };
