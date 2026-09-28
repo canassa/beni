@@ -153,7 +153,9 @@ every file a build writes, the hand-written ones included** — M3a shipped copy
 and the platform's runtime out as `.js`, and Node then reparsed each one and warned
 `MODULE_TYPELESS_PACKAGE_JSON` on every start, whose own suggested remedy is adding `"type":
 "module"` to a `package.json`. That is the dependency this rule exists to avoid, arriving through
-the back door. A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
+the back door. (*Amended by R15-fix-F, 2026-09-28:* the rule is about files that are LOADED; the one
+file a build writes that is not a module, `_manifest.txt` — *The output directory holds what the
+last build wrote* below — is not `.mjs` and is never imported.) A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
 generated module, so it takes **`.foreign.mjs`**: it says which half of the module it is, and it
 cannot collide — a generated file is named for its module, every segment of a module name is an
 upper identifier, so no generated file has two dots in its base name. The `.js` names in `core/` and
@@ -173,6 +175,50 @@ module beside it, which is a line nobody would think to look at.
 file an ES module whatever any `package.json` says, so one would add nothing — and it would put back
 exactly the file the extension was chosen to avoid, inside a directory the user chose (`--out` may
 well point at something they own). A build writes only files it named itself.
+
+### The output directory holds what the last build wrote, and nothing it wrote before
+
+*Added 2026-09-28 by R15-fix-F (CK-163).* Until then a build only ever ADDED to `--out`: build a
+`Main` importing `Half` and `Dict`, then a `Main` using neither into the same directory, and
+`out/Half.mjs`, `out/_core/Dict.mjs` and their siblings survived beside a program that never
+wrote them — stale modules a reader of `out/`, a bundler globbing it, or a deploy copying it
+all take for part of the program.
+
+**The rule: after a successful build, the files of `--out` that beni wrote are exactly the files
+a build of the same program into an empty directory writes.** A file an earlier build wrote and
+this one does not is removed, and so is a directory the removal leaves empty. Nothing else in
+`--out` is touched: `--out` may well be a directory the user owns (the `package.json` paragraph
+above), and a file beni did not write is never beni's to delete.
+
+**What beni wrote is recorded, not inferred.** Every successful build writes a manifest,
+`_manifest.txt`, at the root of `--out` — a reserved name by rule 1 below, and one no platform
+`"entry"` can take because an entry name ends in `.mjs`. Its first line is `beni-manifest 1`;
+each further line is one file the build wrote, as `<hash> <path>`: the path relative to `--out`
+with `/` separators, in write order, and the hash the 64-bit Wyhash of the bytes written, as 16
+lower-case hex digits. The manifest itself is not listed and is not counted in `emitted_files`.
+A stale file is removed only when **all** of these hold, and is left alone otherwise, silently:
+
+1. the previous manifest lists it, and this build does not write it;
+2. its path is relative, `/`-separated, and has no empty, `.` or `..` segment — a manifest is a
+   file in a directory anyone can edit, and a line that could name something outside `--out` is
+   not acted on;
+3. its bytes still hash to what the manifest recorded. A file the user has since edited is
+   theirs now, and survives.
+
+A malformed line, or a manifest whose first line is not `beni-manifest 1`, is skipped the same
+way: the failure mode of a damaged manifest is a stale file left behind, never a file deleted.
+With no manifest at all — the first build into a directory, or a directory from before this rule
+— nothing is removed.
+
+**The order makes an interrupted build safe.** Before the first output byte, the manifest is
+rewritten as the old entries followed by the new ones (the union, so a build killed halfway still
+lists every file either build may have written). Then the outputs are written, then the stale
+files removed, then the manifest rewritten with this build's entries alone.
+
+**A refused build changes nothing** — no output, no removal, no manifest — for the reason the
+checks of *The output tree does not depend on the file system's case sensitivity* run before the
+first byte: a build that says it failed leaves `--out` exactly as the last successful build left
+it.
 
 ### The output tree does not depend on the file system's case sensitivity
 
@@ -198,6 +244,7 @@ a subdirectory, which only moves the collision. The reserved names are:
 | `_main.mjs` | the entry file (§5, `boundary.md` §5.2), unless the platform declares another name | `main.mjs` |
 | `_core/` | the `core` package's directory | `core/` |
 | `_platform/` | the platform package's directory, holding its modules, their siblings and its runtime | `platform/` |
+| `_manifest.txt` | the list of files the last build wrote (*The output directory holds what the last build wrote*, R15-fix-F) | — |
 
 All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
 `Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.

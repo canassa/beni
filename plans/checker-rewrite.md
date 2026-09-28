@@ -2862,6 +2862,54 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   inherited in the declaring module and one across the boundary, inside a list) and
   `check/bad/DerivedPinnedRefused/` (imported, local, inherited, rigid and list refusals).
 
+#### R15-fix-F — The frontend's scans, the flat `let`, the wide `case`, and a stale `out/` (added by the manager, 2026-09-28)
+
+- **Goal.** Fix R15's audit findings outside the type checker proper: CK-164 (`resolve` quadratic
+  in qualified references, with the perf study's item 4 on the same path), CK-165 (`lower`
+  quadratic in imports and their uses), CK-166 (the parser's budget reported once per binding of
+  a flat `let`), CK-167 (a flat `case` over 2 000 constructors refused) and CK-163 (`build --out`
+  keeps an earlier build's files), each structurally, each scenario promoted with its fix.
+- **As built (2026-09-28).** Base `01d0f21`. One spec change: `backend.md` §2 gains *The output
+  directory holds what the last build wrote, and nothing it wrote before* (dated, CK-163) and
+  `_manifest.txt` joins rule 1's reserved names. `checker-v2.md` §19.1 records the new file.
+  - **CK-164.** `Resolve.schemaFromRoot` ran for every qualified reference and scanned the
+    module's declarations and every import's `exposing` list; `resolveSelf` scanned as well.
+    `Resolve.Tables`: the current module's values, types, constructors and schemas, and the schemas
+    its `exposing` lists name, as sorted `(name, index)` tables built once per module (first
+    declaration wins, as the scans did). **Item 4:** `Graph.by_name` (a hash map probed up to three
+    times per reference) is `name_rows` (indexed by module-name symbol) and `rows` (per package, the
+    exact module and the one `lookup` answers, precedence computed at build).
+  - **CK-165.** `Lower`: imports by alias and by module (`import_by_alias`, `import_by_module`,
+    duplicate and duplicate-alias reports unchanged), probed per dot of a qualified token
+    (`resolveQualified`, `couldBeSchemaQualified`, `schemaNamespaceRef`, via the new
+    `InternPool.Local.find`); `addRef` dedupes a declaration's import edges through a key set past
+    64 of them. `Graph.build`'s dependency and prelude-use sets are stamp arrays.
+  - **CK-166.** The accepting form (rule 7). `Parse.Siblings`: a `let`'s bindings and body and a
+    `case`'s scrutinee and branches each start from the parent's depth, and the parent keeps the
+    deepest one's charge — the budget measures the tree's height, which is what every consumer's
+    recursion needs, not a sum over siblings. One binding past the budget is still one message.
+  - **CK-167.** `Flat` takes a constructor whose arguments are all wildcards as a key; new
+    `check/ColumnIndex.zig` answers column zero's questions in one pass (`collect`'s bitset,
+    `split`'s counting sort for "specialise by every alternative", `Heads` for "which rows above
+    share this branch's head"), and `Exhaustive.specializeMerged` builds the same matrices
+    `specializeByCtor` did. The budget is unchanged and still reached by exponential matrices
+    (`abuse_test.zig`'s 200 × 200 nested scenario is unchanged).
+  - **CK-163.** `js/OutputRecord.zig`: `_manifest.txt` lists `<wyhash> <path>` per file written;
+    `Emit.flush` writes the union of the old and new record, the outputs, removes what only the old
+    record lists (contained paths whose bytes still hash as recorded) and the directories that
+    empties, then the new record. A refused build writes nothing, as before.
+  - **Evidence.** Fixture-first against a separately built `01d0f21` (Debug and ReleaseFast in the
+    scratchpad): every scenario red there for its recorded reason. CPU time, best of 3,
+    ReleaseFast: CK-164 `resolve` 51.9 / 204.8 → 3.5 / 6.5 ms at 8 000 / 16 000 (check 99 / 293 →
+    57 / 104 ms); CK-165 `Main`'s `lower` 24.4 / 121.3 → 0.8 / 1.5 ms at 2 000 / 4 000 modules (check
+    79 / 230 → 51 / 95 ms). CK-166: 907 / 11 907 messages → none at 5 000 / 16 000 bindings. CK-167
+    (Debug): refused in 2.3–3.2 s at 2 000–8 000 constructors → checks in 0.22 / 0.43 / 1.3 s.
+    Promoted: CK-164, CK-165 into `perf_test.zig` (`Perf.eventRatioOf` added for CK-165's project);
+    CK-166 (two scenarios, one building and running 16 000 bindings in both modes) and CK-167 (with
+    missing, redundant and general-path variants) into `abuse_test.zig`; CK-163 into
+    `build_test.zig` (three scenarios: fresh-equal tree with user files kept, an edited output and a
+    hostile record line kept, a refused rebuild changing nothing). Only CK-144 is left pending.
+
 ---
 
 ## 4. CK → slice index
@@ -2897,6 +2945,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-C | CK-169, 170, 172, 173, 174 (`tests/corpus/`), CK-171 (`perf_test.zig`) — all six found and fixed in the slice | — | the `err`-producer audit and its Debug check (`checker-v2.md` §12.2); CK-144 not fixed (the interface writer) |
 | R15-fix-D | CK-126, 145, 147, 148 (`tests/corpus/check/bad/`; CK-126 also `digest_test.zig` "row 13 for a schema"), CK-143 (`perf_test.zig`, both scenarios) | — | the digest's schema-endpoint hole (found and fixed with CK-126); `Report.failed` gets its reader (CK-146 item 1) |
 | R15-fix-E | CK-154, 162, 168 (`tests/corpus/check/bad/`), CK-159 (`run/DerivedOverSpecialisedEq/`; new `run/DerivedPinnedAcrossModules/`, `check/bad/DerivedPinnedRefused/`) | — | CK-161 kept for the owner (message fixed; fixture moved to `check/bad/`) |
+| R15-fix-F | CK-163 (`build_test.zig`), CK-164, 165 (`perf_test.zig`), CK-166, 167 (`abuse_test.zig`) | — | perf study item 4 (`Graph.lookup` as arrays); `backend.md` §2's output record |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

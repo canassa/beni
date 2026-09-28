@@ -21,11 +21,6 @@
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
 # R15-fix-A (2026-09-28) fixed and promoted CK-135, 137, 139, 140, 141 and 142.
 scenario/CK-144 superlinear
-scenario/CK-163 stale-files
-scenario/CK-164 slow
-scenario/CK-165 slow
-scenario/CK-166 exit=1 codes=nesting_too_deep×907
-scenario/CK-167 exit=1 codes=pattern_budget_exhausted×1
 # R15-fix-C (2026-09-28): R15-fix-A's review found CK-169 to CK-171 (alias
 # chains past `TypeStore.resolved`'s 1 024-link guard; the alias DAG
 # expanded as a tree), and writing their fixtures found CK-172 to CK-174
@@ -38,3 +33,6 @@ scenario/CK-167 exit=1 codes=pattern_budget_exhausted×1
 # CK-168, and moved CK-161's fixture to tests/corpus/check/bad/ with the
 # refusal kept (static-dispatch-spike.md §1.3 rule 2, A.56: the owner's to
 # reverse) and its message fixed.
+# R15-fix-F (2026-09-28) fixed and promoted CK-163 (into build_test.zig),
+# CK-164 and CK-165 (into perf_test.zig), CK-166 and CK-167 (into
+# abuse_test.zig).

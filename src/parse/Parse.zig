@@ -107,11 +107,14 @@ last_error_start: u32 = std.math.maxInt(u32),
 /// one another with the counter back at zero between them. Holding the
 /// charge until the declaration ends (`resetDepth`) makes `max_depth`
 /// bound the depth of the whole declaration, which is the bound every
-/// consumer's recursion needs. The cost is that a single declaration
-/// containing more than `max_depth` chain links in total — 4096 operators,
-/// field accesses and `?`s added up — is reported as `nesting_too_deep`
-/// even when no one path is that long. Nothing a person writes comes near
-/// it, and what does is a generated file that would otherwise crash us.
+/// consumer's recursion needs. The cost is that chain links ADD UP along
+/// a declaration even when no one path is that long — except across
+/// SIBLINGS (`Siblings`): a `let`'s bindings and body and a `case`'s
+/// scrutinee and branches are charged as the deepest of them, not their
+/// sum (CK-166), because none of them is below another. What still adds
+/// up — say 4096 operators spread over the arguments of one call — is
+/// nothing a person writes, and what does is a generated file that would
+/// otherwise crash us.
 depth: u32 = 0,
 /// Next unprocessed comment, for doc attachment.
 comment_i: u32 = 0,
@@ -1904,6 +1907,33 @@ fn enterSpine(p: *Parse) Allocator.Error!bool {
     }
 }
 
+/// Siblings: children of one node that are not each other's ancestors — a
+/// `let`'s bindings and its body, a `case`'s branches. The tree below the
+/// node is as deep as its DEEPEST child, not as the sum of them, so the
+/// spine charges one child leaves behind are not the next child's to pay
+/// (CK-166: a flat `let` of 5 000 `x{i} = x{i-1} + 1` spent the budget on
+/// its 4 097th binding and was refused 907 times, "nested more than 4096
+/// levels deep" about a block nested two deep). Each child starts from the
+/// depth at `beginSiblings`; `endSiblings` leaves the counter at the
+/// deepest child's, which is the height of what was built, so the node
+/// stays charged for it if a loop later hangs a chain above it.
+const Siblings = struct { start: u32, high: u32 };
+
+fn beginSiblings(p: *const Parse) Siblings {
+    return .{ .start = p.depth, .high = p.depth };
+}
+
+/// Between two children: remember how deep the last one went and start
+/// the next from the parent's depth.
+fn nextSibling(p: *Parse, s: *Siblings) void {
+    s.high = @max(s.high, p.depth);
+    p.depth = s.start;
+}
+
+fn endSiblings(p: *Parse, s: Siblings) void {
+    p.depth = @max(s.high, p.depth);
+}
+
 /// Release every spine charge. Called between top-level items, which is
 /// the scope `enterSpine`'s charges live in.
 fn resetDepth(p: *Parse) void {
@@ -2378,7 +2408,11 @@ fn parseCase(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.case_head);
     defer p.context = saved_context;
     const case_token = p.next();
+    // The scrutinee and the branches are siblings (`Siblings`).
+    var siblings = p.beginSiblings();
+    defer p.endSiblings(siblings);
     const scrutinee = try p.parseExpr();
+    p.nextSibling(&siblings);
     _ = try p.expectToken(.keyword_of);
     p.context = .case_branches;
 
@@ -2400,6 +2434,7 @@ fn parseCase(p: *Parse) Allocator.Error!Index {
         while (true) {
             const before = p.tok_i;
             try p.pushScratch(try p.parseBranch());
+            p.nextSibling(&siblings);
             p.assertProgress(before);
             if (p.peek() == .eof or !canStartPattern(p.peek())) break;
             if (p.col(p.tok_i) != column) {
@@ -2439,6 +2474,9 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
     const let_token = p.next();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
+    // The bindings and the body are siblings (`Siblings`).
+    var siblings = p.beginSiblings();
+    defer p.endSiblings(siblings);
     if (!canStartBinding(p.peek())) {
         @branchHint(.cold);
         try p.pushScratch(try p.unexpected(.error_binding, .binding));
@@ -2448,6 +2486,7 @@ fn parseLet(p: *Parse) Allocator.Error!Index {
         while (true) {
             const before = p.tok_i;
             try p.pushScratch(try p.parseLetBinding());
+            p.nextSibling(&siblings);
             p.assertProgress(before);
             if (!canStartBinding(p.peek())) break;
             if (p.col(p.tok_i) != column) {

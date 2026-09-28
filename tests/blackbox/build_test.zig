@@ -2185,6 +2185,142 @@ test "a project that does not check writes nothing" {
     try testing.expectEqualStrings("", r.stdout);
 }
 
+// CK-163 (`scenario/CK-163`, promoted by R15-fix-F): `build --out` only ever
+// added to the directory, so a module the program stopped using stayed in
+// `out/` beside it. `backend.md` §2, *The output directory holds what the last
+// build wrote*: a build removes what the previous one wrote and it did not,
+// through `_manifest.txt`, and touches nothing it never wrote.
+test "a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives (CK-163)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try w.write("src/Deep/Half.beni", "pub quarter : Int -> Int\nquarter n =\n    n // 4\n");
+    try w.write("src/Main.beni", "import Node exposing (Program)\nimport Dict\nimport Half\nimport Deep.Half\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Deep.Half.quarter (Half.half (Dict.size (Dict.singleton 1 2)))) ]\n");
+    const first = try w.run(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    try testing.expect(w.exists("out/Half.mjs"));
+    try testing.expect(w.exists("out/Deep/Half.mjs"));
+    try testing.expect(w.exists("out/_core/Dict.mjs"));
+    // Files beni never wrote: one beside its output, one inside a directory
+    // it writes into.
+    try w.write("out/README.txt", "mine\n");
+    try w.write("out/_core/notes.txt", "also mine\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    const second = try w.run(&.{ "build", "--platform=node", "--out=out", "--root=src", "src/Main.beni" });
+    const fresh = try w.run(&.{ "build", "--platform=node", "--out=fresh", "--root=src", "src/Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+    try testing.expectEqualStrings("", second.stderr);
+    try testing.expectEqual(@as(u8, 0), fresh.exit_code);
+    const ran = try w.node("out/_main.mjs");
+    try testing.expectEqualStrings("x\n", ran.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // `out/` is `fresh/` plus the two files beni never wrote, and the
+    // directory `Deep/` its removal emptied is gone too.
+    const want = try w.listFiles("fresh");
+    var expected: std.ArrayList([]const u8) = .empty;
+    defer expected.deinit(testing.allocator);
+    try expected.appendSlice(testing.allocator, want);
+    try expected.appendSlice(testing.allocator, &.{ "README.txt", "_core/notes.txt" });
+    std.mem.sort([]const u8, expected.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    const got = try w.listFiles("out");
+    try testing.expectEqual(expected.items.len, got.len);
+    for (expected.items, got) |e, g| try testing.expectEqualStrings(e, g);
+    try testing.expect(!w.exists("out/Deep"));
+    try testing.expectEqualStrings("mine\n", try w.read("out/README.txt"));
+    try testing.expectEqualStrings("also mine\n", try w.read("out/_core/notes.txt"));
+    // The record lists what this build wrote, and only that.
+    try testing.expectEqualStrings(try w.read("fresh/_manifest.txt"), try w.read("out/_manifest.txt"));
+}
+
+test "a file beni wrote and the user then edited, or a record line leaving --out, is never removed (CK-163)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Half\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Half.half 4) ]\n");
+    const first = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni", "Half.beni" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    // The user edits a file beni wrote, and someone appends a line to the
+    // record naming a file outside `--out`.
+    try w.write("out/Half.mjs", "// edited by hand\n");
+    try w.write("victim.txt", "outside\n");
+    const record = try w.read("out/_manifest.txt");
+    try w.write("out/_manifest.txt", try std.mem.concat(w.arena.allocator(), u8, &.{ record, "0000000000000000 ../victim.txt\n" }));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    const second = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+    try testing.expectEqualStrings("", second.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("// edited by hand\n", try w.read("out/Half.mjs"));
+    try testing.expectEqualStrings("outside\n", try w.read("victim.txt"));
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/_manifest.txt"), "Half.mjs") == null);
+}
+
+test "a refused build removes nothing and leaves the record as it was (CK-163)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Half.beni", "pub half : Int -> Int\nhalf n =\n    n // 2\n");
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Half\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (Half.half 4) ]\n");
+    const first = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni", "Half.beni" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    const before = try w.listFiles("out");
+    const record = try w.read("out/_manifest.txt");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.print 7\n");
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(diagnostic.Code.kind_mismatch, r.diagnostics[0].code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const after = try w.listFiles("out");
+    try testing.expectEqual(before.len, after.len);
+    for (before, after) |b, a| try testing.expectEqualStrings(b, a);
+    try testing.expectEqualStrings(record, try w.read("out/_manifest.txt"));
+}
+
 test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -2746,6 +2882,10 @@ fn expectEveryFileIsEsm(w: *World, dir: []const u8) !void {
     }
     for (files) |path| {
         if (std.mem.endsWith(u8, path, ".mjs")) continue;
+        // The build's record of what it wrote is the one file that is not a
+        // module and is never loaded (§2, *The output directory holds what
+        // the last build wrote*).
+        if (std.mem.eql(u8, path, "_manifest.txt")) continue;
         std.debug.print("{s}/{s} is not a .mjs file (backend.md §2)\n", .{ dir, path });
         return error.NotAnEsModule;
     }

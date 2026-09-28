@@ -409,6 +409,14 @@ pub const Local = struct {
     pub fn getOrPutHashed(local: *Local, gpa: Allocator, hash: u64, bytes: []const u8) Allocator.Error!Symbol {
         return local.pool.getOrPutHashed(gpa, hash, bytes);
     }
+
+    /// The symbol for `bytes` if this pool already has it, and null
+    /// otherwise — a lookup, never an insertion. Lowering asks it whether a
+    /// prefix of a qualified token names an import alias (CK-165): a text
+    /// the pool has never seen cannot be one.
+    pub fn find(local: *const Local, bytes: []const u8) ?Symbol {
+        return local.pool.find(bytes);
+    }
 };
 
 /// The session's interner: well-known symbols first, then every worker's

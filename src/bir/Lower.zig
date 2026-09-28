@@ -104,6 +104,18 @@ ctor_names: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 types: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// Schema namespace skeleton; S2 resolves members and imports.
 schemas: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+/// The explicit imports by ALIAS, the first import to take an alias
+/// keeping it (a duplicate alias is reported and resolves to the first),
+/// and by MODULE, for `duplicate_import`. Every qualified reference asks
+/// which import its prefix names; a scan of the import table per reference
+/// was O(imports × references) (CK-165).
+import_by_alias: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+import_by_module: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
+/// The current declaration's import edges by key, once it has more than
+/// `indexed_refs` edges (`addRef`); `import_refs_start` is the
+/// `cur_refs_start` of the declaration it indexes.
+import_refs: std.AutoHashMapUnmanaged(ImportRefKey, void) = .empty,
+import_refs_start: u32 = none_u32,
 /// The lexical scope stack (frontend.md §3.6). Pushed by `bindLocal` and
 /// popped by `popScope` only, which keep `scope_index` in step.
 scope: std.ArrayList(ScopeEntry) = .empty,
@@ -206,6 +218,17 @@ const ScopeEntry = struct {
 /// shadowing check a scan of n. Below it a scan is the cheaper of the two,
 /// and it is what almost every scope is.
 const indexed_scope = 64;
+
+/// Past this many edges a declaration's import edges are deduplicated
+/// through `import_refs` instead of a scan (CK-165), for the reason
+/// `indexed_scope` gives.
+const indexed_refs = 64;
+
+const ImportRefKey = struct {
+    kind: Bir.Ref.Kind,
+    module: Symbol,
+    name: Symbol,
+};
 
 /// One binding of one `let` block, gathered by `lowerBindings` for §7's
 /// initialisation rule and read by `checkLetOrder`. Annotations and `<-`
@@ -317,6 +340,9 @@ pub fn lower(
         l.ctor_names.deinit(scratch);
         l.types.deinit(scratch);
         l.schemas.deinit(scratch);
+        l.import_by_alias.deinit(scratch);
+        l.import_by_module.deinit(scratch);
+        l.import_refs.deinit(scratch);
         l.scope.deinit(scratch);
         l.frames.deinit(scratch);
         l.list_scratch.deinit(scratch);
@@ -549,8 +575,31 @@ fn addRef(l: *Lower, kind: Bir.Ref.Kind, a: u32, b: u32) Allocator.Error!void {
             // indices: each occurrence has its own slot in `symbols`.
             const ma = l.symbols.items[a];
             const na = l.symbols.items[b];
-            for (l.refs.items[l.cur_refs_start..]) |r| {
-                if (r.kind == kind and l.symbols.items[r.a] == ma and l.symbols.items[r.b] == na) return;
+            const since = l.refs.items[l.cur_refs_start..];
+            if (since.len <= indexed_refs) {
+                for (since) |r| {
+                    if (r.kind == kind and l.symbols.items[r.a] == ma and l.symbols.items[r.b] == na) return;
+                }
+            } else {
+                // Past `indexed_refs` a declaration's import edges are
+                // looked up by key rather than scanned: one declaration
+                // naming n imported things was n² here (CK-165). The index
+                // is built once per declaration that needs it, from the
+                // edges it already has.
+                if (l.import_refs_start != l.cur_refs_start) {
+                    l.import_refs.clearAndFree(l.scratch_allocator);
+                    for (since) |r| switch (r.kind) {
+                        .import_value, .import_ctor, .import_type, .import_schema => try l.import_refs.put(l.scratch_allocator, .{
+                            .kind = r.kind,
+                            .module = l.symbols.items[r.a],
+                            .name = l.symbols.items[r.b],
+                        }, {}),
+                        .top_value, .top_ctor, .top_type, .top_schema => {},
+                    };
+                    l.import_refs_start = l.cur_refs_start;
+                }
+                const gop = try l.import_refs.getOrPut(l.scratch_allocator, .{ .kind = kind, .module = ma, .name = na });
+                if (gop.found_existing) return;
             }
         },
     }
@@ -616,20 +665,20 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
     if (std.mem.eql(u8, l.tokenText(name_token), l.options.module_name)) {
         try l.reportToken(.self_import, name_token);
     }
-    for (l.imports.items, 0..) |existing, i| {
-        if (l.symbols.items[@intFromEnum(existing.module)] == module) {
-            try l.reportPair(.duplicate_import, name_token, l.importToken(i, .module));
-            return;
-        }
+    const import_index: u32 = @intCast(l.imports.items.len);
+    const by_module = try l.import_by_module.getOrPut(l.scratch_allocator, module);
+    if (by_module.found_existing) {
+        try l.reportPair(.duplicate_import, name_token, l.importToken(by_module.value_ptr.*, .module));
+        return;
     }
-    for (l.imports.items, 0..) |existing, i| {
-        if (l.symbols.items[@intFromEnum(existing.alias)] == alias) {
-            try l.reportPair(.duplicate_import_alias, alias_token, l.importToken(i, .alias));
-            break;
-        }
+    by_module.value_ptr.* = import_index;
+    const by_alias = try l.import_by_alias.getOrPut(l.scratch_allocator, alias);
+    if (by_alias.found_existing) {
+        try l.reportPair(.duplicate_import_alias, alias_token, l.importToken(by_alias.value_ptr.*, .alias));
+    } else {
+        by_alias.value_ptr.* = import_index;
     }
 
-    const import_index: u32 = @intCast(l.imports.items.len);
     const module_index = try l.addSymbol(module);
     const alias_index = if (imp.alias != null) try l.addSymbol(alias) else module_index;
     const exposed_start: u32 = @intCast(l.exposed.items.len);
@@ -1601,17 +1650,19 @@ fn schemaNamespaceRef(l: *Lower, token: TokenIndex, tag: Inst.Tag) Allocator.Err
         },
     };
     if (first_dot < text.len) {
+        // The LONGEST explicit alias that is a prefix of `text` ending at a
+        // dot with a further dot after it: `text` cut at each such dot,
+        // longest first (CK-165: a probe per dot, not a scan per import).
         var best_len: usize = 0;
         var best_module: ?Symbol = null;
-        for (l.imports.items) |imp| {
-            if (imp.prelude) continue;
-            const alias = l.interner.slice(l.symbols.items[@intFromEnum(imp.alias)]);
-            if (alias.len <= best_len or alias.len >= text.len) continue;
-            if (!std.mem.startsWith(u8, text, alias) or text[alias.len] != '.') continue;
-            const tail = text[alias.len + 1 ..];
-            if (std.mem.indexOfScalar(u8, tail, '.') == null) continue;
-            best_len = alias.len;
-            best_module = l.symbols.items[@intFromEnum(imp.module)];
+        const last_dot = std.mem.lastIndexOfScalar(u8, text, '.').?;
+        var cut = last_dot;
+        while (std.mem.lastIndexOfScalar(u8, text[0..cut], '.')) |at| : (cut = at) {
+            if (l.importWithAlias(text[0..at])) |i| {
+                best_len = at;
+                best_module = l.importModule(i);
+                break;
+            }
         }
         if (best_module) |module| {
             const tail = text[best_len + 1 ..];
@@ -1634,28 +1685,19 @@ fn couldBeSchemaQualified(l: *const Lower, token: TokenIndex) bool {
     const text = l.tokenText(token);
     const first_dot = std.mem.indexOfScalar(u8, text, '.') orelse return false;
     const last_dot = std.mem.lastIndexOfScalar(u8, text, '.').?;
-    var root_schema = false;
-    var schema_it = l.schemas.keyIterator();
-    while (schema_it.next()) |symbol| {
-        if (std.mem.eql(u8, l.interner.slice(symbol.*), text[0..first_dot])) {
-            root_schema = true;
-            break;
-        }
+    // Each question is a probe per DOT of the token, never a scan of the
+    // schema table or the import table (CK-165): an alias that is a prefix
+    // of `text` ending at a dot is `text` cut at that dot.
+    if (l.isAnyAlias(text[0..last_dot])) return false;
+    const root_schema = if (l.interner.find(text[0..first_dot])) |root| l.schemas.contains(root) else false;
+    if (root_schema) return true;
+    // An alias followed by at least two more segments: cut at every dot
+    // but the last.
+    var at: usize = first_dot;
+    while (at < last_dot) : (at = at + 1 + std.mem.indexOfScalar(u8, text[at + 1 ..], '.').?) {
+        if (l.isAnyAlias(text[0..at])) return true;
     }
-    const module_text = text[0..last_dot];
-    var exact_module = false;
-    var prefix_module = false;
-    for (l.imports.items) |imp| {
-        const alias = l.interner.slice(l.symbols.items[@intFromEnum(imp.alias)]);
-        if (std.mem.eql(u8, alias, module_text)) exact_module = true;
-        if (alias.len < text.len and text[alias.len] == '.' and std.mem.startsWith(u8, text, alias) and
-            std.mem.indexOfScalar(u8, text[alias.len + 1 ..], '.') != null) prefix_module = true;
-    }
-    for (prelude.modules) |w| {
-        if (std.mem.eql(u8, @tagName(w), module_text)) exact_module = true;
-    }
-    if (exact_module) return false;
-    return root_schema or prefix_module;
+    return false;
 }
 
 /// An unqualified upper name in type position (§6.2).
@@ -1681,6 +1723,24 @@ fn importModule(l: *const Lower, import_index: u32) Symbol {
     return l.symbols.items[@intFromEnum(l.imports.items[import_index].module)];
 }
 
+/// The explicit import whose alias is spelled `text` — the first to take
+/// it — or null. One hash probe, not a scan of the import table (CK-165).
+fn importWithAlias(l: *const Lower, text: []const u8) ?u32 {
+    const symbol = l.interner.find(text) orelse return null;
+    return l.import_by_alias.get(symbol);
+}
+
+/// Whether `text` is the alias of any import row, the prelude's included:
+/// an explicit import's, or a prelude module's name, which is its own
+/// alias (`lowerImports`).
+fn isAnyAlias(l: *const Lower, text: []const u8) bool {
+    if (l.importWithAlias(text) != null) return true;
+    for (prelude.modules) |w| {
+        if (std.mem.eql(u8, @tagName(w), text)) return true;
+    }
+    return false;
+}
+
 /// `Alias.name` (§6.2): the module part against the import aliases, then
 /// the prelude's module aliases; the name part is interned on its own.
 fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.Ref.Kind, unbound: diagnostic.Code) Allocator.Error!Index {
@@ -1694,12 +1754,7 @@ fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.R
     const module_text = text[0..dot];
     const name_text = text[dot + 1 ..];
     const module: Symbol = found: {
-        for (l.imports.items) |imp| {
-            if (imp.prelude) break;
-            if (std.mem.eql(u8, l.interner.slice(l.symbols.items[@intFromEnum(imp.alias)]), module_text)) {
-                break :found l.symbols.items[@intFromEnum(imp.module)];
-            }
-        }
+        if (l.importWithAlias(module_text)) |i| break :found l.importModule(i);
         for (prelude.modules) |w| {
             if (std.mem.eql(u8, @tagName(w), module_text)) break :found w.symbol();
         }

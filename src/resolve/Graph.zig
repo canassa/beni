@@ -6,9 +6,12 @@
 //! may each have a `List`, and an import resolves in the importing module's
 //! own package first, then `core`. That lookup is the only thing the rest
 //! of the compiler asks this structure, and it is why the index is keyed by
-//! the pair. A `Symbol` is a SPARSE key — a project mentions a few dozen of
-//! the interner's tens of thousands — so a hash map is the right structure
-//! here and the house rule against maps keyed by a dense id does not apply.
+//! the pair. It was a hash map on the argument that a `Symbol` is a sparse
+//! key; it is asked once per qualified REFERENCE, three probes deep, and
+//! the perf study of 2026-09-27 (item 4) measured it at 12 % of a warm
+//! `check`. It is now an array indexed by the module-name symbol — sized by
+//! the largest one, kilobytes — with the precedence precomputed per name
+//! (`name_rows`, `rows`), so a lookup is a bounds check and two loads.
 //!
 //! Three things come out of one pass:
 //!
@@ -90,9 +93,19 @@ deps: []const Index,
 order: []const Index,
 /// Owned. Graph-level diagnostics, each pointing at a file and a token.
 diagnostics: []const Item,
-/// The `(package, name)` index. Owned; lives as long as the graph because
-/// `Resolve` looks modules up through it.
-by_name: std.AutoHashMapUnmanaged(Key, Index),
+/// The `(package, name)` index, as arrays and not a hash map
+/// (`fast-compiler.md` §5: a dense id indexes an array; perf study
+/// 2026-09-27 item 4). Owned; lives as long as the graph because `Resolve`
+/// looks modules up through it, once per qualified reference.
+///
+/// `name_rows[symbol]` is the row of a module NAME, or `no_row` for a
+/// symbol no module is named — sized by the largest module-name symbol, so
+/// kilobytes. `rows[row]` holds, per package, the module that package
+/// declares under the name (`exact`, what `find` answers) and the module a
+/// reference FROM that package resolves to (`visible`, `lookup`'s
+/// precedence computed once at build).
+name_rows: []u32,
+rows: []Row,
 /// Owned. The members named by every `import_cycle` item, in cycle order,
 /// back to back; an item's `cycle_start..cycle_end` slices this.
 cycle_members: []const Index,
@@ -111,9 +124,15 @@ pub const Module = struct {
     deps_end: u32,
 };
 
-pub const Key = struct {
-    package: Package,
-    name: Symbol,
+const package_count = @typeInfo(Package).@"enum".fields.len;
+const no_row = std.math.maxInt(u32);
+const no_module = std.math.maxInt(u32);
+
+/// One module name's answers, indexed by `@intFromEnum(Package)`;
+/// `no_module` where there is none.
+pub const Row = struct {
+    exact: [package_count]u32 = @splat(no_module),
+    visible: [package_count]u32 = @splat(no_module),
 };
 
 /// A graph diagnostic before it is rendered: which file, which token, and
@@ -135,7 +154,8 @@ pub const empty: Graph = .{
     .deps = &.{},
     .order = &.{},
     .diagnostics = &.{},
-    .by_name = .empty,
+    .name_rows = &.{},
+    .rows = &.{},
     .cycle_members = &.{},
 };
 
@@ -145,7 +165,8 @@ pub fn deinit(g: *Graph, gpa: Allocator) void {
     gpa.free(g.order);
     gpa.free(g.diagnostics);
     gpa.free(g.cycle_members);
-    g.by_name.deinit(gpa);
+    gpa.free(g.name_rows);
+    gpa.free(g.rows);
     g.* = undefined;
 }
 
@@ -179,7 +200,16 @@ pub fn dependencies(g: *const Graph, i: Index) []const Index {
 /// already decided, so falling back to another package would resolve a
 /// stale reference onto the wrong module instead of poisoning it.
 pub fn find(g: *const Graph, package: Package, name: Symbol) ?Index {
-    return g.by_name.get(.{ .package = package, .name = name });
+    const row = g.rowOf(name) orelse return null;
+    return moduleOrNull(row.exact[@intFromEnum(package)]);
+}
+
+fn rowOf(g: *const Graph, name: Symbol) ?*const Row {
+    return &g.rows[g.rowIndex(name) orelse return null];
+}
+
+fn moduleOrNull(m: u32) ?Index {
+    return if (m == no_module) null else @enumFromInt(m);
 }
 
 /// Resolve `name` as seen from a module of `from`: its own package first,
@@ -193,15 +223,20 @@ pub fn find(g: *const Graph, package: Package, name: Symbol) ?Index {
 /// capability the chosen platform does not offer must fail to resolve,
 /// which is the diagnostic §5.3 wants instead of a runtime surprise, and
 /// that only works if the platform's modules are in the search path at all.
+///
+/// The precedence is applied once per name when the graph is built
+/// (`Row.visible`), so this is a bounds check and two loads.
 pub fn lookup(g: *const Graph, from: Package, name: Symbol) ?Index {
-    if (g.by_name.get(.{ .package = from, .name = name })) |i| return i;
-    if (from != .platform) {
-        if (g.by_name.get(.{ .package = .platform, .name = name })) |i| return i;
-    }
-    if (from != .core) {
-        if (g.by_name.get(.{ .package = .core, .name = name })) |i| return i;
-    }
-    return null;
+    const row = g.rowOf(name) orelse return null;
+    return moduleOrNull(row.visible[@intFromEnum(from)]);
+}
+
+/// `lookup`'s precedence over one row's `exact` answers.
+fn visibleFrom(exact: [package_count]u32, from: Package) u32 {
+    if (exact[@intFromEnum(from)] != no_module) return exact[@intFromEnum(from)];
+    if (from != .platform and exact[@intFromEnum(Package.platform)] != no_module) return exact[@intFromEnum(Package.platform)];
+    if (from != .core and exact[@intFromEnum(Package.core)] != no_module) return exact[@intFromEnum(Package.core)];
+    return no_module;
 }
 
 /// The number of edges, for the profile counter.
@@ -241,50 +276,78 @@ pub fn build(
     // 1. Name every module and index it. File order is path order, so the
     //    FIRST file to claim a `(package, name)` keeps it and any later one
     //    is `duplicate_module` — deterministic without a tie-break rule.
+    var name_limit: u32 = 0;
     for (0..store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
         if (!store.modulePathValid(file)) continue;
         const name = try interner.getOrPut(gpa, store.moduleName(file));
-        const pkg = store.package(file);
-        const index: Index = @enumFromInt(modules.len);
+        name_limit = @max(name_limit, @intFromEnum(name) + 1);
         try modules.append(gpa, .{
             .file = file,
-            .package = pkg,
+            .package = store.package(file),
             .name = name,
             .poisoned = false,
             .deps_start = 0,
             .deps_end = 0,
         });
-        const gop = try g.by_name.getOrPut(gpa, .{ .package = pkg, .name = name });
-        if (gop.found_existing) {
-            const first = gop.value_ptr.*;
+    }
+    g.name_rows = try gpa.alloc(u32, name_limit);
+    @memset(g.name_rows, no_row);
+    var rows: std.ArrayList(Row) = .empty;
+    errdefer rows.deinit(gpa);
+    for (modules.items(.name), modules.items(.package), modules.items(.file), 0..) |name, pkg, file, i| {
+        const slot = &g.name_rows[@intFromEnum(name)];
+        if (slot.* == no_row) {
+            slot.* = @intCast(rows.items.len);
+            try rows.append(gpa, .{});
+        }
+        const exact = &rows.items[slot.*].exact[@intFromEnum(pkg)];
+        if (exact.* != no_module) {
             try diagnostics.append(gpa, .{
                 .code = .duplicate_module,
                 .file = file,
                 .token = 0,
-                .cycle_start = first.int(),
-                .cycle_end = first.int() + 1,
+                .cycle_start = exact.*,
+                .cycle_end = exact.* + 1,
             });
-            modules.items(.poisoned)[index.int()] = true;
+            modules.items(.poisoned)[i] = true;
         } else {
-            gop.value_ptr.* = index;
+            exact.* = @intCast(i);
         }
     }
+    for (rows.items) |*row| {
+        for (&row.visible, 0..) |*v, from| v.* = visibleFrom(row.exact, @enumFromInt(from));
+    }
+    g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
 
     // 2. Edges: one per import the module uses, then one per module that
     //    declares a type it can see but never names (§6.8). A module's
     //    references to ITSELF add no edge (see the header).
+    //    Both sets a module builds here — the module names its refs use,
+    //    and its dependencies so far — are STAMPS (`i + 1`) in arrays
+    //    indexed by name row and by module, not scans of a list: a module
+    //    importing n modules was n² here (CK-165).
     const packages = g.modules.items(.package);
+    const used_stamp = try scratch.alloc(u32, g.rows.len);
+    @memset(used_stamp, 0);
+    const dep_stamp = try scratch.alloc(u32, g.modules.len);
+    @memset(dep_stamp, 0);
     for (0..g.modules.len) |i| {
         const index: Index = @enumFromInt(i);
+        const stamp: u32 = @intCast(i + 1);
         const start: u32 = @intCast(deps.items.len);
         const file = g.modules.items(.file)[i];
         const bir = artifacts.bir(file);
-        const used = try referencedModules(scratch, bir);
+        g.markReferencedModules(bir, used_stamp, stamp);
         for (bir.imports) |imp| {
             const module_name = bir.symbol(imp.module);
-            if (imp.prelude and std.mem.indexOfScalar(Symbol, used, module_name) == null) continue;
+            // An unused prelude row adds no edge. One whose name no module
+            // has would find no target below either, and says nothing.
+            if (imp.prelude) {
+                const row = g.rowIndex(module_name) orelse continue;
+                if (used_stamp[row] != stamp) continue;
+            }
             const target = g.lookup(packages[i], module_name) orelse {
                 // The prelude names modules the compiler guarantees; a
                 // missing one means core itself is missing or broken, and
@@ -300,7 +363,8 @@ pub fn build(
             // cycle (checker.md §4.3): every operator inside `Basics`
             // produces one.
             if (target == index) continue;
-            if (std.mem.indexOfScalar(Index, deps.items[start..], target) != null) continue;
+            if (dep_stamp[target.int()] == stamp) continue;
+            dep_stamp[target.int()] = stamp;
             try deps.append(gpa, target);
         }
         // The types the checker MINTS for this module
@@ -315,7 +379,8 @@ pub fn build(
             if (minted & (@as(u8, 1) << @intCast(bit)) == 0) continue;
             const target = g.lookup(.core, w.symbol()) orelse continue;
             if (target == index) continue;
-            if (std.mem.indexOfScalar(Index, deps.items[start..], target) != null) continue;
+            if (dep_stamp[target.int()] == stamp) continue;
+            dep_stamp[target.int()] = stamp;
             try deps.append(gpa, target);
         }
         g.modules.items(.deps_start)[i] = start;
@@ -331,26 +396,30 @@ pub fn build(
     return g;
 }
 
-/// The modules a file actually names something from, from its `refs`
-/// table. Deduplicated; the count is the handful of modules one file
-/// mentions, so a linear set beats a hash map here.
+/// Stamp, in `used` (indexed by name row), the module names a file
+/// actually names something from, from its `refs` table. A name no module
+/// has has no row and cannot be an edge, so it is not recorded.
 ///
 /// A type this file WRITES is in here too: a `type_import` or a
 /// `type_qualified` records an `import_type` ref, which is the
 /// `static-dispatch-spike.md` §6.8 edge for every type with a name on it.
 /// `mintedModules` below covers the types that never get one.
-fn referencedModules(scratch: Allocator, bir: *const Bir) Allocator.Error![]const Symbol {
-    var out: std.ArrayList(Symbol) = .empty;
+fn markReferencedModules(g: *const Graph, bir: *const Bir, used: []u32, stamp: u32) void {
     for (bir.refs) |ref| {
         switch (ref.kind) {
             .import_value, .import_ctor, .import_type, .import_schema => {},
             .top_value, .top_ctor, .top_type, .top_schema => continue,
         }
-        const module_name = bir.symbol(@enumFromInt(ref.a));
-        if (std.mem.indexOfScalar(Symbol, out.items, module_name) != null) continue;
-        try out.append(scratch, module_name);
+        const row = g.rowIndex(bir.symbol(@enumFromInt(ref.a))) orelse continue;
+        used[row] = stamp;
     }
-    return out.items;
+}
+
+/// The row of module name `name` in `rows`, or null when no module has it.
+fn rowIndex(g: *const Graph, name: Symbol) ?u32 {
+    const s = @intFromEnum(name);
+    if (s >= g.name_rows.len or g.name_rows[s] == no_row) return null;
+    return g.name_rows[s];
 }
 
 /// Which of `minted_modules` declare a type this file's instructions mint

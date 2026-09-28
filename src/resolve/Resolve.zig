@@ -141,6 +141,7 @@ pub fn run(
         .diagnostics = &diagnostics,
         .available_names = &available_names,
     };
+    defer pass.tables.deinit(gpa);
     for (graph.order) |m| {
         const token = if (profile) |p| p.begin() else null;
         try pass.module(m);
@@ -150,6 +151,73 @@ pub fn run(
     r.available_names = try available_names.toOwnedSlice(gpa);
     return r;
 }
+
+/// Name → first index, for one namespace of one module: sorted by name and
+/// then by index, so the lower bound of a name is its FIRST declaration —
+/// the answer the scan it replaced gave, duplicates included (a duplicate
+/// declaration has been reported by lowering and resolves to the first).
+const NameTable = struct {
+    entries: std.ArrayList(Entry) = .empty,
+
+    const Entry = struct { name: Symbol, index: u32 };
+
+    fn add(t: *NameTable, gpa: Allocator, name: Symbol, index: u32) Allocator.Error!void {
+        try t.entries.append(gpa, .{ .name = name, .index = index });
+    }
+
+    /// Entries are added in increasing `index`, so a stable sort by name
+    /// alone keeps each name's entries in index order.
+    fn seal(t: *NameTable) void {
+        std.sort.pdq(Entry, t.entries.items, {}, struct {
+            fn lessThan(_: void, a: Entry, b: Entry) bool {
+                if (a.name != b.name) return @intFromEnum(a.name) < @intFromEnum(b.name);
+                return a.index < b.index;
+            }
+        }.lessThan);
+    }
+
+    fn first(t: *const NameTable, name: Symbol) ?u32 {
+        const items = t.entries.items;
+        const at = std.sort.partitionPoint(Entry, items, name, struct {
+            fn below(target: Symbol, e: Entry) bool {
+                return @intFromEnum(e.name) < @intFromEnum(target);
+            }
+        }.below);
+        if (at < items.len and items[at].name == name) return items[at].index;
+        return null;
+    }
+};
+
+/// The current module's own names by namespace, and the schemas its
+/// `exposing` lists bring in (CK-164). Every qualified reference asks
+/// whether its root names a schema, and a self-qualified one what it
+/// declares; both were a scan of the module's declarations (or of every
+/// import's `exposing` list) PER REFERENCE — quadratic in a module's size.
+/// Rebuilt per module in O(d log d), the buffers reused.
+const Tables = struct {
+    values: NameTable = .{},
+    types: NameTable = .{},
+    ctors: NameTable = .{},
+    schemas: NameTable = .{},
+    /// `index` of an entry is into `exposed_sources`.
+    exposed_schemas: NameTable = .{},
+    exposed_sources: std.ArrayList(SchemaSource) = .empty,
+
+    fn clear(t: *Tables) void {
+        inline for (.{ &t.values, &t.types, &t.ctors, &t.schemas, &t.exposed_schemas }) |table| table.entries.clearRetainingCapacity();
+        t.exposed_sources.clearRetainingCapacity();
+    }
+
+    fn deinit(t: *Tables, gpa: Allocator) void {
+        inline for (.{ &t.values, &t.types, &t.ctors, &t.schemas, &t.exposed_schemas }) |table| table.entries.deinit(gpa);
+        t.exposed_sources.deinit(gpa);
+    }
+};
+
+const SchemaSource = union(enum) {
+    local: u32,
+    external: struct { module: Graph.Index, schema: Interface.SchemaIndex },
+};
 
 const Pass = struct {
     gpa: Allocator,
@@ -166,6 +234,8 @@ const Pass = struct {
     /// The module being resolved, and the things every helper needs.
     current: Graph.Index = @enumFromInt(0),
     quiet: bool = false,
+    /// The current module's names, looked up per reference (CK-164).
+    tables: Tables = .{},
 
     fn report(p: *Pass, item: Item) Allocator.Error!void {
         if (p.quiet) return;
@@ -177,6 +247,7 @@ const Pass = struct {
         p.quiet = p.graph.isPoisoned(m);
         const file = p.graph.moduleFile(m);
         const bir = p.artifacts.birMut(file);
+        try p.buildTables(m, bir);
         try p.checkExposing(m, bir);
         try p.rewriteReferences(m, bir);
         try p.checkTypeArity(bir);
@@ -402,27 +473,15 @@ const Pass = struct {
 
     fn resolveSelf(p: *Pass, m: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
         const bir = p.artifacts.bir(p.graph.moduleFile(m));
+        // `m` is the module being resolved: a reference resolves against
+        // itself only from inside itself.
+        std.debug.assert(m == p.current);
+        const t = &p.tables;
         switch (namespace) {
-            .value => for (bir.decls, 0..) |d, i| {
-                if (d.kind.isValue() and bir.symbol(d.name) == name) {
-                    return .{ .tag = .top, .lhs = @intCast(i), .rhs = 0 };
-                }
-            },
-            .type => for (bir.decls, 0..) |d, i| {
-                if (!d.kind.isValue() and bir.symbol(d.name) == name) {
-                    return .{ .tag = .type_top, .lhs = @intCast(i), .rhs = 0 };
-                }
-            },
-            .ctor => for (bir.ctors, 0..) |c, i| {
-                if (bir.symbol(c.name) == name) {
-                    return .{ .tag = .ctor, .lhs = @intCast(i), .rhs = 0 };
-                }
-            },
-            .schema => for (bir.decls, 0..) |d, i| {
-                if (d.kind == .schema and bir.symbol(d.name) == name) {
-                    return .{ .tag = .schema_target_top, .lhs = @intCast(i), .rhs = 0 };
-                }
-            },
+            .value => if (t.values.first(name)) |i| return .{ .tag = .top, .lhs = i, .rhs = 0 },
+            .type => if (t.types.first(name)) |i| return .{ .tag = .type_top, .lhs = i, .rhs = 0 },
+            .ctor => if (t.ctors.first(name)) |i| return .{ .tag = .ctor, .lhs = i, .rhs = 0 },
+            .schema => if (t.schemas.first(name)) |i| return .{ .tag = .schema_target_top, .lhs = i, .rhs = 0 },
         }
         if (namespace == .type or namespace == .value or namespace == .ctor) {
             if (p.localSchema(bir, name)) |di| {
@@ -512,11 +571,6 @@ const Pass = struct {
         }
         return ctor;
     }
-
-    const SchemaSource = union(enum) {
-        local: u32,
-        external: struct { module: Graph.Index, schema: Interface.SchemaIndex },
-    };
 
     const SchemaPath = struct {
         source: SchemaSource,
@@ -660,16 +714,39 @@ const Pass = struct {
         };
     }
 
+    /// Two table probes (`Tables`): the module's own schema of that name,
+    /// else the first `exposing` entry that names a schema of its module.
     fn schemaFromRoot(p: *Pass, m: Graph.Index, bir: *const Bir, name: Symbol) ?SchemaSource {
+        std.debug.assert(m == p.current and bir == p.artifacts.bir(p.graph.moduleFile(m)));
         if (p.localSchema(bir, name)) |di| return .{ .local = di };
+        const at = p.tables.exposed_schemas.first(name) orelse return null;
+        return p.tables.exposed_sources.items[at];
+    }
+
+    /// Fill `tables` for module `m`, before any of its references is read.
+    fn buildTables(p: *Pass, m: Graph.Index, bir: *const Bir) Allocator.Error!void {
+        const t = &p.tables;
+        t.clear();
+        for (bir.decls, 0..) |d, i| {
+            const name = bir.symbol(d.name);
+            const index: u32 = @intCast(i);
+            if (d.kind.isValue()) try t.values.add(p.gpa, name, index) else try t.types.add(p.gpa, name, index);
+            if (d.kind == .schema) try t.schemas.add(p.gpa, name, index);
+        }
+        for (bir.ctors, 0..) |c, i| try t.ctors.add(p.gpa, bir.symbol(c.name), @intCast(i));
+        const package = p.graph.module(m).package;
         for (bir.imports) |imp| {
-            for (bir.importExposed(imp)) |e| {
-                if (bir.symbol(e.name) != name) continue;
-                const target = p.graph.lookup(p.graph.module(m).package, bir.symbol(imp.module)) orelse continue;
-                if (p.interfaces[target.int()].findSchema(p.interner, name)) |si| return .{ .external = .{ .module = target, .schema = si } };
+            const exposed = bir.importExposed(imp);
+            if (exposed.len == 0) continue;
+            const target = p.graph.lookup(package, bir.symbol(imp.module)) orelse continue;
+            for (exposed) |e| {
+                const name = bir.symbol(e.name);
+                const si = p.interfaces[target.int()].findSchema(p.interner, name) orelse continue;
+                try t.exposed_schemas.add(p.gpa, name, @intCast(t.exposed_sources.items.len));
+                try t.exposed_sources.append(p.gpa, .{ .external = .{ .module = target, .schema = si } });
             }
         }
-        return null;
+        inline for (.{ &t.values, &t.types, &t.ctors, &t.schemas, &t.exposed_schemas }) |table| table.seal();
     }
 
     fn schemaOrigin(p: *const Pass, m: Graph.Index, source: SchemaSource) Symbol {
@@ -695,9 +772,10 @@ const Pass = struct {
         };
     }
 
-    fn localSchema(_: *Pass, bir: *const Bir, name: Symbol) ?u32 {
-        for (bir.decls, 0..) |d, i| if (d.kind == .schema and bir.symbol(d.name) == name) return @intCast(i);
-        return null;
+    /// The CURRENT module's schema declaration named `name` (`Tables`).
+    fn localSchema(p: *Pass, bir: *const Bir, name: Symbol) ?u32 {
+        std.debug.assert(bir == p.artifacts.bir(p.graph.moduleFile(p.current)));
+        return p.tables.schemas.first(name);
     }
 
     fn resolveOrdinarySchemaFallback(p: *Pass, m: Graph.Index, bir: *const Bir, text: []const u8, namespace: Namespace, token: u32) Allocator.Error!Resolved {

@@ -556,12 +556,19 @@ const Perf = struct {
     /// its own. The event's duration is wall time, of a `--jobs=1` run; each
     /// point the best of 3.
     fn eventRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8, extra: []const []const u8) !Verdict {
+        return s.eventRatioOf(small, large, n, event, extra, small, large);
+    }
+
+    /// `eventRatio` where what is checked (a file or a directory) and the
+    /// file whose event is timed differ (CK-165: a project directory, and
+    /// its `Main`).
+    fn eventRatioOf(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8, extra: []const []const u8, small_file: []const u8, large_file: []const u8) !Verdict {
         var ms: [2]f64 = undefined;
-        for ([_][]const u8{ small, large }, &ms) |file, *slot| {
+        for ([_][]const u8{ small, large }, [_][]const u8{ small_file, large_file }, &ms) |target, file, *slot| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json" });
             try args.appendSlice(s.arena(), extra);
-            try args.append(s.arena(), file);
+            try args.append(s.arena(), target);
             var best: f64 = std.math.inf(f64);
             for (0..3) |_| {
                 const run = try s.timed(args.items, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
@@ -1040,6 +1047,52 @@ test "CK-143-publish: publishing a chain of pub types is linear" {
     try s.w.write("C.beni", try typeChain(s.arena(), 16_000));
     try s.w.write("C2.beni", try typeChain(s.arena(), 32_000));
     try s.finish("CK-143-publish", try s.eventRatio("C.beni", "C2.beni", 16_000, "publish", &.{}));
+}
+
+// CK-164 (R15's audit; promoted from `pending_test.zig` by R15-fix-F): the
+// frontend's `resolve` asked, for EVERY qualified reference, whether its root
+// names a schema — a scan of the module's declarations and of every import's
+// `exposing` list — so a module's resolution was quadratic in its size.
+// `Resolve.Tables` answers from per-module sorted name tables, and
+// `Graph.lookup` is an array load rather than three hash probes (the perf
+// study's item 4). `pub s{i} : List Int -> List Int` / `s{i} xs = List.map
+// xs negate`, the file's `resolve` event. Calibration (ReleaseFast): on
+// 01d0f21, 51.9 / 204.8 ms at 8 000 / 16 000 (ratio 3.9); fixed, 3.5 / 6.5
+// ms. n = 8 000.
+test "CK-164: resolving qualified references is linear in their number" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const template = "pub s{d} : List Int -> List Int\ns{d} xs =\n    List.map xs negate\n\n\n";
+    try s.w.write("Q.beni", try generate(s.arena(), 8_000, template, 2));
+    try s.w.write("Q2.beni", try generate(s.arena(), 16_000, template, 2));
+    try s.finish("CK-164", try s.eventRatio("Q.beni", "Q2.beni", 8_000, "resolve", &.{}));
+}
+
+// CK-165 (R15's audit; promoted from `pending_test.zig` by R15-fix-F):
+// lowering looked a qualified reference's alias up by scanning the import
+// table, and deduplicated a declaration's import edges by scanning the edges
+// it had, so a `Main` importing n modules and naming each was n². Lowering
+// now keeps the imports by alias and by module, and a declaration past 64
+// edges indexes them; the graph's per-module edge sets are stamps. A `Main`
+// importing n one-value modules `M{i}` and listing each `M{i}.v` once;
+// `Main`'s own `lower` event. Calibration (ReleaseFast): on 01d0f21, 24.4 /
+// 121.3 ms at 2 000 / 4 000 modules (ratio 5.0); fixed, 0.8 / 1.5 ms.
+// n = 2 000.
+test "CK-165: lowering a module is linear in its imports and their uses" {
+    var s = try Perf.init();
+    defer s.deinit();
+    for ([_]usize{ 2_000, 4_000 }) |n| {
+        for (0..n) |i| {
+            try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/M{d}.beni", .{ n, i }), try std.fmt.allocPrint(s.arena(), "pub v : Int\nv =\n    {d}\n", .{i}));
+        }
+        var main: std.ArrayList(u8) = .empty;
+        for (0..n) |i| try main.print(s.arena(), "import M{d}\n", .{i});
+        try main.appendSlice(s.arena(), "\n\nall : List Int\nall =\n    [ M0.v\n");
+        for (1..n) |i| try main.print(s.arena(), "    , M{d}.v\n", .{i});
+        try main.appendSlice(s.arena(), "    ]\n");
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Main.beni", .{n}), main.items);
+    }
+    try s.finish("CK-165", try s.eventRatioOf("D2000", "D4000", 2_000, "lower", &.{}, "D2000/Main.beni", "D4000/Main.beni"));
 }
 
 /// `pub type A0 = A0 Int | B0`, then `pub type A{i} = A{i} Int A{i-1} | B{i}`

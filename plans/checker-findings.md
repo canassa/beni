@@ -4327,6 +4327,13 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   wrote is the conservative form).
 - **Fixture** `scenario/CK-163` (fast step), red `stale-files`.
 - **Slice** R15-fix (backend).
+- **Status** fixed by R15-fix-F (2026-09-28), the conservative form: `backend.md` §2, *The output
+  directory holds what the last build wrote* (added by the slice). A build records what it wrote in
+  `--out/_manifest.txt` (path and content hash) and removes what the previous record lists and it
+  did not write — only while its bytes still match, never a path leaving `--out` — and the
+  directories that leaves empty; a refused build touches nothing. Promoted into `build_test.zig`,
+  with a user file that survives, an edited output that survives, a hostile record line, and a
+  refused rebuild.
 
 ### CK-164 — Frontend `resolve` is quadratic in a module's qualified references
 
@@ -4338,6 +4345,14 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** linear.
 - **Fixture** `scenario/CK-164` (`test-pending-perf`, n = 8 000), red `slow` (4.0).
 - **Slice** R15-fix (frontend).
+- **Status** fixed by R15-fix-F (2026-09-28). Every qualified reference asked `schemaFromRoot`,
+  a scan of the module's declarations and every `exposing` list; `resolveSelf` scanned too.
+  `Resolve.Tables` holds the current module's names per namespace and its exposed schemas, sorted,
+  built once per module. With it, the perf study's item 4: `Graph.lookup` is an array indexed by
+  the module-name symbol with the package precedence precomputed (`name_rows`, `rows`), not three
+  hash probes. `resolve` at 8 000 / 16 000: 51.9 / 204.8 ms on 01d0f21, 3.5 / 6.5 ms fixed
+  (ReleaseFast, best of 3); the whole check 99 / 293 → 57 / 104 ms CPU. Promoted into
+  `perf_test.zig`.
 
 ### CK-165 — `lower` is super-linear in a module's imports and their uses
 
@@ -4349,6 +4364,13 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** linear.
 - **Fixture** `scenario/CK-165` (`test-pending-perf`, n = 2 000), red `slow` (4.5).
 - **Slice** R15-fix (frontend).
+- **Status** fixed by R15-fix-F (2026-09-28). Lowering keeps the explicit imports by alias and by
+  module (`import_by_alias`, `import_by_module`) and cuts a qualified token at its dots to probe
+  them, and a declaration past 64 import edges dedupes them through a key set (`import_refs`);
+  `Graph.build`'s per-module edge and prelude-use sets are stamps; resolution is CK-164's.
+  `Main`'s `lower` at 2 000 / 4 000 modules: 24.4 / 121.3 ms on 01d0f21, 0.8 / 1.5 ms fixed
+  (ReleaseFast, best of 3); the whole check 79 / 230 → 51 / 95 ms CPU. Promoted into
+  `perf_test.zig`.
 
 ### CK-166 — The parser's per-declaration budget reports once per offending expression
 
@@ -4362,6 +4384,12 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   endangers no stack) is green too.
 - **Fixture** `scenario/CK-166` (fast step), red `exit=1 codes=nesting_too_deep×907`.
 - **Slice** R15-fix (frontend).
+- **Status** fixed by R15-fix-F (2026-09-28), the accepting form (rule 7). A `let`'s bindings and
+  body and a `case`'s scrutinee and branches are siblings (`Parse.Siblings`): each starts from the
+  parent's depth and the parent keeps the deepest one's charge, so the budget bounds the tree's
+  height and not a sum over siblings. 5 000 and 16 000 bindings check with no diagnostic (01d0f21:
+  907 and 11 907), and 16 000 build and run in both modes; one binding past the budget is still
+  one `nesting_too_deep`. Promoted into `abuse_test.zig`.
 
 ### CK-167 — A flat `case` over 2 000 constructors is CASE TOO BIG TO CHECK
 
@@ -4373,6 +4401,14 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** it checks: one column of distinct constructors is one split, O(n log n) at most.
 - **Fixture** `scenario/CK-167` (fast step), red `exit=1 codes=pattern_budget_exhausted×1`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-F (2026-09-28). A constructor whose arguments are all wildcards
+  (`C x`) is a key of `Flat`'s lookup table, as a nullary one is; and `ColumnIndex` answers the
+  general relation's column-zero questions in one pass — `collect`'s set is a bitset, `split` sorts
+  the rows by head once for "specialise by every alternative", and `Heads` gives each new branch
+  only the rows sharing its head. `C{i} x` over 2 000 / 4 000 / 8 000 constructors checks (Debug,
+  CPU: 0.22 / 0.43 / 1.3 s; 01d0f21 refused all three, in 2.3–3.2 s); a missing constructor, a
+  redundant branch and `C{i} 0 -> … _ ->` (the general path) are answered at that width too. The
+  budget is unchanged. Promoted into `abuse_test.zig`, with those variants.
 
 ### CK-168 — A wrong own-method signature is reported once per use
 
@@ -4665,11 +4701,11 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-160 | latent | K5 | — (structural) | R15-fix |
 | CK-161 | valid-program-rejected | K7 | `run/DotCallCompareDerivedUnannotated.beni` (expects acceptance; rule 7) | R15-fix (owner's decision first) |
 | CK-162 | diagnostic-quality | K13 | `check/bad/NegativeLiteralArgumentHint.beni` | R15-fix |
-| CK-163 | latent | K14 | `scenario/CK-163` | R15-fix (backend) |
-| CK-164 | performance | K14 | `scenario/CK-164` (`test-pending-perf`) | R15-fix (frontend) |
-| CK-165 | performance | K14 | `scenario/CK-165` (`test-pending-perf`) | R15-fix (frontend) |
-| CK-166 | diagnostic-quality | K14 | `scenario/CK-166` | R15-fix (frontend) |
-| CK-167 | valid-program-rejected | K11 | `scenario/CK-167` | R15-fix |
+| CK-163 | latent | K14 | promoted: `build_test.zig` "CK-163" | R15-fix-F (fixed, promoted) |
+| CK-164 | performance | K14 | promoted: `perf_test.zig` "CK-164" (`test-perf`) | R15-fix-F (fixed, promoted) |
+| CK-165 | performance | K14 | promoted: `perf_test.zig` "CK-165" (`test-perf`) | R15-fix-F (fixed, promoted) |
+| CK-166 | diagnostic-quality | K14 | promoted: `abuse_test.zig` "CK-166" | R15-fix-F (fixed, promoted) |
+| CK-167 | valid-program-rejected | K11 | promoted: `abuse_test.zig` "CK-167" | R15-fix-F (fixed, promoted) |
 | CK-168 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureReportedOnce.beni` | R15-fix |
 | CK-169 | compiler-crash-or-hang | K3 | `check/bad/AliasChainNotEquatable.beni`, `run/AliasChainThroughLet.beni` | R15-fix-C (fixed, promoted) |
 | CK-170 | unsound-runtime | K3 | `check/bad/AliasChainKeepsItsType.beni` | R15-fix-C (fixed, promoted) |

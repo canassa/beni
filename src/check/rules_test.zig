@@ -35,6 +35,7 @@ const File = struct { path: []const u8, text: []const u8 };
 const files = [_]File{
     .{ .path = "Category.zig", .text = @embedFile("Category.zig") },
     .{ .path = "Check.zig", .text = @embedFile("Check.zig") },
+    .{ .path = "ColumnIndex.zig", .text = @embedFile("ColumnIndex.zig") },
     .{ .path = "Command.zig", .text = @embedFile("Command.zig") },
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },
     .{ .path = "ContextUnits.zig", .text = @embedFile("ContextUnits.zig") },

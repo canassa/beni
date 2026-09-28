@@ -41,6 +41,7 @@ pub const js = struct {
     pub const Emit = @import("js/Emit.zig");
     pub const Sibling = @import("js/Sibling.zig");
     pub const Manifest = @import("js/Manifest.zig");
+    pub const OutputRecord = @import("js/OutputRecord.zig");
 };
 pub const build = struct {
     pub const Command = @import("build/Command.zig");

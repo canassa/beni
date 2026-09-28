@@ -96,6 +96,7 @@ const Diagnostics = @import("Diagnostics.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
 const PatternStore = @import("PatternStore.zig");
+const ColumnIndex = @import("ColumnIndex.zig");
 const diagnostic = @import("diagnostic");
 
 const Exhaustive = @This();
@@ -427,6 +428,8 @@ fn one(
     // answers are the same answers.
     var flat: Flat = .{ .arena = arena };
     var flat_column = true;
+    // Every admitted row by its head, for `usefulRow` (CK-167).
+    var heads: ColumnIndex.Heads = .{};
     for (branches, 0..) |b, i| {
         // The PATTERN, not the branch: a redundant branch is a statement
         // about what it matches, so the caret belongs under the pattern.
@@ -456,6 +459,7 @@ fn one(
             };
             switch (answer) {
                 .useful => {
+                    try heads.add(arena, &pats, matrix.items.len, p);
                     try matrix.append(arena, row);
                     continue;
                 },
@@ -465,20 +469,22 @@ fn one(
                 .general => flat_column = false,
             }
         }
-        const useful = an.isUseful(matrix.items, row, 0) catch |err| switch (err) {
+        const useful = an.usefulRow(&heads, matrix.items, row) catch |err| switch (err) {
             error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
             error.TooDeep => return reporter.patternBudgetExhausted(case, .depth, max_depth),
             error.Malformed => return, // silent, by the argument above
             else => |e| return e,
         };
         if (!useful) return reporter.redundantPattern(pattern, @intCast(i + 1));
+        try heads.add(arena, &pats, matrix.items.len, p);
         try matrix.append(arena, row);
     }
 
     // A key space with every point taken is exhaustive, and saying so here
-    // is what keeps `isExhaustive`'s own quadratic arm — one
-    // `specializeByCtor` per alternative, over every row — off a `case`
-    // that lists a hundred constructors, or ten thousand pairs of them.
+    // is what keeps `isExhaustive`'s arm that specialises by every
+    // alternative (linear since CK-167's `split`, but still a matrix built
+    // per alternative) off a `case` that lists a hundred constructors, or
+    // ten thousand pairs of them.
     // Every other answer is delegated, witnesses and all, so there is one
     // place that builds a counterexample and it is not this one.
     if (flat_column and flat.exhaustive(&an)) return;
@@ -528,9 +534,11 @@ fn one(
 /// `Box a` matches exactly the values whose contents `a` matches, so the
 /// wrapper can be erased. (`as` is already transparent, `simplify` having
 /// dropped it.) What the walk leaves is a fixed-width row of **cells**, each
-/// of which must be `_`/a variable/a record, a literal, or a **nullary**
-/// constructor of a real choice. Anything else — a constructor with arguments
-/// that is one alternative of several, a column that mixes literals with
+/// of which must be `_`/a variable/a record, a literal, or a constructor of a
+/// real choice that is **nullary or has only wildcard arguments** (`C x`
+/// matches every value `C` builds, so it is one point of its column exactly
+/// as `C` would be — CK-167). Anything else — a constructor with a narrower
+/// argument that is one alternative of several, a column that mixes literals with
 /// constructors (which is `error.Malformed`, and whose silence is the general
 /// path's to keep), a row that unwraps to a different spine than the rows
 /// before it — is `.general`, for that row and every one after it.
@@ -650,10 +658,18 @@ const Flat = struct {
                     }
                     return true;
                 }
-                // One alternative of a real choice. Nullary, or its
-                // arguments are exactly the recursion this path exists to
-                // avoid.
-                if (c.args_len != 0) return false;
+                // One alternative of a real choice. Nullary, or with only
+                // wildcard arguments — `C x`, `C _ _` — it is a key: it
+                // matches exactly the values built by `C`, whatever they
+                // carry, which is the point `rowKey` (the alternative) and
+                // `covered` (a point per alternative) take it for (CK-167:
+                // `C0 x -> … C1999 x ->` went through the general relation,
+                // quadratic, and ran out of budget). A narrower argument is
+                // exactly the recursion this path exists to avoid.
+                for (an.pats.args(c)) |arg| {
+                    try an.spend(1);
+                    if (an.pats.tag(arg) != .anything) return false;
+                }
                 try shape.append(f.arena, 0);
                 try cells.append(f.arena, p);
                 return true;
@@ -1139,10 +1155,11 @@ const Analysis = struct {
                     // adds nothing for the HEADS — but an alternative's
                     // arguments may still be narrower above than here.
                     const u = an.pats.unionAt(un);
+                    const by_alt = try an.split(matrix, un);
                     var alt = u.alts_start;
                     while (alt < u.alts_end) : (alt += 1) {
                         const arity = an.pats.alt(alt).arity;
-                        const sub = try an.specializeByCtor(matrix, alt, arity);
+                        const sub = try an.specializeMerged(matrix, by_alt.headed(alt), by_alt.wild, arity);
                         const v = try an.concat(try an.anythings(arity), rest);
                         if (try an.isUseful(sub, v, depth + 1)) return true;
                     }
@@ -1200,10 +1217,11 @@ const Analysis = struct {
 
         // Every alternative appears: recurse into each one's arguments.
         var out: std.ArrayList([]const PatIndex) = .empty;
+        const by_alt = try an.split(matrix, seen.un);
         var alt = u.alts_start;
         while (alt < u.alts_end) : (alt += 1) {
             const arity = an.pats.alt(alt).arity;
-            const sub = try an.specializeByCtor(matrix, alt, arity);
+            const sub = try an.specializeMerged(matrix, by_alt.headed(alt), by_alt.wild, arity);
             const rows = try an.isExhaustive(sub, arity + n - 1, depth + 1);
             for (rows) |row| {
                 if (row.len < arity) return error.Malformed;
@@ -1215,32 +1233,51 @@ const Analysis = struct {
         return out.items;
     }
 
-    /// The alternatives appearing in column zero. Every one of them belongs
-    /// to the same union — the declaration type-checked — and a matrix that
-    /// says otherwise is abandoned rather than trusted.
-    const Seen = struct {
-        un: u32,
-        count: u32,
-        /// Absolute alternative indices, `count` of them.
-        alts: []const u32,
-
-        fn has(s: Seen, alt: u32) bool {
-            return std.mem.indexOfScalar(u32, s.alts, alt) != null;
+    /// `specializeByCtor(matrix, alt, arity)` when the caller already knows
+    /// which rows it keeps (`ColumnIndex`): `headed`, the rows headed by
+    /// `alt`, and `wild`, those headed by a wildcard, both ascending. Built
+    /// in matrix order, so the result is the same matrix.
+    fn specializeMerged(an: *Analysis, matrix: []const []const PatIndex, headed: []const u32, wild: []const u32, arity: u32) Fail![]const []const PatIndex {
+        try an.spend(headed.len + wild.len + 1);
+        const out = try an.arena.alloc([]const PatIndex, headed.len + wild.len);
+        var h: usize = 0;
+        var w: usize = 0;
+        for (out) |*slot| {
+            if (w == wild.len or (h < headed.len and headed[h] < wild[w])) {
+                const row = matrix[headed[h]];
+                slot.* = try an.concat(an.pats.args(an.pats.ctor(row[0])), row[1..]);
+                h += 1;
+            } else {
+                const row = matrix[wild[w]];
+                slot.* = try an.concat(try an.anythings(arity), row[1..]);
+                w += 1;
+            }
         }
-    };
+        return out;
+    }
 
-    fn collect(an: *Analysis, matrix: []const []const PatIndex) Fail!Seen {
-        var alts: std.ArrayList(u32) = .empty;
-        var un: u32 = 0;
-        for (matrix) |row| {
-            if (row.len == 0) return error.Malformed;
-            if (an.pats.tag(row[0]) != .ctor) continue;
+    /// `isUseful(matrix, row, 0)`, through `heads` when it can answer: the
+    /// ctor arm's first specialisation reads only the rows `heads` names.
+    fn usefulRow(an: *Analysis, heads: *const ColumnIndex.Heads, matrix: []const []const PatIndex, row: []const PatIndex) Fail!bool {
+        if (row.len != 0 and an.pats.tag(row[0]) == .ctor) {
             const c = an.pats.ctor(row[0]);
-            if (alts.items.len != 0 and c.un != un) return error.Malformed;
-            un = c.un;
-            if (std.mem.indexOfScalar(u32, alts.items, c.alt) == null) try alts.append(an.arena, c.alt);
+            if (heads.headedBy(c)) |headed| {
+                // `isUseful`'s own charge at depth 0, sized by what it reads.
+                try an.spend(headed.len + heads.wild.items.len + 1);
+                const sub = try an.specializeMerged(matrix, headed, heads.wild.items, c.args_len);
+                return an.isUseful(sub, try an.concat(an.pats.args(c), row[1..]), 1);
+            }
         }
-        return .{ .un = un, .count = @intCast(alts.items.len), .alts = alts.items };
+        return an.isUseful(matrix, row, 0);
+    }
+
+    fn collect(an: *Analysis, matrix: []const []const PatIndex) Fail!ColumnIndex.Seen {
+        return ColumnIndex.collect(an.arena, an.pats, matrix);
+    }
+
+    fn split(an: *Analysis, matrix: []const []const PatIndex, un: u32) Fail!ColumnIndex.Split {
+        try an.spend(matrix.len + 1);
+        return ColumnIndex.split(an.arena, an.pats, matrix, un);
     }
 
     /// The union of column zero when every one of its alternatives appears,

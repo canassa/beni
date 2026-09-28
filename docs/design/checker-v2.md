@@ -4417,6 +4417,10 @@ events), `Groups` 565, `Instances` 648: 15 905 lines in all (after the review ro
 themselves live in the shared `TypeStore`). `Contexts`
 is 1 574, past §19.1's ~1 500 since R8b's rounds; R8c did not touch it.
 
+*As built by R15-fix-F (2026-09-28):* one new file, **`ColumnIndex`** (column zero of a pattern
+matrix by the alternative heading each row: `collect`'s bitset, `split`'s counting sort, and the
+per-branch `Heads` index — CK-167), which keeps `Exhaustive` under the cap (1 490).
+
 ---
 
 ## 20. External contracts

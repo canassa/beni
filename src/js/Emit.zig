@@ -86,6 +86,7 @@ const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
 const Manifest = @import("Manifest.zig");
+const OutputRecord = @import("OutputRecord.zig");
 const prelude = @import("../bir/prelude.zig");
 
 const Emit = @This();
@@ -1687,7 +1688,37 @@ const Emitter = struct {
     /// Write everything, in the order it was produced. The first failure
     /// stops the build; a half-written `out/` is the price of a disk that
     /// filled up, not of a diagnostic.
+    ///
+    /// Around the writes, §2's *The output directory holds what the last
+    /// build wrote*: the record of the previous build is read, rewritten as
+    /// the union of both builds (so a build killed halfway still lists
+    /// everything either may have written), the outputs are written, what
+    /// only the previous build wrote is removed, and the record is rewritten
+    /// with this build's files alone (CK-163).
     fn flush(e: *Emitter) Error!void {
+        const io = e.session.io;
+        const out_dir = e.options.out_dir;
+        const old = try OutputRecord.read(e.scratch, io, out_dir);
+        const new = try e.scratch.alloc(OutputRecord.Entry, e.pending.items.len);
+        for (e.pending.items, new) |output, *entry| entry.* = .{ .hash = OutputRecord.hash(output.bytes), .path = output.path };
+        const both = try std.mem.concat(e.scratch, OutputRecord.Entry, &.{ old, new });
+        try e.writeRecord(both);
+        try e.writeOutputs();
+        _ = try OutputRecord.removeStale(e.scratch, io, out_dir, old, new);
+        try e.writeRecord(new);
+    }
+
+    fn writeRecord(e: *Emitter, entries: []const OutputRecord.Entry) Error!void {
+        OutputRecord.write(e.scratch, e.session.io, e.options.out_dir, entries) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                e.io_failure.* = .{ .path = e.options.out_dir, .err = err };
+                return error.OutputPath;
+            },
+        };
+    }
+
+    fn writeOutputs(e: *Emitter) Error!void {
         for (e.pending.items) |output| {
             const path = std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, output.path }) catch
                 return error.OutOfMemory;

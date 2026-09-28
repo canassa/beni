@@ -2003,3 +2003,146 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
         }, r.diagnostics[0]);
     }
 }
+
+test "a long flat let is accepted, builds and runs: its bindings are siblings, not nesting (CK-166)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `scenario/CK-166`, promoted by R15-fix-F. At 01d0f21 a `let` of 5 000
+    // bindings `x{i} = x{i-1} + 1` got 907 NESTING TOO DEEP messages (16 000
+    // bindings: 11 907), each "nested more than 4096 levels deep" about a
+    // block two deep: the parser's per-declaration budget summed the chain
+    // links of every binding. A `let`'s bindings and body, and a `case`'s
+    // branches, are siblings (`Parse.Siblings`) and charge the deepest of
+    // them. 16 000 bindings, so a budget summed over them would be spent four
+    // times over; and it must reach node, through every consumer.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    try src.appendSlice(gpa, "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (foo 0) ]\n\n\n");
+    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n");
+    for (1..16_001) |i| try src.print(gpa, "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
+    try src.appendSlice(gpa, "    in\n    x16000\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(checked, 0);
+    try testing.expectEqualSlices(diagnostic.Diagnostic, &.{}, checked.diagnostics);
+    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("16000\n", r.program.?.stdout);
+        try testing.expectEqualStrings("", r.program.?.stderr);
+    }
+}
+
+test "a flat let past the budget in ONE binding is still one nesting_too_deep (CK-166)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The other half of CK-166: siblings do not reset what a single binding
+    // spends. One binding of 5 000 `+` links is past `Parse.max_depth` and
+    // is refused once, exactly as a top-level body would be.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n        a =\n            1\n\n        b =\n            x0");
+    for (0..5_000) |_| try src.appendSlice(gpa, " + 1");
+    try src.appendSlice(gpa, "\n    in\n    b\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--no-cache", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 1);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
+}
+
+test "a case over every constructor of a 2 000-constructor type checks, and the other answers are linear too (CK-167)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `scenario/CK-167`, promoted by R15-fix-F. At 01d0f21 `C{i} x -> x` for
+    // every constructor of `type T = C0 Int | … | C1999 Int` was CASE TOO BIG
+    // TO CHECK: a constructor with arguments was not a key of the lookup
+    // table, and the general relation specialised the whole matrix per
+    // branch and per alternative, n² against a budget sized for exponential
+    // matrices. `C x` with wildcard arguments is now a key, and
+    // `ColumnIndex` answers "which rows share this head" in one pass. The
+    // same width must also answer a MISSING constructor, a REDUNDANT branch
+    // and branches the table cannot take (`C{i} 0`) — each of those went
+    // through the relation at 01d0f21 and ran out of budget too.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    const n = 2_000;
+    const Variant = enum { every, missing_last, redundant, literals_then_default };
+    for ([_]Variant{ .every, .missing_last, .redundant, .literals_then_default }) |variant| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(gpa);
+        try src.appendSlice(gpa, "type T\n    = C0 Int\n");
+        for (1..n) |i| try src.print(gpa, "    | C{d} Int\n", .{i});
+        try src.appendSlice(gpa, "\n\nf : T -> Int\nf t =\n    case t of\n");
+        const listed: usize = if (variant == .missing_last) n - 1 else n;
+        for (0..listed) |i| switch (variant) {
+            .literals_then_default => try src.print(gpa, "        C{d} 0 ->\n            0\n\n", .{i}),
+            else => try src.print(gpa, "        C{d} x ->\n            x\n\n", .{i}),
+        };
+        switch (variant) {
+            .redundant => try src.appendSlice(gpa, "        C7 y ->\n            y\n"),
+            .literals_then_default => try src.appendSlice(gpa, "        _ ->\n            1\n"),
+            .every, .missing_last => {},
+        }
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.runWith(&.{ "check", "--no-cache", "--jobs=1", "Main.beni" }, .{ .timeout_ms = 20_000 });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        const case_line = n + 6;
+        switch (variant) {
+            .every, .literals_then_default => {
+                try expectExited(r, 0);
+                try testing.expectEqualSlices(diagnostic.Diagnostic, &.{}, r.diagnostics);
+            },
+            .missing_last => {
+                try expectExited(r, 1);
+                try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+                const d = r.diagnostics[0];
+                try testing.expectEqual(diagnostic.Code.missing_patterns, d.code);
+                try testing.expectEqual(@as(u32, case_line), d.span.start.line);
+                try testing.expect(std.mem.indexOf(u8, d.message, "\n    C1999 _\n") != null);
+            },
+            .redundant => {
+                try expectExited(r, 1);
+                try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+                const d = r.diagnostics[0];
+                try testing.expectEqual(diagnostic.Code.redundant_pattern, d.code);
+                try testing.expectEqual(@as(u32, case_line + 1 + 3 * n), d.span.start.line);
+                try testing.expect(std.mem.startsWith(u8, d.message, "The 2001st pattern is redundant:"));
+            },
+        }
+    }
+}
