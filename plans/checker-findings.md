@@ -4169,6 +4169,15 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** only the `rigid_mismatch`.
 - **Fixture** `check/bad/InterpolationAfterRigidEscape.beni`, red `why=code`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-E (2026-09-28), `checker-v2.md` §8.3 *amended by R15-fix-E*: the
+  cause was not F6's equatable row but the order of two decisions. Binding the outer `x` to `g`'s
+  rigid readied the `${x}` row, which was decided at once against the rigid (AMBIGUOUS) before
+  `g`'s boundary reported the escape. A `${…}` whose value is a non-`number` rigid not yet
+  generalised is now held on the rigid (`Decide.interpolatable`): step 7 reports it at the
+  rigid's own boundary, or step 6 finds the rigid escaped, reports that, and poisons it, which
+  settles the row in silence (`Solve.poison` now settles a rigid's rows). Step 6 also poisons
+  EVERY escaped rigid of the binding, the message still once. Promoted to
+  `tests/corpus/check/bad/`.
 
 ### CK-155 — `Instances.plainImported`/`readPlain` map argument i to quantifier i by position
 
@@ -4224,6 +4233,21 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   refusal, the fallback is a message naming `H.eq`, and the fixture becomes a `check/bad`.
 - **Fixture** `run/DerivedOverSpecialisedEq/`, red `dev: exit=1 codes=not_equatable×1`.
 - **Slice** R15-fix (the owner's decision first).
+- **Status** fixed by R15-fix-E (2026-09-28), `checker-v2.md` §11.2 and §14.2 *amended by
+  R15-fix-E*. Checked against D1–D14 first: no decision refuses it, and D10's promise
+  ("comparable exactly when everything it can hold is") takes rule 7's side — `W Int` holds a
+  `Holder Int` and an `Int`, both comparable; the refusal was R8's as-built rule ("a marker a
+  specialised instance bound is `absent`"), not an owner's. A marker bound to a GROUND type by
+  a payload's specialised method is now a PIN of the context (`Contexts.Pin`): no entry, no
+  evidence parameter (D4 unchanged), its type an element of the answer's template; the derived
+  body is the pass's own (`H.eq` at the position, `===` at the pinned `Int`). A use unifies each
+  pinned argument with its type first; a mismatch is NOT EQUATABLE (or NO METHODS for
+  `compare`) writing the type as it derives (`W Int`) and, locally, the specialised method.
+  Publication writes the pinned parameter as its type in the row's scheme, so an importer's
+  unification of the parameters is the check and the record's format is unchanged. The
+  `Generic String` case of `check/bad/SpecializedEqWrongReceiver` gains that text. Promoted
+  to `tests/corpus/run/`, with `run/DerivedPinnedAcrossModules/` and
+  `check/bad/DerivedPinnedRefused/` new.
 
 ### CK-160 — `Unit.newWanted` uses `.undetermined`, a real answer, as its placeholder
 
@@ -4253,6 +4277,24 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `run/DotCallCompareDerivedUnannotated.beni` (expects ACCEPTANCE), red `dev: exit=1
   codes=unknown_method×1`.
 - **Slice** R15-fix (the owner's decision first).
+- **Status** OPEN for the owner; the message is fixed by R15-fix-E (2026-09-28). Acceptance
+  contradicts an owner-adopted rule: `static-dispatch-spike.md` §1.3 rule 2 and A.56 ("a
+  hand-written `x.eq y` stays `unknown_method` … *Alternative:* let a `dot_call` derive too,
+  which is §1.3 rule 2 reversed"), adopted with static dispatch on 2026-09-18 and restated by
+  `checker-v2.md` §9.3 step 5; `before`'s promoted requirement keeps its dot-call's kind, so the
+  rule reaches it through the call. Behaviour is unchanged. The UNKNOWN METHOD for a dot-call
+  `x.eq`/`x.compare` now says that a derived method is reached only by an operator or a `where`
+  clause, and the hint writes the fix: `x < y` there, or an annotation with `where a.compare :
+  a, a -> Order` (naming `before` when the refusal comes through it). The fixture moved to
+  `tests/corpus/check/bad/DotCallCompareDerivedUnannotated.beni` with that `.diag`. **The
+  owner's decision:** may a dot-call of `eq`/`compare` reach a derived method — (a) keep §1.3
+  rule 2 (today); (b) let a dot-call derive whenever the type has no own method of the name,
+  directly and through promotion (A.56's rejected alternative); (c) as (b), but only through a
+  promoted requirement, so `(Red).compare Blue` stays refused while `before Red Blue` builds.
+  Recommendation: **(b)** — rule 2 guards no guarantee (the derived `compare` is the one `<`
+  already calls, so no answer can be silently different), `x.compare y` is the natural
+  spelling of an `Order`-returning comparison, and (c) would make an annotation change what a
+  program means. If (b) is taken, the fixture returns to `run/` expecting `T`.
 
 ### CK-162 — `f -1` has no hint that it is `f - 1`
 
@@ -4264,6 +4306,13 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** the same mismatch, hinting `dec (-1)` (Elm has this hint).
 - **Fixture** `check/bad/NegativeLiteralArgumentHint.beni` (`contains "(-1)"`), red `why=message`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-E (2026-09-28): a function where a number is wanted, as the left
+  operand of a binary `-` whose right is a number literal and whose left is a named value,
+  hints "`dec -1` is a subtraction, `dec - 1`. To pass a negative number as an argument, put it
+  in parentheses: `dec (-1)`" (`DispatchTexts.negativeArgumentHint`). The checker sees no
+  whitespace, so the hint is also given for `dec - 1`, where the sentence is still true; telling
+  the two apart needs a lowering bit (frontend, not worth a BIR change). Promoted to
+  `tests/corpus/check/bad/`.
 
 ### CK-163 — `build --out` leaves an earlier build's files behind
 
@@ -4336,6 +4385,17 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   leaves the position open).
 - **Fixture** `check/bad/OwnMethodSignatureReportedOnce.beni`, red `why=count`.
 - **Slice** R15-fix.
+- **Status** fixed by R15-fix-E (2026-09-28), `checker-v2.md` §9.3 *amended by R15-fix-E*: an
+  OWN method met by a use that asks the well-known `T …, T … -> Bool|Order`, whose type fits no
+  use of `T` (two parameters, each a variable or an application of `T`, the result a variable or
+  `Bool`/`Order`), is reported once per (method, type), at the method's declaration, against the
+  use-independent `T a…, T a… -> Bool|Order` (`Instances.signatureOnce`): the text and position
+  are the same in every declaration order (I9). Every other use is rejected with it and
+  attributed the failure. A specialised method (`Holder Int, …` used at `Holder String`) still
+  fails at the use, where the use is the mistake; so does another module's method (its
+  declaration is not in this file). The module-rule clash moves to the declaration too
+  (`check/bad/ModuleRuleClash`, `MethodSignatureNoClash` re-blessed). Promoted to
+  `tests/corpus/check/bad/`.
 
 ### CK-169 — An alias chain past 1 024 links is a silent `<error>`
 

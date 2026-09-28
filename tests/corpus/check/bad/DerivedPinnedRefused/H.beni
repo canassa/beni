@@ -1,0 +1,16 @@
+-- CK-159's refusing half (R15-fix-E): `H.eq` is specialised to `Holder Int`,
+-- so a type that holds a `Holder a` derives `==` only at `a = Int` — its
+-- context PINS the parameter (checker-v2.md §11.2 *as amended by
+-- R15-fix-E*). At any other argument it is NOT EQUATABLE, and the message
+-- writes the type as it derives: through an imported row (`M.W`, whose
+-- published scheme carries the pin, so it cannot name `H.eq`), a local type
+-- (`Y`, which names it), a pin inherited through another local type (`Z`),
+-- a rigid argument, and inside a list. The accepting half is
+-- `run/DerivedPinnedAcrossModules` and `run/DerivedOverSpecialisedEq`.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder x) (Holder y) =
+    modBy x 10 == modBy y 10

@@ -431,6 +431,76 @@ pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method:
     try r.emit(.{ .code = if (is_eq) .not_equatable else .no_methods_on_shape, .module = r.module, .region = region, .message = message });
 }
 
+/// The specialised method that pins a derived type's argument (CK-159).
+pub const PinCulprit = struct { type_id: Types.TypeId, method: Symbol };
+
+/// `==` (or `compare`) refused because the derived answer's type PINS an
+/// argument (checker-v2.md §11.2 *as amended by R15-fix-E*, CK-159): a
+/// payload's method is specialised (`H.eq : Holder Int, …`), so the type
+/// derives only at that argument. `shown` is the value the author compared,
+/// `pinned` the type as it derives, `culprit` the method when known.
+pub fn pinnedDerived(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, pinned: Var, culprit: ?PinCulprit) Error!void {
+    const env = r.env;
+    const interner = env.interner;
+    const is_eq = method == InternPool.WellKnown.eq.symbol();
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const op = if (is_eq) "`==`" else "`compare`";
+    if (is_eq) {
+        w.writeAll("I cannot compare these values with `==`:\n\n    ") catch return error.OutOfMemory;
+    } else {
+        w.print("This type has no `{s}`:\n\n    ", .{interner.slice(method)}) catch return error.OutOfMemory;
+    }
+    Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    const owner: []const u8 = switch (env.store.resolvedContent(pinned)) {
+        .structure => |flat| switch (flat) {
+            .app => |a| interner.slice(env.types.entry(a.type).name),
+            else => "it",
+        },
+        else => "it",
+    };
+    if (culprit) |c| {
+        const entry = env.types.entry(c.type_id);
+        const type_text = interner.slice(entry.name);
+        const module_text = interner.slice(env.graph.moduleName(entry.module));
+        const need_text = interner.slice(c.method);
+        w.print(
+            \\
+            \\
+            \\`{s}` gets its {s} from what it holds, and it holds {s} `{s}`, whose
+            \\`{s}` is `{s}.{s}`, for one type of `{s}` only. So `{s}` has {s} only as:
+            \\
+            \\
+        , .{ owner, op, Diagnostics.article(type_text), type_text, need_text, module_text, need_text, type_text, owner, op }) catch return error.OutOfMemory;
+        w.writeAll("    ") catch return error.OutOfMemory;
+        Render.writeVar(w, renderContext(r), &namer, pinned, .top) catch return error.OutOfMemory;
+        w.print(
+            \\
+            \\
+            \\Hint: use it at that type, or give `{s}.{s}` a type that works for every
+            \\`{s}`.
+            \\
+        , .{ module_text, need_text, type_text }) catch return error.OutOfMemory;
+    } else {
+        w.print(
+            \\
+            \\
+            \\`{s}` gets its {s} from what it holds, and one of those has {s} only at
+            \\one type. So `{s}` has {s} only as:
+            \\
+            \\
+        , .{ owner, op, op, owner, op }) catch return error.OutOfMemory;
+        w.writeAll("    ") catch return error.OutOfMemory;
+        Render.writeVar(w, renderContext(r), &namer, pinned, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nHint: use it at that type, or compare the values another way.\n") catch return error.OutOfMemory;
+    }
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = if (is_eq) .not_equatable else .no_methods_on_shape, .module = r.module, .region = region, .message = message });
+}
+
 const clash_hint =
     \\Hint: this is the module-rule clash of
     \\`docs/design/static-dispatch-spike.md` §11. Move one of the types into a

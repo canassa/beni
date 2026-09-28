@@ -279,6 +279,7 @@ pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
     const st = s.store();
     s.report.at(a.decl);
     const rigids = s.tree.vars(a.rigids_start, a.rigids_len);
+    var reported = false;
     for (rigids, 0..) |r, i| {
         const root = st.find(r);
         switch (st.content(root)) {
@@ -294,15 +295,19 @@ pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
         // A top-level rigid has nothing to escape into (§8.3): a failure is
         // the compiler's.
         if (top) return s.report.internal(a.annotation, "a top-level annotation's type variable was not generalised (checker-v2.md §8.3, invariant I1)");
-        const region = try captureOf(s, root) orelse a.annotation;
-        const enclosing = s.cx.bir.symbol(s.cx.bir.decls[a.decl].name);
-        try Messages.escape(s.report, region, a.name, enclosing, a.scheme, root);
-        // The scheme, so callers are not held to the false promise, and the
-        // rigid itself, so what the body tied it to (a lambda parameter, say)
-        // adds no second message about `a` outside `g` (F5).
-        try s.poison(a.scheme);
+        // Every escaped rigid is poisoned, the message said once: a second
+        // one kept rigid would report what rides on it (CK-154).
+        if (!reported) {
+            reported = true;
+            const region = try captureOf(s, root) orelse a.annotation;
+            const enclosing = s.cx.bir.symbol(s.cx.bir.decls[a.decl].name);
+            try Messages.escape(s.report, region, a.name, enclosing, a.scheme, root);
+            // The scheme, so callers are not held to the false promise, and the
+            // rigid itself, so what the body tied it to (a lambda parameter, say)
+            // adds no second message about `a` outside `g` (F5).
+            try s.poison(a.scheme);
+        }
         try s.poison(root);
-        return;
     }
 }
 

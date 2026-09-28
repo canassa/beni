@@ -106,6 +106,9 @@ pub const State = struct {
     /// shape or null (`Instances.plainImported`, CK-131): read off the
     /// interface once, keyed by every input of the verdict (CK-137).
     plain: std.AutoHashMapUnmanaged(Instances.PlainKey, ?Instances.Plain) = .empty,
+    /// The own well-known methods said once at their declaration, per type
+    /// (`Instances.signatureOnce`, CK-168).
+    signatures: std.AutoHashMapUnmanaged(Instances.SignatureKey, void) = .empty,
     /// Steps in the current top-level group.
     steps: u32 = 0,
     /// What promotion kept, per unannotated declaration: a range of
@@ -128,6 +131,7 @@ pub const State = struct {
         r.derivable_open.deinit(gpa);
         r.missing.deinit(gpa);
         r.plain.deinit(gpa);
+        r.signatures.deinit(gpa);
         r.requirement_rows.deinit(gpa);
         r.requirement_roots.deinit(gpa);
     }

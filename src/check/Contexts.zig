@@ -20,8 +20,9 @@
 //! position with the ordinary resolver (§9.3 in full), drains, and reads the
 //! answer off what is left: every wanted still OPEN on marker `i` is the
 //! entry `(i, its method, its type)` (Rule U1 keeps one per name); a failed
-//! position is `absent`; a marker that became anything but a distinct plain
-//! flex (a specialised instance bound it) is `absent` too. A worklist
+//! position is `absent`; a marker a specialised instance bound to a ground
+//! type is a PIN (CK-159: the type derives only at that argument), and one
+//! that became anything else but a distinct plain flex is `absent`. A worklist
 //! re-runs exactly the passes that read an entry that grew; entries only
 //! move up the lattice `present(∅) ⊂ present(more) ⊂ absent`, so it ends.
 //!
@@ -111,15 +112,27 @@ pub const Status = enum(u8) {
 pub const Entry = struct { param: u16, method: Symbol, slot: u32 = none };
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
 
+/// A PIN (§11.2 *as amended by R15-fix-E*, CK-159): a payload's specialised
+/// method (`H.eq : Holder Int, Holder Int -> Bool`) bound marker `param` to
+/// the ground type at element `slot` of the answer's `template`. The type
+/// derives only where `args[param]` is that type: a use unifies the two, and
+/// no evidence rides on a pin, so it is no entry and no row parameter (D4).
+pub const Pin = struct { param: u16, slot: u32 };
+
 pub const Answer = struct {
     status: Status,
     /// `present`: a run of `entries`, sorted by `(param, method text)`.
     entries: Range = .{},
+    /// `present`: a run of `pins`, by param.
+    pins: Range = .{},
     /// `needs_annotation`: the in-flight method's declaration;
     /// `absent_private`: the `TypeId` whose module holds the private method;
-    /// `absent_requirement`: the `TypeId` whose method failed.
+    /// `absent_requirement`: the `TypeId` whose method failed; `present`
+    /// with pins: the `TypeId` whose specialised method made the first pin,
+    /// when the pass could tell (else `none`).
     culprit: u32 = none,
-    /// `absent_private`, `absent_requirement`: the method's name.
+    /// `absent_private`, `absent_requirement`, a pin's culprit: the method's
+    /// name.
     method: Symbol = undefined,
     /// `present`: one frozen tuple of the method types of every entry whose
     /// method is not `eq` or `compare`, over the type's template parameters
@@ -204,6 +217,7 @@ seen_list: std.ArrayList(u32) = .empty,
 /// Per local type × method, the last computed answer.
 answers: []Answer = &.{},
 entries: std.ArrayList(Entry) = .empty,
+pins: std.ArrayList(Pin) = .empty,
 replays: std.ArrayList(Replay) = .empty,
 /// Per local type, its template parameters (a run of `param_vars`), made
 /// when first needed.
@@ -460,6 +474,10 @@ pub fn derives(c: *const Contexts, t: u32) bool {
 
 pub fn entriesOf(c: *const Contexts, a: Answer) []const Entry {
     return c.entries.items[a.entries.start..][0..a.entries.len];
+}
+
+pub fn pinsOf(c: *const Contexts, a: Answer) []const Pin {
+    return c.pins.items[a.pins.start..][0..a.pins.len];
 }
 
 /// Local type `t`'s template parameters, made once: generalised flexes, one
@@ -931,15 +949,30 @@ fn climbs(c: *const Contexts, old: Answer, new: Answer) bool {
     }
     if (new.status != .present) return new.status != .own_method and new.status != .foreign;
     // Both sorted by `(param, method text)`: one merge walk.
+    // A pin is a constraint on its parameter at least as strong as any
+    // entry on it (CK-159): an old entry may give way to a new pin, and an
+    // old pin stays.
+    const new_pins = c.pinsOf(new);
+    for (c.pinsOf(old)) |p| {
+        if (!hasPin(new_pins, p.param)) return false;
+    }
     const had = c.entriesOf(old);
     const has = c.entriesOf(new);
     var j: usize = 0;
     for (had) |e| {
+        if (hasPin(new_pins, e.param)) continue;
         while (j < has.len and entryLessThan(c.cx.interner, has[j], e)) j += 1;
         if (j == has.len or has[j].param != e.param or has[j].method != e.method) return false;
         j += 1;
     }
     return true;
+}
+
+fn hasPin(pins: []const Pin, param: u16) bool {
+    for (pins) |p| {
+        if (p.param == param) return true;
+    }
+    return false;
 }
 
 /// Passes one run may make before it is `internal` (S3 of R8b's review): a
@@ -953,6 +986,12 @@ fn same(c: *const Contexts, a: Answer, b: Answer) bool {
     if (x.len != y.len) return false;
     for (x, y) |p, q| {
         if (p.param != q.param or p.method != q.method) return false;
+    }
+    const u = c.pinsOf(a);
+    const v = c.pinsOf(b);
+    if (u.len != v.len) return false;
+    for (u, v) |p, q| {
+        if (p.param != q.param) return false;
     }
     return true;
 }
@@ -1128,7 +1167,8 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
 
 /// What a pass's positions say (§11.2): `needs_annotation` when a parametric
 /// in-flight method was met; `absent` when a position failed, a marker
-/// stopped being a distinct plain flex, or a wanted of the pass is left open
+/// stopped being a distinct plain flex or a pin (bound to a ground type:
+/// `pins`, CK-159), or a wanted of the pass is left open
 /// on anything but a marker; else `present`, one entry per wanted open on a
 /// marker, sorted by `(param, method text)`, each of another method than
 /// `eq` or `compare` with its type frozen over the template parameters.
@@ -1148,16 +1188,28 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     for (ids) |wid| {
         if (s.evidence.get(wid).state.rejected()) return failed;
     }
-    // Every marker a distinct plain flex, found in linear time: each root is
-    // stamped `seen` (R8a's reviews: a type of tens of thousands of
-    // parameters).
-    const seen = st.nextMark();
-    for (markers) |m| {
+    // Every marker a distinct plain flex or a PIN — bound to a ground type,
+    // by a payload's specialised method (CK-159) — found in linear time: each
+    // flex root is stamped `seen` (R8a's reviews: a type of tens of
+    // thousands of parameters). The ground walks come first, as they stamp
+    // with marks of their own.
+    var pinned = try std.DynamicBitSetUnmanaged.initEmpty(scratch, markers.len);
+    defer pinned.deinit(scratch);
+    for (markers, 0..) |m, i| {
         const root = st.find(m);
         switch (st.content(root)) {
             .flex => |flags| if (flags.kind != .any) return failed,
+            .structure => {
+                if (!try c.ground(s, root)) return failed;
+                pinned.set(i);
+            },
             else => return failed,
         }
+    }
+    const seen = st.nextMark();
+    for (markers, 0..) |m, i| {
+        if (pinned.isSet(i)) continue;
+        const root = st.find(m);
         if (st.mark(root) == seen) return failed;
         st.setMark(root, seen);
     }
@@ -1177,6 +1229,7 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     var method_types: std.ArrayList(Var) = .empty;
     defer method_types.deinit(scratch);
     for (markers, 0..) |m, i| {
+        if (pinned.isSet(i)) continue;
         const flags = st.flagsOf(st.find(m));
         const set = Walk.constraints(flags);
         const n = set.count(st);
@@ -1205,17 +1258,105 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
             try c.entries.append(scratch, .{ .param = @intCast(i), .method = InternPool.WellKnown.eq.symbol() });
         }
     }
-    // One frozen tuple for every method type the entries need, over the
-    // template parameters, frozen once (not once per entry).
+    // A pin's type rides in the template beside the method types, and its
+    // culprit is the specialised method the pass matched (for the use's
+    // message): the first pin's, by param.
+    const pins_first: u32 = @intCast(c.pins.items.len);
+    var culprit: u32 = none;
+    var culprit_method: Symbol = undefined;
+    for (markers, 0..) |m, i| {
+        if (!pinned.isSet(i)) continue;
+        try c.pins.append(scratch, .{ .param = @intCast(i), .slot = @intCast(method_types.items.len) });
+        try method_types.append(scratch, m);
+        if (culprit == none) {
+            if (pinCulprit(s, st.find(m), wanted_start)) |p| {
+                culprit = @intFromEnum(p.type_id);
+                culprit_method = p.method;
+            }
+        }
+    }
+    const pins_len: u32 = @intCast(c.pins.items.len - pins_first);
+    // One frozen tuple for every method type the entries need and every
+    // pin's type, over the template parameters, frozen once (not once per
+    // entry). A pinned marker's root is its ground type, never a parameter:
+    // only the others are replaced.
     var template: Var.Optional = .none;
     if (method_types.items.len != 0) {
         const range = try st.addVars(method_types.items);
         const tuple = try s.fresh(.{ .structure = .{ .tuple = range } });
-        template = (try s.instantiate.freeze(tuple, markers, try c.paramsOf(t))).toOptional();
+        const params = try c.paramsOf(t);
+        if (pins_len == 0) {
+            template = (try s.instantiate.freeze(tuple, markers, params)).toOptional();
+        } else {
+            var from: std.ArrayList(Var) = .empty;
+            defer from.deinit(scratch);
+            var to: std.ArrayList(Var) = .empty;
+            defer to.deinit(scratch);
+            for (markers, params, 0..) |m, p, i| {
+                if (pinned.isSet(i)) continue;
+                try from.append(scratch, m);
+                try to.append(scratch, p);
+            }
+            template = (try s.instantiate.freeze(tuple, from.items, to.items)).toOptional();
+        }
     }
     const got = c.entries.items[first..];
     std.mem.sort(Entry, got, cx.interner, entryLessThan);
-    return .{ .status = .present, .entries = .{ .start = first, .len = @intCast(got.len) }, .template = template };
+    return .{
+        .status = .present,
+        .entries = .{ .start = first, .len = @intCast(got.len) },
+        .pins = .{ .start = pins_first, .len = pins_len },
+        .template = template,
+        .culprit = culprit,
+        .method = if (culprit != none) culprit_method else undefined,
+    };
+}
+
+/// Whether `root` is a ground type: no variable anywhere below it.
+fn ground(c: *Contexts, s: *Solve, root: Var) Error!bool {
+    var vars: std.ArrayList(Var) = .empty;
+    defer vars.deinit(c.cx.scratch);
+    try Walk.variables(s.store(), &s.stacks, s.cx.gpa, c.cx.scratch, root, &vars);
+    return vars.items.len == 0;
+}
+
+/// The specialised method that pinned a marker whose root is now `root`:
+/// a wanted of the pass answered by a module-rule method (`top`/`ext`)
+/// whose receiver's argument is that root. Null when none is found (a pin
+/// inherited through another pinned type's derived answer).
+fn pinCulprit(s: *Solve, root: Var, wanted_start: u32) ?struct { type_id: Types.TypeId, method: Symbol } {
+    const st = s.store();
+    const c = &s.contexts;
+    for (s.evidence.wanteds.items[wanted_start..], wanted_start..) |w, i| {
+        const answer = s.evidence.answer(@enumFromInt(@as(u32, @intCast(i))));
+        switch (answer) {
+            .top, .ext, .derived => {},
+            else => continue,
+        }
+        const a = switch (st.resolvedContent(w.receiver)) {
+            .structure => |flat| switch (flat) {
+                .app => |a| a,
+                else => continue,
+            },
+            else => continue,
+        };
+        const mine = for (Walk.positions(st, st.find(w.receiver))) |arg| {
+            if (st.find(arg) == root) break true;
+        } else false;
+        if (!mine) continue;
+        switch (answer) {
+            .derived => {
+                // A pin inherited from a pinned type of this module: its
+                // culprit, when its own answer knows it.
+                const u = c.local(a.type) orelse continue;
+                if (!Resolve.isWellKnownName(w.method)) continue;
+                const known = c.answers[u * 2 + @intFromEnum(kindOf(w.method))];
+                if (known.status == .present and known.culprit != none) return .{ .type_id = @enumFromInt(known.culprit), .method = known.method };
+            },
+            else => return .{ .type_id = a.type, .method = w.method },
+        }
+    }
+    return null;
 }
 
 fn entryLessThan(interner: *const InternPool.Global, a: Entry, b: Entry) bool {

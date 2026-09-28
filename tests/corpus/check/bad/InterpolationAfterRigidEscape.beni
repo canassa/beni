@@ -4,6 +4,8 @@
 -- is ALSO refused (AMBIGUOUS INTERPOLATION at `x`), a consequence of the
 -- first error, not a second mistake. Without the annotation `x` is a number
 -- and the interpolation is fine. Expected: only the `rigid_mismatch`.
+-- Fixed by R15-fix-E: a `${…}` decided at a rigid waits for its binder's
+-- boundary, where the escape poisons the rigid and settles it silently.
 f x =
     let
         s =

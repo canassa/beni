@@ -228,6 +228,13 @@ pub fn poison(s: *Solve, v: Var) Error!void {
     const root = st.find(v);
     const flags: TypeStore.Flags = switch (st.content(root)) {
         .flex => |f| f,
+        // A rigid's constraints are givens, not wanteds: only its rows (an
+        // interpolation held on it, CK-154) are settled.
+        .rigid => |f| {
+            st.setContent(root, .err);
+            if (f.obls != .none) try Decide.settle(s, f.obls);
+            return;
+        },
         else => .{},
     };
     st.setContent(root, .err);

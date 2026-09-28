@@ -304,8 +304,8 @@ pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void
 
 // ---- Dispatch (static-dispatch-spike.md §10): v1's texts, staged ---------
 
-pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
-    try r.texts.unknownMethod(origin, from_annotation, module, type_name, method);
+pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol, dot_call_well_known: bool) Error!void {
+    try r.texts.unknownMethod(origin, from_annotation, module, type_name, method, dot_call_well_known);
     try r.flush();
 }
 
@@ -315,7 +315,16 @@ pub fn undeterminedMethodReceiver(r: *Report, region: Bir.Inst.Index, method: Sy
 }
 
 pub fn methodSignatureMismatch(r: *Report, region: Bir.Inst.Index, module: Graph.Index, type_name: Symbol, method: Symbol, found: Var, wanted: Var) Error!void {
-    try r.texts.methodSignatureMismatch(region, module, type_name, method, found, wanted);
+    try r.texts.methodSignatureMismatch(region, module, type_name, method, found, wanted, null);
+    try r.flush();
+}
+
+/// `methodSignatureMismatch` said once, at the method's declaration
+/// (`region`, its name `token` underlined): an own well-known method no use
+/// of `type_name` can call (CK-168). `wanted` is the use-independent
+/// `T a…, T a… -> Bool|Order`.
+pub fn methodSignatureAtDeclaration(r: *Report, region: Bir.Inst.Index, token: u32, module: Graph.Index, type_name: Symbol, method: Symbol, found: Var, wanted: Var) Error!void {
+    try r.texts.methodSignatureMismatch(region, module, type_name, method, found, wanted, token);
     try r.flush();
 }
 

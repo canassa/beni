@@ -193,7 +193,18 @@ fn interpolatable(s: *Solve, id: Id, row: Row) Error!void {
         .err, .alias => {},
         .flex => try reopen(s, id),
         // A `number` rigid is `Int` or `Float`, both of which interpolate.
-        .rigid => |flags| if (flags.kind != .number) try s.report.ambiguousInterpolation(row.region),
+        // Any other is refused, but not here: held on the rigid until its
+        // binder's boundary, whose step 7 reports it (`close`) — unless
+        // step 6 finds the rigid escaped, reports THAT and poisons it, which
+        // settles the row in silence (CK-154: one mistake, one message).
+        .rigid => |flags| if (flags.kind != .number) {
+            const root = st.find(row.vars[0]);
+            if (st.rank(root) == TypeStore.generalized) return s.report.ambiguousInterpolation(row.region);
+            var held = flags;
+            held.obls = try s.obligations.with(s.cx.gpa, flags.obls, id, true);
+            s.obligations.rowPtr(id).state = .open;
+            st.setContent(root, .{ .rigid = held });
+        },
         .structure => |flat| switch (flat) {
             .app => |a| {
                 const ok = a.args.len == 0 and

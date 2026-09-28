@@ -1,0 +1,35 @@
+import H
+import M
+
+
+type Y a
+    = Y (H.Holder a) a
+
+
+type Z a
+    = Z (Y a)
+
+
+imported : M.W String, M.W String -> Bool
+imported l r =
+    l == r
+
+
+local : Y String, Y String -> Bool
+local l r =
+    l == r
+
+
+nested : Z String, Z String -> Bool
+nested l r =
+    l == r
+
+
+rigid : Y a, Y a -> Bool
+rigid l r =
+    l == r
+
+
+inList : List (Y String), List (Y String) -> Bool
+inList l r =
+    l == r

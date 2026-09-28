@@ -2820,6 +2820,48 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     `test-pending-perf` on the fix: CK-143 `dep_digest` 5.1 / 10.1 ms (ratio 2.00), CK-143-publish
     15.0 / 31.4 ms (2.09).
 
+#### R15-fix-E — A cascade, a derived type over a specialised method, three texts (added by the manager, 2026-09-28)
+
+- **Goal.** Fix CK-154 (an interpolation refused because of a rigid escape), CK-159 (a derived
+  type over a specialised `eq` refused), CK-161 (an unannotated dot-call of a derived `compare`
+  refused), CK-162 (`f -1`'s hint) and CK-168 (a wrong own-method signature once per use), each
+  promoted with its fix; for CK-159 and CK-161, check acceptance against D1–D14 first and, where
+  it contradicts an owner decision, keep the behaviour and fix the message.
+- **As built (2026-09-28).** Base `01d0f21` (R15-fix-D). Spec: `checker-v2.md` §8.3, §9.3,
+  §11.2 and §14.2, each *amended by R15-fix-E*. No format bump (the build id discards caches).
+  - **CK-154.** Not F6's equatable row: the order of two decisions. Binding the outer flex to
+    the inner rigid readied the `${…}` row, decided at once (AMBIGUOUS) before step 6 reported
+    the escape. A row decided at a non-`number` rigid that is not generalised is held on the
+    rigid; step 7 reports it at the rigid's boundary, or step 6's poison settles it (a rigid's
+    rows now settle in `Solve.poison`). Step 6 poisons every escaped rigid, one message.
+  - **CK-159 — fixed, no owner decision needed.** No D1–D14 row refuses it, and D10's "comparable
+    exactly when everything it can hold is" takes its side; the refusal was R8's as-built
+    "a bound marker is `absent`". A marker a specialised method binds to a ground type is a
+    **pin** of the present context: no entry, no evidence (D4 unchanged), the pass's answers are
+    the body, the type in the template. A use unifies the pinned argument first; its failure is a
+    new text writing the type as it derives (`W Int`) and the method when known. Publication
+    writes the pinned parameter as its type in the row's scheme, so an importer's existing
+    parameter unification is the check.
+  - **CK-161 — kept, message fixed; the owner's decision.** Acceptance reverses
+    `static-dispatch-spike.md` §1.3 rule 2 and A.56 (adopted with static dispatch, 2026-09-18,
+    which rejected "let a `dot_call` derive" by name). The dot-call's UNKNOWN METHOD now says a
+    derived method is reached by an operator or a `where` clause and writes both fixes, naming
+    the unannotated function it came through. The fixture moved to `tests/corpus/check/bad/`;
+    the decision and a recommendation are CK-161's Status.
+  - **CK-162.** `DispatchTexts.negativeArgumentHint`: `dec (-1)` in the hint when a named
+    function meets a number as `-`'s left operand and the right is a literal (moved out of
+    `Diagnostics.zig` for §19.1's budget). No whitespace reaches the checker, so `dec - 1` gets it
+    too; the sentence stays true.
+  - **CK-168.** An own method met by a well-known use, whose type fits no use of the type, is
+    `type_mismatch` once per (method, type), at its declaration, against `T a…, T a… -> Bool`:
+    order-independent (I9). `ModuleRuleClash` and `MethodSignatureNoClash` move there too.
+- **Evidence.** Fixture-first against a separately built `01d0f21` binary: every promoted or
+  re-blessed fixture is red there (the three `check/bad` goldens re-blessed differ, CK-154 adds
+  AMBIGUOUS INTERPOLATION, CK-168 gives two messages, CK-159's two `run/` fixtures are NOT
+  EQUATABLE) and green on the fix. New: `run/DerivedPinnedAcrossModules/` (a published pin, one
+  inherited in the declaring module and one across the boundary, inside a list) and
+  `check/bad/DerivedPinnedRefused/` (imported, local, inherited, rigid and list refusals).
+
 ---
 
 ## 4. CK → slice index
@@ -2854,6 +2896,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-A | CK-135, 137, 139, 141, 142 (`tests/corpus/`), CK-140 (`abuse_test.zig`) | — | — |
 | R15-fix-C | CK-169, 170, 172, 173, 174 (`tests/corpus/`), CK-171 (`perf_test.zig`) — all six found and fixed in the slice | — | the `err`-producer audit and its Debug check (`checker-v2.md` §12.2); CK-144 not fixed (the interface writer) |
 | R15-fix-D | CK-126, 145, 147, 148 (`tests/corpus/check/bad/`; CK-126 also `digest_test.zig` "row 13 for a schema"), CK-143 (`perf_test.zig`, both scenarios) | — | the digest's schema-endpoint hole (found and fixed with CK-126); `Report.failed` gets its reader (CK-146 item 1) |
+| R15-fix-E | CK-154, 162, 168 (`tests/corpus/check/bad/`), CK-159 (`run/DerivedOverSpecialisedEq/`; new `run/DerivedPinnedAcrossModules/`, `check/bad/DerivedPinnedRefused/`) | — | CK-161 kept for the owner (message fixed; fixture moved to `check/bad/`) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

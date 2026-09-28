@@ -1,0 +1,17 @@
+-- CK-159 across modules (R15-fix-E): `H.eq` is specialised to `Holder Int`,
+-- so `M.W a`, which holds a `Holder a`, derives `==` with its parameter
+-- PINNED to `Int` (checker-v2.md §11.2 *as amended by R15-fix-E*), and `M`
+-- publishes the pin in its row's scheme. `Main` compares `M.W Int` values
+-- directly, through `M.X` (a pin inherited in `M`), through its own `Y`
+-- (a pin inherited across the module boundary, by an unannotated `same`
+-- whose argument the pin decides) and inside a list. Every comparison goes
+-- through `H.eq`, which compares mod 10: 3 and 13 are equal, 3 and 14 are
+-- not. On 01d0f21 every one is NOT EQUATABLE. Oracle twin: the same
+-- comparisons with `W` replaced by a tuple `( H.Holder Int, Int )`.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder x) (Holder y) =
+    modBy x 10 == modBy y 10

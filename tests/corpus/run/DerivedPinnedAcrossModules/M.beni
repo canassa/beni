@@ -1,0 +1,14 @@
+import H
+
+
+pub type W a
+    = W (H.Holder a) a
+
+
+pub type X a
+    = X (W a)
+
+
+pub mk : Int -> W Int
+mk n =
+    W (H.Holder n) 1

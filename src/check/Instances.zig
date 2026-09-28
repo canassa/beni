@@ -32,6 +32,7 @@ const std = @import("std");
 const InternPool = @import("../InternPool.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Graph = @import("../resolve/Graph.zig");
+const Bir = @import("../bir/Bir.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const reads = @import("reads.zig");
@@ -201,7 +202,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         }
     }
     // 6. `unknown_method`.
-    try s.report.unknownMethod(w.origin, w.kind == .where_clause, entry.module, entry.name, w.method);
+    try s.report.unknownMethod(w.origin, w.kind == .where_clause, entry.module, entry.name, w.method, w.kind == .dot_call and Resolve.isWellKnownName(w.method));
     return Resolve.reject(s, id, true);
 }
 
@@ -270,7 +271,7 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
             // The sub-wanteds are the use's: its declaration owns their failures.
             for (s.instantiate.made.items) |sub| s.evidence.ptr(sub).decl = w.decl;
             const args = try s.evidence.addArgs(s.cx.gpa, s.instantiate.made.items);
-            if (!try match(s, id, root, copy, entry)) return;
+            if (!try match(s, id, root, copy, entry, decl)) return;
             return Resolve.answer(s, id, .{ .top = .{ .decl = decl, .args = args } });
         },
     }
@@ -289,7 +290,7 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, ent
     // The sub-wanteds are the use's: its declaration owns their failures.
     for (s.instantiate.made.items) |sub| s.evidence.ptr(sub).decl = w.decl;
     const args = try s.evidence.addArgs(s.cx.gpa, s.instantiate.made.items);
-    if (!try match(s, id, root, copy, entry)) return;
+    if (!try match(s, id, root, copy, entry, null)) return;
     return Resolve.answer(s, id, .{ .ext = .{ .module = entry.module, .value = value, .args = args } });
 }
 
@@ -430,8 +431,10 @@ fn isNullaryRef(iface: *const Interface, refs: []const Types.TypeId, t: Interfac
 /// context (review F2) — except at a DERIVED shape's position, where it is
 /// the shape's refusal, reported at the use for the whole receiver (v1's
 /// rule for a method specialised to another application: row 72).
-fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry) Error!bool {
+fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, decl: ?u32) Error!bool {
     const w = s.evidence.get(id);
+    // Read before the unification, which binds the method type's parts.
+    const well_known = Resolve.isWellKnownName(w.method) and Resolve.hasWellKnownType(s, w.method, w.method_type, root);
     if (try s.unifyQuiet(copy, w.method_type, w.origin)) return true;
     const type_id: ?Types.TypeId = switch (s.store().resolvedContent(root)) {
         .structure => |flat| switch (flat) {
@@ -455,9 +458,76 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry) Erro
     // Inside a fixpoint pass (a payload's position), its entry says why
     // (`absent_requirement`, CK-116); elsewhere this does nothing.
     if (type_id) |t| s.contexts.noteRequirement(s, t, w.method);
+    if (decl) |d| if (type_id) |t| if (well_known and !fitsWellKnown(s, ownScheme(s, d, copy), t, w.method)) {
+        try signatureOnce(s, w.origin, d, t, entry, w.method, copy);
+        try Resolve.reject(s, id, true);
+        return false;
+    };
     try s.report.methodSignatureMismatch(w.origin, entry.module, entry.name, w.method, copy, w.method_type);
     try Resolve.reject(s, id, true);
     return false;
+}
+
+/// Whether own method `copy`, which failed a use asking the well-known
+/// `T …, T … -> Bool|Order`, could still be `T`'s at some other use: two
+/// parameters, each a variable or an application of `T`, and the result a
+/// variable or the well-known one. A specialised `Holder Int, Holder Int ->
+/// Bool` could (the failure is the use's, said there); `T, Int -> Bool`, or
+/// a sibling type's `U, U -> Bool`, cannot, whatever the use (CK-168).
+fn fitsWellKnown(s: *Solve, copy: Var, t: Types.TypeId, method: Symbol) bool {
+    const st = s.store();
+    const f = Walk.function(st, copy) orelse return false;
+    if (f.params.len != 2) return false;
+    for (f.params) |p| switch (st.resolvedContent(p)) {
+        .flex, .rigid, .err => {},
+        .structure => |flat| switch (flat) {
+            .app => |a| if (a.type != t) return false,
+            else => return false,
+        },
+        .alias => unreachable, // `resolvedContent` looks through
+    };
+    return switch (st.resolvedContent(f.result)) {
+        .flex, .rigid, .err => true,
+        .structure => |flat| switch (flat) {
+            .app => |a| a.type == Resolve.wellKnownResult(s, method) and a.args.len == 0,
+            else => false,
+        },
+        .alias => unreachable,
+    };
+}
+
+/// Own declaration `decl`'s scheme, or `copy` when it has none yet: what the
+/// method IS, never what a use's failed unification bound into its copy.
+fn ownScheme(s: *Solve, decl: u32, copy: Var) Var {
+    if (decl >= s.decl_scheme.len) return copy;
+    return s.decl_scheme[decl].unwrap() orelse copy;
+}
+
+/// Key of `Resolve.State.signatures`: an own method, and the type whose
+/// method it failed to be.
+pub const SignatureKey = struct { decl: u32, type_id: Types.TypeId };
+
+/// CK-168: an own well-known method that no use of `t` can call is ONE
+/// mistake, the method's, said once at its declaration whichever use
+/// found it — so the text is the same in every declaration order (I9): the
+/// method's type against the use-independent `T a…, T a… -> Bool|Order`.
+/// Every later use is rejected with it; each is attributed the failure.
+fn signatureOnce(s: *Solve, origin: Bir.Inst.Index, decl: u32, t: Types.TypeId, entry: Types.Entry, method: Symbol, copy: Var) Error!void {
+    if (s.report.current) |d| s.report.failed.set(d);
+    const got = try s.resolver.signatures.getOrPut(s.cx.gpa, .{ .decl = decl, .type_id = t });
+    if (got.found_existing) return;
+    const d = s.cx.bir.decls[decl];
+    const region = d.annotation.unwrap() orelse d.body.unwrap() orelse origin;
+    const st = s.store();
+    const args = try s.cx.scratch.alloc(Var, entry.arity);
+    defer s.cx.scratch.free(args);
+    for (args) |*a| a.* = try s.fresh(.{ .flex = .{} });
+    const receiver = try s.fresh(.{ .structure = .{ .app = .{ .type = t, .args = try st.addVars(args) } } });
+    const wanted = try Resolve.wellKnownType(s, method, receiver);
+    // The method's own scheme, not the copy the failed unification bound: the
+    // copy shows what the FIRST use pushed into it, which is order-dependent.
+    const found = ownScheme(s, decl, copy);
+    try s.report.methodSignatureAtDeclaration(region, d.name_token, entry.module, entry.name, method, found, wanted);
 }
 
 /// A private method of the module of `culprit` answers `id`, which is
@@ -493,6 +563,29 @@ fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbo
     }
     try Resolve.reject(s, id, id != top);
     if (!reported and top != id) try Resolve.reject(s, top, true);
+}
+
+/// A pinned argument (CK-159) the use cannot be: reported once at the use,
+/// for the lineage root's receiver, with the type as it derives — `pinned`,
+/// `T` applied to the pinned types — and the specialised method that pins
+/// it when the context knows it; the lineage root rejected.
+fn refusePinned(s: *Solve, id: WantedId, pinned: Var, culprit: ?Messages.PinCulprit) Error!void {
+    // Inside a fixpoint pass (a payload's position), its entry says why.
+    if (culprit) |c| s.contexts.noteRequirement(s, c.type_id, c.method);
+    const top = Resolve.lineageRoot(s, id);
+    const reported = top != id and s.evidence.get(top).state.rejected();
+    try Resolve.reject(s, id, id != top);
+    if (reported) return;
+    const t = s.evidence.get(top);
+    try Messages.pinnedDerived(s.report, t.origin, t.receiver, t.method, pinned, culprit);
+    if (top != id) try Resolve.reject(s, top, true);
+}
+
+fn hasPin(pins: []const Contexts.Pin, param: usize) bool {
+    for (pins) |p| {
+        if (p.param == param) return true;
+    }
+    return false;
 }
 
 /// The derived answer for `id` on `root` cannot be given: reported once, at
@@ -596,6 +689,26 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             const tuple = try s.instantiate.substitute(template, try s.contexts.paramsOf(t), args);
             break :blk try s.cx.scratch.dupe(Var, Walk.positions(s.store(), tuple));
         } else &.{};
+        // The pins first (CK-159): the type derives only at its pinned
+        // arguments, and the entries' wanteds see them.
+        const pins = s.contexts.pinsOf(answer);
+        if (pins.len != 0) {
+            const wanted = try s.cx.scratch.dupe(Var, args);
+            defer s.cx.scratch.free(wanted);
+            for (pins) |p| {
+                if (p.param >= wanted.len or p.slot >= types.len) return Resolve.reject(s, id, true);
+                wanted[p.param] = types[p.slot];
+            }
+            for (wanted, 0..) |*v, i| {
+                if (!hasPin(pins, i)) v.* = try s.fresh(.{ .flex = .{} });
+            }
+            const pinned = try s.fresh(.{ .structure = .{ .app = .{ .type = a.type, .args = try s.store().addVars(wanted) } } });
+            for (pins) |p| {
+                if (try s.unifyQuiet(args[p.param], types[p.slot], w.origin)) continue;
+                const culprit: ?Messages.PinCulprit = if (answer.culprit != Contexts.none) .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } else null;
+                return refusePinned(s, id, pinned, culprit);
+            }
+        }
         for (entries, subs) |e, *sub| {
             const receiver = args[e.param];
             const method_type = if (e.slot != Contexts.none and e.slot < types.len)
@@ -651,6 +764,8 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         // with no message here.
         .poisoned => return Resolve.poisoned(s, id),
         .malformed => return Resolve.reject(s, id, true),
+        // A parameter the row PINS (CK-159) the use cannot be.
+        .pinned => |pinned| return refusePinned(s, id, try s.fresh(.{ .structure = .{ .app = .{ .type = a.type, .args = try s.store().addVars(pinned) } } }), null),
     } else &.{};
     for (subs, 0..) |*sub, k| {
         const e = iface.contextEntry(row.context, k).?;
@@ -705,7 +820,7 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
     defer cx.scratch.free(elements);
     if (elements.len != args.len + 1) return .malformed;
     for (elements[0..args.len], args) |p, arg| {
-        if (!try s.unifyQuiet(p, arg, w.origin)) return .malformed;
+        if (!try s.unifyQuiet(p, arg, w.origin)) return .{ .pinned = try cx.scratch.dupe(Var, elements[0..args.len]) };
     }
     return .{ .types = try cx.scratch.dupe(Var, Walk.positions(s.store(), elements[args.len])) };
 }
@@ -713,7 +828,9 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
 /// A published row's method types, or why there are none: its scheme is
 /// `<error>` (the publisher reported why), or it does not have the row's
 /// shape (the compiler's).
-const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed };
+/// Or `pinned`: the use's argument is not a type the row pins (its scheme's
+/// parameter is a ground type, CK-159), with the row's parameters.
+const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed, pinned: []const Var };
 
 /// A derived answer with one sub-wanted per position, each resolved now
 /// (a flex position rides on its variable; a rigid one needs a given, and

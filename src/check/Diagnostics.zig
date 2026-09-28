@@ -559,6 +559,7 @@ pub const Reporter = struct {
                 , .{ordinal(r.env.scratch, slot)}) catch return error.OutOfMemory;
                 return;
             }
+            if (try DispatchTexts.negativeArgumentHint(r, w, category)) return;
             w.writeAll(
                 \\
                 \\Hint: this is a function, so it may be missing an argument.
@@ -1221,7 +1222,7 @@ pub const Reporter = struct {
         return r.describe(reference);
     }
 
-    fn describe(r: *const Reporter, reference: Bir.Inst.Index) Callee {
+    pub fn describe(r: *const Reporter, reference: Bir.Inst.Index) Callee {
         const bir = r.env.bir;
         if (reference.int() >= bir.insts.len) return .anonymous;
         const data = bir.instData(reference);

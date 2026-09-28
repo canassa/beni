@@ -1304,6 +1304,16 @@ frame's pool (§6.6). A top-level rigid has no enclosing binder to escape into e
 frame's live variables through a dispatch back-edge, and §10.4 merges those frames first. So a
 failure there is `internal`, never a user error. *Revised 2026-09-24 (S16).*
 
+*Amended by R15-fix-E (2026-09-28, CK-154).* **What rides on an escaping rigid waits for this
+check.** Binding an outer flex to an inner rigid readies the flex's rows, and an `interpolatable`
+row decided at once against a non-`number` rigid said AMBIGUOUS INTERPOLATION before step 6 said
+the escape — two messages for one mistake. Such a row is now held on the rigid while the rigid is
+not generalised (`Decide.interpolatable`): step 7 reports it at the rigid's own boundary (§8.1),
+or step 6 finds the escape, reports it and poisons the rigid, which settles the row silently
+(`Solve.poison` settles a rigid's rows; its constraints are givens and stay). Step 6 poisons
+**every** escaped rigid of the binding, the message still once, so no second one is left rigid
+with rows on it.
+
 ### 8.4 Generalisation, and constrained `let` bindings (D5)
 
 Rule (a) of `static-dispatch-spike.md` §6.4 is **retired** (D5). Generalisation is plain HM(X) on
@@ -1619,6 +1629,21 @@ returns "unknown, accept" (I8).
 Sub-wanteds are resolved in the same drain. A rigid inside a derived shape (CK-20) is a sub-wanted
 on a rigid, so it reaches the `rigid` row of §9.2, which gives a missing-constraint error at the
 comparison, not a structural answer.
+
+*Amended by R15-fix-E (2026-09-28, CK-168, CK-161).* **An own method no use can call is said once,
+at its declaration.** Step 3's module-rule match failing for a use that asks the well-known `T …,
+T … -> Bool|Order` of an OWN method (this module's) whose type fits no use of `T` — not two
+parameters each a variable or an application of `T`, or a result not a variable, `Bool` or
+`Order` — is one mistake, the method's: `type_mismatch` once per (method, `T`), at the method's
+declaration, its type against the use-independent `T a…, T a… -> Bool|Order`
+(`Instances.signatureOnce`), the same text and position in every declaration order (I9). Every
+use is rejected with it. A method that fits some use (a specialised `Holder Int, …` asked at
+`Holder String`), a dot-call's own type, and another module's method still fail at the use.
+**Step 6 for a dot-call of `eq`/`compare`** keeps `unknown_method` (static-dispatch-spike.md §1.3
+rule 2, A.56: a dot-call never derives, directly or through a requirement it promoted), and its
+text says so: a derived method is reached by an operator or a `where` clause, and the hint
+writes the operator or the annotation, naming the unannotated function when the refusal comes
+through its call. Whether a dot-call should derive is the owner's (CK-161).
 
 ### 9.4 Promotion and the undetermined default
 
@@ -2547,6 +2572,19 @@ and where the build departs from it:
   `absent_other`'s *"a function anywhere inside it"*. A private method met first keeps
   `absent_private`. A use that decides the same failure itself (a present context's entry at a
   concrete argument) names the method and both types.
+  *Amended by R15-fix-E (2026-09-28, CK-159):* a marker bound to a **ground** type (no variable
+  below it) — by a payload's specialised method, `H.eq : Holder Int, …` on `Holder a` — is not
+  `absent` but a **pin** `(i, τ)` of the present answer (`Contexts.Pin`): `T` derives exactly
+  where `args[i]` is `τ`. D10's promise is kept to the letter — `W Int` holds a `Holder Int` and
+  an `Int`, both comparable — and D4 is unchanged: a pin is no entry and takes no evidence
+  parameter, because the pass answered the pinned positions itself (`H.eq`, and `===` at the
+  pinned `Int`), and those answers are the derived body. `τ` rides in the answer's template (so
+  a pinned marker is left out of the template's parameters) and a use unifies `args[i]` with its
+  instance before any entry's wanted; a failure is `not_equatable` (or `no_methods_on_shape`
+  for `compare`) at the use for the lineage root's receiver, writing `T` at its pinned types and
+  the specialised method when the pass saw it (`pinCulprit`; inherited through another local
+  pinned type's answer). A marker bound to a non-ground type (`List b`) stays `absent`. The
+  lattice gains a rung: a pin may replace entries on its parameter, never the reverse.
 - **The frame** is a new kind, `.fixpoint`: a queue of its own, no group, never merged
   (`Groups.topFrame` skips it). Every pass reports into ONE quiet report per module; a group a pass
   nests is checked with the module's report (`Groups.solveGroup` swaps it back); an `internal` is
@@ -3713,6 +3751,14 @@ method)` — the type whose method it is, and the method (`Interface.privateCulp
 so an importer's message names it (`static-dispatch-spike.md` §10.13); `verify` refuses any other
 shape, and the raw interface dump prints `requirement <kind> type_ref=… method=…`. Before, such a
 row was `unanswerable`.
+
+*Amended by R15-fix-E (2026-09-28, CK-159); no format change.* A present row whose context
+**pins** a parameter (§11.2 *amended by R15-fix-E*) writes that parameter in its scheme's
+`( p₀, …, pₙ₋₁, ( τ… ) )` as the pinned ground type instead of a quantifier. An importer already
+unifies the scheme's parameters with the use's arguments (`Instances.publishedMethodTypes`), so
+that unification is the pin's check; its failure is the pinned `not_equatable` with no method
+named (the record carries none). A pinned row always has a scheme: the pinned type is an element
+of its template. Before, such a row was `unanswerable`.
 
 ### 14.3 Cache and table versions
 

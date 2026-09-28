@@ -6,8 +6,8 @@
 -- anywhere inside it") — there is no function, and no guarantee is at stake
 -- (rule 7). Expected: it builds and prints `equal`. Oracle twin: the same
 -- comparison through a tuple, `( Holder Int, Int )`, builds and prints
--- `equal`. (If the owner decides W Int stays refused, the fallback is a
--- `check/bad` whose message names `H.eq`; this fixture takes rule 7's side.)
+-- `equal`. Fixed by R15-fix-E: `H.eq` PINS `W`'s parameter to `Int`
+-- (checker-v2.md §11.2 *as amended by R15-fix-E*), and `W` derives there.
 pub type Holder a
     = Holder a
 

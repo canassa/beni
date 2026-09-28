@@ -3,7 +3,7 @@
 -- only hint is "this is a function, so it may be missing an argument" —
 -- nothing about the negative literal, which is the mistake. Elm hints
 -- `f (-1)` here. Expected: the same TYPE MISMATCH, with a hint that writes
--- the argument in parentheses, `(-1)`.
+-- the argument in parentheses, `(-1)`. Fixed by R15-fix-E.
 dec : Int -> Int
 dec n =
     n - 1

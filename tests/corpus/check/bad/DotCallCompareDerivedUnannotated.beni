@@ -1,0 +1,24 @@
+-- CK-161: an unannotated function's dot-call `x.compare` never reaches a
+-- derived `compare`. `Colour` has no `pub compare`, so its `compare` is
+-- derived, which only an operator (`Red < Blue`) or a `where` clause
+-- reaches: static-dispatch-spike.md §1.3 rule 2 and A.56, which the owner's
+-- adoption of static dispatch (2026-09-18) took with it. `before`'s
+-- promoted requirement keeps its dot-call's kind, so `before Red Blue` is
+-- refused. Written red on 8b98464 expecting acceptance (rule 7: nothing is
+-- guarded); acceptance reverses that rule, so it is the owner's decision
+-- (plans/checker-findings.md CK-161). Until it is taken, R15-fix-E keeps
+-- the refusal and fixes its message, which said only "no method called
+-- `compare`": it now says why, and what to write — `x < y`, or a `where`
+-- annotation, whose twin builds and prints `T`.
+type Colour
+    = Red
+    | Blue
+
+
+before x y =
+    x.compare y == LT
+
+
+result : Bool
+result =
+    before Red Blue

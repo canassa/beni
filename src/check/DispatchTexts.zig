@@ -34,6 +34,7 @@ pub fn unknownMethod(
     module: Graph.Index,
     type_name: Symbol,
     method: Symbol,
+    dot_call_well_known: bool,
 ) Error!void {
     if (r.quiet) return;
     var out = r.writer();
@@ -54,6 +55,14 @@ pub fn unknownMethod(
         module_text,
         method_text,
     }) catch return error.OutOfMemory;
+    if (dot_call_well_known) {
+        // A hand-written `x.eq`/`x.compare` never derives
+        // (static-dispatch-spike.md §1.3 rule 2, A.56), directly or through
+        // an unannotated function's promoted requirement (CK-161): say so,
+        // and what does derive.
+        try derivedByOperatorOnly(r, w, origin, method_text);
+        return r.emit(.unknown_method, origin, &out);
+    }
     if (nearestValue(r, module, method)) |near| {
         w.print("\nHint: did you mean `{s}`?\n", .{r.env.interner.slice(near)}) catch return error.OutOfMemory;
     } else if (module.int() < r.env.interfaces.len) {
@@ -93,6 +102,79 @@ pub fn unknownMethod(
         }
     }
     try r.emit(.unknown_method, origin, &out);
+}
+
+/// The rest of `unknownMethod` for a dot-call of `eq` or `compare`: the
+/// compiler derives the two only for an operator or a `where` clause
+/// (static-dispatch-spike.md §1.3 rule 2, A.56). When the call is not the
+/// dot-call itself, it is a function whose unannotated body made one, and
+/// the hint names it (CK-161).
+fn derivedByOperatorOnly(r: *Reporter, w: *std.Io.Writer, origin: Bir.Inst.Index, method_text: []const u8) Error!void {
+    const is_eq = std.mem.eql(u8, method_text, "eq");
+    const operators = if (is_eq) "`==` and `/=`" else "`<`, `>`, `<=` and `>=`";
+    const example = if (is_eq) "x == y" else "x < y";
+    const result = if (is_eq) "Bool" else "Order";
+    const bir = r.env.bir;
+    const direct = origin.int() < bir.insts.len and bir.instTag(origin) == .method_call;
+    const callee = if (direct) Diagnostics.Callee.anonymous else r.calleeOf(origin);
+    w.print(
+        \\
+        \\I can write a `{s}` for a type that declares none, but only for {s},
+        \\and for a `where` clause, which ask for it by name. A dot-call `x.{s}`
+        \\means the module's own `pub` value, so it never gets a derived one.
+        \\
+    , .{ method_text, operators, method_text }) catch return error.OutOfMemory;
+    switch (callee.kind) {
+        .function, .value => w.print(
+            \\
+            \\Hint: `{s}` calls `x.{s}` and has no annotation. Write `{s}` there instead,
+            \\or give `{s}` an annotation that asks for it:
+            \\`where a.{s} : a, a -> {s}`.
+            \\
+        , .{ callee.name, method_text, example, callee.name, method_text, result }) catch return error.OutOfMemory,
+        else => w.print(
+            \\
+            \\Hint: write `{s}` instead, or reach `x.{s}` through a function whose
+            \\annotation asks for it: `where a.{s} : a, a -> {s}`.
+            \\
+        , .{ example, method_text, method_text, result }) catch return error.OutOfMemory,
+    }
+}
+
+/// `f -1` is `f - 1` (`language.md` §6.5): a named function as the left
+/// operand of a binary `-` whose right one is a number literal is nearly
+/// always a negative argument written without its parentheses, and the hint
+/// writes them (CK-162, Elm's hint). The checker sees no whitespace, so the
+/// sentence is true of `f - 1` as well. False, for `Reporter.typeHint`'s
+/// generic hint, when the shape is not that one. Here and not in
+/// `Diagnostics.zig` for §19.1's line budget.
+pub fn negativeArgumentHint(r: *Reporter, w: *std.Io.Writer, category: @import("Category.zig").Category) Error!bool {
+    if (category.tag != .call_arg or category.index != 1) return false;
+    const call = category.owner.unwrap() orelse return false;
+    const bir = r.env.bir;
+    if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return false;
+    const callee = r.calleeOf(call);
+    if (callee.kind != .operator or !std.mem.eql(u8, callee.name, "-")) return false;
+    const args = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(call).rhs)), Bir.Inst.Index);
+    if (args.len != 2 or args[1].int() >= bir.insts.len) return false;
+    switch (bir.instTag(args[1])) {
+        .int, .float => {},
+        else => return false,
+    }
+    const function = r.describe(args[0]);
+    switch (function.kind) {
+        .function, .value, .ctor => {},
+        else => return false,
+    }
+    const f = function.name;
+    const n = bir.bytes(args[1]);
+    w.print(
+        \\
+        \\Hint: `{s} -{s}` is a subtraction, `{s} - {s}`. To pass a negative number as
+        \\an argument, put it in parentheses: `{s} (-{s})`.
+        \\
+    , .{ f, n, f, n, f, n }) catch return error.OutOfMemory;
+    return true;
 }
 
 /// §10.1, the arm for a receiver whose type nothing ever determines
@@ -157,6 +239,10 @@ pub fn undeterminedMethodReceiver(
 /// It is `type_mismatch` and not a code of its own: §10's catalogue is
 /// closed and the problem really is that two types do not agree. What
 /// the prose adds is WHY the compiler looked there.
+///
+/// With `declaration` (the method's name token), it is said once at the
+/// method, not at a call: a well-known method no use of the type can call
+/// (CK-168), and `wanted` is the use-independent type.
 pub fn methodSignatureMismatch(
     r: *Reporter,
     region: Bir.Inst.Index,
@@ -165,6 +251,7 @@ pub fn methodSignatureMismatch(
     method: Symbol,
     found: Var,
     wanted: Var,
+    declaration: ?u32,
 ) Error!void {
     if (r.quiet) return;
     var out = r.writer();
@@ -174,10 +261,28 @@ pub fn methodSignatureMismatch(
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
+    const type_text = r.env.interner.slice(type_name);
+    if (declaration) |token| {
+        w.print("`{s}.{s}` cannot be the `{s}` of `{s}`:\n\n    ", .{ module_text, method_text, method_text, type_text }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, found, .top) catch return error.OutOfMemory;
+        w.print("\n\nbut the `{s}` of `{s}` has to be:\n\n    ", .{ method_text, type_text }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
+        try signatureExplanation(r, w, module, type_name, method, found, "that type");
+        return r.emitAt(.type_mismatch, region, token, &out);
+    }
     w.print("`{s}.{s}` is not the method this call needs:\n\n    ", .{ module_text, method_text }) catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, found, .top) catch return error.OutOfMemory;
     w.writeAll("\n\nbut the call wants:\n\n    ") catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
+    try signatureExplanation(r, w, module, type_name, method, found, "the type the call wants");
+    try r.emit(.type_mismatch, region, &out);
+}
+
+/// The paragraph and hint of `methodSignatureMismatch`: why the compiler
+/// looked at that value, the module-rule clash's or not.
+fn signatureExplanation(r: *Reporter, w: *std.Io.Writer, module: Graph.Index, type_name: Symbol, method: Symbol, found: Var, wants: []const u8) Error!void {
+    const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
+    const method_text = r.env.interner.slice(method);
     const type_text = r.env.interner.slice(type_name);
     if (clashes(r, module, type_name, found)) {
         w.print(
@@ -198,14 +303,13 @@ pub fn methodSignatureMismatch(
             \\
             \\
             \\A method of `{s}` is a `pub` value of the module that declares it, so
-            \\`{s}.{s}` is the `{s}` of `{s}`, and it has to have the type the call wants.
+            \\`{s}.{s}` is the `{s}` of `{s}`, and it has to have {s}.
             \\
             \\Hint: give `{s}` that type, or rename it if it is not meant to be a method
             \\of `{s}`.
             \\
-        , .{ type_text, module_text, method_text, method_text, type_text, method_text, type_text }) catch return error.OutOfMemory;
+        , .{ type_text, module_text, method_text, method_text, type_text, wants, method_text, type_text }) catch return error.OutOfMemory;
     }
-    try r.emit(.type_mismatch, region, &out);
 }
 
 /// §11's module-rule clash is what happened exactly when the method's first

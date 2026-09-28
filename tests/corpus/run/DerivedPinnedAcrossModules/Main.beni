@@ -1,0 +1,21 @@
+import H
+import M
+import Node exposing (Program)
+
+
+type Y a
+    = Y (M.W a) a
+
+
+same l r =
+    l == r
+
+
+main : Program
+main =
+    Node.printLines
+        [ if M.mk 3 == M.mk 13 then "eq1" else "ne1"
+        , if M.X (M.mk 3) == M.X (M.mk 14) then "eq2" else "ne2"
+        , if same (Y (M.mk 5) 1) (Y (M.mk 15) 1) then "eq3" else "ne3"
+        , if [ M.mk 2 ] == [ M.mk 12 ] then "eq4" else "ne4"
+        ]

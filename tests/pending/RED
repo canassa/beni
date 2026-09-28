@@ -21,16 +21,11 @@
 # on 8b98464 before any fix; each signature checked against its CK's Observed.
 # R15-fix-A (2026-09-28) fixed and promoted CK-135, 137, 139, 140, 141 and 142.
 scenario/CK-144 superlinear
-tests/pending/check/bad/InterpolationAfterRigidEscape.beni exit=1 codes=ambiguous_interpolation×1,rigid_mismatch×1 why=code
-tests/pending/run/DerivedOverSpecialisedEq dev: exit=1 codes=not_equatable×1
-tests/pending/run/DotCallCompareDerivedUnannotated.beni dev: exit=1 codes=unknown_method×1
-tests/pending/check/bad/NegativeLiteralArgumentHint.beni exit=1 codes=type_mismatch×1 why=message
 scenario/CK-163 stale-files
 scenario/CK-164 slow
 scenario/CK-165 slow
 scenario/CK-166 exit=1 codes=nesting_too_deep×907
 scenario/CK-167 exit=1 codes=pattern_budget_exhausted×1
-tests/pending/check/bad/OwnMethodSignatureReportedOnce.beni exit=1 codes=type_mismatch×2 why=count
 # R15-fix-C (2026-09-28): R15-fix-A's review found CK-169 to CK-171 (alias
 # chains past `TypeStore.resolved`'s 1 024-link guard; the alias DAG
 # expanded as a tree), and writing their fixtures found CK-172 to CK-174
@@ -39,3 +34,7 @@ tests/pending/check/bad/OwnMethodSignatureReportedOnce.beni exit=1 codes=type_mi
 # R15-fix-D (2026-09-28) fixed and promoted CK-126 (its line above, the
 # last of R0–R14's, is gone), CK-143 (both scenarios, into perf_test.zig),
 # CK-145, CK-147 and CK-148.
+# R15-fix-E (2026-09-28) fixed and promoted CK-154, CK-159, CK-162 and
+# CK-168, and moved CK-161's fixture to tests/corpus/check/bad/ with the
+# refusal kept (static-dispatch-spike.md §1.3 rule 2, A.56: the owner's to
+# reverse) and its message fixed.

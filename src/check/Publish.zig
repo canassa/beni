@@ -407,7 +407,7 @@ const Facts = struct {
         try words.ensureTotalCapacity(f.cx.scratch, 1 + entries.len * Interface.context_words);
         // The row's one scheme first: its method types, or `none`.
         words.appendAssumeCapacity(if (answer.template.unwrap()) |template|
-            @intFromEnum(try f.templateScheme(t, template, f.cx.types.entry(id).decl))
+            @intFromEnum(try f.templateScheme(t, template, f.contexts.pinsOf(answer), f.cx.types.entry(id).decl))
         else
             std.math.maxInt(u32));
         for (entries) |e| {
@@ -445,12 +445,23 @@ const Facts = struct {
     /// importer's use meets as `err` and leaves `poisoned`, silent. It
     /// wrote with a bare `writer.add`: no scan, and a truncated template
     /// published as a silent `<error>` that the importer's I7 then tripped on.
-    fn templateScheme(f: *Facts, t: u32, template: Var, decl: Bir.DeclIndex) Error!Interface.SchemeIndex {
+    ///
+    /// A PINNED parameter (CK-159) is written as its ground type instead —
+    /// the template's element `slot` — so an importer's unification of the
+    /// parameters with the use's arguments is the pin's check (§14.2 *as
+    /// amended by R15-fix-E*): the record's format does not change.
+    fn templateScheme(f: *Facts, t: u32, template: Var, pins: []const Contexts.Pin, decl: Bir.DeclIndex) Error!Interface.SchemeIndex {
         const store = f.cx.store;
         const params = try f.contexts.paramsOf(t);
         const elements = try f.cx.scratch.alloc(Var, params.len + 1);
         defer f.cx.scratch.free(elements);
         @memcpy(elements[0..params.len], params);
+        if (pins.len != 0) {
+            const types = Walk.positions(store, template);
+            for (pins) |p| {
+                if (p.param < params.len and p.slot < types.len) elements[p.param] = types[p.slot];
+            }
+        }
         elements[params.len] = template;
         const range = try store.addVars(elements);
         const tuple = try store.fresh(.{ .structure = .{ .tuple = range } }, TypeStore.generalized);
