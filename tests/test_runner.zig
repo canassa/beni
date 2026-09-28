@@ -67,6 +67,23 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
     selectShard(init.environ);
     timing.open(runner_io, init.environ, args[0]);
+    // The tests run on a thread with a stack of their own rather than on the
+    // main thread, whose size is whatever the shell's limit is: `zig build`
+    // raises that limit for everything it spawns and a shell does not, so
+    // the deep-tree tests passed under the build and overflowed when the
+    // binary was run by hand.
+    const thread = std.Thread.spawn(.{ .stack_size = test_stack_size }, runAll, .{ init, listen }) catch
+        return runAll(init, listen);
+    thread.join();
+}
+
+/// The stack every test runs on. The compiler walks trees by recursion on
+/// threads of 64 MiB; a Debug test binary's frames are several times a
+/// release build's, and the deepest unit tests walk the deepest trees the
+/// parser admits. Only the pages a test touches are ever mapped in.
+const test_stack_size = 256 * 1024 * 1024;
+
+fn runAll(init: std.process.Init.Minimal, listen: bool) void {
     if (listen) {
         mainServer(init) catch |err| std.debug.panic("internal test runner failure: {t}", .{err});
     } else {
