@@ -88,7 +88,7 @@ release build. The corpus fixtures of the defects behind §1's classes are the b
 | **I11** | The solver reads no generation-time context | construction: `Solve` has no `Env.local_var` |
 | **I12** | A declaration's failure bit is set iff an **error** diagnostic was attributed to it or to a member of its binding group. Every consumer that must skip failed declarations reads the bit | construction (§15.2) |
 | **I13** | When several independent failures could be reported and only one is, the one reported is the first in name-text or source order, never in id order | construction (§7.2) |
-| **I14** | Nothing written during speculation survives a rollback. Every write a probe can make, including the in-place `Wanted.state` and `answers` writes of `unify`, is either an append truncated by rollback or a journalled in-place write. A probe never calls `Resolve`, `Instances`, `Groups`, the obligation deciders or `Report` | construction (§7.5); a debug assertion that those entry points are not reached while `journal.depth > 0`. *Revised 2026-09-24.* Consequence: a probe never nests a group check, because only resolution nests and a probe never resolves. |
+| **I14** | Nothing written during speculation survives a rollback. Every write a probe can make, including the in-place `Wanted.state` and `answers` writes of `unify`, is either an append truncated by rollback or a journalled in-place write. A probe never calls `Resolve`, `Instances`, `Groups`, the obligation deciders or `Report` | construction (§7.5); a debug assertion that those entry points are not reached while `journal.depth > 0`. *Revised 2026-09-24.* Consequence: a probe never nests a group check, because only resolution nests and a probe never resolves. *Amended 2026-09-28:* no probe exists, so neither the journal nor the assertion does (§7.5). |
 | **I15** | For every wanted `w` whose receiver is **not generalised**, every variable reachable from `w.method_type` by `Walk.owned` has rank ≤ `rank(find(w.receiver))`. All variables of one open obligation have one rank | construction: attaching, and re-attaching on merge, lowers them (§7.1, §4.5), OCaml's `update_level` on binding. A debug assert checks the wanteds and obligations met during each boundary's own generalisation walk, which is linear. A promoted wanted on a generalised receiver is exempt: its method type may mention outer variables free, the HM(X) reading of §8.4. *Added 2026-09-24; restricted and extended the same day. Amended 2026-09-25: the obligation half is directional — no dependant of an open obligation outranks its owner (§4.5, *Amended 2026-09-25*); "one rank" over-lowered a `?` target, making it monomorphic in its own success type.* |
 | **I16** | A boundary generalises only after nothing it runs can unify any more, and it occurs-checks after the last unification | construction: §8.1's fixpoint loop precedes occurs and generalisation. *Added 2026-09-24.* |
 
@@ -992,6 +992,15 @@ A probe unifies and nothing else. It never calls `Resolve`, `Instances`, `Groups
 decider or `Report` (I14), and it cannot create a dispatch-table row, because rows do not exist
 until P6. That is what deletes `TargetProbe`, `forgetResolvedSince` and the other hand-journalled
 tables.
+
+*Amended 2026-09-28: the diagnostic probe was never built, so nothing speculates and the store has
+no journal.* `TypeStore`'s `Snapshot`, its journal, `beginSpeculation`, `commit`, `rollback` and
+`rollbacks` are deleted, with I14's asserts (no wanted readied, no join, no resolution and no group
+check while a snapshot is open) and the rollback guards on `Derivable`'s memos keyed by variable
+id. What they guarded could not happen, and the `Snapshot` they built lacked this section's
+per-frame `ready` and `touched` lengths, so its first real use would have broken I14. The first
+probe builds the journal to this section's `Snapshot`, per-frame lengths included, and restores
+I14's asserts with it.
 
 ---
 

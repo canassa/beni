@@ -45,32 +45,17 @@ pub const PairKey = struct { root: Var, kind: Kind };
 /// (`Resolve.State.derivable`): one byte per variable, bit `kind`, grown
 /// with the store. A dense id indexes a column, never a hash map.
 ///
-/// Keyed by a variable id, so sound only while no id is reused for another
-/// type: the checker never rolls the store back (§7.5). A rollback while the memo
-/// holds anything (`TypeStore.rollbacks` moved since its first write) is a
-/// panic in a safe build, and empties it otherwise (§9.3).
+/// Keyed by a variable id, which is sound because no id is ever reused for
+/// another type: the store is never rolled back (§7.5).
 pub const GroundMemo = struct {
     bits: std.ArrayList(u8) = .empty,
-    /// `TypeStore.rollbacks` at the first write, or null while empty.
-    generation: ?u32 = null,
 
-    pub fn contains(m: *GroundMemo, store: *const TypeStore, key: PairKey) bool {
-        m.guard(store);
+    pub fn contains(m: *GroundMemo, key: PairKey) bool {
         const i = key.root.int();
         return i < m.bits.items.len and m.bits.items[i] & bit(key.kind) != 0;
     }
 
-    fn guard(m: *GroundMemo, store: *const TypeStore) void {
-        const g = m.generation orelse return;
-        if (g == store.rollbacks) return;
-        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3)", .{});
-        m.bits.clearRetainingCapacity();
-        m.generation = null;
-    }
-
     pub fn put(m: *GroundMemo, gpa: std.mem.Allocator, store: *const TypeStore, key: PairKey) Error!void {
-        m.guard(store);
-        if (m.generation == null) m.generation = store.rollbacks;
         const i = key.root.int();
         if (i >= m.bits.items.len) {
             const len = @max(store.count(), i + 1);
@@ -98,12 +83,10 @@ pub const Shapes = struct {
     /// each node a tag and its arity (so no two shapes share an encoding).
     words: std.ArrayList(u32) = .empty,
     stack: std.ArrayList(Var) = .empty,
-    /// The last encoding's receiver and kind, what it found, and
-    /// `TypeStore.rollbacks` then: `words` holds its encoding while `last`
-    /// names it (`derivable` reads it before and after the walk). Keyed by a
-    /// variable id: a rollback since is a panic in a safe build and a miss
-    /// otherwise (`GroundMemo`).
-    last: ?struct { root: Var, kind: Kind, ground: ?Ground, generation: u32 } = null,
+    /// The last encoding's receiver and kind, and what it found: `words`
+    /// holds its encoding while `last` names it (`derivable` reads it before
+    /// and after the walk). Keyed by a variable id, as `GroundMemo` is.
+    last: ?struct { root: Var, kind: Kind, ground: ?Ground } = null,
 
     pub fn deinit(sh: *Shapes, gpa: std.mem.Allocator) void {
         var it = sh.map.keyIterator();
@@ -129,13 +112,9 @@ pub const Ground = struct {
 /// among them).
 pub fn groundShape(s: *Solve, root: Var, kind: Kind) Error!?Ground {
     const sh = &s.resolver.shapes;
-    const generation = s.store().rollbacks;
-    if (sh.last) |l| if (l.root == root and l.kind == kind) {
-        if (l.generation == generation) return l.ground;
-        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3)", .{});
-    };
+    if (sh.last) |l| if (l.root == root and l.kind == kind) return l.ground;
     const ground = try encode(s, root, kind);
-    sh.last = .{ .root = root, .kind = kind, .ground = ground, .generation = generation };
+    sh.last = .{ .root = root, .kind = kind, .ground = ground };
     return ground;
 }
 
@@ -441,7 +420,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
     const gpa = s.cx.gpa;
     const scratch = s.cx.scratch;
     const first: PairKey = .{ .root = st.find(start), .kind = kind };
-    if (s.resolver.derivable.contains(st, first)) return .ok;
+    if (s.resolver.derivable.contains(first)) return .ok;
     // The open memo holds while no leaf a walk met has been given
     // successors since (`TypeStore.proof_voids`), and only for a walk with
     // nothing forced.
@@ -488,7 +467,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
                 continue;
             },
         };
-        if (s.resolver.derivable.contains(st, key)) continue;
+        if (s.resolver.derivable.contains(key)) continue;
         if (open_memo and r.derivable_open.contains(key)) {
             top.ground = false;
             continue;

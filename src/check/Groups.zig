@@ -228,10 +228,6 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
     const cx = gs.cx;
     const gpa = cx.gpa;
     const scratch = cx.scratch;
-    // No check starts inside a speculation (§7.5), so nothing a probe
-    // writes survives its rollback; a `demand` node reaches here without
-    // `Resolve.step`'s guard.
-    if (!try s.expect(cx.store.depth == 0, @enumFromInt(0), "a binding group was checked inside a speculation (checker-v2.md §7.5)")) return .done;
     const level = gs.active;
     gs.active += 1;
     defer gs.active -= 1;

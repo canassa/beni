@@ -26,9 +26,7 @@
 //! canonical order (§12.1). Rigid sets are never rebuilt, so a given's
 //! position is its identity.
 //!
-//! No write here is journalled: the checker has no speculation (§7.5), so
-//! nothing written during a probe can survive a rollback, by absence —
-//! `Resolve` asserts that no snapshot is open.
+//! No write here is undone: the checker never speculates (§7.5).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

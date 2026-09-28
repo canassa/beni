@@ -39,8 +39,8 @@
 //! (a `where` clause may constrain another parameter, so a repeated receiver
 //! is no cycle).
 //!
-//! **No speculation** (§7.5): nothing here may run while a
-//! snapshot is open — checked, and `internal` if it ever is.
+//! **No speculation** (§7.5): the store is never rolled back, so what is
+//! written here is final.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -194,8 +194,6 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
     defer s.report.at(saved);
     const w = s.evidence.get(id);
     s.report.at(if (w.decl == Evidence.Wanted.no_decl) saved else w.decl);
-    // A probe never resolves (§7.5).
-    if (!try s.expect(st.depth == 0, w.origin, "the resolver ran inside a speculation (checker-v2.md §7.5)")) return reject(s, id, false);
 
     s.resolver.steps += 1;
     if (s.resolver.steps == step_budget) try Messages.resolutionBudget(s.report, w.origin, step_budget);

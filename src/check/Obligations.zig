@@ -30,9 +30,7 @@
 //! **A set is a growable list per variable, mutated in place**: attaching
 //! appends, and a merge moves the smaller set's open rows into the larger
 //! (union by size). So R rows and M merges cost O(R log R + M) (§4.5's cost
-//! claim). Neither rows nor sets are journalled: the checker has no
-//! speculation yet (§7.5); the diagnostic probe must journal them, or never
-//! merge a set.
+//! claim). Nothing here is undone: the checker never speculates (§7.5).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

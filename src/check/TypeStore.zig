@@ -1,5 +1,5 @@
 //! The type store (docs/design/checker.md §5): descriptors, union-find,
-//! Rémy levels and the undo journal — Elm's `Type.Variable` plus Roc's
+//! Rémy levels — Elm's `Type.Variable` plus Roc's
 //! `types/store.zig`, laid out under the design's data rules.
 //!
 //! **A type variable IS a graph node.** There is no substitution anywhere in
@@ -37,13 +37,8 @@
 //! Expanding at every use would turn a project's record aliases into the
 //! doubling blowup instantiation's `copy` memo exists to prevent.
 //!
-//! **The undo journal** brackets a speculative unification. `mark` returns a
-//! `Snapshot`; every later mutation of `parent`, `rank`, `content` or `size`
-//! pushes the OLD descriptor, and `rollback` restores them in reverse and
-//! truncates the vars and `extra` created since. The journal exists
-//! because retrofitting one is exactly the rework `fast-compiler.md` §13
-//! warns about. With no mark outstanding, journaling
-//! is one `depth == 0` test and nothing is recorded.
+//! **No write is undone.** The checker never speculates (checker-v2.md
+//! §7.5), so the store keeps no undo journal: every write is final.
 //!
 //! One store per module being checked, owned by the worker checking it and
 //! backed by an `Arena` it owns, so the whole thing is released in one call
@@ -206,8 +201,7 @@ pub const MethodConstraint = struct {
 /// A run of `constraints`, named by its index in `constraint_sets`.
 ///
 /// Sets are APPEND-ONLY and never mutated: merging two appends a third and
-/// leaves both originals, so the undo journal rolls speculation back by
-/// truncating two lengths (§6.1 invariant 2).
+/// leaves both originals (§6.1 invariant 2).
 pub const ConstraintSet = enum(u32) {
     _,
 
@@ -301,23 +295,12 @@ descriptors: std.MultiArrayList(Descriptor) = .empty,
 /// run — it was a third of a deep type's check.
 col: Columns = .{},
 extra: std.ArrayList(u32) = .empty,
-/// Undo entries, newest last. Empty unless a `mark` is outstanding.
-journal: std.ArrayList(Entry) = .empty,
 /// Every method constraint ever created, in creation order
 /// (static-dispatch-spike.md §6.1 invariant 1). A `ConstraintSet` is a run
-/// of this list; nothing is ever removed out of order, so rollback is a
-/// truncation.
+/// of this list; nothing is ever removed from it.
 constraints: std.ArrayList(MethodConstraint) = .empty,
 /// One `Range` per set, indexed by `ConstraintSet`.
 constraint_sets: std.ArrayList(Range) = .empty,
-/// How many `mark`s are outstanding. Journaling is off at zero, which is
-/// the whole of a normal solve.
-depth: u32 = 0,
-/// A journal entry could not be allocated, so the outstanding speculation
-/// can no longer be undone exactly. `rollback` reports it; the only caller
-/// (`?`, checker.md §6.5) treats an inexact rollback as "this shape did not
-/// fit" and stops trying alternatives.
-broken: bool = false,
 next_mark: u32 = no_mark + 1,
 /// The checker's acyclicity proofs (`checker-v2.md` §8.2): per variable,
 /// the epoch in which an occurs walk proved
@@ -347,38 +330,10 @@ tracks_proofs: bool = false,
 /// good: an annotation prints as written. Set on a class's root; a merge of
 /// two such classes keeps it (`Unify`).
 inferred_alias: std.DynamicBitSetUnmanaged = .{},
-/// How many times `rollback` ran: never decreases. The checker never
-/// speculates (§7.5), so under it it stays 0; its memos keyed by a variable
-/// id (`check/Derivable.zig`'s `GroundMemo` and `Shapes.last`) record it
-/// and refuse to be read across a rollback, which could reuse an id for
-/// another type.
-rollbacks: u32 = 0,
 /// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
 /// Never read outside that assert.
 proof_assert_work: u64 = 0,
-
-const Entry = struct { v: Var, desc: Descriptor };
-
-/// What `rollback` restores to.
-pub const Snapshot = struct {
-    journal_len: u32,
-    vars: u32,
-    extra: u32,
-    /// The three append-only constraint tables, truncated by `rollback`
-    /// exactly as `vars` and `extra` are (static-dispatch-spike.md §6.1
-    /// invariant 2, A.35). The truncation is PER SNAPSHOT and not one saved
-    /// length, because this journal nests (`depth`) where Roc's asserts it
-    /// does not.
-    ///
-    /// The four `Dispatch` builders of §7.1 are journaled the same way, but
-    /// by `Solve.tryShape` beside the pool and the obligation list, which is
-    /// where the solver's own per-rank bookkeeping is already rolled back;
-    /// the store does not own them and a pointer from here to the solver
-    /// would be the only one in the file.
-    constraints: u32,
-    constraint_sets: u32,
-};
 
 pub fn init(backing: Allocator) TypeStore {
     return .{ .arena = .init(backing) };
@@ -496,9 +451,7 @@ fn findSlow(store: *TypeStore, v: Var) Var {
     const parents = store.col.parent;
     var root = v;
     while (parents[root.int()] != root) root = parents[root.int()];
-    // Compress: point everything on the path straight at the root. Under a
-    // mark this is journalled like any other write, so a rollback restores
-    // the original chain — the shape is not observable either way.
+    // Compress: point everything on the path straight at the root.
     var walk = v;
     while (parents[walk.int()] != root) {
         const next = parents[walk.int()];
@@ -543,8 +496,6 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
             if (pb) store.gains(b, survivor);
         }
     }
-    store.record(drop);
-    store.record(keep);
     const parents = store.col.parent;
     parents[drop.int()] = keep;
     sizes[keep.int()] = total;
@@ -583,8 +534,6 @@ pub fn expandAlias(store: *TypeStore, alias: Var, end: Var) Var {
     const sizes = store.col.size;
     const ranks = store.col.rank;
     if (store.tracks_proofs) store.touchesErr(store.content(alias), store.content(end), store.content(end));
-    store.record(alias);
-    store.record(end);
     store.col.parent[alias.int()] = end;
     sizes[end.int()] += sizes[alias.int()];
     ranks[end.int()] = @min(ranks[alias.int()], ranks[end.int()]);
@@ -689,7 +638,6 @@ fn gains(store: *TypeStore, v: Var, c: Content) void {
 }
 
 pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
-    store.record(v);
     if (store.tracks_proofs) {
         const before = store.col.content[v.int()];
         // An `err` no walk has proved is in no proved graph: `err` has no
@@ -705,14 +653,12 @@ pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
 }
 
 pub inline fn setRank(store: *TypeStore, v: Var, r: u32) void {
-    store.record(v);
     store.col.rank[v.int()] = r;
 }
 
-/// `mark` and `copy` are scratch columns of one walk each and are never
-/// rolled back: a speculative unification that is undone leaves them
-/// stale, and every consumer stamps a FRESH mark (`nextMark`) or clears
-/// `copy` through its own touched-list before reading.
+/// `mark` and `copy` are scratch columns of one walk each: every consumer
+/// stamps a FRESH mark (`nextMark`) or clears `copy` through its own
+/// touched-list before reading.
 pub inline fn setMark(store: *TypeStore, v: Var, m: u32) void {
     store.col.mark[v.int()] = m;
 }
@@ -722,7 +668,6 @@ pub inline fn setCopy(store: *TypeStore, v: Var, c: Var.Optional) void {
 }
 
 inline fn setParent(store: *TypeStore, v: Var, parent: Var) void {
-    store.record(v);
     store.col.parent[v.int()] = parent;
 }
 
@@ -750,7 +695,7 @@ pub fn resolvedContent(store: *TypeStore, v: Var) Content {
 /// variables is that invariant broken, a compiler bug, and panics.
 ///
 /// **The walk compresses** as `find` does: every alias on the path gets
-/// `actual` = the end, journalled like any content write, so a chain is
+/// `actual` = the end, so a chain is
 /// walked in full once and every later walk is one step. An alias's
 /// `actual` is its expansion's representative, and the end is the same
 /// type; the alias itself — its name and arguments, all `Render` prints —
@@ -1075,7 +1020,7 @@ pub fn addConstraints(store: *TypeStore, items: []const MethodConstraint) Alloca
 /// A set is a half-open RANGE of an append-only list, so when the old range
 /// already ends at the tail this is one append and one range; otherwise it
 /// is one copy. Neither the old set nor any existing constraint is touched
-/// (invariant 2), and rollback is still a truncation of both lists.
+/// (invariant 2).
 pub fn extendConstraints(
     store: *TypeStore,
     set: ConstraintSet.Optional,
@@ -1136,95 +1081,6 @@ pub fn flagsOf(store: *const TypeStore, v: Var) Flags {
         .flex, .rigid => |f| f,
         else => .{},
     };
-}
-
-// ---------------------------------------------------------------------------
-// The undo journal
-// ---------------------------------------------------------------------------
-
-/// Push `v`'s current descriptor, if a mark is outstanding. Called by every
-/// mutator; one predictable branch when nothing is speculating.
-inline fn record(store: *TypeStore, v: Var) void {
-    if (store.depth == 0 or store.broken) return;
-    store.recordSlow(v);
-}
-
-fn recordSlow(store: *TypeStore, v: Var) void {
-    // A journal that could not record a write can no longer undo one, so
-    // the region is marked BROKEN rather than closed: `rollback` then
-    // restores what it can and says so, and the bracket stays balanced —
-    // zeroing `depth` here would make the matching `rollback` decrement it
-    // below zero.
-    store.journal.append(store.gpa(), .{ .v = v, .desc = store.get(v) }) catch {
-        store.broken = true;
-    };
-}
-
-/// Open a speculative region. Every mutation until the matching `commit` or
-/// `rollback` is undoable.
-pub fn beginSpeculation(store: *TypeStore) Snapshot {
-    store.depth += 1;
-    return .{
-        .journal_len = @intCast(store.journal.items.len),
-        .vars = @intCast(store.descriptors.len),
-        .extra = @intCast(store.extra.items.len),
-        .constraints = @intCast(store.constraints.items.len),
-        .constraint_sets = @intCast(store.constraint_sets.items.len),
-    };
-}
-
-/// Keep everything the speculation did.
-pub fn commit(store: *TypeStore, snapshot: Snapshot) void {
-    std.debug.assert(store.depth > 0);
-    store.depth -= 1;
-    if (store.depth == 0) {
-        store.journal.clearRetainingCapacity();
-        store.broken = false;
-    } else {
-        store.journal.shrinkRetainingCapacity(snapshot.journal_len);
-    }
-}
-
-/// Undo everything the speculation did: descriptors in reverse order, then
-/// the variables and `extra` words it appended. Returns false when the
-/// journal ran out of memory and the undo is therefore incomplete.
-///
-/// **An inexact undo keeps the variables it could not unwind.** Truncating
-/// `descriptors` back to the snapshot is only safe when every write is
-/// known to have been undone: a pre-existing descriptor whose `parent` was
-/// re-pointed at a variable CREATED during the speculation, and whose old
-/// value the journal could not record, would otherwise point past the end
-/// of the column and the next `find` would index out of bounds. The store
-/// outlives the speculation — the rest of the module's check keeps using it
-/// — so leaking the speculation's variables is the cheap half of the
-/// trade. The sole caller stops guessing once an undo comes back inexact.
-pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
-    std.debug.assert(store.depth > 0);
-    // A rolled-back write is not seen by the proofs, and a reused index could
-    // read as proved: the checker never speculates (§7.5), and a rollback voids them.
-    if (store.tracks_proofs) store.voidProofs();
-    store.rollbacks +%= 1;
-    store.depth -= 1;
-    const exact = !store.broken;
-    var i = store.journal.items.len;
-    while (i > snapshot.journal_len) {
-        i -= 1;
-        const entry = store.journal.items[i];
-        store.descriptors.set(entry.v.int(), entry.desc);
-    }
-    store.journal.shrinkRetainingCapacity(snapshot.journal_len);
-    if (store.depth == 0) {
-        store.journal.clearRetainingCapacity();
-        store.broken = false;
-    }
-    if (exact) {
-        store.descriptors.shrinkRetainingCapacity(snapshot.vars);
-        store.syncColumns();
-        store.extra.shrinkRetainingCapacity(snapshot.extra);
-        store.constraints.shrinkRetainingCapacity(snapshot.constraints);
-        store.constraint_sets.shrinkRetainingCapacity(snapshot.constraint_sets);
-    }
-    return exact;
 }
 
 // ---------------------------------------------------------------------------
@@ -1299,78 +1155,6 @@ test "resolved walks an alias chain of any length and compresses it" {
     // Every alias on the path now names the end, and is still an alias.
     try testing.expectEqual(int, store.content(at).alias.actual);
     try testing.expect(store.content(at) == .alias);
-    // Under a mark the compression is journalled like any write.
-    var again = int;
-    for (0..3) |_| again = try store.fresh(.{ .alias = .{ .type = @enumFromInt(1), .args = .empty, .actual = again } }, 1);
-    const before = store.content(again).alias.actual;
-    const snap = store.beginSpeculation();
-    _ = store.resolved(again);
-    try testing.expectEqual(int, store.content(again).alias.actual);
-    try testing.expect(store.rollback(snap));
-    try testing.expectEqual(before, store.content(again).alias.actual);
-}
-
-test "rollback restores descriptors and discards variables and extra made since the mark" {
-    var store: TypeStore = .init(testing.allocator);
-    defer store.deinit();
-    const a = try store.freshFlex(3);
-    const b = try store.freshFlex(3);
-    const before_vars = store.count();
-    const before_extra = store.extra.items.len;
-
-    const snapshot = store.beginSpeculation();
-    const args = try store.addVars(&.{ a, b });
-    const applied = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(3), .args = args } } }, 3);
-    const params = try store.addVars(&.{applied});
-    _ = store.merge(a, b, .{ .structure = .{ .func = .{ .params = params, .result = applied } } });
-    store.setRank(a, 99);
-    try testing.expect(store.content(store.find(b)) == .structure);
-
-    try testing.expect(store.rollback(snapshot));
-    try testing.expectEqual(before_vars, store.count());
-    try testing.expectEqual(before_extra, store.extra.items.len);
-    try testing.expectEqual(a, store.find(a));
-    try testing.expectEqual(b, store.find(b));
-    try testing.expectEqual(@as(u32, 3), store.rank(a));
-    try testing.expect(store.content(a) == .flex);
-    try testing.expect(store.content(b) == .flex);
-    try testing.expectEqual(@as(u32, 1), store.get(a).size);
-}
-
-test "commit keeps what the speculation did" {
-    var store: TypeStore = .init(testing.allocator);
-    defer store.deinit();
-    const a = try store.freshFlex(1);
-    const b = try store.freshFlex(1);
-    const snapshot = store.beginSpeculation();
-    _ = store.merge(a, b, .err);
-    store.commit(snapshot);
-    try testing.expectEqual(store.find(a), store.find(b));
-    try testing.expect(store.content(store.find(a)) == .err);
-    try testing.expectEqual(@as(usize, 0), store.journal.items.len);
-}
-
-test "nested speculation rolls back only the inner region" {
-    var store: TypeStore = .init(testing.allocator);
-    defer store.deinit();
-    const a = try store.freshFlex(1);
-    const outer = store.beginSpeculation();
-    store.setRank(a, 5);
-    const inner = store.beginSpeculation();
-    store.setRank(a, 9);
-    try testing.expect(store.rollback(inner));
-    try testing.expectEqual(@as(u32, 5), store.rank(a));
-    try testing.expect(store.rollback(outer));
-    try testing.expectEqual(@as(u32, 1), store.rank(a));
-}
-
-test "nothing is journalled without an outstanding mark" {
-    var store: TypeStore = .init(testing.allocator);
-    defer store.deinit();
-    const a = try store.freshFlex(1);
-    store.setRank(a, 2);
-    store.setContent(a, .err);
-    try testing.expectEqual(@as(usize, 0), store.journal.items.len);
 }
 
 test "record fields are stored sorted and read back as pairs" {

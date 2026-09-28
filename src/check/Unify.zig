@@ -261,8 +261,6 @@ fn releaseSlow(u: *Unify, flags: TypeStore.Flags) Error!void {
 
 /// Put an open wanted on the queue (§9.1). Queued, never resolved here.
 fn readyWanted(u: *Unify, id: Evidence.WantedId) Error!void {
-    // A probe writes nothing the journal cannot undo (§7.5).
-    if (!u.invariant(u.store.depth == 0, "a wanted was readied inside a speculation (checker-v2.md §7.5)")) return;
     const w = u.evidence.ptr(id);
     if (w.state != .open) return;
     w.state = .ready;
@@ -374,7 +372,6 @@ fn isWellKnownName(name: Symbol) bool {
 /// the younger of each pair answered `alias(older)`, and every wanted now on
 /// the survivor has its method type lowered to the survivor's rank.
 fn finishJoins(u: *Unify, root: Var, joins: []const Join, lowered: []const Var) Error!void {
-    if (joins.len != 0 and !u.invariant(u.store.depth == 0, "a Rule-U1 join ran inside a speculation (checker-v2.md §7.5)")) return;
     const rank = u.store.rank(root);
     for (lowered) |v| try Walk.lowerTo(u.store, u.stacks, u.gpa, v, rank);
     for (joins) |j| {

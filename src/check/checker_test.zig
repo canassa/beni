@@ -16,7 +16,7 @@ const diagnostic = @import("diagnostic");
 // diagnostic prints types with, and asserting the store's internals instead
 // would test an implementation that is meant to change. `TypeStore.zig`,
 // `Schemes.zig` and the solver's own files keep the pieces that have no
-// visible output — the journal, the term round trip, the occurs check,
+// visible output — the term round trip, the occurs check,
 // rank adjustment.
 // ---------------------------------------------------------------------------
 
