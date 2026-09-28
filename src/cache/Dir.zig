@@ -231,11 +231,19 @@ fn write(d: *const Dir, kind: Kind, key: Key.Key, bytes: []const u8) bool {
 ///
 /// A missing file, an unreadable one and one too large to be an entry are
 /// all null: a stale cache must be indistinguishable from a cold build, so
-/// none of them is a diagnostic and none is an exit code.
+/// none of them is a diagnostic and none is an exit code. The bytes are read
+/// by `readRacing`, like a front-end artifact's, because another process may
+/// be writing this very file while it is read.
 pub fn load(d: *const Dir, gpa: Allocator, key: Key.Key) ?[]u8 {
-    var buffer: [name_len]u8 = undefined;
-    const p = filePath(&buffer, .entry, key);
-    return d.handle.readFileAlloc(d.io, p, gpa, .limited(max_entry_bytes)) catch null;
+    var bytes: std.ArrayList(u8) = .empty;
+    if (d.readRacing(.entry, key, gpa, &bytes) == null) {
+        bytes.deinit(gpa);
+        return null;
+    }
+    return bytes.toOwnedSlice(gpa) catch {
+        bytes.deinit(gpa);
+        return null;
+    };
 }
 
 /// The front-end artifact for `key`, read into `scratch.*` and returned as a
@@ -252,28 +260,44 @@ pub fn load(d: *const Dir, gpa: Allocator, key: Key.Key) ?[]u8 {
 /// `scratch` is the worker's own buffer and grows to the largest artifact
 /// that worker has read; `gpa` owns it and the caller frees it once.
 pub fn loadFrontend(d: *const Dir, gpa: Allocator, scratch: *std.ArrayList(u8), key: Key.Key) ?[]const u8 {
+    return d.readRacing(.frontend, key, gpa, scratch);
+}
+
+/// Read the `kind` file for `key` into `out`, replacing what it held, and
+/// return its items; null when there is no file to read.
+///
+/// **The file may change size while it is read.** With no `rename`, a
+/// concurrent writer truncates it to nothing and then extends it with the
+/// same bytes, so the size `stat` reports can be smaller or larger than what
+/// the reads then return. The read is bounded by the size seen once and a
+/// short read ends it, so what comes back is always a prefix of the file's
+/// one true contents, and a prefix is a MISS through each format's length
+/// check or section bounds. Nothing here subtracts a later position from an
+/// earlier size: `readFileAlloc` does, and trapped with an integer overflow
+/// on a file that grew between its `stat` and its reads.
+fn readRacing(d: *const Dir, kind: Kind, key: Key.Key, gpa: Allocator, out: *std.ArrayList(u8)) ?[]u8 {
     var buffer: [name_len]u8 = undefined;
-    const p = filePath(&buffer, .frontend, key);
+    const p = filePath(&buffer, kind, key);
     var file = d.handle.openFile(d.io, p, .{}) catch return null;
     defer file.close(d.io);
     const info = file.stat(d.io) catch return null;
     if (info.size == 0 or info.size > max_entry_bytes) return null;
     const size: usize = @intCast(info.size);
-    scratch.clearRetainingCapacity();
-    scratch.ensureTotalCapacity(gpa, size) catch return null;
-    scratch.items.len = size;
+    out.clearRetainingCapacity();
+    out.ensureTotalCapacityPrecise(gpa, size) catch return null;
+    out.items.len = size;
     var filled: usize = 0;
     while (filled < size) {
         // A short read is not a failure — it is what a reader racing a
         // writer sees — so the loop keeps going until the file is exhausted,
-        // and a file that ended early is a MISS through the header's
-        // `total_len` rather than an error here.
-        const n = file.readStreaming(d.io, &.{scratch.items[filled..]}) catch break;
+        // and a file that ended early is a miss for the format's reader to
+        // declare rather than an error here.
+        const n = file.readStreaming(d.io, &.{out.items[filled..]}) catch break;
         if (n == 0) break;
         filled += n;
     }
-    scratch.items.len = filled;
-    return scratch.items;
+    out.items.len = filled;
+    return out.items;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,4 +325,55 @@ test "a key of all zeroes and a key of all ones both name a file" {
     var buffer: [name_len]u8 = undefined;
     try testing.expectEqualStrings("v1/00/" ++ "0" ** 30 ++ ".bec", entryPath(&buffer, @splat(0)));
     try testing.expectEqualStrings("v1/ff/" ++ "f" ** 30 ++ ".bec", entryPath(&buffer, @splat(0xFF)));
+}
+
+/// An `Io` that reports every file's size as `reported`: the size a `stat`
+/// sees when it lands at a different moment of a concurrent writer's work
+/// than the reads that follow it.
+const StaleStat = struct {
+    var reported: u64 = 0;
+    var vtable: Io.VTable = undefined;
+
+    fn io() Io {
+        vtable = testing.io.vtable.*;
+        vtable.fileStat = fileStat;
+        return .{ .userdata = testing.io.userdata, .vtable = &vtable };
+    }
+
+    fn fileStat(userdata: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
+        var info = try testing.io.vtable.fileStat(userdata, file);
+        info.size = reported;
+        return info;
+    }
+};
+
+test "a file that grows or shrinks while it is read comes back as a prefix, never a trap" {
+    // A writer truncates the file to nothing and extends it again, so a
+    // reader's `stat` can report fewer bytes than its reads then return
+    // (the writer got further) or more (another writer truncated it). Either
+    // way what comes back is a prefix of the file, which the formats' own
+    // bounds turn into a miss, and the build does not crash.
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const d: Dir = .{ .io = testing.io, .handle = tmp.dir, .path = "cache" };
+    const key: Key.Key = @splat(0x5A);
+    var bytes: [4096]u8 = undefined;
+    for (&bytes, 0..) |*b, i| b.* = @truncate(i *% 7 +% 1);
+    try testing.expect(d.store(key, &bytes));
+    try testing.expect(d.storeFrontend(key, &bytes));
+
+    var racing = d;
+    racing.io = StaleStat.io();
+    var scratch: std.ArrayList(u8) = .empty;
+    defer scratch.deinit(testing.allocator);
+    for ([_]u64{ 1, 3000, bytes.len, bytes.len + 100 }) |size| {
+        StaleStat.reported = size;
+        if (racing.load(testing.allocator, key)) |got| {
+            defer testing.allocator.free(got);
+            try testing.expectEqualSlices(u8, bytes[0..got.len], got);
+        }
+        if (racing.loadFrontend(testing.allocator, &scratch, key)) |got| {
+            try testing.expectEqualSlices(u8, bytes[0..got.len], got);
+        }
+    }
 }
