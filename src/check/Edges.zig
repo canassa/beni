@@ -201,6 +201,19 @@ pub fn termEdges(
 /// table without sharing yields exactly the edges the recursive walk did.
 /// An explicit stack, and no depth guard: every argument's index is greater
 /// than its owner's (verified on every load from bytes), so the walk ends.
+/// `termsEdges`' set of term indices, hashed by one multiplication where
+/// the default hash of a `u32` key runs Wyhash over its bytes: on a build
+/// of a type of 4 097 parameters the set was a sixth of the whole build.
+const TermSet = struct {
+    pub fn hash(_: TermSet, key: u32) u64 {
+        return @as(u64, key) *% 0x9E37_79B9_7F4A_7C15;
+    }
+
+    pub fn eql(_: TermSet, a: u32, b: u32) bool {
+        return a == b;
+    }
+};
+
 pub fn termsEdges(
     out: *std.ArrayList(Edge),
     scratch: Allocator,
@@ -211,7 +224,7 @@ pub fn termsEdges(
     through_rows: bool,
 ) Error!void {
     if (roots.len == 0) return;
-    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    var seen: std.HashMapUnmanaged(u32, void, TermSet, std.hash_map.default_max_load_percentage) = .empty;
     defer seen.deinit(scratch);
     var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
     defer stack.deinit(scratch);
