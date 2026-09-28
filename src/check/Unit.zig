@@ -176,6 +176,12 @@ pub fn emit(
     args: *std.ArrayList(TermIndex),
     out: *std.ArrayList(TermIndex),
 ) Error!bool {
+    // A wanted's node holds `undetermined`, which is also a real answer,
+    // until `Elaborate.fillUnit` answers it: nothing may be emitted while
+    // one is still pending.
+    if (std.debug.runtime_safety and u.pending.items.len != 0) {
+        std.debug.panic("a dispatch unit was emitted with {d} wanted nodes unanswered (checker-v2.md §13.1)", .{u.pending.items.len});
+    }
     const n = u.nodes.items.len;
     const colour = try scratch.alloc(u8, n);
     defer scratch.free(colour);

@@ -613,6 +613,29 @@ pub fn reaches(store: *TypeStore, stacks: *Stacks, gpa: Allocator, from: Var, ta
     return false;
 }
 
+/// `reaches`, also through the method type of every requirement on a
+/// variable met: the closure `Schemes.quantifierOrder` lists a scheme's
+/// quantifiers from, so "is `target` one of `from`'s quantifiers" has one
+/// answer whichever of the two asks. Error path only.
+pub fn reachesThroughRequirements(store: *TypeStore, stacks: *Stacks, gpa: Allocator, from: Var, target: Var) Error!bool {
+    const want = store.find(target);
+    const seen = store.nextMark();
+    const stack = &stacks.vars;
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, from);
+    while (stack.pop()) |v| {
+        const root = store.find(v);
+        if (root == want) return true;
+        if (store.mark(root) == seen) continue;
+        store.setMark(root, seen);
+        // `owned` with no obligation table: the structural successors, and
+        // a variable's requirements' method types.
+        var n: u32 = 0;
+        while (owned(store, null, root, n)) |c| : (n += 1) try stack.append(gpa, c);
+    }
+    return false;
+}
+
 /// The variable roots (`flex`, `rigid`) reachable from `from` by
 /// `structural` successors, each once, appended to `out` (allocated with
 /// `scratch`).
@@ -801,6 +824,25 @@ fn walkDeepType() !void {
     try lowerTo(&store, &stacks, testing.allocator, v, 2);
     try testing.expectEqual(@as(u32, 2), store.rank(bottom));
     try testing.expect(try reaches(&store, &stacks, testing.allocator, v, bottom));
+}
+
+test "a variable met only in a requirement's method type is reached through requirements alone" {
+    var store: TypeStore = .init(testing.allocator);
+    defer store.deinit();
+    var stacks: Stacks = .{};
+    defer stacks.deinit(testing.allocator);
+    // `a` carries `a.m : a, b -> b`; `b` appears nowhere else.
+    const a = try store.freshFlex(1);
+    const b = try store.freshFlex(1);
+    const params = try store.addVars(&.{ a, b });
+    const method_type = try store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = b } } }, 1);
+    const set = try store.addConstraints(&.{.{ .name = @enumFromInt(3), .fn_var = method_type, .region = @enumFromInt(0), .origin = .where_clause }});
+    store.setContent(a, .{ .flex = .{ .constraints = set.toOptional() } });
+    const args = try store.addVars(&.{a});
+    const scheme = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 1);
+    try testing.expect(!try reaches(&store, &stacks, testing.allocator, scheme, b));
+    try testing.expect(try reachesThroughRequirements(&store, &stacks, testing.allocator, scheme, b));
+    try testing.expect(try reachesThroughRequirements(&store, &stacks, testing.allocator, scheme, a));
 }
 
 /// Whether `a` and `b` are the same type up to fresh copies: the same

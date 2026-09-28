@@ -588,14 +588,15 @@ fn inList(e: *const Elaborate, r: Dispatch.Range, root: Var, method: Symbol) ?u3
 }
 
 /// §12.3's case 3: `q` is in no list of a binder around the site, which is
-/// sound only when none of their types reaches `q` — else the lists disagree
+/// sound only when none of their types reaches `q`, through a requirement's
+/// method type included (the walk their lists come from) — else they disagree
 /// with the types, and that is `internal` ("in the member's type, but not in
 /// its list").
 fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Error!?Dispatch.Term {
     const st = e.in.cx.store;
     var l = e.site_let;
     while (l != no_let) : (l = e.scopes.parent[l]) {
-        if (try Walk.reaches(st, &e.stacks, e.gpa, e.in.let_schemes[l], q)) {
+        if (try Walk.reachesThroughRequirements(st, &e.stacks, e.gpa, e.in.let_schemes[l], q)) {
             e.fail(.internal, "a requirement an enclosing `let` binding's type reaches is not in its list (checker-v2.md §12.3)");
             return null;
         }
@@ -603,7 +604,7 @@ fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Er
     if (binder == .decl) {
         const d = binder.decl;
         if (d < e.in.decl_scheme.len) if (e.in.decl_scheme[d].unwrap()) |scheme| {
-            if (try Walk.reaches(st, &e.stacks, e.gpa, scheme, q)) {
+            if (try Walk.reachesThroughRequirements(st, &e.stacks, e.gpa, scheme, q)) {
                 e.fail(.internal, "a requirement the site's declaration's type reaches is not in its list (checker-v2.md §12.3)");
                 return null;
             }
