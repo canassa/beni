@@ -1,10 +1,10 @@
 -- `W a` derives its `==` from `H.Holder a`, whose `H.eq` takes `Holder Int`
 -- only, so `W` compares only as `W Int`. `same l r = l == r` compares two
 -- `W String`: that is NOT EQUATABLE at the use of `same`, naming the pinned
--- payload, as `mk "a" == mk "a"` below is at its `==`. The unfixed checker
--- pins `mk`'s argument to `Int` before the argument is read, and then says
--- "`mk` needs the 1st argument to be `Int`" — blaming a function whose
--- argument may be any type.
+-- payload, as `mk "a" == mk "a"` below is at its `==` — never a TYPE
+-- MISMATCH saying "`mk` needs the 1st argument to be `Int`", which pinning
+-- `mk`'s argument before the argument was read used to say of a function
+-- whose argument may be any type.
 import H
 
 

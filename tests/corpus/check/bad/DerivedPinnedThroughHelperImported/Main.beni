@@ -1,0 +1,24 @@
+-- `same (M.mk "a") (M.mk "a")` is NOT EQUATABLE at the use of `same`, naming
+-- `W Int`, as the direct comparison is at its `==`; no message blames
+-- `M.mk`, whose argument may be any type. `numbers` compares two `W` of number
+-- literals, which the pin decides as `Int` once nothing else has: it checks.
+import M
+
+
+same l r =
+    l == r
+
+
+helper : Bool
+helper =
+    same (M.mk "a") (M.mk "a")
+
+
+direct : Bool
+direct =
+    M.mk "a" == M.mk "a"
+
+
+numbers : Bool
+numbers =
+    same (M.mk 1) (M.mk 2)

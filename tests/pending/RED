@@ -69,5 +69,6 @@
 # alone; written on d90ab5f, fixed and promoted the same day.
 # CK-202 to CK-209 (2026-09-29), from the final review of the checker: alias
 # names inside structures, an alias DAG whose uses differ in their arguments,
-# and six diagnostic faults. Written and checked on b8b289a.
-tests/pending/check/bad/DerivedPinnedThroughHelper exit=1 codes=not_equatable×1,type_mismatch×1 why=code
+# and six diagnostic faults. Written and checked on b8b289a; all fixed and
+# promoted the same day (the scenarios into ordering_test.zig, perf_test.zig
+# and build_test.zig).

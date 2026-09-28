@@ -1,0 +1,11 @@
+-- check/bad: a pinned derived `==` reached through an unannotated helper is
+-- refused as the pin when the pinned type is ANOTHER module's, whose derived
+-- row `Main` reads from its interface. This module's `Holder` has an own `eq`
+-- for `Holder Int` only; `M` wraps it in `W`; `Main` compares.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder a) (Holder b) =
+    a == b

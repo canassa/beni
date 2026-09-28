@@ -5159,7 +5159,15 @@ with a red fixture on `b8b289a` before its fix.*
   `W Int`", as the direct comparison says.
 - **Fixture** `check/bad/DerivedPinnedThroughHelper/`, red `why=code`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §11.2 and §15.3 *amended 2026-09-29*: a use's own
+  wanted whose pinned argument is still a flex waits on its queue's `deferred` list for the
+  frame's next boundary (`Instances.deferPinned`, `Solve.at_boundary`), locally and through a
+  published row (`publishedMethodTypes`); there the pin holds, is refused as the direct
+  comparison's is, or decides a still-open argument before generalisation. Both uses now say
+  NOT EQUATABLE, "`W` has `==` only as `W Int`", at the use. No other golden changed. Promoted:
+  `tests/corpus/check/bad/DerivedPinnedThroughHelper/`; new
+  `…/DerivedPinnedThroughHelperImported/` (the published row's path, red before the fix with the
+  same TYPE MISMATCH, and `same (M.mk 1) (M.mk 2)`, whose literals the pin decides, checks).
 
 ### CK-208 — A refused dot-call `.eq` names `==`, which the program never wrote
 
@@ -5402,7 +5410,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-204 | diagnostic-quality | K13 | promoted: `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes (fixed) |
 | CK-205 | diagnostic-quality | K13 | promoted: `check/bad/SameNameTypesQualified/` | the final review's fixes (fixed) |
 | CK-206 | diagnostic-quality | K14 | promoted: `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes (fixed) |
-| CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |
+| CK-207 | diagnostic-quality | K13 | promoted: `check/bad/DerivedPinnedThroughHelper/`; new `…Imported/` | the final review's fixes (fixed) |
 | CK-208 | diagnostic-quality | K13 | promoted: `check/bad/DotCallEqRefusal.beni` | the final review's fixes (fixed) |
 | CK-209 | diagnostic-quality | K14 | promoted: `build_test.zig` "an unreadable _manifest.txt refuses the build …" | the final review's fixes (fixed) |
 

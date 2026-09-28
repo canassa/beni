@@ -750,6 +750,29 @@ fn refusePinned(s: *Solve, id: WantedId, pinned: Var, culprit: ?Messages.PinCulp
     if (top != id) try Resolve.reject(s, top, true);
 }
 
+/// Set wanted `id` aside for its frame's next boundary when `arg`, an
+/// argument its derived answer pins, is still a flex: resolution runs as
+/// soon as a receiver's head is known, before the rest of the expression that
+/// decides the argument is read, and pinning it then would make the pin a
+/// fact the program never stated — `same (mk "a") (mk "a")` would bind
+/// `mk`'s argument to the pinned type and blame `mk` for the `"a"`. At the
+/// boundary the argument is whatever the program made it: the pin holds, or
+/// is refused as the direct comparison's is, and an argument still
+/// undecided there takes the pinned type. Only a use's own wanted waits
+/// (a sub-wanted is its parent's to decide), and never at a boundary.
+fn deferPinned(s: *Solve, id: WantedId, arg: Var) Error!bool {
+    if (s.at_boundary) return false;
+    const w = s.evidence.get(id);
+    if (w.parent != .none) return false;
+    if (s.store().resolvedContent(arg) != .flex) return false;
+    const q = &s.queues.items[w.frame];
+    if (!q.live) return false;
+    try q.deferred.append(s.cx.gpa, id.int() | Evidence.queued_wanted);
+    // Readied, so the boundary's drain steps it (`Resolve.drained`).
+    s.evidence.ptr(id).state = .ready;
+    return true;
+}
+
 fn hasPin(pins: []const Contexts.Pin, param: usize) bool {
     for (pins) |p| {
         if (p.param == param) return true;
@@ -848,6 +871,11 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             // A payload met `err`, which has its message.
             .poisoned => return Resolve.poisoned(s, id),
         }
+        // A pinned parameter the use has not decided yet waits for the
+        // boundary (`deferPinned`).
+        for (s.contexts.pinsOf(answer)) |p| {
+            if (p.param < args.len and try deferPinned(s, id, args[p.param])) return;
+        }
         const t = s.contexts.local(a.type).?;
         const entries = try s.cx.scratch.dupe(Contexts.Entry, s.contexts.entriesOf(answer));
         defer s.cx.scratch.free(entries);
@@ -920,14 +948,9 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         },
         else => return refuseDerived(s, id, root, .opaque_type),
     }
-    Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });
-    try Resolve.remember(s, id, root);
-    const n = iface.contextLen(row.context);
-    const subs = try s.cx.scratch.alloc(WantedId, n);
-    defer s.cx.scratch.free(subs);
     // The row's method types, instantiated at the arguments once.
     const scheme = iface.contextScheme(row.context);
-    const types: []const Var = if (scheme != .none) switch (try publishedMethodTypes(s, iface, entry.module, scheme, args, w)) {
+    const types: []const Var = if (scheme != .none) switch (try publishedMethodTypes(s, id, iface, entry.module, scheme, args, w)) {
         .types => |t| t,
         // The row's module could not write its template, and said so
         // (`Publish.Facts.templateScheme`): the answer is poisoned,
@@ -936,7 +959,15 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         .malformed => return Resolve.reject(s, id, true),
         // A parameter the row PINS the use cannot be.
         .pinned => |pinned| return refusePinned(s, id, try s.fresh(.{ .structure = .{ .app = .{ .type = a.type, .args = try s.store().addVars(pinned) } } }), null),
+        // A pinned parameter the use has not decided yet waits for the
+        // boundary (`deferPinned`).
+        .deferred => return,
     } else &.{};
+    Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });
+    try Resolve.remember(s, id, root);
+    const n = iface.contextLen(row.context);
+    const subs = try s.cx.scratch.alloc(WantedId, n);
+    defer s.cx.scratch.free(subs);
     for (subs, 0..) |*sub, k| {
         const e = iface.contextEntry(row.context, k).?;
         const method = iface.symbol(e.method);
@@ -979,7 +1010,7 @@ fn finishDerived(s: *Solve, id: WantedId, type_id: Types.TypeId, subs: []const W
 /// scheme's body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`; the parameters are
 /// unified with the use's arguments and each `τ` is the method type of the
 /// entries whose `slot` it is.
-fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!PublishedTypes {
+fn publishedMethodTypes(s: *Solve, id: WantedId, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!PublishedTypes {
     const cx = s.cx;
     if (@intFromEnum(scheme) >= iface.schemes.len) return .malformed;
     const mark = cx.store.count();
@@ -989,6 +1020,11 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
     const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
     defer cx.scratch.free(elements);
     if (elements.len != args.len + 1) return .malformed;
+    // A parameter the row pins (not a variable) whose argument the use has
+    // not decided yet: the wanted waits for the boundary (`deferPinned`).
+    for (elements[0..args.len], args) |p, arg| {
+        if (s.store().resolvedContent(p) != .flex and try deferPinned(s, id, arg)) return .deferred;
+    }
     for (elements[0..args.len], args) |p, arg| {
         if (!try s.unifyQuiet(p, arg, w.origin)) return .{ .pinned = try cx.scratch.dupe(Var, elements[0..args.len]) };
     }
@@ -999,8 +1035,9 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
 /// `<error>` (the publisher reported why), or it does not have the row's
 /// shape (the compiler's).
 /// Or `pinned`: the use's argument is not a type the row pins (its scheme's
-/// parameter is a ground type), with the row's parameters.
-const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed, pinned: []const Var };
+/// parameter is a ground type), with the row's parameters. Or `deferred`:
+/// the wanted was set aside for the boundary (`deferPinned`).
+const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed, pinned: []const Var, deferred };
 
 /// A derived answer with one sub-wanted per position, each resolved now
 /// (a flex position rides on its variable; a rigid one needs a given, and

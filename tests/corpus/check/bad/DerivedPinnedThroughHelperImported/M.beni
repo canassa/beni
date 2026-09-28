@@ -1,0 +1,11 @@
+-- `W a` derives its `==` from `H.Holder a`, so `W` compares only as `W Int`.
+import H
+
+
+pub type W a
+    = W (H.Holder a)
+
+
+pub mk : a -> W a
+mk x =
+    W (H.Holder x)

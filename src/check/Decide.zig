@@ -97,6 +97,9 @@ pub fn drain(s: *Solve, q: u32, boundary: bool) Error!void {
     // The current frame's queue, whose `ready` list `Solve` holds (and
     // swaps back in after any frame a decision pushes).
     std.debug.assert(q == s.ready_queue);
+    const was_at_boundary = s.at_boundary;
+    s.at_boundary = boundary;
+    defer s.at_boundary = was_at_boundary;
     var batch: std.ArrayList(u32) = .empty;
     defer batch.deinit(gpa);
     while (true) {

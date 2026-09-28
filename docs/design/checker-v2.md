@@ -2632,6 +2632,18 @@ and where the build departs from it:
   the specialised method when the pass saw it (`pinCulprit`; inherited through another local
   pinned type's answer). A marker bound to a non-ground type (`List b`) stays `absent`. The
   lattice gains a rung: a pin may replace entries on its parameter, never the reverse.
+  *Amended 2026-09-29: a pin waits for an undecided argument.* Resolution is eager (§9.1): a
+  wanted is resolved as soon as its receiver's head is known, which inside a call can be before
+  the argument expression that decides `args[i]` is read — `same (mk "a") (mk "a")` with an
+  unannotated `same l r = l == r` binds `same`'s receiver to `W a₀` from `mk`'s result, and
+  unifying the pin then made `a₀` an `Int` that the program never said, so the `"a"` was
+  reported against `mk` ("`mk` needs the 1st argument to be `Int`"). A use's own wanted (no
+  parent) whose pinned argument is still a flex is set aside for its frame's next boundary
+  (`Instances.deferPinned`, on the queue's `deferred` list that §11.4's `equatable` rows use,
+  `Solve.at_boundary`); the published row's pins wait the same way (`publishedMethodTypes`). At
+  the boundary drain the argument is whatever the body made it: the pin holds, or is refused
+  exactly as a direct comparison's is, and an argument still undecided there takes the pinned
+  type before the frame generalises. A sub-wanted never waits: its parent decides it.
 - **The frame** is a new kind, `.fixpoint`: a queue of its own, no group, never merged
   (`Groups.topFrame` skips it). Every pass reports into ONE quiet report per module; a group a pass
   nests is checked with the module's report (`Groups.solveGroup` swaps it back); an `internal` is
@@ -4043,7 +4055,10 @@ written or promoted through a function (the wanted's `kind` is `dot_call`), and 
 after D15 a dot-call derives, so it is refused with the operator's texts, never with an operator
 the program did not write. (3) A `type_mismatch` that prints two distinct types or aliases of one
 name qualifies each by its module, `Main.T` against `Shapes.T` (`Render.qualifyClashes`, over
-what the message prints: an alias's arguments, never its expansion).
+what the message prints: an alias's arguments, never its expansion). (4) A pinned derived `==`
+reached through an unannotated function is the pin's `not_equatable` at the use, as a direct
+comparison's is, never a `type_mismatch` against the function that built the value (§11.2,
+*amended 2026-09-29*).
 
 ### 15.4 Regions and categories
 

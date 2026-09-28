@@ -131,6 +131,10 @@ recursive_frames: u32 = 0,
 ready: std.ArrayList(u32) = .empty,
 /// The queue `ready` belongs to.
 ready_queue: u32 = Generalize.Queue.none,
+/// A boundary's drain is running (`Decide.drain` with `boundary`): what
+/// the eager drain set aside is decided now, and nothing is set aside
+/// again.
+at_boundary: bool = false,
 /// Queues free for reuse (`pushFrame`).
 free_queues: std.ArrayList(u32) = .empty,
 /// The `ready` buffers of popped queues, for the next frames to reuse.
