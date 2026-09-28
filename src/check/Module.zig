@@ -433,7 +433,16 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
                     try roots.append(scratch, r.root);
                     continue;
                 }
-                try roots.append(scratch, givens[k].rigid);
+                // The two readings list one clause in one order: the pair
+                // is the same requirement, by position, method and the
+                // variable the annotation named.
+                const g = givens[k];
+                const same = g.k == k and g.method == r.method and store.flagsOf(g.rigid).name == store.flagsOf(r.root).name;
+                if (!try solver.expect(same, d.inst_start, "an annotated declaration's requirement and its given disagree (checker-v2.md §12.1)")) {
+                    try roots.append(scratch, r.root);
+                    continue;
+                }
+                try roots.append(scratch, g.rigid);
             }
         } else {
             const kept = solver.resolver.decl_requirements[i];
