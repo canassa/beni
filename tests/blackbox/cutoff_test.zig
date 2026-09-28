@@ -3,10 +3,11 @@
 //!
 //! **Two assertions per edit, and the second is the one that is new.**
 //!
-//! 1. An incremental build's every stream and every output file is
-//!    BYTE-IDENTICAL to a cold build of the same tree — diagnostics, exit code,
-//!    `--stage=raw`, `--stage=interface`, `--stage=dispatch` and the emitted
-//!    JavaScript.
+//! 1. An incremental check's every stream is BYTE-IDENTICAL to a cold check
+//!    of the same tree — diagnostics, exit code and the keys it prints.
+//!    (`--stage=raw`, `--stage=interface` and `--stage=dispatch` read no
+//!    cache, so comparing them here would compare two cold runs; the emitted
+//!    JavaScript of a warm build is `cache_test.zig`'s.)
 //! 2. The counters show each importer was skipped **exactly when the
 //!    enumeration says it may be** — not merely that it was skipped.
 //!
@@ -16,17 +17,17 @@
 //! new expectation, and what the assertion says is *the cache re-checked
 //! exactly the modules whose key moved, and nothing else*.
 //!
-//! **The loop is `plans/m4-3.md` §10.2's, in full:**
+//! **The loop is `plans/m4-3.md` §10.2's, less the warm run of the
+//! unchanged tree, which `cache_test.zig` asserts on its own:**
 //!
 //! ```
-//! cold   build into a fresh cache directory, capture every stream and file
-//! warm0  build again; byte-identical to cold; modules_checked == 0
+//! cold   check into a fresh cache directory, capture every stream
 //! apply  the edit
-//! warm1  build; byte-identical to a COLD build of the EDITED tree;
+//! warm1  check; byte-identical to a COLD check of the EDITED tree;
 //!        the re-checked set is exactly the set whose key moved
 //! revert the edit
-//! warm2  build; byte-identical to cold; the re-checked set is the modules
-//!        whose entry the edited state displaced, and no more
+//! warm2  check; byte-identical to cold; every key is back to its cold
+//!        value, so nothing is re-checked
 //! ```
 //!
 //! **What this file is, against the full cross.** `bench/cutoff.sh` runs the
@@ -180,10 +181,7 @@ const Run = struct {
 };
 
 /// One `beni check` over the project, with the three cache counters read back
-/// from the trace and every dump the acceptance test compares taken with it.
-///
-/// The dumps are on the SAME invocation as the check, so what is compared is
-/// one run's whole product and not two runs that happened to agree.
+/// from the trace.
 fn run(w: *World, arena: std.mem.Allocator, cache: ?[]const u8, trace: []const u8) !Run {
     var argv: std.ArrayList([]const u8) = .empty;
     // `--cache-keys` ALONE, so stdout is one block and "which keys moved" is
@@ -228,22 +226,6 @@ fn run(w: *World, arena: std.mem.Allocator, cache: ?[]const u8, trace: []const u
         .exit_code = r.exit_code,
         .counters = counters,
     };
-}
-
-/// The `--stage=raw`, `--stage=interface` and `--stage=dispatch` dumps of the
-/// three app modules, concatenated — the bytes `fast-compiler.md` §8's
-/// acceptance test names beside the diagnostics.
-fn dumps(w: *World, arena: std.mem.Allocator) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    for ([_][]const u8{ "raw", "interface", "dispatch" }) |stage| {
-        const r = try w.runWith(
-            &.{ "dump", try std.fmt.allocPrint(arena, "--stage={s}", .{stage}), "src" },
-            .{ .raw_diagnostics = true },
-        );
-        try out.appendSlice(arena, r.stdout);
-        try out.appendSlice(arena, r.stderr);
-    }
-    return out.items;
 }
 
 fn expectSameRun(what: []const u8, cold: Run, warm: Run) !void {
@@ -344,8 +326,8 @@ test "an alias body no scheme names moves only Leaf's digest, and Mid is re-chec
 // The loop
 // ---------------------------------------------------------------------------
 
-/// `plans/m4-3.md` §10.2's loop over one edit: cold, warm0, the edit and
-/// warm1 against a cold build of the edited tree, the revert and warm2.
+/// `plans/m4-3.md` §10.2's loop over one edit: cold, the edit and warm1
+/// against a cold check of the edited tree, the revert and warm2.
 fn differential(edit: Edit) !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -355,19 +337,11 @@ fn differential(edit: Edit) !void {
     try writeProject(&w);
 
     // ┌─────────────────────────────────────────┐
-    // │ cold, then warm0                        │
+    // │ cold                                    │
     // └─────────────────────────────────────────┘
     const cold = try run(&w, arena, "cache", "cold.json");
-    const cold_dumps = try dumps(&w, arena);
     try testing.expectEqual(@as(u64, 0), cold.counters.hits);
     try testing.expectEqual(@as(u8, 0), cold.exit_code);
-
-    const warm0 = try run(&w, arena, "cache", "warm0.json");
-    try expectSameRun("warm0", cold, warm0);
-    if (warm0.counters.checked != 0) {
-        std.debug.print("{s}: warm0 re-checked {d} modules\n", .{ edit.what, warm0.counters.checked });
-        return error.WarmRunReChecked;
-    }
 
     // ┌─────────────────────────────────────────┐
     // │ apply, warm1 against a COLD of the same │
@@ -403,12 +377,10 @@ fn differential(edit: Edit) !void {
     // │ revert, warm2 back to cold              │
     // └─────────────────────────────────────────┘
     try w.write(edit.path, original);
+    // The edited state wrote entries beside the cold ones and displaced
+    // none: every module's key is back to its cold value, and each finds the
+    // entry the cold run wrote.
     const warm2 = try run(&w, arena, "cache", "warm2.json");
     try expectSameRun("warm2", cold, warm2);
-    try testing.expectEqualStrings(cold_dumps, try dumps(&w, arena));
-    // The edited state displaced some entries; the revert re-checks
-    // exactly those, and the warm run AFTER it re-checks nothing.
-    const settled = try run(&w, arena, "cache", "settled.json");
-    try expectSameRun("settled", cold, settled);
-    try testing.expectEqual(@as(u64, 0), settled.counters.checked);
+    try testing.expectEqual(@as(u64, 0), warm2.counters.checked);
 }
