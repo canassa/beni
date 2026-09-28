@@ -382,6 +382,24 @@ const evidence_spill = 20;
 /// closure evaluates nothing, so the binding moves nothing (`onlyClosures`).
 const lambda_spill = 128;
 
+/// A map keyed by a node or term index, hashed by one multiplication: the
+/// default hash of a `u32` runs Wyhash over its bytes, and a derived body
+/// asks these per call it makes. Membership and lookup only; nothing
+/// iterates them, so the hash decides no order.
+fn IndexMap(comptime V: type) type {
+    return std.HashMapUnmanaged(u32, V, IndexContext, std.hash_map.default_max_load_percentage);
+}
+
+const IndexContext = struct {
+    pub fn hash(_: IndexContext, key: u32) u64 {
+        return @as(u64, key) *% 0x9E37_79B9_7F4A_7C15;
+    }
+
+    pub fn eql(_: IndexContext, a: u32, b: u32) bool {
+        return a == b;
+    }
+};
+
 const Lowerer = struct {
     gpa: Allocator,
     scratch: Allocator,
@@ -470,7 +488,7 @@ const Lowerer = struct {
     /// (`derivedBodiesExist`), judged once, bottom-up.
     bodies_ok: []const bool = &.{},
     /// The shared terms already bound in `bound_out`, by term index.
-    bound: std.AutoHashMapUnmanaged(u32, JsIr.NameIndex) = .empty,
+    bound: IndexMap(JsIr.NameIndex) = .empty,
     bound_out: ?*StmtList = null,
 
     /// One name this module has to import. `value` indexes the other
@@ -508,7 +526,7 @@ const Lowerer = struct {
         /// a request (`forwardTail`).
         mode: enum { direct, forward, steps } = .direct,
         /// The direct and forward forms' depth-taking calls, by node.
-        calls: std.AutoHashMapUnmanaged(u32, void) = .empty,
+        calls: IndexMap(void) = .empty,
         /// How many depth-taking calls the direct form made, and how many
         /// of them it returned (`derivedReturn`): equal makes a forwarder.
         depth_calls: u32 = 0,
@@ -529,7 +547,7 @@ const Lowerer = struct {
         /// `$e`, the steps form's one temporary (`awaitRequest`), once used.
         temp: ?JsIr.NameIndex = null,
         /// The steps form's requests (`depthCall`), by node.
-        requests: std.AutoHashMapUnmanaged(u32, void) = .empty,
+        requests: IndexMap(void) = .empty,
     };
 
     // ---- Small helpers ----------------------------------------------------

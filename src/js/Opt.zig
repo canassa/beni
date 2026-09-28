@@ -307,7 +307,7 @@ const Opt = struct {
         defer o.stack.shrinkRetainingCapacity(base);
         try o.stack.append(o.arena, root);
         while (o.stack.items.len > base) {
-            const node = o.stack.pop().?;
+            const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
                 .ident => o.use(@enumFromInt(o.ir.data(node).lhs)),
                 .arrow => try o.countFunc(@enumFromInt(o.ir.data(node).lhs)),
@@ -366,7 +366,7 @@ const Opt = struct {
         defer o.stack.shrinkRetainingCapacity(base);
         try o.stack.append(o.arena, root);
         while (o.stack.items.len > base) {
-            const node = o.stack.pop().?;
+            const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
                 .arrow => try o.planFunc(@enumFromInt(o.ir.data(node).lhs)),
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
@@ -535,7 +535,7 @@ const Opt = struct {
         try o.stack.append(o.arena, root);
         var total: u32 = 0;
         while (o.stack.items.len > base) {
-            const node = o.stack.pop().?;
+            const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
                 .ident => {
                     if (@as(NameIndex, @enumFromInt(o.ir.data(node).lhs)) != n) continue;

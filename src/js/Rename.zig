@@ -392,7 +392,7 @@ pub const Module = struct {
         defer m.stack.shrinkRetainingCapacity(base);
         try m.stack.append(m.gpa, root);
         while (m.stack.items.len > base) {
-            const node = m.stack.pop().?;
+            const node = JsIr.popOperand(&m.stack).?;
             switch (m.ir.tag(node)) {
                 .ident => try m.see(@enumFromInt(m.ir.data(node).lhs), mentioned),
                 .arrow => try m.collectFunc(@enumFromInt(m.ir.data(node).lhs), mentioned),
