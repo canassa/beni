@@ -330,16 +330,19 @@ not its wall column. A spawn that bypasses `World` (a bare
 `std.process.run`) is invisible to it except as "unrecorded" child CPU, so
 spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 
-**Every test fits in one second of CPU.** The runner fails a test in the
-gates that spends more — its own CPU and every process it spawned, user
-plus system — and the corpus walker holds each case (each build of a
-`run/` fixture) to the same second. There is one budget and no exemption.
-Measure a new test with `-Dtest-budget-ms=1`, which makes every selected
-test fail with its CPU printed (`zig build test-blackbox-<file>
--Dtest-filter=<name> -Dtest-budget-ms=1`), or run the binary by hand; aim
-well under the second, because the gates' own load raises CPU time two to
-three times over a quiet run. A test that does not fit is made to fit, by
-the owner's rule that a few hand-picked tests reach specific branches:
+**Every test fits in a second's work: 4 300 million instructions.** The
+runner fails a test in the gates that retires more user-space
+instructions — its own and those of every thread and process it creates —
+and the corpus walker holds each case (each build of a `run/` fixture) to
+the same budget. 4 300 million is what one second of CPU retires on this
+code on a quiet machine; unlike CPU time, the count does not move with the
+machine's load, so a test that fits once fits every time. There is one
+budget and no exemption. Measure a new test with `-Dtest-budget=1` (in
+millions of instructions), which makes every selected test fail with its
+count printed (`zig build test-blackbox-<file> -Dtest-filter=<name>
+-Dtest-budget=1`), or run the binary by hand. A test that does not fit is
+made to fit, by the owner's rule that a few hand-picked tests reach
+specific branches:
 
 - size the input just past the limit it tests, never a round number past it;
 - move a "the walk does not recurse" claim to a unit test that runs its

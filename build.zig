@@ -23,7 +23,7 @@
 //! `gates` refuses the two filters: a gate runs everything.
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
-//! budget (`tests/test_runner.zig`): one that retires more than 5 000
+//! budget (`tests/test_runner.zig`): one that retires more than 4 300
 //! million user-space instructions, its own and its children's, fails. For
 //! profiling only:
 //!   -Dtest-budget=<millions> another budget; 0 enforces none
@@ -793,14 +793,16 @@ fn childBuildArgs(
 
 /// The budget every test and corpus case is held to, in millions of
 /// user-space instructions retired (`tests/test_runner.zig`): what one
-/// second of CPU retires on this code, measured on a quiet machine over the
-/// whole suite (CLAUDE.md, *Every test has a budget*).
-const default_test_budget = 5_000;
+/// second of CPU retires on this code. Measured on a quiet machine, every
+/// unit and black-box test run one process at a time (`-j1`): 213 billion
+/// instructions in 49.5 s of CPU, user plus system, 4.3 billion a second
+/// (the median test 4.2).
+const default_test_budget = 4_300;
 
 /// The CPU time one million instructions of `default_test_budget` stands
-/// for, in microseconds, when a budget falls back to CPU time: 1 s spread
+/// for, in nanoseconds, when a budget falls back to CPU time: 1 s spread
 /// over the default.
-const fallback_us_per_million = 1_000_000 / default_test_budget;
+const fallback_ns_per_million = 1_000_000_000 / default_test_budget;
 
 /// A test budget as the runner reads it: instructions, and the CPU time
 /// they correspond to where no instruction counter can be opened. Empty is
@@ -818,7 +820,7 @@ const TestBudget = struct {
 /// machine inflates, and the build says so once.
 fn testBudget(b: *std.Build, millions: u64) TestBudget {
     if (millions == 0) return .none;
-    const cpu_ms = b.fmt("{d}", .{millions * fallback_us_per_million / 1000});
+    const cpu_ms = b.fmt("{d}", .{millions * fallback_ns_per_million / 1_000_000});
     if (!perfCountersPermitted()) {
         std.debug.print("note: perf_event_paranoid does not permit counting instructions; each test's budget is {s} ms of CPU instead\n", .{cpu_ms});
         return .{ .instructions = "", .cpu_ms = cpu_ms };
