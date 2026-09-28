@@ -901,15 +901,19 @@ const Printer = struct {
     }
     /// Follow §9 item 1's substitutions to the node that is really printed.
     /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
-    /// the pass itself needs neither a fixpoint nor a backward walk. The
-    /// budget makes a malformed plan a wrong spelling rather than a hang.
+    /// the pass itself needs neither a fixpoint nor a backward walk.
+    ///
+    /// **One step, and total** (CK-190): `Opt.compress` records every
+    /// substitution already resolved, so a target is never itself
+    /// substituted. This used to loop with a budget of 64 and, once a chain
+    /// of single-use aliases outran it, print the name it stopped at — whose
+    /// binding the plan had dropped — and a `--release` build printed an
+    /// unrelated top-level's value.
     fn resolve(p: *Printer, node: Index) Index {
-        var n = node;
-        var budget: u32 = 64;
-        while (budget > 0 and p.ir.tag(n) == .ident) : (budget -= 1) {
-            n = p.plan.replacement(n) orelse return n;
-        }
-        return n;
+        if (p.ir.tag(node) != .ident) return node;
+        const target = p.plan.replacement(node) orelse return node;
+        std.debug.assert(p.ir.tag(target) != .ident or p.plan.replacement(target) == null);
+        return target;
     }
 
     fn precedence(p: *Printer, node: Index) u8 {

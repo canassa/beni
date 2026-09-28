@@ -47,11 +47,6 @@ scenario/CK-144 superlinear
 scenario/CK-179 order-dependent
 # R15-fix-H (2026-09-28): a review of R15-fix-F found CK-190 (the release
 # printer's 64-step substitution budget), CK-191 and CK-192 (`--out`'s
-# record). Written and checked on 31dd4bd.
-tests/pending/run/ReleaseAliasChain1000.beni release: exit=0 program-exit=1
-tests/pending/run/ReleaseAliasChain129.beni release: exit=0 stdout-differs
-tests/pending/run/ReleaseAliasChain130.beni release: exit=0 stdout-differs
-scenario/CK-191 removed
-scenario/CK-192 overwritten
-# CK-193 found by R15-fix-H's own audit of budgets in src/js, checked on 31dd4bd.
-tests/pending/build/bad/ForeignBadShapeWideRecord BuildDidNotFail
+# record), and the slice's own audit CK-193 (the `foreign` shape check's
+# 64-slot stack); written and checked on 31dd4bd, all four fixed and promoted
+# by R15-fix-H (the two scenarios into build_test.zig).

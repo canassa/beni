@@ -6,9 +6,11 @@
 //! The record is `_manifest.txt` at the root of `--out`: a first line
 //! `beni-manifest 1`, then `<hash> <path>` per file, the hash the 64-bit
 //! Wyhash of the bytes written as 16 lower-case hex digits. Everything here
-//! errs toward leaving a file where it is: a line it cannot read, a path
-//! that could leave `--out`, or bytes that are no longer what beni wrote all
-//! mean "not beni's to delete".
+//! errs toward leaving a file where it is: a path that could leave `--out`,
+//! bytes that are no longer what beni wrote, or a path that is, on this file
+//! system, the same file as one this build writes (CK-191: `Ab.mjs` and
+//! `AB.mjs` on APFS) all mean "not beni's to delete". And a `_manifest.txt` that is not in this format at all is not
+//! beni's to overwrite (CK-192): `read` says so, and the build is refused.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -36,27 +38,93 @@ pub fn hash(bytes: []const u8) u64 {
     return std.hash.Wyhash.hash(0, bytes);
 }
 
-/// The previous build's entries, or none: no record, an unreadable one, or
-/// one with another header all read as empty, and a malformed line is
-/// skipped. Paths point into `arena`.
-pub fn read(arena: Allocator, io: Io, out_dir: []const u8) Allocator.Error![]const Entry {
+/// What `--out` held under the record's name before this build.
+pub const Previous = union(enum) {
+    /// No `_manifest.txt`: a first build, or an `--out` that does not exist.
+    none,
+    /// beni's record: the entries it lists that stay inside `--out`.
+    record: []const Entry,
+    /// A file of that name that is not beni's record — the header is not
+    /// `beni-manifest 1`, a line is not `<16 hex digits> <path>`, or it
+    /// cannot be read at all. Somebody else's file, which a build must
+    /// neither overwrite nor act on (CK-192).
+    unrecognised,
+};
+
+/// Read the previous build's record. Paths point into `arena`.
+///
+/// **Strict** since CK-192: every line after the header must have the
+/// record's shape, and the last may only be the empty one after the final
+/// newline, or the file is not beni's. A well-formed line whose path would
+/// leave `--out` is still skipped rather than refused: it is beni's format,
+/// edited by somebody, and acting on it is the one thing that is ruled out.
+pub fn read(arena: Allocator, io: Io, out_dir: []const u8) Allocator.Error!Previous {
     const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, file_name });
     const text = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return &.{},
+        error.FileNotFound, error.NotDir => return .none,
+        else => return .unrecognised,
     };
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    if (!std.mem.eql(u8, lines.first(), header)) return &.{};
+    return parse(arena, text);
+}
+
+/// `read`'s parse of a record's text, apart so that it is testable without
+/// a file system.
+pub fn parse(arena: Allocator, text: []const u8) Allocator.Error!Previous {
+    if (!std.mem.endsWith(u8, text, "\n")) return .unrecognised;
+    var lines = std.mem.splitScalar(u8, text[0 .. text.len - 1], '\n');
+    if (!std.mem.eql(u8, lines.first(), header)) return .unrecognised;
     var out: std.ArrayList(Entry) = .empty;
     while (lines.next()) |line| {
-        if (line.len < 18 or line[16] != ' ') continue;
-        const h = std.fmt.parseInt(u64, line[0..16], 16) catch continue;
+        if (line.len < 18 or line[16] != ' ') return .unrecognised;
+        const h = std.fmt.parseInt(u64, line[0..16], 16) catch return .unrecognised;
         const p = line[17..];
         if (!isContained(p)) continue;
         try out.append(arena, .{ .hash = h, .path = p });
     }
-    return out.items;
+    return .{ .record = out.items };
 }
+
+/// `path` with ASCII letters lower-cased: the key two paths share when they
+/// are one file on APFS and NTFS. The same folding `output_path_collision`
+/// uses (`Emit.checkOutputPaths`), and for the same reason no other: module
+/// path segments and the compiler's reserved names are ASCII.
+fn fold(arena: Allocator, path: []const u8) Allocator.Error![]const u8 {
+    const key = try arena.dupe(u8, path);
+    for (key) |*c| c.* = std.ascii.toLower(c.*);
+    return key;
+}
+
+/// Which of `old`'s paths `removeStale` may consider: not written by this
+/// build byte for byte (`.written`), and — when this build writes a path
+/// equal to it under case folding — which one (`.folds_onto`), so the
+/// caller can ask the file system whether the two names are one file.
+pub const Verdict = union(enum) {
+    written,
+    folds_onto: []const u8,
+    stale,
+};
+
+/// A lookup of the new build's paths, exact and folded (CK-191).
+pub const Written = struct {
+    exact: std.StringHashMapUnmanaged(void) = .empty,
+    folded: std.StringHashMapUnmanaged([]const u8) = .empty,
+
+    pub fn init(arena: Allocator, new: []const Entry) Allocator.Error!Written {
+        var w: Written = .{};
+        for (new) |entry| {
+            try w.exact.put(arena, entry.path, {});
+            try w.folded.put(arena, try fold(arena, entry.path), entry.path);
+        }
+        return w;
+    }
+
+    pub fn judge(w: *const Written, arena: Allocator, path: []const u8) Allocator.Error!Verdict {
+        if (w.exact.contains(path)) return .written;
+        if (w.folded.get(try fold(arena, path))) |other| return .{ .folds_onto = other };
+        return .stale;
+    }
+};
 
 /// Whether `path` names something inside `--out` and is not the record:
 /// relative, `/`-separated, and without an empty, `.` or `..` segment. A
@@ -93,13 +161,32 @@ pub fn write(arena: Allocator, io: Io, out_dir: []const u8, entries: []const Ent
 /// empty, up to but not including `out_dir`. Failures are not errors: a
 /// file that cannot be read or removed stays, which is the outcome this
 /// module always prefers. Returns how many files it removed.
+///
+/// **A stale path equal to a written one under ASCII case folding** is
+/// removed only when the file system says the two names are two files
+/// (CK-191). `Ab.mjs` from the last build and `AB.mjs` from this one are
+/// one file on APFS and NTFS, and there a byte-for-byte comparison read the
+/// file just written, found the old hash when the bytes happened to agree,
+/// and deleted it. On a case-sensitive file system they are two, and the
+/// older is stale like any other — so `--out` still matches a fresh build.
+/// A name that cannot be stat'd stays: not knowing is "not beni's to
+/// delete".
 pub fn removeStale(arena: Allocator, io: Io, out_dir: []const u8, old: []const Entry, new: []const Entry) Allocator.Error!u32 {
-    var kept: std.StringHashMapUnmanaged(void) = .empty;
-    for (new) |entry| try kept.put(arena, entry.path, {});
+    const written: Written = try .init(arena, new);
     var removed: u32 = 0;
     for (old) |entry| {
-        if (kept.contains(entry.path) or !isContained(entry.path)) continue;
+        if (!isContained(entry.path)) continue;
         const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, entry.path });
+        switch (try written.judge(arena, entry.path)) {
+            .written => continue,
+            .stale => {},
+            .folds_onto => |other| {
+                const other_path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, other });
+                const a = Io.Dir.cwd().statFile(io, path, .{}) catch continue;
+                const b = Io.Dir.cwd().statFile(io, other_path, .{}) catch continue;
+                if (a.inode == b.inode) continue;
+            },
+        }
         const bytes = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stale_bytes)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => continue,
@@ -132,4 +219,39 @@ test "a record path is acted on only when it stays inside the output directory" 
     try testing.expect(!isContained("./a.mjs"));
     try testing.expect(!isContained("a\\..\\b.mjs"));
     try testing.expect(!isContained(file_name));
+}
+
+test "only beni's own format parses as a record (CK-192)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const good = try parse(a, header ++ "\n00000000000000ff Main.mjs\n0000000000000001 ../out.mjs\n");
+    try testing.expectEqual(@as(usize, 1), good.record.len);
+    try testing.expectEqual(@as(u64, 0xff), good.record[0].hash);
+    try testing.expectEqualStrings("Main.mjs", good.record[0].path);
+    try testing.expectEqual(@as(usize, 0), (try parse(a, header ++ "\n")).record.len);
+    for ([_][]const u8{
+        "",
+        "my own notes\n",
+        header,
+        "beni-manifest 2\n",
+        header ++ "\nnot a line\n",
+        header ++ "\n\n",
+        header ++ "\n00000000000000zz Main.mjs\n",
+        header ++ "\n00000000000000ff Main.mjs",
+    }) |text| try testing.expectEqual(Previous.unrecognised, try parse(a, text));
+}
+
+test "a stale path is compared with the written ones exactly, then under ASCII case folding (CK-191)" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const new = [_]Entry{ .{ .hash = 1, .path = "AB.mjs" }, .{ .hash = 3, .path = "_core/List.mjs" } };
+    const w: Written = try .init(a, &new);
+    try testing.expectEqual(Verdict.written, try w.judge(a, "AB.mjs"));
+    try testing.expectEqual(Verdict.written, try w.judge(a, "_core/List.mjs"));
+    try testing.expectEqualStrings("AB.mjs", (try w.judge(a, "Ab.mjs")).folds_onto);
+    try testing.expectEqualStrings("AB.mjs", (try w.judge(a, "ab.mjs")).folds_onto);
+    try testing.expectEqualStrings("_core/List.mjs", (try w.judge(a, "_CORE/list.MJS")).folds_onto);
+    try testing.expectEqual(Verdict.stale, try w.judge(a, "Gone.mjs"));
 }

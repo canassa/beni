@@ -203,12 +203,30 @@ A stale file is removed only when **all** of these hold, and is left alone other
    file in a directory anyone can edit, and a line that could name something outside `--out` is
    not acted on;
 3. its bytes still hash to what the manifest recorded. A file the user has since edited is
-   theirs now, and survives.
+   theirs now, and survives;
+4. *(added 2026-09-28 by R15-fix-H, CK-191)* it is not **the same file** as one this build
+   writes. `Ab.mjs` from the last build and `AB.mjs` from this one are one file on APFS and NTFS:
+   comparing paths byte for byte read the file just written there, found the old hash whenever
+   the bytes agreed (two `--release` modules of identical content do), and deleted it. So a stale
+   path equal to a written one under ASCII case folding — the folding rule 2 of the next
+   subsection uses — is removed only when the file system reports the two names as two files
+   (different inode numbers); if either cannot be stat'd, it stays. On a case-sensitive file
+   system they are two, the older one goes, and `--out` still matches a fresh build.
 
-A malformed line, or a manifest whose first line is not `beni-manifest 1`, is skipped the same
-way: the failure mode of a damaged manifest is a stale file left behind, never a file deleted.
-With no manifest at all — the first build into a directory, or a directory from before this rule
-— nothing is removed.
+*Amended 2026-09-28 by R15-fix-H (CK-192).* A manifest must be beni's to be acted on OR
+overwritten. `_manifest.txt` is beni's when its first line is `beni-manifest 1` and every
+further line is `<16 hex digits> <path>`, the file ending in a newline. A file of that name in
+any other shape — the user's own notes, a future version's format, one that cannot be read — is
+somebody else's: the build is **refused** with `unknown_output_record`, naming the file, before
+the first byte is written, and `--out` is left as it was. (Until the amendment such a file read
+as an empty manifest and was silently overwritten.) A well-formed line whose path fails rule 2
+is still only skipped, never refused: the manifest is beni's, edited, and the one thing ruled
+out is acting on that line. With no manifest at all — the first build into a directory, or a
+directory from before this rule — nothing is removed.
+
+**Deploying `--out`.** `_manifest.txt` is served next to the modules unless the deploy excludes
+it; it lists the path and a content hash of every file the build wrote (modules, copied
+siblings, the runtime and the entry file), and nothing else. *(Added 2026-09-28 by R15-fix-H.)*
 
 **The order makes an interrupted build safe.** Before the first output byte, the manifest is
 rewritten as the old entries followed by the new ones (the union, so a build killed halfway still
@@ -2206,6 +2224,20 @@ shared. **Cost:** two linear walks of each function body and no sort. **No fixpo
 as the rewriting walk runs backwards: a substitution never raises anyone's use count, and a chain —
 `const x = p.a; const y = x.b; return f(y);` — collapses in one backward pass because `y` is
 resolved before `x` is looked at.
+
+*Amended 2026-09-28 by R15-fix-H (CK-190).* As built, the pass does not rewrite: it records one
+substitution per use site and the printer follows them. It followed a chain for at most 64 steps
+and then printed the name it had stopped at — whose binding the pass had dropped — so `let x1 = x0
+… x130 = x129 in x130` printed, under `--release`, whatever top-level `Rename` had given that short
+name. **Substitutions are path-compressed when they are recorded** (`Opt.compress`): a binding's
+initialiser that is itself a substituted name records that substitution's target, so no target is
+ever substituted and the printer takes exactly one step per name, whatever the chain's length. The
+general rule this states: **no budget in the release optimiser or the printer may run out into
+output.** A budget either bounds a search that then declines the optimisation — `chainBase`'s
+member-chain depth, the single-use scan's 64 statements — or it is not a budget: `markAssigned`
+walks to the root, because its give-up answer was the unsafe "not assigned". The same audit found
+`boundary.md` §4's check 1 answering "concrete" when its 64-slot stack filled (CK-193); it walks
+the whole type now.
 **Where:** inside `Emit.emitModules`, between `Lower.lower` and `Print.print`
 (`src/js/Emit.zig:760-786`), on the `JsIr` the lowering just produced.
 

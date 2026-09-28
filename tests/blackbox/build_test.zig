@@ -2321,6 +2321,148 @@ test "a refused build removes nothing and leaves the record as it was (CK-163)" 
     try testing.expectEqualStrings(record, try w.read("out/_manifest.txt"));
 }
 
+// CK-191 (`scenario/CK-191`, promoted by R15-fix-H): the stale pass compared
+// an old record's paths with the new build's byte for byte. A build writing
+// `Zz.mjs`, then one writing `ZZ.mjs`: on APFS and NTFS those names are ONE
+// file, the second build's write lands in it, and the stale pass read the
+// file just written, found the first build's hash (a `--release` module of
+// identical content has it) and deleted it. Linux cannot fold case, so the
+// case-folding file system is simulated the way it behaves: `ZZ.mjs` is made
+// a second name (a hard link) of `Zz.mjs` before the second build, so the
+// write goes into the one file under either name. `--out` is absolute so
+// that the harness's own folding check (`world.zig`), which would see the
+// two names, leaves this tree to the scenario.
+test "a stale path that is the same file as a written one under case folding is not removed (CK-191)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeCaseRename(&w);
+    const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}/out", .{try w.projectPath()});
+    const first = try w.run(&.{ "build", "--platform=node", "--release", out, "--root=one", "one" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    try w.hardLink("out/Zz.mjs", "out/ZZ.mjs");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const second = try w.run(&.{ "build", "--platform=node", "--release", out, "--root=two", "two" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+    try testing.expectEqualStrings("", second.stderr);
+    try testing.expectEqualStrings("1\n", (try w.node("out/_main.mjs")).stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The one file keeps both of its names: on APFS, the one name it has.
+    try testing.expect(w.exists("out/Zz.mjs"));
+    try testing.expectEqual(@as(u64, 2), try w.linkCount("out/ZZ.mjs"));
+    const record = try w.read("out/_manifest.txt");
+    try testing.expect(std.mem.indexOf(u8, record, " ZZ.mjs\n") != null);
+    try testing.expect(std.mem.indexOf(u8, record, " Zz.mjs\n") == null);
+}
+
+// CK-191's other half: where the two names are two files — Linux, and any
+// case-sensitive file system — the older is stale like any other and goes,
+// so `--out` is still exactly what a fresh build writes.
+test "a stale path equal to a written one under case folding but another file is removed (CK-191)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeCaseRename(&w);
+    const first = try w.run(&.{ "build", "--platform=node", "--release", "--out=out", "--root=one", "one" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const second = try w.run(&.{ "build", "--platform=node", "--release", "--out=out", "--root=two", "two" });
+    const fresh = try w.run(&.{ "build", "--platform=node", "--release", "--out=fresh", "--root=two", "two" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+    try testing.expectEqualStrings("", second.stderr);
+    try testing.expectEqual(@as(u8, 0), fresh.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const want = try w.listFiles("fresh");
+    const got = try w.listFiles("out");
+    try testing.expectEqual(want.len, got.len);
+    for (want, got) |a, b| try testing.expectEqualStrings(a, b);
+    try testing.expect(!w.exists("out/Zz.mjs"));
+}
+
+/// Two projects that differ only by the case of one module's name, `Zz` and
+/// `ZZ`, with byte-identical `--release` output for it (CK-191). Both sort
+/// after `Main`, so their one export gets the same short name; `Ab` and `AB`
+/// do not (`const b` against `const c`), and a hash would then tell them
+/// apart where APFS does not.
+fn writeCaseRename(w: *World) !void {
+    const lib = "pub one : Int\none =\n    1\n";
+    try w.write("one/Zz.beni", lib);
+    try w.write("one/Main.beni", "import Node exposing (Program)\nimport Zz\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt Zz.one ]\n");
+    try w.write("two/ZZ.beni", lib);
+    try w.write("two/Main.beni", "import Node exposing (Program)\nimport ZZ\nimport String\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt ZZ.one ]\n");
+}
+
+// CK-192 (`scenario/CK-192`, promoted by R15-fix-H): a `_manifest.txt` in
+// `--out` that beni did not write read as an empty record and was
+// overwritten. `backend.md` §2: a file of that name that does not parse as
+// beni's record refuses the build before anything is written.
+test "a _manifest.txt beni did not write refuses the build and nothing is written (CK-192)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try w.write("out/_manifest.txt", "my own notes\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .unknown_output_record,
+        .severity = .@"error",
+        .span = .{ .file = "out/_manifest.txt", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNKNOWN FILE IN THE OUTPUT DIRECTORY",
+        .message = "The output directory already holds a `_manifest.txt` that beni did not write.\n" ++
+            "\n" ++
+            "A build records the files it writes in `out/_manifest.txt` and, on the next\n" ++
+            "build, removes the ones that build no longer writes (`docs/design/backend.md`\n" ++
+            "§2). This file does not begin with `beni-manifest 1`, or has a line that is not\n" ++
+            "a record line, so it is somebody else's, and writing the record would overwrite\n" ++
+            "it. Nothing was written. Move the file, or build into another directory with\n" ++
+            "`--out`.",
+    }, r.diagnostics[0]);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("my own notes\n", try w.read("out/_manifest.txt"));
+    const left = try w.listFiles("out");
+    try testing.expectEqual(@as(usize, 1), left.len);
+    try testing.expectEqualStrings("_manifest.txt", left[0]);
+}
+
 test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

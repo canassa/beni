@@ -271,8 +271,12 @@ pub fn run(
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    // §2's record, read before the first byte is written: a
+    // `_manifest.txt` that is not beni's is somebody's file (CK-192).
+    const previous = try e.readRecord();
+    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
-    try e.flush();
+    try e.flush(previous);
     return .{
         .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
         .files_written = e.files_written,
@@ -505,7 +509,7 @@ const Emitter = struct {
                 if (d.kind != .foreign_value) continue;
                 const annotation = d.annotation.unwrap() orelse continue;
                 if (b.instTag(annotation) == .type_fn) continue;
-                const offender = firstTypeVar(b, annotation) orelse continue;
+                const offender = try firstTypeVar(e.scratch, b, annotation) orelse continue;
                 _ = offender;
                 try e.report(
                     .foreign_bad_shape,
@@ -1694,11 +1698,12 @@ const Emitter = struct {
     /// the union of both builds (so a build killed halfway still lists
     /// everything either may have written), the outputs are written, what
     /// only the previous build wrote is removed, and the record is rewritten
-    /// with this build's files alone (CK-163).
-    fn flush(e: *Emitter) Error!void {
+    /// with this build's files alone (CK-163). An old path equal to a new
+    /// one under case folding is removed only when it is another file
+    /// (CK-191, `OutputRecord.removeStale`).
+    fn flush(e: *Emitter, old: []const OutputRecord.Entry) Error!void {
         const io = e.session.io;
         const out_dir = e.options.out_dir;
-        const old = try OutputRecord.read(e.scratch, io, out_dir);
         const new = try e.scratch.alloc(OutputRecord.Entry, e.pending.items.len);
         for (e.pending.items, new) |output, *entry| entry.* = .{ .hash = OutputRecord.hash(output.bytes), .path = output.path };
         const both = try std.mem.concat(e.scratch, OutputRecord.Entry, &.{ old, new });
@@ -1706,6 +1711,38 @@ const Emitter = struct {
         try e.writeOutputs();
         _ = try OutputRecord.removeStale(e.scratch, io, out_dir, old, new);
         try e.writeRecord(new);
+    }
+
+    /// The previous build's record, or a refusal when `--out` holds a
+    /// `_manifest.txt` that is not one (CK-192, `backend.md` §2). Before
+    /// this, such a file read as an empty record and was overwritten: a
+    /// user's notes of that name were lost without a word. Refused rather
+    /// than renamed around, because the name is the record's by §2's rule 1
+    /// and a build that silently wrote its record elsewhere could never find
+    /// it again.
+    fn readRecord(e: *Emitter) Error![]const OutputRecord.Entry {
+        switch (try OutputRecord.read(e.scratch, e.session.io, e.options.out_dir)) {
+            .none => return &.{},
+            .record => |entries| return entries,
+            .unrecognised => {
+                const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name });
+                try e.reportInFile(
+                    .unknown_output_record,
+                    .{ .path = path },
+                    \\The output directory already holds a `{s}` that beni did not write.
+                    \\
+                    \\A build records the files it writes in `{s}` and, on the next build,
+                    \\removes the ones that build no longer writes (`docs/design/backend.md` §2).
+                    \\This file does not begin with `beni-manifest 1`, or has a line that is not
+                    \\a record line, so it is somebody else's, and writing the record would
+                    \\overwrite it. Nothing was written. Move the file, or build into another
+                    \\directory with `--out`.
+                ,
+                    .{ OutputRecord.file_name, path },
+                );
+                return &.{};
+            },
+        }
     }
 
     fn writeRecord(e: *Emitter, entries: []const OutputRecord.Entry) Error!void {
@@ -1819,51 +1856,28 @@ fn platformModule(qualified: []const u8) []const u8 {
 /// concrete. Iterative: a type is a tree the parser bounds, but the bound is
 /// 4096 levels (language.md §10) and recursion here would be bounded by the
 /// C stack instead of by the input.
-fn firstTypeVar(b: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
-    var stack: [64]Bir.Inst.Index = undefined;
-    var depth: usize = 1;
-    stack[0] = root;
-    var budget: u32 = 4096;
-    while (depth != 0) {
-        budget -= 1;
-        if (budget == 0) return null;
-        depth -= 1;
-        const inst = stack[depth];
+///
+/// **Total** (R15-fix-H's audit, CK-193): it used a 64-slot stack and a
+/// 4 096-node budget and answered null — "concrete", the ADMITTING answer —
+/// when either ran out, so a `foreign` value of a record with 65 fields, one
+/// of them `a`, passed the shape check. The stack now grows in `scratch` and
+/// the walk visits every node once, a type being a tree.
+fn firstTypeVar(scratch: Allocator, b: *const Bir, root: Bir.Inst.Index) Allocator.Error!?Bir.Inst.Index {
+    var stack: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer stack.deinit(scratch);
+    try stack.append(scratch, root);
+    while (stack.pop()) |inst| {
         if (inst.int() >= b.insts.len) continue;
         const d = b.instData(inst);
         switch (b.instTag(inst)) {
             .type_var => return inst,
             .type_fn => {
-                const params = b.extraSlice(b.subRange(@enumFromInt(d.lhs)), Bir.Inst.Index);
-                if (depth + params.len + 1 > stack.len) return null;
-                for (params) |param| {
-                    stack[depth] = param;
-                    depth += 1;
-                }
-                stack[depth] = @enumFromInt(d.rhs);
-                depth += 1;
+                try stack.appendSlice(scratch, b.extraSlice(b.subRange(@enumFromInt(d.lhs)), Bir.Inst.Index));
+                try stack.append(scratch, @enumFromInt(d.rhs));
             },
-            .type_app => {
-                for (b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)) |child| {
-                    if (depth >= stack.len) return null;
-                    stack[depth] = child;
-                    depth += 1;
-                }
-            },
-            .type_tuple => {
-                for (b.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)) |child| {
-                    if (depth >= stack.len) return null;
-                    stack[depth] = child;
-                    depth += 1;
-                }
-            },
-            .type_record => {
-                for (b.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| {
-                    if (depth >= stack.len) return null;
-                    stack[depth] = f.value;
-                    depth += 1;
-                }
-            },
+            .type_app => try stack.appendSlice(scratch, b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)),
+            .type_tuple => try stack.appendSlice(scratch, b.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)),
+            .type_record => for (b.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| try stack.append(scratch, f.value),
             .type_record_ext => return @enumFromInt(d.lhs),
             else => {},
         }

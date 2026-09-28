@@ -269,6 +269,11 @@ pub const Code = enum {
     /// arity would import the type at the wrong width — the defect CK-38
     /// was at 255, and the reason this is an error and not a clamp.
     too_many_type_parameters,
+    /// Appended on 2026-09-28 (slice R15-fix-H, CK-192; `backend.md` §2's
+    /// *The output directory holds what the last build wrote*): `--out`
+    /// holds a `_manifest.txt` that is not beni's record, which the build
+    /// would otherwise overwrite. Reported before the first byte is written.
+    unknown_output_record,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -395,6 +400,7 @@ pub fn title(code: Code) []const u8 {
         .schema_conversion_mismatch => "SCHEMA CONVERSION MISMATCH",
         .method_needs_annotation => "METHOD NEEDS AN ANNOTATION",
         .too_many_type_parameters => "TOO MANY TYPE PARAMETERS",
+        .unknown_output_record => "UNKNOWN FILE IN THE OUTPUT DIRECTORY",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

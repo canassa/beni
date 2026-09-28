@@ -30,9 +30,14 @@
 //! the plan when the printer reaches an `ident` gets there for free, because a
 //! chain — `const x = p.a; const y = x.b; return f(y);` — collapses as the
 //! printer follows `y` to `x.b` and then `x` to `p.a`. The chain is acyclic by
-//! construction (a binding is inlined only into a LATER statement), and
-//! `resolve` carries a budget anyway so that a malformed plan is a wrong
-//! spelling and never a hang.
+//! construction (a binding is inlined only into a LATER statement), and it
+//! is COMPRESSED as it is recorded (`compress`, CK-190): for `const x = p;
+//! const y = x; f(y)` the use of `y` records `p` directly and not the `x`
+//! that `y`'s initialiser reads, so the printer follows exactly one step per
+//! `ident` whatever the chain's length. It used to follow up to 64
+//! and then print a dropped binding's name — a budget whose exhaustion was a
+//! wrong program, which no budget in this pass or the printer may be: each
+//! either finishes or declines the optimisation.
 //!
 //! **Determinism** (CLAUDE.md rule 5): the pass reads only `JsIr`, visits the
 //! module body in emission order and every statement list inside it in
@@ -263,10 +268,14 @@ const Opt = struct {
     /// Mark the root of an assignment target. `a.b = c` mutates `a`'s object
     /// and not `a`, but a chain rooted at `a` is refused either way: the
     /// cheaper rule is the one nobody has to reason about at a call site.
+    ///
+    /// No budget (CK-190's audit): running out of one here would leave the
+    /// root unmarked — "not assigned", the unsafe answer — so the walk goes
+    /// to the root of the chain. It is linear in the chain and the IR is a
+    /// tree, so it ends.
     fn markAssigned(o: *Opt, target: Index) void {
         var node = target;
-        var budget: u32 = 64;
-        while (budget > 0) : (budget -= 1) {
+        while (true) {
             const d = o.ir.data(node);
             switch (o.ir.tag(node)) {
                 .ident => {
@@ -391,8 +400,33 @@ const Opt = struct {
             }
             const at = try o.findUse(stmts[i + 1 ..], n) orelse continue;
             o.drop(stmt);
-            o.inlined[at.int()] = value.toOptional();
+            o.inlined[at.int()] = o.compress(value).toOptional();
         }
+    }
+
+    /// The node a substitution records: `value` itself, or — when `value` is
+    /// an `ident` that is already some earlier binding's single use — what
+    /// THAT substitution records. **Path compression at creation** (CK-190),
+    /// and the reason `Plan.replacement` is one step with no budget.
+    ///
+    /// The invariant is that no recorded target is itself a substituted
+    /// node, and it holds by induction over the order `list` visits
+    /// bindings. A target is the initialiser of a binding at or before the
+    /// one being planned; a node is substituted only as the use site of a
+    /// binding planned LATER, and `findUse` finds a use only AFTER its
+    /// binding in the same list — so no later binding can substitute a
+    /// target already recorded. A nested statement list is planned after
+    /// the list that holds it, but its bindings' uses are inside it, and a
+    /// target is an atom or a member chain, which holds no list.
+    ///
+    /// Before this, `Printer.resolve` followed the chain for 64 steps and
+    /// then printed the name it stopped at — a name whose binding this pass
+    /// had dropped, which `Rename` spelt as whatever a live top-level held:
+    /// `let x1 = x0 … x130 = x129 in x130` printed an unrelated constant.
+    fn compress(o: *Opt, value: Index) Index {
+        const target = if (o.ir.tag(value) == .ident) o.inlined[value.int()].unwrap() orelse value else value;
+        std.debug.assert(o.ir.tag(target) != .ident or o.inlined[target.int()] == .none);
+        return target;
     }
 
     fn drop(o: *Opt, node: Index) void {
@@ -407,6 +441,10 @@ const Opt = struct {
     /// A `template` is not an atom: its interpolations are work, and repeating
     /// work is the one thing the condition exists to forbid. `index_get` is
     /// not one either — `xs[i]` reads `i` as well, and `i` may be assigned.
+    ///
+    /// The budget is a conservative one: a member chain deeper than it
+    /// answers null, which declines the fold (and, in `isPureReadConst`,
+    /// stops the scan). Output is then unoptimised, never wrong.
     fn chainBase(o: *Opt, node: Index) ?NameIndex {
         var n = node;
         var budget: u32 = 64;

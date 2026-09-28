@@ -2950,6 +2950,47 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   guard `check/bad/PhantomTypeAliasKeepsArguments.beni` (a phantom NOMINAL parameter is kept:
   `Boxed String` against `Boxed Bool` is still refused, naming the aliases).
 
+#### R15-fix-H — Budgets that run out into output, and `--out`'s record (added by the manager, 2026-09-28)
+
+- **Goal.** Fix the review of R15-fix-F: CK-190 (a `--release` miscompile once a chain of
+  single-use aliases outruns the printer's 64-step budget), CK-191 (the stale pass can delete the
+  file just written on a case-folding file system), CK-192 (a `_manifest.txt` beni did not write is
+  overwritten), and `backend.md` §2's deploy line; audit `src/js` for any other budget whose
+  exhaustion yields wrong output rather than unoptimised output. IDs from 190 up, because R15-fix-G
+  catalogued concurrently (it took CK-175 to CK-179).
+- **As built (2026-09-28).** Base `31dd4bd`. Spec: `backend.md` §2's manifest rules gain rule 4
+  (same file, CK-191) and an amendment (a manifest not in beni's format refuses the build, CK-192)
+  and the deploy line; §9 item 1 an amendment (substitutions are path-compressed; no budget may run
+  out into output); `language.md` §10 the code `unknown_output_record`.
+  - **CK-190.** `Opt.compress`: a substitution whose value is an `ident` already substituted
+    records that substitution's target, so no target is itself substituted (the invariant and its
+    induction are in the comment, and asserted in Debug on both sides). `Printer.resolve` is one
+    lookup with no budget. The audit: `markAssigned` lost its budget (its give-up answer, "not
+    assigned", was the unsafe one); `chainBase`'s budget and the scan limit decline the fold and are
+    kept; `Rename` has none.
+  - **CK-193** (the audit, outside Opt/Print): `Emit.firstTypeVar`, `boundary.md` §4's check 1,
+    walked a type on a 64-slot stack under a 4 096-node budget and answered "concrete" when either
+    ran out — a platform `foreign` of a 65-field record with an `a` in it built. It walks the whole
+    type on a growing stack now.
+  - **CK-191.** `OutputRecord.Written.judge`: an old path not written byte for byte but equal to a
+    written one under ASCII folding is removed only when `statFile` gives the two names different
+    inodes; a name that cannot be stat'd stays. The reviewer's form (fold only) would have left the
+    older file beside the new one on Linux, which the harness's own folding check refuses; this one
+    keeps `--out` equal to a fresh build where names are two files.
+  - **CK-192.** `OutputRecord.read` is strict (`Previous`: `none`, `record`, `unrecognised`); a
+    line leaving `--out` is still skipped, not refused. `Emit.readRecord` runs after
+    `checkOutputPaths` and before the first write, and reports `unknown_output_record` against the
+    file.
+  - **Evidence.** Fixture-first against a separately built `31dd4bd`: `run/ReleaseAliasChain{129,
+    130,1000}` red (`7`, a function's source, a `ReferenceError`), `{64,65,128}` green there and in
+    the corpus from the red commit; `build/bad/ForeignBadShapeWideRecord/` red (`BuildDidNotFail`);
+    both scenarios red (`removed`, `overwritten`). CK-191 is reproduced on Linux by making `ZZ.mjs`
+    a hard link of `Zz.mjs` (with `--out` absolute, outside the harness's folding check); `Zz`/`ZZ`
+    rather than `Ab`/`AB` because only names that sort alike give byte-identical release modules.
+    Promoted: the six chains into `run/`, the wide record into `build/bad/`, CK-191 (two scenarios,
+    one file and two files) and CK-192 into `build_test.zig`; hermetic tests of `OutputRecord.parse`
+    and `Written.judge`. Pending: CK-144 and R15-fix-G's CK-179, as before.
+
 ---
 
 ## 4. CK → slice index
@@ -2987,6 +3028,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-E | CK-154, 162, 168 (`tests/corpus/check/bad/`), CK-159 (`run/DerivedOverSpecialisedEq/`; new `run/DerivedPinnedAcrossModules/`, `check/bad/DerivedPinnedRefused/`) | — | CK-161 kept for the owner (message fixed; fixture moved to `check/bad/`) |
 | R15-fix-F | CK-163 (`build_test.zig`), CK-164, 165 (`perf_test.zig`), CK-166, 167 (`abuse_test.zig`) | — | perf study item 4 (`Graph.lookup` as arrays); `backend.md` §2's output record |
 | R15-fix-G | CK-175 (`run/PhantomAliasUnifiesByExpansion`; new `run/PhantomAliasNested`, `run/PhantomAliasMutualGroup` in PERM, `check/bad/PhantomTypeAliasKeepsArguments`), CK-176, 177, 178 (`tests/corpus/check/bad/`) — all four found by R15-fix-E's review | — | CK-179 found, pending (`scenario/CK-179`, the owner's) |
+| R15-fix-H | CK-190 (`run/ReleaseAliasChain*`), CK-193 (`build/bad/ForeignBadShapeWideRecord/`), CK-191, 192 (`build_test.zig`) — all four found by R15-fix-F's review or the slice's audit | — | the budget audit of `src/js` (`backend.md` §9 item 1, amended) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
