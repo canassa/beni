@@ -266,7 +266,6 @@ pub fn run(
     skip: []const bool,
     budget: u32,
 ) Error!void {
-    if (reporter.quiet) return;
     const bir = cx.bir;
     for (bir.decls, 0..) |d, i| {
         if (i < skip.len and skip[i]) continue;

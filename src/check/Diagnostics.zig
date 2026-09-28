@@ -85,11 +85,10 @@ pub const max_derived_record_fields = 4096;
 pub const Reporter = struct {
     gpa: Allocator,
     env: *Env,
+    /// `Report`'s staging list. The reporter never drops a message itself:
+    /// `Report.emit` is the one place a quiet module's are dropped
+    /// (checker-v2.md §15.1).
     items: *std.ArrayList(Item),
-    /// A module in an import cycle reports nothing (checker.md §4.3), and
-    /// so does a declaration that has already failed: one mistake, one
-    /// message.
-    quiet: bool = false,
     /// The `where` clause a `.where_clause` unification is checking: set by
     /// the resolver around that one unification, so the message can name
     /// the clause after its receiver is bound (static-dispatch-spike.md
@@ -137,7 +136,6 @@ pub const Reporter = struct {
         actual: Var,
         rigid: ?Rigid,
     ) Error!void {
-        if (r.quiet) return;
         if (category.tag == .where_clause and rigid == null) {
             if (r.clause) |c| return DispatchTexts.whereClauseMismatch(r, region, c, expected, actual);
         }
@@ -721,7 +719,6 @@ pub const Reporter = struct {
         given: u32,
         missing: []const Var,
     ) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -763,7 +760,6 @@ pub const Reporter = struct {
         arity: u32,
         given: u32,
     ) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         const w = &out.writer;
@@ -785,7 +781,6 @@ pub const Reporter = struct {
         given: u32,
         actual: Var,
     ) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -812,7 +807,6 @@ pub const Reporter = struct {
     /// "produce a function", so it gets its own sentence rather than a
     /// confusing reuse of the call one.
     pub fn ctorPatternArity(r: *Reporter, region: Bir.Inst.Index, callee: Callee, arity: u32, given: u32) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         const w = &out.writer;
@@ -829,7 +823,6 @@ pub const Reporter = struct {
     // ---- Kinds, cycles, obligations --------------------------------------
 
     pub fn kindMismatch(r: *Reporter, region: Bir.Inst.Index, left: TypeStore.Kind, right: TypeStore.Kind) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         const w = &out.writer;
@@ -852,7 +845,6 @@ pub const Reporter = struct {
         expected: Var,
         actual: Var,
     ) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -921,7 +913,6 @@ pub const Reporter = struct {
     }
 
     pub fn infiniteType(r: *Reporter, region: Bir.Inst.Index, name: Symbol.Optional) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         const w = &out.writer;
@@ -961,7 +952,6 @@ pub const Reporter = struct {
     /// same problem — this file nests further than the compiler reads — and
     /// an author who splits the type up fixes both.
     pub fn nestingTooDeep(r: *Reporter, region: Bir.Inst.Index, limit: u32) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         const w = &out.writer;
@@ -998,23 +988,10 @@ pub const Reporter = struct {
     /// A compiler invariant the checker could not rely on. It is a
     /// diagnostic and not a panic for the reason `fast-compiler.md` §5
     /// gives — the build says what it could not do — and it should be
-    /// unreachable on every input a person writes.
+    /// unreachable on every input a person writes. `Report.emit` keeps it
+    /// even in a quiet module: a broken invariant is not a consequence of
+    /// anything the author wrote.
     pub fn internal(r: *Reporter, region: Bir.Inst.Index, what: []const u8) Error!void {
-        if (r.quiet) return;
-        return r.internalAlways(region, what);
-    }
-
-    /// `internal`, said even in a QUIET module.
-    ///
-    /// `quiet` means "an earlier phase already reported on this module, so
-    /// every type error in it is a consequence of a message the author
-    /// already has" — a rule about the PROGRAM. A compiler invariant that
-    /// broke in this run is not a consequence of anything the author wrote,
-    /// and a module with a syntax error is exactly where an interface
-    /// record full of holes gets built, so the one place this is used —
-    /// `--roundtrip-interfaces` failing to load a record back
-    /// (`fast-compiler.md` §8) — must not be able to fail in silence.
-    pub fn internalAlways(r: *Reporter, region: Bir.Inst.Index, what: []const u8) Error!void {
         var out = r.writer();
         defer out.deinit();
         out.writer.print(
@@ -1075,7 +1052,6 @@ pub const Reporter = struct {
     /// everything a build prints. The slice is the solver's scratch and is
     /// discarded straight after, so sorting it in place costs nothing.
     pub fn missingField(r: *Reporter, region: Bir.Inst.Index, missing: []Symbol, actual: Var, expected: Var) Error!void {
-        if (r.quiet) return;
         std.mem.sort(Symbol, missing, r.env.interner, symbolTextLessThan);
         var out = r.writer();
         defer out.deinit();
@@ -1108,7 +1084,6 @@ pub const Reporter = struct {
 
     /// Sorted by name text for the same reason as `missingField`.
     pub fn unknownField(r: *Reporter, region: Bir.Inst.Index, extra: []Symbol, actual: Var, expected: Var) Error!void {
-        if (r.quiet) return;
         std.mem.sort(Symbol, extra, r.env.interner, symbolTextLessThan);
         var out = r.writer();
         defer out.deinit();
@@ -1137,7 +1112,6 @@ pub const Reporter = struct {
     }
 
     pub fn recordNotClosed(r: *Reporter, region: Bir.Inst.Index, actual: Var, expected: Var) Error!void {
-        if (r.quiet) return;
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);

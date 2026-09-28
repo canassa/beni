@@ -85,7 +85,6 @@ pub fn run(
     interner: *const InternPool.Global,
     reporter: *Diagnostics.Reporter,
 ) Error!void {
-    if (reporter.quiet) return;
     const count: u32 = @intCast(bir.decls.len);
     if (count == 0) return;
     // Nothing can be reported about a module with no constant in it, and a

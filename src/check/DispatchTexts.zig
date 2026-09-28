@@ -35,7 +35,6 @@ pub fn unknownMethod(
     type_name: Symbol,
     method: Symbol,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
@@ -155,7 +154,6 @@ pub fn undeterminedMethodReceiver(
     method: Symbol,
     kind: TypeStore.Kind,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
@@ -207,7 +205,6 @@ pub fn methodSignatureMismatch(
     wanted: Var,
     declaration: ?u32,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -288,7 +285,6 @@ pub fn clashes(r: *const Reporter, module: Graph.Index, type_name: Symbol, metho
 
 /// §10.2. The value exists, but not as `pub`.
 pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, method: Symbol) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
@@ -309,7 +305,6 @@ pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, 
 /// §10.3. A tuple, a function, `()` or a record that reached discharge
 /// rather than the call.
 pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v: Var, shape: ShapeKind) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -430,7 +425,6 @@ pub fn missingWhereConstraint(
     /// its annotation cannot take the `where` (§10.4).
     let_binding: Symbol.Optional,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -487,7 +481,6 @@ pub fn methodConstraintMismatch(
     younger: Var,
     older: Var,
 ) Error!void {
-    if (r.quiet) return;
     _ = other;
     var out = r.writer();
     defer out.deinit();
@@ -517,7 +510,6 @@ pub fn typeDispatchNeedsAnnotation(
     method: Symbol,
     fn_var: Var,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -554,7 +546,6 @@ pub fn tooManyInferredConstraints(
     /// Each name's receiver, named as a `where` clause names it (§10.11).
     receivers: []const Var,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -598,7 +589,6 @@ pub fn ambiguousMethodReceiver(
     count: u32,
     scheme: Var,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -640,7 +630,6 @@ pub fn constrainedConstant(
     var_name: Symbol.Optional,
     method: Symbol,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
@@ -681,7 +670,6 @@ fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
 }
 
 pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -737,7 +725,6 @@ pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: Equata
 }
 
 pub fn notInterpolatable(r: *Reporter, region: Bir.Inst.Index, v: Var) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -768,7 +755,6 @@ pub fn notInterpolatable(r: *Reporter, region: Bir.Inst.Index, v: Var) Error!voi
 }
 
 pub fn ambiguousInterpolation(r: *Reporter, region: Bir.Inst.Index) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     out.writer.writeAll(
@@ -784,7 +770,6 @@ pub fn ambiguousInterpolation(r: *Reporter, region: Bir.Inst.Index) Error!void {
 }
 
 pub fn ambiguousTuple(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     out.writer.print(
@@ -800,7 +785,6 @@ pub fn ambiguousTuple(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!vo
 }
 
 pub fn tupleIndexOutOfRange(r: *Reporter, region: Bir.Inst.Index, index: u32, arity: u32, v: Var) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -817,7 +801,6 @@ pub fn tupleIndexOutOfRange(r: *Reporter, region: Bir.Inst.Index, index: u32, ar
 }
 
 pub fn notATuple(r: *Reporter, region: Bir.Inst.Index, index: u32, v: Var) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -830,7 +813,6 @@ pub fn notATuple(r: *Reporter, region: Bir.Inst.Index, index: u32, v: Var) Error
 }
 
 pub fn tryShape(r: *Reporter, region: Bir.Inst.Index, scrutinee: Var, enclosing: Var) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
@@ -878,7 +860,6 @@ pub fn cyclicValue(
     /// (`Convention`'s `thunk` and `applied`, checker-v2.md §12.5).
     per_use: ?[]const u8,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;

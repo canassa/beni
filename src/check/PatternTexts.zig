@@ -23,7 +23,6 @@ const ordinalSuffix = Diagnostics.ordinalSuffix;
 /// store they name constructors from is the module's, and this message
 /// is the last thing that will ever read it.
 pub fn missingPatterns(r: *Reporter, region: Bir.Inst.Index, examples: []const []const u8) Error!void {
-    if (r.quiet) return;
     if (examples.len == 0) return;
     var out = r.writer();
     defer out.deinit();
@@ -68,7 +67,6 @@ pub fn patternBudgetExhausted(
     why: enum { budget, depth },
     limit: u32,
 ) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     const w = &out.writer;
@@ -125,7 +123,6 @@ pub fn refutablePattern(
     code: diagnostic.Code,
     examples: []const []const u8,
 ) Error!void {
-    if (r.quiet) return;
     const what: []const u8 = if (code == .refutable_let_pattern) "A `let` pattern" else "A parameter";
     var out = r.writer();
     defer out.deinit();
@@ -170,7 +167,6 @@ pub fn refutablePattern(
 /// A branch no value can reach: every shape it matches is taken by a
 /// branch above it. `index` is 1-based, as the reader counts them.
 pub fn redundantPattern(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {
-    if (r.quiet) return;
     var out = r.writer();
     defer out.deinit();
     out.writer.print(
