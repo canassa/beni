@@ -3043,6 +3043,51 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   5 000 / 10 000 links 2.0 / 8.4 s → 1.1 / 2.1 s; 20 000 links OutOfMemory → 4.6 s with one
   `nesting_too_deep`. Pending: CK-144 only.
 
+#### R15-fix-J — The structural residues, and a string literal's span (2026-09-28)
+
+- **Goal.** Close every open structural-only finding (CK-146's items 2–5, CK-149 to CK-153,
+  CK-155 to CK-158, CK-160; the v1-era CK-10, CK-14 and CK-35 checked against v2), decide CK-194's
+  leftover, and fix a reported span defect (CK-200).
+- **As built (2026-09-28).** Base `d90ab5f`. Every finding was verified still present on the base
+  first. Spec: `checker-v2.md` §7.5 and I14 *amended 2026-09-28* (the journal is deleted; the first
+  probe builds it in full); no other contract changed.
+  - **CK-200** (red first, `why=diag`). `Lower.lowerString` stamps `string`/`interp` with the
+    opening quote and each `chunk` with its own token; `Session.tokenSpan` spans a `str_start` to
+    its `str_end`. 25 `check/` goldens that underlined one quote were wrong the same way and were
+    re-blessed; each diff is one span widened over a literal, message text identical.
+  - **CK-151.** The texts' `quiet` field and its 37 guards deleted (and `Exhaustive.run`'s and
+    `Cycles.run`'s, whose caller already skips a quiet module); `internalAlways` is `internal`.
+  - **CK-146.** (2) `Report.error_regions` answers `hasErrorAt`. (3) was a live defect, CK-201:
+    the quiet report keeps only `internal`s, so the pass never saw a nested refusal; now
+    `Report.too_deep` counts every `nesting_too_deep` emitted, and the use says
+    `Messages.derivedBudget`. (4) `verifyReads` appends through `Report.appendTo`. (5) a review
+    watch: each `at` is paired with `defer at(saved)`.
+  - **CK-150.** `monomorphicMethod` walks `Walk.child`'s structural successors on a growing
+    stack; it was visible (a held variable past 64 pending parts lost the hint): new
+    `check/bad/LetValueConstrainedWideType.beni`.
+  - **CK-152.** The journal, snapshots, rollbacks, `depth`/`broken`/`rollbacks`, the four "inside
+    a speculation" checks and `Derivable`'s rollback guards deleted, with their unit tests.
+  - **CK-149.** `Generalize.assertOwnedWithin` at each variable the rank walk finalises.
+  - **CK-153.** `Unify.unifyArgument`: the question belongs to the top pair by contract; `unify`
+    no longer reads its caller's position.
+  - **CK-156.** `Evidence.assertWrittenOrder`, called from `Schemes.Writer.add` (one line: the
+    file is at §19.1's cap). **CK-155.** `readPlain` refuses unless argument `i` is quantifier `i`.
+    **CK-157.** each requirement/given pair agrees on `k`, method and spelled name.
+    **CK-160.** `Unit.emit` refuses to run with a pending node; `caseThree` walks
+    `Walk.reachesThroughRequirements`. **CK-158.** `rules_test.zig`'s bit fence reads any
+    receiver, and `src/js` and `src/cache`.
+  - **CK-194's leftover** is recorded as a perf idea, not built: re-ranking top-level frames is a
+    change to §8's rank model (and a departure from Elm's `outermostRank`), no program is wrong
+    today, and it needs a spec amendment and a `bench/corpus` measurement first.
+- **Evidence.** Each safe-build assert was proved live by breaking its invariant on purpose and
+  watching the black-box suites panic with its message (I15: a leaf ranked one too high, 30
+  `run/` cases; canonical order: `orderWalk` visiting a result first, 68 `check/good`; the
+  requirement pairs: givens reversed, 4 `run/`; the unit's placeholder: one node left pending,
+  502 `run/`). Each changed rule was proved reached by disabling it (`hasErrorAt`:
+  `LetHelperRecordOneError`; the argument question: `EqRecordFieldFunctionAtComparison`). CK-200
+  and CK-201 and CK-150's fixture are red on the base and green after. Gates green after every
+  commit; `test-pending`: CK-144 only.
+
 ---
 
 ## 4. CK → slice index
@@ -3082,6 +3127,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-G | CK-175 (`run/PhantomAliasUnifiesByExpansion`; new `run/PhantomAliasNested`, `run/PhantomAliasMutualGroup` in PERM, `check/bad/PhantomTypeAliasKeepsArguments`), CK-176, 177, 178 (`tests/corpus/check/bad/`) — all four found by R15-fix-E's review | — | CK-179 found, pending (`scenario/CK-179`, the owner's) |
 | R15-fix-H | CK-190 (`run/ReleaseAliasChain*`), CK-193 (`build/bad/ForeignBadShapeWideRecord/`), CK-191, 192 (`build_test.zig`) — all four found by R15-fix-F's review or the slice's audit | — | the budget audit of `src/js` (`backend.md` §9 item 1, amended) |
 | R15-fix-I | CK-161 (`run/DotCall*`, under D15), CK-179 and CK-196 (`ordering_test.zig`), CK-194 (`perf_test.zig`), CK-195, 197 (`tests/corpus/check/bad/`) — CK-194 to CK-197 from the manager's residues | — | D15 and D16 recorded (`checker-v2.md` §21.1) |
+| R15-fix-J | CK-200 (`check/bad/StringLiteralMismatchSpan`), CK-201 (`ordering_test.zig`), CK-150 (`check/bad/LetValueConstrainedWideType`); CK-146, 149, 151, 152, 153, 155 to 158, 160 structural (asserts, deletions, a widened fence); CK-10, 14, 35 checked closed | — | CK-194's re-ranking recorded as a perf idea; `checker-v2.md` §7.5 and I14 amended (journal deleted) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
