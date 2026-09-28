@@ -1,0 +1,20 @@
+-- An unannotated function may dot-call a derived `compare`. `Colour` has
+-- no `pub compare`, so `compare` is derived: `Red < Blue` reaches it, and
+-- so does `x.compare y` in `before`, through the requirement `before`
+-- promotes (checker-v2.md §21.1). Oracle twin: `before` annotated with
+-- `where a.compare : a, a -> Order` prints `T`.
+import Node exposing (Program)
+
+
+type Colour
+    = Red
+    | Blue
+
+
+before x y =
+    x.compare y == LT
+
+
+main : Program
+main =
+    Node.printLines [ if before Red Blue then "T" else "F" ]

@@ -767,6 +767,7 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // The whole run stamps what it proves (CK-93): a header walk may stop at
     // a node a pattern's walk blackened, whose variables must be stamped too.
     run.proves = true;
+    run.limit = Unify.max_depth;
     if (s.frame().inherited != null) {
         try Groups.occursMerged(s, &run, binders);
     } else {
@@ -851,8 +852,27 @@ fn occursRequirements(s: *Solve, run: *Walk.Occurs) Error!void {
 
 /// §8.2: an occurs check from one binder; a cycle is reported at the
 /// binder, drawn as its structure, and its node poisoned.
+///
+/// A boundary's run is bounded by `Unify.max_depth` (checker-v2.md
+/// §7.3): a binder whose type is deeper is `nesting_too_deep` at
+/// the binder, and poisoned, so no use copies it again. A chain of bindings
+/// each one deeper than the last (`x2 = Just x1`) otherwise copied and
+/// walked its whole type at every link, quadratic in time and in memory.
 pub fn occursBinder(s: *Solve, run: *Walk.Occurs, b: Generalize.Binder) Error!void {
-    _ = (try run.check(s.store(), &s.stacks, s.cx.gpa, b.v)) orelse return;
+    const found = try run.check(s.store(), &s.stacks, s.cx.gpa, b.v);
+    if (run.too_deep) {
+        // A type that holds a poisoned part grew from a binding already
+        // refused (the next links of the chain): its consequence, poisoned
+        // in silence, as a cycle through one is (`reportCycle`).
+        if (try Walk.hasError(s.store(), &s.stacks, s.cx.gpa, b.v) == .clean) {
+            if (b.decl) |d| s.report.at(d);
+            try Messages.inferredTooDeep(s.report, b.region, b.name, run.limit);
+        }
+        try s.poison(b.v);
+        run.restart(s.store());
+        return;
+    }
+    _ = found orelse return;
     if (b.decl) |d| s.report.at(d);
     try s.reportCycle(b.region, b.name, b.v, null);
     run.restart(s.store());

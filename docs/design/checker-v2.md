@@ -905,6 +905,36 @@ follows declaration order: CK-179, pending, the owner's to decide (I9's scope pr
 program's types). `PERM`'s CK-175 program (`run/PhantomAliasMutualGroup.beni`) is chosen so that
 no member can meet two names.
 
+*Amended 2026-09-28: agree or expand (the owner's decision, §21.1).* An inferred type keeps an
+alias name only while every name it meets agrees, and otherwise shows the expansion:
+
+- **A flex takes a name.** A flex nothing rides on that meets an alias takes its name. When the
+  alias is itself an inferred name (a class a flex took its name from, `TypeStore.inferred_alias`)
+  the flex joins that class, so one expansion reaches all of it. When it is a WRITTEN one — an
+  annotation's reading, an instantiation's copy — the flex gets a node of its own with the same
+  alias content (the same arguments and expansion, so the same type), marked inferred, and the
+  written node is never joined: nothing an inferred type meets later can rewrite what the program
+  wrote. A flex that carries a kind, a marker or anything riding meets the expansion, as before.
+- **An inferred name meets something else.** Two aliases of one injective name whose arguments
+  unify agree: two inferred ones are merged, keeping the name, and an inferred one is never merged
+  with a written one. Every other meeting — two different names, two uses of a non-injective
+  alias, an alias against its own expansion, a rigid, a structure or a flex that carries anything
+  — unifies the expansions and then EXPANDS the inferred side: its class joins the root its chain
+  resolves to, which keeps its content (`Unify.expand`, `TypeStore.expandAlias`; no edge is added,
+  so no acyclicity proof is voided). A written name is left as written.
+- **A requirement attached through a name.** A wanted whose receiver's class is an inferred alias
+  of a flex expands it first (`Resolve.step`), as a flex that met the alias already carrying the
+  wanted would have.
+
+"One name, or none" is commutative, associative and idempotent, so the name an inferred type shows
+is a function of the names it met, never of the order it met them in. A declaration's annotation
+is published and dumped from its own reading, which is written and never expands: `x : Name`
+prints `Name`. The accepted cost: a parameter that took its annotation's name and then met the
+expansion — `String.length p` on `p : Name`, or a field access on a record alias — shows the
+expansion in a later message and in the dump of its locals. `ordering_test.zig` checks the
+recursive-group program in both orders, and `PERM` now runs `run/PhantomAliasUnifiesByExpansion`
+too.
+
 ### 7.2 Choice among failures is by text (I13, CK-07)
 
 `unifyRecord` unifies every shared field and collects the failures. The one returned is the
@@ -981,6 +1011,20 @@ sides before any failure's text, and a cycle is `infinite_type` at the unificati
 — the mistake, where the mismatch was its consequence. Error path only. And `Render` elides a
 cycle where it repeats (`Namer.path`, the roots being printed): a cyclic type met by any other
 printer is `( …, … )`, never unrolled.
+
+*Amended 2026-09-28: an inferred type deeper than the guard is refused at its binder.* A chain of
+top-level bindings each wrapping the one before (`x0 = 0`, `x{i} = Just x{i-1}`) builds an i-deep
+type that no unification ever walks to the bottom, so the guard above never saw it — while every
+link copied the whole of the one before at instantiation (every node of a generalised top-level
+type is quantified) and walked it again in the boundary's occurs check and rank adjustment:
+quadratic in time and in the store's memory, and out of memory, exit 2 with no diagnostic, near
+20 000 links. The boundary's occurs run (§8.1 step 4) is now bounded by the same guard,
+`Unify.max_depth` (`Walk.Occurs.limit`): a binder whose type goes deeper is `nesting_too_deep` at
+the binder (`Messages.inferredTooDeep`, a text for an inferred type) and poisoned, so no use copies
+it again. A binder whose too-deep type already holds a poisoned part — the next links of the same
+chain — is poisoned in silence: one message per chain. The cost is bounded by the guard, so such a
+chain checks in time linear in its length (`perf_test.zig`). A `let` chain is not affected: a
+`let` value binding is not generalised (§8.4), and shares its type.
 
 ### 7.4 Kinds
 
@@ -1680,6 +1724,33 @@ rule 2, A.56: a dot-call never derives, directly or through a requirement it pro
 text says so: a derived method is reached by an operator or a `where` clause, and the hint
 writes the operator or the annotation, naming the unannotated function when the refusal comes
 through its call. Whether a dot-call should derive is the owner's (CK-161).
+
+*Amended 2026-09-28: a dot-call derives, and an own method's signature is said once per method.*
+
+- **A dot-call derives** (the owner's decision, §21.1). Step 5 no longer asks whether the call is
+  marked: a well-known name derives whatever surface asked for it (`Resolve.derives`), so `x.eq
+  y` and `x.compare y` reach the derived method of a type that declares none — directly, and
+  through the requirement an unannotated function promoted — exactly as `==` and `<` do. Step 1's
+  table and step 3's module rule are unchanged, so a type's own method still wins. A dot-call's
+  own wanted on a record is still the record's field call (spike §1.2, §11 *Deferred receiver*);
+  a promoted requirement, which has no field accessor to be, derives on a closed record as an
+  operator's does (`Instances.onRecord`). The UNKNOWN METHOD text that said a dot-call never
+  derives is gone; a type that cannot derive (a function inside) keeps the operator's texts.
+- **Once per method.** The own-method messages above are recorded during P4 and said after it
+  (`Instances.ownSignatures`), once per METHOD however many types' uses found it wrong: the type it
+  is written for (its first parameter's) when that is one of them, else the one whose name sorts
+  first. Two messages at one declaration used to print in the order their uses were checked, which
+  followed declaration order.
+- **Said by its own module.** A `pub eq` or `pub compare` WRITTEN for a type `T` of its module —
+  its first parameter an application of `T` — whose type fits no use of `T` is said at its
+  declaration whether or not the module uses it. Another module's use of such a method, read off
+  the interface scheme by the same two tests, is `poisoned`, in silence: the message is the
+  declaring module's, once, where each importer used to get one per use. A method not written for
+  a type of its module (`eq : Int, Int -> Bool`) is an ordinary function until something compares
+  a `T`, and is still judged at the use (rule 7).
+- **The payload a context names.** A derived context's `absent_requirement` answer carries the
+  first payload whose position failed (`Contexts.Answer.payload`), and the NOT EQUATABLE text of a
+  local type names that payload's constructor and the type it holds.
 
 ### 9.4 Promotion and the undetermined default
 

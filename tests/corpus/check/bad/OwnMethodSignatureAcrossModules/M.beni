@@ -1,0 +1,13 @@
+-- A wrong own-method signature is one mistake across modules too.
+-- `pub eq : T, Int -> Bool` is written for `T` (its first parameter) and
+-- fits no use of `T`: `T, T -> Bool` is what `==` needs. Nothing in this
+-- module compares a `T`, yet the method is refused here, once, at its
+-- declaration, as a use in this module would refuse it; `Main`, which
+-- compares two, is refused with it in silence (checker-v2.md §9.3).
+pub type T
+    = T Int
+
+
+pub eq : T, Int -> Bool
+eq (T a) b =
+    a == b

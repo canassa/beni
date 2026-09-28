@@ -97,11 +97,6 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // R15-fix-G (2026-09-28) added CK-179; R15-fix-H added CK-191 and
     // CK-192 (`--out`'s record) and promoted both into `build_test.zig`.
     .{ .name = "scenario/CK-144", .step = .fast },
-    .{ .name = "scenario/CK-179", .step = .fast },
-    // A chain of bindings each one deeper (timed, on the ReleaseFast
-    // compiler), and two messages at one declaration in check order.
-    .{ .name = "scenario/CK-194", .step = .perf },
-    .{ .name = "scenario/CK-196", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -152,101 +147,6 @@ test "CK-144: an alias chain's interface is linear in its length" {
         .green = green,
         .signature = if (green) "" else "superlinear",
         .detail = try std.fmt.allocPrint(s.arena(), "60 aliases: {d} bytes; 120: {d} bytes; ratio {d}.{d:0>2}", .{ bytes[0], bytes[1], hundredths / 100, hundredths % 100 }),
-    });
-}
-
-// CK-179: which alias name an inferred type shows depends on declaration
-// order (checker-v2.md I9's scope: "for an accepted program its types").
-// `x : Name` (`type alias Name = String`), `y : String`, and a recursive
-// group `f` → `x`, `g` → `y`: its members' result is one flex, and it
-// absorbs whichever of `Name` and `String` the group meets first. At
-// 8a68e12 (and R15-fix-G) `f` above `g` publishes `f : number -> Name`,
-// the swap `f : number -> String`. Expected: one type in both orders.
-test "CK-179: an inferred type names the same alias in every declaration order" {
-    var s = try Scenario.init("CK-179");
-    defer s.deinit();
-    const head = "type alias Name =\n    String\n\n\nx : Name\nx =\n    \"x\"\n\n\ny : String\ny =\n    \"y\"\n\n\n";
-    const f = "f n =\n    if n == 0 then\n        x\n\n    else\n        g (n - 1)\n\n\n";
-    const g = "g n =\n    if n == 0 then\n        y\n\n    else\n        f (n - 1)\n\n\n";
-    try s.w.write("FG.beni", head ++ f ++ g);
-    try s.w.write("GF.beni", head ++ g ++ f);
-    var types: [2][]const u8 = undefined;
-    for ([_][]const u8{ "FG.beni", "GF.beni" }, &types) |file, *slot| {
-        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
-        if (run.exit_code != 0) return s.finish(try s.failed(run));
-        // `f`'s line: the module line and the declaration order differ.
-        const at = std.mem.indexOf(u8, run.stdout, "\n  f : ") orelse return s.finish(.{ .green = false, .signature = "stdout-differs", .detail = "no `f` in the dump" });
-        const end = std.mem.indexOfScalarPos(u8, run.stdout, at + 1, '\n') orelse run.stdout.len;
-        slot.* = run.stdout[at + 1 .. end];
-    }
-    const same = std.mem.eql(u8, types[0], types[1]);
-    try s.finish(.{
-        .green = same,
-        .signature = if (same) "" else "order-dependent",
-        .detail = try std.fmt.allocPrint(s.arena(), "f above g: `{s}`; g above f: `{s}`", .{ types[0], types[1] }),
-    });
-}
-
-// CK-194: a chain of top-level bindings each wrapping the one before, `x0 =
-// 0`, `x{i} = Just x{i-1}`, builds an i-deep type, and every link copied and
-// walked the whole of it: quadratic in time and in the store's memory. On
-// the unfixed checker (ReleaseFast, CPU time): 5 000 links 2.0 s, 10 000 links 8.4 s
-// (ratio 4.1); 20 000 links end in `beni: OutOfMemory`, exit 2, with no
-// diagnostic. Expected: linear, whatever the program is told — it may build,
-// or be refused with the documented `nesting_too_deep` (checker-v2.md §7.3),
-// but never run out of memory.
-test "CK-194: a chain of ever deeper bindings is linear, or nesting_too_deep" {
-    var s = try Scenario.init("CK-194");
-    defer s.deinit();
-    const n = 5000;
-    try s.w.write("Small.beni", try justChain(s.arena(), n));
-    try s.w.write("Large.beni", try justChain(s.arena(), 2 * n));
-    try s.finish(try s.ratioRefusing(
-        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Small.beni" },
-        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "Large.beni" },
-        n,
-        .nesting_too_deep,
-    ));
-}
-
-/// `x0 = 0`, then `x{i} = Just x{i-1}` up to `count`.
-fn justChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "x0 =\n    0\n\n\n");
-    for (1..count + 1) |i| try out.print(arena, "x{d} =\n    Just x{d}\n\n\n", .{ i, i - 1 });
-    return out.items;
-}
-
-// CK-196: an own method whose type fits no use of two types of its module is
-// refused once per type, both at its declaration, and the two messages
-// printed in the order their uses were checked — which is declaration order.
-// `type T`, `type V`, `pub eq : T, Int -> Bool`, a `==` on each. Unfixed,
-// the set of codes and positions is the same in both orders (the manager's
-// "changes the set" is refuted), but `T`'s message comes first in one and
-// `V`'s in the other. Expected: the same messages in the same order.
-test "CK-196: one own method's messages print the same in every declaration order" {
-    var s = try Scenario.init("CK-196");
-    defer s.deinit();
-    const t = "type T\n    = T Int\n\n\n";
-    const v = "type V\n    = V Int\n\n\n";
-    const eq = "pub eq : T, Int -> Bool\neq (T a) b =\n    a == b\n\n\n";
-    const one = "one =\n    T 1 == T 1\n\n\n";
-    const two = "two =\n    V 2 == V 2\n\n\n";
-    try s.w.write("TV.beni", t ++ v ++ eq ++ one ++ two);
-    try s.w.write("VT.beni", two ++ one ++ eq ++ v ++ t);
-    var texts: [2][]const u8 = undefined;
-    for ([_][]const u8{ "TV.beni", "VT.beni" }, &texts) |file, *slot| {
-        const run = try s.w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
-        if (run.exit_code != 1) return s.finish(try s.failed(run));
-        var out: std.ArrayList(u8) = .empty;
-        for (try s.diagnosticsOf(run)) |d| try out.print(s.arena(), "{t}: {s}\n", .{ d.code, d.message });
-        slot.* = out.items;
-    }
-    const same = std.mem.eql(u8, texts[0], texts[1]);
-    try s.finish(.{
-        .green = same,
-        .signature = if (same) "" else "order-dependent",
-        .detail = if (same) "one text in both orders" else "the messages differ in text or in order between the two declaration orders",
     });
 }
 
@@ -440,43 +340,6 @@ const Scenario = struct {
         const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
         const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
-    }
-
-    /// `ratioOf` for a program that may be REFUSED: a run passes when it
-    /// exits 0, or exits 1 with every diagnostic `allowed` (CK-194: the
-    /// documented refusal is an answer, running out of memory is not).
-    fn ratioRefusing(s: *Scenario, args_small: []const []const u8, args_large: []const []const u8, n: usize, allowed: @import("diagnostic").Code) !Verdict {
-        var best_small: i64 = std.math.maxInt(i64);
-        for (0..3) |_| {
-            const run = try s.timed(args_small, world.bulk_timeout_ms) orelse
-                return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "n={d} did not finish within {d} ms", .{ n, world.bulk_timeout_ms }) };
-            if (!try s.answered(run.result, allowed)) return s.failed(run.result);
-            best_small = @min(best_small, run.ms);
-        }
-        const bound: i64 = @divTrunc(best_small * 5, 2);
-        var best_large: ?i64 = null;
-        for (0..3) |_| {
-            const run = try s.timed(args_large, @max(bound * 2, 1_000)) orelse continue;
-            if (!try s.answered(run.result, allowed)) return s.failed(run.result);
-            best_large = @min(best_large orelse run.ms, run.ms);
-            if (run.ms <= bound) break;
-        }
-        const large_ms = best_large orelse
-            return .{ .green = false, .signature = "slow", .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n > {d} ms (2.5×) on 3 of 3 runs, CPU time", .{ n, best_small, bound }) };
-        const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
-        const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
-        return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
-    }
-
-    /// Whether run `r` ended as `ratioRefusing` accepts: exit 0, or exit 1
-    /// with at least one diagnostic and every one of code `allowed`.
-    fn answered(s: *Scenario, r: world.Result, allowed: @import("diagnostic").Code) !bool {
-        if (r.exit_code == 0) return true;
-        if (r.exit_code != 1) return false;
-        const diags = s.diagnosticsOf(r) catch return false;
-        if (diags.len == 0) return false;
-        for (diags) |d| if (d.code != allowed) return false;
-        return true;
     }
 
     /// A run's stderr as the diagnostics array (a run passes

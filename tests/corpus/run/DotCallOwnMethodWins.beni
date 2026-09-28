@@ -1,0 +1,61 @@
+-- A dot-call reaches the DERIVED method only when the receiver's type
+-- declares none (checker-v2.md §21.1). `Rank` declares its own `compare`,
+-- which orders `Queen` before `King` where the derived one would not, and
+-- its own `eq`, which calls every two faces equal: a dot-call, an operator
+-- and an unannotated helper all reach the module's own, never a derived
+-- one. Oracle twin: every call written `Main.compare a b` / `Main.eq a b`
+-- prints the same.
+import Node exposing (Program)
+
+
+type Rank
+    = Ace
+    | King
+    | Queen
+
+
+pub compare : Rank, Rank -> Order
+compare a b =
+    Basics.compare (weight a) (weight b)
+
+
+pub eq : Rank, Rank -> Bool
+eq a b =
+    weight a > 1 && weight b > 1 || weight a == weight b
+
+
+weight : Rank -> Int
+weight r =
+    case r of
+        Ace ->
+            1
+
+        King ->
+            3
+
+        Queen ->
+            2
+
+
+before x y =
+    x.compare y == LT
+
+
+yes : Bool -> String
+yes b =
+    if b then
+        "T"
+    else
+        "F"
+
+
+main : Program
+main =
+    Node.printLines
+        [ yes ((Ace).compare King == LT)
+        , yes (Ace < King)
+        , yes (before Queen King)
+        , yes ((King).eq Queen)
+        , yes (King == Queen)
+        , yes ((Ace).eq King)
+        ]

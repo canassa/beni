@@ -2991,6 +2991,58 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     one file and two files) and CK-192 into `build_test.zig`; hermetic tests of `OutputRecord.parse`
     and `Written.judge`. Pending: CK-144 and R15-fix-G's CK-179, as before.
 
+#### R15-fix-I — Two owner decisions, a deepening chain, one message per method (added by the manager, 2026-09-28)
+
+- **Goal.** Record and build the owner's two decisions of 2026-09-28 — D15 (CK-161, option (b): a
+  dot-call `x.eq`/`x.compare` derives) and D16 (CK-179, "agree or expand") — and fix the manager's
+  residues: a 20 000-link chain of ever deeper bindings that ends in OutOfMemory (CK-194), CK-168
+  across modules (CK-195), a confirm-or-refute of an I9 report on sibling types (CK-196), and the
+  pinned refusal's message through a recursive payload (CK-197).
+- **As built (2026-09-28).** Base `275b203` (R15-fix-H). Spec: `checker-v2.md` §21.1 gains D15
+  and D16 (their own commit, first),
+  §7.1, §7.3 and §9.3 an amendment each; `static-dispatch-spike.md` §1.3 rule 2, §6.3.1 step 4 and
+  A.56 amended in place. No format bump: nothing written changes shape.
+  - **D15 (CK-161).** `Resolve.derives` is the name alone. `Instances.onRecord` keeps a dot-call's
+    own wanted (immediate or `field_ok`) a field call and lets a promoted one derive on a closed
+    record; tuples and units derive for a dot-call too. R15-fix-E's dot-call-only UNKNOWN METHOD
+    text (`DispatchTexts.derivedByOperatorOnly`) is deleted; types that cannot derive keep the
+    operator's NOT EQUATABLE / NO METHODS texts.
+  - **D16 (CK-179).** `TypeStore.inferred_alias` marks the alias classes a flex took its name from.
+    `Unify.takeName`: a plain flex meeting an INFERRED name joins its class; meeting a WRITTEN one
+    (an annotation's reading, an instantiation's copy) it gets its own node with the same alias
+    content, so nothing it meets can rewrite what the program wrote. `Unify.expand` /
+    `TypeStore.expandAlias`: an inferred class that meets another name, a non-injective use, its
+    expansion, a rigid, a structure or a carrying flex joins its expansion's root (no edge added,
+    proofs kept). Same-name injective meetings merge only inferred with inferred. `Resolve.step`
+    expands an inferred alias of a flex before a wanted attaches through it. The annotated
+    declaration's reading prints as written (`x : Name`); the accepted cost shows in
+    `blackbox_test.zig`'s types dump (`p : { x : Int, y : Int }` under `shift : Point -> Point`)
+    and in the R8c B1 cycle drawing (`a = ( a, a )`).
+  - **CK-194.** `Walk.Occurs.limit`, set to `Unify.max_depth` for a boundary's run
+    (`Solve.closeFrame`): a binder past it is `Messages.inferredTooDeep` and poisoned; one that
+    already holds poison is poisoned silently. Found with `perf`: `Instantiate.copy` 61 %, the
+    binder's occurs 17 %, `adjustRanks` 16 %, each O(depth) per link — every node of a top-level
+    type is quantified because a top-level frame's rank equals `outermost`, the floor an
+    application's rank folds from, so even closed types are copied at every use. Re-ranking the
+    frames (top level at `outermost + 1`) would make a monomorphic chain linear below the guard;
+    not done here (it moves every rank in the checker), recorded in CK-194's Status.
+  - **CK-195.** `Instances.ownSignatures`, after `checkAll`: a `pub eq`/`compare` whose first
+    parameter is an application of a type `T` of its module and which fits no use of `T` is said at
+    its declaration, used or not; `reportedAtDeclaration` applies the same two tests to an imported
+    method's interface scheme and answers such a use `poisoned`.
+  - **CK-196.** *Refuted as stated* (the set of codes and positions was the same in both orders),
+    *confirmed in part*: two messages at one declaration printed in check order. `signatureOnce`
+    now records `(decl, type)`; `ownSignatures` says one message per method after P4, for the type
+    it is written for when that failed, else the first by name.
+  - **CK-197.** `Contexts.Answer.payload` (first failed payload of an `absent_requirement`),
+    `Contexts.payloadAt`, and a `requirementFailed` branch naming the constructor and its payload
+    type; four `check/bad` goldens re-blessed.
+- **Evidence.** Fixture-first against a separately built `275b203` (Debug and ReleaseFast, from a
+  `git archive` in the scratchpad): every new fixture and scenario red there for its recorded
+  reason (second commit); green on the fix, promoted in the fix commit. CK-194, ReleaseFast CPU:
+  5 000 / 10 000 links 2.0 / 8.4 s → 1.1 / 2.1 s; 20 000 links OutOfMemory → 4.6 s with one
+  `nesting_too_deep`. Pending: CK-144 only.
+
 ---
 
 ## 4. CK → slice index
@@ -3029,6 +3081,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R15-fix-F | CK-163 (`build_test.zig`), CK-164, 165 (`perf_test.zig`), CK-166, 167 (`abuse_test.zig`) | — | perf study item 4 (`Graph.lookup` as arrays); `backend.md` §2's output record |
 | R15-fix-G | CK-175 (`run/PhantomAliasUnifiesByExpansion`; new `run/PhantomAliasNested`, `run/PhantomAliasMutualGroup` in PERM, `check/bad/PhantomTypeAliasKeepsArguments`), CK-176, 177, 178 (`tests/corpus/check/bad/`) — all four found by R15-fix-E's review | — | CK-179 found, pending (`scenario/CK-179`, the owner's) |
 | R15-fix-H | CK-190 (`run/ReleaseAliasChain*`), CK-193 (`build/bad/ForeignBadShapeWideRecord/`), CK-191, 192 (`build_test.zig`) — all four found by R15-fix-F's review or the slice's audit | — | the budget audit of `src/js` (`backend.md` §9 item 1, amended) |
+| R15-fix-I | CK-161 (`run/DotCall*`, under D15), CK-179 and CK-196 (`ordering_test.zig`), CK-194 (`perf_test.zig`), CK-195, 197 (`tests/corpus/check/bad/`) — CK-194 to CK-197 from the manager's residues | — | D15 and D16 recorded (`checker-v2.md` §21.1) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |

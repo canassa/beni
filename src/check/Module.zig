@@ -51,6 +51,7 @@ const Solve = @import("Solve.zig");
 const Resolve = @import("Resolve.zig");
 const Evidence = @import("Evidence.zig");
 const Eager = @import("Eager.zig");
+const Instances = @import("Instances.zig");
 const Elaborate = @import("Elaborate.zig");
 const Groups = @import("Groups.zig");
 const Contexts = @import("Contexts.zig");
@@ -195,6 +196,9 @@ pub fn check(in: Input) Error!Check.Counters {
     solver.groups = &groups;
     const p4_token = if (in.profile) |p| p.begin() else null;
     try groups.checkAll(&solver);
+    // A `pub eq`/`compare` written for a type of this module that no use can
+    // call is said here, used or not.
+    try Instances.ownSignatures(&solver);
     // A record a deferred wanted refused, as P4 left it (checker.md §8.7).
     try report.renderLate();
     const p4_ns: u64 = if (in.profile) |p| p.since(p4_token.?) else 0;

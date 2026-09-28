@@ -16,7 +16,8 @@
 //!      wanted's method type — or, for another module's PLAIN method,
 //!      the requirements made directly, as that would make them
 //!      (`plainImported`, CK-131);
-//!   5. derivation, for a well-known name asked by anything but a dot-call:
+//!   5. derivation, for a well-known name, whatever surface asked (a dot-call
+//!      too; on a record a dot-call is the field call):
 //!      `Derivable.derivable`, the ONE verdict on "can this receiver derive
 //!      the method" (I10; review B1), which reads the derived contexts and
 //!      reports why not — then one sub-wanted per context entry of a nominal
@@ -47,6 +48,7 @@ const Producers = @import("Producers.zig");
 const Contexts = @import("Contexts.zig");
 const Derivable = @import("Derivable.zig");
 const Schemes = @import("Schemes.zig");
+const Generalize = @import("Generalize.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -202,7 +204,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         }
     }
     // 6. `unknown_method`.
-    try s.report.unknownMethod(w.origin, w.kind == .where_clause, entry.module, entry.name, w.method, w.kind == .dot_call and Resolve.isWellKnownName(w.method));
+    try s.report.unknownMethod(w.origin, w.kind == .where_clause, entry.module, entry.name, w.method);
     return Resolve.reject(s, id, true);
 }
 
@@ -271,7 +273,7 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
             // The sub-wanteds are the use's: its declaration owns their failures.
             for (s.instantiate.made.items) |sub| s.evidence.ptr(sub).decl = w.decl;
             const args = try s.evidence.addArgs(s.cx.gpa, s.instantiate.made.items);
-            if (!try match(s, id, root, copy, entry, decl)) return;
+            if (!try match(s, id, root, copy, entry, .{ .own = decl })) return;
             return Resolve.answer(s, id, .{ .top = .{ .decl = decl, .args = args } });
         },
     }
@@ -290,7 +292,7 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, ent
     // The sub-wanteds are the use's: its declaration owns their failures.
     for (s.instantiate.made.items) |sub| s.evidence.ptr(sub).decl = w.decl;
     const args = try s.evidence.addArgs(s.cx.gpa, s.instantiate.made.items);
-    if (!try match(s, id, root, copy, entry, null)) return;
+    if (!try match(s, id, root, copy, entry, .{ .imported = value })) return;
     return Resolve.answer(s, id, .{ .ext = .{ .module = entry.module, .value = value, .args = args } });
 }
 
@@ -431,7 +433,11 @@ fn isNullaryRef(iface: *const Interface, refs: []const Types.TypeId, t: Interfac
 /// context (review F2) — except at a DERIVED shape's position, where it is
 /// the shape's refusal, reported at the use for the whole receiver (v1's
 /// rule for a method specialised to another application: row 72).
-fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, decl: ?u32) Error!bool {
+/// Where the matched method comes from: this module's declaration, or
+/// another module's interface value.
+const MethodSource = union(enum) { own: u32, imported: Interface.ValueIndex };
+
+fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, source: MethodSource) Error!bool {
     const w = s.evidence.get(id);
     // Read before the unification, which binds the method type's parts.
     const well_known = Resolve.isWellKnownName(w.method) and Resolve.hasWellKnownType(s, w.method, w.method_type, root);
@@ -458,10 +464,19 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, decl
     // Inside a fixpoint pass (a payload's position), its entry says why
     // (`absent_requirement`, CK-116); elsewhere this does nothing.
     if (type_id) |t| s.contexts.noteRequirement(s, t, w.method);
-    if (decl) |d| if (type_id) |t| if (well_known and !fitsWellKnown(s, ownScheme(s, d, copy), t, w.method)) {
-        try signatureOnce(s, w.origin, d, t, entry, w.method, copy);
-        try Resolve.reject(s, id, true);
-        return false;
+    if (type_id) |t| if (well_known) switch (source) {
+        .own => |d| if (!fitsWellKnown(s, ownScheme(s, d, copy), t, w.method)) {
+            try signatureOnce(s, d, t, copy);
+            try Resolve.reject(s, id, true);
+            return false;
+        },
+        // Said once, at the method, by its own module: this use is
+        // `poisoned`, in silence, as a use meeting a dependency's `err` is
+        // (§12.2) — the message is that module's.
+        .imported => |value| if (reportedAtDeclaration(s, t, entry, value, w.method)) {
+            try Resolve.poisoned(s, id);
+            return false;
+        },
     };
     try s.report.methodSignatureMismatch(w.origin, entry.module, entry.name, w.method, copy, w.method_type);
     try Resolve.reject(s, id, true);
@@ -508,26 +523,176 @@ fn ownScheme(s: *Solve, decl: u32, copy: Var) Var {
 pub const SignatureKey = struct { decl: u32, type_id: Types.TypeId };
 
 /// CK-168: an own well-known method that no use of `t` can call is ONE
-/// mistake, the method's, said once at its declaration whichever use
-/// found it — so the text is the same in every declaration order (I9): the
-/// method's type against the use-independent `T a…, T a… -> Bool|Order`.
-/// Every later use is rejected with it; each is attributed the failure.
-fn signatureOnce(s: *Solve, origin: Bir.Inst.Index, decl: u32, t: Types.TypeId, entry: Types.Entry, method: Symbol, copy: Var) Error!void {
+/// mistake, the method's, said at its declaration whichever use found it:
+/// recorded here, and said by `ownSignatures` once P4 is over, once per
+/// METHOD whatever types found it, so the text and the order of
+/// the messages are the same in every declaration order (I9). Every use is
+/// rejected with it; each is attributed the failure.
+fn signatureOnce(s: *Solve, decl: u32, t: Types.TypeId, copy: Var) Error!void {
     if (s.report.current) |d| s.report.failed.set(d);
     const got = try s.resolver.signatures.getOrPut(s.cx.gpa, .{ .decl = decl, .type_id = t });
-    if (got.found_existing) return;
+    if (!got.found_existing) got.value_ptr.* = copy;
+}
+
+/// The one message of an own method `decl` that no use of `t` can call:
+/// its own scheme — never a use's copy, which shows what the use pushed into
+/// it, and is printed only when the declaration has no scheme at all —
+/// against the use-independent `T a…, T a… -> Bool|Order`.
+fn sayMethodSignature(s: *Solve, decl: u32, t: Types.TypeId, copy: Var) Error!void {
     const d = s.cx.bir.decls[decl];
-    const region = d.annotation.unwrap() orelse d.body.unwrap() orelse origin;
+    const method = s.cx.bir.symbol(d.name);
+    const scheme = ownScheme(s, decl, copy);
+    const entry = s.cx.types.entry(t);
+    const region = d.annotation.unwrap() orelse d.body.unwrap() orelse d.inst_start;
     const st = s.store();
     const args = try s.cx.scratch.alloc(Var, entry.arity);
     defer s.cx.scratch.free(args);
     for (args) |*a| a.* = try s.fresh(.{ .flex = .{} });
     const receiver = try s.fresh(.{ .structure = .{ .app = .{ .type = t, .args = try st.addVars(args) } } });
     const wanted = try Resolve.wellKnownType(s, method, receiver);
-    // The method's own scheme, not the copy the failed unification bound: the
-    // copy shows what the FIRST use pushed into it, which is order-dependent.
-    const found = ownScheme(s, decl, copy);
-    try s.report.methodSignatureAtDeclaration(region, d.name_token, entry.module, entry.name, method, found, wanted);
+    const saved = s.report.current;
+    defer s.report.at(saved);
+    s.report.at(decl);
+    try s.report.methodSignatureAtDeclaration(region, d.name_token, entry.module, entry.name, method, scheme, wanted);
+}
+
+/// The type an own `eq`/`compare` is WRITTEN for: the head of its
+/// first parameter, when that is a type this module declares.
+fn writtenFor(s: *Solve, scheme: Var) ?Types.TypeId {
+    const st = s.store();
+    const f = Walk.function(st, scheme) orelse return null;
+    if (f.params.len == 0) return null;
+    const a = switch (st.resolvedContent(f.params[0])) {
+        .structure => |flat| switch (flat) {
+            .app => |a| a,
+            else => return null,
+        },
+        else => return null,
+    };
+    if (a.type == .none or s.cx.types.entry(a.type).module != s.cx.module) return null;
+    return a.type;
+}
+
+/// Whether another module's value `value` is a `pub eq`/`compare` written
+/// for `t` — its first parameter an application of `t` — that no use of `t`
+/// can call: its module reported it once, at its declaration
+/// (`ownSignatures`), so a use here is refused in silence. Read off the
+/// interface scheme, the type the declaring module judged, and never off a
+/// use's copy, which a failed match may have bound: the two tests are
+/// `writtenFor` and `fitsWellKnown`, term for term.
+fn reportedAtDeclaration(s: *Solve, t: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex, method: Symbol) bool {
+    const cx = s.cx;
+    if (!Resolve.isWellKnownName(method) or entry.module == cx.module) return false;
+    const iface = cx.iface(entry.module);
+    const refs = cx.types.refIds(entry.module);
+    if (@intFromEnum(value) >= iface.values.len) return false;
+    const index = iface.values[@intFromEnum(value)].scheme;
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return false;
+    const body = expansionOf(iface, iface.scheme(index).body);
+    if (body.tag != .func) return false;
+    const params = iface.range(body.lhs);
+    if (params.len == 0) return false;
+    const first = expansionOf(iface, @enumFromInt(params[0]));
+    if (first.tag != .app or first.lhs >= refs.len or refs[first.lhs] != t) return false;
+    // `fitsWellKnown`, on terms.
+    if (params.len != 2) return true;
+    for (params) |p| {
+        const term = expansionOf(iface, @enumFromInt(p));
+        switch (term.tag) {
+            .@"var", .err => {},
+            .app => if (term.lhs >= refs.len or refs[term.lhs] != t) return true,
+            else => return true,
+        }
+    }
+    const result = expansionOf(iface, @enumFromInt(body.rhs));
+    return switch (result.tag) {
+        .@"var", .err => false,
+        .app => !(result.lhs < refs.len and refs[result.lhs] == Resolve.wellKnownResult(s, method) and iface.range(result.rhs).len == 0),
+        else => true,
+    };
+}
+
+/// Interface term `t` with its aliases looked through, as `resolvedContent`
+/// looks through a variable's.
+fn expansionOf(iface: *const Interface, t: Interface.TermIndex) Interface.Term {
+    var term = iface.term(t);
+    // An interface is acyclic; the bound only keeps a malformed one from
+    // looping (every step moves to another term).
+    var steps: usize = 0;
+    while (term.tag == .alias and steps < iface.terms.len) : (steps += 1) {
+        const r = iface.range(term.rhs);
+        if (r.len == 0) break;
+        term = iface.term(@enumFromInt(r[r.len - 1]));
+    }
+    return term;
+}
+
+/// A `pub eq` or `pub compare` written for a type `T` of this
+/// module — its first parameter an application of `T` — whose type fits no
+/// use of `T` (`fitsWellKnown`) is reported at its declaration whether or
+/// not this module uses it: another module's `==` on a `T` is refused in
+/// silence (`reportedAtDeclaration`), so the one message is here, the same
+/// one a use in this module gives (`signatureOnce`, deduplicated with it).
+/// A method that fits some use, or that is not written for a type of this
+/// module (`eq : Int, Int -> Bool` is an ordinary function until something
+/// compares a `T`), is judged at a use, as before (rule 7).
+///
+/// Every own method a use found wrong (`signatureOnce`) is said here too,
+/// ONCE per method however many types found it: the type it is
+/// written for when that is one of them, else the one whose name sorts
+/// first. Said after P4, so neither the text nor the order of two messages
+/// at one declaration follows the order the uses were checked in (I9).
+pub fn ownSignatures(s: *Solve) Error!void {
+    const cx = s.cx;
+    for ([_]Symbol{ InternPool.WellKnown.eq.symbol(), InternPool.WellKnown.compare.symbol() }) |method| {
+        const decl = s.ownValue(method) orelse continue;
+        const d = cx.bir.decls[decl];
+        if (!d.is_pub or decl >= s.decl_scheme.len) continue;
+        const scheme = s.decl_scheme[decl].unwrap() orelse continue;
+        const t = writtenFor(s, scheme) orelse continue;
+        if (fitsWellKnown(s, scheme, t, method)) continue;
+        const got = try s.resolver.signatures.getOrPut(cx.gpa, .{ .decl = decl, .type_id = t });
+        if (!got.found_existing) got.value_ptr.* = scheme;
+    }
+    const count = s.resolver.signatures.count();
+    if (count == 0) return;
+    const Found = struct { key: SignatureKey, copy: Var };
+    const found = try cx.scratch.alloc(Found, count);
+    defer cx.scratch.free(found);
+    var it = s.resolver.signatures.iterator();
+    var i: usize = 0;
+    while (it.next()) |e| : (i += 1) found[i] = .{ .key = e.key_ptr.*, .copy = e.value_ptr.* };
+    const Order = struct {
+        interner: *const InternPool.Global,
+        types: *const Types,
+        fn lessThan(o: @This(), a: Found, b: Found) bool {
+            if (a.key.decl != b.key.decl) return a.key.decl < b.key.decl;
+            const an = o.interner.slice(o.types.entry(a.key.type_id).name);
+            const bn = o.interner.slice(o.types.entry(b.key.type_id).name);
+            return switch (std.mem.order(u8, an, bn)) {
+                .lt => true,
+                .gt => false,
+                .eq => @intFromEnum(a.key.type_id) < @intFromEnum(b.key.type_id),
+            };
+        }
+    };
+    std.mem.sort(Found, found, Order{ .interner = cx.interner, .types = cx.types }, Order.lessThan);
+    try Generalize.pushFrame(s, @intCast(s.frames.items.len + 1), .fixpoint);
+    defer Generalize.popFrame(s);
+    var at: usize = 0;
+    while (at < found.len) {
+        const decl = found[at].key.decl;
+        var end = at;
+        while (end < found.len and found[end].key.decl == decl) end += 1;
+        // The type it is written for, when a use found it wrong for that one.
+        var pick = found[at];
+        const scheme = if (decl < s.decl_scheme.len) s.decl_scheme[decl].unwrap() else null;
+        if (scheme) |v| if (writtenFor(s, v)) |w| for (found[at..end]) |f| {
+            if (f.key.type_id == w) pick = f;
+        };
+        try sayMethodSignature(s, decl, pick.key.type_id, pick.copy);
+        at = end;
+    }
 }
 
 /// A private method of the module of `culprit` answers `id`, which is
@@ -559,7 +724,7 @@ fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbo
     const reported = top != id and s.evidence.get(top).state.rejected();
     if (!reported) {
         const t = s.evidence.get(top);
-        try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types);
+        try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types, null);
     }
     try Resolve.reject(s, id, id != top);
     if (!reported and top != id) try Resolve.reject(s, top, true);
@@ -858,14 +1023,18 @@ fn derivedPositions(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, p
 // A record receiver
 // ---------------------------------------------------------------------------
 
-/// A record: a well-known name derives over a CLOSED record (A.28); a
-/// dot-call's own wanted is a FIELD call (§1.2), whether the record was known
-/// at the call or met later (§11 *Deferred receiver*, amended 2026-09-26);
-/// any other wanted is `no_methods_on_shape` (§6.3, A.36).
+/// A record: a dot-call's own wanted is a FIELD call (§1.2), whether the
+/// record was known at the call or met later (§11 *Deferred receiver*,
+/// amended 2026-09-26). Any other well-known name derives over a CLOSED
+/// record (A.28): an operator, a `where` clause, and a
+/// dot-call's requirement promoted through an unannotated function, which
+/// has no field accessor to be. Any other wanted is `no_methods_on_shape`
+/// (§6.3, A.36).
 fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record, immediate: bool) Error!void {
     const st = s.store();
     const w = s.evidence.get(id);
-    if (Resolve.derives(w)) {
+    const field_call = w.kind == .dot_call and (immediate or w.field_ok);
+    if (!field_call and Resolve.derives(w)) {
         const row = &s.stacks.fields;
         row.clearRetainingCapacity();
         var concatenated = false;

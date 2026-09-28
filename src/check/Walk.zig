@@ -350,6 +350,14 @@ pub const Occurs = struct {
     /// Whether this run stops at a proved node. False only for the Debug
     /// check of a proof (`Resolve.step`).
     trusts: bool = true,
+    /// The deepest path a run walks before it stops and says `too_deep`
+    /// for a boundary's run over its binders (`Solve.closeFrame`),
+    /// whose binder is then `nesting_too_deep` (checker-v2.md
+    /// §7.3). Unbounded for every other run.
+    limit: u32 = std.math.maxInt(u32),
+    /// Set when a path went past `limit`: the run stopped there, and said
+    /// nothing about cycles.
+    too_deep: bool = false,
 
     pub fn begin(store: *TypeStore) Occurs {
         return .{ .grey = store.nextMark(), .black = store.nextMark() };
@@ -359,10 +367,12 @@ pub const Occurs = struct {
         const proves = o.proves;
         const trusts = o.trusts;
         const interior = o.interior;
+        const limit = o.limit;
         o.* = begin(store);
         o.proves = proves;
         o.trusts = trusts;
         o.interior = interior;
+        o.limit = limit;
     }
 
     /// The node on a cycle reachable from `v` — the one the walk met again
@@ -399,6 +409,10 @@ pub const Occurs = struct {
                     // voids the proof (`TypeStore.gains`).
                     if (o.proves) store.prove(r);
                     continue;
+                }
+                if (frames.items.len >= o.limit) {
+                    o.too_deep = true;
+                    return null;
                 }
                 store.setMark(r, o.grey);
                 try frames.append(gpa, .{ .v = r, .cursor = 0 });

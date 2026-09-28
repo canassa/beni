@@ -3179,11 +3179,13 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     // `step` is let-bound and therefore GENERALISED, so its scheme's
     // variable is not the one `total`'s type ended up with — the use site
     // instantiated a copy. `number2` says exactly that, and it would be a
-    // lie to print `number` twice.
+    // lie to print `number` twice. `shift` prints its annotation as written;
+    // its parameter `p` took the name `Point` and then met the record `p.x`
+    // asks for, so it shows the expansion (checker-v2.md §7.1, §21.1).
     try testing.expectEqualStrings(
         \\module Main
         \\  shift : Point -> Point
-        \\    p : Point
+        \\    p : { x : Int, y : Int }
         \\  apply : (a -> b), a -> b
         \\    f : a -> b
         \\    x : a
@@ -6089,7 +6091,9 @@ test "R8c review B1: an infinite type through a schema alias's `err` is still re
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
-        infiniteType("p/Main.beni", 6, 5, 3, "for `z`", "a = ( a, PrivRecW )"),
+        // `w` took the name `PrivRecW` and met a tuple, so it shows its
+        // expansion, which is the cycle itself (checker-v2.md §7.1).
+        infiniteType("p/Main.beni", 6, 5, 3, "for `z`", "a = ( a, a )"),
         unknownNope(),
     }), r.diagnostics);
 }

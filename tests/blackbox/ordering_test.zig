@@ -171,10 +171,14 @@ const perm_programs = [_]PermProgram{
     .{ .name = "r14-capture", .path = "tests/corpus/run/LetEvidenceCapture.beni", .expect = .{ .prints = "tests/corpus/run/LetEvidenceCapture.expected" } },
     .{ .name = "r14-polymorphic", .path = "tests/corpus/run/LetConstrainedHelperPolymorphic", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/LetConstrainedHelperPolymorphic/_expected.expected" } },
     // R15-fix-G (CK-175): two uses of an alias that drops its parameter,
-    // met inside a recursive group, are one type in every order. (CK-175's
-    // own fixture is not here: which alias name its members' inferred types
-    // show depends on the order, CK-179, and PERM compares the types.)
+    // met inside a recursive group, are one type in every order.
     .{ .name = "ck175-group", .path = "tests/corpus/run/PhantomAliasMutualGroup.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasMutualGroup.expected" } },
+    // Uses of an alias that drops its parameter, met in a recursive group,
+    // with the names they show compared too; and an unannotated helper whose
+    // dot-call requirement is answered by a derived method at several
+    // types, written above or below its uses.
+    .{ .name = "phantom alias uses in a recursive group", .path = "tests/corpus/run/PhantomAliasUnifiesByExpansion.beni", .expect = .{ .prints = "tests/corpus/run/PhantomAliasUnifiesByExpansion.expected" } },
+    .{ .name = "a dot-call helper answered by derived methods", .path = "tests/corpus/run/DotCallDerivedThroughHelper.beni", .expect = .{ .prints = "tests/corpus/run/DotCallDerivedThroughHelper.expected" } },
 };
 
 test "PERM: every declaration order of an own-method program does what its twin says" {
@@ -598,6 +602,74 @@ fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []con
         },
         .checks => unreachable,
     }
+}
+
+// The name an inferred type shows is the same in every declaration order
+// ("agree or expand", checker-v2.md §7.1, §21.1). `x : Name` (`type alias
+// Name = String`), `y : String`, and a recursive group `f` → `x`, `g` → `y`:
+// its members' result is one flex that meets both `Name` and `String`, so it
+// shows the expansion, `String`, whichever it meets first; and `x` still
+// prints as its annotation is written.
+test "an inferred type names the same alias in every declaration order" {
+    var s = try Scenario.init("an inferred alias name");
+    defer s.deinit();
+    const head = "type alias Name =\n    String\n\n\nx : Name\nx =\n    \"x\"\n\n\ny : String\ny =\n    \"y\"\n\n\n";
+    const f = "f n =\n    if n == 0 then\n        x\n\n    else\n        g (n - 1)\n\n\n";
+    const g = "g n =\n    if n == 0 then\n        y\n\n    else\n        f (n - 1)\n\n\n";
+    try s.w.write("FG.beni", head ++ f ++ g);
+    try s.w.write("GF.beni", head ++ g ++ f);
+    var types: [2][]const u8 = undefined;
+    for ([_][]const u8{ "FG.beni", "GF.beni" }, &types) |file, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        // The annotation prints as written.
+        if (std.mem.indexOf(u8, run.stdout, "\n  x : Name\n") == null) return s.finish(.{ .green = false, .signature = "stdout-differs", .detail = "`x : Name` is not printed as written" });
+        // `f`'s line: the module line and the declaration order differ.
+        const at = std.mem.indexOf(u8, run.stdout, "\n  f : ") orelse return s.finish(.{ .green = false, .signature = "stdout-differs", .detail = "no `f` in the dump" });
+        const end = std.mem.indexOfScalarPos(u8, run.stdout, at + 1, '\n') orelse run.stdout.len;
+        slot.* = run.stdout[at + 1 .. end];
+    }
+    const same = std.mem.eql(u8, types[0], types[1]);
+    try s.finish(.{
+        .green = same,
+        .signature = if (same) "" else "order-dependent",
+        .detail = try std.fmt.allocPrint(s.arena(), "f above g: `{s}`; g above f: `{s}`", .{ types[0], types[1] }),
+    });
+}
+
+// An own method whose type fits no use of two types of its module is one
+// mistake, said once at its declaration, after every use was checked
+// (`Instances.ownSignatures`): `type T`, `type V`, `pub eq : T, Int -> Bool`
+// and a `==` on each, in two declaration orders, print the same messages in
+// the same order.
+test "one own method's messages print the same in every declaration order" {
+    var s = try Scenario.init("an own method's messages");
+    defer s.deinit();
+    const t = "type T\n    = T Int\n\n\n";
+    const v = "type V\n    = V Int\n\n\n";
+    const eq = "pub eq : T, Int -> Bool\neq (T a) b =\n    a == b\n\n\n";
+    const one = "one =\n    T 1 == T 1\n\n\n";
+    const two = "two =\n    V 2 == V 2\n\n\n";
+    // One module name in both orders (a message names `Main.eq`): each order
+    // is a project of its own.
+    try s.w.write("tv/Main.beni", t ++ v ++ eq ++ one ++ two);
+    try s.w.write("vt/Main.beni", two ++ one ++ eq ++ v ++ t);
+    var texts: [2][]const u8 = undefined;
+    for ([_][]const u8{ "tv", "vt" }, &texts) |file, *slot| {
+        const run = try s.w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 1) return s.finish(try s.failed(run));
+        const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
+        const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{}) catch return s.finish(try s.failed(run));
+        var out: std.ArrayList(u8) = .empty;
+        for (diags) |d| try out.print(s.arena(), "{t}: {s}\n", .{ d.code, d.message });
+        slot.* = out.items;
+    }
+    const same = std.mem.eql(u8, texts[0], texts[1]);
+    try s.finish(.{
+        .green = same,
+        .signature = if (same) "" else "order-dependent",
+        .detail = if (same) "one text in both orders" else "the messages differ in text or in order between the two declaration orders",
+    });
 }
 
 // R7's nesting scenarios (S-3, S-4; checker-v2.md §10.2): chains of own

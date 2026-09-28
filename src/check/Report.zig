@@ -304,8 +304,8 @@ pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void
 
 // ---- Dispatch (static-dispatch-spike.md §10): v1's texts, staged ---------
 
-pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol, dot_call_well_known: bool) Error!void {
-    try r.texts.unknownMethod(origin, from_annotation, module, type_name, method, dot_call_well_known);
+pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
+    try r.texts.unknownMethod(origin, from_annotation, module, type_name, method);
     try r.flush();
 }
 

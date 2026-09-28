@@ -139,6 +139,10 @@ pub const Answer = struct {
     /// `absent_private`, `absent_requirement`, a pin's culprit: the method's
     /// name.
     method: Symbol = undefined,
+    /// `absent_requirement`: the first payload whose position failed, by
+    /// its index in `readPayloads`' order (constructors in declaration
+    /// order, arguments left to right), for the message.
+    payload: u32 = none,
     /// `present`: one frozen tuple of the method types of every entry whose
     /// method is not `eq` or `compare`, over the type's template parameters
     /// (`paramsOf`), an entry's `slot` its element. One tuple per answer, so a
@@ -1194,8 +1198,12 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     // else failed (`Status.poisoned`, CK-178), and never over a reason the
     // run recorded.
     var poisoned = false;
-    for (ids) |wid| switch (s.evidence.get(wid).state) {
-        .failed => return failed,
+    for (ids, 0..) |wid, k| switch (s.evidence.get(wid).state) {
+        .failed => {
+            var at = failed;
+            if (at.status == .absent_requirement) at.payload = @intCast(k);
+            return at;
+        },
         .poisoned => poisoned = true,
         else => {},
     };

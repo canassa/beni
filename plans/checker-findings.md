@@ -4295,6 +4295,14 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   already calls, so no answer can be silently different), `x.compare y` is the natural
   spelling of an `Order`-returning comparison, and (c) would make an annotation change what a
   program means. If (b) is taken, the fixture returns to `run/` expecting `T`.
+- **Status** fixed by R15-fix-I (2026-09-28): the owner took (b) that day (`checker-v2.md` §21.1
+  D15; `static-dispatch-spike.md` §1.3 rule 2 and A.56 amended). `Resolve.derives` no longer asks
+  the surface; a dot-call's own wanted on a record is still the field call
+  (`Instances.onRecord`), and a promoted one derives on a closed record. R15-fix-E's dot-call
+  UNKNOWN METHOD text is gone. Promoted: `run/DotCallCompareDerivedUnannotated.beni` (back from
+  `check/bad/`), and new `run/DotCallDerivedDirect.beni`, `run/DotCallDerivedThroughHelper.beni`
+  (also in `ordering_test.zig`'s PERM), `run/DotCallDerivedAcrossModules/` and the guard
+  `run/DotCallOwnMethodWins.beni` (a type with its own `eq`/`compare` keeps them).
 
 ### CK-162 — `f -1` has no hint that it is `f - 1`
 
@@ -4627,6 +4635,16 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   `Name` today, after `String.length p` on a `p : Name`.
 - **Fixture** `scenario/CK-179` (`test-pending`), red `order-dependent`.
 - **Slice** unassigned (owner's decision first).
+- **Status** fixed by R15-fix-I (2026-09-28) under the owner's decision of that day, "agree or
+  expand" (`checker-v2.md` §21.1 D16, §7.1 *amended 2026-09-28*): a flex takes an alias's name
+  into a class marked inferred (`TypeStore.inferred_alias`) — joining an inferred class, copying a
+  written one — and an inferred name that meets another name or an unnamed type shows its
+  expansion (`Unify.expand`); written names (annotation readings, instantiation copies) never
+  change. `f` and `g` are `number -> String` in both orders and `x : Name` prints as written.
+  Promoted into `ordering_test.zig`; `run/PhantomAliasUnifiesByExpansion.beni` joins PERM. The
+  accepted cost: a parameter that took its annotation's name shows the expansion after meeting it
+  (`blackbox_test.zig`'s types dump now prints `p : { x : Int, y : Int }` under `shift : Point ->
+  Point`).
 
 *CK-190 to CK-192 were added on 2026-09-28 from the review of R15-fix-F, and CK-193 by R15-fix-H's
 own audit of the budgets in `src/js`. They start at 190 because R15-fix-G was cataloguing
@@ -4721,6 +4739,14 @@ review; written red on `275b203` before any fix (their own commit).*
 - **Expected** linear-ish, or §7.3's documented `nesting_too_deep` — never an out-of-memory exit.
 - **Fixture** `scenario/CK-194` (`test-pending-perf`), red `slow`.
 - **Slice** R15-fix-I.
+- **Status** fixed by R15-fix-I (2026-09-28), `checker-v2.md` §7.3 *amended 2026-09-28*: the
+  boundary's occurs run is bounded by `Unify.max_depth` (`Walk.Occurs.limit`); a binder past it is
+  one `nesting_too_deep` (`Messages.inferredTooDeep`) and poisoned, later links holding its poison
+  poisoned in silence. ReleaseFast: 5 000 / 10 000 / 20 000 links 1.1 / 2.1 / 4.6 s CPU, one
+  message each (was 2.0 / 8.4 s / OutOfMemory). Promoted into `perf_test.zig`. The quadratic's
+  roots are unchanged below the guard: a top-level frame's rank is `outermost`, so every node of a
+  top-level type is quantified and copied per use; making closed types unquantified would need
+  the frames re-ranked, left for a perf slice.
 
 ### CK-195 — A wrong own-method signature is reported once per use in every importer
 
@@ -4735,6 +4761,11 @@ review; written red on `275b203` before any fix (their own commit).*
 - **Fixture** `check/bad/OwnMethodSignatureAcrossModules/` (`.codes`), red `exit=1
   codes=type_mismatch×2 why=count`.
 - **Slice** R15-fix-I.
+- **Status** fixed by R15-fix-I (2026-09-28), `checker-v2.md` §9.3 *amended 2026-09-28*:
+  `Instances.ownSignatures` says a `pub eq`/`compare` written for a type of its module (first
+  parameter) that fits no use of it at the declaration, used or not; an importer's use of such a
+  method, judged off the interface by the same tests (`reportedAtDeclaration`), is `poisoned`.
+  Promoted: `tests/corpus/check/bad/OwnMethodSignatureAcrossModules/`.
 
 ### CK-196 — Two types refusing one own method print in the order their uses were checked
 
@@ -4750,6 +4781,10 @@ review; written red on `275b203` before any fix (their own commit).*
 - **Expected** one message per method, the same in every order.
 - **Fixture** `scenario/CK-196` (`test-pending`), red `order-dependent`.
 - **Slice** R15-fix-I.
+- **Status** fixed by R15-fix-I (2026-09-28), `checker-v2.md` §9.3 *amended 2026-09-28*: the
+  messages are recorded in P4 and said after it, once per method — the type it is written for
+  when that failed, else the first by name. Promoted into `ordering_test.zig` (each order its own
+  project, so the module name in the message is the same).
 
 ### CK-197 — A pinned type refused through a recursive payload does not say which payload
 
@@ -4765,6 +4800,11 @@ review; written red on `275b203` before any fix (their own commit).*
 - **Fixture** `check/bad/DerivedPinnedRecursive/` (`.codes`), red `exit=1 codes=not_equatable×1
   why=message`.
 - **Slice** R15-fix-I.
+- **Status** fixed by R15-fix-I (2026-09-28): `Contexts.Answer.payload` records the first failed
+  payload of an `absent_requirement` answer, `Contexts.payloadAt` reads it, and
+  `Messages.requirementFailed` names the constructor and the type it holds (local types; an
+  imported row still has the older text). Four `check/bad` goldens re-blessed with it. Promoted:
+  `tests/corpus/check/bad/DerivedPinnedRecursive/`.
 
 ## Summary table
 
@@ -4934,7 +4974,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-158 | latent | K7 | — (structural) | R15-fix |
 | CK-159 | valid-program-rejected | K7 | `run/DerivedOverSpecialisedEq/` (expects acceptance; rule 7) | R15-fix (owner's decision first) |
 | CK-160 | latent | K5 | — (structural) | R15-fix |
-| CK-161 | valid-program-rejected | K7 | `run/DotCallCompareDerivedUnannotated.beni` (expects acceptance; rule 7) | R15-fix (owner's decision first) |
+| CK-161 | valid-program-rejected | K7 | `run/DotCallCompareDerivedUnannotated.beni` (expects acceptance; rule 7) | R15-fix-I (fixed under D15, promoted with three new `run/` fixtures and a guard) |
 | CK-162 | diagnostic-quality | K13 | `check/bad/NegativeLiteralArgumentHint.beni` | R15-fix |
 | CK-163 | latent | K14 | promoted: `build_test.zig` "CK-163" | R15-fix-F (fixed, promoted) |
 | CK-164 | performance | K14 | promoted: `perf_test.zig` "CK-164" (`test-perf`) | R15-fix-F (fixed, promoted) |
@@ -4952,19 +4992,23 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-176 | diagnostic-quality | K13 | promoted: `check/bad/AliasOfVariableKeepsItsName.beni` | R15-fix-G (fixed) |
 | CK-177 | diagnostic-quality | K13 | promoted: `check/bad/InfiniteTypeBeforeMismatch.beni` | R15-fix-G (fixed) |
 | CK-178 | diagnostic-quality | K9 | promoted: `check/bad/SchemaPayloadArityNoCascade.beni` | R15-fix-G (fixed) |
-| CK-179 | nondeterminism | K12 | `scenario/CK-179` | unassigned (owner's decision) |
+| CK-179 | nondeterminism | K12 | `scenario/CK-179` | R15-fix-I (fixed under D16, promoted into `ordering_test.zig`) |
 | CK-190 | unsound-runtime | K14 | `run/ReleaseAliasChain129.beni`, `…130.beni`, `…1000.beni` | R15-fix-H (fixed, promoted) |
 | CK-191 | latent | K14 | promoted: `build_test.zig` "CK-191" (two scenarios) | R15-fix-H (fixed, promoted) |
 | CK-192 | latent | K14 | promoted: `build_test.zig` "CK-192" | R15-fix-H (fixed, promoted) |
 | CK-193 | unsound-runtime | K14 | `build/bad/ForeignBadShapeWideRecord/` | R15-fix-H (fixed, promoted) |
+| CK-194 | compiler-crash-or-hang | K3 | `scenario/CK-194` | R15-fix-I (fixed, promoted into `perf_test.zig`) |
+| CK-195 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureAcrossModules/` | R15-fix-I (fixed, promoted) |
+| CK-196 | nondeterminism | K12 | `scenario/CK-196` | R15-fix-I (fixed, promoted into `ordering_test.zig`) |
+| CK-197 | diagnostic-quality | K13 | `check/bad/DerivedPinnedRecursive/` | R15-fix-I (fixed, promoted) |
 
 Totals:
-- 183 entries (CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 187 entries (CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 34 (CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 22 (CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
+- compiler-crash-or-hang: 23 (CK-194 from R15-fix-I; CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 32 (CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
-- nondeterminism: 4 (CK-179 from R15-fix-G; CK-132 among them, v1 only).
+- nondeterminism: 5 (CK-196 from R15-fix-I; CK-179 from R15-fix-G; CK-132 among them, v1 only).
 - performance: 27 (CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
-- diagnostic-quality: 36 (CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
+- diagnostic-quality: 38 (CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 27 (CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 25 (CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

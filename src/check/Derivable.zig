@@ -185,7 +185,7 @@ pub const Verdict = union(enum) {
     /// A context whose pass met a payload's method of the wrong type
     /// (static-dispatch-spike.md §10.13, CK-116): said at the use, naming
     /// the type whose method it is.
-    requirement: struct { type_id: Types.TypeId, method: Symbol },
+    requirement: struct { type_id: Types.TypeId, method: Symbol, site: ?Messages.PayloadSite = null },
     /// An own type whose context met a payload's `err` (`Contexts.Status.
     /// poisoned`, CK-178): no answer, and no message — the `err` has one.
     poisoned,
@@ -254,6 +254,26 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
 /// A refusal `verdict` of `method` on `root`, said at `origin` (v1's texts;
 /// §11.3's and §11.2's own). Shared with the deferred checks of a closed
 /// endpoint compared while its schema was in flight (`checkDeferred`).
+/// The payload `site` names (`Contexts.Answer.payload`), read afresh over
+/// its type's parameters for a message: its constructor and its type, or
+/// null when it cannot be read.
+fn payloadAt(s: *Solve, site: ?Messages.PayloadSite) Error!?Messages.Payload {
+    const at = site orelse return null;
+    const t = s.contexts.local(at.owner) orelse return null;
+    const entry = s.cx.types.entry(at.owner);
+    if (entry.schema_endpoint) return null;
+    const p = (try Contexts.readPayloads(s, t)) orelse return null;
+    if (at.payload >= p.args.len) return null;
+    const bir = s.cx.bir;
+    var k: u32 = 0;
+    for (bir.declCtors(bir.decls[entry.decl.int()])) |ctor| {
+        const n: u32 = @intCast(bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index).len);
+        if (at.payload < k + n) return .{ .owner = entry.name, .ctor = bir.symbol(ctor.name), .v = p.args[at.payload] };
+        k += n;
+    }
+    return null;
+}
+
 pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verdict: Verdict) Error!void {
     const is_eq = method == InternPool.WellKnown.eq.symbol();
     const w = .{ .origin = origin, .method = method };
@@ -267,7 +287,7 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
         .budget => try Messages.resolutionBudget(s.report, w.origin, Resolve.step_budget),
         .requirement => |q| {
             s.contexts.noteRequirement(s, q.type_id, q.method);
-            try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null);
+            try Messages.requirementFailed(s.report, w.origin, root, method, q.type_id, q.method, null, try payloadAt(s, q.site));
         },
         .needs_annotation => |n| {
             s.contexts.noteCulprit(s, n.decl);
@@ -581,7 +601,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             .absent_budget => return .budget,
             .poisoned => return .poisoned,
             .absent_private => return .{ .private_method = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
-            .absent_requirement => return .{ .requirement = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method } },
+            .absent_requirement => return .{ .requirement = .{ .type_id = @enumFromInt(answer.culprit), .method = answer.method, .site = if (answer.payload != Contexts.none) .{ .owner = a.type, .payload = answer.payload } else null } },
             .own_method => {},
             .needs_annotation => return .{ .needs_annotation = .{ .type_id = a.type, .decl = answer.culprit } },
         }

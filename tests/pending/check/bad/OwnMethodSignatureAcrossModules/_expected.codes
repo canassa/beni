@@ -1,2 +1,0 @@
-# One message, `M`'s, at the method; `Main`'s two uses are refused with it.
-type_mismatch M.beni:14:1 contains "cannot be the `eq` of `T`"

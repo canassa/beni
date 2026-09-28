@@ -406,12 +406,15 @@ test "records: the four-way field partition" {
     );
 }
 
-test "aliases are printed by name and never expanded away" {
+// An annotation prints its alias by name. The parameter `p` took the name
+// and then met the open record `p.x` asks for, so it shows the expansion
+// (checker-v2.md §7.1, §21.1).
+test "annotations print aliases by name, and a parameter that met the record shows it" {
     try expectTypes(
         \\module M
         \\  origin : Point
         \\  shift : Point -> Point
-        \\    p : Point
+        \\    p : { x : Int, y : Int }
         \\
     ,
         \\pub type alias Point =

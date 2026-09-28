@@ -1,0 +1,13 @@
+-- A refusal through a recursive payload says which payload. `H.eq` is
+-- specialised to `Holder Int`, and `S`'s `SNode` holds `S (Holder a)`:
+-- comparing that asks `S`'s own `==` at `Holder a`, and so the `eq` of
+-- `Holder (Holder a)`, which `H.eq` never is — no `S` can be compared, and
+-- `SLeaf 1 == SLeaf 1` is NOT EQUATABLE. The message names the constructor,
+-- `SNode`, and the type it holds.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder x) (Holder y) =
+    modBy x 10 == modBy y 10

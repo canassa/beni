@@ -671,15 +671,34 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
 ///     otherwise the expansions meet, directly — not one link per
 ///     recursion, which spent `max_depth` on a long chain — and the two
 ///     nodes stay apart, each printing what its source wrote.
+///
+/// **Agree or expand** (checker-v2.md §7.1, §21.1). The name a
+/// class shows is kept only while every name it meets agrees: two aliases
+/// of one injective name whose arguments unify. Two different names, two
+/// uses of a non-injective alias (whose arguments are never unified), and
+/// an alias against an unnamed type — its expansion, or a rigid, a
+/// structure — each unify the expansions and then show the EXPANSION: the
+/// alias's class joins it (`expand`). "One name, or none" is commutative,
+/// associative and idempotent, so the name an inferred type shows is a
+/// function of the names it met, never of the order it met them in. A flex
+/// has no name, and still absorbs an alias by name.
 fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStore.Content) Error!bool {
     const st = u.store;
     const xa, const xca = if (ca == .alias) st.resolved(ra) else .{ ra, ca };
     const xb, const xcb = if (cb == .alias) st.resolved(rb) else .{ rb, cb };
-    if (xa == xb) return true;
     if (ca == .alias and cb == .alias) {
         const aa = ca.alias;
         const ab = cb.alias;
-        if (aa.type != ab.type or aa.args.len != ab.args.len or !u.types.isInjective(aa.type)) return u.go(xa, xb);
+        if (aa.type != ab.type or aa.args.len != ab.args.len or !u.types.isInjective(aa.type)) {
+            // Two names, or two uses of a name whose arguments say nothing
+            // (a dropped parameter): the expansions meet, and an inferred
+            // name shows its expansion.
+            if (xa != xb and !try u.go(xa, xb)) return false;
+            try u.expand(ra);
+            try u.expand(rb);
+            return true;
+        }
+        if (xa == xb) return true;
         if (u.isActive(ra, rb)) return true;
         try u.pushActive(ra, rb);
         defer u.popActive();
@@ -693,49 +712,105 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
         const ya, _ = st.resolved(na);
         const yb, _ = st.resolved(nb);
         if (ya == yb) return true;
-        _ = try u.merge(na, nb, st.content(nb));
+        // One name, agreed: two inferred names are one class, and so are
+        // two written ones; an inferred name never joins a written one, which
+        // `expand` would otherwise rewrite with it.
+        const ia = st.isInferredAlias(na);
+        const ib = st.isInferredAlias(nb);
+        if (ia != ib) return true;
+        const keep = try u.merge(na, nb, st.content(nb));
+        if (ia) try st.markInferredAlias(keep);
         return true;
     }
     // One side is an alias; `r`, `c` the other.
     const alias_left = ca == .alias;
+    const named = if (alias_left) ra else rb;
     const r = if (alias_left) rb else ra;
     const c = if (alias_left) cb else ca;
     const x = if (alias_left) xa else xb;
     const xc = if (alias_left) xca else xcb;
+    // The other side IS the expansion: one type, which has no name, so an
+    // inferred name shows its expansion — a flex too: it is what the
+    // alias stands for, and a class that met both prints it in every order.
+    if (x == r) {
+        try u.expand(named);
+        return true;
+    }
     switch (c) {
         .err => {
             _ = try u.merge(ra, rb, .err);
             return true;
         },
         .flex => |f| switch (xc) {
-            // A flex nothing rides on absorbs the alias by name, as it does
-            // an alias of a structure (*amended by R15-fix-G*, CK-176): it
-            // IS the expansion, and binding it writes no cycle — `x`, the
-            // expansion, is not `r`, and a later `r` against `x` is the
-            // first row. One that carries a kind, a marker or anything
-            // riding meets the expansion, whose flags must join its own.
+            // A flex nothing rides on takes the alias's name, so a message
+            // still prints `Id b`: it IS the expansion, and naming it writes
+            // no cycle — `x`, the expansion, is not `r`, and a later `r`
+            // against `x` is the first row. One that carries a kind, a marker
+            // or anything riding meets the expansion, whose flags must join
+            // its own, and an inferred name shows it: the class the
+            // other order makes, where the flex met the expansion first.
             .flex, .rigid => {
                 if (f.kind == .any and !f.equatable and f.obls == .none and f.constraints == .none) {
-                    const named = if (alias_left) ra else rb;
-                    try u.bind(r, f, named, st.content(named));
+                    try u.takeName(r, f, named);
                     return true;
                 }
-                return if (alias_left) u.go(x, r) else u.go(r, x);
+                if (!try (if (alias_left) u.go(x, r) else u.go(r, x))) return false;
+                try u.expand(named);
+                return true;
             },
-            // The flex absorbs the alias, name and all.
+            // The flex takes the alias's name.
             else => {
-                const named = if (alias_left) ra else rb;
                 if (f.kind != .any and !u.kindAccepts(f.kind, named)) {
                     return u.fail(.{ .kind_not_satisfied = .{ .kind = f.kind } });
                 }
                 try u.equatableMeets(f, named);
-                try u.bind(r, f, named, st.content(named));
+                try u.takeName(r, f, named);
                 return true;
             },
         },
-        .rigid, .structure => return if (alias_left) u.go(x, r) else u.go(r, x),
+        .rigid, .structure => {
+            if (!try (if (alias_left) u.go(x, r) else u.go(r, x))) return false;
+            try u.expand(named);
+            return true;
+        },
         .alias => unreachable,
     }
+}
+
+/// Flex `r` takes the name of alias class `named`. An INFERRED name
+/// is a class, which the flex joins, so one expansion reaches all of it. A
+/// WRITTEN one — an annotation's reading, an instantiation's copy — is
+/// never joined: the flex gets a node of its own with the same alias
+/// content (the same arguments and expansion, so the same type), marked
+/// inferred, and whatever it meets later cannot rewrite what the program
+/// wrote.
+fn takeName(u: *Unify, r: Var, flags: TypeStore.Flags, named: Var) Error!void {
+    const st = u.store;
+    if (st.isInferredAlias(named)) {
+        try u.bind(r, flags, named, st.content(named));
+        try st.markInferredAlias(st.find(r));
+        return;
+    }
+    try u.release(flags);
+    if (st.rank(r) < st.rank(named)) try u.captures.append(u.gpa, .{ .v = named, .region = u.region });
+    st.setContent(r, st.content(named));
+    try st.markInferredAlias(r);
+}
+
+/// An inferred name's expansion: the class of alias `alias`, when it is
+/// still an alias and its name is an inferred one
+/// (`TypeStore.inferred_alias`), joins the root its chain resolves to, which
+/// keeps its content (`TypeStore.expandAlias`). A written name is left as
+/// written.
+pub fn expand(u: *Unify, alias: Var) Error!void {
+    const st = u.store;
+    const a = st.find(alias);
+    if (st.content(a) != .alias or !st.isInferredAlias(a)) return;
+    const end, _ = st.resolved(a);
+    if (end == a) return;
+    if (std.debug.runtime_safety) u.assertContained(a, end);
+    const keep = st.expandAlias(a, end);
+    try u.evidence.mergeRejected(u.gpa, a, keep);
 }
 
 /// Unify two argument lists elementwise, re-slicing the range each time:

@@ -1,12 +1,9 @@
--- CK-161: the owner's decision D15 (checker-v2.md §21.1, 2026-09-28): a
--- hand-written dot-call `x.eq y` or `x.compare y` reaches the DERIVED method
--- whenever the receiver's type declares none, as `==` and `<` do — on an
--- all-nullary type, on a type with payloads, on a tuple. A dot-call on a
--- RECORD is still the record's field call. At 275b203 each nominal dot-call
--- is UNKNOWN METHOD ("A dot-call `x.compare` means the module's own `pub`
--- value, so it never gets a derived one") and the tuple's is NO METHODS
--- HERE. Oracle twin: every `a.compare b` written `compare a b` and every
--- `a.eq b` written `a == b` prints the same.
+-- A hand-written dot-call `x.eq y` or `x.compare y` reaches the DERIVED
+-- method whenever the receiver's type declares none, as `==` and `<` do
+-- (checker-v2.md §21.1): on an all-nullary type, on a type with payloads,
+-- on a tuple, and the table's on a primitive. A dot-call on a RECORD is
+-- still the record's field call. Oracle twin: every `a.compare b` written
+-- `compare a b` and every `a.eq b` written `a == b` prints the same.
 import Node exposing (Program)
 
 

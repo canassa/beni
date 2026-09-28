@@ -438,6 +438,10 @@ const Verdict = struct {
 const Perf = struct {
     w: World,
     arena_state: std.heap.ArenaAllocator,
+    /// A code `ratioOf` accepts as an answer: a run that exits 1
+    /// with every diagnostic of this code is timed like a clean one. Null:
+    /// every run must be clean.
+    refusable: ?@import("diagnostic").Code = null,
 
     fn init() !Perf {
         {
@@ -509,7 +513,7 @@ const Perf = struct {
                 std.debug.print("n={d} did not finish within {d} ms\n", .{ n, world.bulk_timeout_ms });
                 return error.PerfRunTimedOut;
             };
-            try expectClean(run.result);
+            try s.expectAnswered(run.result);
             best_small = @min(best_small, run.ms);
         }
         // Killed at twice the bound of wall time, judged on CPU time; one run
@@ -518,7 +522,7 @@ const Perf = struct {
         var best_large: ?i64 = null;
         for (0..3) |_| {
             const run = try s.timed(large_args, @max(bound * 2, 1_000)) orelse continue;
-            try expectClean(run.result);
+            try s.expectAnswered(run.result);
             best_large = @min(best_large orelse run.ms, run.ms);
             if (run.ms <= bound) break;
         }
@@ -661,6 +665,19 @@ const Perf = struct {
             total = (total orelse 0) + e.dur / 1000.0;
         }
         return total orelse error.PerfEventMissing;
+    }
+
+    /// `expectClean`, or a refusal of exactly the `refusable` code.
+    fn expectAnswered(s: *Perf, r: world.Result) !void {
+        const code = s.refusable orelse return expectClean(r);
+        if (r.exit_code == 1) refused: {
+            const trimmed = std.mem.trim(u8, r.stderr, " \r\n");
+            const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{}) catch break :refused;
+            if (diags.len == 0) break :refused;
+            for (diags) |d| if (d.code != code) break :refused;
+            return;
+        }
+        return expectClean(r);
     }
 
     fn expectClean(r: world.Result) !void {
@@ -919,6 +936,31 @@ test "CK-93: a let chain whose types grow is linear to check" {
     try s.w.write("L2.beni", try letChain(s.arena(), 16_000));
     const verdict = try s.eventRatio("L.beni", "L2.beni", 8_000, "check", &.{});
     try s.finish("CK-93", verdict);
+}
+
+// A chain of top-level bindings, each wrapping the one before (`x0 = 0`,
+// `x{i} = Just x{i-1}`), builds an i-deep polymorphic type, which every link
+// copies and walks. Checking must stay linear in the chain's length, or
+// refuse the first binder past `Unify.max_depth` once with
+// `nesting_too_deep` and the rest in silence (checker-v2.md §7.3); it may
+// never run out of memory. 5 000 and 10 000 links, time(2n) / time(n) ≤
+// 2.5, CPU time.
+test "a chain of ever deeper bindings is linear or nesting_too_deep" {
+    var s = try Perf.init();
+    defer s.deinit();
+    s.refusable = .nesting_too_deep;
+    const n = 5000;
+    try s.w.write("Small.beni", try justChain(s.arena(), n));
+    try s.w.write("Large.beni", try justChain(s.arena(), 2 * n));
+    try s.finish("a chain of ever deeper bindings", try s.ratio("Small.beni", "Large.beni", n));
+}
+
+/// `x0 = 0`, then `x{i} = Just x{i-1}` up to `count`.
+fn justChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "x0 =\n    0\n\n\n");
+    for (1..count + 1) |i| try out.print(arena, "x{d} =\n    Just x{d}\n\n\n", .{ i, i - 1 });
+    return out.items;
 }
 
 fn letChain(arena: std.mem.Allocator, n: usize) ![]const u8 {

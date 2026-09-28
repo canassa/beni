@@ -1,0 +1,19 @@
+-- A dot-call reaches a derived method across modules: `Level` and `Tag`
+-- declare no `eq` or `compare`, so their derived ones are published
+-- (checker-v2.md §14.2), and a dot-call reaches them in `Main` — directly,
+-- and through `Main`'s unannotated `before` used at `M.Level` and at
+-- `Main`'s own `Local` — and in `M` itself (`isLow`). Oracle twin:
+-- `a.compare b` written `compare a b`, `a.eq b` written `a == b`, prints the
+-- same.
+pub type Level
+    = Low
+    | High
+
+
+pub type Tag a
+    = Tag a
+
+
+pub isLow : Level -> Bool
+isLow l =
+    l.eq Low

@@ -73,6 +73,37 @@ pub fn infiniteType(r: *Report, region: Bir.Inst.Index, name: Symbol.Optional, c
     try r.emit(.{ .code = .infinite_type, .module = r.module, .region = region, .message = message });
 }
 
+/// `nesting_too_deep` for an INFERRED type deeper than `limit` (checker-v2.md
+/// §7.3): the binding `name`, whose type the program
+/// built one level at a time — a chain of bindings, each wrapping the one
+/// before. No annotation can be written for it (an annotation is read to
+/// 512 levels), so the hint is about the program, not the type.
+pub fn inferredTooDeep(r: *Report, region: Bir.Inst.Index, name: Symbol.Optional, limit: u32) Error!void {
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    const w = &out.writer;
+    if (name.unwrap()) |s| {
+        w.print("The type I inferred for `{s}` is nested more than {d} levels deep", .{ r.env.interner.slice(s), limit }) catch return error.OutOfMemory;
+    } else {
+        w.print("The type I inferred here is nested more than {d} levels deep", .{limit}) catch return error.OutOfMemory;
+    }
+    w.writeAll(
+        \\, which is more than
+        \\I can check.
+        \\
+        \\I gave up on it, so I cannot check this definition or anything that uses
+        \\it.
+        \\
+        \\Hint: a type this deep is usually built one level at a time, by a chain
+        \\of definitions each wrapping the one before. Build the value with a
+        \\function that takes the depth as an argument instead, or use a
+        \\recursive `type`, whose values can be as deep as they like.
+        \\
+    ) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .nesting_too_deep, .module = r.module, .region = region, .message = message });
+}
+
 /// `rigid_mismatch` for an annotation escape (§8.3, D7, CK-01): binding
 /// `binding` declares `scheme`, and its variable `rigid` was tied to a type
 /// of `enclosing`, the declaration it is written in.
@@ -377,7 +408,15 @@ pub const RequirementTypes = struct { wanted: Var, found: Var };
 /// §10.13, CK-116). `shown` is the value the author compared, `culprit` the
 /// type whose method `need` failed. `types` when the use decided it; a
 /// reason read from a context's answer or a published row has none.
-pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Types.TypeId, need: Symbol, types: ?RequirementTypes) Error!void {
+/// A payload a derived context's answer names (`Contexts.Answer.payload`,
+/// for its message): the type whose payload it is, and its index.
+pub const PayloadSite = struct { owner: Types.TypeId, payload: u32 };
+
+/// That payload, read for the message: its type's name, its constructor, and
+/// its type over the type's own parameters.
+pub const Payload = struct { owner: Symbol, ctor: Symbol, v: Var };
+
+pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Types.TypeId, need: Symbol, types: ?RequirementTypes, payload: ?Payload) Error!void {
     const env = r.env;
     const interner = env.interner;
     const entry = env.types.entry(culprit);
@@ -409,7 +448,27 @@ pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method:
             w.print("\n\nHint: give `{s}.{s}` that type, or compare the values another way.\n", .{ module_text, need_text }) catch return error.OutOfMemory;
         }
     } else {
-        w.print(
+        if (payload) |p| {
+            // Which payload, and what it asks: the constructor and
+            // the type it holds, over the type's own parameters.
+            w.print(
+                \\
+                \\
+                \\`{s}` gets its {s} from what it holds, and its `{s}` holds:
+                \\
+                \\
+            , .{ interner.slice(p.owner), if (is_eq) "`==`" else "ordering", interner.slice(p.ctor) }) catch return error.OutOfMemory;
+            w.writeAll("    ") catch return error.OutOfMemory;
+            Render.writeVar(w, renderContext(r), &namer, p.v, .top) catch return error.OutOfMemory;
+            w.print(
+                \\
+                \\
+                \\{s} that needs the `{s}` of `{s}` at a type that `{s}.{s}` does not
+                \\have.
+                \\
+                \\
+            , .{ if (is_eq) "Comparing" else "Ordering", need_text, type_text, module_text, need_text }) catch return error.OutOfMemory;
+        } else w.print(
             \\
             \\
             \\It holds {s} `{s}`, and {s} that needs the `{s}` of `{s}` at a type that

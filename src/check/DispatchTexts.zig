@@ -34,7 +34,6 @@ pub fn unknownMethod(
     module: Graph.Index,
     type_name: Symbol,
     method: Symbol,
-    dot_call_well_known: bool,
 ) Error!void {
     if (r.quiet) return;
     var out = r.writer();
@@ -55,14 +54,6 @@ pub fn unknownMethod(
         module_text,
         method_text,
     }) catch return error.OutOfMemory;
-    if (dot_call_well_known) {
-        // A hand-written `x.eq`/`x.compare` never derives
-        // (static-dispatch-spike.md §1.3 rule 2, A.56), directly or through
-        // an unannotated function's promoted requirement (CK-161): say so,
-        // and what does derive.
-        try derivedByOperatorOnly(r, w, origin, method_text);
-        return r.emit(.unknown_method, origin, &out);
-    }
     if (nearestValue(r, module, method)) |near| {
         w.print("\nHint: did you mean `{s}`?\n", .{r.env.interner.slice(near)}) catch return error.OutOfMemory;
     } else if (module.int() < r.env.interfaces.len) {
@@ -102,43 +93,6 @@ pub fn unknownMethod(
         }
     }
     try r.emit(.unknown_method, origin, &out);
-}
-
-/// The rest of `unknownMethod` for a dot-call of `eq` or `compare`: the
-/// compiler derives the two only for an operator or a `where` clause
-/// (static-dispatch-spike.md §1.3 rule 2, A.56). When the call is not the
-/// dot-call itself, it is a function whose unannotated body made one, and
-/// the hint names it (CK-161).
-fn derivedByOperatorOnly(r: *Reporter, w: *std.Io.Writer, origin: Bir.Inst.Index, method_text: []const u8) Error!void {
-    const is_eq = std.mem.eql(u8, method_text, "eq");
-    const operators = if (is_eq) "`==` and `/=`" else "`<`, `>`, `<=` and `>=`";
-    const example = if (is_eq) "x == y" else "x < y";
-    const result = if (is_eq) "Bool" else "Order";
-    const bir = r.env.bir;
-    const direct = origin.int() < bir.insts.len and bir.instTag(origin) == .method_call;
-    const callee = if (direct) Diagnostics.Callee.anonymous else r.calleeOf(origin);
-    w.print(
-        \\
-        \\I can write a `{s}` for a type that declares none, but only for {s},
-        \\and for a `where` clause, which ask for it by name. A dot-call `x.{s}`
-        \\means the module's own `pub` value, so it never gets a derived one.
-        \\
-    , .{ method_text, operators, method_text }) catch return error.OutOfMemory;
-    switch (callee.kind) {
-        .function, .value => w.print(
-            \\
-            \\Hint: `{s}` calls `x.{s}` and has no annotation. Write `{s}` there instead,
-            \\or give `{s}` an annotation that asks for it:
-            \\`where a.{s} : a, a -> {s}`.
-            \\
-        , .{ callee.name, method_text, example, callee.name, method_text, result }) catch return error.OutOfMemory,
-        else => w.print(
-            \\
-            \\Hint: write `{s}` instead, or reach `x.{s}` through a function whose
-            \\annotation asks for it: `where a.{s} : a, a -> {s}`.
-            \\
-        , .{ example, method_text, method_text, result }) catch return error.OutOfMemory,
-    }
 }
 
 /// `f -1` is `f - 1` (`language.md` §6.5): a named function as the left

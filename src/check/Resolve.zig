@@ -108,7 +108,7 @@ pub const State = struct {
     plain: std.AutoHashMapUnmanaged(Instances.PlainKey, ?Instances.Plain) = .empty,
     /// The own well-known methods said once at their declaration, per type
     /// (`Instances.signatureOnce`, CK-168).
-    signatures: std.AutoHashMapUnmanaged(Instances.SignatureKey, void) = .empty,
+    signatures: std.AutoHashMapUnmanaged(Instances.SignatureKey, TypeStore.Var) = .empty,
     /// Steps in the current top-level group.
     steps: u32 = 0,
     /// What promotion kept, per unannotated declaration: a range of
@@ -217,6 +217,12 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             return reject(s, id, false);
         },
         .flex => |flags| {
+            // A receiver whose class is an alias of this flex (a flex that
+            // absorbed `Id a` by name) now carries something, as a flex that
+            // met the alias carrying it would have: it shows the expansion
+            // (checker-v2.md §7.1), so the name it
+            // prints does not depend on which came first.
+            if (st.find(w.receiver) != root) try s.unifier.expand(w.receiver);
             if (flags.kind == .number and isWellKnownName(w.method)) return bridge(s, id, root);
             return attach(s, id, root, flags);
         },
@@ -310,10 +316,13 @@ pub fn isWellKnownName(name: Symbol) bool {
     return name == InternPool.WellKnown.eq.symbol() or name == InternPool.WellKnown.compare.symbol();
 }
 
-/// Whether `w` may DERIVE (static-dispatch-spike.md §3.3 step 2, §1.3 rule
-/// 2): a well-known name asked by anything but a hand-written dot-call.
+/// Whether `w` may DERIVE (static-dispatch-spike.md §3.3 step 2): a
+/// well-known name, whatever surface asked for it. A hand-written dot-call
+/// derives too when the receiver's type declares no method of the name
+/// (static-dispatch-spike.md §1.3 rule 2, reversed by checker-v2.md
+/// §21.1); on a record it is still the field call (`Instances.onRecord`).
 pub fn derives(w: Evidence.Wanted) bool {
-    return w.kind != .dot_call and isWellKnownName(w.method);
+    return isWellKnownName(w.method);
 }
 
 /// The result type of a well-known method: `Bool` for `eq`, `Order` for

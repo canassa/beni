@@ -44,7 +44,6 @@ scenario/CK-144 superlinear
 # R15-fix-G also found CK-179 (an inferred type names whichever alias its
 # group meets first), written on 8a68e12 and left red: the owner decides
 # which name an inferred type keeps.
-scenario/CK-179 order-dependent
 # R15-fix-H (2026-09-28): a review of R15-fix-F found CK-190 (the release
 # printer's 64-step substitution budget), CK-191 and CK-192 (`--out`'s
 # record), and the slice's own audit CK-193 (the `foreign` shape check's
@@ -55,11 +54,7 @@ scenario/CK-179 order-dependent
 # manager's residues, catalogued CK-194 to CK-197. Written and checked on
 # 275b203. CK-161's acceptance fixtures return here from check/bad/ until
 # the fix promotes them; CK-194 is a timing scenario (test-pending-perf).
-tests/pending/run/DotCallCompareDerivedUnannotated.beni dev: exit=1 codes=unknown_method×1
-tests/pending/run/DotCallDerivedDirect.beni dev: exit=1 codes=no_methods_on_shape×2,unknown_method×7
-tests/pending/run/DotCallDerivedThroughHelper.beni dev: exit=1 codes=no_methods_on_shape×1,unknown_method×5
-tests/pending/run/DotCallDerivedAcrossModules dev: exit=1 codes=unknown_method×6
-tests/pending/check/bad/OwnMethodSignatureAcrossModules exit=1 codes=type_mismatch×2 why=count
-tests/pending/check/bad/DerivedPinnedRecursive exit=1 codes=not_equatable×1 why=message
-scenario/CK-194 slow
-scenario/CK-196 order-dependent
+# R15-fix-I fixed all of them and promoted each (CK-161's four fixtures,
+# CK-195 and CK-197 into tests/corpus/, CK-194 into perf_test.zig, CK-196
+# into ordering_test.zig), and CK-179 with them under D16 (into
+# ordering_test.zig). CK-144 is the one left.
