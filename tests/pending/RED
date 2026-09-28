@@ -61,5 +61,7 @@ scenario/CK-144 superlinear
 # The tests over the gates' test budget of 4 300 million instructions
 # (2026-09-28): parked here until the compiler fits them, then promoted
 # back into abuse_wide_test.zig and cache_test.zig.
-scenario/CK-198 over-budget
-scenario/CK-199 over-budget
+# Both went back resized (2026-09-28): the comparison past the positional
+# evidence limit at 4 097 fields, the narrowest width that takes the array,
+# in abuse_wide_test.zig, and the cross-module test as two warm builds after
+# a check, in cache_test.zig.

@@ -2731,6 +2731,138 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     try testing.expectEqual(@as(u64, 0), again.counters.checked);
 }
 
+/// `Wide.beni`: `pub type T a0 … a<n-1> = Mk a0 … a<n-1>`. And `Main.beni`:
+/// `x` and `y` of it, all fields `1 … n` except `y`'s last, which is 0, and
+/// a `main` printing `x == x`, `x == y`, `y < x` and `x < y` — then
+/// `extra`, so a second version of `Main` can differ from the first.
+fn wideImportProject(w: *World, gpa: std.mem.Allocator, n: usize, extra: []const u8) !void {
+    var wide: std.Io.Writer.Allocating = .init(gpa);
+    defer wide.deinit();
+    try wide.writer.writeAll("pub type T");
+    for (0..n) |i| try wide.writer.print(" a{d}", .{i});
+    try wide.writer.writeAll("\n    = Mk");
+    for (0..n) |i| try wide.writer.print(" a{d}", .{i});
+    try wide.writer.writeAll("\n");
+    try w.write("Wide.beni", wide.written());
+
+    var main: std.Io.Writer.Allocating = .init(gpa);
+    defer main.deinit();
+    const out = &main.writer;
+    try out.writeAll("import Node exposing (Program)\nimport Wide\n\n\nx =\n    Wide.Mk");
+    for (1..n + 1) |i| try out.print(" {d}", .{i});
+    try out.writeAll("\n\n\ny =\n    Wide.Mk");
+    for (1..n + 1) |i| try out.print(" {d}", .{if (i == n) 0 else i});
+    try out.print(
+        \\
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (x == x), show (x == y), show (y < x), show (x < y){s} ]
+        \\
+    , .{extra});
+    try w.write("Main.beni", main.written());
+}
+
+test "an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `static-dispatch-spike.md` §9.2's wide form (A.87) across a module
+    // boundary, which needs interface v3's `u16` arity: past 4 096 evidence
+    // entries a derived function takes ONE array `$m`, and every caller
+    // packs the same count. `T` has 4 097 parameters, the narrowest count
+    // that takes the array, so `Wide` emits `T`'s `eq` and `compare` in the
+    // wide form, and `Main` — which counts the entries from what it
+    // imported — must pack 4 097. An importer that read the count through a
+    // `u8`, or fell back to positional evidence, would call `Wide$T$$eq`
+    // with 4 097 arguments: exit 0, then `TypeError: $m[0] is not a
+    // function` at run time.
+    //
+    // The count an importer uses on a warm build is the one a cached RECORD
+    // states, and there are two such records, so two builds over one cache
+    // directory, each after a `check` that fills it:
+    //   - warm: nothing is checked, and `Main`'s cached dispatch table states
+    //     the count;
+    //   - `Main` edited: `Wide` comes from the cache and `Main` is checked
+    //     against `Wide`'s loaded interface, which states it.
+    // A cold build would take the count from the interface in memory, which
+    // no cached record states, so the cache is filled by a `check` of both
+    // modules instead; the switch itself, in one module, is
+    // `abuse_wide_test.zig`'s. Both builds are development builds: `--release`
+    // renames the same lowered calls and has no branch of its own at the
+    // switch. Which module an edit re-checks is `cutoff_test.zig`'s, and
+    // each build here costs a whole build of a type 4 097 wide.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const n = 4_097;
+    try wideImportProject(&w, arena, n, "");
+    const expected = "True\nFalse\nTrue\nFalse\n";
+    const cold = try runCounted(&w, arena, &.{ "check", "--platform=node", "--cache-dir=cache", "--jobs=1", "Main.beni", "Wide.beni" }, "cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+
+    const passes = [_]struct {
+        what: []const u8,
+        edit: ?[]const u8,
+        checked: u64,
+        hits_at_least: u64,
+        expected: []const u8,
+    }{
+        .{ .what = "warm", .edit = null, .checked = 0, .hits_at_least = 2, .expected = expected },
+        .{ .what = "Main edited", .edit = ", show (y == y)", .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
+    };
+    for (passes, 0..) |pass, i| {
+        if (pass.edit) |extra| try wideImportProject(&w, arena, n, extra);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const built = try runCounted(
+            &w,
+            arena,
+            &.{ "build", "--platform=node", "--out=out", "--cache-dir=cache", "--jobs=1", "Main.beni", "Wide.beni" },
+            try std.fmt.allocPrint(arena, "pass{d}.json", .{i}),
+        );
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        if (built.result.exit_code != 0) std.debug.print("{s}: {s}\n", .{ pass.what, built.result.stderr });
+        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
+        try testing.expectEqualStrings("", built.result.stderr);
+        try w.expectProgram(world.entry_file, .{ .stdout = pass.expected });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        // Which modules the build checked and which it took from the cache:
+        // the reason for two builds, not a detail of them.
+        if (built.counters.checked != pass.checked or built.counters.hits < pass.hits_at_least) {
+            std.debug.print("{s}: checked {d}, hits {d}\n", .{ pass.what, built.counters.checked, built.counters.hits });
+            return error.UnexpectedCacheUse;
+        }
+
+        // The importer really does pack the array: one `$m` of 4 097
+        // entries per call, never 4 097 arguments.
+        const main_js = try w.read("out/Main.mjs");
+        try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$eq([") != null);
+        try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$compare([") != null);
+    }
+}
+
 fn runFlagged(
     w: *World,
     arena: std.mem.Allocator,

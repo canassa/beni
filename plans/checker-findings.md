@@ -4828,6 +4828,17 @@ review; written red on `275b203` before any fix (their own commit).*
 - **Expected** under the budget, so the scenario can go back into `abuse_wide_test.zig`.
 - **Fixture** `scenario/CK-198` (`test-pending`), red `over-budget`.
 - **Slice** open.
+- **Status** fixed by resizing (2026-09-28), the owner's decision: the 65 530 width is not needed.
+  The compiler's branch is `Convention.derivedEvidence`'s switch from positional evidence to one
+  array past `max_positional_evidence` (4 096), and 4 097 reaches it; what 65 530 added was an
+  engine's claim (V8 loading a function of several MB), not a branch of the compiler, and the
+  checker's 16-bit index at 65 535 is the check-only payload test's. The scenario is gone;
+  `abuse_wide_test.zig`'s "`==` and `<` on a record one field past the positional evidence limit
+  build and run" already built and ran 4 097 fields, and now also reads the emitted module: two
+  derived functions taking `($m, $x, $y)` and three uses each passing one array literal. With
+  the limit moved to 4 097 the program still runs and the test is red on that shape. 860 million
+  instructions against the budget of 4 300, development build only (`--release` lowers the same
+  calls and has no branch of its own at the switch).
 
 ### CK-199 — A type of 4 097 parameters compared across modules is over the test budget
 
@@ -4846,6 +4857,17 @@ review; written red on `275b203` before any fix (their own commit).*
   emit cache would make the warm builds nearly free; it needs a spec first.
 - **Fixture** `scenario/CK-199` (`test-pending`), red `over-budget`.
 - **Slice** open.
+- **Status** fixed by resizing (2026-09-28): 4 097 stays, since it is the narrowest count that
+  takes the array, and the builds are cut to the ones whose claim is a cached record stating that
+  count. A `check` of both modules fills the cache (the cold build's count came from the
+  interface in memory, which no record states), then two development builds: warm, nothing
+  checked, the count from `Main`'s cached dispatch table; and `Main` edited, `Main` checked
+  against `Wide`'s loaded interface. Each runs its program and reads `Main.mjs` for the packed
+  calls; the `--release` build went, as it has no branch of its own at the switch. Back in
+  `cache_test.zig` as "an imported type of 4 097 parameters compares in the wide form from a warm
+  cache and with only the importer edited": 3 503 million instructions against 4 300 (the check
+  about 890, the warm build about 950, the edited build about 1 160). With the limit moved to
+  4 097 it is red on the packed calls.
 
 ## Summary table
 
@@ -5042,8 +5064,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-195 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureAcrossModules/` | R15-fix-I (fixed, promoted) |
 | CK-196 | nondeterminism | K12 | `scenario/CK-196` | R15-fix-I (fixed, promoted into `ordering_test.zig`) |
 | CK-197 | diagnostic-quality | K13 | `check/bad/DerivedPinnedRecursive/` | R15-fix-I (fixed, promoted) |
-| CK-198 | performance | K11 | `scenario/CK-198` | open (over the test budget) |
-| CK-199 | performance | K11 | `scenario/CK-199` | open (over the test budget) |
+| CK-198 | performance | K11 | `scenario/CK-198` | fixed by resizing to 4 097 fields, into `abuse_wide_test.zig`'s existing test |
+| CK-199 | performance | K11 | `scenario/CK-199` | fixed by resizing to a check and two builds, promoted into `cache_test.zig` |
 
 Totals:
 - 187 entries (CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.

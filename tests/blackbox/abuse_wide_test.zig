@@ -94,9 +94,9 @@ fn wideEqProgram(gpa: std.mem.Allocator, n: usize) ![]u8 {
 // to 4 096 positions the evidence is positional; past it, one array
 // (`static-dispatch-spike.md` §9.2), so the width that threw no longer makes
 // a wide call. This scenario builds and runs the widest positional record;
-// one past the positional limit is the scenario after it. A width that
-// threw, 65 530 fields, is over the test budget on the compiler the gates
-// run, so it waits in `pending_test.zig` until that compiler fits it.
+// one past the positional limit is the scenario after it, and it asserts the
+// array form. The switch is the one the compiler owns; a width that threw
+// would add only an engine's claim, not a branch of the compiler.
 test "== on a record builds and runs at the widest positional evidence" {
     try wideEqRuns(4_096);
 }
@@ -131,7 +131,12 @@ fn wideEqRuns(n: usize) !void {
 // 40 000 and 60 000. The wide form (`static-dispatch-spike.md` §9.2) takes
 // the evidence as one array past 4 096 positions, and the checker lifts the
 // cap (checker-v2.md §11.2): the program builds, runs and prints its three
-// answers; a refusal is the finding.
+// answers; a refusal is the finding. It runs either way, since Node loads a
+// call of 4 097 arguments, so the emitted module is read too: the derived
+// `eq` and `compare` each take one array and every use passes one — two
+// `==` and one `<` — so a fallback to positional evidence is red here.
+// Only the development build: `--release` renames the same lowered form
+// and has no branch of its own at the switch.
 test "`==` and `<` on a record one field past the positional evidence limit build and run" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -158,6 +163,16 @@ test "`==` and `<` on a record one field past the positional evidence limit buil
     // └─────────────────────────────────────────┘
     try expectExited(built, 0);
     try testing.expectEqualStrings("", built.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Every field's evidence is the primitive's, so each use's array
+    // literal opens with it.
+    const js = try w.read("out/Main.mjs");
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, js, " = ($m, $x, $y) =>"));
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, js, "([Main$eq$prim, "));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, js, "([Main$compare$prim, "));
 }
 
 // A nominal payload record of 65 537 fields. The eager pass probes `T`'s
