@@ -277,7 +277,7 @@ pub fn build(b: *std.Build) void {
     };
     for ([_]struct { []const u8, u32 }{
         .{ "tests/blackbox/blackbox_test.zig", 6 },
-        .{ "tests/blackbox/abuse_test.zig", 6 },
+        .{ "tests/blackbox/abuse_test.zig", 3 },
         .{ "tests/blackbox/abuse_wide_test.zig", 4 },
         .{ "tests/blackbox/build_test.zig", 3 },
         .{ "tests/blackbox/cache_test.zig", 4 },

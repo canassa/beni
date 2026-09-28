@@ -4446,6 +4446,10 @@ within its bound. `check/bad/LetConstrainedTwice` is **still refused**, and its 
 2026-09-26 (§21.1) keeps monomorphic. Its golden moved in its hint alone, which now says why the
 binding has one type (§8.4, *As built 2026-09-27*).
 
+*2026-09-28:* the `abuse_test.zig` cyclic-receiver scenario is gone. Its first body is
+`run/LetHelperCyclicReceiver`, and its other three (a list, a record and a tuple compared) reach
+the same generalisation and nothing else.
+
 ---
 
 ## 21. Decisions

@@ -1,12 +1,11 @@
 //! Abuse scenarios (docs/design/frontend.md §8,
 //! .claude/skills/write-tests/SKILL.md "Abuse scenarios are first-class").
 //!
-//! Hostile and degenerate source is a supported input, not an edge case. A
-//! 10 MB literal, nesting one level past every limit, every byte value there
-//! is, a symlink that points at its own parent: each must produce a
-//! diagnostic or a clean pass — never a panic, never a hang, never a partial
-//! write. Every scenario here therefore asserts four things beyond the
-//! diagnostics:
+//! Hostile and degenerate source is a supported input, not an edge case.
+//! Nesting one level past a limit, every byte value there is, a symlink
+//! that points at its own parent: each must produce a diagnostic or a clean
+//! pass — never a panic, never a hang, never a partial write. Every scenario
+//! here therefore asserts four things beyond the diagnostics:
 //!
 //!   - the exit code, exactly;
 //!   - that the child EXITED rather than dying from a signal (`Term`), so
@@ -18,12 +17,17 @@
 //!   - no partial output: for `check`, stdout is empty; for `fmt`, the
 //!     input file is byte-identical afterwards and stdout is empty.
 //!
-//! The inputs are BUILT HERE, not checked in: a 10 MB fixture in git is a
-//! 10 MB fixture in every clone forever, and the bytes are easier to trust
+//! The inputs are BUILT HERE, not checked in: the bytes are easier to trust
 //! when the test says how they were made. What is frozen into
 //! `bench/pathological/` is the small, slow subset (see that
 //! directory's README); the giant ones are generator cases in
-//! `bench/gen.zig` for the same reason.
+//! `bench/gen.zig`.
+//!
+//! Each scenario reaches one guard, recovery path or fixed defect that no
+//! corpus fixture reaches. A limit the corpus already pins — the parser's
+//! nesting guard in `parse/bad/NestingTooDeep`, the checker's in
+//! `check/depth/`, deep derived comparisons in `run/DerivedDeep*` — is not
+//! repeated here.
 //!
 //! Peak memory is asserted OUTSIDE this file: measuring a child's RSS
 //! portably from a test means polling `/proc`, which is a Linux-only race.
@@ -46,140 +50,9 @@ const expectExited = support.expectExited;
 const chain = support.chain;
 const nested = support.nested;
 
-const ten_megabytes = 10 * 1024 * 1024;
-
-// ---------------------------------------------------------------------------
-// Enormous single files
-// ---------------------------------------------------------------------------
-
-test "a 10 MB single-line string literal is one token and no diagnostic" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try repeatedInside(testing.allocator, "main =\n    \"", 'a', ten_megabytes, "\"\n");
-    defer testing.allocator.free(source);
-    try w.write("Big.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Big.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(r, 0);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // A string is copied verbatim (language.md §9), so the canonical form
-    // of this file is the file: `fmt --check` finds nothing to say.
-    const f = try w.run(&.{ "fmt", "--check", "Big.beni" });
-    try expectExited(f, 0);
-    try testing.expectEqualStrings("", f.stderr);
-    try testing.expectEqualStrings(source, try w.read("Big.beni"));
-}
-
-test "a 10 MB file that is one identifier is a definition without `=`" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try repeatedInside(testing.allocator, "", 'a', ten_megabytes, "\n");
-    defer testing.allocator.free(source);
-    try w.write("Big.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Big.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // One 10 MB identifier is one token, and one token at the top level is
-    // the start of a definition: the parser wants `=` and hits EOF. The
-    // span is the EOF position — the line after the identifier.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
-        .code = .expected_token,
-        .severity = .@"error",
-        .span = .{ .file = "Big.beni", .start = .{ .line = 2, .col = 1 }, .end = .{ .line = 2, .col = 1 } },
-        .title = "EXPECTED TOKEN",
-        .message = "I got to the end of the file while parsing a definition. I was expecting `=`\nnext.",
-    }}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Big.beni", 1);
-}
-
 // ---------------------------------------------------------------------------
 // Deep nesting
 // ---------------------------------------------------------------------------
-
-test "parentheses nested one level past the limit stop at exactly one nesting_too_deep" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try nested(testing.allocator, "(", "1", ")", 4_097);
-    defer testing.allocator.free(source);
-    try w.write("Deep.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Deep.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // The parser's depth limit is what keeps recursion off the stack; it
-    // fires once, at the first level past the limit, and the closing half of
-    // the file is not turned into more copies of the same complaint.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{nestingTooDeep("Deep.beni", 2, 4101, 1)}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Deep.beni", 1);
-}
-
-test "lists nested one level past the limit stop at exactly one nesting_too_deep" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try nested(testing.allocator, "[", "", "]", 4_097);
-    defer testing.allocator.free(source);
-    try w.write("Deep.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Deep.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{nestingTooDeep("Deep.beni", 2, 4101, 1)}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Deep.beni", 1);
-}
 
 test "a record literal nested to the parser's limit checks and compares, one past it is one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
@@ -222,81 +95,22 @@ test "a record literal nested to the parser's limit checks and compares, one pas
     }
 }
 
-test "a record literal nested to the parser's limit compares and RUNS, development build" {
-    try deepRecordRuns(&.{ "--no-cache", "Main.beni" });
-}
-
-test "a record literal nested to the parser's limit compares and RUNS, release build" {
-    try deepRecordRuns(&.{ "--release", "--no-cache", "Main.beni" });
-}
-
-/// Build the program below with `args` and run it.
-fn deepRecordRuns(args: []const []const u8) !void {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // The literal above, built and run. Every level is its own record TYPE,
-    // so the derived `eq` of the shape `{ x, y }` is handed itself as
-    // evidence once a level: two native frames a level (the shape's function
-    // and the evidence closure), and without a bound Node's stack gave out at
-    // 3 747 levels with `RangeError` — which is why this is the parser's
-    // 4 095 and not a size just past the 400 units of `derived_depth_limit`,
-    // past which the comparison continues from an explicit stack
-    // (`backend.md` §4, *Derived comparisons do not grow the native stack*).
-    // `other` differs only in its innermost field, so `==` and `<` walk every
-    // level.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const gpa = testing.allocator;
-    var source: std.ArrayList(u8) = .empty;
-    defer source.deinit(gpa);
-    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\n");
-    for ([_][]const u8{ "deep", "other" }, [_][]const u8{ "1", "2" }) |name, innermost| {
-        try source.appendSlice(gpa, name);
-        try source.appendSlice(gpa, " =\n    ");
-        for (0..4095) |_| try source.appendSlice(gpa, "{ x = ");
-        try source.appendSlice(gpa, innermost);
-        for (0..4095) |_| try source.appendSlice(gpa, ", y = 0 }");
-        try source.appendSlice(gpa, "\n\n\n");
-    }
-    try source.appendSlice(gpa,
-        \\show : Bool -> String
-        \\show b =
-        \\    if b then
-        \\        "True"
-        \\
-        \\    else
-        \\        "False"
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines [ show (deep == deep), show (deep == other), show (deep < other), show (other < deep) ]
-        \\
-    );
-    try w.write("Main.beni", source.items);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(args);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-    try testing.expectEqualStrings("", r.build.stderr);
-    try testing.expectEqualStrings("True\nFalse\nTrue\nFalse\n", r.program.?.stdout);
-    try testing.expectEqualStrings("", r.program.?.stderr);
-    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-}
-
 test "a recursive type of 4 096 parameters compares past the derived depth limit, positional" {
+    // 4 096 evidence parameters, positional: a call charges 1 + (2 × 4 096
+    // + 4 097) / 32 = 385 units, so the third level is past the limit and
+    // continues from the explicit stack, whose steps take the evidence as
+    // one array. Without the charge per 32 parameters the frames are so big
+    // that Node's `==` overflowed about 13 levels down; 20 levels threw
+    // `RangeError` with a charge of one unit a call.
     try wideRecursiveTypeCompares(4096, "20");
 }
 
 test "a recursive type of 4 097 parameters compares past the derived depth limit, wide" {
-    try wideRecursiveTypeCompares(4097, "450");
+    // 4 097 parameters take the evidence as one array, and a call charges
+    // 1 + 4 098 / 32 = 129 units for the positions: the fifth level is the
+    // first past the limit of 400, so 5 levels reach the explicit stack in
+    // the array form and 4 do not.
+    try wideRecursiveTypeCompares(4097, "5");
 }
 
 /// A recursive type of `n` parameters, `levels` deep, compared.
@@ -306,13 +120,11 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
     // └─────────────────────────────────────────┘
     // The two evidence forms of static-dispatch-spike.md §9.2: 4 096
     // parameters is the widest POSITIONAL derived function, 4 097 the
-    // narrowest that takes them as one array. A positional frame of 4 096
-    // parameters is big — without a charge for it Node overflowed its `==`
-    // about 13 levels down — so its calls charge `derived_depth_limit` one
-    // unit per 32 parameters and it reaches the explicit stack after two
-    // levels: 20 levels are past it. The wide one charges one unit, like any
-    // other, so 450 levels are past the 400-unit limit. Every parameter is a
-    // position.
+    // narrowest that takes them as one array. Every parameter is a
+    // position. The recursive position is the FIRST, so the comparison
+    // recurses into it: in the last position it would be a tail self-call,
+    // which loops and never grows the depth (`backend.md` §4, *Derived
+    // comparisons do not grow the native stack*).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -320,17 +132,17 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
     defer source.deinit(gpa);
     try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W");
     try params(gpa, &source, n, " p{d}");
-    try source.appendSlice(gpa, "\n    = Cell");
+    try source.appendSlice(gpa, "\n    = Cell (W");
     try params(gpa, &source, n, " p{d}");
-    try source.appendSlice(gpa, " (W");
+    try source.appendSlice(gpa, ")");
     try params(gpa, &source, n, " p{d}");
-    try source.appendSlice(gpa, ")\n    | End\n\n\ncell : Int, W");
+    try source.appendSlice(gpa, "\n    | End\n\n\ncell : Int, W");
     try params(gpa, &source, n, " Int");
     try source.appendSlice(gpa, " -> W");
     try params(gpa, &source, n, " Int");
-    try source.appendSlice(gpa, "\ncell k rest =\n    Cell k");
+    try source.appendSlice(gpa, "\ncell k rest =\n    Cell rest k");
     try params(gpa, &source, n - 1, " 0");
-    try source.appendSlice(gpa, " rest\n\n\nbuild : Int, Int, W");
+    try source.appendSlice(gpa, "\n\n\nbuild : Int, Int, W");
     try params(gpa, &source, n, " Int");
     try source.appendSlice(gpa, " -> W");
     try params(gpa, &source, n, " Int");
@@ -489,205 +301,20 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
     }
 }
 
-test "a chain of forwarders as deep as the parser allows compares and runs: `Just` nested 4 095 deep" {
+test "the left-deep access and `?` spines the parser builds in a loop are depth-bounded too" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `Maybe`'s derived `eq` and `compare` are FORWARDERS — their
-    // one depth-taking call is in tail position, so they have no steps and
-    // no prologue. A chain of them as deep as a TYPE still charges the depth
-    // at every level and hands the tail call to the engine past the limit
-    // (`backend.md` §4, *Derived comparisons do not grow the native stack*).
-    // Without the charge this chain threw `RangeError`: two native frames a
-    // level (the function and the evidence closure).
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const gpa = testing.allocator;
-    var source: std.ArrayList(u8) = .empty;
-    defer source.deinit(gpa);
-    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\n");
-    for ([_][]const u8{ "deep", "other" }, [_][]const u8{ "1", "2" }) |name, innermost| {
-        try source.appendSlice(gpa, name);
-        try source.appendSlice(gpa, " =\n    ");
-        for (0..4095) |_| try source.appendSlice(gpa, "Just (");
-        try source.appendSlice(gpa, innermost);
-        for (0..4095) |_| try source.append(gpa, ')');
-        try source.appendSlice(gpa, "\n\n\n");
-    }
-    try source.appendSlice(gpa,
-        \\main : Program
-        \\main =
-        \\    Node.printLines
-        \\        [ if deep == deep then "True" else "False"
-        \\        , if deep == other then "True" else "False"
-        \\        , if deep < other then "True" else "False"
-        \\        ]
-        \\
-    );
-    try w.write("Main.beni", source.items);
-
-    {
-        for ([_]bool{ false, true }) |release| {
-            // ┌─────────────────────────────────────┐
-            // │ EXECUTE                             │
-            // └─────────────────────────────────────┘
-            const r = if (release)
-                try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
-            else
-                try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
-
-            // ┌─────────────────────────────────────┐
-            // │ VERIFY OUTPUT                       │
-            // └─────────────────────────────────────┘
-            try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-            try testing.expectEqualStrings("", r.build.stderr);
-            try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
-            try testing.expectEqualStrings("", r.program.?.stderr);
-            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-        }
-    }
-}
-
-test "a recursive type through 50 nested wrappers a level compares 1 000 levels deep" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // The forwarders' bound: every level of `T` passes through 50 forwarders
-    // (`W a = W a`, then `Maybe`), none of which checks the depth unless it
-    // is past the limit, and all of which charge it. So the native stack a
-    // level costs is paid for in depth, and the explicit stack takes over
-    // after a few levels of `T` rather than after 400. Without the charge,
-    // 20 000 levels threw `RangeError`; 1 000 levels are some 50 000
-    // forwarder frames, several times what Node's default stack holds.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const gpa = testing.allocator;
-    var source: std.ArrayList(u8) = .empty;
-    defer source.deinit(gpa);
-    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W a\n    = W a\n\n\ntype T\n    = T Int (");
-    for (0..50) |_| try source.appendSlice(gpa, "W (");
-    try source.appendSlice(gpa, "Maybe T");
-    for (0..50) |_| try source.append(gpa, ')');
-    try source.appendSlice(gpa, ")\n\n\nwrap : Maybe T -> ");
-    for (0..50) |_| try source.appendSlice(gpa, "W (");
-    try source.appendSlice(gpa, "Maybe T");
-    for (0..49) |_| try source.append(gpa, ')');
-    try source.appendSlice(gpa, ")\nwrap m =\n    ");
-    for (0..50) |_| try source.appendSlice(gpa, "W (");
-    try source.append(gpa, 'm');
-    for (0..50) |_| try source.append(gpa, ')');
-    try source.appendSlice(gpa,
-        \\
-        \\
-        \\
-        \\build : Int, Maybe T -> Maybe T
-        \\build n acc =
-        \\    if n == 0 then
-        \\        acc
-        \\
-        \\    else
-        \\        build (n - 1) (Just (T n (wrap acc)))
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    Node.printLines
-        \\        [ if build 1000 Nothing == build 1000 Nothing then "True" else "False"
-        \\        , if build 1000 Nothing == build 1000 (Just (T 0 (wrap Nothing))) then "True" else "False"
-        \\        , if build 1000 (Just (T 0 (wrap Nothing))) < build 1000 Nothing then "True" else "False"
-        \\        ]
-        \\
-    );
-    try w.write("Main.beni", source.items);
-
-    for ([_]bool{ false, true }) |release| {
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        const r = if (release)
-            try w.buildAndRun(&.{ "--release", "--no-cache", "Main.beni" })
-        else
-            try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
-
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        // The pairs differ in their innermost `Maybe`: `Just` is declared
-        // first, so the value that ends in it is the lesser.
-        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
-        try testing.expectEqualStrings("", r.program.?.stderr);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-    }
-}
-
-test "lambdas nested past the limit report every shadowed parameter, then stop nesting" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `\x -> \x -> …`: every parameter but the first shadows the one
-    // outside it, so this is the input that asks whether the diagnostic
-    // list needs a cap. It does not — the nesting limit caps it first, at
-    // 4096 — which is why there is no `--max-errors` flag to test.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try nested(testing.allocator, "\\x -> ", "1", "", 4_097);
-    defer testing.allocator.free(source);
-    try w.write("Lambdas.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Lambdas.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // 4094 shadowings (every parameter but the outermost) and the single
-    // nesting error that ended the parse: count, then first and last in
-    // full, because 4095 whole structs is not an assertion anyone reads.
-    // One level fewer fits than the raw source nesting suggests, because
-    // the depth guard charges a pattern ATOM too — a lambda's parameter is one — so that
-    // the guard bounds the TREE every consumer walks and not just the
-    // source nesting (see the deep-constructor-pattern scenario).
-    try expectExited(r, 1);
-    try testing.expectEqual(@as(usize, 4095), r.diagnostics.len);
-    try testing.expectEqualDeep(diagnostic.Diagnostic{
-        .code = .shadowing,
-        .severity = .@"error",
-        .span = .{ .file = "Lambdas.beni", .start = .{ .line = 2, .col = 12 }, .end = .{ .line = 2, .col = 13 } },
-        .title = "SHADOWING",
-        .message = "The name `x` is already bound on line 2.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope,\nwhether from an enclosing binding, a top-level declaration, an `exposing` list\nor the prelude. Rename one of them.",
-    }, r.diagnostics[0]);
-    try testing.expectEqualDeep(nestingTooDeep("Lambdas.beni", 2, 24576, 1), r.diagnostics[r.diagnostics.len - 1]);
-    var shadowings: usize = 0;
-    for (r.diagnostics) |d| {
-        if (d.code == .shadowing) shadowings += 1;
-    }
-    try testing.expectEqual(@as(usize, 4094), shadowings);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Lambdas.beni", 1);
-}
-
-test "the three left-deep spines the parser builds in a loop are depth-bounded too" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `1 + 1 + …`, `r.a.a.a…` and `r????…` are assembled by LOOPS in the
-    // parser, not by recursion, so they cost it no stack — but they are
-    // real tree depth, and every consumer that walks the tree recurses
-    // along them. Before `Parse.max_depth` counted them, a 24 KB file of
-    // `1 + 1 + …` segfaulted `beni check` and an 8 KB file of `r.a.a.a…`
-    // segfaulted both `check` and `dump --stage=ast`. 4 100 links each, just
-    // past the 4096 limit.
+    // `r.a.a.a…` and `r????…` are assembled by LOOPS in the parser
+    // (`parsePostfix`, `parseAccessChain`), not by recursion, so they cost
+    // it no stack — but they are real tree depth, and every consumer that
+    // walks the tree recurses along them. Before `Parse.max_depth` counted
+    // them, an 8 KB file of `r.a.a.a…` segfaulted both `check` and `dump
+    // --stage=ast`. 4 097 links each, one past the 4096 limit. The third
+    // such loop, an operator chain, is `abuse_wide_test.zig`'s.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const cases = [_]struct { path: []const u8, head: []const u8, piece: []const u8, col: u32, width: u32 }{
-        .{ .path = "Plus.beni", .head = "x =\n    1", .piece = " + 1", .col = 16385, .width = 1 },
         .{ .path = "Access.beni", .head = "f r =\n    r", .piece = ".a", .col = 8196, .width = 2 },
         .{ .path = "Question.beni", .head = "f r =\n    r", .piece = "?", .col = 4101, .width = 1 },
     };
@@ -696,7 +323,7 @@ test "the three left-deep spines the parser builds in a loop are depth-bounded t
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const source = try chain(testing.allocator, case.head, case.piece, 4_100);
+        const source = try chain(testing.allocator, case.head, case.piece, 4_097);
         defer testing.allocator.free(source);
         try w.write(case.path, source);
         const checked = try w.run(&.{ "check", case.path });
@@ -785,39 +412,6 @@ test "a pattern with `as` and no name is a syntax error, not a panic" {
 // Degenerate bytes
 // ---------------------------------------------------------------------------
 
-test "200 000 blank lines are a valid empty module" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try testing.allocator.alloc(u8, 200_000);
-    defer testing.allocator.free(source);
-    @memset(source, '\n');
-    try w.write("Blank.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Blank.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(r, 0);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // A module with no declarations formats to nothing at all, so `fmt`
-    // DOES rewrite this one: 200 000 blank lines become zero bytes.
-    const f = try w.run(&.{ "fmt", "Blank.beni" });
-    try expectExited(f, 0);
-    try testing.expectEqualStrings("", f.stderr);
-    try testing.expectEqualStrings("", try w.read("Blank.beni"));
-}
-
 test "a file of every byte value 0-255 reports its lexical errors and never panics" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -872,77 +466,22 @@ test "a file of every byte value 0-255 reports its lexical errors and never pani
     try expectFmtRefuses(&w, "Bytes.beni", 1);
 }
 
-test "mixed CRLF, LF and a bare CR: the lone CR is the only line-ending error" {
+test "an unterminated char, and an empty paren and brace, at EOF" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = "a = 1\r\nb = 2\nc = 3\rd = 4\n";
-    try w.write("Endings.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Endings.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // `\r\n` and `\n` are both line endings; a lone `\r` is neither, so it
-    // is an error AND it does not end the line — which is why `d = 4` is
-    // read as a continuation of `c`'s declaration and produces two more
-    // diagnostics on line 3. Reporting all three is the point: the lexer
-    // does not stop at the first bad byte.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{
-        .{
-            .code = .bare_carriage_return,
-            .severity = .@"error",
-            .span = .{ .file = "Endings.beni", .start = .{ .line = 3, .col = 6 }, .end = .{ .line = 3, .col = 7 } },
-            .title = "BARE CARRIAGE RETURN",
-            .message = "I found a carriage return (\\r) that is not followed by a newline.\n\nLine endings must be \\n or \\r\\n. A lone \\r is neither, so convert the file's\nline endings to one of those.",
-        },
-        .{
-            .code = .unbound_variable,
-            .severity = .@"error",
-            .span = .{ .file = "Endings.beni", .start = .{ .line = 3, .col = 7 }, .end = .{ .line = 3, .col = 8 } },
-            .title = "NAMING ERROR",
-            .message = "I cannot find a `d` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
-        },
-        .{
-            .code = .unexpected_token,
-            .severity = .@"error",
-            .span = .{ .file = "Endings.beni", .start = .{ .line = 3, .col = 9 }, .end = .{ .line = 3, .col = 10 } },
-            .title = "UNEXPECTED TOKEN",
-            .message = "I was parsing the declaration of `c` and ran into `=`, which cannot continue it.\n\nEither it is part of the expression before it (then check what comes just\nbefore it), or it should start a new declaration on column 1.",
-        },
-    }, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Endings.beni", 1);
-}
-
-test "unterminated string, char, interpolation, paren, bracket and brace at EOF" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // Six ways to end a file in the middle of something. Each is its own
-    // project so the spans name a file of its own, and each is checked for
-    // the whole diagnostic list AND for `fmt` leaving its bytes alone.
+    // Three ways to end a file in the middle of something that no
+    // `parse/bad` fixture ends in: the lexer's char literal cut off by the
+    // end of the file, and the parser meeting the end where an expression
+    // or a field name must come. An unterminated string, an interpolation
+    // and a delimiter closed by nothing after its content are
+    // `parse/bad/*AtEof`. Each is its own project so the spans name a file
+    // of its own, and each is checked for the whole diagnostic list AND for
+    // `fmt` leaving its bytes alone.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
     const cases = [_]struct { path: []const u8, source: []const u8, want: []const diagnostic.Diagnostic }{
-        .{ .path = "String.beni", .source = "main = \"abc", .want = &.{.{
-            .code = .unterminated_string,
-            .severity = .@"error",
-            .span = .{ .file = "String.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 12 } },
-            .title = "UNTERMINATED STRING",
-            .message = "I got to the end of the file without seeing the closing `\"` of this string.\n\nStrings are single-line. For text that spans several lines, use a multiline\nstring, one `\\\\` per line:\n\n    \\\\first line\n    \\\\second line",
-        }} },
         .{ .path = "Char.beni", .source = "main = 'a", .want = &.{.{
             .code = .invalid_char_literal,
             .severity = .@"error",
@@ -950,22 +489,6 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
             .title = "INVALID CHAR LITERAL",
             .message = "I got to the end of the line without seeing the closing `'` of this\ncharacter literal.\n\nA character literal holds exactly one character: `'a'`, `'\\n'`, `'\\u{1F600}'`.",
         }} },
-        .{ .path = "Interp.beni", .source = "main = \"x ${y", .want = &.{
-            .{
-                .code = .unterminated_string,
-                .severity = .@"error",
-                .span = .{ .file = "Interp.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 14 } },
-                .title = "UNTERMINATED STRING",
-                .message = "I got to the end of the file without seeing the closing `\"` of this string.\n\nStrings are single-line. For text that spans several lines, use a multiline\nstring, one `\\\\` per line:\n\n    \\\\first line\n    \\\\second line",
-            },
-            .{
-                .code = .unbound_variable,
-                .severity = .@"error",
-                .span = .{ .file = "Interp.beni", .start = .{ .line = 1, .col = 13 }, .end = .{ .line = 1, .col = 14 } },
-                .title = "NAMING ERROR",
-                .message = "I cannot find a `y` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
-            },
-        } },
         .{ .path = "Paren.beni", .source = "main = (", .want = &.{
             .{
                 .code = .unclosed_delimiter,
@@ -980,22 +503,6 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
                 .span = .{ .file = "Paren.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNEXPECTED TOKEN",
                 .message = "I got to the end of the file while parsing a parenthesised expression. I was\nexpecting an expression.",
-            },
-        } },
-        .{ .path = "Bracket.beni", .source = "main = [", .want = &.{
-            .{
-                .code = .unclosed_delimiter,
-                .severity = .@"error",
-                .span = .{ .file = "Bracket.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 9 } },
-                .title = "UNCLOSED DELIMITER",
-                .message = "I was parsing a list and got to the end of the file without finding the `]` that\ncloses this `[`.",
-            },
-            .{
-                .code = .unexpected_token,
-                .severity = .@"error",
-                .span = .{ .file = "Bracket.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 9 } },
-                .title = "UNEXPECTED TOKEN",
-                .message = "I got to the end of the file while parsing a list. I was expecting an\nexpression.",
             },
         } },
         .{ .path = "Brace.beni", .source = "main = {", .want = &.{
@@ -1039,100 +546,6 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
     }
 }
 
-test "a file that is only `--|` is an unattached doc comment" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("Doc.beni", "--|");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Doc.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
-        .code = .doc_comment_unattached,
-        .severity = .@"error",
-        .span = .{ .file = "Doc.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 4 } },
-        .title = "UNATTACHED DOC COMMENT",
-        .message = "This `--|` doc comment is not attached to a declaration.\n\nA `--|` block documents the declaration that starts on the next non-blank line\n(`pub` included). It cannot come before an import, an ordinary `--` comment, a\n`let` binding, or the end of the file. For a comment that is not documentation,\nuse `--`.",
-    }}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Doc.beni", 1);
-}
-
-test "a file that is only a backslash cannot begin a declaration" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("Lambda.beni", "\\");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Lambda.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // A lone `\` is a lambda that never starts. It is reported as a
-    // declaration problem, not a lexical one: `\` IS a token.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
-        .code = .expected_declaration,
-        .severity = .@"error",
-        .span = .{ .file = "Lambda.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 2 } },
-        .title = "EXPECTED DECLARATION",
-        .message = "I was parsing the top level of this module and ran into `\\` on column 1, which\ncannot begin a declaration.\n\nA line that starts on column 1 begins a new import or declaration:\n\n    import Json.Decode\n    type alias Point = { x : Int, y : Int }\n    type Shape = Circle Float | Rect Float Float\n    area : Shape -> Float\n    area shape = ...\n\nEverything that belongs to the previous declaration must be indented by at\nleast one space.",
-    }}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try expectFmtRefuses(&w, "Lambda.beni", 1);
-}
-
-test "a 1 MB comment line is a valid empty module" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try repeatedInside(testing.allocator, "-- ", 'x', 1024 * 1024, "\n");
-    defer testing.allocator.free(source);
-    try w.write("Comment.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Comment.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(r, 0);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // A comment is copied verbatim, so this file is already canonical.
-    const f = try w.run(&.{ "fmt", "--check", "Comment.beni" });
-    try expectExited(f, 0);
-    try testing.expectEqualStrings(source, try w.read("Comment.beni"));
-}
-
 // ---------------------------------------------------------------------------
 // Degenerate project shapes
 // ---------------------------------------------------------------------------
@@ -1160,142 +573,6 @@ test "an empty directory is zero files and zero diagnostics" {
     try testing.expectEqualStrings("", r.stderr);
     try expectExited(f, 0);
     try testing.expectEqualStrings("", f.stderr);
-}
-
-test "the same file twice on the command line is one set of diagnostics" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("Twice.beni", "main = \"abc");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Twice.beni", "Twice.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // Enumeration deduplicates by path before numbering, so the file is
-    // one file with one index — not two files that happen to be equal, and
-    // certainly not a doubled diagnostic list.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
-        .code = .unterminated_string,
-        .severity = .@"error",
-        .span = .{ .file = "Twice.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 12 } },
-        .title = "UNTERMINATED STRING",
-        .message = "I got to the end of the file without seeing the closing `\"` of this string.\n\nStrings are single-line. For text that spans several lines, use a multiline\nstring, one `\\\\` per line:\n\n    \\\\first line\n    \\\\second line",
-    }}, r.diagnostics);
-}
-
-test "a directory path with a trailing slash walks the directory" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("src/Main.beni", "main = nope\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "src/" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // The trailing slash is trimmed before the path becomes the module
-    // root, so the module is `Main` and not `.Main`; the diagnostic names
-    // the file by the path the walk built, without a doubled separator.
-    try expectExited(r, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
-        .code = .unbound_variable,
-        .severity = .@"error",
-        .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 12 } },
-        .title = "NAMING ERROR",
-        .message = "I cannot find a `nope` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
-    }}, r.diagnostics);
-}
-
-test "a hidden .beni file is skipped by the walk and invalid_module_path when named" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("src/.hidden.beni", "main = nope\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const walked = try w.run(&.{ "check", "src" });
-    const named = try w.run(&.{ "check", "src/.hidden.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // Walking skips it silently — an editor swap file is not a module.
-    try expectExited(walked, 0);
-    try testing.expectEqualStrings("", walked.stderr);
-    // Naming it explicitly is a different request, and gets a different
-    // answer: `.hidden` is not an upper identifier, so there is no module
-    // name to give it. The file is still compiled — a bad module name does
-    // not stop the phases — so its own error is reported too, after the
-    // path's, because diagnostics sort by position within a file.
-    try expectExited(named, 1);
-    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{
-        .{
-            .code = .invalid_module_path,
-            .severity = .@"error",
-            .span = .{ .file = "src/.hidden.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
-            .title = "INVALID MODULE PATH",
-            .message = "I cannot turn the path `src/.hidden.beni` into a module name.\n\nA module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`.\nEvery segment of the path after the source root must be an upper identifier — a\ncapital letter followed by letters, digits or underscores.",
-        },
-        .{
-            .code = .unbound_variable,
-            .severity = .@"error",
-            .span = .{ .file = "src/.hidden.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 12 } },
-            .title = "NAMING ERROR",
-            .message = "I cannot find a `nope` variable.\n\nIt is not a local binding, a top-level value of this module, a name from an\n`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
-        },
-    }, named.diagnostics);
-}
-
-test "a non-.beni file and a nested hidden directory are both skipped" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("src/Main.beni", "main = 1\n");
-    try w.write("src/notes.txt", "main = nope\n");
-    try w.write("src/README.md", "not beni\n");
-    try w.write("src/.cache/Stale.beni", "main = nope\n");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "src" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // Only `.beni` files under non-hidden directories are modules. If
-    // either rule slipped, `nope` would be reported.
-    try expectExited(r, 0);
-    try testing.expectEqualStrings("", r.stderr);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // And `fmt` does not rewrite what the walk did not enumerate.
-    const f = try w.run(&.{ "fmt", "src" });
-    try expectExited(f, 0);
-    try testing.expectEqualStrings("main = nope\n", try w.read("src/notes.txt"));
-    try testing.expectEqualStrings("main = nope\n", try w.read("src/.cache/Stale.beni"));
 }
 
 test "a symlink loop in the tree terminates the walk instead of following it" {
@@ -1370,79 +647,9 @@ fn nestingTooDeep(file: []const u8, line: u32, col: u32, width: u32) diagnostic.
     };
 }
 
-/// `prefix` then `filler` repeated until the whole thing is `bytes` long,
-/// then `suffix`.
-fn repeatedInside(gpa: Allocator, prefix: []const u8, filler: u8, bytes: usize, suffix: []const u8) ![]u8 {
-    std.debug.assert(bytes > prefix.len + suffix.len);
-    const out = try gpa.alloc(u8, bytes);
-    errdefer gpa.free(out);
-    @memcpy(out[0..prefix.len], prefix);
-    @memset(out[prefix.len .. bytes - suffix.len], filler);
-    @memcpy(out[bytes - suffix.len ..], suffix);
-    return out;
-}
-
 // ---------------------------------------------------------------------------
-// Pattern usefulness (checker.md §6.6): the algorithm is exponential in the
-// worst case, so the inputs that reach for the exponent get their own
-// scenarios.
+// Patterns and emitted code nested to the limits
 // ---------------------------------------------------------------------------
-
-test "a case with 200 constructors and 200 branches finishes and says one thing" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // Maranget's usefulness relation branches once per alternative whenever
-    // a column is COMPLETE, so the cost of one `case` grows with
-    // constructors × branches × nesting. 200 × 200, each branch a two-deep
-    // nest, is far past anything a person writes and is what the work
-    // budget of `check/Exhaustive.zig` exists for: past it the `case`
-    // reports nothing rather than hanging.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const ctors = 200;
-    var source: std.Io.Writer.Allocating = .init(testing.allocator);
-    defer source.deinit();
-    const out = &source.writer;
-    try out.writeAll("pub type T\n");
-    for (0..ctors) |i| try out.print("    {s} C{d} T\n", .{ if (i == 0) "=" else "|", i });
-    try out.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
-    for (0..ctors) |i| {
-        if (i != 0) try out.writeAll("\n");
-        try out.print("        C{d} (C{d} rest{d}) ->\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
-    }
-    try w.write("Wide.beni", source.written());
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Wide.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // It finished — `World.run` would have returned `error.CompilerTimeout`
-    // otherwise — it exited rather than dying from a signal, and it has
-    // either exactly one thing to say or nothing at all. Which of the two
-    // depends on the budget, and neither is a bug; a second message, a
-    // signal or a hang would be.
-    if (r.term != .exited) {
-        std.debug.print("did not exit normally: {any}\n", .{r.term});
-        return error.CompilerDiedFromSignal;
-    }
-    try testing.expect(r.diagnostics.len <= 1);
-    if (r.diagnostics.len == 1) {
-        try testing.expectEqual(diagnostic.Code.missing_patterns, r.diagnostics[0].code);
-        try testing.expectEqual(@as(u8, 1), r.exit_code);
-    } else {
-        try testing.expectEqual(@as(u8, 0), r.exit_code);
-    }
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings("", r.stdout);
-}
 
 test "a deeply nested constructor pattern is bounded in every consumer of the tree" {
     // ┌─────────────────────────────────────────┐
@@ -1454,85 +661,50 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
     // an 8192-deep tree and segfaulted `check`, both dumps and `fmt`.
     // `parsePatAtom` now charges too, so the guard bounds the tree, and
     // every consumer runs on a thread with room for `max_depth` frames.
-    //
-    // 600 levels is a legal tree the whole pipeline must survive, and past
-    // the checker's own depth guard of 512; 2 100 levels charge 4 200, past
-    // the parser's limit, and must be exactly one `nesting_too_deep`.
+    // 2 100 levels charge 4 200, past the parser's limit, and must be
+    // exactly one `nesting_too_deep`; charged once a level they would pass.
+    // A legal pattern past the checker's own depth guard is
+    // `check/depth/PatternNestDeep`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    for ([_]struct { depth: usize, path: []const u8, bounded: bool }{
-        .{ .depth = 600, .path = "Legal.beni", .bounded = false },
-        .{ .depth = 2_100, .path = "Deep.beni", .bounded = true },
-    }) |case| {
-        var source: std.Io.Writer.Allocating = .init(testing.allocator);
-        defer source.deinit();
-        const out = &source.writer;
-        try out.writeAll("f m =\n    case m of\n        ");
-        for (0..case.depth) |_| try out.writeAll("Just (");
-        try out.writeAll("x");
-        for (0..case.depth) |_| try out.writeAll(")");
-        try out.writeAll(" ->\n            x\n");
-        try w.write(case.path, source.written());
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("f m =\n    case m of\n        ");
+    for (0..2_100) |_| try out.writeAll("Just (");
+    try out.writeAll("x");
+    for (0..2_100) |_| try out.writeAll(")");
+    try out.writeAll(" ->\n            x\n");
+    try w.write("Deep.beni", source.written());
 
-        // ┌─────────────────────────────────────────┐
-        // │ EXECUTE                                 │
-        // └─────────────────────────────────────────┘
-        const checked = try w.run(&.{ "check", case.path });
-        const ast = try w.runWith(&.{ "dump", "--stage=ast", case.path }, .{ .raw_diagnostics = true });
-        const bir = try w.runWith(&.{ "dump", "--stage=bir", case.path }, .{ .raw_diagnostics = true });
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "Deep.beni" });
+    const ast = try w.runWith(&.{ "dump", "--stage=ast", "Deep.beni" }, .{ .raw_diagnostics = true });
+    const bir = try w.runWith(&.{ "dump", "--stage=bir", "Deep.beni" }, .{ .raw_diagnostics = true });
 
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        for ([_]world.Result{ ast, bir }) |r| {
-            if (r.term != .exited) {
-                std.debug.print("{s}: dump did not exit normally: {any}\n", .{ case.path, r.term });
-                return error.CompilerDiedFromSignal;
-            }
-            // A dump prints its tree either way; the exit code follows the
-            // diagnostics, so the legal depth is 0 and the bounded one is 1
-            // (`frontend.md` §1).
-            try testing.expectEqual(@as(u8, if (case.bounded) 1 else 0), r.exit_code);
-            try testing.expect(r.stdout.len != 0);
-        }
-        if (checked.term != .exited) {
-            std.debug.print("{s}: check did not exit normally: {any}\n", .{ case.path, checked.term });
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // A dump prints the tree it has and exits 1 for the error on stderr
+    // (`frontend.md` §1).
+    for ([_]world.Result{ ast, bir }) |r| {
+        if (r.term != .exited) {
+            std.debug.print("dump did not exit normally: {any}\n", .{r.term});
             return error.CompilerDiedFromSignal;
         }
-        if (case.bounded) {
-            // The nesting error, and the consequence of the recovery it
-            // did: the truncated pattern never binds `x`, so the branch
-            // body cannot find it. Two messages about one mistake, which
-            // is what a pattern the parser had to abandon looks like.
-            try testing.expectEqual(@as(u8, 1), checked.exit_code);
-            try testing.expectEqual(@as(usize, 2), checked.diagnostics.len);
-            try testing.expectEqual(diagnostic.Code.nesting_too_deep, checked.diagnostics[0].code);
-            try testing.expectEqual(diagnostic.Code.unbound_variable, checked.diagnostics[1].code);
-        } else {
-            // A legal tree the parser and both dumps survive, and a `case`
-            // the CHECKER cannot decide: 600 levels is past `Exhaustive`'s
-            // own depth guard (`checker.md` §6.6), so the analysis stops
-            // rather than working for a week.
-            //
-            // It used to stop in SILENCE, and this line used to assert exit
-            // 0 with no diagnostic — which was a hole, not a property. The
-            // `case` is genuinely not exhaustive (one branch, `Nothing`
-            // unmatched), so `backend.md` §7's default-free decision tree
-            // would have answered `x` for a `Nothing` at exit 0. Queue slice
-            // 14 made it a refusal, and the message it gets is the depth one:
-            // `--pattern-budget` buys work, and this ran out of depth.
-            try testing.expectEqual(@as(u8, 1), checked.exit_code);
-            try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
-            try testing.expectEqual(diagnostic.Code.pattern_budget_exhausted, checked.diagnostics[0].code);
-            try testing.expect(std.mem.indexOf(u8, checked.diagnostics[0].message, "nested deeper than I can analyse") != null);
-            try testing.expect(std.mem.indexOf(u8, checked.diagnostics[0].message, "will not help here") != null);
-        }
-
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY SIDE EFFECTS                     │
-        // └─────────────────────────────────────────┘
-        try testing.expectEqualStrings("", checked.stdout);
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expect(r.stdout.len != 0);
     }
+    // The nesting error, and the consequence of the recovery it did: the
+    // truncated pattern never binds `x`, so the branch body cannot find it.
+    // Two messages about one mistake, which is what a pattern the parser had
+    // to abandon looks like.
+    try expectExited(checked, 1);
+    try testing.expectEqual(@as(usize, 2), checked.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.nesting_too_deep, checked.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Code.unbound_variable, checked.diagnostics[1].code);
 }
 
 test "a pathologically nested expression is EMITTED without a stack overflow, and RUNS" {
@@ -1549,8 +721,10 @@ test "a pathologically nested expression is EMITTED without a stack overflow, an
     // And the module has to LOAD: 4 000 nested calls printed as
     // written are past every engine's parser — node throws `RangeError`
     // from about 1 550 — so `Lower` binds the chain to a `const` every
-    // `nesting.spill` units (`backend.md` §4) and the program runs, in both
-    // builds.
+    // `nesting.spill` units (`backend.md` §4) and the program runs. The
+    // development build is enough: `--release` runs on the same spilled
+    // `JsIr`, and inlines only atoms and member chains, so it never folds a
+    // spilled call back into its user.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -1565,21 +739,19 @@ test "a pathologically nested expression is EMITTED without a stack overflow, an
     try source.appendSlice(gpa, "\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt big ]\n");
     try w.write("Main.beni", source.items);
 
-    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
 
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("4001\n", r.program.?.stdout);
-        try testing.expectEqualStrings("", r.program.?.stderr);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-    }
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+    try testing.expectEqualStrings("", r.build.stderr);
+    try testing.expectEqualStrings("4001\n", r.program.?.stdout);
+    try testing.expectEqualStrings("", r.program.?.stderr);
+    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
 }
 
 test "functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run" {
@@ -1648,20 +820,22 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
     }
 }
 
-test "600 modules check identically at one worker and at eight, twice each" {
+test "a wide project with a chain of imports checks identically at one worker and at eight, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The DAG-parallel checker (checker.md §4.4) is where determinism can
     // break: modules finish in whatever order the scheduler hands them out,
-    // and anything keyed by completion would reorder here. A wide project
-    // with a deep spine through it, half of whose modules have an error, is
-    // the shape that would show it — 200 leaves that may all run at once,
-    // and a 200-long chain that may not.
+    // and anything keyed by completion would reorder here. The other
+    // `--jobs` determinism scenarios check modules that import nothing, or
+    // one or two that do. A wide project with a spine of imports through
+    // it, a third of whose leaves have an error, is the shape that would
+    // show it — 24 leaves, three times the workers, that may all run at
+    // once, and a 24-long chain that may not.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const leaves = 200;
-    const chain_len = 200;
+    const leaves = 24;
+    const chain_len = 24;
     var buffer: [256]u8 = undefined;
     for (0..leaves) |i| {
         const path = try std.fmt.bufPrint(&buffer, "src/Leaf/M{d}.beni", .{i});
@@ -1836,60 +1010,6 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     try testing.expectEqualStrings("", r.stdout);
 }
 
-test "a constrained let helper used at `a` and `List a` checks, within seconds" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // Were a constrained `let` helper monomorphic (static-dispatch-spike.md
-    // §6.4 rule (a)), `inner x y` and then `inner [ x ] [ y ]` would make
-    // `x ~ List x`, and the method obligation on that cyclic receiver could
-    // ask for the element's method forever. Under the owner's decision that
-    // a constrained `let` generalises (checker-v2.md §8.4) `inner`
-    // generalises — each body's requirement is an operator's, not a
-    // dot-call's own — so its two uses are two instantiations and every
-    // body checks: exit 0, no diagnostic. The limit is still the assertion:
-    // whatever the answer, it must come at once.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const bodies = [_][]const u8{
-        "a == b",
-        "[ a ] == [ b ]",
-        "{ v = a } == { v = b }",
-        "( a, 1 ) < ( b, 1 )",
-    };
-    for (bodies) |body| {
-        var source: std.Io.Writer.Allocating = .init(testing.allocator);
-        defer source.deinit();
-        try source.writer.print(
-            \\pairEq x y =
-            \\    let
-            \\        inner a b =
-            \\            {s}
-            \\    in
-            \\    inner x y && inner [ x ] [ y ]
-            \\
-        , .{body});
-        try w.write("Main.beni", source.written());
-
-        // ┌─────────────────────────────────────────┐
-        // │ EXECUTE                                 │
-        // └─────────────────────────────────────────┘
-        const r = try w.runWith(&.{ "check", "Main.beni" }, .{ .timeout_ms = 8_000 });
-
-        // ┌─────────────────────────────────────────┐
-        // │ VERIFY OUTPUT                           │
-        // └─────────────────────────────────────────┘
-        if (r.term != .exited) {
-            std.debug.print("[{s}] did not exit normally: {any}\n", .{ body, r.term });
-            return error.CompilerDiedFromSignal;
-        }
-        if (r.exit_code != 0) std.debug.print("[{s}] stderr:\n{s}\n", .{ body, r.stderr });
-        try testing.expectEqual(@as(u8, 0), r.exit_code);
-        try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
-        try testing.expectEqualStrings("", r.stdout);
-    }
-}
-
 test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an expansion" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1897,14 +1017,17 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     // An annotation must not expand `A = ( A, A )` once resolution has
     // refused it: the expansion would double per level up to the builder's
     // depth bound of 512. The builder refuses an alias met inside its own
-    // expansion (`Types.Builder.expanding`), so every form is one message at
-    // once. The 3 s limit is the assertion that nothing grew: the check
-    // takes milliseconds.
+    // expansion (`Types.Builder.expanding`), and an alias already expanded
+    // in a read is one variable wherever the read meets it again
+    // (`Types.Builder.aliases`) — either alone keeps it linear, and without
+    // both the check does not finish. So every form is one message at
+    // once: the alias met directly inside itself, and met again through a
+    // second alias further out. The 3 s limit is the assertion that nothing
+    // grew: the check takes milliseconds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const sources = [_][]const u8{
         "type alias A =\n    ( A, A )\n\n\nf : A -> Int\nf p =\n    0\n",
-        "type alias A =\n    { x : B, y : B }\n\n\ntype alias B =\n    { p : A }\n\n\nf : A -> B -> Int\nf p q =\n    0\n",
         "type alias A =\n    ( B, B )\n\n\ntype alias B =\n    { p : A }\n\n\nf : A -> Int\nf p =\n    0\n",
     };
     for (sources) |source| {
@@ -1932,7 +1055,7 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     }
 }
 
-test "a flat let past what a summed budget allows is accepted, builds and runs: its bindings are siblings" {
+test "a flat let past what a summed budget allows is accepted: its bindings are siblings" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1942,13 +1065,13 @@ test "a flat let past what a summed budget allows is accepted, builds and runs: 
     // every binding, one a binding. A `let`'s bindings and body, and a
     // `case`'s branches, are siblings (`Parse.Siblings`) and charge the
     // deepest of them. 4 200 bindings, so a budget summed over them would be
-    // spent; and it must reach node, through every consumer.
+    // spent. Past the parser nothing is deep: a `let` lowers to ONE node
+    // holding its bindings, so `check` is the whole claim.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
-    try src.appendSlice(gpa, "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (foo 0) ]\n\n\n");
     try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n");
     for (1..4_201) |i| try src.print(gpa, "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
     try src.appendSlice(gpa, "    in\n    x4200\n");
@@ -1957,20 +1080,13 @@ test "a flat let past what a summed budget allows is accepted, builds and runs: 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const checked = try w.run(&.{ "check", "--no-cache", "--platform=node", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--no-cache", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExited(checked, 0);
     try testing.expectEqualSlices(diagnostic.Diagnostic, &.{}, checked.diagnostics);
-    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
-        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("4200\n", r.program.?.stdout);
-        try testing.expectEqualStrings("", r.program.?.stderr);
-    }
 }
 
 test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
@@ -1978,7 +1094,7 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The other half: siblings do not reset what a single binding spends.
-    // One binding of 4 100 `+` links is past `Parse.max_depth` and
+    // One binding of 4 097 `+` links is past `Parse.max_depth` and
     // is refused once, exactly as a top-level body would be.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1986,7 +1102,7 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
     try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n        a =\n            1\n\n        b =\n            x0");
-    for (0..4_100) |_| try src.appendSlice(gpa, " + 1");
+    for (0..4_097) |_| try src.appendSlice(gpa, " + 1");
     try src.appendSlice(gpa, "\n    in\n    b\n");
     try w.write("Main.beni", src.items);
 

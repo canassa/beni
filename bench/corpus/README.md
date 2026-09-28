@@ -78,9 +78,10 @@ down, kept so the next regression has something to be measured against.
 **Shapes that are not files.** Two of the abuse cases are project shapes
 rather than sources and so cannot live here: a directory of 5 000 empty
 modules, and a symlink loop (`dir/loop -> ..`, which used to kill the whole
-run with the OS's `SymLinkLoop`). Both are black-box scenarios in
-`tests/blackbox/abuse_test.zig`; see `SourceStore.walk` for why the walk
-skips symlinks.
+run with the OS's `SymLinkLoop`). The symlink loop is a black-box scenario
+in `tests/blackbox/abuse_test.zig`; see `SourceStore.walk` for why the walk
+skips symlinks. The 5 000 empty modules are no longer a black-box
+scenario.
 
 ## How to add to it
 

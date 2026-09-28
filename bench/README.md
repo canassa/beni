@@ -585,11 +585,13 @@ canonical text into a session-owned buffer, which is what buys the
 parallelism, and what the `formatted_bytes` counter now reports
 (1 856 438 bytes for this corpus).
 
-### Abuse inputs (`tests/blackbox/abuse_test.zig`)
+### Abuse inputs
 
 `beni check --diagnostics=json`, best of 3, peak RSS from
 `getrusage(RUSAGE_CHILDREN)` around the run. Every one of these exits
-normally — none is a signal, a hang, or a partial write.
+normally — none is a signal, a hang, or a partial write. These are
+measurements of the inputs, not a list of tests: the few that reach a guard
+or a fixed defect no corpus fixture does are `tests/blackbox/abuse_test.zig`'s.
 
 | input | diagnostics | exit | time | peak RSS |
 |---|---:|---:|---:|---:|

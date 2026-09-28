@@ -2104,7 +2104,8 @@ const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$
   lower threshold would cost nothing measurable, and is left for whoever meets it. *Since
   2026-09-27 neither overflows at any depth: a derived function charges its callers' depth by its
   frame's size and continues from an explicit stack past the limit ([`backend.md`](backend.md) §4,
-  *Derived comparisons do not grow the native stack*; `abuse_test.zig`, 1 000 levels of both).*
+  *Derived comparisons do not grow the native stack*; `abuse_test.zig`, 20 levels of the 4 096-parameter
+  type and 5 of the 4 097, each past the limit).*
 - **Who reaches it.** A record payload of a nominal type past 4 096 fields (a use's record `==` is
   refused by the record-width cap first), and a nominal type whose own context passes 4 096 entries (a type of
   5 000 parameters, in one module).

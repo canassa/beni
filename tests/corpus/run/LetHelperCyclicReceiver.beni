@@ -5,8 +5,8 @@
 -- `infinite_type` at the `==`.
 -- A `let` generalises (§8.4): `inner`'s `eq` is an operator's, so
 -- `inner` generalises and its two uses are two instantiations: the program
--- is valid and prints `True`, `False`. `abuse_test.zig` holds the
--- time-bounded twin over four bodies.
+-- is valid and prints `True`, `False`. Were the helper monomorphic
+-- again, the harness's timeout would bound the endless variant.
 --
 import Node exposing (Program)
 

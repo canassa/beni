@@ -943,12 +943,14 @@ parametric type's own evidence; 100 000 deep; red before), `run/DerivedDeepOrder
 and short-circuiting past the limit, through a hand-written method with `Debug.log`; red before, and
 a 5 000-deep variant, which the recursive build survives, prints byte-identical output on both),
 `run/DerivedDeepAcrossModules/` (a cycle through another user module's parametric type, 100 000
-deep; red before), and five abuse scenarios in `abuse_test.zig`: a 4 095-deep record literal
-built and RUN under both checkers, development and `--release` (red before at 3 747); a recursive
-type of 4 096 (positional) and 4 097 (array) parameters compared 1 000 levels deep (red before);
-`Just` nested 4 095 deep, a chain of forwarders, under both checkers, dev and `--release` (red
-before); a recursive type through 50 nested wrappers a level, 20 000 levels (red before); and the
-exclusion above (100 levels through a hand-written `Box.eq` compare, 100 000 throw). Every `run/`
+deep; red before), and three abuse scenarios in `abuse_test.zig`: a recursive type of 4 096
+(positional) and one of 4 097 (array) parameters, recursing in their FIRST position so the
+comparison does not loop, compared just past the limit — 20 levels, which threw `RangeError` with
+a charge of one unit a call, and 5 levels, the first that reaches the engine in the array form;
+and the exclusion above (100 levels through a hand-written `Box.eq` compare, 100 000 throw). The
+fixtures above already fail when the prologue, a forwarder's check or charge, or an evidence
+closure's depth is taken out, so the record literal nested 4 095 deep and the chains of forwarders
+nested as deep as a type that used to be scenarios here are not repeated. Every `run/`
 fixture is also built and run with `--release`. The emitted shapes are pinned by
 `emit/DerivedEqNominal`, `emit/DerivedCompareNominal` and `emit/MatchNested`.
 
