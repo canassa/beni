@@ -225,6 +225,12 @@ imports, a module importing itself, duplicate declarations, unterminated strings
 comments at EOF, a file that is one long line. Each must produce a diagnostic, never
 a panic, a hang, or an OOM — and must leave no partial output behind.
 
+Size every generated input to the smallest that reaches what it is about: one
+level past a nesting cap, one entry past a width limit, and for a regression
+the size that failed before the fix — never ten times past. A declaration-order
+test tries a fixed set of orders (the written one, the reversed one, a few
+seeded shuffles, and any order a defect needed), never every permutation.
+
 ## Fixtures: capture, don't invent
 
 Goldens come from real runs and carry a comment saying where they came from.

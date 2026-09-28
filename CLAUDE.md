@@ -229,7 +229,11 @@ zig build --list-steps
 
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on
-`builtin.mode == .Debug`, so it runs there as it does in Debug.
+`builtin.mode == .Debug`, so it runs there as it does in Debug. An input a
+black-box test generates is the smallest that reaches the limit or the
+defect it is about — one past a cap, or the size that failed before a fix,
+not ten times past it — and a declaration-order test tries a fixed set of
+orders (written, reversed, a few seeded shuffles), never every permutation.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than

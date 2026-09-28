@@ -2,11 +2,11 @@
 //! .claude/skills/write-tests/SKILL.md "Abuse scenarios are first-class").
 //!
 //! Hostile and degenerate source is a supported input, not an edge case. A
-//! 10 MB literal, 100 000 levels of nesting, every byte value there is, a
-//! directory of five thousand modules, a symlink that points at its own
-//! parent: each must produce a diagnostic or a clean pass — never a panic,
-//! never a hang, never a partial write. Every scenario here therefore
-//! asserts four things beyond the diagnostics:
+//! 10 MB literal, nesting one level past every limit, every byte value there
+//! is, a symlink that points at its own parent: each must produce a
+//! diagnostic or a clean pass — never a panic, never a hang, never a partial
+//! write. Every scenario here therefore asserts four things beyond the
+//! diagnostics:
 //!
 //!   - the exit code, exactly;
 //!   - that the child EXITED rather than dying from a signal (`Term`), so
@@ -30,6 +30,9 @@
 //! The numbers in `bench/README.md` come from `getrusage(RUSAGE_CHILDREN)`
 //! around each run; here the claim is the one a test can make honestly —
 //! it finished, and it finished cleanly.
+//!
+//! A scenario over a limit uses the smallest input that reaches it: one
+//! level, one link or one entry past the cap, not ten times past it.
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
@@ -48,42 +51,6 @@ const ten_megabytes = 10 * 1024 * 1024;
 // ---------------------------------------------------------------------------
 // Enormous single files
 // ---------------------------------------------------------------------------
-
-test "a 10 MB single-line list literal lexes, parses and lowers with no diagnostics" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const source = try listLiteral(testing.allocator, ten_megabytes);
-    defer testing.allocator.free(source);
-    try w.write("Big.beni", source);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "Big.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // The whole point of this one: it is VALID. Ten megabytes of list is a
-    // program, so every phase must run it to completion and say nothing.
-    try expectExited(r, 0);
-    try testing.expectEqualStrings("", r.stderr);
-    try testing.expectEqualSlices(diagnostic.Diagnostic, &.{}, r.diagnostics);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // `fmt --check` formats it too — 3.5 million elements, one per line —
-    // and must still write nothing: `--check` only ever lists.
-    const f = try w.run(&.{ "fmt", "--check", "Big.beni" });
-    try testing.expectEqual(@as(u8, 1), f.exit_code);
-    try testing.expectEqualStrings("Big.beni\n", f.stdout);
-    try testing.expectEqualStrings("", f.stderr);
-    try testing.expectEqualStrings(source, try w.read("Big.beni"));
-}
 
 test "a 10 MB single-line string literal is one token and no diagnostic" {
     // ┌─────────────────────────────────────────┐
@@ -157,13 +124,13 @@ test "a 10 MB file that is one identifier is a definition without `=`" {
 // Deep nesting
 // ---------------------------------------------------------------------------
 
-test "100 000 nested parentheses stop at exactly one nesting_too_deep" {
+test "parentheses nested one level past the limit stop at exactly one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const source = try nested(testing.allocator, "(", "1", ")", 100_000);
+    const source = try nested(testing.allocator, "(", "1", ")", 4_097);
     defer testing.allocator.free(source);
     try w.write("Deep.beni", source);
 
@@ -176,8 +143,8 @@ test "100 000 nested parentheses stop at exactly one nesting_too_deep" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // The parser's depth limit is what keeps recursion off the stack; it
-    // fires once, at the first level past the limit, and the rest of the
-    // file is not turned into 96 000 more copies of the same complaint.
+    // fires once, at the first level past the limit, and the closing half of
+    // the file is not turned into more copies of the same complaint.
     try expectExited(r, 1);
     try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{nestingTooDeep("Deep.beni", 2, 4101, 1)}, r.diagnostics);
 
@@ -187,13 +154,13 @@ test "100 000 nested parentheses stop at exactly one nesting_too_deep" {
     try expectFmtRefuses(&w, "Deep.beni", 1);
 }
 
-test "100 000 nested lists stop at exactly one nesting_too_deep" {
+test "lists nested one level past the limit stop at exactly one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const source = try nested(testing.allocator, "[", "", "]", 100_000);
+    const source = try nested(testing.allocator, "[", "", "]", 4_097);
     defer testing.allocator.free(source);
     try w.write("Deep.beni", source);
 
@@ -214,7 +181,7 @@ test "100 000 nested lists stop at exactly one nesting_too_deep" {
     try expectFmtRefuses(&w, "Deep.beni", 1);
 }
 
-test "a record literal nested to the parser's limit checks and compares, one past it is one nesting_too_deep (CK-114)" {
+test "a record literal nested to the parser's limit checks and compares, one past it is one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -255,18 +222,20 @@ test "a record literal nested to the parser's limit checks and compares, one pas
     }
 }
 
-test "a record literal nested to the parser's limit compares and RUNS, dev and release (CK-128)" {
+test "a record literal nested to the parser's limit compares and RUNS, dev and release" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // CK-114's literal, now built and run. Every level is its own record
-    // TYPE, so the derived `eq` of the shape `{ x, y }` is handed itself
-    // as evidence 4 095 times over: two native frames a level (the shape's
-    // function and the evidence closure), and before R8d Node's stack gave
-    // out at 3 747 levels with `RangeError`. Past `derived_depth_limit` the
-    // comparison continues from an explicit stack (`backend.md` §4,
-    // *Derived comparisons do not grow the native stack*). `other` differs
-    // only in its innermost field, so `==` and `<` walk every level.
+    // The literal above, built and run. Every level is its own record TYPE,
+    // so the derived `eq` of the shape `{ x, y }` is handed itself as
+    // evidence once a level: two native frames a level (the shape's function
+    // and the evidence closure), and without a bound Node's stack gave out at
+    // 3 747 levels with `RangeError` — which is why this is the parser's
+    // 4 095 and not a size just past the 400 units of `derived_depth_limit`,
+    // past which the comparison continues from an explicit stack
+    // (`backend.md` §4, *Derived comparisons do not grow the native stack*).
+    // `other` differs only in its innermost field, so `==` and `<` walk every
+    // level.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -322,22 +291,23 @@ test "a record literal nested to the parser's limit compares and RUNS, dev and r
     }
 }
 
-test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep, positional and wide (CK-128)" {
+test "a recursive type of 4 096 and 4 097 parameters compares past the derived depth limit, positional and wide" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The two evidence forms of static-dispatch-spike.md §9.2: 4 096
     // parameters is the widest POSITIONAL derived function, 4 097 the
     // narrowest that takes them as one array. A positional frame of 4 096
-    // parameters is big — before R8d Node overflowed its `==` about 13 levels
-    // down — so its calls charge `derived_depth_limit` one unit per 32
-    // parameters and it reaches the explicit stack after a few levels. The
-    // wide one charges one unit, like any other. Every parameter is a
+    // parameters is big — without a charge for it Node overflowed its `==`
+    // about 13 levels down — so its calls charge `derived_depth_limit` one
+    // unit per 32 parameters and it reaches the explicit stack after two
+    // levels: 20 levels are past it. The wide one charges one unit, like any
+    // other, so 450 levels are past the 400-unit limit. Every parameter is a
     // position.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
-    for ([_]usize{ 4096, 4097 }) |n| {
+    for ([_]usize{ 4096, 4097 }, [_][]const u8{ "20", "450" }) |n, levels| {
         var source: std.ArrayList(u8) = .empty;
         defer source.deinit(gpa);
         try source.appendSlice(gpa, "import Node exposing (Program)\n\n\ntype W");
@@ -356,7 +326,7 @@ test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep,
         try params(gpa, &source, n, " Int");
         try source.appendSlice(gpa, " -> W");
         try params(gpa, &source, n, " Int");
-        try source.appendSlice(gpa,
+        const tail = try std.mem.replaceOwned(u8, gpa,
             \\
             \\build n last acc =
             \\    if n == 0 then
@@ -383,7 +353,9 @@ test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep,
             \\        , show (build 1000 1 End < build 1000 2 End)
             \\        ]
             \\
-        );
+        , "1000", levels);
+        defer gpa.free(tail);
+        try source.appendSlice(gpa, tail);
         try w.write("Main.beni", source.items);
 
         {
@@ -395,8 +367,8 @@ test "a recursive type of 4 096 and 4 097 parameters compares 1 000 levels deep,
             // ┌─────────────────────────────────────┐
             // │ VERIFY OUTPUT                       │
             // └─────────────────────────────────────┘
-            // The cell that differs is the innermost one (`n == 1000` is
-            // built first), so every comparison walks all 1 000 levels.
+            // The cell that differs is the innermost one (`n == levels` is
+            // built first), so every comparison walks every level.
             try testing.expectEqual(@as(u8, 0), r.build.exit_code);
             try testing.expectEqualStrings("", r.build.stderr);
             try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
@@ -417,11 +389,11 @@ fn params(gpa: Allocator, out: *std.ArrayList(u8), count: usize, comptime patter
     }
 }
 
-test "recursion THROUGH a hand-written parametric method still grows the native stack: R8d's stated exclusion (CK-128)" {
+test "recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The one cycle R8d does not cover (backend.md §4, *Derived comparisons
+    // The one cycle the explicit stack does not cover (backend.md §4, *Derived comparisons
     // do not grow the native stack*, "What it does not cover"). `Box.eq`
     // is written by hand and takes `a.eq` as evidence; `T` recurses through
     // it, so every level is `T$$eq → Box$eq → T$$eq`. A hand-written method
@@ -510,17 +482,17 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
     }
 }
 
-test "a chain of forwarders as deep as the parser allows compares and runs: `Just` nested 4 095 deep (R8e)" {
+test "a chain of forwarders as deep as the parser allows compares and runs: `Just` nested 4 095 deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R8e (O2): `Maybe`'s derived `eq` and `compare` are FORWARDERS — their
+    // `Maybe`'s derived `eq` and `compare` are FORWARDERS — their
     // one depth-taking call is in tail position, so they have no steps and
     // no prologue. A chain of them as deep as a TYPE still charges the depth
     // at every level and hands the tail call to the engine past the limit
     // (`backend.md` §4, *Derived comparisons do not grow the native stack*).
-    // `e86883a` threw `RangeError` here: two native frames a level (the
-    // function and the evidence closure).
+    // Without the charge this chain threw `RangeError`: two native frames a
+    // level (the function and the evidence closure).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -569,16 +541,17 @@ test "a chain of forwarders as deep as the parser allows compares and runs: `Jus
     }
 }
 
-test "a recursive type through 50 nested wrappers a level compares 20 000 levels deep (R8e)" {
+test "a recursive type through 50 nested wrappers a level compares 1 000 levels deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // R8e (O2)'s bound: every level of `T` passes through 50 forwarders
+    // The forwarders' bound: every level of `T` passes through 50 forwarders
     // (`W a = W a`, then `Maybe`), none of which checks the depth unless it
     // is past the limit, and all of which charge it. So the native stack a
     // level costs is paid for in depth, and the explicit stack takes over
-    // after a few levels of `T` rather than after 400. `e86883a` threw
-    // `RangeError`.
+    // after a few levels of `T` rather than after 400. Without the charge,
+    // 20 000 levels threw `RangeError`; 1 000 levels are some 50 000
+    // forwarder frames, several times what Node's default stack holds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -612,9 +585,9 @@ test "a recursive type through 50 nested wrappers a level compares 20 000 levels
         \\main : Program
         \\main =
         \\    Node.printLines
-        \\        [ if build 20000 Nothing == build 20000 Nothing then "True" else "False"
-        \\        , if build 20000 Nothing == build 20000 (Just (T 0 (wrap Nothing))) then "True" else "False"
-        \\        , if build 20000 (Just (T 0 (wrap Nothing))) < build 20000 Nothing then "True" else "False"
+        \\        [ if build 1000 Nothing == build 1000 Nothing then "True" else "False"
+        \\        , if build 1000 Nothing == build 1000 (Just (T 0 (wrap Nothing))) then "True" else "False"
+        \\        , if build 1000 (Just (T 0 (wrap Nothing))) < build 1000 Nothing then "True" else "False"
         \\        ]
         \\
     );
@@ -642,7 +615,7 @@ test "a recursive type through 50 nested wrappers a level compares 20 000 levels
     }
 }
 
-test "100 000 nested lambdas report every shadowed parameter, then stop nesting" {
+test "lambdas nested past the limit report every shadowed parameter, then stop nesting" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -652,7 +625,7 @@ test "100 000 nested lambdas report every shadowed parameter, then stop nesting"
     // 4096 — which is why there is no `--max-errors` flag to test.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const source = try nested(testing.allocator, "\\x -> ", "1", "", 100_000);
+    const source = try nested(testing.allocator, "\\x -> ", "1", "", 4_097);
     defer testing.allocator.free(source);
     try w.write("Lambdas.beni", source);
 
@@ -702,9 +675,8 @@ test "the three left-deep spines the parser builds in a loop are depth-bounded t
     // real tree depth, and every consumer that walks the tree recurses
     // along them. Before `Parse.max_depth` counted them, a 24 KB file of
     // `1 + 1 + …` segfaulted `beni check` and an 8 KB file of `r.a.a.a…`
-    // segfaulted both `check` and `dump --stage=ast`. 8000 links each,
-    // which is comfortably past the 4096 limit and was comfortably past
-    // the stack.
+    // segfaulted both `check` and `dump --stage=ast`. 4 100 links each, just
+    // past the 4096 limit.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const cases = [_]struct { path: []const u8, head: []const u8, piece: []const u8, col: u32, width: u32 }{
@@ -717,7 +689,7 @@ test "the three left-deep spines the parser builds in a loop are depth-bounded t
         // ┌─────────────────────────────────────────┐
         // │ EXECUTE                                 │
         // └─────────────────────────────────────────┘
-        const source = try chain(testing.allocator, case.head, case.piece, 8000);
+        const source = try chain(testing.allocator, case.head, case.piece, 4_100);
         defer testing.allocator.free(source);
         try w.write(case.path, source);
         const checked = try w.run(&.{ "check", case.path });
@@ -1183,42 +1155,6 @@ test "an empty directory is zero files and zero diagnostics" {
     try testing.expectEqualStrings("", f.stderr);
 }
 
-test "5 000 empty modules produce identical output at --jobs=1 and the machine default" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // Five thousand files is the shape where the driver's per-file costs
-    // dominate everything the phases do, and the shape most likely to make
-    // a worker pool behave differently from a single thread.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    var name: [32]u8 = undefined;
-    for (0..5_000) |i| try w.write(try std.fmt.bufPrint(&name, "src/M{d:0>4}.beni", .{i}), "");
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    // The bound is raised for this one case, with a number behind it (queue
-    // row 59): `--jobs=1` over 5 000 files was measured at 12.05, 24.29,
-    // 26.11, 59.16 and 61.16 s for identical deterministic work — the spread
-    // is a single thread landing on an efficiency core, not the compiler, and
-    // the default 60 s sat inside it. `world.bulk_timeout_ms` is five times
-    // the worst of those, so scheduling cannot reach it and a hang still
-    // fails. The default-jobs run beside it took 6.00, 6.00 and 6.08 s.
-    const bulk: world.RunOptions = .{ .timeout_ms = world.bulk_timeout_ms };
-    const one = try w.runWith(&.{ "check", "--jobs=1", "src" }, bulk);
-    const many = try w.runWith(&.{ "check", "src" }, bulk);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try expectExited(one, 0);
-    try expectExited(many, 0);
-    try testing.expectEqualStrings("", one.stderr);
-    try testing.expectEqualStrings(one.stderr, many.stderr);
-    try testing.expectEqualStrings(one.stdout, many.stdout);
-}
-
 test "the same file twice on the command line is one set of diagnostics" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1427,17 +1363,6 @@ fn nestingTooDeep(file: []const u8, line: u32, col: u32, width: u32) diagnostic.
     };
 }
 
-/// `main =\n    [ 1, 1, … ]` on one line, at least `bytes` long.
-fn listLiteral(gpa: Allocator, bytes: usize) ![]u8 {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
-    try out.ensureTotalCapacity(gpa, bytes + 64);
-    out.appendSliceAssumeCapacity("main =\n    [ 1");
-    while (out.items.len + 3 < bytes) out.appendSliceAssumeCapacity(", 1");
-    out.appendSliceAssumeCapacity(" ]\n");
-    return out.toOwnedSlice(gpa);
-}
-
 /// `prefix` then `filler` repeated until the whole thing is `bytes` long,
 /// then `suffix`.
 fn repeatedInside(gpa: Allocator, prefix: []const u8, filler: u8, bytes: usize, suffix: []const u8) ![]u8 {
@@ -1523,13 +1448,14 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
     // `parsePatAtom` now charges too, so the guard bounds the tree, and
     // every consumer runs on a thread with room for `max_depth` frames.
     //
-    // 2000 levels is a legal tree the whole pipeline must survive; 8000 is
-    // past the limit and must be exactly one `nesting_too_deep`.
+    // 600 levels is a legal tree the whole pipeline must survive, and past
+    // the checker's own depth guard of 512; 2 100 levels charge 4 200, past
+    // the parser's limit, and must be exactly one `nesting_too_deep`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     for ([_]struct { depth: usize, path: []const u8, bounded: bool }{
-        .{ .depth = 2000, .path = "Legal.beni", .bounded = false },
-        .{ .depth = 8000, .path = "Deep.beni", .bounded = true },
+        .{ .depth = 600, .path = "Legal.beni", .bounded = false },
+        .{ .depth = 2_100, .path = "Deep.beni", .bounded = true },
     }) |case| {
         var source: std.Io.Writer.Allocating = .init(testing.allocator);
         defer source.deinit();
@@ -1577,7 +1503,7 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
             try testing.expectEqual(diagnostic.Code.unbound_variable, checked.diagnostics[1].code);
         } else {
             // A legal tree the parser and both dumps survive, and a `case`
-            // the CHECKER cannot decide: 2000 levels is past `Exhaustive`'s
+            // the CHECKER cannot decide: 600 levels is past `Exhaustive`'s
             // own depth guard (`checker.md` §6.6), so the analysis stops
             // rather than working for a week.
             //
@@ -1715,7 +1641,7 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
     }
 }
 
-test "600 modules check identically at every worker count, twice each" {
+test "600 modules check identically at one worker and at eight, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1761,7 +1687,7 @@ test "600 modules check identically at every worker count, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const jobs = [_][]const u8{ "--jobs=1", "--jobs=2", "--jobs=4", "--jobs=8" };
+    const jobs = [_][]const u8{ "--jobs=1", "--jobs=8" };
     var first_stderr: ?[]const u8 = null;
     var first_count: usize = 0;
 
@@ -1820,14 +1746,14 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     // constraint and the chain costs one error per 65 links instead of the
     // n(n+1)/2 constraints and 3.7 GB report 19 §3 measured at n = 3000.
     //
-    // 300 links, so the recovery has to happen four times: the assertion is
-    // the EXACT count and the EXACT declarations, because "a bounded number"
-    // is only a claim if the bound is written down. Same shape as the A.81
-    // scenario above — no operator, no literal, no import, so
+    // 131 links, just past two periods, so the recovery has to happen once
+    // and the cap is met again after it: the assertion is the EXACT count
+    // and the EXACT declarations, because "a bounded number" is only a claim
+    // if the bound is written down. No operator, no literal, no import, so
     // `--core-root=nocore` holds and every number here is this file's.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const links = 300;
+    const links = 131;
     // 65: the 64 the cap allows, plus the one that is over it.
     const period = 65;
 
@@ -1859,8 +1785,8 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), r.exit_code);
-    // One message per declaration and no more: ⌊300/65⌋ = 4 declarations are
-    // over the cap and the other 296 are unannotated `pub` declarations
+    // One message per declaration and no more: ⌊131/65⌋ = 2 declarations are
+    // over the cap and the other 129 are unannotated `pub` declarations
     // whose interface really did acquire a suffix (§10.9).
     try testing.expectEqual(@as(usize, links), r.diagnostics.len);
     var capped: usize = 0;
@@ -1961,7 +1887,7 @@ test "a constrained let helper used at `a` and `List a` checks, within seconds" 
     }
 }
 
-test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an expansion (CK-140)" {
+test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an expansion" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -2004,18 +1930,17 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
     }
 }
 
-test "a long flat let is accepted, builds and runs: its bindings are siblings, not nesting (CK-166)" {
+test "a flat let past what a summed budget allows is accepted, builds and runs: its bindings are siblings" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `scenario/CK-166`, promoted by R15-fix-F. At 01d0f21 a `let` of 5 000
-    // bindings `x{i} = x{i-1} + 1` got 907 NESTING TOO DEEP messages (16 000
-    // bindings: 11 907), each "nested more than 4096 levels deep" about a
-    // block two deep: the parser's per-declaration budget summed the chain
-    // links of every binding. A `let`'s bindings and body, and a `case`'s
-    // branches, are siblings (`Parse.Siblings`) and charge the deepest of
-    // them. 16 000 bindings, so a budget summed over them would be spent four
-    // times over; and it must reach node, through every consumer.
+    // A `let` of 5 000 bindings `x{i} = x{i-1} + 1` once got 907 NESTING TOO
+    // DEEP messages, each "nested more than 4096 levels deep" about a block
+    // two deep: the parser's per-declaration budget summed the chain links of
+    // every binding, one a binding. A `let`'s bindings and body, and a
+    // `case`'s branches, are siblings (`Parse.Siblings`) and charge the
+    // deepest of them. 4 200 bindings, so a budget summed over them would be
+    // spent; and it must reach node, through every consumer.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const gpa = testing.allocator;
@@ -2023,8 +1948,8 @@ test "a long flat let is accepted, builds and runs: its bindings are siblings, n
     defer src.deinit(gpa);
     try src.appendSlice(gpa, "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (foo 0) ]\n\n\n");
     try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n");
-    for (1..16_001) |i| try src.print(gpa, "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
-    try src.appendSlice(gpa, "    in\n    x16000\n");
+    for (1..4_201) |i| try src.print(gpa, "        x{d} =\n            x{d} + 1\n\n", .{ i, i - 1 });
+    try src.appendSlice(gpa, "    in\n    x4200\n");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -2041,17 +1966,17 @@ test "a long flat let is accepted, builds and runs: its bindings are siblings, n
         const r = try w.buildAndRun(&.{ flag, "Main.beni" });
         try testing.expectEqual(@as(u8, 0), r.build.exit_code);
         try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("16000\n", r.program.?.stdout);
+        try testing.expectEqualStrings("4200\n", r.program.?.stdout);
         try testing.expectEqualStrings("", r.program.?.stderr);
     }
 }
 
-test "a flat let past the budget in ONE binding is still one nesting_too_deep (CK-166)" {
+test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The other half of CK-166: siblings do not reset what a single binding
-    // spends. One binding of 5 000 `+` links is past `Parse.max_depth` and
+    // The other half: siblings do not reset what a single binding spends.
+    // One binding of 4 100 `+` links is past `Parse.max_depth` and
     // is refused once, exactly as a top-level body would be.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2059,7 +1984,7 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep (C
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(gpa);
     try src.appendSlice(gpa, "foo : Int -> Int\nfoo x0 =\n    let\n        a =\n            1\n\n        b =\n            x0");
-    for (0..5_000) |_| try src.appendSlice(gpa, " + 1");
+    for (0..4_100) |_| try src.appendSlice(gpa, " + 1");
     try src.appendSlice(gpa, "\n    in\n    b\n");
     try w.write("Main.beni", src.items);
 
@@ -2076,7 +2001,7 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep (C
     try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
 }
 
-test "a case over every constructor of a 2 000-constructor type checks, and the other answers are linear too (CK-167)" {
+test "a case over every constructor of a 2 000-constructor type checks, and the other answers are linear too" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘

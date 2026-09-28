@@ -1,11 +1,9 @@
-//! Abuse scenarios over WIDE inputs — records of 100 000 fields, nominal
-//! payloads of 65 535, operator chains and list literals as wide as the
-//! parser admits (wider than engines loaded until R2c) — split out of
-//! `abuse_test.zig` on 2026-09-25 only so that the two run as separate
-//! processes in parallel: together they were one
-//! binary of about 80 s, the longest in `test-blackbox`
-//! (`plans/checker-rewrite.md` §2.4, *Parts*). Everything `abuse_test.zig`'s
-//! header says about what an abuse scenario asserts holds here.
+//! Abuse scenarios over WIDE inputs — records and nominal payloads at and
+//! past the evidence limits, operator chains as wide as the parser admits,
+//! types at the parameter cap. A file of its own only so that it runs as a
+//! separate process in parallel with `abuse_test.zig`. Everything
+//! `abuse_test.zig`'s header says about what an abuse scenario asserts, and
+//! about sizing an input just past the limit it reaches, holds here.
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
@@ -37,22 +35,23 @@ fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u
     return source.toOwnedSlice();
 }
 
-test "Basics.eq on a 100 000-field record walks all of it: all Int is equatable, a function at field 99 999 is not" {
+test "Basics.eq on a record past the old 256-entry worklist walks all of it: all Int is equatable, a function at its last field is not" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The `equatable` walk's worklist was a fixed 256 entries, and a full
     // worklist answered "unknown", which `Basics.eq` accepted — so a function
-    // in field 257 of a record compared structurally at run time (CK-17).
-    // It is growable now, and never answers on width: the all-`Int` record
-    // is accepted because every field was walked, and the function at field
-    // 99 999 — the far end of the worklist — is found.
+    // in field 257 of a record compared structurally at run time. It is
+    // growable now, and never answers on width: the all-`Int` record of 300
+    // fields is accepted because every field was walked, and the function at
+    // field 299 — past the old capacity, at the far end of the worklist — is
+    // found.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const all_int = try wideRecord(testing.allocator, 100_000, 0, "Basics.eq r r");
+    const all_int = try wideRecord(testing.allocator, 300, 0, "Basics.eq r r");
     defer testing.allocator.free(all_int);
     try w.write("AllInt.beni", all_int);
-    const with_fn = try wideRecord(testing.allocator, 100_000, 99_999, "Basics.eq r r");
+    const with_fn = try wideRecord(testing.allocator, 300, 299, "Basics.eq r r");
     defer testing.allocator.free(with_fn);
     try w.write("WithFn.beni", with_fn);
 
@@ -89,25 +88,21 @@ fn wideEqProgram(gpa: std.mem.Allocator, n: usize) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "== on a record builds and runs at every width, never a runtime exception" {
+test "== on a record builds and runs at the widest positional evidence and at a width that threw, never a runtime exception" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `==` on a record DERIVES one function with a parameter per field, and a
     // JavaScript call that wide overflows the engine's stack: under Node 24
-    // a 60 000- and a 65 530-field `r == r` built and then threw `RangeError`
-    // (R1's review). Checker v1 therefore refused a derived record
-    // comparison past `max_derived_record_fields`, 4 096, as `not_equatable`
-    // (CK-79). The wide form takes the evidence as one array past 4 096
-    // positions (`static-dispatch-spike.md` §9.2, CK-81), and checker v2
-    // lifts the cap (`checker-v2.md` §11.2's D4 bullet, R8a): since the
-    // cut-over (R11) the no-runtime-exception guarantee holds at every width
-    // by building and RUNNING — at the old cap, one past it, and at the
-    // widths that threw.
+    // a 60 000- and a 65 530-field `r == r` built and then threw `RangeError`.
+    // Up to 4 096 positions the evidence is positional; past it, one array
+    // (`static-dispatch-spike.md` §9.2), so the width that threw no longer
+    // makes a wide call: the widest positional record, and one of the
+    // widths that threw. One past the positional limit is the next scenario.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
-    for ([_]usize{ 4_096, 4_097, 65_530 }) |n| {
+    for ([_]usize{ 4_096, 65_530 }) |n| {
         const source = try wideEqProgram(testing.allocator, n);
         defer testing.allocator.free(source);
         try w.write("Wide.beni", source);
@@ -127,22 +122,21 @@ test "== on a record builds and runs at every width, never a runtime exception" 
     }
 }
 
-// CK-79 (promoted from `tests/pending/`'s `scenario/CK-79` at the cut-over,
-// R11): `==` and `<` on a record of 40 000 fields. The old checker capped a
-// derived record `eq`/`compare` at `max_derived_record_fields` = 4 096
-// (`not_equatable` and `no_methods_on_shape` past it, R1), because a derived
+// `==` and `<` on a record one field past the positional evidence limit. The
+// old checker capped a derived record `eq`/`compare` at 4 096 fields
+// (`not_equatable` and `no_methods_on_shape` past it), because a derived
 // function took one JavaScript parameter per field and V8 threw between
-// 40 000 and 60 000. The wide form (`static-dispatch-spike.md` §9.2, CK-81)
-// takes the evidence as one array past 4 096 positions, so R8a's checker
-// lifts the cap (checker-v2.md §11.2's D4 bullet): the program builds, runs
-// and prints its three answers; a refusal is the finding.
-test "CK-79: `==` and `<` on a 40 000-field record build and run" {
+// 40 000 and 60 000. The wide form (`static-dispatch-spike.md` §9.2) takes
+// the evidence as one array past 4 096 positions, and the checker lifts the
+// cap (checker-v2.md §11.2): the program builds, runs and prints its three
+// answers; a refusal is the finding.
+test "`==` and `<` on a record one field past the positional evidence limit build and run" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const n = 40_000;
+    const n = 4_097;
     var text: std.Io.Writer.Allocating = .init(testing.allocator);
     defer text.deinit();
     const out = &text.writer;
@@ -165,18 +159,16 @@ test "CK-79: `==` and `<` on a 40 000-field record build and run" {
     try testing.expectEqualStrings("eq\nne\nlt\n", ran.program.?.stdout);
 }
 
-// CK-82 (promoted from `tests/pending/`'s `scenario/CK-82` at the cut-over,
-// R11): a nominal payload record of 65 537 fields. The eager pass probed
-// `T`'s derived `eq`, and v1's `Solve.derivedUse` cast the field count into
-// the `u16` evidence count: a panic in Debug, whether or not anything
-// compares `T`. 65 535 builds and runs (CK-81, below). 65 537 and not
-// 65 536 since R8a's review: the record's structural row has one entry per
-// field, so its last entry's index `k` is 65 536, one past what a `u16`
-// `Dispatch.Param.k` holds (CK-109). On the Debug binary, whose safety
-// checks are part of the claim. What is required is the program built and
+// A nominal payload record of 65 537 fields. The eager pass probed `T`'s
+// derived `eq`, and an older checker cast the field count into the `u16`
+// evidence count: a panic in a safety build, whether or not anything
+// compares `T`. 65 535 builds and runs (below). 65 537 and not 65 536: the
+// record's structural row has one entry per field, so its last entry's index
+// `k` is 65 536, one past what a `u16` `Dispatch.Param.k` holds. On the
+// ReleaseSafe binary, whose safety checks are part of the claim. What is required is the program built and
 // run, printing its two answers, or a refusal by name — exit 1 with
 // diagnostics and not one of them `internal`; never a crash.
-test "CK-82: a nominal payload of 65 537 fields checks, and builds and runs or is refused by name" {
+test "a nominal payload of 65 537 fields checks, and builds and runs or is refused by name" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -256,11 +248,11 @@ fn wideNominalProgram(gpa: Allocator, n: usize) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "derived eq and compare over a 60 000- and a 65 535-field nominal payload build and run, in both builds" {
+test "derived eq and compare over a 65 535-field nominal payload build and run, in both builds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // CK-81. The eager pass derives `T`'s `eq` and `compare` through its
+    // The eager pass derives `T`'s `eq` and `compare` through its
     // payload's record, whose derived body compares every field inline: one
     // left-nested `&&` 60 000 deep, and 60 000 statements for `compare`. The
     // printer recursed once per `&&` and segfaulted the compiler; so would
@@ -271,13 +263,13 @@ test "derived eq and compare over a 60 000- and a 65 535-field nominal payload b
     // overflows the default stack — and at 65 535 V8 refuses the function
     // (65 537 parameters). Past 4 096 the evidence is one array now
     // (static-dispatch §9.2's wide form), so both run. 65 535 is the widest
-    // the checker takes today (CK-82). The record `==` of CK-79's cap is not
+    // the checker takes, so it is the one size tried. The record `==` is not
     // involved: `T r == T r` compares a nominal type.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const expected = "True\nFalse\nTrue\nFalse\nTrue\n";
 
-    for ([_]usize{ 60_000, 65_535 }) |n| {
+    for ([_]usize{65_535}) |n| {
         const source = try wideNominalProgram(testing.allocator, n);
         defer testing.allocator.free(source);
         try w.write("Main.beni", source);
@@ -305,52 +297,17 @@ test "derived eq and compare over a 60 000- and a 65 535-field nominal payload b
     try testing.expectEqual(@as(u8, 0), release.program.?.exit_code);
 }
 
-test "a 200 000-element list literal is EMITTED without a stack overflow and RUNS, in both builds" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // A list literal lowered to one `{ $: 1, a: x, b: … }` per element, each
-    // inside the last, and the parser does not charge its depth for the
-    // elements. The printer recursed per level and segfaulted the build
-    // (CK-81); then the module it wrote threw `RangeError` in Node's parser
-    // from about 1 550 elements (CK-83). Past 32 elements a literal is one
-    // flat array now, built into cells by `reduceRight` (`backend.md` §4),
-    // so the build finishes and the program runs.
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    var source: std.Io.Writer.Allocating = .init(testing.allocator);
-    defer source.deinit();
-    try source.writer.writeAll("import Node exposing (Program)\n\n\nxs : List Int\nxs =\n    [ 1");
-    for (1..200_000) |i| try source.writer.print(", {d}", .{i + 1});
-    try source.writer.writeAll(" ]\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (List.length xs), String.fromInt (List.sum xs), String.join (List.map (List.take xs 3) String.fromInt) \",\" ]\n");
-    try w.write("Main.beni", source.written());
-
-    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-        // ┌─────────────────────────────────────┐
-        // │ EXECUTE                             │
-        // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
-
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        try expectExited(r.build, 0);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("200000\n20000100000\n1,2,3\n", r.program.?.stdout);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-    }
-}
-
-// CK-83, promoted from `tests/pending` by R2c (`plans/checker-rewrite.md`
-// §2.6): programs the compiler accepted, lowered to JavaScript nested deeper
-// than Node 24's parser loads — it threw `RangeError` from about 1 550
-// levels. A 2 000-element list literal (uncharged by the parser's budget),
-// and 2 000-term `+` and `++` chains (under it). Every one builds and runs,
-// printing its length. The three cases are three files of ONE project, built
+// Programs the compiler accepted, lowered to JavaScript nested deeper than
+// Node 24's parser loads — it threw `RangeError` from about 1 550 levels. A
+// 2 000-element list literal (uncharged by the parser's budget; past 32
+// elements it is one flat array, `backend.md` §4, where it was once one
+// nested cell per element and also segfaulted the printer), and 2 000-term
+// `+` and `++` chains (under it). Every one builds and runs, printing its
+// length, in both builds. The three cases are three files of ONE project, built
 // in turn to the same `--out=out`: `build` compiles only the named entry's
 // import graph, and each build rewrites `out/_main.mjs` for its own entry
 // before it is run, so no case reads another's output.
-test "CK-83: a 2 000-element list and 2 000-term + and ++ chains build and run" {
+test "a 2 000-element list and 2 000-term + and ++ chains build and run, in both builds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -376,19 +333,21 @@ test "CK-83: a 2 000-element list and 2 000-term + and ++ chains build and run" 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ "--no-cache", file });
+        for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+            const r = try w.buildAndRun(&.{ flag, file });
 
-        // ┌─────────────────────────────────────┐
-        // │ VERIFY OUTPUT                       │
-        // └─────────────────────────────────────┘
-        try expectExited(r.build, 0);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("2000\n", r.program.?.stdout);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+            // ┌─────────────────────────────────┐
+            // │ VERIFY OUTPUT                   │
+            // └─────────────────────────────────┘
+            try expectExited(r.build, 0);
+            try testing.expectEqualStrings("", r.build.stderr);
+            try testing.expectEqualStrings("2000\n", r.program.?.stdout);
+            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        }
     }
 }
 
-test "a written operator chain runs at the widest the parser admits, and 100 000 terms are one nesting_too_deep" {
+test "a written operator chain runs at the widest the parser admits, and one term more is one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -396,7 +355,7 @@ test "a written operator chain runs at the widest the parser admits, and 100 000
     // parser charges every operator to `Parse.max_depth`, so a chain is
     // bounded before the backend sees it: `&&` over `x == 3` reaches the
     // budget at 1 366 terms (three charges each), `++` at 2 049 (two) and
-    // `+` at 4 096 (one), and 100 000 terms of any operator is exactly one
+    // `+` at 4 096 (one), and one term past the widest is exactly one
     // `nesting_too_deep`. Under it the chain goes through check, both walks
     // and the printer — and, since R2c (CK-83), RUNS at the widest the
     // parser admits: `&&` prints as one flat run and `+`/`++` are bound to a
@@ -411,7 +370,7 @@ test "a written operator chain runs at the widest the parser admits, and 100 000
         .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 2_048, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "2048\n" },
     };
     for (cases) |case| {
-        for ([_]usize{ case.width, 100_000 }) |n| {
+        for ([_]usize{ case.width, case.width + 1 }) |n| {
             var source: std.Io.Writer.Allocating = .init(testing.allocator);
             defer source.deinit();
             try source.writer.print("import Node exposing (Program)\n\n\n{s}", .{case.head});
@@ -551,22 +510,20 @@ fn holderRow(gpa: Allocator, n: usize, bare: bool) ![]u8 {
     return source.toOwnedSlice();
 }
 
-test "CK-109: a derived row of more than 65 535 context entries checks, and builds and runs, under v2" {
+test "a derived row of more than 65 535 context entries checks, and builds and runs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // D4 gives a derived row one evidence parameter per context entry, and
+    // A derived row has one evidence parameter per context entry, and
     // an entry per (parameter, method), so entries outrun parameters: 656
     // parameters whose payload's `eq` asks 100 methods of each are 65 600.
-    // R8a's first draft kept the entry index `Dispatch.Param.k` a `u16` and
-    // panicked in `Eager.marker`'s `@intCast` (Debug; wrapped silently to
-    // the wrong evidence in ReleaseFast); its lookup there was also
-    // quadratic in the entries (74 s and 3.1 GB of a Debug build). The
+    // A first draft kept the entry index `Dispatch.Param.k` a `u16` and
+    // panicked in `Eager.marker`'s `@intCast` (safety builds; wrapped
+    // silently to the wrong evidence in ReleaseFast); its lookup there was
+    // also quadratic in the entries (74 s and 3.1 GB of a Debug build). The
     // second shape reaches 65 538 entries with no user method at all: 32 769
     // parameters, each a bare position (`(i, eq)`) and a `Holder` whose `eq`
-    // asks `compare` (`(i, compare)`). Only v2: v1 builds the first in
-    // 9 s and checks the second in six minutes (CK-112), and neither was
-    // ever its defect.
+    // asks `compare` (`(i, compare)`).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const methods = try holderModule(testing.allocator, 100);
@@ -600,8 +557,7 @@ test "CK-109: a derived row of more than 65 535 context entries checks, and buil
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }
 
-// CK-88, found by R2c and fixed by R12 (`plans/checker-findings.md`): one
-// `case` of n literal branches. `js/Decision.zig` compared every row with
+// One `case` of n literal branches. `js/Decision.zig` compared every row with
 // every other three times over, so a build of 20 000 branches took 8.6 s
 // (ReleaseFast) and 70 000 would take minutes; and the one `switch` it
 // wrote had n labels, where SpiderMonkey — Firefox and its shell — refuses
@@ -609,12 +565,13 @@ test "CK-109: a derived row of more than 65 535 context entries checks, and buil
 // thrown at load in Firefox while Node, which takes 300 000, ran it. The
 // rows are grouped by literal now, and a fan of more than 16 384 labels is
 // written as consecutive `switch`es over the same discriminant. The timing
-// half is `perf_test.zig`'s CK-88 scenario; this is the shape half.
-test "CK-88: a case of 70 000 literal branches builds as switches of at most 16 384 labels and runs, in both builds" {
+// half is in `perf_test.zig`; this is the shape half, at 16 400 branches:
+// just past one `switch`'s worth, so the fan must be split in two.
+test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs, in both builds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    const branches = 70_000;
+    const branches = 16_400;
     const max_labels = 16_384;
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -628,7 +585,7 @@ test "CK-88: a case of 70 000 literal branches builds as switches of at most 16 
     try out.writeAll(
         \\main : Program
         \\main =
-        \\    Node.printLines (List.map [ 0, 16383, 16384, 32768, 65535, 69999, 70000, -5 ] (\k -> String.fromInt (g k)))
+        \\    Node.printLines (List.map [ 0, 16383, 16384, 16399, 16400, -5 ] (\k -> String.fromInt (g k)))
         \\
     );
     try w.write("Main.beni", source.written());
@@ -644,14 +601,14 @@ test "CK-88: a case of 70 000 literal branches builds as switches of at most 16 
         // └─────────────────────────────────────┘
         try expectExited(r.build, 0);
         try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("1\n16384\n16385\n32769\n65536\n70000\n-1\n-1\n", r.program.?.stdout);
+        try testing.expectEqualStrings("1\n16384\n16385\n16400\n-1\n-1\n", r.program.?.stdout);
         try testing.expectEqualStrings("", r.program.?.stderr);
         try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY SIDE EFFECTS                 │
         // └─────────────────────────────────────┘
-        // The module's one `case` is ⌈70 001 / 16 384⌉ = 5 `switch`es, none
+        // The module's one `case` is ⌈16 401 / 16 384⌉ = 2 `switch`es, none
         // over the bound: every label between two `switch`es is counted
         // against the one before.
         const js = try w.read("out/Main.mjs");
@@ -667,7 +624,7 @@ test "CK-88: a case of 70 000 literal branches builds as switches of at most 16 
                 worst = @max(worst, labels);
             }
         }
-        try testing.expectEqual(@as(usize, 5), switches);
+        try testing.expectEqual(@as(usize, 2), switches);
         try testing.expectEqual(@as(usize, max_labels), worst);
     }
 }

@@ -338,28 +338,27 @@ fn walk(kind: Kind) !void {
     // Pending mode never blesses: a golden there is the CORRECT output,
     // written by hand, and the binary under test is the one known to be
     // wrong. Blessing happens after promotion, under `tests/corpus/`.
-    const bless = blessing(gpa) and cfg.mode != .pending;
-    const bless_only = blessOnly(arena);
-    var w = try World.init(gpa, io);
-    defer w.deinit();
-
-    var failures: usize = 0;
-    for (fixtures.items) |fixture| {
-        const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
-        const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
-        const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this, .cfg = &cfg };
-        switch (cfg.mode) {
-            .strict => {
-                case.run() catch |err| {
-                    std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
-                    failures += 1;
-                };
-            },
-            .pending => if (!try case.pending(path)) {
-                failures += 1;
-            },
-        }
+    var walker: Walker = .{
+        .kind = kind,
+        .cfg = &cfg,
+        .fixtures = fixtures.items,
+        .bless = blessing(gpa) and cfg.mode != .pending,
+        .bless_only = blessOnly(arena),
+    };
+    // Every case is independent — its own world, its own arena — so the
+    // cases are spread over a pool of workers, each pulling the next from
+    // one counter. Pending mode stays on one thread: its report is one line
+    // per fixture, read in order.
+    const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
+    {
+        var threads: std.ArrayList(std.Thread) = .empty;
+        defer threads.deinit(gpa);
+        defer for (threads.items) |t| t.join();
+        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.work, .{ &walker, io }));
+        walker.work(io);
     }
+    const failures = walker.failures.load(.monotonic);
+    if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
     // which reads as a broken suite to everyone who sees it.
@@ -368,6 +367,55 @@ fn walk(kind: Kind) !void {
         return error.CorpusFailures;
     }
 }
+
+/// One kind's fixtures, pulled by the workers of `walk` from one counter.
+const Walker = struct {
+    kind: Kind,
+    cfg: *const Config,
+    fixtures: []const Fixture,
+    bless: bool,
+    bless_only: ?[]const u8,
+    next: std.atomic.Value(usize) = .init(0),
+    failures: std.atomic.Value(usize) = .init(0),
+    /// A worker that could not run a case at all (out of memory, a world
+    /// it could not create): the kind fails whatever the cases said.
+    fatal: std.atomic.Value(bool) = .init(false),
+
+    fn work(wk: *Walker, io: std.Io) void {
+        wk.cases(io) catch |err| {
+            std.debug.print("corpus worker: {t}\n", .{err});
+            wk.fatal.store(true, .monotonic);
+        };
+    }
+
+    fn cases(wk: *Walker, io: std.Io) !void {
+        const gpa = testing.allocator;
+        var arena_state: std.heap.ArenaAllocator = .init(gpa);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        var w = try World.init(gpa, io);
+        defer w.deinit();
+        while (true) {
+            const i = wk.next.fetchAdd(1, .monotonic);
+            if (i >= wk.fixtures.len) return;
+            const fixture = wk.fixtures[i];
+            const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
+            const bless_this = wk.bless and (wk.bless_only == null or std.mem.indexOf(u8, path, wk.bless_only.?) != null);
+            const case: Case = .{ .arena = arena, .w = &w, .kind = wk.kind, .fixture = fixture, .bless = bless_this, .cfg = wk.cfg };
+            switch (wk.cfg.mode) {
+                .strict => {
+                    case.run() catch |err| {
+                        std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                        _ = wk.failures.fetchAdd(1, .monotonic);
+                    };
+                },
+                .pending => if (!try case.pending(path)) {
+                    _ = wk.failures.fetchAdd(1, .monotonic);
+                },
+            }
+        }
+    }
+};
 
 /// How this run of the walker behaves, read once per kind from the
 /// environment (`plans/checker-rewrite.md` §2.4). Every variable defaults to
@@ -472,10 +520,10 @@ fn envOr(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
 /// of each failure to themselves, so `Case` writes its detail through
 /// `detail` and records a one-line reason through `because`.
 var quiet: bool = false;
-var reason_buf: [480]u8 = undefined;
-var reason_len: usize = 0;
+threadlocal var reason_buf: [480]u8 = undefined;
+threadlocal var reason_len: usize = 0;
 /// Owns the text `expectExit` summarises; failures only, never freed.
-var scratch: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+threadlocal var scratch: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
 
 fn detail(comptime fmt: []const u8, args: anytype) void {
     if (quiet) return;
@@ -527,8 +575,8 @@ fn reasonFor(err: anyerror, cfg: *const Config) []const u8 {
 /// The `why=` suffix refines S13's signature for `.codes` fixtures: without
 /// it a fixture red for its message and the same fixture red for a typo in
 /// a line number would sign the same.
-var class_buf: [256]u8 = undefined;
-var class_len: usize = 0;
+threadlocal var class_buf: [256]u8 = undefined;
+threadlocal var class_len: usize = 0;
 
 /// Record the failure's signature, if nothing has yet: the FIRST failure of
 /// a case is the one it stops on.

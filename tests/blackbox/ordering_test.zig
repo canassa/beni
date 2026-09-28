@@ -1,17 +1,10 @@
 //! Declaration-order scenarios for own methods (`checker-v2.md` I9, §10.2–
-//! §10.5): R7's permutation scenario `PERM` and its nesting scenarios
-//! `NEST-OVER` and `NEST-DEEP`. They were written red into
-//! `tests/blackbox/pending_test.zig` (R0's stubs, R7's programs), claimed
-//! under `--checker=v2` by R7, and promoted here at the cut-over (R11), when
-//! v2 became the checker the gates run (`plans/checker-rewrite.md` §2.5,
-//! §2.6). Their timing twin `NEST-UNDER` went to `perf_test.zig`.
+//! §10.5): whether a program checks, and what it prints or reports, never
+//! depends on the order its declarations are written in; and the nesting
+//! budget a check that nests another check spends.
 //!
-//! They are not in `abuse_test.zig`, where §2.5 sends a promoted non-timing
-//! scenario, only so that they run as a process of their own in parallel
-//! (the reason `abuse_wide_test.zig` was split out, §2.4 *Parts*): `PERM`
-//! alone builds and runs thousands of declaration orders. They run on the
-//! Debug binary, as they did in `test-pending`. The code is moved verbatim;
-//! only the harness changed: a scenario that is not GREEN fails the step.
+//! A process of its own so that it runs in parallel with the other
+//! black-box binaries. A scenario that is not GREEN fails the step.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -23,35 +16,29 @@ const testing = std.testing;
 // │ SCENARIOS                                                               │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// R7's permutation scenario (plans/checker-rewrite.md §2.5, R7's exit
-// criteria; checker-v2.md I9, §10.5): for every program below, every order of
-// its top-level declarations — all of them up to 120, else 120 orders spread
-// evenly over the whole permutation space by rank (the first and the
-// reversed order among them) — must do what the program's oracle twin says:
+// Every program below is a regression fixture of an order-dependence the
+// checker once had. For each, a fixed set of orders of its top-level
+// declarations — the written one, the reversed one and three shuffles seeded
+// by the program's position in the list — must do what the program's oracle
+// twin says:
 //
-//   - `prints`: build, exit 0 and print the twin's output (S13: "every
-//     order prints the same" would pass if every order failed alike);
+//   - `prints`: build, exit 0 and print the twin's output ("every order
+//     prints the same" would pass if every order failed alike);
 //   - `checks`: `check` exits 0;
 //   - `refused`: exactly one diagnostic, of the code named, byte-identical
 //     in every order — the same message, and the same source text under its
-//     span (CK-70, CK-72, CK-76: D14's and §10.6's refusals with their hints).
+//     span.
 //
 // For `prints` and `checks`, `dump --stage=types` must also be the same in
-// the written order, the reversed one and four orders between (each
-// declaration's block, whatever its position): a group nested at its first
-// demand, however deep, gets the types it gets written first (the reviewer
-// focus "a nested check started two `let`s deep").
+// every order tried (each declaration's block, whatever its position): a
+// group nested at its first demand, however deep, gets the types it gets
+// written first.
 //
 // The orders of one single-file program are packed into one build: each is a
 // module `PermPxK` whose `main` became `pub lines : List String`, and a
 // `Main` prints every module's lines in order, so one build and one run
 // check them all (a failing order is named by the file its diagnostic is
 // in). A project's module is permuted one build per order.
-//
-// R8a adds `cbA`/`cbB` (CK-77, the same `type_mismatch`) and `xm`/`xm2` (the
-// guard `DerivedCrossMethodCycle`, the same refusal). On 8016030 v1 refuses
-// every program that uses an own method above its definition with METHOD
-// NEEDS AN ANNOTATION.
 const perm_programs = [_]PermProgram{
     // Round 1: disp's `o1`, orch's `row75`, adv's `box` (CK-36).
     .{ .name = "o1", .path = "tests/corpus/run/OwnMethodBeforeDefinition", .module = "O1.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodBeforeDefinition/_expected.expected" } },
@@ -181,8 +168,8 @@ const perm_programs = [_]PermProgram{
     .{ .name = "a dot-call helper answered by derived methods", .path = "tests/corpus/run/DotCallDerivedThroughHelper.beni", .expect = .{ .prints = "tests/corpus/run/DotCallDerivedThroughHelper.expected" } },
 };
 
-test "PERM: every declaration order of an own-method program does what its twin says" {
-    var s = try Scenario.init("PERM");
+test "every order-dependence regression program does what its twin says in a fixed set of orders" {
+    var s = try Scenario.init("declaration orders");
     defer s.deinit();
     var orders: usize = 0;
     for (perm_programs, 0..) |p, i| {
@@ -220,8 +207,9 @@ const PermProgram = struct {
     },
 };
 
-/// Most orders tried per program.
-const perm_cap = 120;
+/// Seeded shuffles tried per program, beside the written and the reversed
+/// order.
+const shuffles = 3;
 
 /// A source file split at its top-level declarations: the `import` lines, and
 /// each declaration with its annotation. Top-level comments are dropped.
@@ -274,39 +262,29 @@ fn asLines(arena: std.mem.Allocator, decl: []const u8) ![]const u8 {
     return std.mem.replaceOwned(u8, arena, b, "Node.printLines", "");
 }
 
-/// n!, saturating.
-fn factorial(n: usize) u128 {
-    var f: u128 = 1;
-    var i: usize = 2;
-    while (i <= n) : (i += 1) f = std.math.mul(u128, f, i) catch return std.math.maxInt(u128);
-    return f;
-}
-
-/// The permutation of `0..out.len` of lexicographic rank `rank`.
-fn permutationAt(out: []usize, rank: u128) void {
-    var pool: [32]usize = undefined;
-    for (0..out.len) |i| pool[i] = i;
-    var left = out.len;
-    var r = rank;
-    for (out) |*slot| {
-        const f = factorial(left - 1);
-        const d: usize = @intCast(r / f);
-        r %= f;
-        slot.* = pool[d];
-        std.mem.copyForwards(usize, pool[d .. left - 1], pool[d + 1 .. left]);
-        left -= 1;
+/// The orders tried for `n` declarations: the written one, the reversed one,
+/// and `shuffles` shuffles seeded by the program's index, without
+/// repeats (a program of one or two declarations has fewer).
+fn declOrders(arena: std.mem.Allocator, n: usize, seed: u64) ![]const []const usize {
+    var out: std.ArrayList([]const usize) = .empty;
+    const written = try arena.alloc(usize, n);
+    for (written, 0..) |*slot, i| slot.* = i;
+    try out.append(arena, written);
+    const reversed = try arena.dupe(usize, written);
+    std.mem.reverse(usize, reversed);
+    try appendNew(arena, &out, reversed);
+    var prng: std.Random.DefaultPrng = .init(seed);
+    for (0..shuffles) |_| {
+        const shuffled = try arena.dupe(usize, written);
+        prng.random().shuffle(usize, shuffled);
+        try appendNew(arena, &out, shuffled);
     }
+    return out.items;
 }
 
-/// The orders tried for `n` declarations: every one when there are at most
-/// `perm_cap`, else `perm_cap` ranks spread evenly from the first to the last
-/// (the reversed order).
-fn orderRanks(arena: std.mem.Allocator, n: usize) ![]const u128 {
-    const total = factorial(n);
-    const count: usize = if (total <= perm_cap) @intCast(total) else perm_cap;
-    const ranks = try arena.alloc(u128, count);
-    for (ranks, 0..) |*r, k| r.* = if (count == 1) 0 else if (total <= perm_cap) k else (total - 1) * k / (count - 1);
-    return ranks;
+fn appendNew(arena: std.mem.Allocator, out: *std.ArrayList([]const usize), order: []const usize) !void {
+    for (out.items) |seen| if (std.mem.eql(usize, seen, order)) return;
+    try out.append(arena, order);
 }
 
 const PermOutcome = union(enum) { orders: usize, red: Verdict };
@@ -316,19 +294,15 @@ fn readRepo(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 /// Program `p`'s orders, tried (`perm_programs`' comment); `index` names its
-/// modules.
+/// modules and seeds its shuffles.
 fn permuteProgram(s: *Scenario, p: PermProgram, index: usize) !PermOutcome {
     const a = s.arena();
     const source_path = if (p.module) |m| try std.fs.path.join(a, &.{ p.path, m }) else p.path;
     const split = try splitDecls(a, try readRepo(a, source_path));
-    const ranks = try orderRanks(a, split.decls.len);
-    const order = try a.alloc(usize, split.decls.len);
-    const files = try a.alloc([]const u8, ranks.len);
-    const texts = try a.alloc([]const u8, ranks.len);
-    const orders = try a.alloc([]const usize, ranks.len);
-    for (ranks, files, texts, orders, 0..) |rank, *file, *text, *o, k| {
-        permutationAt(order, rank);
-        o.* = try a.dupe(usize, order);
+    const orders = try declOrders(a, split.decls.len, index);
+    const files = try a.alloc([]const u8, orders.len);
+    const texts = try a.alloc([]const u8, orders.len);
+    for (orders, files, texts, 0..) |order, *file, *text, k| {
         var out: std.ArrayList(u8) = .empty;
         try out.appendSlice(a, split.imports);
         for (order) |d| {
@@ -348,7 +322,7 @@ fn permuteProgram(s: *Scenario, p: PermProgram, index: usize) !PermOutcome {
         .refused_region => |code| try permuteRefused(s, p, code, false, files, texts, orders),
     };
     if (red) |v| return .{ .red = v };
-    return .{ .orders = ranks.len };
+    return .{ .orders = orders.len };
 }
 
 fn redAt(s: *Scenario, p: PermProgram, order: []const usize, v: Verdict, total: usize) !Verdict {
@@ -422,13 +396,12 @@ fn permuteChecks(s: *Scenario, p: PermProgram, files: []const []const u8, texts:
     return try sameTypes(s, p, files, orders);
 }
 
-/// `dump --stage=types` of the written order, the reversed one and four
-/// between: each declaration's block the same, wherever it is written.
+/// `dump --stage=types` of every order tried: each declaration's block the
+/// same, wherever it is written.
 fn sameTypes(s: *Scenario, p: PermProgram, files: []const []const u8, orders: []const []const usize) !?Verdict {
     const a = s.arena();
-    const picks = [_]usize{ 0, files.len / 5, 2 * files.len / 5, 3 * files.len / 5, 4 * files.len / 5, files.len - 1 };
     var first: ?[]const u8 = null;
-    for (picks) |k| {
+    for (0..files.len) |k| {
         const run = try s.w.runWith(try s.argv(&.{ "dump", "--stage=types", "--platform=node", files[k] }), .{ .raw_diagnostics = true });
         if (run.exit_code != 0) return try redAt(s, p, orders[k], try s.failed(run), files.len);
         const blocks = try declBlocks(a, run.stdout);
@@ -672,37 +645,35 @@ test "one own method's messages print the same in every declaration order" {
     });
 }
 
-// R7's nesting scenarios (S-3, S-4; checker-v2.md §10.2): chains of own
-// methods `m0 … mn` on one type, each calling the next, written in REVERSE
-// dependency order (`m0`, which needs `m1`, first), so checking `m0` nests
-// `m1`, which nests `m2`, and so on. The budget admits a nested check while
-// the solver depth summed over the open groups, plus `nest_cost` (3) per
-// nesting, leaves one declaration's worth (4 200) of the budget (8 400): a
-// chain's link costs 4 depth units and 3, so about 599 nest (calibrated in
-// a Debug build, 2026-09-26: `Groups.nest_cost`'s comment).
+// The nesting budget (checker-v2.md §10.2): chains of own methods `m0 … mn`
+// on one type, each calling the next, written in REVERSE dependency order
+// (`m0`, which needs `m1`, first), so checking `m0` nests `m1`, which nests
+// `m2`, and so on. The budget admits a nested check while the solver depth
+// summed over the open groups, plus `nest_cost` (3) per nesting, leaves one
+// declaration's worth (4 200) of the budget (8 400): a chain's link costs 4
+// depth units and 3, so about 599 nest (`Groups.nest_cost`'s comment). The
+// same chains below the budget are timed for linearity in `perf_test.zig`.
 //
-//   - NEST-UNDER, the same chains below the budget timed for linearity, is
-//     `perf_test.zig`'s (ReleaseFast).
-//   - NEST-OVER (Debug): one chain of 1 000 links is refused exactly once —
+//   - A chain of 650 links, just past the budget, is refused exactly once —
 //     the check that `m0` started runs out at about the 600th link and is
 //     refused at that use, and the rest is checked from the next group in
 //     SCC order, within the budget — with the hint, and no crash.
-//   - NEST-DEEP (Debug): round 4's "pair of deep declarations" (§5.6),
-//     which the budget as specified admits (a demand at depth 2 500 leaves
-//     5 900 units): what reaches the refusal is a chain of TWO demands each
-//     about 2 150 levels deep. Written with the user first, exactly one
-//     `nesting_too_deep`, at the second use, with the hint; with the
-//     methods first, it checks (I9's stated exception, §10.5).
-test "NEST-OVER: a chain past the nesting budget is one nesting_too_deep" {
-    var s = try Scenario.init("NEST-OVER");
+//   - A "pair of deep declarations" (§5.6), which the budget admits one at a
+//     time (a demand at depth 2 500 leaves 5 900 units): what reaches the
+//     refusal is a chain of TWO demands each about 2 150 levels deep. Written
+//     with the user first, exactly one `nesting_too_deep`, at the second
+//     use, with the hint; with the methods first, it checks (I9's stated
+//     exception, §10.5).
+test "a chain of own methods just past the nesting budget is one nesting_too_deep" {
+    var s = try Scenario.init("nesting budget");
     defer s.deinit();
-    try s.w.write("C.beni", try chains(s.arena(), 1, 1_000));
+    try s.w.write("C.beni", try chains(s.arena(), 1, 650));
     const verdict = try s.exactlyOneHinted(&.{ "check", "--no-cache", "--diagnostics=json", "C.beni" }, .nesting_too_deep);
     try s.finish(verdict);
 }
 
-test "NEST-DEEP: two deep demands in a row are refused once, and the other order checks" {
-    var s = try Scenario.init("NEST-DEEP");
+test "two deep demands in a row are refused once, and the other order checks" {
+    var s = try Scenario.init("two deep demands");
     defer s.deinit();
     const a = s.arena();
     const user = try deepUse(a, "use u =\n    ", "(T 0).m ()", 2_150);

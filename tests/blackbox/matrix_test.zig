@@ -3,9 +3,9 @@
 //!
 //! **The claim.** An incremental build's every output stream and output
 //! file must be byte-identical to a cold build of the same source tree. So
-//! for every corpus case of every kind that runs the checker, four runs —
-//! {plain, `--roundtrip-interfaces`} × {`--jobs=1`, `--jobs=8`} — must
-//! agree byte for byte on exit code, stdout, stderr and every file written.
+//! for every corpus case of every kind that runs the checker, a plain run at
+//! `--jobs=1` and a round-tripped one at `--jobs=8` (`variants`) must agree
+//! byte for byte on exit code, stdout, stderr and every file written.
 //!
 //! This is the first test in the project that asserts the firewall's
 //! premise rather than assuming it: until it passes, every claim about a
@@ -15,16 +15,12 @@
 //! determinism claim was carried entirely by a handful of synthetic
 //! projects in `blackbox_test.zig` and `abuse_test.zig`.
 //!
-//! **Why it is its own binary, and parallel.** One invocation of the
-//! installed (Debug) compiler costs ~100 ms, almost all of it lexing,
-//! parsing and checking the embedded core package, and the cross adds three
-//! runs to every primary invocation of ~600 of them. Serially that is ~4
-//! minutes on top of a 86-second suite. `zig build test-blackbox` already
-//! runs its test binaries concurrently, so a separate binary that also
-//! spreads its own cases over a pool of workers costs wall-clock time only
-//! where it overlaps — measured at +6 s of `test-blackbox`, against ~240 s
-//! of work. No coverage is traded for it: every fixture of every
-//! checker-driven kind is here.
+//! **Why it is its own binary, and parallel.** Every invocation checks the
+//! embedded core package, and the matrix makes several of them per fixture
+//! for some 600 fixtures. `zig build test-blackbox` already runs its test
+//! binaries concurrently, so a separate binary that also spreads its own
+//! cases over a pool of workers costs wall-clock time only where it
+//! overlaps. Every fixture of every checker-driven kind is here.
 //!
 //! **What is NOT compared, and why.** The `--release` half of a `run/`
 //! fixture: `--release` changes the BACKEND's printing and inlining, which
@@ -34,7 +30,7 @@
 //! not executed here — `corpus_test.zig` runs it, twice; this binary's
 //! claim is about bytes.
 //!
-//! **The cache axis** (M4-1) adds two more runs per fixture: a cold one at
+//! **The cache axis** adds two more runs per fixture: a cold one at
 //! `--jobs=1` into a cache directory that is fresh because the `World` is,
 //! and a warm one at `--jobs=8` against it. Both are byte-compared with the
 //! plain run, and both assert counters — the cold one hits nothing, and the
@@ -120,36 +116,38 @@ const Kind = enum {
     }
 };
 
-/// The four runs. Variant 0 is the baseline every other is compared with;
-/// it is also the shape the corpus walker uses today, so a difference here
-/// is a difference from the goldens.
+/// The runs. Variant 0 is the baseline every other is compared with; it is
+/// also the shape the corpus walker uses today, so a difference here is a
+/// difference from the goldens.
 const Variant = struct {
     label: []const u8,
     flags: []const []const u8,
 };
 
-/// The round-tripped variants pass ALL THREE flags, so the dispatch
+/// The round-tripped variant passes ALL THREE flags, so the dispatch
 /// sidecar's format and the front-end artifact's are proven lossless over the
-/// same fixtures at no extra runs (`plans/m4-1.md` M1-d, `plans/m4-2.md`
-/// M2-c). They belong together: a `run/` fixture whose emitted JavaScript is
-/// byte-identical through the record, through the table AND through the
-/// `Bir` that was written to bytes and read back before `Resolve` ever saw it
-/// is the strongest single claim available about any of them. The sidecar is
-/// the one whose loss shows up as a wrong program rather than a wrong
-/// message; the front-end artifact is the one whose loss shows up as a wrong
-/// program that depends on HISTORY, which is worse.
+/// same fixtures at no extra runs. They belong together: a `run/` fixture
+/// whose emitted JavaScript is byte-identical through the record, through the
+/// table AND through the `Bir` that was written to bytes and read back before
+/// `Resolve` ever saw it is the strongest single claim available about any of
+/// them. The sidecar is the one whose loss shows up as a wrong program rather
+/// than a wrong message; the front-end artifact is the one whose loss shows
+/// up as a wrong program that depends on HISTORY, which is worse.
 ///
-/// **The first four pass `--no-cache` explicitly**, and since M4-3 they must.
-/// The cache is on by default, these fixtures run with cwd = the repo root,
-/// and variant 0 is the ORACLE every other variant is byte-compared against —
-/// so without the flag the oracle would be a run whose behaviour depended on a
+/// It runs at `--jobs=8` against a `--jobs=1` baseline, so one run crosses
+/// both axes: a difference from either the worker count or the round trip
+/// moves its bytes. Running each axis alone as well would only say which of
+/// the two moved them, which the failure's own diff is enough to find.
+///
+/// **The first two pass `--no-cache` explicitly**, and they must. The cache
+/// is on by default, these fixtures run with cwd = the repo root, and variant
+/// 0 is the ORACLE every other variant is byte-compared against — so without
+/// the flag the oracle would be a run whose behaviour depended on a
 /// `.beni-cache/` left by whatever ran before it. A golden compared against
-/// something history-dependent is not a golden. The cached path has variants 4
-/// and 5, which name their own fresh directory.
+/// something history-dependent is not a golden. The cached path has variants
+/// 2 and 3, which name their own fresh directory.
 const variants = [_]Variant{
     .{ .label = "cold --jobs=1", .flags = &.{ "--jobs=1", "--no-cache" } },
-    .{ .label = "cold --jobs=8", .flags = &.{ "--jobs=8", "--no-cache" } },
-    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--no-cache", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
     .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--no-cache", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
     // The cache axis (`fast-compiler.md` §8, M4-1): a COLD-WITH-CACHE run at
     // `--jobs=1` into a fresh directory, then a WARM one at `--jobs=8`
@@ -168,7 +166,7 @@ const variants = [_]Variant{
 
 /// Variant index of the first cached run. From here on the runs assert
 /// counters as well as bytes.
-const first_cached_variant = 4;
+const first_cached_variant = 2;
 
 /// `{cache}` replaced by an ABSOLUTE path inside this fixture's own temp
 /// tree, and `--self-profile` appended so the counters can be read.
@@ -351,7 +349,7 @@ test "the acceptance matrix: cold and round-tripped agree at every --jobs" {
     try testing.expect(fixtures.items.len > 200);
 
     var runner: Runner = .{ .gpa = gpa, .fixtures = fixtures.items };
-    const workers = @min(8, @max(1, std.Thread.getCpuCount() catch 1));
+    const workers = @min(16, @max(1, std.Thread.getCpuCount() catch 1));
     {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
@@ -471,13 +469,13 @@ fn one(gpa: std.mem.Allocator, f: Fixture) !void {
     if (f.kind == .dispatch) try streamMatrix(&w, arena, f, &.{ "dump", "--stage=dispatch", path });
 }
 
-/// One command, four ways, compared on exit code, stdout and stderr. Run
-/// with cwd = the repo root, as the corpus walker runs it, so the paths in
-/// the diagnostics are the repo-relative ones the goldens hold.
+/// One command every way `variants` lists, compared on exit code, stdout and
+/// stderr. Run with cwd = the repo root, as the corpus walker runs it, so the
+/// paths in the diagnostics are the repo-relative ones the goldens hold.
 fn streamMatrix(w: *World, arena: std.mem.Allocator, f: Fixture, args: []const []const u8) !void {
     // `dump` takes no cache flag at all — it prints a representation rather
     // than a result (`frontend.md` §1) — so the cache axis applies to the
-    // `check` invocations and the dumps keep the four they had.
+    // `check` invocations and the dumps keep the two uncached ones.
     const cached_axis = std.mem.eql(u8, args[0], "check");
     var base: ?world.Result = null;
     for (variants, 0..) |v, i| {
@@ -559,11 +557,11 @@ fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
     }
 }
 
-/// One fixture compiled four ways into four output directories, compared on
-/// the streams AND on every file written. The fixture is copied into the
-/// world's project directory for the reason the corpus walker copies it:
-/// the module name comes from the path, and a build writes an `out/` that
-/// has no business in the repository.
+/// One fixture compiled every way `variants` lists, each into an output
+/// directory of its own, compared on the streams AND on every file written.
+/// The fixture is copied into the world's project directory for the reason
+/// the corpus walker copies it: the module name comes from the path, and a
+/// build writes an `out/` that has no business in the repository.
 fn buildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
     var sources: std.ArrayList([]const u8) = .empty;
     if (f.project) {

@@ -11,8 +11,8 @@
 //! An unset or empty `BENI_CORPUS_PART` is every part, in one process: what
 //! a hand run of the walker and `test-pending` get.
 //!
-//! The grouping is by measured wall time (2026-09-25, Debug binary, idle
-//! 32-core machine); `plans/checker-rewrite.md` §2.4 records the numbers.
+//! The grouping is by measured wall time; inside a part the walker spreads
+//! its cases over a pool of workers.
 //! Imports nothing, because `build.zig` imports it.
 
 pub const Part = enum {
