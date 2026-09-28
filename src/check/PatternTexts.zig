@@ -1,7 +1,7 @@
 //! The texts of pattern analysis (docs/design/checker.md §6.6): a `case`
 //! with a missing possibility, one the analysis could not decide, a
 //! refutable pattern in an irrefutable position, and a redundant branch.
-//! Split out of `Diagnostics.zig` by R13, which had grown past
+//! Kept apart from `Diagnostics.zig` to hold both under
 //! `checker-v2.md` §19.1's 1 500 lines; they are still
 //! `Diagnostics.Reporter`'s methods, re-exported there by name.
 

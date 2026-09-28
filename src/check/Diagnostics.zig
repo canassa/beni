@@ -73,13 +73,13 @@ pub const Callee = struct {
     pub const anonymous: Callee = .{ .kind = .anonymous, .name = "" };
 };
 
-/// The widest record `==` or `compare` may DERIVE a function for (CK-79).
+/// The widest record `==` or `compare` may DERIVE a function for.
 /// A derived record function takes one evidence parameter per field
 /// (static-dispatch-spike.md §9), and a JavaScript call with tens of
 /// thousands of arguments overflows the engine's stack: V8 threw at 60 000
 /// under Node 24, and JavaScriptCore and SpiderMonkey set their own limits.
 /// 4 096 is far below any of them. Lifting it needs a derived record function
-/// that takes its evidence as ONE value (an array), which is CK-79's fix.
+/// that takes its evidence as ONE value (an array).
 pub const max_derived_record_fields = 4096;
 
 pub const Reporter = struct {
@@ -93,7 +93,7 @@ pub const Reporter = struct {
     /// The `where` clause a `.where_clause` unification is checking: set by
     /// the resolver around that one unification, so the message can name
     /// the clause after its receiver is bound (static-dispatch-spike.md
-    /// §10.13, CK-55).
+    /// §10.13).
     clause: ?Clause = null,
     pub const Error = Allocator.Error;
     pub const Clause = struct { variable: Symbol.Optional, method: Symbol };
@@ -164,10 +164,10 @@ pub const Reporter = struct {
             try r.emit(.schema_conversion_mismatch, region, &out);
             return;
         }
-        // **A.30's boundary, said out loud.** A `let` binding D5 does not
-        // generalise over a constrained variable (a dot-call's own
-        // requirement, or a value binding: checker-v2.md §8.4 *As built by
-        // R14*) meets a second use at another type here, as an ordinary
+        // **A.30's boundary, said out loud.** A `let` binding that is not
+        // generalised over a constrained variable (a dot-call's own
+        // requirement, or a value binding: checker-v2.md §8.4) meets a
+        // second use at another type here, as an ordinary
         // mismatch — and the numeric hints below would tell the author to
         // check their arithmetic. This one names the binding and the
         // constraint instead, and says what to do.
@@ -201,8 +201,8 @@ pub const Reporter = struct {
         else
             "it";
         const method = r.env.interner.slice(found.method);
-        // Why the binding has one type (checker-v2.md §8.4 *As built by
-        // R14*): D5 generalises every other constrained `let` function.
+        // Why the binding has one type (checker-v2.md §8.4): every other
+        // constrained `let` function is generalised.
         switch (found.why) {
             .dot_call => w.print(
                 \\
@@ -356,8 +356,7 @@ pub const Reporter = struct {
             },
             // The 1st element can only have failed against the list's
             // CONTEXT: the elements are checked left to right against one
-            // element type, and it has no previous ones (checker.md §8.7,
-            // CK-49).
+            // element type, and it has no previous ones (checker.md §8.7).
             .list_entry => if (category.index == 1) return .{
                 .intro = "The 1st element of this list is not what the list needs:",
                 .found = "The 1st element is:",
@@ -410,9 +409,8 @@ pub const Reporter = struct {
                 .found = "The conversion has type:",
                 .wanted = "But this field needs:",
             },
-            // `.where_clause` (checker v2 only: a `where` clause's method type
-            // against the method it resolved to, CK-55) keeps the general lines
-            // until R13 writes its own.
+            // `.where_clause` (a `where` clause's method type against the
+            // method it resolved to) keeps the general lines.
             .try_value, .pattern, .ctor_arg, .destructure, .general, .where_clause => return .{
                 .intro = "Something is off here:",
                 .found = "This is:",
@@ -447,7 +445,7 @@ pub const Reporter = struct {
         const wanted_arrows = r.paramCount(expected);
         const found_arrows = r.paramCount(actual);
         // An Elm curried annotation over a definition of that many
-        // parameters (checker.md §8.7, CK-56).
+        // parameters (checker.md §8.7).
         if ((category.tag == .annotation or category.tag == .let_annotation) and
             r.env.store.isCurried(expected, found_arrows))
         {
@@ -522,7 +520,7 @@ pub const Reporter = struct {
         // belong in a hint about numbers.
         if (a == wk.string and (e == wk.int or e_kind == .number)) {
             // The numbers-only sentence only for an arithmetic operator's
-            // operand (checker.md §8.7, CK-50).
+            // operand (checker.md §8.7).
             if (r.arithmeticOperand(category)) {
                 w.writeAll(
                     \\
@@ -571,7 +569,7 @@ pub const Reporter = struct {
 
     /// Elm's `badFlexSuper`/`problemToHint` for a number that has to become
     /// a `String`, and for a `String` that has to become a number
-    /// (checker.md §8.7, CK-50).
+    /// (checker.md §8.7).
     const to_string_hint =
         \\
         \\Hint: want to turn a number into a `String`? Use `String.fromInt` or
@@ -585,7 +583,7 @@ pub const Reporter = struct {
     ;
 
     /// Whether the mismatch is an operand of an arithmetic operator — the
-    /// one place the numbers-only hint is true (checker.md §8.7, CK-50).
+    /// one place the numbers-only hint is true (checker.md §8.7).
     fn arithmeticOperand(r: *const Reporter, category: Category) bool {
         if (category.tag != .call_arg) return false;
         const call = category.owner.unwrap() orelse return false;
@@ -600,7 +598,7 @@ pub const Reporter = struct {
     /// The 1-based position of another parameter of this call that is a
     /// function of as many arguments as `actual`, when `actual` — a function
     /// — was passed where a non-function is wanted: Elm's argument
-    /// order against beni's subject-first one (checker.md §8.7, CK-56).
+    /// order against beni's subject-first one (checker.md §8.7).
     ///
     /// The parameters are read off the callee's DECLARED type — its scheme
     /// in this module, or its interface's — because an argument is checked
@@ -894,7 +892,7 @@ pub const Reporter = struct {
                 ) catch return error.OutOfMemory;
                 // The numbers-only sentence only for an arithmetic operator's
                 // operand; elsewhere Elm's conversion, in the direction the
-                // value has to go (checker.md §8.7, CK-50).
+                // value has to go (checker.md §8.7).
                 const wk = r.env.types.well_known;
                 if (r.arithmeticOperand(category)) {
                     w.writeAll(
@@ -1031,12 +1029,11 @@ pub const Reporter = struct {
     /// Which shape a receiver turned out to be, for §10.3's sentence.
     /// `record` is a dot-call's (its hint is the field call); `record_required`
     /// a requirement that is not one, and `open_record` a well-known method
-    /// on an open record (static-dispatch-spike.md §10.3 *amended by R13*,
-    /// CK-54).
+    /// on an open record (static-dispatch-spike.md §10.3).
     pub const ShapeKind = enum { record, record_required, open_record, tuple, unit, function, contains_function, not_orderable, too_wide, other };
 
     // The texts of static dispatch and of the obligations (§10, checker.md
-    // §8.4), in `DispatchTexts.zig` since R12 (checker-v2.md §19.1).
+    // §8.4), in `DispatchTexts.zig` (checker-v2.md §19.1).
     pub const EquatableReason = enum { function, opaque_type, rigid_variable, too_wide };
     pub const unknownMethod = DispatchTexts.unknownMethod;
     pub const undeterminedMethodReceiver = DispatchTexts.undeterminedMethodReceiver;
@@ -1059,10 +1056,10 @@ pub const Reporter = struct {
 
     // ---- Patterns (checker.md §6.6) --------------------------------------
 
-    /// §6.7's text, in `DispatchTexts.zig` since R12.
+    /// §6.7's text, in `DispatchTexts.zig`.
     pub const cyclicValue = DispatchTexts.cyclicValue;
 
-    // The pattern texts, in `PatternTexts.zig` since R13.
+    // The pattern texts, in `PatternTexts.zig`.
     pub const missingPatterns = PatternTexts.missingPatterns;
     pub const patternBudgetExhausted = PatternTexts.patternBudgetExhausted;
     pub const refutablePattern = PatternTexts.refutablePattern;
@@ -1363,7 +1360,7 @@ fn plural(scratch: Allocator, n: u32, comptime noun: []const u8) []const u8 {
     return std.fmt.allocPrint(scratch, "{d} " ++ noun ++ "s", .{n}) catch "several " ++ noun ++ "s";
 }
 
-/// "a" or "an" before a backticked name (checker.md §8.7, CK-59): "an" when
+/// "a" or "an" before a backticked name (checker.md §8.7): "an" when
 /// it starts with a vowel LETTER. A name is not a word, so the letter the
 /// reader sees decides, not how it might be spoken (`url` reads "an").
 /// Elm writes "a" every time.

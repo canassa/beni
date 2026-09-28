@@ -1,8 +1,6 @@
 //! What the checker was looking at when it made an equality: the category
 //! every diagnostic text picks its sentences by (checker.md §8). Shared by
-//! both checkers and by `Diagnostics.zig`'s texts; moved out of v1's
-//! `Constrain.zig` by R4b's review (S2) so the shared texts do not depend on
-//! a file R12 deletes.
+//! the constraint generator and by `Diagnostics.zig`'s texts.
 
 const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
@@ -54,9 +52,8 @@ pub const Category = struct {
         /// The value side of a `let pattern = value`.
         destructure,
         schema_conversion,
-        /// Checker v2: a requirement that came from a `where` clause, checked
-        /// against the method type it resolved to (checker-v2.md §9.2, CK-55).
-        /// v1 never makes one.
+        /// A requirement that came from a `where` clause, checked
+        /// against the method type it resolved to (checker-v2.md §9.2).
         where_clause,
     };
 };

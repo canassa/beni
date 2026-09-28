@@ -40,10 +40,9 @@
 //! **The undo journal** brackets a speculative unification. `mark` returns a
 //! `Snapshot`; every later mutation of `parent`, `rank`, `content` or `size`
 //! pushes the OLD descriptor, and `rollback` restores them in reverse and
-//! truncates the vars and `extra` created since. M2b's only speculator is
-//! `?` (checker.md §6.5, which tries `Result` and then `Maybe`), but the
-//! journal is built now because retrofitting one is exactly the rework
-//! `fast-compiler.md` §13 warns about. With no mark outstanding, journaling
+//! truncates the vars and `extra` created since. The journal exists
+//! because retrofitting one is exactly the rework `fast-compiler.md` §13
+//! warns about. With no mark outstanding, journaling
 //! is one `depth == 0` test and nothing is recorded.
 //!
 //! One store per module being checked, owned by the worker checking it and
@@ -168,7 +167,7 @@ pub const Flags = struct {
     constraints: ConstraintSet.Optional = .none,
     /// The open obligations riding on this variable (checker-v2.md §4.1,
     /// §4.5): a set in the checker's own table (`check/Obligations.zig`),
-    /// opaque here (§4.1, *Decided by R5*). A store no check builds — an
+    /// opaque here (§4.1). A store no check builds — an
     /// interface dump's — leaves it `.none`.
     obls: ObligationSet = .none,
 };
@@ -312,8 +311,8 @@ depth: u32 = 0,
 /// fit" and stops trying alternatives.
 broken: bool = false,
 next_mark: u32 = no_mark + 1,
-/// Checker v2's acyclicity proofs (`checker-v2.md` §8.2 *as restated by R8c's
-/// review rounds*): per variable, the epoch in which an occurs walk proved
+/// The checker's acyclicity proofs (`checker-v2.md` §8.2): per variable,
+/// the epoch in which an occurs walk proved
 /// it acyclic. They live here, beside the content they are about, because
 /// every write that can add an edge to a proved graph or leave it an
 /// unrecorded leaf — a proved leaf given successors, any write touching an
@@ -344,11 +343,11 @@ inferred_alias: std.DynamicBitSetUnmanaged = .{},
 /// speculates (§7.5), so under it it stays 0; its memos keyed by a variable
 /// id (`check/Derivable.zig`'s `GroundMemo` and `Shapes.last`) record it
 /// and refuse to be read across a rollback, which could reuse an id for
-/// another type (CK-131, R9b).
+/// another type.
 rollbacks: u32 = 0,
 /// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
-/// (CK-133). Never read outside that assert.
+/// Never read outside that assert.
 proof_assert_work: u64 = 0,
 
 const Entry = struct { v: Var, desc: Descriptor };
@@ -406,7 +405,7 @@ pub fn count(store: *const TypeStore) u32 {
 /// putting it in the pool of that rank (`Solve` does).
 pub fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Allocator.Error!Var {
     const v: Var = @enumFromInt(store.descriptors.len);
-    // The capacity test inline and the growth out of line (R14b): every
+    // The capacity test inline and the growth out of line: every
     // variable the checker makes comes through here, and `append` made a
     // call for the test alone.
     if (store.descriptors.len == store.descriptors.capacity) try store.descriptors.ensureUnusedCapacity(store.gpa(), 1);
@@ -504,7 +503,7 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     // A class keeps a proof either side had, unless the merge voided every
     // proof: a proved flat structure's children were unified with the other
     // side's before the merge, a proved leaf that stays a leaf gains no edge,
-    // and a record's new rows reach it through a bind or an `err` (both void) (§8.2 *as restated by R8c's review rounds*).
+    // and a record's new rows reach it through a bind or an `err` (both void) (§8.2).
     if (carry and store.acyclic_epoch == epoch) store.prove(keep);
     return keep;
 }
@@ -611,8 +610,8 @@ fn hasSuccessors(c: Content) bool {
 /// an edge to a proved graph, so every proof is void; so, conservatively, is a
 /// proved structure overwritten with another kind. What a merge's survivor
 /// holds besides that is the `err` rule's (`touchesErr`) and §8.2's argument
-/// (`checker-v2.md` §8.2 *as restated by R8c's review rounds*).
-/// The `err` rule (§8.2 *as restated by R8c's review rounds*): a write where
+/// (`checker-v2.md` §8.2).
+/// The `err` rule (§8.2): a write where
 /// one side is `err` — before or after — and any side has successors voids
 /// every proof. `err` is the one kind without successors that can absorb a
 /// structure (a merge whose survivor is `err`, a poison: an unrecorded leaf
@@ -624,7 +623,7 @@ fn hasSuccessors(c: Content) bool {
 /// manager, 2026-09-26). It costs a content read per merge, about 0.8 % of
 /// instructions on the generated dispatch corpus.
 inline fn touchesErr(store: *TypeStore, before_a: Content, before_b: Content, after: Content) void {
-    // Inline, with the rest out of line: almost no write touches an `err` (R14b).
+    // Inline, with the rest out of line: almost no write touches an `err`.
     if (before_a != .err and before_b != .err and after != .err) return;
     touchesErrSlow(store, before_a, before_b, after);
 }
@@ -683,12 +682,11 @@ pub fn resolvedContent(store: *TypeStore, v: Var) Content {
 
 /// `resolvedContent` with the root the walk ended on.
 ///
-/// **No bound, and no `err` it did not find** (R15-fix-C, CK-169, CK-170).
-/// An alias chain is as long as the program makes it — nested annotations,
-/// and every flex that absorbed an alias by name — so a chain of 1 200
-/// links is an ordinary type. The walk used to stop at 1 024 links and
-/// answer `err`, which reports nothing and unifies with anything: `check`
-/// exited 0 over a comparison it could not dispatch, and a wrong use built.
+/// **No bound, and no `err` it did not find.** An alias chain is as long
+/// as the program makes it — nested annotations, and every flex that
+/// absorbed an alias by name — so a chain of 1 200 links is an ordinary
+/// type. A walk that stopped at a fixed length and answered `err` would
+/// report nothing and unify with anything, so a wrong program would build.
 /// Termination is `Unify`'s invariant instead: it never closes a cycle
 /// through `actual` (`Unify.throughAlias`), and every other writer of an
 /// `alias` copies an acyclic one; a chain longer than the store has
@@ -709,7 +707,7 @@ pub fn resolved(store: *TypeStore, v: Var) struct { Var, Content } {
         switch (c) {
             .alias => |a| {
                 links += 1;
-                if (links > store.count()) @panic("an alias chain is a cycle through `actual` (TypeStore.resolved; checker-v2.md §7.1 *amended by R15-fix-C*)");
+                if (links > store.count()) @panic("an alias chain is a cycle through `actual` (TypeStore.resolved; checker-v2.md §7.1)");
                 root = store.find(a.actual);
             },
             else => {
@@ -758,8 +756,8 @@ pub fn paramCount(store: *TypeStore, v: Var) u32 {
 }
 
 /// Whether `v` is `n` ≥ 2 nested 1-ary functions, `A -> B -> … -> R`: Elm's
-/// curried annotation of a definition of `n` parameters (checker.md §8.7,
-/// CK-56). `curriedParam` and `curriedResult` read its levels.
+/// curried annotation of a definition of `n` parameters (checker.md §8.7).
+/// `curriedParam` and `curriedResult` read its levels.
 pub fn isCurried(store: *TypeStore, v: Var, n: u32) bool {
     if (n < 2) return false;
     var at = v;
@@ -984,7 +982,7 @@ pub fn commit(store: *TypeStore, snapshot: Snapshot) void {
 pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     std.debug.assert(store.depth > 0);
     // A rolled-back write is not seen by the proofs, and a reused index could
-    // read as proved: v2 never speculates (§7.5), and a rollback voids them.
+    // read as proved: the checker never speculates (§7.5), and a rollback voids them.
     if (store.tracks_proofs) store.voidProofs();
     store.rollbacks +%= 1;
     store.depth -= 1;
@@ -1068,7 +1066,7 @@ test "resolved looks through an alias chain to the expansion" {
     try testing.expectEqual(@as(TypeId, @enumFromInt(7)), c.structure.app.type);
 }
 
-test "resolved walks an alias chain of any length and compresses it (CK-169)" {
+test "resolved walks an alias chain of any length and compresses it" {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
     const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(7), .args = .empty } } }, 1);

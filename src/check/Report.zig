@@ -1,5 +1,5 @@
 //! The one emit path, `quiet` once, failure as state (checker-v2.md §15.1,
-//! §15.2, I12; CK-11, CK-14).
+//! §15.2).
 //!
 //! **`emit` is the only way anything reaches the module's diagnostics.** It
 //! drops the message when the module is quiet, and sets the failure bit of
@@ -7,16 +7,17 @@
 //! `src/check/` appends to the list any other way, and nothing tests a
 //! diagnostic's region against an instruction range.
 //!
-//! **The texts are v1's** (§19: `Diagnostics.zig` texts kept verbatim). They
-//! are `Diagnostics.Reporter` methods, which append to a list and read an
-//! `Env` (v1's `Constrain.Env`, trimmed to what the texts read by R12). `Report` owns one such reporter, never quiet, appending
-//! to a STAGING list only `Report` reads; each method here calls the text,
-//! then `flush` moves what it staged through `emit` (§15.1, *As built by
-//! R4b*). `at` sets the declaration a message is about — and with it the
+//! **The texts are `Diagnostics.zig`'s** (§19). They are
+//! `Diagnostics.Reporter` methods, which append to a list and read an
+//! `Env` (what the texts read). `Report` owns one such reporter, never
+//! quiet, appending to a STAGING list only `Report` reads; each method here
+//! calls the text, then `flush` moves what it staged through `emit`
+//! (§15.1). `at` sets the declaration a message is about — and with it the
 //! locals the texts name a callee from — which is the one generation-time
-//! fact the texts read, and they read it here, never in the solver (I11).
+//! fact the texts read, and they read it here: the solver reads no
+//! generation-time context.
 //!
-//! **v2's own texts** (§15.3, `checker.md` §8.5, §8.6) — the annotation
+//! **The checker's own texts** (§15.3, `checker.md` §8.5, §8.6) — the annotation
 //! escape, the infinite type written as its structure and the legs of a
 //! failed `?` — are `Messages.zig`'s, which emits through `emit` too.
 
@@ -49,12 +50,12 @@ items: *std.ArrayList(Item),
 /// An earlier phase reported on the module, or the graph poisoned it
 /// (checker.md §4.3): every message is dropped, once, here.
 quiet: bool,
-/// I12: one bit per declaration, set iff an ERROR was attributed to it or
+/// One bit per declaration, set iff an ERROR was attributed to it or
 /// (at its group's boundary) to a member of its group.
 failed: std.DynamicBitSetUnmanaged = .{},
 /// The same, less the declarations whose only errors are `infinite_type`:
-/// what P7 skips (§15.2 *As built by R4b's review*, F9). Exhaustiveness
-/// reads no solved type (CK-61), and an infinite type says nothing about a
+/// what P7 skips (§15.2). Exhaustiveness
+/// reads no solved type, and an infinite type says nothing about a
 /// pattern, so a `case` beside one is still checked.
 failed_patterns: std.DynamicBitSetUnmanaged = .{},
 /// The declaration a message is attributed to, or none outside a group.
@@ -128,7 +129,7 @@ pub fn emit(r: *Report, item: Item) Error!void {
 /// refusal, which runs before P1 builds one. Takes ownership of the message.
 pub fn appendTo(gpa: Allocator, items: *std.ArrayList(Item), quiet: bool, item: Item) Error!void {
     // An `internal` is the compiler's own failure and is said even in a
-    // quiet module (v1's `internalAlways`).
+    // quiet module.
     if (quiet and item.code != .internal) {
         gpa.free(item.message);
         return;
@@ -138,7 +139,7 @@ pub fn appendTo(gpa: Allocator, items: *std.ArrayList(Item), quiet: bool, item: 
 }
 
 /// §15.2: the members of a group share variables, so one failure fails
-/// them all (I12's one owner is `Report`).
+/// them all (the failure bits' one owner is `Report`).
 pub fn failGroup(r: *Report, members: []const u32) void {
     for ([_]*std.DynamicBitSetUnmanaged{ &r.failed, &r.failed_patterns }) |bits| {
         for (members) |m| {
@@ -162,7 +163,8 @@ pub fn flush(r: *Report) Error!void {
 }
 
 /// Append `text` to the message of the module's diagnostic at `index`, one
-/// already emitted: D14's hint, written once its class is final (§10.8).
+/// already emitted: a recursive group's hint, written once its class is
+/// final (§10.8).
 pub fn appendToItem(r: *Report, index: u32, text: []const u8) Error!void {
     const item = &r.items.items[index];
     const joined = try std.mem.concat(r.gpa, u8, &.{ item.message, text });
@@ -190,14 +192,14 @@ pub fn staging(r: *Report) *Diagnostics.Reporter {
     return &r.texts;
 }
 
-/// A message with no text of v1's to reuse, built here.
+/// A message with no shared text to reuse, built here.
 pub fn emitText(r: *Report, code: diagnostic.Code, region: Bir.Inst.Index, token: ?u32, text: []const u8) Error!void {
     const message = try r.gpa.dupe(u8, text);
     try r.emit(.{ .code = code, .module = r.module, .region = region, .token = token, .message = message });
 }
 
 // ---------------------------------------------------------------------------
-// v1's texts, staged and flushed
+// The shared texts, staged and flushed
 // ---------------------------------------------------------------------------
 
 pub fn calleeOf(r: *const Report, region: Bir.Inst.Index) Callee {
@@ -226,7 +228,7 @@ pub fn notEquatableRigid(r: *Report, region: Bir.Inst.Index, v: Var) Error!void 
 
 pub const EquatableReason = Diagnostics.Reporter.EquatableReason;
 
-/// The `equatable` marker walk's refusal (§11.4), v1's text.
+/// The `equatable` marker walk's refusal (§11.4), the shared text.
 pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
     try r.texts.notEquatable(region, v, reason);
     try r.flush();
@@ -302,7 +304,7 @@ pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void
     try r.flush();
 }
 
-// ---- Dispatch (static-dispatch-spike.md §10): v1's texts, staged ---------
+// ---- Dispatch (static-dispatch-spike.md §10): shared texts, staged -------
 
 pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
     try r.texts.unknownMethod(origin, from_annotation, module, type_name, method);
@@ -321,7 +323,7 @@ pub fn methodSignatureMismatch(r: *Report, region: Bir.Inst.Index, module: Graph
 
 /// `methodSignatureMismatch` said once, at the method's declaration
 /// (`region`, its name `token` underlined): an own well-known method no use
-/// of `type_name` can call (CK-168). `wanted` is the use-independent
+/// of `type_name` can call. `wanted` is the use-independent
 /// `T a…, T a… -> Bool|Order`.
 pub fn methodSignatureAtDeclaration(r: *Report, region: Bir.Inst.Index, token: u32, module: Graph.Index, type_name: Symbol, method: Symbol, found: Var, wanted: Var) Error!void {
     try r.texts.methodSignatureMismatch(region, module, type_name, method, found, wanted, token);
@@ -354,7 +356,8 @@ pub fn noMethodsOnShapeLate(r: *Report, region: Bir.Inst.Index, method: Symbol, 
 }
 
 /// Redraw every `noMethodsOnShapeLate` message with the store as P4 left it.
-/// A hint appended since (D14's, `appendToItem`) is kept after the text.
+/// A hint appended since (a recursive group's, `appendToItem`) is kept
+/// after the text.
 pub fn renderLate(r: *Report) Error!void {
     defer r.late.clearRetainingCapacity();
     for (r.late.items) |l| {
@@ -406,7 +409,7 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
 
 /// Whether this module already has an error at `region`: an error path's
 /// question (a scan), so one use is not refused twice for one receiver
-/// (`Instances.noMethodsAs`, R14's review N2).
+/// (`Instances.noMethodsAs`).
 pub fn hasErrorAt(r: *const Report, region: Bir.Inst.Index) bool {
     for (r.items.items) |item| {
         if (item.module == r.module and item.region == region and item.severity == .@"error") return true;

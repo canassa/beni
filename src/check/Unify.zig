@@ -1,34 +1,34 @@
-//! Unification (checker-v2.md §7): v1's `unifyFlat`, `unifyRecord`,
-//! `unifyAlias` and kind lattice with the dispatch arms removed.
+//! Unification (checker-v2.md §7): flat, record and alias unification and
+//! the kind lattice, with no dispatch arms.
 //!
 //! **`unify` merges and queues. It never resolves and never reports**
 //! (§7.1). It returns `ok` or `mismatch(problem)` and the caller reports it
 //! with its category, which is Elm's split. What it does besides merging:
 //!
 //!   - a merge that lowers a rigid's rank, or binds an outer flex to a
-//!     younger structure, appends a `Capture` to the module's list (§7.1,
-//!     *As built by R4b*), which is where §8.3 reports an escape;
+//!     younger structure, appends a `Capture` to the module's list (§7.1),
+//!     which is where §8.3 reports an escape;
 //!   - a record merge leaves the surviving root **normalised** (§4.1): one
 //!     node, the union of the fields sorted by symbol, and the chain's end.
 //!
-//! **Which failing field is reported is chosen by name text** (§7.2, I13,
-//! CK-07): every shared field is unified, and among those that failed the
+//! **Which failing field is reported is chosen by name text** (§7.2):
+//! every shared field is unified, and among those that failed the
 //! one whose name is smallest by text supplies the problem. With one
 //! failure, the common case, nothing extra is done.
 //!
-//! **Depth** (§7.3): the recursion guard is v1's (`Parse.max_depth + 104`),
+//! **Depth** (§7.3): the recursion guard is `Parse.max_depth + 104`,
 //! but past it `unify` fails with `too_deep`, which the caller reports as
-//! `nesting_too_deep`. It never answers "ok" (CK-10 item 3).
+//! `nesting_too_deep`. It never answers "ok".
 //!
 //! **Obligations ride on their variables** (§4.5): binding a flex readies
 //! every open obligation on it (onto the queue of the frame it was created
 //! under, §9.1), merging
 //! two flexes joins their sets and lowers every variable of every obligation
-//! now on the survivor to its rank (I15), and a flex carrying the `equatable`
+//! now on the survivor to its rank, and a flex carrying the `equatable`
 //! marker that meets a structure turns the marker's question into an
 //! obligation, readied (§11.4). Nothing is decided here.
 //!
-//! **Wanteds ride on their receivers** (§4.2, §7.1, R6a): binding a flex
+//! **Wanteds ride on their receivers** (§4.2, §7.1): binding a flex
 //! readies every wanted on it (a flex bound to a rigid included: the
 //! resolver then reads the rigid's givens), and two merging flexes join
 //! their constraint sets by Rule U1 — one wanted per method name, the younger
@@ -55,7 +55,7 @@ pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
 /// Why a unification failed, when the reason is more specific than "these
-/// two types differ" (v1's `Solve.Problem`, plus `too_deep`).
+/// two types differ" (including `too_deep`).
 pub const Problem = union(enum) {
     kinds: struct { left: TypeStore.Kind, right: TypeStore.Kind },
     kind_not_satisfied: struct { kind: TypeStore.Kind },
@@ -100,7 +100,7 @@ queues: *std.ArrayList(Generalize.Queue),
 /// frame is current, and that queue's index.
 ready: *std.ArrayList(u32),
 ready_queue: *const u32,
-/// For `lowerTo` (I15).
+/// For `lowerTo`.
 stacks: *Walk.Stacks,
 /// The module's wanteds (§4.2): `unify` readies those riding on a flex it
 /// binds, joins two flexes' sets by Rule U1 (the younger of two wanteds of
@@ -109,27 +109,26 @@ stacks: *Walk.Stacks,
 evidence: *Evidence,
 /// Rule-U1 joins whose two method types did not unify. `unify` itself
 /// succeeded — the variables merged — and the caller reports each one as
-/// `method_constraint_mismatch` (v1's `unifyPending`), since `unify` never
+/// `method_constraint_mismatch`, since `unify` never
 /// reports (§7.1).
 join_failures: std.ArrayList(JoinFailure) = .empty,
 /// The first invariant a unification broke (`invariant`), for the caller to
-/// report as `internal` (review S2): never a silent drop.
+/// report as `internal`: never a silent drop.
 fault: ?[]const u8 = null,
 region: Bir.Inst.Index = @enumFromInt(0),
 /// Whether this unification is a call's argument meeting its parameter:
 /// where a flag from a comparison's scheme becomes that comparison's
-/// question (§11.4 *As built by R5*).
+/// question (§11.4).
 argument: bool = false,
 problem: ?Problem = null,
 /// The pairs of non-variables being unified, outermost first: the
 /// coinduction of §7.3. Each pair is stored in the order `(min, max)` of
 /// its roots when pushed.
 active: std.ArrayList([2]Var) = .empty,
-/// The pairs of `active` from index `hash_from` on, hashed (R8c, CK-93's
-/// note): a deep acyclic unification would otherwise scan its whole path
+/// The pairs of `active` from index `hash_from` on, hashed: a deep acyclic unification would otherwise scan its whole path
 /// per pair, quadratic in depth. An array hash map, popped in stack order:
 /// a plain hash map's removals leave tombstones, and a deep unification's
-/// pushes and pops made every probe longer (CK-111's scenario).
+/// pushes and pops would make every probe longer.
 active_deep: std.AutoArrayHashMapUnmanaged([2]Var, void) = .empty,
 /// Scratch: the rows of a merge side whose rank dropped (`lowerOwned`).
 lowered: std.ArrayList(Obligations.Id) = .empty,
@@ -171,20 +170,20 @@ fn fresh(u: *Unify, content: TypeStore.Content) Error!Var {
     return v;
 }
 
-/// Every merge `unify` makes (review S3): the store's union, then the
-/// resolver's per-root class flags (`Evidence.rejected`, CK-37) OR-merged
+/// Every merge `unify` makes: the store's union, then the
+/// resolver's per-root class flags (`Evidence.rejected`) OR-merged
 /// onto the survivor, so a flag set on either side is on the one root that
 /// remains — never keyed by a variable that stopped being a root.
 fn merge(u: *Unify, a: Var, b: Var, content: TypeStore.Content) Error!Var {
     if (std.debug.runtime_safety) u.assertContained(a, b);
     // The store keeps the acyclicity proofs through the merge, or voids them
-    // all when it adds an edge (`TypeStore.merge`, CK-93).
+    // all when it adds an edge (`TypeStore.merge`).
     const keep = u.store.merge(a, b, content);
     try u.evidence.mergeRejected(u.gpa, if (keep == a) b else a, keep);
     return keep;
 }
 
-/// §11.2's frame assert, in its linear form (CK-117, R8b): while a
+/// §11.2's frame assert, in its linear form: while a
 /// fixpoint frame is the current frame — a derived-context pass, or P5's
 /// rows — no unification may change a VARIABLE of an older frame. A pass
 /// may bind its own variables to older structure (a done method's shared
@@ -199,7 +198,7 @@ fn assertContained(u: *Unify, a: Var, b: Var) void {
         const rank = u.store.rank(x);
         if (rank == TypeStore.generalized or rank >= f.rank) continue;
         switch (u.store.content(x)) {
-            .flex => std.debug.panic("a fixpoint frame's unification changed a variable of an older frame (checker-v2.md §11.2, CK-117)", .{}),
+            .flex => std.debug.panic("a fixpoint frame's unification changed a variable of an older frame (checker-v2.md §11.2)", .{}),
             else => {},
         }
     }
@@ -211,7 +210,7 @@ fn assertContained(u: *Unify, a: Var, b: Var) void {
 /// the safe path (the caller's `continue` or `return`).
 fn invariant(u: *Unify, cond: bool, what: []const u8) bool {
     if (cond) return true;
-    if (std.debug.runtime_safety) std.debug.panic("checker v2 invariant: {s}", .{what});
+    if (std.debug.runtime_safety) std.debug.panic("checker invariant: {s}", .{what});
     if (u.fault == null) u.fault = what;
     return false;
 }
@@ -232,7 +231,7 @@ fn bind(u: *Unify, bound: Var, flags: TypeStore.Flags, other: Var, content: Type
 /// being one. Against `err` too: the resolver then answers a wanted
 /// `failed`, in silence (§7.1), and an obligation poisons its results.
 inline fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
-    // Inline, with the rest out of line: most flexes carry nothing (R14b).
+    // Inline, with the rest out of line: most flexes carry nothing.
     if (flags.obls == .none and flags.constraints == .none) return;
     return u.releaseSlow(flags);
 }
@@ -252,7 +251,7 @@ fn releaseSlow(u: *Unify, flags: TypeStore.Flags) Error!void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
         const id = u.evidence.slotAt(Evidence.position(u.store, set, i)).asWanted() orelse {
-            _ = u.invariant(false, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+            _ = u.invariant(false, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2)");
             continue;
         };
         try u.readyWanted(id);
@@ -261,8 +260,8 @@ fn releaseSlow(u: *Unify, flags: TypeStore.Flags) Error!void {
 
 /// Put an open wanted on the queue (§9.1). Queued, never resolved here.
 fn readyWanted(u: *Unify, id: Evidence.WantedId) Error!void {
-    // I14: a probe writes nothing the journal cannot undo (§7.5).
-    if (!u.invariant(u.store.depth == 0, "a wanted was readied inside a speculation (checker-v2.md §7.5, I14)")) return;
+    // A probe writes nothing the journal cannot undo (§7.5).
+    if (!u.invariant(u.store.depth == 0, "a wanted was readied inside a speculation (checker-v2.md §7.5)")) return;
     const w = u.evidence.ptr(id);
     if (w.state != .open) return;
     w.state = .ready;
@@ -270,7 +269,7 @@ fn readyWanted(u: *Unify, id: Evidence.WantedId) Error!void {
 }
 
 /// Put a readied item on the `ready` queue of the frame it was created
-/// under (§9.1, round 4 R4-1) — or of the root it was re-pointed to when its
+/// under (§9.1) — or of the root it was re-pointed to when its
 /// frame handed down (`Groups.handDown`). A popped frame left nothing that can
 /// be readied: its variables were generalised, or handed down with its items.
 pub fn enqueue(u: *Unify, q: u32, raw: u32) Error!void {
@@ -290,7 +289,7 @@ const Join = struct { older: Evidence.WantedId, younger: Evidence.WantedId };
 /// constraint set of two merging flexes. A name on one side only is carried
 /// over; a name on both is one wanted — the older by `seq` — and the pair is
 /// appended to `joins` for the caller to unify once the roots are merged
-/// (merging first stops the re-entry, as in v1). On a `number` survivor an
+/// (merging first stops the re-entry). On a `number` survivor an
 /// `eq` or `compare` wanted is readied instead, for the `number` bridge
 /// (§9.2): a `number` never promotes one. A set neither input changes is
 /// returned as it is; otherwise a fresh one, every position paired with its
@@ -315,7 +314,7 @@ fn unionWants(u: *Unify, fa: TypeStore.Flags, fb: TypeStore.Flags, kind: TypeSto
         while (i < n) : (i += 1) {
             const c = st.constraintAt(set, i);
             const id = u.evidence.slotAt(Evidence.position(st, set, i)).asWanted() orelse {
-                _ = u.invariant(false, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+                _ = u.invariant(false, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2)");
                 continue;
             };
             if (bridged and isWellKnownName(c.name)) {
@@ -331,7 +330,7 @@ fn unionWants(u: *Unify, fa: TypeStore.Flags, fb: TypeStore.Flags, kind: TypeSto
                 if (at) |j| {
                     const other = ids.items[j];
                     // A failed wanted is never an alias target (§4.2: a
-                    // flex's set is its open wanteds; round-2 review, S1):
+                    // flex's set is its open wanteds):
                     // the live one keeps the name, and the failed one leaves
                     // the set with nothing joined to it.
                     const id_failed = u.evidence.get(id).state.rejected();
@@ -372,9 +371,9 @@ fn isWellKnownName(name: Symbol) bool {
 
 /// After a merge into `root`: the joined pairs' method types are unified,
 /// the younger of each pair answered `alias(older)`, and every wanted now on
-/// the survivor has its method type lowered to the survivor's rank (I15).
+/// the survivor has its method type lowered to the survivor's rank.
 fn finishJoins(u: *Unify, root: Var, joins: []const Join, lowered: []const Var) Error!void {
-    if (joins.len != 0 and !u.invariant(u.store.depth == 0, "a Rule-U1 join ran inside a speculation (checker-v2.md §7.5, I14)")) return;
+    if (joins.len != 0 and !u.invariant(u.store.depth == 0, "a Rule-U1 join ran inside a speculation (checker-v2.md §7.5)")) return;
     const rank = u.store.rank(root);
     for (lowered) |v| try Walk.lowerTo(u.store, u.stacks, u.gpa, v, rank);
     for (joins) |j| {
@@ -412,9 +411,9 @@ fn equatableRigidDeferred(u: *Unify, flags: TypeStore.Flags) bool {
 }
 
 /// After a merge into `root` lowered the rank of a side that carried the
-/// rows `ids`, lower the dependants of those it owns to `root`'s rank (I15,
-/// §4.5); the other side's rows already hold it. Ranks only fall, so a row
-/// is lowered at most once per level (§4.5's cost claim, CK-97).
+/// rows `ids`, lower the dependants of those it owns to `root`'s rank
+/// (§4.5); the other side's rows already hold it. Ranks only fall, so a row
+/// is lowered at most once per level (§4.5's cost claim).
 fn lowerOwned(u: *Unify, root: Var, ids: []const Obligations.Id) Error!void {
     const rank = u.store.rank(root);
     for (ids) |id| {
@@ -450,7 +449,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     const ca = st.content(ra);
     const cb = st.content(rb);
     if (ca == .alias or cb == .alias) return u.throughAlias(ra, ca, rb, cb);
-    // **Coinduction** (§7.3, *As built by R4b's review*). Only two
+    // **Coinduction** (§7.3). Only two
     // non-variables recurse, and only they can meet again on a cycle: a pair
     // already being unified further up is assumed equal, so a cyclic graph —
     // or two isomorphic ones — terminates, and a finite type is unchanged
@@ -458,7 +457,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     // unified before the merge, so a message still prints two types.
     if (!isVariable(ca) and !isVariable(cb)) {
         // Two structures with no children (`Int`, `()`, `{}`) recurse into
-        // nothing, so they cannot meet a pair again: no pair is pushed (R8c).
+        // nothing, so they cannot meet a pair again: no pair is pushed.
         if (isChildless(ca) and isChildless(cb)) return u.flat(ra, ca.structure, rb, cb.structure);
         if (u.isActive(ra, rb)) return true;
         try u.pushActive(ra, rb);
@@ -533,7 +532,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
             const kind = TypeStore.Kind.meet(fa.kind, fb.kind) orelse
                 return u.fail(.{ .kinds = .{ .left = fa.kind, .right = fb.kind } });
             // Nothing rides on either side and neither is marked: the join
-            // below reduces to this (R8c's profile: the common case).
+            // below reduces to this (the common case).
             if (fa.obls == .none and fb.obls == .none and fa.constraints == .none and fb.constraints == .none and !fa.equatable and !fb.equatable) {
                 var plain = fb;
                 plain.name = if (fb.name != .none) fb.name else fa.name;
@@ -542,21 +541,21 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
                 return true;
             }
             // One `Flags`, copied and changed field by field, never rebuilt
-            // from parts: a rebuilt one drops what it does not name (CK-18).
+            // from parts: a rebuilt one drops what it does not name.
             var joined = fb;
             joined.name = if (fb.name != .none) fb.name else fa.name;
             joined.kind = kind;
             joined.equatable = fa.equatable or fb.equatable;
             // The rows of a side whose rank is about to drop, taken before
-            // the sets are joined in place (§4.5, I15).
+            // the sets are joined in place (§4.5).
             const low = @min(st.rank(ra), st.rank(rb));
             const dropped = u.lowered.items.len;
             if (st.rank(ra) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fa.obls));
             if (st.rank(rb) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fb.obls));
             joined.obls = try u.obligations.merged(u.gpa, fa.obls, fb.obls);
             // A comparison's flag meeting its argument: the question is
-            // asked HERE, at the argument, and the row remembers it (§11.4
-            // *As built by R5*: `Basics.eq r r`'s answer is reported at the
+            // asked HERE, at the argument, and the row remembers it (§11.4:
+            // `Basics.eq r r`'s answer is reported at the
             // comparison, not where `r` later becomes a record).
             if (joined.equatable and u.argument and u.depth == 1 and u.obligations.openEquatable(joined.obls) == null) {
                 const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{ra}, 0, null);
@@ -574,7 +573,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
             var joins: std.ArrayList(Join) = .empty;
             defer joins.deinit(u.scratch);
             joined.constraints = try u.unionWants(fa, fb, kind, &joins);
-            // The method types of a side whose rank is about to drop (I15).
+            // The method types of a side whose rank is about to drop.
             var sink: std.ArrayList(Var) = .empty;
             defer sink.deinit(u.scratch);
             if (st.rank(ra) > low) try methodTypes(st, fa, &sink, u.scratch);
@@ -605,7 +604,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
     }
 }
 
-/// v1's flat membership test for `number` and `appendable`.
+/// The flat membership test for `number` and `appendable`.
 fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
     const wk = u.types.well_known;
     const app = switch (u.store.resolvedContent(v)) {
@@ -643,32 +642,31 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
     }
 }
 
-/// Unify two types at least one of which is an alias (checker-v2.md §7.1
-/// *amended by R15-fix-C*). An alias is a NAME for its expansion, so:
+/// Unify two types at least one of which is an alias (checker-v2.md
+/// §7.1). An alias is a NAME for its expansion, so:
 ///
 ///   - **two types whose expansions end at one variable are one type**, and
-///     nothing is written. Merging them anyway closed a cycle through an
-///     alias's `actual`: `x` against `Id x` bound `x` to an alias whose
-///     expansion is `x` (a false INFINITE TYPE, CK-172), and two same-named
-///     aliases, one the other's argument, merged into a node that expands
-///     to itself — the cycle `TypeStore.resolved` once stopped at 1 024
-///     links with a silent `err` (CK-169). With this row no write makes an
+///     nothing is written. Merging them anyway would close a cycle through
+///     an alias's `actual`: `x` against `Id x` would bind `x` to an alias
+///     whose expansion is `x` (a false INFINITE TYPE), and two same-named
+///     aliases, one the other's argument, would merge into a node that
+///     expands to itself. With this row no write makes an
 ///     alias reach itself through `actual`, which is what lets `resolved`
 ///     walk with no bound;
 ///   - a **variable** meets the alias's expansion when that expansion is a
-///     variable too: a `number` flex against `Id number` is two flexes
-///     (CK-174), a rigid against `Id a` is `a` against `a` (CK-173). A flex
+///     variable too: a `number` flex against `Id number` is two flexes,
+///     a rigid against `Id a` is `a` against `a`. A flex
 ///     against an alias of a STRUCTURE absorbs it by name, so a message
 ///     still prints `Id Int` where the program wrote it, and so does a flex
-///     nothing rides on against an alias of a variable (*amended by
-///     R15-fix-G*, CK-176: `bad : a -> Id b` says `Id b`);
+///     nothing rides on against an alias of a variable (`bad : a -> Id b`
+///     says `Id b`);
 ///   - two aliases of the same INJECTIVE name unify their arguments and
-///     keep the name (*amended by R15-fix-G*, CK-175: only there do equal
+///     keep the name (only there do equal
 ///     expansions mean equal arguments — `Tagged String` and `Tagged Bool`
 ///     of `type alias Tagged t = Int` are one type, and unifying their
-///     arguments refused it, or not, by which one a group met first);
+///     arguments would refuse it, or not, by which one a group met first);
 ///     otherwise the expansions meet, directly — not one link per
-///     recursion, which spent `max_depth` on a long chain — and the two
+///     recursion, which would spend `max_depth` on a long chain — and the two
 ///     nodes stay apart, each printing what its source wrote.
 ///
 /// **Agree or expand** (checker-v2.md §7.1, §21.1). The name a
@@ -1002,15 +1000,15 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
         ok = try u.go(sub_a, b_ext) and ok;
         end = ext;
     }
-    // A problem the extensions produced is v1's first and stays first.
+    // A problem the extensions produced comes first and stays first.
     const kept = u.problem;
     var failures: std.ArrayList(Failure) = .empty;
     defer failures.deinit(u.scratch);
     // Past the depth guard no further field is tried: each would walk to the
-    // guard again (review B1).
+    // guard again.
     const stopped = if (kept) |k| k == .too_deep else false;
     // Shared fields are unified in NAME-TEXT order, not the merge-join's
-    // symbol-id order (§7.2 *amended by R15-fix-D*, CK-145): unifying one
+    // symbol-id order (§7.2): unifying one
     // field binds variables the next one is judged against, so the order is
     // part of a message's text, and a symbol id follows which other files
     // the project has.

@@ -1,18 +1,18 @@
 //! Per-file front-end artifacts (docs/design/frontend.md §3, §4): what each
 //! per-file phase produced, in one `MultiArrayList` column set keyed by file
-//! index. M1a fills the lexical columns, M1b the AST, M1c the BIR.
+//! index. The lex phase fills the lexical columns, parse the AST, lower the BIR.
 //!
 //! Ownership: a file's artifacts are the FILE's, not the worker's. They are
 //! allocated from the session allocator, pre-sized from the byte count
 //! (`Tokenizer.estimatedTokenCount` and friends), and installed here by
 //! pointer — never copied — when the phase ends. The worker's arena is for
-//! phase scratch (the parser's stacks, M1b), reset between files. This is
+//! phase scratch (the parser's stacks), reset between files. This is
 //! the choice frontend.md §3.4 leaves open ("moved to session-owned
 //! storage"), taken this way because the alternative — an arena chunk per
 //! file detached from the worker — either wastes a 256 KiB chunk on every
 //! small module or forces a chunk-size policy, while a handful of
 //! session-allocator calls per file is nowhere near the per-token budget.
-//! It is also what the daemon (M4) needs: an edited file's columns are
+//! It is also what the daemon needs: an edited file's columns are
 //! freed and rebuilt on their own, and every other file's survive untouched.
 //!
 //! Threads: `set` writes only the columns of its own index, so workers on
@@ -40,13 +40,13 @@ pub const File = struct {
     comments: []const Token.Comment,
     /// Owned. Offsets only; the session renders messages at report time.
     lex_diagnostics: []const LexDiagnostics.Item,
-    /// Owned (M1b). `Ast.empty` until the parse phase has run.
+    /// Owned. `Ast.empty` until the parse phase has run.
     ast: Ast,
-    /// Owned (M1c). `Bir.empty` until the lower phase has run. Its
+    /// Owned. `Bir.empty` until the lower phase has run. Its
     /// `symbols` hold the producing worker's LOCAL symbols until
     /// `applyRemap`, like the token payloads.
     bir: Bir,
-    /// Owned (M1d). The file's canonical text, produced by the `format`
+    /// Owned. The file's canonical text, produced by the `format`
     /// phase on a worker. `null` means "not formatted": either the phase
     /// did not run, or the file has a diagnostic and therefore no canonical
     /// form. An EMPTY file formats to zero bytes, which is why this is an
@@ -128,7 +128,7 @@ pub fn birMut(a: *Artifacts, index: SourceStore.Index) *Bir {
 
 /// Install `index`'s Bir, taking ownership and freeing whatever was there.
 ///
-/// The one-column-set-at-a-time counterpart of `set`, for M4-2: a file whose
+/// The one-column-set-at-a-time counterpart of `set`, for the front-end cache: a file whose
 /// artifact was loaded from disk, or round-tripped through the format in
 /// place, replaces its `Bir` and its token spans and keeps everything the
 /// artifact does not carry. Safe from a worker for its own index, like `set`.
@@ -138,8 +138,8 @@ pub fn setBir(a: *Artifacts, gpa: Allocator, index: SourceStore.Index, replaceme
     slot.* = replacement;
 }
 
-/// The file's token list for in-place rewriting of the two columns M4-2
-/// caches, `tag` and `start`.
+/// The file's token list for in-place rewriting of the two columns the front-end
+/// cache keeps, `tag` and `start`.
 ///
 /// `line` and `payload` are NOT cached (`frontend.md` §3.2) and are not
 /// touched here: on a round trip the live ones stay, which is what keeps

@@ -37,7 +37,7 @@
 //! `?` is the one desugaring that is not spelled out as ordinary
 //! instructions: `try` (see its tag) stands for the `case` of language.md
 //! §6.6 whose `Err`/`Nothing` branch returns from an enclosing function,
-//! and the checker reads it as that case — the Maybe/Result choice is M2's.
+//! and the checker reads it as that case — the Maybe/Result choice is the checker's.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -238,7 +238,7 @@ pub const Inst = struct {
         /// `SubRange` of `Field` pairs.
         type_record_ext,
 
-        // ---- Unresolved schema plan (schema.md §4, S1) -----------------
+        // ---- Unresolved schema plan (schema.md §4) ---------------------
 
         /// A schema operand name. `lhs` is its SymbolIndex.
         schema_ref,
@@ -268,7 +268,7 @@ pub const Inst = struct {
         /// An unresolved nonlocal leaf inside a `via` Atom. `lhs` is its
         /// SymbolIndex and the instruction token retains lower/upper/qualified.
         schema_expr_ref,
-        /// Resolved schema operands used only by the S2 elaborator.
+        /// Resolved schema operands used only by the schema elaborator.
         schema_parameter,
         schema_primitive,
         schema_target_top,
@@ -593,7 +593,7 @@ pub const LetDef = struct {
 };
 
 /// The most type parameters a `type`, `type alias`, `foreign type` or `schema` may declare:
-/// an arity is a `u16` in the interface record (`checker-v2.md` §14.2, CK-38).
+/// an arity is a `u16` in the interface record (`checker-v2.md` §14.2).
 /// Lowering refuses more with `too_many_type_parameters`, so a `Decl.params` of a
 /// type never exceeds it.
 pub const max_type_params: u32 = std.math.maxInt(u16);
@@ -609,8 +609,8 @@ pub const Decl = struct {
     is_opaque: bool,
     /// `equatable foreign type T`: values of this type may be compared with
     /// `==` (checker.md Appendix B). Only ever true on `foreign_type`; an
-    /// ordinary `type` is equatable when its fields are, which is M2b's
-    /// question, not a lexical one.
+    /// ordinary `type` is equatable when its fields are, which is the
+    /// checker's question, not a lexical one.
     is_equatable: bool,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block
     /// (plain comments inside the range are trivia).
@@ -801,7 +801,7 @@ pub const Exposed = struct {
     /// The `(` of Elm's `T(..)` written after this name, or 0, which that
     /// `(` cannot be: `import M exposing (T` comes before it. The parser
     /// has reported it; resolution names the constructors in that same
-    /// diagnostic (`Resolve.exposeAllCtors`, CK-47), and lowering keeps the
+    /// diagnostic (`Resolve.exposeAllCtors`), and lowering keeps the
     /// uses of unknown constructors in this file quiet.
     all_ctors_token: u32 = 0,
 };

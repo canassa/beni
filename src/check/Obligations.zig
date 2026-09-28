@@ -1,4 +1,4 @@
-//! Obligations ride on their variables (checker-v2.md §4.5, I3, I15).
+//! Obligations ride on their variables (checker-v2.md §4.5).
 //!
 //! An obligation is a question about a type that cannot be answered until
 //! the type is known: which element a `.0` names (`tuple_index`), whether a
@@ -8,7 +8,7 @@
 //! index-based, like the wanteds of §4.2.
 //!
 //! **An open obligation rides on its deciding variables**, through the
-//! shared `Flags.obls` field (§4.1, *Decided by R5*): a set here. What the
+//! shared `Flags.obls` field (§4.1): a set here. What the
 //! store holds is only that opaque set; the rows and the sets are this
 //! file's.
 //!
@@ -19,18 +19,18 @@
 //! - **Decided when drained** (`Decide.drain`), in ascending `seq`.
 //! - **Closed at quantification** (§8.5, `Decide.close`).
 //! - **Carried by escape**: a row on an escaped variable is still attached to
-//!   it (I3).
+//!   it, and decided by whichever boundary quantifies or binds it.
 //!
-//! **Every row has an owner, and its dependants never outrank it** (§4.5,
-//! *Amended by R5's review*, I15): a `tuple_index`'s result is lowered to its
+//! **Every row has an owner, and its dependants never outrank it** (§4.5):
+//! a `tuple_index`'s result is lowered to its
 //! tuple's rank, a `try`'s subject and value to its target's. The reverse
-//! never happens: a `?` target keeps its own success type polymorphic
-//! (CK-99). `Walk.owned` yields a row's dependants from its owner only.
+//! never happens: a `?` target keeps its own success type polymorphic.
+//! `Walk.owned` yields a row's dependants from its owner only.
 //!
 //! **A set is a growable list per variable, mutated in place**: attaching
 //! appends, and a merge moves the smaller set's open rows into the larger
 //! (union by size). So R rows and M merges cost O(R log R + M) (§4.5's cost
-//! claim; CK-96, CK-97). Neither rows nor sets are journalled: v2 has no
+//! claim). Neither rows nor sets are journalled: the checker has no
 //! speculation yet (§7.5); the diagnostic probe must journal them, or never
 //! merge a set.
 
@@ -82,11 +82,12 @@ pub const Row = struct {
     state: State,
     /// The instruction the obligation is about: where it reports.
     region: Bir.Inst.Index,
-    /// Module-wide creation order, shared with wanteds from R6a (§9.1): the
-    /// order a queue is drained in, a function of the source (I9).
+    /// Module-wide creation order, shared with wanteds (§9.1): the order a
+    /// queue is drained in, a function of the source, so declaration order
+    /// never changes the result.
     seq: u32,
-    /// The `ready` queue of the frame current at creation (§9.1, round 4
-    /// R4-1): where a unification readies it, whichever frame unified.
+    /// The `ready` queue of the frame current at creation (§9.1): where a
+    /// unification readies it, whichever frame unified.
     frame: u32 = 0,
     /// The deciding variables first, then the results; unused slots repeat
     /// `vars[0]`.
@@ -109,7 +110,7 @@ pub const Row = struct {
         };
     }
 
-    /// The slot of the owner (§4.5, *Amended by R5's review*).
+    /// The slot of the owner (§4.5).
     pub fn owner(r: Row) u32 {
         return switch (r.kind) {
             .tuple_index, .interpolatable, .equatable => 0,
@@ -132,7 +133,7 @@ const List = std.ArrayList(Id);
 /// What rides on one variable: every row it decides (`all`, what binding it
 /// readies), and the part of them it owns (`owned`, what `Walk.owned` yields
 /// dependants from). Kept apart so a variable that decides many rows it does
-/// not own — the subject of many `?` — is not walked through them (CK-98).
+/// not own — the subject of many `?` — is not walked through them.
 const SetData = struct {
     all: List = .empty,
     owned: List = .empty,

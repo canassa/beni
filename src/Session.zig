@@ -1,7 +1,7 @@
 //! The one object everything hangs off (docs/design/frontend.md §4,
 //! fast-compiler.md §4): gpa, options, the `SourceStore`, the global
 //! `InternPool`, the `Profile`, and the workers. There is no global mutable
-//! state anywhere in beni; a daemon (M4) keeps one `Session` alive across
+//! state anywhere in beni; a daemon keeps one `Session` alive across
 //! edits, which is why every structure here is owned explicitly and reset
 //! rather than rebuilt.
 //!
@@ -15,8 +15,8 @@
 //!      file's tokens, then its Bir's symbols, interned on first sight, and
 //!      what no file references after them by text. So the global index an
 //!      identifier gets is a function of the input, never of which worker
-//!      took which file or of `--jobs` (CK-71; it was worker index order,
-//!      which let `unifyRecord`'s choice by id vary between runs). An id
+//!      took which file or of `--jobs` (worker index order would let
+//!      `unifyRecord`'s choice by id vary between runs). An id
 //!      still moves with every edit to an earlier file, so nothing a user
 //!      sees may be chosen by one.
 //!   4. Diagnostics are gathered in file index order (each file's are
@@ -25,10 +25,9 @@
 //! Two runs with different `--jobs` therefore produce identical bytes on
 //! every stream; the black-box determinism scenario checks exactly that.
 //!
-//! The per-file phase is a function pointer (`Phases`): M1a installed
-//! read → tokenize (`lex_phases`), M1b added parse (`parse_phases`), M1c
-//! lower (`lower_phases`), M1d format (`format_phases`), none of them
-//! touching the driver. What a phase produces for a file goes into
+//! The per-file phase is a function pointer (`Phases`): read → tokenize
+//! (`lex_phases`), then parse (`parse_phases`), lower (`lower_phases`) or
+//! format (`format_phases`), none of them touching the driver. What a phase produces for a file goes into
 //! `artifacts`, keyed by file index and owned by the session (see
 //! `Artifacts.zig` for why they are not arena memory). Anything a command
 //! must do in a fixed order — `fmt`'s compare/write/print — is done AFTER
@@ -132,7 +131,7 @@ file_keys: []FileKey.FileKey = &.{},
 /// order (`checker.md` §7, *The dependency digest*). Empty unless the phases
 /// included the check step.
 ///
-/// The pair is what an import contributes to its importer's key from M4-3 on,
+/// The pair is what an import contributes to its importer's key,
 /// in place of the import's own key: the hash says whether the module's public
 /// face moved, and the digest carries what a dependent reads about it that the
 /// record does not say — the settled `equatable`/`comparable`/`has_function`
@@ -268,7 +267,7 @@ pub const Options = struct {
     /// start and never grown, so a worker records without allocating; a full
     /// buffer counts the drop and the trace says `dropped_events`.
     ///
-    /// M2c's per-module events (checker.md §9: `resolve`, `check`,
+    /// The per-module events (checker.md §9: `resolve`, `check`,
     /// `constrain`, `solve` and `exhaustive` for every module) put five rows
     /// per module on top of four per file, so the old 4096 truncated the
     /// trace of the 100k-line corpus at `--jobs=1` — the run whose trace one
@@ -303,31 +302,31 @@ pub const Phases = struct {
     module_names: bool = true,
 };
 
-/// M1a: read the bytes, tokenize, install the lexical artifacts, report
+/// Read the bytes, tokenize, install the lexical artifacts, report
 /// the lexical diagnostics.
 pub const lex_phases: Phases = .{ .per_file = lexPhase };
 
-/// M1b: `lex_phases`, then parse into the file's `ast` column and report the
+/// `lex_phases`, then parse into the file's `ast` column and report the
 /// syntax diagnostics. What `dump --stage=tokens|ast` runs: those stages
 /// show a file the lowering rules have not judged.
 pub const parse_phases: Phases = .{ .per_file = parsePhase };
 
-/// M1c: `parse_phases`, then lower into the file's `bir` column and report
+/// `parse_phases`, then lower into the file's `bir` column and report
 /// the lowering diagnostics. What `check` and `dump --stage=bir` run.
 pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 
-/// M2a: `lower_phases` per file, then — serially, once — the module graph
+/// `lower_phases` per file, then — serially, once — the module graph
 /// and cross-module name resolution (checker.md §4). What `check` and
 /// `dump --stage=interface` run.
 pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveSerial };
 
-/// M2b: `resolve_phases`, then type-check every module in the graph's
+/// `resolve_phases`, then type-check every module in the graph's
 /// topological order (checker.md §6). What `check` and the two typed dumps
 /// run. Serial for now; §4.4 allows DAG parallelism and the data is laid
 /// out for it.
 pub const check_phases: Phases = .{ .per_file = lowerPhase, .after = checkSerial };
 
-/// M1d: `parse_phases`, then format into the file's `formatted` column.
+/// `parse_phases`, then format into the file's `formatted` column.
 /// What `fmt` runs. Formatting is per-file work with no cross-file
 /// knowledge, so it belongs on a worker like lexing and parsing; the
 /// command that follows only compares, writes and prints, walking files in
@@ -389,7 +388,7 @@ pub const Worker = struct {
     }
 
     /// Append a diagnostic whose prose has ALREADY been through
-    /// `render/wrap.zig` — one replayed from a front-end artifact (M4-2).
+    /// `render/wrap.zig` — one replayed from a front-end artifact.
     ///
     /// It is `reportAs` minus the reflow, and the difference is the whole
     /// point: a stored message was wrapped when the phase that will not run
@@ -736,17 +735,16 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
 /// Read one file's bytes into the store, once, with the `read` row and the
 /// `bytes` counter.
 ///
-/// It is idempotent because M4-2 turns the per-file phase inside out: the
+/// It is idempotent because the front-end cache turns the per-file phase inside out: the
 /// front-end cache must READ the source before it can hash it into a file
 /// key, and the key is what decides whether the lexer runs at all — so on a
 /// MISS the phase asks for the bytes again and must not pay for them twice.
 ///
-/// **This read is what the `stat` fast path would remove, and it is not
-/// M4-2's**: the file key is over the source BYTES, so the source is still
-/// read and still hashed. That is 5.2 ms + 0.6 ms of a predicted ~33 ms warm
-/// `check` and it moves to M4-5, where a daemon holds the sources and the
-/// watcher already knows what changed (`fast-compiler.md` §8, `plans/m4-2.md`
-/// §5).
+/// **This read is what a `stat` fast path would remove, and the front-end
+/// cache does not**: the file key is over the source BYTES, so the source is
+/// still read and still hashed. That is 5.2 ms + 0.6 ms of a predicted ~33 ms
+/// warm `check`, and it belongs to a daemon, which holds the sources and
+/// whose watcher already knows what changed (`fast-compiler.md` §8).
 fn readSource(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
     if (session.store.isRead(file)) return;
     const read_token = session.profile.begin();
@@ -756,7 +754,7 @@ fn readSource(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     worker.addCounter(.bytes, text.len);
 }
 
-/// The M1a per-file phase: read the bytes into the store, tokenize them into
+/// The lex per-file phase: read the bytes into the store, tokenize them into
 /// session-owned artifacts (tokens, comments; the line table goes to the
 /// store), and turn the lexical diagnostics into reported ones with
 /// positions from that table. Two profile events, `read` and `lex`, so the
@@ -806,7 +804,7 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
     });
 }
 
-/// The M1b per-file phase: everything `lexPhase` does, then the parser over
+/// The parse per-file phase: everything `lexPhase` does, then the parser over
 /// the installed tokens. Scratch comes from the worker's arena (reset by
 /// the driver after the file); the tree goes to session storage next to
 /// the tokens it indexes.
@@ -844,7 +842,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     session.artifacts.files.items(.ast)[file.int()] = tree;
 }
 
-/// The M1c per-file phase: everything `parsePhase` does, then lowering
+/// The lower per-file phase: everything `parsePhase` does, then lowering
 /// over the installed tree. Scratch from the worker's arena; the Bir goes
 /// to session storage next to the tree, its symbols local to the worker
 /// until the merge.
@@ -862,7 +860,7 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     // the worker because the per-file phase already does file I/O and is
     // already parallel; the one thing that could not stay there is the string
     // table's re-interning, and it does not have to, because a worker has a
-    // `Local` pool to hand where M4-1's entry had only `Global`.
+    // `Local` pool to hand where the module cache's entry has only `Global`.
     if (session.wantsFileKeys()) {
         try readSource(session, worker, file);
         session.file_keys[file.int()] = session.fileKey(file);
@@ -1002,7 +1000,7 @@ fn frontendDiagnostics(
 /// (`plans/m4-2.md` §6 A).
 ///
 /// **A file whose front end produced an `error` is never written.** That is
-/// M4-1's "produced by a clean check" bit, one phase earlier and for the same
+/// the module cache's "produced by a clean check" bit, one phase earlier and for the same
 /// reason: a file that did not lex, parse or lower has a `Bir` the recovery
 /// invented, and a later run that installed it would be reporting the
 /// recovery's guesses as facts. `warning`s ARE written and replayed, because
@@ -1048,7 +1046,7 @@ fn storeFrontend(
 
 /// Whether this run needs a front-end key per file at all.
 ///
-/// A departure from M4-1's "one code path, and the cost is in the trace":
+/// A departure from the module cache's "one code path, and the cost is in the trace":
 /// there the key pass is serial and once, here it is on the per-file phase
 /// every lowering command runs, and a `dump --stage=bir` that hashed every
 /// source for a key nothing reads would be paying 0.6 ms for nothing. The
@@ -1202,7 +1200,7 @@ fn installFrontend(
     loaded.diagnostics = &.{};
 }
 
-/// The M1d per-file phase: everything `parsePhase` does, then the formatter
+/// The format per-file phase: everything `parsePhase` does, then the formatter
 /// over the installed tree, into a session-owned buffer next to it.
 ///
 /// A file with any diagnostic has no canonical form and is never written,
@@ -1275,7 +1273,7 @@ fn resolveSerial(session: *Session) RunError!void {
 
     session.resolution.deinit(gpa);
     // One `resolve` event per module (checker.md §9), emitted inside, not
-    // one for the whole step: the per-module rows are what M4's
+    // one for the whole step: the per-module rows are what the
     // incrementality tests read.
     session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile);
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
@@ -1288,11 +1286,10 @@ fn resolveSerial(session: *Session) RunError!void {
 /// A symbol's global id is the order its text is first met walking the
 /// files by index — sorted path order — and each file's tokens, then its
 /// Bir's symbol column. That is a function of the input alone
-/// (`fast-compiler.md` §10, rule 5). Merging whole pools in WORKER order,
-/// which this did until CK-71, numbered a symbol by which worker the
-/// `next_file` race handed its file to, so any choice made by id —
-/// `unifyRecord`'s was the one found — changed between runs of the same
-/// input at the same `--jobs`.
+/// (`fast-compiler.md` §10, rule 5). Merging whole pools in WORKER order
+/// would number a symbol by which worker the `next_file` race handed its
+/// file to, so any choice made by id — `unifyRecord`'s is one — would
+/// change between runs of the same input at the same `--jobs`.
 fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
     const gpa = session.gpa;
     const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
@@ -1331,7 +1328,7 @@ fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
 /// ERROR on (checker.md §4.3, `Check.Options.quiet`). A WARNING leaves the
 /// module loud: it says nothing is wrong, and silencing a module's type
 /// errors for one would let a program with a type error print only the
-/// warning and exit 0 (CK-12). `graph` is anything with `count` and
+/// warning and exit 0. `graph` is anything with `count` and
 /// `moduleFile`, so the rule can be tested without building one.
 fn markQuiet(quiet: []bool, graph: anytype, pending: []const Worker.Pending) void {
     for (pending) |p| {
@@ -1627,7 +1624,7 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// gains a field and the failure mode is a segfault rather than a
 /// diagnostic.
 ///
-/// M2c's DAG-parallel checking (checker.md §4.4) needs the same room on
+/// DAG-parallel checking (checker.md §4.4) needs the same room on
 /// every worker, which is why the number lives in `Check` and is stated at
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
@@ -1829,7 +1826,7 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
 
 /// Replace the text of the diagnostic an earlier phase reported for
 /// `file` with `code` at `start`, and say whether there was one. Elm's
-/// `exposing (T(..))` is the one user (CK-47): the parser reports it where
+/// `exposing (T(..))` is the one user: the parser reports it where
 /// it is written, and only resolution can name `T`'s constructors — one
 /// diagnostic, with the better text, and not two.
 fn rewriteMessage(session: *Session, file: SourceStore.Index, code: diagnostic.Code, start: diagnostic.Position, message: []const u8) Allocator.Error!bool {
@@ -2161,9 +2158,9 @@ test "collectDiagnostics orders by file then comparator regardless of worker" {
     }, session.diagnostics.items[0]);
 }
 
-// CK-12, a documented rule-3 exception (plans/checker-findings.md): no
-// frontend phase emits a warning today, so no program can show a module
-// silenced by one, and the rule is pinned here instead.
+// A documented exception to black-box testing: no frontend phase emits a
+// warning today, so no program can show a module silenced by one, and the
+// rule is pinned here instead.
 test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not" {
     const FakeGraph = struct {
         files: []const SourceStore.Index,
@@ -2189,7 +2186,7 @@ test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not"
     try testing.expectEqualSlices(bool, &.{ false, true, false }, &quiet);
 }
 
-// CK-71's reliable half (the black-box half is `blackbox_test.zig`'s loaded
+// Input-ordered symbol numbering, the reliable half (the black-box half is `blackbox_test.zig`'s loaded
 // determinism test, which only a racing scheduler can turn red): the files
 // are handed to the workers in the one order the race can produce and a
 // fixed run cannot — file 0 to worker 1, file 1 to worker 0 — and the ids

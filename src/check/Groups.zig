@@ -25,7 +25,7 @@
 //! which generalises them together. `let` frames never merge. The use takes
 //! the in-flight link (§10.3): the member's own variable, no instantiation.
 //!
-//! **Nesting is bounded** (§10.2, round 4 R7-3): one budget of two
+//! **Nesting is bounded** (§10.2): one budget of two
 //! declarations' worth for the whole stack, `nest_cost` charged per nested
 //! check, and a check admitted only when one declaration's worth is left;
 //! otherwise `nesting_too_deep` at the demanding use, with the hint to
@@ -64,7 +64,7 @@ pub const Status = enum(u8) { unchecked, checking, done };
 /// when the nesting budget refused the check and the use was reported
 /// (§10.2); `missing` when the declaration has no type at all (its
 /// annotation or body could not be read, already reported), which poisons
-/// in silence (R7's review, N4).
+/// in silence.
 pub const Demand = union(enum) { scheme: Var, in_flight: Var, refused, missing };
 
 pub const none = std.math.maxInt(u32);
@@ -82,7 +82,7 @@ pub const declaration_worth: u32 = Tree.Generator.max_depth;
 pub const budget: u32 = 2 * declaration_worth;
 
 /// What one nested check charges against `budget`, in solver depth units.
-/// **Calibrated once, in a Debug build** (2026-09-26, R7), where frames are
+/// **Calibrated once, in a Debug build** (2026-09-26), where frames are
 /// largest, and never measured at run time, so Debug and ReleaseFast refuse
 /// the same programs (§10.2):
 ///
@@ -127,7 +127,8 @@ decl_display: []Var.Optional,
 profile: ?*Profile = null,
 /// Nanoseconds spent generating constraints, nested checks included.
 constrain_ns: u64 = 0,
-/// D14 mismatches whose hint waits for their class to be final
+/// Mismatches made by the canonical pessimism of recursive groups (§10.7),
+/// whose hint waits for their class to be final
 /// (`Recursion.note`, `Recursion.finish`).
 hints: std.ArrayList(Recursion.Pending) = .empty,
 
@@ -227,9 +228,10 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
     const cx = gs.cx;
     const gpa = cx.gpa;
     const scratch = cx.scratch;
-    // I14: no check starts inside a speculation (§7.5); a `demand` node
-    // reaches here without `Resolve.step`'s guard (R7's review, N5).
-    if (!try s.expect(cx.store.depth == 0, @enumFromInt(0), "a binding group was checked inside a speculation (checker-v2.md §7.5, I14)")) return .done;
+    // No check starts inside a speculation (§7.5), so nothing a probe
+    // writes survives its rollback; a `demand` node reaches here without
+    // `Resolve.step`'s guard.
+    if (!try s.expect(cx.store.depth == 0, @enumFromInt(0), "a binding group was checked inside a speculation (checker-v2.md §7.5)")) return .done;
     const level = gs.active;
     gs.active += 1;
     defer gs.active -= 1;
@@ -310,7 +312,8 @@ pub const Group = struct {
     members: []const u32,
     /// Its `Groups` index.
     id: u32,
-    /// A value SCC of two or more members: D14 applies from its first node
+    /// A value SCC of two or more members: the canonical pessimism of
+    /// recursive groups applies from its first node
     /// (§10.7).
     recursive: bool,
 };
@@ -346,7 +349,7 @@ pub fn solveGroup(s: *Solve, g: Group, done: *[]const u32) Error!Ended {
     s.tree = g.tree;
     s.depth_base = s.depth;
     s.last_bad_call = .none;
-    // The resolution budget is per top-level group (review F1); a nested
+    // The resolution budget is per top-level group; a nested
     // group counts against its demander's (§10.2).
     if (s.frames.items.len == 0) s.resolver.steps = 0;
     try Generalize.pushFrame(s, @intCast(s.frames.items.len + 1), .top);
@@ -364,7 +367,7 @@ pub fn solveGroup(s: *Solve, g: Group, done: *[]const u32) Error!Ended {
     if (s.frames.items[index].merged) {
         // An annotated declaration is a singleton SCC, never nested or merged
         // (`Module.bindingGroups` drops edges to it), so a merged frame has
-        // no generality check to hand down (R7's review, N3).
+        // no generality check to hand down.
         std.debug.assert(g.annotated.len == 0);
         try s.groups.handDown(s, g.binders, g.members);
         return .merged;
@@ -378,7 +381,7 @@ pub fn solveGroup(s: *Solve, g: Group, done: *[]const u32) Error!Ended {
     Generalize.popFrame(s);
     s.report.failGroup(done.*);
     // A capture names a variable of this group; none can explain an escape
-    // in another (review N1).
+    // in another.
     s.captures.shrinkRetainingCapacity(captures_start);
     return .done;
 }
@@ -413,7 +416,7 @@ fn binderLessThan(_: void, a: Generalize.Binder, b: Generalize.Binder) bool {
     if (a.kind != b.kind) return @intFromEnum(a.kind) < @intFromEnum(b.kind);
     if (a.region != b.region) return a.region.int() < b.region.int();
     // Ties, which binders sharing a region would be, by declaration and
-    // name: a total order, so the unstable sort cannot reorder them (S5).
+    // name: a total order, so the unstable sort cannot reorder them.
     const ad = a.decl orelse std.math.maxInt(u32);
     const bd = b.decl orelse std.math.maxInt(u32);
     if (ad != bd) return ad < bd;
@@ -503,9 +506,10 @@ fn inFlight(gs: *Groups, decl: u32) Demand {
 }
 
 /// Frame `j` checks a group a back-edge from the current chain reached:
-/// every top-level-kind frame above it is merged into it (§10.4, D11). Their
-/// groups join `j`'s class; each frame keeps solving and hands down at its
-/// end. Every frame of the class is now a recursive group's (D14).
+/// every top-level-kind frame above it is merged into it (§10.4: a dispatch
+/// back-edge merges the groups on the stack). Their groups join `j`'s class;
+/// each frame keeps solving and hands down at its end. Every frame of the
+/// class is now a recursive group's (§10.7).
 fn merge(gs: *Groups, s: *Solve, j: u32) void {
     const frames = s.frames.items;
     const into = gs.root(frames[j].group);
@@ -557,7 +561,7 @@ pub fn handDown(gs: *Groups, s: *Solve, binders: []const u32, own: []const u32) 
         try into.members.appendSlice(gpa, mine.members.items);
     }
     try Generalize.handQueueDown(s, to.queue);
-    // Read only through its root from now on (R7's review, N2).
+    // Read only through its root from now on.
     gs.frame_of[from.group] = none;
     from = undefined;
     to = undefined;

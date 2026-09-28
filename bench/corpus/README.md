@@ -45,7 +45,7 @@ cannot hide inside a corpus average:
 
 | File | Why it is here |
 |---|---|
-| `PlusChain8000.beni` | an 8000-link `1 + 1 + …` chain — segfaulted `check` at 6000 links and `dump --stage=ast` at 4000 before M1d bounded the parser's iterative spines |
+| `PlusChain8000.beni` | an 8000-link `1 + 1 + …` chain — segfaulted `check` at 6000 links and `dump --stage=ast` at 4000 before the parser's iterative spines were bounded |
 | `AccessChain8000.beni` | an 8000-link `r.a.a.a…` chain — the second iterative spine, same crash |
 | `QuestionChain8000.beni` | an 8000-link `r????…` chain — the third |
 | `AsWithoutName.beni` | `(x as)` with no name after `as` — panicked lowering in Debug and silently bound a variable called `main` in ReleaseFast |

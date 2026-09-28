@@ -9,7 +9,7 @@
 //      "floor_ms":36.1,"best_ms":329.8,"median_ms":334.9,
 //      "ns_per_op":2447.5,"checksum":"60000 288894"}
 //
-// `--variant=c0|c1` picks the directory, so S6 can drop the dispatch
+// `--variant=c0|c1` picks the directory, so the dispatch
 // rewrites in `bench/runtime/c1/` beside the `c0` originals under the same
 // names and the two sets line up row for row.
 //
@@ -29,7 +29,7 @@
 // automatically a C1 floor.
 //
 // **It is re-measured interleaved with every program**, run for run, rather
-// than once at the start (`bench/README.md:60-64`: an early draft of the M1d
+// than once at the start (`bench/README.md:60-64`: an early draft of a
 // table read 784 ms where the real number was 51 ms because the machine
 // drifted between blocks). Each iteration times the floor and then the
 // program, so a machine that speeds up or slows down over the run moves both

@@ -3,25 +3,25 @@
 //!
 //! Free functions over the solver: a lookup unifies, instantiates and
 //! reports, which are the solver's (`Resolve.zig` calls in; nothing here runs
-//! inside a probe, I14). The marker walk of §11.4 is `Marker.zig`'s. The
-//! order is §9.3's, v1's rules verbatim (static-dispatch-spike.md §6.3,
+//! inside a probe). The marker walk of §11.4 is `Marker.zig`'s. The
+//! order is §9.3's (static-dispatch-spike.md §6.3,
 //! §6.3.1):
 //!
 //!   1. the well-known table (§3.2), for `eq`/`compare` on a core primitive,
-//!      after the method type is unified with `t, t -> Bool|Order` (CK-21);
+//!      after the method type is unified with `t, t -> Bool|Order`;
 //!   3. the module rule: `T`'s declaring module's value of that name — this
 //!      module's any (the P3 index), another's `pub`, or `private_method` —
 //!      whose scheme is instantiated per use, its requirements the
-//!      sub-wanteds in canonical order (I5), and matched against the
+//!      sub-wanteds in canonical order, and matched against the
 //!      wanted's method type — or, for another module's PLAIN method,
 //!      the requirements made directly, as that would make them
-//!      (`plainImported`, CK-131);
+//!      (`plainImported`);
 //!   5. derivation, for a well-known name, whatever surface asked (a dot-call
 //!      too; on a record a dot-call is the field call):
 //!      `Derivable.derivable`, the ONE verdict on "can this receiver derive
-//!      the method" (I10; review B1), which reads the derived contexts and
+//!      the method", which reads the derived contexts and
 //!      reports why not — then one sub-wanted per context entry of a nominal
-//!      type (D4: `Contexts`, or the published row, §14.2), per field of a
+//!      type (`Contexts`, or the published row, §14.2), per field of a
 //!      closed record, per element of a tuple;
 //!   6. `unknown_method`.
 //!
@@ -98,8 +98,7 @@ fn noMethodsWhen(s: *Solve, id: WantedId, root: Var, late: bool) Error!void {
             .tuple => .tuple,
             .unit => .unit,
             .func => .function,
-            // The field-call hint is a dot-call's (§10.3 *amended by R13*,
-            // CK-54).
+            // The field-call hint is a dot-call's (§10.3).
             .record, .empty_record => if (w.kind == .dot_call) .record else .record_required,
             else => .other,
         },
@@ -110,12 +109,11 @@ fn noMethodsWhen(s: *Solve, id: WantedId, root: Var, late: bool) Error!void {
 fn noMethodsAs(s: *Solve, id: WantedId, root: Var, late: bool, shape: Diagnostics.Reporter.ShapeKind) Error!void {
     const w = s.evidence.get(id);
     // A dot-call joined with a scheme's requirement is refused where the
-    // requirement is (the use that needed a method), in every order (X1).
+    // requirement is (the use that needed a method), in every order.
     const at = w.blocked_at.unwrap() orelse w.origin;
     // One failure, one owner: a receiver that already refused another
     // method at this very use (its `==`, as NOT EQUATABLE, when one
-    // instantiation of a `let` helper asks both) says nothing more there
-    // (R14's review N2).
+    // instantiation of a `let` helper asks both) says nothing more there.
     if (s.evidence.rejected.contains(s.store().find(root)) and s.report.hasErrorAt(at)) return Resolve.reject(s, id, true);
     if (late) {
         try s.report.noMethodsOnShapeLate(at, w.method, root, shape);
@@ -209,7 +207,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
 }
 
 /// Whether module `module` declares `name` without `pub` (§10.2). An error
-/// path only: it reads another module's Bir, as v1's did (`reads.zig`
+/// path only: it reads another module's Bir (`reads.zig`
 /// notes it).
 fn privateIn(s: *Solve, module: Graph.Index, name: Symbol) bool {
     reads.note(.bir, module);
@@ -248,8 +246,7 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
             // method in flight: the same closed or parametric branch as one
             // in flight when asked, never the link — unifying this frame's
             // method type with the member's variable would put the pass's
-            // variables into a class below its frame (CK-117, §11.2 *as
-            // amended by R8b*).
+            // variables into a class below its frame (§11.2).
             if (s.contexts.active(s)) |ri| {
                 if (s.cx.bir.decls[decl].annotation == .none) return Contexts.inFlight(s, ri, id, decl);
             }
@@ -296,8 +293,7 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, ent
     return Resolve.answer(s, id, .{ .ext = .{ .module = entry.module, .value = value, .args = args } });
 }
 
-/// **The plain-method fast path** (CK-131; v1's `plainMethodMask`, diary
-/// 2026-09-24 00:17). An imported method whose scheme is PLAIN —
+/// **The plain-method fast path**. An imported method whose scheme is PLAIN —
 /// `T q₁ … qₙ, T q₁ … qₙ -> Bool|Order` over distinct quantifiers, each
 /// asked for nothing but the method's own name at `qᵢ, qᵢ -> Bool|Order`
 /// (`List.compare … where a.compare`) — asked on `T t₁ … tₙ` at a method
@@ -361,7 +357,7 @@ pub const Plain = struct { arity: u32, mask: u64 };
 /// receiver's type among them. The module rule makes one value of a module
 /// the method of each of the module's types, and whether it is plain differs
 /// per type: a key without the type reused one type's verdict for a sibling
-/// type of the same module, and called `A`'s `eq` on a `B` (CK-137).
+/// type of the same module, and called `A`'s `eq` on a `B`.
 pub const PlainKey = struct { module: Graph.Index, value: Interface.ValueIndex, type_id: Types.TypeId, method: InternPool.Symbol };
 
 /// Whether `entry`'s module's value `value` is a plain `name` method on
@@ -428,11 +424,11 @@ fn isNullaryRef(iface: *const Interface, refs: []const Types.TypeId, t: Interfac
 }
 
 /// §9.3 step 4: the instantiated method against the wanted's method type.
-/// A mismatch is the module-rule clash, v1's `type_mismatch` naming the
+/// A mismatch is the module-rule clash, a `type_mismatch` naming the
 /// method's type — at a use, and for a requirement of an instance's
-/// context (review F2) — except at a DERIVED shape's position, where it is
-/// the shape's refusal, reported at the use for the whole receiver (v1's
-/// rule for a method specialised to another application: row 72).
+/// context — except at a DERIVED shape's position, where it is
+/// the shape's refusal, reported at the use for the whole receiver (the
+/// rule for a method specialised to another application).
 /// Where the matched method comes from: this module's declaration, or
 /// another module's interface value.
 const MethodSource = union(enum) { own: u32, imported: Interface.ValueIndex };
@@ -452,7 +448,7 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, sour
     if (w.parent.unwrap()) |p| {
         if (s.evidence.answer(p) == .derived) {
             // The shape's refusal, naming the method and both types
-            // (static-dispatch-spike.md §10.13, CK-116).
+            // (static-dispatch-spike.md §10.13).
             if (type_id) |t| {
                 try refuseRequirement(s, id, t, w.method, .{ .wanted = w.method_type, .found = copy });
             } else {
@@ -462,7 +458,7 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, sour
         }
     }
     // Inside a fixpoint pass (a payload's position), its entry says why
-    // (`absent_requirement`, CK-116); elsewhere this does nothing.
+    // (`absent_requirement`); elsewhere this does nothing.
     if (type_id) |t| s.contexts.noteRequirement(s, t, w.method);
     if (type_id) |t| if (well_known) switch (source) {
         .own => |d| if (!fitsWellKnown(s, ownScheme(s, d, copy), t, w.method)) {
@@ -488,7 +484,7 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, sour
 /// parameters, each a variable or an application of `T`, and the result a
 /// variable or the well-known one. A specialised `Holder Int, Holder Int ->
 /// Bool` could (the failure is the use's, said there); `T, Int -> Bool`, or
-/// a sibling type's `U, U -> Bool`, cannot, whatever the use (CK-168).
+/// a sibling type's `U, U -> Bool`, cannot, whatever the use.
 fn fitsWellKnown(s: *Solve, copy: Var, t: Types.TypeId, method: Symbol) bool {
     const st = s.store();
     const f = Walk.function(st, copy) orelse return false;
@@ -522,11 +518,11 @@ fn ownScheme(s: *Solve, decl: u32, copy: Var) Var {
 /// method it failed to be.
 pub const SignatureKey = struct { decl: u32, type_id: Types.TypeId };
 
-/// CK-168: an own well-known method that no use of `t` can call is ONE
+/// An own well-known method that no use of `t` can call is ONE
 /// mistake, the method's, said at its declaration whichever use found it:
 /// recorded here, and said by `ownSignatures` once P4 is over, once per
 /// METHOD whatever types found it, so the text and the order of
-/// the messages are the same in every declaration order (I9). Every use is
+/// the messages are the same in every declaration order. Every use is
 /// rejected with it; each is attributed the failure.
 fn signatureOnce(s: *Solve, decl: u32, t: Types.TypeId, copy: Var) Error!void {
     if (s.report.current) |d| s.report.failed.set(d);
@@ -641,7 +637,7 @@ fn expansionOf(iface: *const Interface, t: Interface.TermIndex) Interface.Term {
 /// ONCE per method however many types found it: the type it is
 /// written for when that is one of them, else the one whose name sorts
 /// first. Said after P4, so neither the text nor the order of two messages
-/// at one declaration follows the order the uses were checked in (I9).
+/// at one declaration follows the order the uses were checked in.
 pub fn ownSignatures(s: *Solve) Error!void {
     const cx = s.cx;
     for ([_]Symbol{ InternPool.WellKnown.eq.symbol(), InternPool.WellKnown.compare.symbol() }) |method| {
@@ -696,7 +692,7 @@ pub fn ownSignatures(s: *Solve) Error!void {
 }
 
 /// A private method of the module of `culprit` answers `id`, which is
-/// asked outside that module (D1, §11.3): `private_method`, reported once
+/// asked outside that module (§11.3): `private_method`, reported once
 /// at the use for the lineage root's receiver — the value the author
 /// compared, which names the wrapper, tuple, record or list the private
 /// method is inside (`Messages.privateMethod`) — and the lineage root
@@ -704,7 +700,7 @@ pub fn ownSignatures(s: *Solve) Error!void {
 fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol) Error!void {
     s.contexts.notePrivate(s, culprit, method);
     const top = Resolve.lineageRoot(s, id);
-    // Read BEFORE the rejection, as `refuseDerived` does (CK-102).
+    // Read BEFORE the rejection, as `refuseDerived` does.
     const reported = top != id and s.evidence.get(top).state.rejected();
     try Resolve.reject(s, id, id != top);
     if (reported) return;
@@ -713,7 +709,7 @@ fn refusePrivate(s: *Solve, id: WantedId, culprit: Types.TypeId, method: Symbol)
     if (top != id) try Resolve.reject(s, top, true);
 }
 
-/// A method a derived answer needs has the wrong type (CK-116): said once,
+/// A method a derived answer needs has the wrong type: said once,
 /// at the use, for the lineage root's receiver, as `refuseDerived` does, and
 /// noted on a fixpoint pass's run so its entry says why
 /// (`absent_requirement`). The types are rendered before the rejection
@@ -730,7 +726,7 @@ fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbo
     if (!reported and top != id) try Resolve.reject(s, top, true);
 }
 
-/// A pinned argument (CK-159) the use cannot be: reported once at the use,
+/// A pinned argument the use cannot be: reported once at the use,
 /// for the lineage root's receiver, with the type as it derives — `pinned`,
 /// `T` applied to the pinned types — and the specialised method that pins
 /// it when the context knows it; the lineage root rejected.
@@ -754,13 +750,13 @@ fn hasPin(pins: []const Contexts.Pin, param: usize) bool {
 }
 
 /// The derived answer for `id` on `root` cannot be given: reported once, at
-/// the use, for the lineage root's receiver (v1's rule — the message names
+/// the use, for the lineage root's receiver (the message names
 /// the type the author compared), and the lineage root rejected.
 fn refuseDerived(s: *Solve, id: WantedId, root: Var, reason: Diagnostics.Reporter.EquatableReason) Error!void {
     const top = Resolve.lineageRoot(s, id);
     // Read BEFORE the rejection, which fails the whole lineage: a root that
     // failed earlier has its message; one this rejection fails does not
-    // (CK-102: the check after it returned in silence every time).
+    // (the check after the rejection would always read it as rejected).
     const reported = top != id and s.evidence.get(top).state.rejected();
     try Resolve.reject(s, id, id != top);
     if (reported) return;
@@ -800,12 +796,12 @@ fn allNullary(s: *Solve, id: Types.TypeId) bool {
     return true;
 }
 
-/// A nominal type's derived function (§11.2, D4): one sub-wanted per entry
+/// A nominal type's derived function (§11.2): one sub-wanted per entry
 /// of its derived CONTEXT — this module's (`Contexts`, read after the
 /// verdict walk proved it present) or the one its module published (§14.2)
 /// — in the context's `(param, method text)` order. A nullary `foreign
 /// type` has no derived function. A tagged schema endpoint is derived like
-/// any `type`, over its schema's payloads (§11.5, R8b).
+/// any `type`, over its schema's payloads (§11.5).
 fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!void {
     const cx = s.cx;
     const entry = cx.types.entry(a.type);
@@ -841,7 +837,7 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
                 return Resolve.reject(s, id, true);
             },
             .absent_other, .own_method, .foreign => return refuseDerived(s, id, root, .opaque_type),
-            // A payload met `err`, which has its message (CK-178).
+            // A payload met `err`, which has its message.
             .poisoned => return Resolve.poisoned(s, id),
         }
         const t = s.contexts.local(a.type).?;
@@ -856,7 +852,7 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
             const tuple = try s.instantiate.substitute(template, try s.contexts.paramsOf(t), args);
             break :blk try s.cx.scratch.dupe(Var, Walk.positions(s.store(), tuple));
         } else &.{};
-        // The pins first (CK-159): the type derives only at its pinned
+        // The pins first: the type derives only at its pinned
         // arguments, and the entries' wanteds see them.
         const pins = s.contexts.pinsOf(answer);
         if (pins.len != 0) {
@@ -889,9 +885,8 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     if (entry.module.int() >= cx.interfaces.len) return Resolve.reject(s, id, true);
     const iface = cx.iface(entry.module);
     const facts = iface.typeFacts(cx.interner, entry.name) orelse {
-        // A record v2 wrote has a row for every type it can reach, and from
-        // R9 every record a v2 build reads is v2's (§22.1): v1's ABI for a
-        // row-less private type is gone from this checker.
+        // A record has a row for every type it can reach (§22.1), so a
+        // row-less type here is an internal error.
         try s.report.internal(s.evidence.get(id).origin, "another module of this package published no derived row for a type its record reaches (checker-v2.md §14.2)");
         return Resolve.reject(s, id, true);
     };
@@ -901,14 +896,14 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
         // Its module was never checked (a dependency that failed): its
         // failure has a message, so this one is `poisoned`, in silence.
         .unchecked => return Resolve.poisoned(s, id),
-        // D1 (§11.3): the row's context reaches a private method.
+        // §11.3: the row's context reaches a private method.
         .private_method => {
             const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
             const refs = cx.types.refIds(entry.module);
             if (@intFromEnum(p.type_ref) >= refs.len) return refuseDerived(s, id, root, .opaque_type);
             return refusePrivate(s, id, refs[@intFromEnum(p.type_ref)], iface.symbol(p.method));
         },
-        // CK-116: the row says which method failed (§14.2 *as amended by R13*).
+        // The row says which method failed (§14.2).
         .requirement => {
             const p = iface.privateCulprit(row.context) orelse return refuseDerived(s, id, root, .opaque_type);
             const refs = cx.types.refIds(entry.module);
@@ -927,11 +922,11 @@ fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App
     const types: []const Var = if (scheme != .none) switch (try publishedMethodTypes(s, iface, entry.module, scheme, args, w)) {
         .types => |t| t,
         // The row's module could not write its template, and said so
-        // (`Publish.Facts.templateScheme`, CK-142): the answer is poisoned,
+        // (`Publish.Facts.templateScheme`): the answer is poisoned,
         // with no message here.
         .poisoned => return Resolve.poisoned(s, id),
         .malformed => return Resolve.reject(s, id, true),
-        // A parameter the row PINS (CK-159) the use cannot be.
+        // A parameter the row PINS the use cannot be.
         .pinned => |pinned| return refusePinned(s, id, try s.fresh(.{ .structure = .{ .app = .{ .type = a.type, .args = try s.store().addVars(pinned) } } }), null),
     } else &.{};
     for (subs, 0..) |*sub, k| {
@@ -958,7 +953,7 @@ fn contextWanted(s: *Solve, parent: WantedId, method: Symbol, receiver: Var, met
     const sub = try Resolve.create(s, method, receiver, method_type, p.origin, kind, parent.toOptional());
     s.evidence.ptr(sub).decl = p.decl;
     // Resolution recursing into a derived answer's context spends native
-    // stack the nesting budget counts (§10.2; R7's review, S7).
+    // stack the nesting budget counts (§10.2).
     s.resolve_depth += 1;
     defer s.resolve_depth -= 1;
     try Resolve.step(s, sub, false);
@@ -972,7 +967,7 @@ fn finishDerived(s: *Solve, id: WantedId, type_id: Types.TypeId, subs: []const W
     }
 }
 
-/// A published row's method types (§14.2 *as amended by R8a*): its
+/// A published row's method types (§14.2): its
 /// scheme's body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`; the parameters are
 /// unified with the use's arguments and each `τ` is the method type of the
 /// entries whose `slot` it is.
@@ -996,18 +991,18 @@ fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index,
 /// `<error>` (the publisher reported why), or it does not have the row's
 /// shape (the compiler's).
 /// Or `pinned`: the use's argument is not a type the row pins (its scheme's
-/// parameter is a ground type, CK-159), with the row's parameters.
+/// parameter is a ground type), with the row's parameters.
 const PublishedTypes = union(enum) { types: []const Var, poisoned, malformed, pinned: []const Var };
 
 /// A derived answer with one sub-wanted per position, each resolved now
 /// (a flex position rides on its variable; a rigid one needs a given, and
-/// without one is `missing_where_constraint` at the use: CK-20).
+/// without one is `missing_where_constraint` at the use).
 fn derivedPositions(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, positions: []const Var) Error!void {
     const gpa = s.cx.gpa;
     const owned = try s.cx.scratch.dupe(Var, positions);
     defer s.cx.scratch.free(owned);
     // Answered first, so a position that meets the same receiver again is
-    // shared and not walked again (CK-80).
+    // shared and not walked again.
     Resolve.answer(s, id, .{ .derived = .{ .type_id = type_id, .args = .{} } });
     try Resolve.remember(s, id, root);
     const subs = try s.cx.scratch.alloc(WantedId, owned.len);
@@ -1058,9 +1053,9 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
     // out a record before it is generalised (static-dispatch-spike.md §11
     // *Deferred receiver*, amended 2026-09-26): "known at the call" would
     // read the solving order, which in a recursive group is the declaration
-    // order (checker-v2.md I9). A requirement an instantiation made has no
-    // field accessor to be, and neither has a dot-call joined with one
-    // (`Wanted.field_ok`, R7's round-2 review, X1).
+    // order, and the result must not depend on it. A requirement an
+    // instantiation made has no field accessor to be, and neither has a
+    // dot-call joined with one (`Wanted.field_ok`).
     if (!immediate and !w.field_ok) return noMethodsWhen(s, id, root, true);
     return fieldCall(s, id, root);
 }
@@ -1070,7 +1065,7 @@ fn fieldTextLess(interner: *const InternPool.Global, a: TypeStore.Field, b: Type
 }
 
 /// `x.m a` on a record known at the call: `(x.m) a`, the ordinary field and
-/// arity diagnostics (v1's `methodOnRecord`, verbatim in its rules).
+/// arity diagnostics.
 fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     const st = s.store();
     const w = s.evidence.get(id);
@@ -1134,14 +1129,14 @@ fn funcOf(s: *Solve, params: []const Var, result: Var) Error!Var {
 }
 
 /// A concrete receiver on a cycle (§9.5's cycle test, which replaced the
-/// lineage rule: round-2 review, N1; review F5): one `infinite_type` at the
+/// lineage rule): one `infinite_type` at the
 /// use, the cycle poisoned, and nothing shared or looked up on its head. An
 /// occurs walk from the receiver, `structural` successors; `Resolve.step`
 /// runs it for every wanted on a structure.
 pub fn cyclic(s: *Solve, id: WantedId, root: Var) Error!bool {
     var run: Walk.Occurs = .begin(s.store());
     // It proves: a position met later in the same resolution stops here
-    // (`TypeStore.acyclic`, CK-111).
+    // (`TypeStore.acyclic`).
     run.proves = true;
     run.interior = true;
     const node = (try run.check(s.store(), &s.stacks, s.cx.gpa, root)) orelse return false;

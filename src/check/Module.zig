@@ -1,18 +1,18 @@
 //! The check of one module (checker-v2.md §5): named phases, in order, once
-//! each, with no re-settling (I12, CK-15). `Driver.checkInner` runs it for
+//! each, with no re-settling (§15.2). `Driver.checkInner` runs it for
 //! every module that is not a cache hit.
 //!
-//! | Phase | What it does here (R6b)                                                                 |
+//! | Phase | What it does here                                                                       |
 //! |-------|-----------------------------------------------------------------------------------------|
 //! | P1    | the store, the tables, `Schema.State`, the report                                       |
 //! | P2    | every annotated value's published scheme, read at rank `generalized`, with its `where` |
-//! | P3    | the own-name index: every value by name, for the module rule (CK-42)                    |
+//! | P3    | the own-name index: every value by name, for the module rule                            |
 //! | P4    | per top-level group in SCC order, or nested at demand: generate, solve, boundary (`Groups`) |
 //! | P5    | every derived context settled (`Contexts`, §11.2), and the eager rows it gives (`Eager`) |
 //! | P6    | elaboration: the dispatch table's trees (`Elaborate`)                                  |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
 //! | P8    | the interface, through one publication routine (`Publish`); then `nesting_too_deep`s    |
-//! | P9    | the table's round trip, `Cycles`, the I7 assert, the schema plan (no error in module) |
+//! | P9    | the table's round trip, `Cycles`, the evidence-count assert, the schema plan (no error in module) |
 //!
 //! A derived context is computed at the first use that asks for it, even in
 //! the middle of P4, and every other one in P5; P8 publishes them (§14.2).
@@ -61,7 +61,7 @@ const Walk = @import("Walk.zig");
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
 
-/// What `Driver.checkInner` hands v2 for one module.
+/// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
     gpa: Allocator,
     scratch: *Arena,
@@ -103,17 +103,17 @@ pub fn check(in: Input) Error!Check.Counters {
     // P1.
     // An owned store is carved out of the worker's scratch arena, which the
     // driver resets (retaining its largest chunk) after every module: a
-    // module's store no longer maps and unmaps its own pages (R14b).
+    // module's store does not map and unmap its own pages.
     var owned_store: TypeStore = .init(in.scratch.allocator());
     const store = if (in.keep) |k| &k.store else &owned_store;
     defer if (in.keep == null) owned_store.deinit();
-    // v2 makes two to three variables per instruction (R9 measured 2.1× on
+    // The checker makes two to three variables per instruction (2.1× on
     // the generated corpora, 3× on a module of 6 000 tuple comparisons, and
-    // at most 4.1× in one module): reserving one per instruction, as v1
-    // does, grew the store two or three times, each a copy of every
+    // at most 4.1× in one module): reserving one per instruction would
+    // grow the store two or three times, each a copy of every
     // descriptor. The tail a module never touches costs no page.
     try store.reserve(bir.insts.len * 3 + 64, bir.insts.len * 2 + 64);
-    // The acyclicity proofs (§8.2 *as restated by R8c's review rounds*).
+    // The acyclicity proofs (§8.2).
     store.tracks_proofs = true;
     const scratch = in.scratch.allocator();
 
@@ -165,15 +165,14 @@ pub fn check(in: Input) Error!Check.Counters {
         try Decl.attachWhere(&cx, d, &b, @intCast(i));
         // An Elm curried annotation over a definition of as many
         // parameters is one mistake, reported at the body; its callers are
-        // not held to a promise the author did not mean (checker.md §8.7,
-        // CK-56).
+        // not held to a promise the author did not mean (checker.md §8.7).
         const params = bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index).len;
         if (cx.store.isCurried(decl_scheme[i].unwrap().?, @intCast(params))) {
             decl_scheme[i] = (try cx.store.freshErr(TypeStore.generalized)).toOptional();
         }
     }
 
-    // P3: the own-name index (§5, CK-42): every value by name, once.
+    // P3: the own-name index (§5): every value by name, once.
     const own_values = try ownIndex(scratch, bir);
 
     // P4.
@@ -206,7 +205,7 @@ pub fn check(in: Input) Error!Check.Counters {
     const solve_ns = p4_ns -| constrain_ns;
 
     // What P2 and P4 found too deep, reported now so its declaration's
-    // failure bit is set before P7 reads it (review S10).
+    // failure bit is set before P7 reads it.
     var reported_deep: std.ArrayList(Bir.Inst.Index) = .empty;
     defer reported_deep.deinit(scratch);
     try reportTooDeep(&report, too_deep.items, &reported_deep, scratch);
@@ -269,16 +268,16 @@ pub fn check(in: Input) Error!Check.Counters {
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
         try report.flush();
-        // Last, so every error the module has gates it (v1's rule, S2).
+        // Last, so every error the module has gates it.
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
         if (std.debug.runtime_safety and report.errors == 0 and !in.dependency_errors) try assertErrorsReported(store, scratch, p6, &.{ decl_scheme, decl_display, local_type });
     }
     // Gated on NO error in the module, after the last pass that can report
-    // one (CK-15).
+    // one.
     in.plan.deinit(gpa);
     in.plan.* = if (!quiet and report.errors == 0) blk: {
-        // The endpoints' property bytes, read off the settled contexts (§11.5
-        // *as built by R8b*): nothing settles them in the session table.
+        // The endpoints' property bytes, read off the settled contexts
+        // (§11.5): nothing settles them in the session table.
         const properties = try scratch.alloc([2]u8, bir.decls.len);
         for (bir.decls, properties, 0..) |d, *p, i| {
             p.* = .{ 0, 0 };
@@ -317,7 +316,7 @@ fn newTable(gpa: Allocator, len: usize) Error![]Var.Optional {
 
 /// SCC over the module's top-level values and schemas, dependencies first:
 /// an edge `d → e` exists when `d` mentions `e` and `e` is an unannotated
-/// value or a schema of this module (v1's `bindingGroups`, kept: §4.4).
+/// value or a schema of this module (§4.4).
 fn bindingGroups(scratch: Allocator, bir: *const Bir) Error!Scc.IndexGroups {
     const n = bir.decls.len;
     var edges: std.ArrayList(u32) = .empty;
@@ -343,7 +342,7 @@ fn bindingGroups(scratch: Allocator, bir: *const Bir) Error!Scc.IndexGroups {
 /// One `nesting_too_deep` per over-deep type, sorted and deduplicated: the
 /// same annotation is read more than once, and one mistake is one message.
 /// Called twice — after P4, so the declaration's failure bit is set before
-/// P7 reads it (review S10), and after P8 for what publication noted — and
+/// P7 reads it, and after P8 for what publication noted — and
 /// `reported` keeps the second from repeating the first.
 fn reportTooDeep(report: *Report, notes: []Context.TooDeep, reported: *std.ArrayList(Bir.Inst.Index), scratch: Allocator) Error!void {
     if (notes.len == 0) return;
@@ -379,7 +378,7 @@ fn orderInst(key: Bir.Inst.Index, item: Bir.Inst.Index) std.math.Order {
 }
 
 /// What P6 could not write: its own faults, and the sites a `poisoned`
-/// wanted left unwritten (ascending), which are no fault (CK-141).
+/// wanted left unwritten (ascending), which are no fault.
 const P6Faults = struct {
     internals: []const Elaborate.Internal,
     poisoned: []const Bir.Inst.Index,
@@ -424,13 +423,13 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
                 // scheme's: its givens are what a group call matches. A
                 // declaration with no body — an annotation with no definition
                 // (already reported), a `foreign` — has no rigid reading, and
-                // nothing inside it calls anything: its scheme's roots (CK-121).
+                // nothing inside it calls anything: its scheme's roots.
                 if (d.body == .none) {
                     try roots.append(scratch, r.root);
                     continue;
                 }
                 const given = givens.len == reqs.items.len;
-                if (!try solver.expect(given, d.inst_start, "an annotated declaration's `where` clause registered a different number of givens (checker-v2.md §4.2, review S2)")) {
+                if (!try solver.expect(given, d.inst_start, "an annotated declaration's `where` clause registered a different number of givens (checker-v2.md §4.2)")) {
                     try roots.append(scratch, r.root);
                     continue;
                 }
@@ -448,7 +447,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
             .convention = Convention.of(bir.decls[i].params, Convention.bodyIsLambda(bir, @intCast(i)), arity, count),
         };
     }
-    // The promoting `let` function bindings (D5, §8.4 *As built by R14*),
+    // The promoting `let` function bindings (§8.4),
     // by instruction, their rows after every declaration's.
     const let_rows = try scratch.dupe(Resolve.LetRow, solver.resolver.let_rows.items);
     std.mem.sort(Resolve.LetRow, let_rows, {}, letRowLessThan);
@@ -506,12 +505,12 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
     return out;
 }
 
-/// **Every `err` has a message** (§12.2 *amended by R15-fix-C*), checked: in
+/// **Every `err` has a message** (§12.2), checked: in
 /// a module that reported no error, and whose dependencies reported none
 /// (`Input.dependency_errors`), no declaration's or local's type reaches an
 /// `err`, and no wanted is `poisoned`. `err` means "a message was written
-/// for this"; a producer that makes one without it — `TypeStore.resolved`'s
-/// old guard was one (CK-169) — turns a wrong program into a silent hole and
+/// for this"; a producer that makes one without it turns a wrong program
+/// into a silent hole and
 /// a `poisoned` wanted into an INTERNAL ERROR at `build`. Only the types the
 /// module's declarations and locals HAVE are walked: a derived-context pass
 /// (§11.2) rejects a payload's wanted against the variables of its own frame,
@@ -533,24 +532,24 @@ fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, tab
         while (Walk.child(store, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
     }
     if (errs != 0 or p6.poisoned.len != 0) std.debug.panic(
-        "an `err` without a message: {d} in the types of declarations and locals, and {d} poisoned instruction(s), in a module that reported no error and whose dependencies reported none (checker-v2.md §12.2 *amended by R15-fix-C*)",
+        "an `err` without a message: {d} in the types of declarations and locals, and {d} poisoned instruction(s), in a module that reported no error and whose dependencies reported none (checker-v2.md §12.2)",
         .{ errs, p6.poisoned.len },
     );
 }
 
-/// I7 (§2, §13.1) over the finished table, the one the backend will read:
+/// The evidence-count invariant (§2, §13.1) over the finished table, the one
+/// the backend will read:
 /// `internal` at each instruction whose tree does not add up, and only in a
 /// module that reported nothing — so it runs after the last pass that can
-/// report (v1's `assertEvidenceShape`, the same predicate and text). P6's own
-/// failures are said here too, under the same gate (review S4): one whose
+/// report. P6's own
+/// failures are said here too, under the same gate: one whose
 /// message a later pass says is not the compiler's.
 ///
-/// "Nothing reported HERE" is not "no poison reached here" (CK-141): a
+/// "Nothing reported HERE" is not "no poison reached here": a
 /// dependency's `<error>` value is `err` in this module, and a wanted that
 /// meets it is `poisoned` with its message in the dependency. P6 wrote no
-/// site for such an instruction, and I7 does not hold it to one — the build
-/// that would lower it stops at the dependency's error (§12.2 *Amended by
-/// R15-fix-A*).
+/// site for such an instruction, and the invariant does not hold it to one —
+/// the build that would lower it stops at the dependency's error (§12.2).
 fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: P6Faults) Error!void {
     for (p6.internals) |x| try report.internal(x.region, x.what);
     const scratch = in.scratch.allocator();
@@ -565,10 +564,10 @@ fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: P6Faults) Err
     }
     bad.shrinkRetainingCapacity(kept);
     if (bad.items.len == 0) return;
-    // From the cut-over (R11) a violation is a v2 bug with no known
+    // A violation is a checker bug with no known
     // exception, so a safe build stops at it (§13.1); a release build still
     // says `internal` below and writes nothing.
-    if (std.debug.runtime_safety) std.debug.panic("I7: {d} instruction(s) whose evidence tree does not add up (checker-v2.md §13.1)", .{bad.items.len});
+    if (std.debug.runtime_safety) std.debug.panic("evidence count: {d} instruction(s) whose evidence tree does not add up (checker-v2.md §13.1)", .{bad.items.len});
     std.mem.sort(Bir.Inst.Index, bad.items, {}, regionLessThan);
     var previous: ?Bir.Inst.Index = null;
     for (bad.items) |inst| {
@@ -578,12 +577,12 @@ fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: P6Faults) Err
             inst,
             "the hidden arguments here do not add up — the evidence tree the checker " ++
                 "recorded here gives a function a different number of arguments than it has " ++
-                "requirements (`docs/design/checker-v2.md` §13.1, invariant I7)",
+                "requirements (`docs/design/checker-v2.md` §13.1)",
         );
     }
 }
 
-/// `--roundtrip-dispatch` on the table (v1's, verbatim for the table): right
+/// `--roundtrip-dispatch` on the table: right
 /// after it is finished, before `Cycles` reads it.
 fn roundtripTable(in: Input, report: *Report) Error!void {
     const gpa = in.gpa;
@@ -602,7 +601,7 @@ fn roundtripTable(in: Input, report: *Report) Error!void {
 }
 
 /// The plan's canonical round trip under the same flag, once the plan
-/// exists (§5, *As built by R4b*).
+/// exists (§5).
 fn roundtripPlan(in: Input, report: *Report) Error!void {
     const gpa = in.gpa;
     const plan_bytes = try schema_plan_bytes.write(gpa, in.plan, in.interner);
@@ -630,10 +629,10 @@ fn tryLessThan(_: void, a: Dispatch.Try, b: Dispatch.Try) bool {
     return a.inst.int() < b.inst.int();
 }
 
-/// P3 (§5, CK-42): every value of the module by name, sorted by symbol, so
+/// P3 (§5): every value of the module by name, sorted by symbol, so
 /// the module rule's lookup is one binary search and never a scan of the
-/// declarations per resolution (v1's `ownDeclNamed`). A name declared twice
-/// was refused by resolution; the first declaration wins, as v1's scan did.
+/// declarations per resolution. A name declared twice
+/// was refused by resolution; the first declaration wins.
 fn ownIndex(scratch: Allocator, bir: *const Bir) Error![]const Solve.OwnValue {
     var list: std.ArrayList(Solve.OwnValue) = .empty;
     for (bir.decls, 0..) |d, i| {

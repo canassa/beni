@@ -1,11 +1,7 @@
 //! The checker's public API and its inter-module driver (checker-v2.md §5,
-//! §19.1; checker.md §4.4): `run`, `Module`, `Options`, `Cutoff`. Moved here
-//! from v1's `Check.zig` by R4a, unchanged in behaviour, so that ONE
-//! scheduler, one core gate and one cutoff protocol served both checkers
-//! (`plans/checker-rewrite.md` R4a). `Driver.zig` walks the DAG,
-//! `Incremental.zig` finishes keys, loads, installs and publishes, and each
-//! module is checked by `Module.zig`. v1 was deleted by R12 and this
-//! directory, `src/check2/` until then, took its name (checker-v2.md §19.1).
+//! §19.1; checker.md §4.4): `run`, `Module`, `Options`, `Cutoff`.
+//! `Driver.zig` walks the DAG, `Incremental.zig` finishes keys, loads,
+//! installs and publishes, and each module is checked by `Module.zig`.
 //!
 //! **Order.** Modules are checked over the graph's topological order, so
 //! every import's interface is complete — and immutable — before anything
@@ -50,18 +46,16 @@ pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
-/// What `--self-profile` reports, and what M4's incrementality tests will
-/// assert did NOT move when only a body changed (checker.md §9). Moved here
-/// from v1's `Solve.zig` by R4b's review (S2). R12 deleted the six counters
-/// only v1 wrote (`obligations` and `constraints_*`).
+/// What `--self-profile` reports, and what the incrementality tests can
+/// assert did NOT move when only a body changed (checker.md §9).
 pub const Counters = struct {
     unifications: u64 = 0,
     generalisations: u64 = 0,
     instantiations: u64 = 0,
-    /// The derived-context fixpoints v2 ran (`Contexts.run`, checker-v2.md
-    /// §11.2), summed over the modules it CHECKED. A module installed from
-    /// the cache runs none: its rows are read off its record (I10, §14.3 *as
-    /// built by R10*), which is what a warm run's 0 here says.
+    /// The derived-context fixpoints the checker ran (`Contexts.run`,
+    /// checker-v2.md §11.2), summed over the modules it CHECKED. A module
+    /// installed from the cache runs none: its rows are read off its record
+    /// (§14.3), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
 
     /// Field-by-field sum. Reflective on purpose: a counter added above and
@@ -203,14 +197,12 @@ pub const Options = struct {
 /// The key, the entry load and the two published values, done ON THE WORKER
 /// that claimed the module (`fast-compiler.md` §8, `plans/m4-3.md` §8).
 ///
-/// **Why it cannot stay a serial pre-pass.** M4-1 computed every key in one
-/// serial pass and loaded every entry in a second, which worked because an
-/// import contributed its own KEY and a key is a function of sources alone.
-/// From M4-3 an import contributes its `(interface hash, dependency digest)`
-/// pair, and that pair exists only once the import has been CHECKED or LOADED
-/// — so the serial pass could only finish the keys of modules all of whose
-/// imports hit, and the case the cutoff exists for is precisely the one where
-/// an import MISSED and was re-checked to the same interface.
+/// **Why it is not a serial pre-pass.** An import contributes its
+/// `(interface hash, dependency digest)` pair, and that pair exists only
+/// once the import has been CHECKED or LOADED — so a serial pass could only
+/// finish the keys of modules all of whose imports hit, and the case the
+/// cutoff exists for is precisely the one where an import MISSED and was
+/// re-checked to the same interface.
 ///
 /// **What makes it deterministic** is that a key is a function of `own_terms`
 /// and of values published by modules the schedule guarantees are complete
@@ -218,8 +210,7 @@ pub const Options = struct {
 /// depends on which worker got there first. **One writer per slot**, the
 /// discipline `interfaces[m]`, `dispatch[m]` and `types.ref_ids[m]` already
 /// keep. And at `--jobs=1` the serial walk is `graph.order`, so keys are
-/// finished in exactly the order M4-1's serial pass used — one code path and
-/// one scheduling rule.
+/// finished in the graph's order — one code path and one scheduling rule.
 pub const Cutoff = struct {
     /// The serial pass's `own_terms` blobs, and the slots this fills.
     keys: *Key.Keys,
@@ -395,8 +386,8 @@ pub fn run(
 
 /// Constraint generation and solving walk an expression TREE, and the parser
 /// accepts 4096 levels of nesting (language.md §10). 4096 frames do not fit
-/// in a default thread stack: M2b measured `bench/pathological/
-/// PlusChain8000.beni` overflowing at 16 MiB and surviving at 32, and
+/// in a default thread stack: `bench/pathological/PlusChain8000.beni`
+/// was measured overflowing at 16 MiB and surviving at 32, and
 /// `Session` runs the whole check on a 64 MiB thread for that reason. Every
 /// worker here needs the same room, so the size is stated at every spawn —
 /// `std.Thread.SpawnConfig`'s default is nowhere near it.

@@ -22,15 +22,14 @@
 //! constructor tables. A constructor's arity follows its name as `/n` and is
 //! omitted for a nullary one.
 //!
-//! M2b fills in ` : scheme` after each value, rendered by `check/Render.zig`
+//! The checker fills in ` : scheme` after each value, rendered by `check/Render.zig`
 //! — the same renderer every diagnostic uses, so these goldens test the
 //! type text of every message too (checker.md §8.2). A scheme is printed by
 //! instantiating it into a throwaway store: the interface stores terms
 //! precisely so it can outlive the store it came from, and the renderer
 //! reads store variables, so one of the two has to give. A run that
 //! resolved names but did not check (the hermetic tests of `Interface`)
-//! has no schemes and prints the names alone, which is M2a's output
-//! unchanged. A declaration that failed to check prints `<error>`.
+//! has no schemes and prints the names alone. A declaration that failed to check prints `<error>`.
 //!
 //! Everything is a name or a small integer: there are no positions and no
 //! symbol ids, so the output depends on the source alone and not on
@@ -40,7 +39,7 @@
 //! The dump above goes through `Schemes.instantiate` and `Render`, and
 //! `Render` re-sorts a record's fields by text — so it cannot see whether
 //! the bytes `terms` and `extra` actually hold depend on which worker
-//! interned which file. `fast-compiler.md` §8.1 has M4 hashing exactly
+//! interned which file. `fast-compiler.md` §8.1 hashes exactly
 //! those bytes, so "the same at every `--jobs`" has to be assertable about
 //! them and not about a printer that would hide a difference. That is the
 //! whole reason the raw form exists; it is not meant to be read for
@@ -81,7 +80,7 @@ pub fn write(
         try w.print(" {s}", .{interner.slice(iface.symbol(t.name))});
         // The interface records an ARITY, not the parameter names the
         // source wrote: a type's identity does not depend on what its
-        // parameters were called, and M4 hashes this record. The names come
+        // parameters were called, and the cache hashes this record. The names come
         // from the type renderer's own generator, so a parameter here is
         // spelled exactly as an unnamed variable is spelled in a
         // diagnostic and in `dump --stage=types`.
@@ -142,7 +141,7 @@ pub fn write(
 
 /// One present derived row's context, entry by entry: `(param, method)` and,
 /// for a method that is not `eq` or `compare`, the scheme that carries its
-/// type (§14.2 *as amended by R8a*).
+/// type (checker-v2.md §14.2).
 fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, kind: []const u8, d: Interface.Derived) Error!void {
     if (d.status == .private_method or d.status == .requirement) {
         const p = iface.privateCulprit(d.context) orelse return;
@@ -213,7 +212,7 @@ pub fn writeRaw(
             }
             try w.writeByte('}');
         }
-        // §11.4's gate, written by the new checker only (R8b's review round).
+        // checker-v2.md §11.4's gate.
         if (t.no_function) try w.writeAll(" no_function");
         try w.writeByte('\n');
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
@@ -221,7 +220,7 @@ pub fn writeRaw(
             try writeContext(w, iface, interner, row[0], row[1]);
         }
     }
-    // The hidden rows of §14.2 *as amended by R8a* (CK-89).
+    // The hidden rows of checker-v2.md §14.2.
     for (iface.hidden_types, 0..) |t, i| {
         try w.print("hidden {d} {s} arity={d} kind={t} equatable={} eq={t} compare={t}{s}\n", .{
             i,
@@ -249,7 +248,7 @@ pub fn writeRaw(
             c.result,
         });
         // A record alias's field names, argument `i` being field `i`
-        // (interface v3, CK-39).
+        // (interface v3).
         for (iface.range(c.fields), 0..) |word, f| {
             try w.print("  field {d} {s}\n", .{ f, interner.slice(iface.symbol(@enumFromInt(word))) });
         }

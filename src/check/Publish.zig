@@ -1,17 +1,16 @@
-//! P8: the interface record (checker-v2.md §14.1, CK-13).
+//! P8: the interface record (checker-v2.md §14.1).
 //!
 //! **`scheme` is the only way a solved type enters an interface.** In order:
-//! the error scan (`Walk.hasError`, v1's three-valued `hasError` over
+//! the error scan (`Walk.hasError`, three-valued, over
 //! `owned` successors), `Schemes.Writer.add`, the writer's depth check, a
 //! `nesting_too_deep` on failure, and `<error>` instead of a truncated or
 //! poisoned scheme. Values, schema members and schema constructors all go
-//! through it — v1 wrote schema members and constructors with a bare
-//! `writer.add`, so a 600-deep member was published truncated and a
-//! dependent's mistake against it compiled clean (CK-13). Constructor terms
-//! keep v1's own guard (`addCtor` has no scheme to scan).
+//! through it, so a deep member is never published truncated, where a
+//! dependent's mistake against it would compile clean. Constructor terms
+//! keep a guard of their own (`addCtor` has no scheme to scan).
 //!
-//! The rest is v1's `fillInterface`, `fillCtorTerms` and `fillTypeFacts`,
-//! moved here (§19: "the rest into `Publish.zig`"), and the
+//! The rest is `fillInterface`, `fillCtorTerms` and `fillTypeFacts`
+//! (§19: "the rest into `Publish.zig`"), and the
 //! `--roundtrip-interfaces` hook, which runs right after the record is
 //! complete and before anything reads it (§5).
 
@@ -109,14 +108,14 @@ pub fn fill(in: Input) Error!void {
     ref_ids.* = try in.types.resolveRefs(gpa, iface, cx.graph);
 }
 
-/// What a value declaration publishes (§14.1 *amended by R15-fix-D*,
-/// CK-147): a function of the declaration alone. An ANNOTATED one publishes
+/// What a value declaration publishes (§14.1): a function of the
+/// declaration alone. An ANNOTATED one publishes
 /// its P2 scheme, the annotation as written, failed or not. An UNANNOTATED
-/// one whose failure bit is set (I12, `Report.failed`) publishes `<error>`:
+/// one whose failure bit is set (`Report.failed`) publishes `<error>`:
 /// its inferred type is whatever the solver had reached when the error
 /// stopped it, which depends on the order the module's declarations were
 /// checked in, and a dependent checked against it would get a verdict that
-/// follows that order (I9). The error is this module's, so the dependent is
+/// follows declaration order. The error is this module's, so the dependent is
 /// silent against the `<error>` (a `poisoned` wanted, §12.2).
 fn publishedRoot(bir: *const Bir, report: *const Report, decl_scheme: []const Var.Optional, d: Bir.DeclIndex) ?Var {
     if (d.int() >= decl_scheme.len) return null;
@@ -168,9 +167,9 @@ const Publisher = struct {
 };
 
 /// Every visible constructor's argument terms (checker.md §7's
-/// `arg_terms`), quantified over the owning type's parameters. v1's
-/// `fillCtorTerms`, through the one routine's scan and depth check (§14.1
-/// *Amended by R15-fix-A*): an argument that reads as `err` (a type that did
+/// `arg_terms`), quantified over the owning type's parameters:
+/// `fillCtorTerms`, through the one routine's scan and depth check
+/// (§14.1): an argument that reads as `err` (a type that did
 /// not resolve, or a wrong arity: reported) or too deep keeps `no_terms`, so
 /// a use poisons, and no `<error>` term is published inside a constructor.
 fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface) Error!void {
@@ -217,11 +216,11 @@ fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
     iface.ctors = ctors;
 }
 
-/// Interface v3's per-type facts (§14.2 *as amended by R8a*): each type's
+/// Interface v3's per-type facts (§14.2): each type's
 /// `payload_params` and its two derived rows, read off THE derived contexts
 /// (`Contexts`, settled in P5) — on the exported types' rows, and on a hidden
-/// row for every other nominal type of this module a published term names
-/// (CK-89), found by closing over the writer's type references, which the
+/// row for every other nominal type of this module a published term names,
+/// found by closing over the writer's type references, which the
 /// context entries' own schemes can extend.
 fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface, contexts: *Contexts, report: *Report) Error!void {
     const cx = p.cx;
@@ -242,7 +241,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
                 continue;
             }
             t.payload_params = try facts.payloadParams(decl, t.kind, t.arity);
-            // §11.4's gate, which an importer cannot compute (CK-120).
+            // §11.4's gate, which an importer cannot compute.
             if (t.kind == .adt) t.no_function = ((try Marker.functionFree(cx, contexts, null, id)) orelse true);
             t.eq = try facts.derived(id, .eq);
             t.compare = try facts.derived(id, .compare);
@@ -260,7 +259,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
     // Own alias bodies are in no record, so a private type an importer
     // reaches only through a `pub type alias` body is named by no
     // `type_refs` row: the set is closed over them, as `cache/Digest.zig`
-    // closes its type set (R8a's review, S2). Seeded with the exported
+    // closes its type set. Seeded with the exported
     // aliases; an alias the writer names adds its body too.
     var through: std.ArrayList(Types.TypeId) = .empty;
     defer through.deinit(cx.scratch);
@@ -307,7 +306,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
             .arity = entry.arity,
             .kind = entry.kind,
             .is_equatable = entry.equatable and entry.kind == .foreign,
-            // §11.4's gate, which an importer cannot compute (CK-120; a
+            // §11.4's gate, which an importer cannot compute (a
             // tagged schema endpoint's among them, §11.5).
             .no_function = entry.kind == .adt and ((try Marker.functionFree(cx, contexts, null, id)) orelse true),
             .payload_params = try facts.payloadParams(entry.decl, entry.kind, entry.arity),
@@ -339,7 +338,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
 /// symbol slot per method name.
 const Facts = struct {
     cx: *const Context,
-    /// The one routine: a row's template scheme goes through it (CK-142).
+    /// The one routine: a row's template scheme goes through it.
     publisher: *Publisher,
     report: *Report,
     writer: *Schemes.Writer,
@@ -368,7 +367,7 @@ const Facts = struct {
     /// `present` with its entries, each of another method than `eq` or
     /// `compare` with its method type as a scheme over the type's
     /// parameters, or `function` / `unanswerable` — or `private_method`
-    /// (D1, §14.2 *as amended by R8b*) with its culprit: this type itself
+    /// (§11.3, §14.2) with its culprit: this type itself
     /// when the module's own value of the name is private, or the type a
     /// payload's context reached.
     fn derived(f: *Facts, id: Types.TypeId, kind: Contexts.Kind) Error!Interface.Derived {
@@ -387,18 +386,17 @@ const Facts = struct {
             .foreign => return .{ .status = .foreign },
             .absent_function => return .{ .status = .function },
             .absent_private => return f.private(@enumFromInt(answer.culprit), answer.method),
-            // CK-116: the reason rides on the row (§14.2 *as amended by R13*).
+            // The reason rides on the row (§14.2).
             .absent_requirement => return f.culpritRow(.requirement, @enumFromInt(answer.culprit), answer.method),
             // The record has no status for a needed annotation, so an
             // importer says "does not support" where the module itself gives
-            // the annotation hint (R8a's review, nit): the texts are R13's.
+            // the annotation hint: the texts are the unanswerable row's.
             .absent_other, .needs_annotation => return .{ .status = .unanswerable },
             // A payload met `err`: the module has a message, and an importer
-            // poisons in silence as for a module never checked (CK-178).
+            // poisons in silence as for a module never checked.
             .poisoned => return .{ .status = .unchecked },
             // P5 ran it with a budget of its own: one that still ran out is
-            // the compiler's failure, not a fact about the type (R8b's
-            // round-2 review, S1).
+            // the compiler's failure, not a fact about the type.
             .absent_budget => {
                 try f.report.internal(f.cx.bir.decls[f.cx.types.entry(id).decl.int()].inst_start, "a derived context ran out of the step budget in P5 (checker-v2.md §11.2)");
                 return .{ .status = .unanswerable };
@@ -428,8 +426,8 @@ const Facts = struct {
         return f.culpritRow(.private_method, culprit, method);
     }
 
-    /// `private_method`'s or `requirement`'s row (§14.2 *as amended by R8b*,
-    /// *by R13*): `(type_ref, method)`.
+    /// `private_method`'s or `requirement`'s row (§14.2):
+    /// `(type_ref, method)`.
     fn culpritRow(f: *Facts, status: Interface.Derived.Status, culprit: Types.TypeId, method: InternPool.Symbol) Error!Interface.Derived {
         const ref = try f.writer.typeRefOf(culprit);
         if (ref == .none) return .{ .status = .unanswerable };
@@ -438,21 +436,21 @@ const Facts = struct {
     }
 
     /// A row's method types as ONE scheme whose body is `( p₀, …, pₙ₋₁,
-    /// ( τ₀, …, τₖ ) )` (§14.2 *as amended by R8a*): the parameters first, so
+    /// ( τ₀, …, τₖ ) )` (§14.2): the parameters first, so
     /// `Schemes.Writer` numbers them `0 … n − 1`, then the answer's template
     /// tuple, whose element `slot` an entry names.
     ///
-    /// Published by `Publisher.scheme`, the one routine (§14.1, CK-142), at
+    /// Published by `Publisher.scheme`, the one routine (§14.1), at
     /// the type's declaration `decl`: a template too deep to write is
     /// `nesting_too_deep` there, and the row's scheme `<error>` — which an
-    /// importer's use meets as `err` and leaves `poisoned`, silent. It
-    /// wrote with a bare `writer.add`: no scan, and a truncated template
-    /// published as a silent `<error>` that the importer's I7 then tripped on.
+    /// importer's use meets as `err` and leaves `poisoned`, silent. A bare
+    /// `writer.add` would scan nothing, and publish a truncated template as
+    /// a silent `<error>` that trips the importer's evidence count check.
     ///
-    /// A PINNED parameter (CK-159) is written as its ground type instead —
+    /// A PINNED parameter is written as its ground type instead —
     /// the template's element `slot` — so an importer's unification of the
-    /// parameters with the use's arguments is the pin's check (§14.2 *as
-    /// amended by R15-fix-E*): the record's format does not change.
+    /// parameters with the use's arguments is the pin's check
+    /// (§14.2): the record's format does not change.
     fn templateScheme(f: *Facts, t: u32, template: Var, pins: []const Contexts.Pin, decl: Bir.DeclIndex) Error!Interface.SchemeIndex {
         const store = f.cx.store;
         const params = try f.contexts.paramsOf(t);
@@ -472,7 +470,7 @@ const Facts = struct {
     }
 };
 
-/// v1's `payloadParams`: bit `i` set when parameter `i` occurs in some
+/// `payloadParams`: bit `i` set when parameter `i` occurs in some
 /// constructor's payload; every bit for a `foreign type`, for a declaration
 /// too deep to read, or for a payload that reads as `err` ("may hold a
 /// value" is the safe side). The walk is the store's own, over the builder's
@@ -491,7 +489,7 @@ pub fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, kind: Interface.Ty
     }.set;
     const owner = cx.bir.decl(decl);
     // A schema endpoint's payloads are its plan's, not constructors: every
-    // parameter counts (§11.4's safe side; R8b).
+    // parameter counts (§11.4's safe side).
     if (kind == .foreign or arity == 0 or owner.kind == .schema) return all(words.items, arity);
     const params = cx.bir.declTypeParams(owner);
     var b = cx.builder(.flex, TypeStore.generalized);
@@ -530,7 +528,7 @@ pub fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, kind: Interface.Ty
 }
 
 /// `--roundtrip-interfaces` (`fast-compiler.md` §8): replace the record with
-/// serialize → bytes → deserialize of itself. v1's, verbatim; a failure is
+/// serialize → bytes → deserialize of itself. A failure is
 /// `internal`, never a cache miss.
 fn roundtrip(cx: *const Context, iface: *Interface, report: *Report) Error!void {
     const gpa = cx.gpa;

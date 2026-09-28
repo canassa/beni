@@ -113,7 +113,7 @@ pub const Code = enum {
     duplicate_pattern_variable,
     duplicate_type_parameter,
     unbound_type_variable,
-    // M2a (checker.md §8.1): the module graph and cross-module resolution.
+    // Resolution (checker.md §8.1): the module graph and cross-module resolution.
     unknown_module,
     duplicate_module,
     import_cycle,
@@ -122,7 +122,7 @@ pub const Code = enum {
     opaque_constructor,
     wrong_type_arity,
     recursive_alias,
-    // M2b (checker.md §8.1): inference. `rigid_mismatch` is the case where
+    // Inference (checker.md §8.1). `rigid_mismatch` is the case where
     // one side was an annotation's promise about ALL types, which needs a
     // different hint from an ordinary mismatch; the three arity codes are
     // §8.3's, and with currying gone (`language.md` §6.7) they are what an
@@ -144,12 +144,12 @@ pub const Code = enum {
     tuple_index_out_of_range,
     not_a_tuple,
     try_shape,
-    // M2c (checker.md §6.6, §8.1): pattern usefulness. Both are reported
+    // Pattern usefulness (checker.md §6.6, §8.1). Both are reported
     // after a declaration solves cleanly, so the patterns they judge are
     // known to be well typed.
     missing_patterns,
     redundant_pattern,
-    // M3a / B1 (boundary.md §4, §5): the platform contract. Every one of
+    // The platform contract (boundary.md §4, §5). Every one of
     // these is about privileged code — a `foreign` declaration and the
     // sibling JavaScript file it binds to — and every one of them is a
     // check Elm does not perform (§4).
@@ -167,7 +167,7 @@ pub const Code = enum {
     // The static-dispatch spike (docs/design/static-dispatch-spike.md §10),
     // appended so no existing line moves. These two are lowering's, from the
     // well-formedness rules of a `where` clause (§2.4); the other eight codes
-    // of §10 are the checker's and land with S3.
+    // of §10 are the checker's.
     where_variable_unbound,
     duplicate_where_constraint,
     /// The eight the CHECKER raises (§6, §10.1-§10.5, §10.8-§10.10).
@@ -186,27 +186,27 @@ pub const Code = enum {
     /// unannotated declaration whose inferred scheme would carry more than
     /// `Solve.Solver.max_inferred_constraints` of them.
     too_many_inferred_constraints,
-    /// `boundary.md` §4's fourth check, appended on 2026-09-18 (queue slice
-    /// 4, `static-dispatch-spike.md` A.84): a sibling export whose parameter
+    /// `boundary.md` §4's fourth check, appended on 2026-09-18
+    /// (`static-dispatch-spike.md` A.84): a sibling export whose parameter
     /// count is not evidence count + declared arity, or whose parameter list
     /// the scanner may not count.
     foreign_arity_mismatch,
-    /// The third of the exhaustiveness set, appended on 2026-09-18 (queue
-    /// slice 14, `checker.md` §6.6): a `case` whose exhaustiveness the
+    /// The third of the exhaustiveness set, appended on 2026-09-18
+    /// (`checker.md` §6.6): a `case` whose exhaustiveness the
     /// usefulness analysis could not decide inside `--pattern-budget`.
     /// Silence there was the last exit-0 path to a wrong answer, because
     /// `backend.md` §7's decision tree emits no default arm.
     pattern_budget_exhausted,
-    /// `language.md` §7's initialisation rule, appended on 2026-09-18
-    /// (queue slice 21): a `let` VALUE binding whose right-hand side reads
+    /// `language.md` §7's initialisation rule, appended on 2026-09-18: a
+    /// `let` VALUE binding whose right-hand side reads
     /// a value binding of the same `let` written below it — directly, by
     /// naming itself, or by naming a `let` function that reads one. §6's
     /// *Evaluation order* makes written order the rule, so the reference
     /// is a JavaScript temporal dead zone: it was the last exit-0 path
     /// from a `let` to a `ReferenceError`.
     let_forward_reference,
-    /// The TOP-LEVEL half of the same rule, appended on 2026-09-18 (queue
-    /// slice 23, `language.md` §7, `checker.md` §6.7): a top-level value
+    /// The TOP-LEVEL half of the same rule, appended on 2026-09-18
+    /// (`language.md` §7, `checker.md` §6.7): a top-level value
     /// whose initialiser is reachable from itself, directly or through the
     /// functions it names. Top-level constants are emitted in dependency
     /// order (`backend.md` §5), which orders everything except a cycle —
@@ -215,15 +215,15 @@ pub const Code = enum {
     /// the last exit-0 path from a MODULE to a temporal dead zone, as
     /// `let_forward_reference` was from a `let`.
     cyclic_value,
-    /// M3a again (`boundary.md` §5.3), appended on 2026-09-19: a project
+    /// The platform contract again (`boundary.md` §5.3), appended on 2026-09-19: a project
     /// with more than one `main`. It was reported under `missing_main`,
     /// whose title says the opposite of the message underneath it and whose
     /// code routes a tool to the wrong condition. A build is a pair of ONE
     /// entry point and ONE platform, so two `main`s are two builds — a
     /// different edit from the one "MISSING MAIN" asks for.
     duplicate_main,
-    /// M3c (`backend.md` §9's *The release optimiser*), appended on
-    /// 2026-09-19 (queue slice 50): a `--release` build in which a `pub`
+    /// The release optimiser (`backend.md` §9), appended on 2026-09-19: a
+    /// `--release` build in which a `pub`
     /// value of `core/Debug` survives §9's reachability walk. The owner took
     /// Elm's rule that day — `Debug.toString` reflects on the runtime
     /// representation the optimiser must be free to change, and a
@@ -231,9 +231,8 @@ pub const Code = enum {
     /// — so that "a release build behaves exactly as the development build
     /// does" holds without exception. The message names the use sites.
     debug_in_release,
-    /// M3a again (`backend.md` §2's *The output tree does not depend on the
-    /// file system's case sensitivity*), appended on 2026-09-21 (queue row
-    /// 58): two files a build would write whose paths are equal under ASCII
+    /// The output tree (`backend.md` §2's *The output tree does not depend on
+    /// the file system's case sensitivity*), appended on 2026-09-21: two files a build would write whose paths are equal under ASCII
     /// case folding. On APFS and NTFS they are ONE file, the second write
     /// wins, and the build exits 0 having shipped something that throws at
     /// load — which is what `main.mjs` did to every module named `Main`.
@@ -257,19 +256,19 @@ pub const Code = enum {
     duplicate_schema_modifier,
     schema_conversion_mismatch,
     /// Static dispatch (`static-dispatch-spike.md` §10.12), appended on
-    /// 2026-09-23 (queue row 75): a use of a module's own type needs that
+    /// 2026-09-23: a use of a module's own type needs that
     /// module's method, which has no annotation and whose binding group is
     /// checked after the use, so it has no type there yet. It used to be a
     /// silent `err` site or part — `undefined`, or a structural
     /// `Basics.eq` that ignored the method.
     method_needs_annotation,
-    /// Appended on 2026-09-25 (slice R3, `checker-v2.md` §14.2, CK-38): a
+    /// Appended on 2026-09-25 (`checker-v2.md` §14.2): a
     /// `type`, `type alias`, `foreign type` or `schema` of more than 65 535 parameters.
     /// A type's arity is a `u16` in the interface record, and a saturated
-    /// arity would import the type at the wrong width — the defect CK-38
-    /// was at 255, and the reason this is an error and not a clamp.
+    /// arity would import the type at the wrong width — which is what a `u8`
+    /// arity did at 255, and the reason this is an error and not a clamp.
     too_many_type_parameters,
-    /// Appended on 2026-09-28 (slice R15-fix-H, CK-192; `backend.md` §2's
+    /// Appended on 2026-09-28 (`backend.md` §2's
     /// *The output directory holds what the last build wrote*): `--out`
     /// holds a `_manifest.txt` that is not beni's record, which the build
     /// would otherwise overwrite. Reported before the first byte is written.

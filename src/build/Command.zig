@@ -50,9 +50,9 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
 
     // Opened here for the reason `check/Command.zig` gives: the one failure
     // a cache is allowed to have is a usage failure, and the command owns
-    // the message. `build` caches no emitted byte in M4-1 — the entry holds
+    // the message. `build` caches no emitted byte — the entry holds
     // the check's result and nothing of `emit`'s, and the write-skip
-    // `Emit.flush` wants is M4-4's.
+    // `Emit.flush` wants is future work.
     var cache_failure: ?CacheDir.Failure = null;
     var cache: ?CacheDir = CacheDir.fromCli(io, build.cache, &cache_failure) catch {
         const f = cache_failure.?;
@@ -122,7 +122,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // else, and a build's product is the files it wrote — so there is no
     // stream left for a summary line, and `check` already sets the
     // precedent. How much was written is a `--self-profile` counter, which
-    // is also where M4's incrementality tests will read it.
+    // is also where the incrementality tests read it.
     session.profile.addCounter(.emitted_files, result.files_written);
     session.profile.addCounter(.emitted_bytes, result.bytes_written);
     if (options.self_profile) |path| session.writeProfile(path) catch {};

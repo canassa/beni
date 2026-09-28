@@ -112,8 +112,8 @@ pub const Entry = struct {
     /// An alias every one of whose parameters survives its FULL expansion
     /// (`settleInjective`): two of its uses expand to one type exactly when
     /// their arguments are one type, so `Unify` may unify the arguments
-    /// and keep the name (checker-v2.md §7.1 *amended by R15-fix-G*,
-    /// CK-175). `type alias Tagged t = Int` is not: `Tagged String` and
+    /// and keep the name (checker-v2.md §7.1). `type alias Tagged t = Int`
+    /// is not: `Tagged String` and
     /// `Tagged Bool` are both `Int`. False for anything that is not an
     /// alias, and for a schema endpoint, whose body this table does not
     /// read — false is always sound, it only costs the fast path.
@@ -127,8 +127,8 @@ entries: []Entry,
 interfaces: []const Interface,
 /// Borrowed, the session's schema plans, one slot per module, filled when
 /// that module's check (or its cache hit) finishes, before any dependent
-/// starts: a private record schema's endpoint is read from it (CK-126,
-/// `Builder.planEndpoint`).
+/// starts: a private record schema's endpoint is read from it
+/// (`Builder.planEndpoint`).
 plans: []const SchemaPlan = &.{},
 /// Owned. `by_decl[module][decl] = TypeId`, `.none` for a value
 /// declaration. One flat array with per-module offsets, so nothing is
@@ -140,7 +140,7 @@ schema_encoded_by_decl: []TypeId,
 /// the schema a declaration declares, `no_schema` for any other
 /// declaration and for a private schema. An alias body read from another
 /// module names that module's schema by declaration, and the endpoint's
-/// scheme is in the interface (CK-122).
+/// scheme is in the interface.
 schema_iface_by_decl: []u32,
 decl_offsets: []u32,
 /// Owned. `by_interface[module][interface type index] = TypeId`.
@@ -155,10 +155,10 @@ schema_offsets: []u32,
 entry_offsets: []u32,
 /// Owned, parallel to `entries`: each module's range of it (`entry_offsets`)
 /// holds that range's ids sorted by `(name, id)`, so `find` is a binary
-/// search, not a scan (CK-143: publication and the dependency digest each
-/// call it once per type reference, which made both quadratic in a
+/// search, not a scan (publication and the dependency digest each call it
+/// once per type reference, so a scan would make both quadratic in a
 /// module's types). The duplicate name of a refused redeclaration finds
-/// the first declaration, as the scan did.
+/// the first declaration.
 by_name: []TypeId,
 /// Owned, one slice per module: `ref_ids[m][r]` is the `TypeId` module
 /// `m`'s interface `type_refs[r]` names in THIS session.
@@ -384,13 +384,13 @@ pub fn refIds(types: *const Types, m: Graph.Index) []const TypeId {
 /// declaration list rather than against its interface, because a `pub`
 /// signature may name a PRIVATE type (`pub make : Hidden`) and that type is
 /// in no interface. Each lookup is a binary search of the declaring module's
-/// `by_name` range (CK-143: the scan it replaced made this quadratic in a
+/// `by_name` range (a scan would make this quadratic in a
 /// module's types) and runs once per reference per build, not once per use;
 /// the `checker.md` §4.5 rule is about the per-use path, which `ref_ids`
 /// keeps free of names.
 ///
 /// A reference that names no module or no type of it yields `.none` — the
-/// same poisoned id the term carried before, so a record M4 mapped from
+/// same poisoned id the term carried before, so a record mapped from
 /// disk that does not describe itself cannot trap.
 pub fn resolveRefs(
     types: *const Types,
@@ -413,7 +413,7 @@ pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Packa
     const m = graph.find(package, module) orelse return .none;
     // The one place a check can reach a module it has no import edge to
     // (`checker.md` §7's first `type_refs` consequence): a record names the
-    // DECLARING module, and this resolves that name. §3.2 row 11.
+    // DECLARING module, and this resolves that name: the `types_find` read.
     reads.note(.types_find, m);
     if (m.int() + 1 >= types.entry_offsets.len) return .none;
     const from = types.entry_offsets[m.int()];
@@ -687,9 +687,8 @@ fn settleEquatable(
             if (!e.equatable) try queue.append(gpa, @intCast(i));
             // A `foreign type` has no body to derive `compare` over, so it
             // answers `<` only through §3.2's table or through a `pub
-            // compare` of its own module (A.50). `List` has neither until
-            // §5.2 lands in S6, which is what makes `xs < ys` an honest
-            // `unknown_method` today.
+            // compare` of its own module (A.50). A `foreign type` with
+            // neither makes `xs < ys` an honest `unknown_method`.
             e.comparable = types.inWellKnownTable(@enumFromInt(i)) or
                 types.declaresPubCompare(e.module, bir, @enumFromInt(i));
             if (!e.comparable) try order_queue.append(gpa, @intCast(i));
@@ -1015,10 +1014,10 @@ pub const Builder = struct {
     /// expansion is `err`: it is recursive, which resolution reported
     /// (`recursive_alias`; a cycle across modules is an `import_cycle`).
     /// The depth bound alone did not stop it — `type alias A = ( A, A )`
-    /// doubles per level, 2^512 reads before the bound (CK-140).
+    /// doubles per level, 2^512 reads before the bound.
     expanding: ?*const Expansion = null,
     /// Every alias this read has expanded, by `(alias, argument roots)`:
-    /// the `alias` variable made for it (CK-171). A written type is a tree
+    /// the `alias` variable made for it. A written type is a tree
     /// but the aliases it names are a DAG — `A{i} = ( A{i-1}, A{i-1} )` —
     /// and expanding each use again made `A18` 2^18 bodies. Here an alias
     /// applied to the same arguments is one variable wherever the read
@@ -1161,7 +1160,7 @@ pub const Builder = struct {
         // A declaration's parameter carries its index (`TypeVarInfo.param`),
         // and every reader binds a declaration's parameters first and in
         // order (`bind`), so the slot is checked, not searched: a scan per
-        // variable was O(n²) in the parameter count (CK-112). Anything else
+        // variable would be O(n²) in the parameter count. Anything else
         // falls back to the scan.
         if (info.param != Bir.TypeVarInfo.param_none and info.param < b.scope.items.len) {
             const s = b.scope.items[info.param];
@@ -1211,7 +1210,7 @@ pub const Builder = struct {
                 // An alias body read from the module that declares it
                 // (`aliasBody`), when that is not the module being
                 // checked: the endpoint's scheme is in that module's
-                // interface (CK-122).
+                // interface.
                 if (b.schema_context == null) {
                     const endpoint: Interface.SchemaCtor.Endpoint = if (data.rhs == 0) .type else .encoded;
                     if (b.types.schemaMemberOfDecl(b.module, @enumFromInt(data.lhs), endpoint)) |member| {
@@ -1220,7 +1219,7 @@ pub const Builder = struct {
                     // A private schema is in no interface. Its tagged
                     // endpoint is a nominal type, whole in its `TypeId`;
                     // a record endpoint's shape is its module's resolved
-                    // schema plan's (CK-126).
+                    // schema plan's.
                     const id = b.types.ofSchemaDecl(b.module, @enumFromInt(data.lhs), endpoint);
                     if (id != .none and b.types.entry(id).kind == .adt) break :blk id;
                     if (try b.planEndpoint(@enumFromInt(data.lhs), endpoint, args)) |v| return v;
@@ -1235,7 +1234,7 @@ pub const Builder = struct {
     }
 
     /// A PRIVATE schema's record endpoint, met in another module's alias
-    /// body (CK-126; `checker-v2.md` §11.5 *amended by R15-fix-D*): read
+    /// body (`checker-v2.md` §11.5): read
     /// from the declaring module's resolved schema plan, whose
     /// `program_term`/`encoded_term` are the endpoint written in interface
     /// terms, the same bytes an interface scheme would hold. The interface
@@ -1243,7 +1242,7 @@ pub const Builder = struct {
     /// that outlives the declaring module's check — and a cache hit
     /// installs it too (`Incremental.install`). The dependency digest
     /// already carries the expansion (`Digest.schemaEndpointExpansion`),
-    /// which is what makes this read `types_alias_body`'s row 12.
+    /// which is what makes this the `types_alias_body` read.
     ///
     /// `null` when the module has no plan: it had an error, so the importer
     /// has a dependency's message and the `err` the caller makes is
@@ -1290,7 +1289,7 @@ pub const Builder = struct {
     /// Build `id args`, expanding an alias's body ONCE under its
     /// parameters.
     ///
-    /// A count that is not the type's arity is `err` (CK-139): resolution
+    /// A count that is not the type's arity is `err`: resolution
     /// reported it (`wrong_type_arity`, `resolve/Resolve.zig`), and a
     /// partial application must never reach the store, where every reader
     /// of an `app` — derivation's context entries first — indexes its
@@ -1301,7 +1300,7 @@ pub const Builder = struct {
         if (e.kind != .alias) {
             return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = try b.store.addVars(args) } } }, b.varRank());
         }
-        // Expanded already in this read (`aliases`, CK-171). An entry is
+        // Expanded already in this read (`aliases`). An entry is
         // made only once its expansion is finished, so an alias inside its
         // own expansion is never found here and reaches the test below.
         const key = try b.scratch.alloc(u32, args.len + 1);
@@ -1331,11 +1330,12 @@ pub const Builder = struct {
     ///
     /// **This reads the DECLARING module's Bir, and for a cross-module
     /// alias that is a hole in the §8.1 firewall** — one of exactly two
-    /// left after M2d, the other being `Types.build` itself. It is not
+    /// left, the other being `Types.build` itself. It is not
     /// reachable today (every module's Bir is in memory for the whole run)
     /// and it is not what the checker.md §4.5 rule is about: no name is
     /// looked up, the module and declaration are dense indices resolution
-    /// produced. But M4 wants a dependency's Bir to be absent, and this
+    /// produced. But incremental builds want a dependency's Bir to be
+    /// absent, and this
     /// would have nothing to read.
     ///
     /// Closing it is checker.md §7's `alias_body: TermIndex?`, written the
@@ -1343,12 +1343,12 @@ pub const Builder = struct {
     /// the alias's parameters, instantiated from the interface here. That
     /// is deliberately NOT done yet, because it would close one of two
     /// holes and leave the larger one — `Types.build` walks every module's
-    /// declarations to number the types and settle equatability, so M4
-    /// needs a story for the whole type table, not for alias bodies alone.
+    /// declarations to number the types and settle equatability, so
+    /// incrementality needs a story for the whole type table, not for alias bodies alone.
     /// The comment is here so nothing claims a firewall that does not exist.
     fn aliasBody(b: *Builder, e: Entry, id: TypeId, args: []const Var) Error!Var {
-        // §3.2 row 12, and one of the two demonstrated miscompiles
-        // (`plans/m4-3.md` §6.2): the expansion is in no record, so the digest
+        // The `types_alias_body` read, and one of the two demonstrated
+        // miscompiles (`plans/m4-3.md` §6.2): the expansion is in no record, so the digest
         // is what makes it visible.
         reads.note(.types_alias_body, e.module);
         const bir = b.artifacts.bir(b.graph.moduleFile(e.module));
@@ -1363,7 +1363,7 @@ pub const Builder = struct {
         inner.expanding = &here;
         inner.shared = b.memo();
         // A schema endpoint in the body is read as the caller would read
-        // it written directly (CK-122): through the caller's schema lookup
+        // it written directly: through the caller's schema lookup
         // when the alias is the checked module's own, and through the
         // declaring module's interface otherwise (`named`). Without them
         // the body was a silent `err`, and a comparison of the alias an

@@ -1,7 +1,7 @@
 //! One file's front-end artifact as BYTES (docs/design/fast-compiler.md §8,
 //! *The front-end artifacts, and the file key*; `plans/m4-2.md` §2, §3).
 //!
-//! One file per SOURCE FILE, named by its **file key** — which is not M4-1's
+//! One file per SOURCE FILE, named by its **file key** — which is not the
 //! module key: it holds no import, no sibling hash and no `core_epoch`, so a
 //! body edit in a leaf moves the leaf's artifact and not its importers'.
 //! What travels: the **pre-resolve** `Bir`, the token `tag` and `start`
@@ -68,12 +68,11 @@ pub const magic = "BENIFE\x00\x00";
 
 /// Bumped whenever the meaning of any byte changes. A format change is a
 /// version bump and a cache discard, never a migration into spare bytes
-/// (`plans/m4-plan.md` D4) — and the compiler build id in the file key means
+/// — and the compiler build id in the file key means
 /// a version bump is belt and braces rather than the only defence.
 ///
-/// 4 (checker rewrite R1, 2026-09-24): `Token.Tag` gained `dot_dot`, which
-/// shifted every later tag, and a `Bir.Exposed` row grew from 8 to 12 bytes
-/// (`all_ctors_token`, CK-47).
+/// 4 (2026-09-24): `Token.Tag` gained `dot_dot`, which shifted every later
+/// tag, and a `Bir.Exposed` row grew from 8 to 12 bytes (`all_ctors_token`).
 pub const format_version: u32 = 4;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
@@ -804,7 +803,7 @@ const sample_key: [16]u8 = .{ 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6 };
 /// A small artifact with every section non-empty and several lengths that
 /// are NOT multiples of four, so the padding between sections is exercised
 /// rather than assumed. Built by hand rather than lowered: this file's claim
-/// is about the CONTAINER, and `--roundtrip-frontend` (M2-c) is what asserts
+/// is about the CONTAINER, and `--roundtrip-frontend` is what asserts
 /// it over the whole corpus.
 const Sample = struct {
     bir: Bir,

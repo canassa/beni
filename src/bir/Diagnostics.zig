@@ -31,7 +31,7 @@ pub const Item = struct {
     /// itself, `self` is a value written in terms of itself, and `through`
     /// names a `let` function of the same block whose body reads it —
     /// `self_through` when what it reads is the binding being defined
-    /// (CK-46), which is not "further down" but here.
+    /// — which is not "further down" but here.
     forward: Forward = .direct,
     /// `where_variable_unbound` only: which of the two triggers of
     /// static-dispatch-spike.md §10.6 fired. False is (a), the constraint's

@@ -5,7 +5,7 @@
 //! **`--platform` is not `build`'s alone** (boundary.md §5.3). Until this
 //! command took it, `check` could not be pointed at any program that imports
 //! its platform for `Program` — which is every program — so the one command
-//! an editor, a pre-commit hook, CI, M4's daemon and M5's LSP all run did not
+//! an editor, a pre-commit hook, CI, the daemon and an LSP all run did not
 //! exist for real code. The flag resolves exactly as `build`'s does, through
 //! `platform.zig`, so the two commands cannot disagree about what a platform
 //! is.
@@ -152,7 +152,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
 
 /// `--iface-hash`: one `<package>:<Module> <32 hex digits>` line per module
 /// on stdout, `core` and the platform included, sorted by that key
-/// (`fast-compiler.md` §8's *The interface hash, and slice zero*).
+/// (`fast-compiler.md` §8's *The interface hash*).
 ///
 /// **Why it exists at all**: `dump --stage=raw` prints only the modules
 /// named on the command line, so core's and the platform's records are
@@ -317,7 +317,7 @@ fn printDependencyDigests(gpa: Allocator, stdout: *Io.Writer, session: *Session)
 /// sorted by path (`fast-compiler.md` §8, `frontend.md` §1).
 ///
 /// `--cache-keys`' twin, and deliberately the same shape, because the two
-/// answer the two halves of the question M4-2 exists for: the module key says
+/// answer the two halves of the question incremental rebuilds ask: the module key says
 /// whether a module's CHECK would have to run again, and the file key whether
 /// its front end would. A body edit in a leaf moves one of these and three of
 /// those, and an edit-scenario fixture asserts exactly that, with no cache

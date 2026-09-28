@@ -1,5 +1,4 @@
-//! Constraint generation for patterns (checker-v2.md §6; `checker.md` §6.1,
-//! v1's rules verbatim).
+//! Constraint generation for patterns (checker-v2.md §6; `checker.md` §6.1).
 //!
 //! A pattern binds its variables by making the local's variable the one the
 //! context expects — no fresh variable and no equality — and it registers
@@ -27,7 +26,7 @@ pub fn pattern(g: *Generator, inst: Bir.Inst.Index, v: Var) Error!Constraint {
 pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!Constraint {
     g.depth += 1;
     defer g.depth -= 1;
-    // Unreachable from a file the parser accepted; noted, never silent (I4).
+    // Unreachable from a file the parser accepted; noted, never silent.
     if (g.depth > Generator.max_depth) {
         try g.cx.noteTooDeep(inst, @intFromEnum(g.decl));
         return g.true_();
@@ -127,7 +126,7 @@ pub fn patternAgainst(g: *Generator, inst: Bir.Inst.Index, expected: Var) Error!
         },
         // A parser placeholder: already reported.
         .@"error" => return g.equal(expected, try g.fresh(.err), inst, .{}),
-        // No pattern at all: the compiler's failure (review S1).
+        // No pattern at all: the compiler's failure.
         else => return g.add(.internal, inst, @intFromEnum(expected), 0, .{}),
     }
 }

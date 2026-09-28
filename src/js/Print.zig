@@ -14,13 +14,13 @@
 //! **This milestone prints readably** (backend.md §2: development output has
 //! no elimination and readable names). Real indentation, `Module$name`
 //! identifiers, string constructor tags, one statement per line. §9's
-//! compact printing is one boolean on this pass and is M3c's, so nothing
+//! compact printing is one boolean on this pass, so nothing
 //! here bakes the spacing into the IR.
 //!
 //! **Parenthesisation is computed, not stored.** `JsIr` holds structure;
 //! there is no `paren` node. The printer knows JavaScript's precedence table
 //! and brackets a child that binds less tightly than its parent. That keeps
-//! M3c's peephole free to rewrite `a + (b * c)` into anything without having
+//! the release optimiser free to rewrite `a + (b * c)` into anything without having
 //! to maintain parentheses as data.
 //!
 //! **Reserved words are escaped at the last moment.** beni's keyword set is
@@ -85,7 +85,7 @@ pub const Options = struct {
     /// §9 items 3 and 5: compact printing and `const` joining.
     compact: bool = false,
     /// How many expression levels the printer takes by recursion before it
-    /// switches to its work stack (CK-81). Only a test sets it, to 0, to
+    /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
     recursion_limit: u32 = 256,
 };
@@ -562,7 +562,7 @@ const Printer = struct {
                 try p.expression(@enumFromInt(d.lhs), 0, level);
                 // Compact printing drops the braces of a lone `return`,
                 // `continue`, `break`, `throw` or expression statement with no
-                // `else` (R8e, O6): `if(c)return a;`. Never a declaration
+                // `else`: `if(c)return a;`. Never a declaration
                 // (not a legal `if` body) and never an `if` (a dangling
                 // `else` would change owner).
                 if (p.compact and branches.elseBody().len() == 0) {
@@ -686,13 +686,13 @@ const Printer = struct {
     // ---- Expressions ------------------------------------------------------
     //
     // Past `recursion_limit` levels an expression is printed by a LOOP over an
-    // explicit work stack, not by recursion (CK-81). The tree the printer is handed is as deep as the
+    // explicit work stack, not by recursion. The tree the printer is handed is as deep as the
     // longest chain the compiler built, and several builders make chains as
     // long as their input is wide: a derived `eq` over a 60 000-field record
     // is one left-nested `&&` 60 000 deep (`Lower.structuralArrow`), and a
-    // list literal was one `{ $: 1, a: x, b: … }` per element (`consNode`;
-    // past 32 it is one array since R2c, `backend.md` §4).
-    // One Zig frame per link overflowed the emit thread's stack. With the
+    // short list literal is one `{ $: 1, a: x, b: … }` per element
+    // (`consNode`; past 32 it is one array, `backend.md` §4).
+    // One Zig frame per link would overflow the emit thread's stack. With the
     // stack, what a link costs is one `Work` entry on the heap, and the only
     // recursion left is an `arrow`'s block body — a function inside a
     // function, which is nesting the source wrote. Under the limit the
@@ -903,7 +903,7 @@ const Printer = struct {
     /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
     /// the pass itself needs neither a fixpoint nor a backward walk.
     ///
-    /// **One step, and total** (CK-190): `Opt.compress` records every
+    /// **One step, and total**: `Opt.compress` records every
     /// substitution already resolved, so a target is never itself
     /// substituted. This used to loop with a budget of 64 and, once a chain
     /// of single-use aliases outran it, print the name it stopped at — whose
@@ -1057,7 +1057,7 @@ const Printer = struct {
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
-            // three handle it (CK-81).
+            // three handle it.
             .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
         }
     }
@@ -1191,7 +1191,7 @@ const Printer = struct {
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
-            // three handle it (CK-81).
+            // three handle it.
             .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => try p.push("undefined"),
         }
         return null;
@@ -1215,7 +1215,7 @@ const Printer = struct {
                         try p.push(")");
                         return;
                     }
-                    // CK-138: not only an object itself — ANY body whose
+                    // Not only an object itself — ANY body whose
                     // printed text begins with `{` (`{ a: n }.a`,
                     // `{ a: n }.f(x)`, `{ …r, x: n }.x + 1`) reads as a block.
                     if (p.startsWithBrace(resolved, prec_arrow)) {
@@ -1236,7 +1236,7 @@ const Printer = struct {
     }
 
     /// Whether `node`, printed at `min_prec`, begins with the `{` of an
-    /// object literal (CK-138, `backend.md` §4's leftmost-token rule). An
+    /// object literal (`backend.md` §4's leftmost-token rule). An
     /// arrow's concise body and an expression statement are the two places
     /// JavaScript reads a leading `{` as a block, so they ask this and
     /// bracket the whole expression when it says yes.
@@ -1277,7 +1277,7 @@ const Printer = struct {
 
     /// An expression in statement position, bracketed whole when its first
     /// token would be the `{` of an object literal, which JavaScript reads
-    /// as a block (CK-138). JsIr has no function EXPRESSION node, so the
+    /// as a block. JsIr has no function EXPRESSION node, so the
     /// other statement-position hazard, a leading `function`, cannot arise.
     fn statementExpression(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         if (p.startsWithBrace(node, 0)) {
@@ -1735,7 +1735,7 @@ test "an arrow with one return prints concisely; an object body is bracketed" {
     }.go);
 }
 
-/// The CK-138 shapes, shared by the two tests below: arrow bodies and
+/// The leftmost-brace shapes, shared by the two tests below: arrow bodies and
 /// statements whose LEFTMOST token is an object literal's `{`, reached
 /// through a member, a call, a binary operand and a conditional's test —
 /// and one whose leftmost operand is bracketed anyway, which needs nothing.
@@ -1777,7 +1777,7 @@ const LeftmostBrace = struct {
     }
 };
 
-test "an arrow body or a statement whose leftmost token is `{` is bracketed whole (CK-138)" {
+test "an arrow body or a statement whose leftmost token is `{` is bracketed whole" {
     try expectPrinted(
         \\const m = () => ({ a: 1 }.a);
         \\const c = () => ({ a: 1 }.f(b));
@@ -1790,7 +1790,7 @@ test "an arrow body or a statement whose leftmost token is `{` is bracketed whol
     , LeftmostBrace.go);
 }
 
-test "the leftmost-brace bracket survives compact printing (CK-138)" {
+test "the leftmost-brace bracket survives compact printing" {
     try expectCompact(
         \\const m=()=>({a:1}.a),
         \\c=()=>({a:1}.f(b)),
@@ -2073,7 +2073,7 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
     try testing.expect(!isReservedWord("newer"));
 }
 
-test "a chain 200 000 links deep prints in a loop, not a stack frame per link (CK-81)" {
+test "a chain 200 000 links deep prints in a loop, not a stack frame per link" {
     // A supplement to `abuse_test.zig`'s end-to-end scenarios, which are the
     // coverage: here the tree is built directly, so the depth is exact. A
     // left-nested `&&` (a derived `eq`'s shape) and a right-nested object in
@@ -2125,7 +2125,7 @@ test "a chain 200 000 links deep prints in a loop, not a stack frame per link (C
 }
 
 test "the recursive and the iterative printer write the same bytes" {
-    // `rawRecursive` and `expand` are two spellings of one printer (CK-81):
+    // `rawRecursive` and `expand` are two spellings of one printer:
     // the first under `recursion_limit`, the second past it. A limit of 0
     // prints everything through the work stack, and every node kind, every
     // bracket and both whitespace modes have to come out byte for byte.
@@ -2284,7 +2284,7 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
         },
         17 => return f.node(.false_lit, 0, 0),
         else => {
-            // A long left-nested chain, the shape CK-81 is about.
+            // A long left-nested chain, the deep shape.
             var chain = try randomExpr(f, random, 0);
             for (0..random.uintLessThan(usize, 40)) |_| chain = try f.binary(.logical_and, chain, try randomExpr(f, random, sub / 2));
             return chain;

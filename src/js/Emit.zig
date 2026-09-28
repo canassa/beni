@@ -6,8 +6,8 @@
 //! **Development output is one ESM file per source module, mirroring the
 //! source tree** (§2). Nothing is eliminated and every name is readable,
 //! because this is the mode the §2 warm-rebuild budget of 15 ms is measured
-//! against: one edit rewrites one small file. Release output is chunks and
-//! is M3c/M3d's.
+//! against: one edit rewrites one small file. Release output as chunks is
+//! future work (§10).
 //!
 //! Layout under `--out`:
 //!
@@ -139,7 +139,7 @@ pub const default_entry_file = "_main.mjs";
 /// `default_entry_file`'s reason: a user module `Core.List` is legal and
 /// lands on `Core/List.mjs`.
 pub const core_dir = "_core/";
-/// The build's one derived-comparison engine (R8e, O3). A `_` name inside
+/// The build's one derived-comparison engine. A `_` name inside
 /// `_core/`, which no module file can take (§2, rule 1).
 pub const derived_runtime_path = core_dir ++ "_derived.mjs";
 const derived_runtime_source = @embedFile("derived_runtime.mjs");
@@ -181,9 +181,9 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
-    // No `source_maps`: the VLQ encoder is M5 (§11), so `--source-maps` is
-    // refused in `Cli.parseBuild` and never reaches here. Positions ride in
-    // the IR from M3a either way (§9.6).
+    // No `source_maps`: the VLQ encoder is not written (§11), so
+    // `--source-maps` is refused in `Cli.parseBuild` and never reaches here.
+    // Positions ride in the IR either way (§9.6).
 };
 
 pub const Result = struct {
@@ -231,8 +231,8 @@ pub fn run(
     try e.checkEntryFileName();
     try e.checkForeignShapes();
     try e.checkSiblings();
-    // Schema S2 checks endpoint types and records the resolved plan, but S4
-    // is the first slice which emits its required parse and print runners.
+    // The checker checks a schema's endpoint types and records the resolved
+    // plan, but its parse and print runners are not generated yet.
     // Refuse here, before entry discovery and before a pending output tree
     // exists, so a schema can never build while silently omitting them.
     if (try e.refuseSchemas()) return e.nothingWritten(gpa);
@@ -272,7 +272,7 @@ pub fn run(
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
     // §2's record, read before the first byte is written: a
-    // `_manifest.txt` that is not beni's is somebody's file (CK-192).
+    // `_manifest.txt` that is not beni's is somebody's file.
     const previous = try e.readRecord();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
@@ -484,8 +484,8 @@ const Emitter = struct {
 
     /// Either (a) a function over admitted types, or (b) an effect value.
     ///
-    /// M3a has no effect types yet (`Task`, `Cmd` and `Sub` arrive with B3
-    /// and B4), so shape (b) is approximated by its structural property: a
+    /// There are no effect types yet (`Task`, `Cmd` and `Sub` are still to
+    /// come), so shape (b) is approximated by its structural property: a
     /// CONCRETE type, with no type variable anywhere in it. That admits
     /// `foreign pi : Float` and `foreign type Program`'s values, and
     /// refuses `foreign xs : List a` and `foreign anything : a`, which are
@@ -546,7 +546,7 @@ const Emitter = struct {
                 // so check 4 and the call sites cannot disagree: the arity is
                 // the TYPE's, through any alias, and not the annotation's
                 // spelling (`pub foreign p : Pred a where …` takes evidence
-                // and one argument, R2b review S2).
+                // and one argument).
                 const use = Convention.ofDecl(dispatch, b, @intCast(index));
                 try declared.append(e.scratch, .{
                     .name = e.session.interner.slice(b.symbol(d.name)),
@@ -817,7 +817,7 @@ const Emitter = struct {
     /// build is a pair of entry point and platform (§5.3), and in a project
     /// with one `main` the entry point is not information the user should
     /// have to repeat. A project with two would be two builds, which is
-    /// exactly §5.3's full-stack case, and M3a says so rather than guessing.
+    /// exactly §5.3's full-stack case, and the build says so rather than guessing.
     fn findEntry(e: *Emitter) !?Entry {
         var found: ?Entry = null;
         for (0..e.graph().count()) |i| {
@@ -1298,7 +1298,7 @@ const Emitter = struct {
         // 8.7 % of a 100k-line build's cycles and half its page faults
         // (plans/perf-study-2026-09-27.md, item 1).
         var by_depth: std.ArrayList(?[]const []const u8) = .empty;
-        // R8e (O3): whether any module written imports the one engine.
+        // Whether any module written imports the one engine.
         var uses_runtime = false;
 
         for (0..count) |i| {
@@ -1698,9 +1698,9 @@ const Emitter = struct {
     /// the union of both builds (so a build killed halfway still lists
     /// everything either may have written), the outputs are written, what
     /// only the previous build wrote is removed, and the record is rewritten
-    /// with this build's files alone (CK-163). An old path equal to a new
+    /// with this build's files alone. An old path equal to a new
     /// one under case folding is removed only when it is another file
-    /// (CK-191, `OutputRecord.removeStale`).
+    /// (`OutputRecord.removeStale`).
     fn flush(e: *Emitter, old: []const OutputRecord.Entry) Error!void {
         const io = e.session.io;
         const out_dir = e.options.out_dir;
@@ -1714,9 +1714,9 @@ const Emitter = struct {
     }
 
     /// The previous build's record, or a refusal when `--out` holds a
-    /// `_manifest.txt` that is not one (CK-192, `backend.md` §2). Before
-    /// this, such a file read as an empty record and was overwritten: a
-    /// user's notes of that name were lost without a word. Refused rather
+    /// `_manifest.txt` that is not one (`backend.md` §2). Reading such a
+    /// file as an empty record would overwrite it: a user's notes of that
+    /// name would be lost without a word. Refused rather
     /// than renamed around, because the name is the record's by §2's rule 1
     /// and a build that silently wrote its record elsewhere could never find
     /// it again.
@@ -1857,11 +1857,11 @@ fn platformModule(qualified: []const u8) []const u8 {
 /// 4096 levels (language.md §10) and recursion here would be bounded by the
 /// C stack instead of by the input.
 ///
-/// **Total** (R15-fix-H's audit, CK-193): it used a 64-slot stack and a
-/// 4 096-node budget and answered null — "concrete", the ADMITTING answer —
-/// when either ran out, so a `foreign` value of a record with 65 fields, one
-/// of them `a`, passed the shape check. The stack now grows in `scratch` and
-/// the walk visits every node once, a type being a tree.
+/// **Total**: a fixed-size stack or a node budget would have to answer null
+/// — "concrete", the ADMITTING answer — when it ran out, so a `foreign` value
+/// of a record with 65 fields, one of them `a`, could pass the shape check.
+/// The stack grows in `scratch` and the walk visits every node once, a type
+/// being a tree.
 fn firstTypeVar(scratch: Allocator, b: *const Bir, root: Bir.Inst.Index) Allocator.Error!?Bir.Inst.Index {
     var stack: std.ArrayList(Bir.Inst.Index) = .empty;
     defer stack.deinit(scratch);

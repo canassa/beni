@@ -1,11 +1,11 @@
-//! v2's constraint tree and the generator's state (checker-v2.md §6).
+//! The constraint tree and the generator's state (checker-v2.md §6).
 //!
 //! One tree per top-level binding group, generated in one pass and solved
-//! left to right (§6.1). The node set is v1's minus what v2 does not have at
-//! all (the dead `equatable` marker node, CK-18), plus:
+//! left to right (§6.1). The node set is Elm's, plus:
 //!
 //!   - `instantiate` names the VARIABLE to copy for a local or `top`
-//!     reference, resolved while the node is built (I11, §6.2), or leaves a
+//!     reference, resolved while the node is built (§6.2: the solver reads
+//!     no generation-time context), or leaves a
 //!     reference the solver must type from the Bir or an interface
 //!     (constructors, imports, schema members) with `reference`;
 //!   - `binders_end` occurs-checks the binders of the lambda or `case`
@@ -14,7 +14,7 @@
 //!     to, which is who a failure is attributed to (§15.2) and whose locals
 //!     a message names a callee from.
 //!
-//! The per-form rules are v1's (`checker.md` §6.1), in `Expr.zig`,
+//! The per-form rules are `checker.md` §6.1's, in `Expr.zig`,
 //! `Pattern.zig` and `Decl.zig`; this file is the tree, the variables and
 //! the three lists every form appends to.
 
@@ -34,8 +34,8 @@ const Parse = @import("../../parse/Parse.zig");
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
-/// v1's category, kept: it is what the shared message texts are written
-/// against (`checker-v2.md` §15.1, *As built by R4b*).
+/// The category the shared message texts are written against
+/// (`checker-v2.md` §15.1).
 pub const Category = CategoryFile.Category;
 pub const Binder = Generalize.Binder;
 pub const Annotated = Generalize.Annotated;
@@ -67,7 +67,7 @@ pub const Node = struct {
         call,
         /// `a` = the target; `b` = the variable to copy (`Var` as an
         /// integer). The copy is the identity on a node that is not
-        /// generalised (§6.2, *As built by R4b*).
+        /// generalised (§6.2).
         instantiate,
         /// `a` = the target; the type is the one the reference at `region`
         /// names (`Instantiate.reference`), copied.
@@ -84,7 +84,7 @@ pub const Node = struct {
         tuple_index,
         /// A `${e}` part (§4.5): `a` = the part's variable.
         interpolatable,
-        /// A record literal (§6.5, CK-59): `a` = `extra` index of a
+        /// A record literal (§6.5): `a` = `extra` index of a
         /// `RecordLiteral`. The solver chooses the order of its two halves.
         record,
         /// `e?` (§8.6): `a` = `extra` index of a `Try`. Decided now when
@@ -102,7 +102,7 @@ pub const Node = struct {
         /// then instantiates or shares (`Solve.demanded`).
         demand,
         /// A form the generator must never meet: `internal` at `region`, and
-        /// `a` (the expected type) poisoned (review S1).
+        /// `a` (the expected type) poisoned.
         internal,
     };
 };
@@ -124,7 +124,7 @@ pub const Let = struct {
     body_con: Constraint,
 };
 
-/// Payload of `Node.Tag.call`: v1's, verbatim.
+/// Payload of `Node.Tag.call`.
 pub const Call = struct {
     callee: Var,
     args_start: u32,
@@ -225,7 +225,7 @@ pub const Generator = struct {
     /// Per local of the module (absolute index), the variable its binder
     /// made: written by patterns and `let` declarations, read by `.local`
     /// references. Generation order guarantees the write comes first
-    /// (§6.2, *As built by R4b*). Also what `dump --stage=types` prints.
+    /// (§6.2). Also what `dump --stage=types` prints.
     local_type: []Var.Optional,
     /// The module's evidence tables: an annotated declaration's rigid
     /// reading registers its `where` clause's givens here (§4.2).
@@ -236,7 +236,7 @@ pub const Generator = struct {
     /// The declaration being generated.
     decl: Bir.DeclIndex = @enumFromInt(0),
     locals_base: u32 = 0,
-    /// The recursion guard of v1's generator: the parser bounds a
+    /// The generator's recursion guard: the parser bounds a
     /// declaration at `Parse.max_depth` levels, so a file it accepted never
     /// reaches this, and one that could was already reported.
     depth: u32 = 0,

@@ -1,20 +1,21 @@
-//! THE derivability verdict (checker-v2.md §9.5 as built by R6a's review,
-//! §11.1 as built by R8a): "can this receiver derive `eq` or `compare`, and
+//! THE derivability verdict (checker-v2.md §9.5,
+//! §11.1): "can this receiver derive `eq` or `compare`, and
 //! if not, why", asked once per derived answer and reported at the use for
-//! the receiver the author compared (v1's messages).
+//! the receiver the author compared.
 //!
-//! **It reads the one answer** (I10, CK-26): a nominal type's head is what
+//! **It reads the one answer** (whether `T` answers `m` has one answer per
+//! module): a nominal type's head is what
 //! its derived context says (`Contexts` for this module's types, the
 //! published row for another's, §14.2), or what its method's requirements
 //! say when the module rule answers it (a custom method is a boundary: its
 //! requirements, not its payloads, say what the arguments must answer).
 //! Nothing here settles, caches a capability, or has a second opinion — a
-//! tagged schema endpoint's head included (§11.5, R8b), whose context is
+//! tagged schema endpoint's head included (§11.5), whose context is
 //! computed over its schema's payloads like any `type`'s.
 //!
 //! One iterative walk over `(node, method)` pairs, coloured per pair (a pair
 //! met grey again is a cycle, whichever method the contexts alternate
-//! through), no native recursion (I4), and linear on a DAG. A head that
+//! through), no native recursion, and linear on a DAG. A head that
 //! needs a fixpoint run or a nested group check first stops the walk
 //! (`pending`, `query`); `derivable` does it and walks again.
 
@@ -45,9 +46,9 @@ pub const PairKey = struct { root: Var, kind: Kind };
 /// with the store. A dense id indexes a column, never a hash map.
 ///
 /// Keyed by a variable id, so sound only while no id is reused for another
-/// type: v2 never rolls the store back (§7.5). A rollback while the memo
+/// type: the checker never rolls the store back (§7.5). A rollback while the memo
 /// holds anything (`TypeStore.rollbacks` moved since its first write) is a
-/// panic in a safe build, and empties it otherwise (§9.3 *amended by R9b*).
+/// panic in a safe build, and empties it otherwise (§9.3).
 pub const GroundMemo = struct {
     bits: std.ArrayList(u8) = .empty,
     /// `TypeStore.rollbacks` at the first write, or null while empty.
@@ -62,7 +63,7 @@ pub const GroundMemo = struct {
     fn guard(m: *GroundMemo, store: *const TypeStore) void {
         const g = m.generation orelse return;
         if (g == store.rollbacks) return;
-        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3 *amended by R9b*, CK-131)", .{});
+        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3)", .{});
         m.bits.clearRetainingCapacity();
         m.generation = null;
     }
@@ -83,8 +84,8 @@ pub const GroundMemo = struct {
     }
 };
 
-/// The ground shapes this module proved derivable (CK-131;
-/// `Resolve.State.shapes`), keyed by their STRUCTURE, not by a variable: a
+/// The ground shapes this module proved derivable
+/// (`Resolve.State.shapes`), keyed by their STRUCTURE, not by a variable: a
 /// module that compares `( Int, List Int )` in 6 000 declarations walks it
 /// once. Only a shape whose every nominal head is §3.2's or another
 /// module's is kept — the verdict then reads nothing but the structure, the
@@ -131,7 +132,7 @@ pub fn groundShape(s: *Solve, root: Var, kind: Kind) Error!?Ground {
     const generation = s.store().rollbacks;
     if (sh.last) |l| if (l.root == root and l.kind == kind) {
         if (l.generation == generation) return l.ground;
-        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3 *amended by R9b*, CK-131)", .{});
+        if (std.debug.runtime_safety) std.debug.panic("the type store rolled back under a memo keyed by variable ids (checker-v2.md §9.3)", .{});
     };
     const ground = try encode(s, root, kind);
     sh.last = .{ .root = root, .kind = kind, .ground = ground, .generation = generation };
@@ -176,27 +177,27 @@ pub const Verdict = union(enum) {
     /// §11.2's parametric in-flight case: `method_needs_annotation`.
     needs_annotation: struct { type_id: Types.TypeId, decl: u32 },
     /// A context whose computation ran out of the step budget:
-    /// `nesting_too_deep` at the use (R8b's review, B1).
+    /// `nesting_too_deep` at the use.
     budget,
     /// A context that reaches another module's private method (§11.2,
     /// §11.3): `private_method` at the use, naming the type whose module
     /// declares it.
     private_method: struct { type_id: Types.TypeId, method: Symbol },
     /// A context whose pass met a payload's method of the wrong type
-    /// (static-dispatch-spike.md §10.13, CK-116): said at the use, naming
+    /// (static-dispatch-spike.md §10.13): said at the use, naming
     /// the type whose method it is.
     requirement: struct { type_id: Types.TypeId, method: Symbol, site: ?Messages.PayloadSite = null },
     /// An own type whose context met a payload's `err` (`Contexts.Status.
-    /// poisoned`, CK-178): no answer, and no message — the `err` has one.
+    /// poisoned`): no answer, and no message — the `err` has one.
     poisoned,
 };
 
 /// `derivability` for wanted `id` on `root`, reported at the use when it is
-/// not `ok` (v1's texts).
+/// not `ok`.
 pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
     const kind = Contexts.kindOf(w.method);
-    // A ground shape proved derivable before (`Shapes`, CK-131).
+    // A ground shape proved derivable before (`Shapes`).
     if (try groundShape(s, root, kind)) |g| {
         if (g.kept and s.resolver.shapes.map.contains(g.key)) return true;
     }
@@ -251,8 +252,8 @@ pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
     return false;
 }
 
-/// A refusal `verdict` of `method` on `root`, said at `origin` (v1's texts;
-/// §11.3's and §11.2's own). Shared with the deferred checks of a closed
+/// A refusal `verdict` of `method` on `root`, said at `origin` (with
+/// §11.3's and §11.2's own texts). Shared with the deferred checks of a closed
 /// endpoint compared while its schema was in flight (`checkDeferred`).
 /// The payload `site` names (`Contexts.Answer.payload`), read afresh over
 /// its type's parameters for a message: its constructor and its type, or
@@ -351,7 +352,7 @@ const Frame = struct {
     /// No variable below it, so far: a black ground node's verdict cannot
     /// change, and is kept (`Resolve.State.derivable`).
     ground: bool = true,
-    /// The verdict a failure below it is reported as (v1's rule: a failed
+    /// The verdict a failure below it is reported as (a failed
     /// `eq` requirement is `contains_function`, a failed `compare` one
     /// `opaque_type`).
     map: ?Verdict,
@@ -372,9 +373,9 @@ const Walker = struct {
 
 /// The walk's colour per pair. The first `inline_len` pairs are kept inline
 /// and searched linearly, so the common walk — one use's tuple, record or
-/// list, a handful of nodes — never hashes; past them, a hash map (R9: the
-/// map's hashing was about a twentieth of the check of 6 000 tuple
-/// comparisons, `checker-v2.md` §18 *as measured by R9*).
+/// list, a handful of nodes — never hashes; past them, a hash map (hashing
+/// every walk would cost about a twentieth of the check of 6 000 tuple
+/// comparisons, `checker-v2.md` §18).
 const Colours = struct {
     const inline_len = 16;
 
@@ -433,7 +434,7 @@ fn isLeaf(s: *Solve, f: Frame) bool {
     return Walk.child(st, f.key.root, 0, .structural) == null;
 }
 
-/// THE answer to "can `start` derive `kind`?" (I10), which every derivation
+/// THE answer to "can `start` derive `kind`?", which every derivation
 /// reads. `forced` are the heads `derivable` computed for this walk.
 pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) Error!Verdict {
     const st = s.store();
@@ -441,7 +442,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) E
     const scratch = s.cx.scratch;
     const first: PairKey = .{ .root = st.find(start), .kind = kind };
     if (s.resolver.derivable.contains(st, first)) return .ok;
-    // The open memo (CK-111) holds while no leaf a walk met has been given
+    // The open memo holds while no leaf a walk met has been given
     // successors since (`TypeStore.proof_voids`), and only for a walk with
     // nothing forced.
     const r = &s.resolver;
@@ -609,9 +610,8 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
     }
     if (entry.module.int() >= cx.interfaces.len) return null;
     const iface = cx.iface(entry.module);
-    // A record v2 wrote has a row for every type it can reach, and from R9
-    // every record a v2 build reads is v2's (§22.1): with none, resolution
-    // says `internal` (`Instances.derivedNominal`).
+    // A record has a row for every type it can reach (§22.1): with none,
+    // resolution says `internal` (`Instances.derivedNominal`).
     const facts = iface.typeFacts(cx.interner, entry.name) orelse return null;
     const row = facts.derived(if (key.kind == .eq) .eq else .compare);
     switch (row.status) {
@@ -623,7 +623,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
         },
         .function => return .contains_function,
         .unanswerable, .foreign => return .opaque_type,
-        // D1 (§11.3, §14.2 *as amended by R8b*): the row names the type whose
+        // §11.3, §14.2: the row names the type whose
         // module's private method its context reaches — its own, under the
         // module rule, or one a payload holds.
         .private_method => {
@@ -632,8 +632,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
             const culprit = if (@intFromEnum(p.type_ref) < refs.len) refs[@intFromEnum(p.type_ref)] else return .opaque_type;
             return .{ .private_method = .{ .type_id = culprit, .method = iface.symbol(p.method) } };
         },
-        // CK-116: the row names the type whose method failed (§14.2 *as
-        // amended by R13*).
+        // The row names the type whose method failed (§14.2).
         .requirement => {
             const p = iface.privateCulprit(row.context) orelse return .opaque_type;
             const refs = cx.types.refIds(entry.module);
@@ -656,8 +655,8 @@ fn forcedAnswer(s: *Solve, type_id: Types.TypeId, kind: Kind, forced: []const Fo
 
 /// A context entry `(param, method)` asked of a head being derived for
 /// `kind`: the argument, for the same method; for the other well-known one,
-/// mapped as v1 maps a boundary's requirement; for any other method, the
-/// derived method itself (v1's rule for a requirement it cannot check).
+/// mapped as a boundary's requirement is; for any other method, the
+/// derived method itself (a requirement it cannot check).
 fn contextStep(w: *Walker, scratch: std.mem.Allocator, args: []const Var, param: u16, method: Symbol, kind: Kind) Error!void {
     if (param >= args.len) return;
     const step: Step = if (!Resolve.isWellKnownName(method) or Contexts.kindOf(method) == kind)
@@ -671,7 +670,7 @@ fn contextStep(w: *Walker, scratch: std.mem.Allocator, args: []const Var, param:
 
 /// A requirement of a boundary method on its receiver's parameter `i`:
 /// `eq` (or the `equatable` marker), `compare`, or another method, which the
-/// derived method stands for (v1's `installMethodRequirements`).
+/// derived method stands for.
 fn boundaryStep(w: *Walker, scratch: std.mem.Allocator, arg: Var, method: ?Symbol, kind: Kind) Error!void {
     const m = method orelse return w.steps.append(scratch, .{ .v = arg, .kind = .eq, .map = .contains_function });
     if (m == InternPool.WellKnown.eq.symbol()) return w.steps.append(scratch, .{ .v = arg, .kind = .eq, .map = .contains_function });
@@ -770,7 +769,7 @@ fn nextStep(s: *Solve, w: *const Walker, frame: *Frame) ?Step {
 
 /// Whether a `foreign type` answers derived `kind` (A.55): it has no body to
 /// derive over, so only an `equatable` one answers `eq`, structurally. The
-/// one statement of the rule (R8a's review, nit): at a use's head
+/// one statement of the rule: at a use's head
 /// `Instances` routes a refusal to `unknown_method`, which names the `pub
 /// compare` its module is missing (A.50); at a position the verdict is
 /// `opaque_type`.
@@ -781,8 +780,7 @@ pub fn foreignDerives(entry: Types.Entry, kind: Kind) bool {
 /// P9's property byte for a schema endpoint `v` (schema.md A.6: bit 0
 /// equatable, bit 1 comparable, bit 2 has-function), read off THE verdict —
 /// the derived contexts P5 settled — for a nominal endpoint and a record
-/// one's expansion alike (checker-v2.md §11.5 *as built by R8b*; v1's
-/// `Schema.settleProperties`, deleted by R12, never was on this path).
+/// one's expansion alike (checker-v2.md §11.5).
 pub fn propertyBits(s: *Solve, v: Var) Error!u8 {
     var bits: u8 = 0;
     for ([_]Kind{ .eq, .compare }, 0..) |kind, i| {

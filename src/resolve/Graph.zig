@@ -327,7 +327,7 @@ pub fn build(
     //    Both sets a module builds here — the module names its refs use,
     //    and its dependencies so far — are STAMPS (`i + 1`) in arrays
     //    indexed by name row and by module, not scans of a list: a module
-    //    importing n modules was n² here (CK-165).
+    //    importing n modules would be n² here.
     const packages = g.modules.items(.package);
     const used_stamp = try scratch.alloc(u32, g.rows.len);
     @memset(used_stamp, 0);

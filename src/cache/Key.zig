@@ -27,7 +27,7 @@
 //! **An import contributes its `(interface hash, dependency digest)` PAIR, and
 //! that pair replaces its key.** It is the slice `fast-compiler.md` §8.1 has
 //! been pointing at since the document was written: a module is re-checked only
-//! when something it can OBSERVE about one of its imports changed. M4-1 keyed on
+//! when something it can OBSERVE about one of its imports changed. The first recipe keyed on
 //! the import's own key, which is inductively every source byte that can reach
 //! the check — correct, and so coarse that **a comment in one leaf re-checked
 //! 624 of 634 modules** while moving 0 of 634 interface hashes.
@@ -85,23 +85,23 @@ pub const magic = "BENIKEY\x00";
 
 /// Bumped whenever the meaning of any byte of the recipe changes. Every
 /// entry written by an older recipe then misses, which is the only
-/// migration a cache ever needs. **2 since M4-3.** An import contributes its `(interface hash, dependency
+/// migration a cache ever needs. **2**: an import contributes its `(interface hash, dependency
 /// digest)` pair in place of its key, and `core_epoch` becomes `core_surface`
 /// — the firewall cutoff (`fast-compiler.md` §8).
-/// **3 since R4a**: the checker id follows the build id (`checker-v2.md` §14.3,
-/// S22), so an entry one checker wrote is never read by the other.
-/// **4 since R9** (`checker-v2.md` §14.3, *R9 note*): the text `v2` changed
+/// **3**: the checker id follows the build id (`checker-v2.md` §14.3), so an
+/// entry one checker wrote is never read by the other.
+/// **4** (`checker-v2.md` §14.3): the text `v2` changed
 /// meaning, from "v2 checks the root package, v1 checks `core`" to "v2
 /// checks every package", and a `--cache-build-id` pins the build id across
 /// that change — so a `core` entry v1 wrote under `v2` must not be read by a
 /// v2 that checks `core`.
-/// **5 since R12**: v1 and `--checker` are deleted, and the checker id with
+/// **5**: v1 and `--checker` are deleted, and the checker id with
 /// them (`checker-v2.md` §14.3). The build id alone is the compiler identity
 /// again; the bump keeps a key without the term from ever equalling one
 /// written with it.
 pub const key_version: u32 = 5;
 
-/// The recipe M4-1 and M4-2 used: an import contributes its own KEY, and the
+/// The first recipe: an import contributes its own KEY, and the
 /// core term is `core_epoch` over core's keys. **Nothing is stored under it.**
 /// It survives only for `--cutoff-compare`'s invariant, which needs both keys
 /// of one run (`finishTransitive`).
@@ -144,7 +144,7 @@ pub const Terms = struct {
     imports: []const Import = &.{},
 };
 
-/// **The TRANSITIVE recipe's byte string** — M4-1's, which `finishTransitive`
+/// **The TRANSITIVE recipe's byte string** — the first one, which `finishTransitive`
 /// implements and `--cutoff-compare` still computes. The recipe in use is
 /// `finish`, whose import term is a pair rather than a key; it takes the same
 /// `writeOwn` middle and differs in the version word and in the terms after it.
@@ -226,7 +226,7 @@ pub const ImportPair = struct {
     digest: [16]u8,
 };
 
-/// `m`'s key: the recipe in use since M4-3.
+/// `m`'s key: the recipe in use, the firewall cutoff.
 pub fn finish(
     scratch: Allocator,
     own: []const u8,
@@ -327,7 +327,7 @@ pub const CoreEntry = struct { name: []const u8, key: Key };
 /// and `--roundtrip-dispatch` because a run with either must produce the
 /// same record, and exempting them would excuse them from the acceptance
 /// matrix; `--out`, `--library`, `--release` because they are the backend's
-/// and no emitted byte is cached in M4-1.
+/// and no emitted byte is cached.
 pub const OptionBits = struct {
     /// `Lower.Options.core` for this module's file.
     core: bool,
@@ -364,7 +364,7 @@ pub const Keys = struct {
     /// Owned, one blob per module: `writeOwn`'s prefix, the part of the key
     /// that depends on nothing else in the project.
     ///
-    /// **This is what the serial pass produces from M4-3 on.** An import's
+    /// **This is what the serial pass produces.** An import's
     /// contribution exists only once that import has been checked or loaded,
     /// so the serial pass cannot finish a key it can no longer see the terms
     /// of; what it can still do — reading and hashing every source and every
@@ -438,7 +438,7 @@ pub const Options = struct {
 /// Every module's `own_terms` blob and cacheability bit — everything about a
 /// key that depends on nothing else in the project.
 ///
-/// **No key is finished here any more.** From M4-3 an import contributes its
+/// **No key is finished here any more.** An import contributes its
 /// `(interface hash, dependency digest)` pair, which exists only once that
 /// import has been CHECKED or LOADED, so every key is finished on the DAG by
 /// the worker that claimed the module (`check/Incremental.zig`'s `claim`). What stays is

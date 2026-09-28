@@ -14,7 +14,7 @@
 //! ```
 //!
 //! **It is not `Key.zig`'s module key, and that is the whole reason for a
-//! second file.** M4-1's key folds every import's key, so a body edit in a
+//! second file.** The transitive module key folds every import's key, so a body edit in a
 //! leaf moves every transitive importer's module key. It must not move their
 //! FRONT END: a `Bir` is a function of one file's bytes, and lowering is
 //! handed `(text, tokens, tree, interner, Options{core, platform,
@@ -38,8 +38,8 @@
 //! file's lex, parse and lower is ~66 µs on the 100k corpus, so the cost is
 //! real and small, and it is bounded to the ONE file that was edited —
 //! which is exactly what this key buys over the module key. Doing better
-//! needs a form-insensitive key, which is M4-3's firewall question and not
-//! this one.
+//! needs a form-insensitive key, which is the interface firewall's question
+//! and not this one.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

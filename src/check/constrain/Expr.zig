@@ -1,31 +1,30 @@
 //! Constraint generation for expressions (checker-v2.md §6; `checker.md`
-//! §6.1's per-form rules, kept verbatim from v1's `Constrain.zig`).
+//! §6.1's per-form rules).
 //!
 //! **Expected types are pushed down**, as in Elm: a sub-expression is handed
 //! the variable its context already knows about, which is what lets §8.3's
 //! arity messages see what a call's result was wanted for.
 //!
-//! What differs from v1:
+//! What differs from Elm's generator:
 //!
 //!   - a `.local` or `.top` reference is resolved to its variable here
-//!     (I11, §6.2), and every other reference is left to the solver as a
+//!     (§6.2: the solver reads no generation-time context), and every
+//!     other reference is left to the solver as a
 //!     `reference` node read from the Bir or an interface;
 //!   - a lambda's parameters and a `case` branch's pattern variables are
 //!     binders, occurs-checked by a `binders_end` node when the lambda or
-//!     branch ends (§6.3, CK-04);
+//!     branch ends (§6.3);
 //!   - the obligation forms (`e.i`, `${…}`, `e?`) emit a node the solver
 //!     decides at once or turns into an obligation riding on its variables
 //!     (§4.5, §8.6); a record literal's fields and its meeting with the
-//!     expectation are one node, whose order the solver chooses (§6.5 as
-//!     built by R5, CK-59);
+//!     expectation are one node, whose order the solver chooses (§6.5);
 //!   - a method call, an operator comparison and a `type_dispatch` emit a
 //!     `method` node between the receiver's constraints and the arguments'
 //!     (Rule U0), whose wanted the resolver answers (§9); an operator
-//!     section's lambda is typed `a, a -> Bool` before its body (v1's message
-//!     rule), but a saturated section is an ordinary call of the lambda: v1's
-//!     call shim is gone (§6.4, CK-32);
-//!   - a form with no rule here is `internal`, never a silent poison (review
-//!     S1).
+//!     section's lambda is typed `a, a -> Bool` before its body (for the
+//!     message), but a saturated section is an ordinary call of the lambda,
+//!     with no call shim (§6.4);
+//!   - a form with no rule here is `internal`, never a silent poison.
 
 const std = @import("std");
 const Bir = @import("../../bir/Bir.zig");
@@ -47,7 +46,7 @@ const Error = Tree.Error;
 pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Category) Error!Constraint {
     g.depth += 1;
     defer g.depth -= 1;
-    // Unreachable from a file the parser accepted; noted, never silent (I4).
+    // Unreachable from a file the parser accepted; noted, never silent.
     if (g.depth > Generator.max_depth) {
         try g.cx.noteTooDeep(inst, @intFromEnum(g.decl));
         return g.true_();
@@ -64,7 +63,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .string, .chunk => return g.equal(expected, try g.primitive(wk.string), inst, category),
         .unit => return g.equal(expected, try g.fresh(.{ .structure = .unit }), inst, category),
 
-        // Resolved here, never by the solver (I11): the binder's variable
+        // Resolved here, never by the solver: the binder's variable
         // was made before this reference was generated (§6.2).
         .local => {
             const v = g.localVar(data.lhs) orelse return g.equal(expected, try g.fresh(.err), inst, category);
@@ -114,7 +113,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         },
 
         // The fields, and the literal meeting the expectation, in the order
-        // the solver chooses (§6.5 as built by R5, CK-59): the fields first
+        // the solver chooses (§6.5): the fields first
         // when the expectation cannot take this literal's field names, so a
         // missing or unexpected field shows the literal's own field types;
         // the expectation first otherwise, so each field is checked against
@@ -226,7 +225,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             return g.equal(expected, try g.fresh(.err), inst, category);
         },
         // A form the generator has no rule for, or no expression at all:
-        // the compiler says so, never a silent poison (review S1, I8).
+        // the compiler says so, never a silent poison: no failure to decide
+        // is answered as success.
         else => return g.add(.internal, inst, @intFromEnum(expected), 0, category),
     }
 }
@@ -407,8 +407,8 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     // `method_call` (static-dispatch-spike.md §3.1, A.22), and its type is
     // known exactly: `a, a -> Bool`. Pinned before the body, so
     // `List.foldl [ 1 ] 0 (<)` says "this argument is `Int, Int -> Bool`" at
-    // the section and not "`Bool` is not `b`" inside it (v1's rule: a
-    // message rule, not the call shim §6.4 deletes).
+    // the section and not "`Bool` is not `b`" inside it (a message rule,
+    // not a call shim: §6.4 has none).
     if (bir.operatorSection(inst, g.locals_base) != null) {
         const operand = try g.freshFlex();
         for (param_vars) |*v| v.* = operand;
@@ -422,7 +422,7 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.rhs), result, .{ .tag = .general }));
     // Elm's placement: the lambda's own header, checked before anything
-    // outside it meets the lambda's type (§6.3, S4).
+    // outside it meets the lambda's type (§6.3).
     if (try g.bindersEnd(binders)) |end| try parts.append(g.cx.scratch, end);
     return g.conj(parts.items);
 }

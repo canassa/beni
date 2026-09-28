@@ -4,7 +4,7 @@
 //! The tokenizer never formats text: an item is a code and a byte range,
 //! twelve bytes, appended to a list. That keeps the scanning loop free of
 //! allocation beyond the append, keeps the record small enough to sit in a
-//! file's artifact set for the daemon (M4) to re-report without re-lexing,
+//! file's artifact set for a daemon to re-report without re-lexing,
 //! and lets the prose be a pure function of `(code, the offending bytes)`,
 //! written once in `message`. The session turns an item into a
 //! `diagnostic.Diagnostic` by resolving offsets against the file's

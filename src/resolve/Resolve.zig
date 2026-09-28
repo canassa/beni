@@ -7,7 +7,7 @@
 //! `import_value(Basics, add)` — because one file's text is all it may
 //! know. After this pass that instruction is `ext_value(module 3, value 7)`
 //! and no later phase ever looks a name up again: the checker indexes an
-//! array, the backend indexes an array, and M4's cache key is a pair of
+//! array, the backend indexes an array, and the cache key is a pair of
 //! integers rather than a string comparison. A reference to the module's
 //! OWN declarations becomes `top`/`ctor`/`type_top`, and one that does not
 //! resolve becomes `error`, so the unresolved forms simply do not exist
@@ -61,7 +61,7 @@ interfaces: []Interface,
 /// Owned. One per module, in lockstep with `interfaces`: which `Bir`
 /// declaration each interface entry came from. Kept OUT of the interface
 /// itself because it is meaningless once the Bir is gone and must never be
-/// hashed with the record M4 caches (`Interface.Provenance`).
+/// hashed with the record the cache stores (`Interface.Provenance`).
 provenance: []Interface.Provenance,
 /// Owned. In the order the modules were resolved, which is topological and
 /// therefore stable; the session sorts them with everything else.
@@ -106,7 +106,7 @@ pub fn deinit(r: *Resolve, gpa: Allocator) void {
 /// the diagnostics are `gpa`-owned and belong to the session.
 /// Resolve every module in the graph's order. `profile` gets one `resolve`
 /// event per MODULE (checker.md §9) — the per-module granularity is what
-/// M4's incrementality tests read, since "this module was not re-resolved"
+/// the incrementality tests read, since "this module was not re-resolved"
 /// is only visible if the trace has a row per module.
 pub fn run(
     gpa: Allocator,
@@ -189,7 +189,7 @@ const NameTable = struct {
 };
 
 /// The current module's own names by namespace, and the schemas its
-/// `exposing` lists bring in (CK-164). Every qualified reference asks
+/// `exposing` lists bring in. Every qualified reference asks
 /// whether its root names a schema, and a self-qualified one what it
 /// declares; both were a scan of the module's declarations (or of every
 /// import's `exposing` list) PER REFERENCE — quadratic in a module's size.
@@ -234,7 +234,7 @@ const Pass = struct {
     /// The module being resolved, and the things every helper needs.
     current: Graph.Index = @enumFromInt(0),
     quiet: bool = false,
-    /// The current module's names, looked up per reference (CK-164).
+    /// The current module's names, looked up per reference.
     tables: Tables = .{},
 
     fn report(p: *Pass, item: Item) Allocator.Error!void {
@@ -300,7 +300,7 @@ const Pass = struct {
         }
     }
 
-    /// Elm's `T(..)` (CK-47, D8 as amended): the parser has already
+    /// Elm's `T(..)`: the parser has already
     /// reported `expected_token` at the `(`, without the constructors,
     /// because only this interface lists them. This item carries them, as
     /// `available`, and `Session.reportResolveDiagnostics` rewrites the

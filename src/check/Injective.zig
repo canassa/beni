@@ -1,5 +1,5 @@
-//! Which type aliases are injective (checker-v2.md §7.1 *amended by
-//! R15-fix-G*, CK-175): `Types.Entry.injective`, settled once per session
+//! Which type aliases are injective (checker-v2.md §7.1):
+//! `Types.Entry.injective`, settled once per session
 //! by `Types.build` and read by `Unify.throughAlias`. Split out of
 //! `Types.zig` by §19.1's 1 500-line rule.
 
@@ -12,7 +12,7 @@ const Types = @import("Types.zig");
 
 const Entry = Types.Entry;
 
-/// Settle `Entry.injective` for every alias, once per session (CK-175).
+/// Settle `Entry.injective` for every alias, once per session.
 ///
 /// A parameter is KEPT when it occurs in the alias's body outside every
 /// argument position that a nested alias drops: `type alias T a = Tagged a`

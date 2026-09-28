@@ -102,13 +102,13 @@ values: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 ctor_names: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// Type namespace: this file's types and aliases and exposed upper names.
 types: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
-/// Schema namespace skeleton; S2 resolves members and imports.
+/// Schema namespace skeleton; resolution resolves members and imports.
 schemas: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// The explicit imports by ALIAS, the first import to take an alias
 /// keeping it (a duplicate alias is reported and resolves to the first),
 /// and by MODULE, for `duplicate_import`. Every qualified reference asks
 /// which import its prefix names; a scan of the import table per reference
-/// was O(imports × references) (CK-165).
+/// would be O(imports × references).
 import_by_alias: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
 import_by_module: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
 /// The current declaration's import edges by key, once it has more than
@@ -121,7 +121,7 @@ import_refs_start: u32 = none_u32,
 scope: std.ArrayList(ScopeEntry) = .empty,
 /// The innermost scope entry of each name, while `scope_indexed`: set when
 /// the scope grows past `indexed_scope` and dropped when it shrinks to half
-/// of it (CK-95).
+/// of it.
 scope_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
 scope_indexed: bool = false,
 /// Enclosing definitions and lambdas, for `?` (§6.6).
@@ -138,8 +138,8 @@ ctor_stamp: []u32 = &.{},
 /// null inside an annotation, where type variables are free (§7).
 type_params: ?[]const TokenIndex = null,
 /// `type_params` by name, first occurrence, when there are more than
-/// `indexed_params` of them: a scan per type variable was O(n²) in the
-/// parameter count (CK-112).
+/// `indexed_params` of them: a scan per type variable would be O(n²) in the
+/// parameter count.
 type_param_index: std.AutoHashMapUnmanaged(Symbol, u32) = .empty,
 /// The type variables already seen in the type expression being lowered,
 /// for the "first occurrence" half of the `equatable` rule (checker.md
@@ -167,9 +167,9 @@ forward: []const Symbol = &.{},
 cur_token: TokenIndex = 0,
 cur_decl: u32 = 0,
 /// While lowering a `via` Atom, lexical locals resolve normally and every
-/// nonlocal name stays as an unresolved schema-expression leaf for S2.
+/// nonlocal name stays as an unresolved schema-expression leaf for resolution.
 in_schema_expr: bool = false,
-/// An import of this file wrote Elm's `T(..)` (CK-47). Its constructors
+/// An import of this file wrote Elm's `T(..)`. Its constructors
 /// are unknown here — only the imported module's interface lists them —
 /// so an unknown constructor is left quiet, as an error instruction, and
 /// resolution's one `expected_token` names what to write instead.
@@ -213,14 +213,14 @@ const ScopeEntry = struct {
 };
 
 /// Past this many entries the scope is looked up by name (`scope_index`)
-/// instead of scanned (CK-95, CK-127): a `let` binds all its names before
-/// any body is lowered, so a block of n bindings made every lookup and every
+/// instead of scanned: a `let` binds all its names before any body is
+/// lowered, so a block of n bindings would make every lookup and every
 /// shadowing check a scan of n. Below it a scan is the cheaper of the two,
 /// and it is what almost every scope is.
 const indexed_scope = 64;
 
 /// Past this many edges a declaration's import edges are deduplicated
-/// through `import_refs` instead of a scan (CK-165), for the reason
+/// through `import_refs` instead of a scan, for the reason
 /// `indexed_scope` gives.
 const indexed_refs = 64;
 
@@ -583,7 +583,7 @@ fn addRef(l: *Lower, kind: Bir.Ref.Kind, a: u32, b: u32) Allocator.Error!void {
             } else {
                 // Past `indexed_refs` a declaration's import edges are
                 // looked up by key rather than scanned: one declaration
-                // naming n imported things was n² here (CK-165). The index
+                // naming n imported things would be n² here. The index
                 // is built once per declaration that needs it, from the
                 // edges it already has.
                 if (l.import_refs_start != l.cur_refs_start) {
@@ -815,7 +815,7 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
 
 fn declareSchema(l: *Lower, node: NodeIndex) Allocator.Error!void {
     const d = l.tree.fullSchemaDecl(node);
-    // S2's generated interface names must already be in this file's Local
+    // The schema's generated interface names must already be in this file's Local
     // pool so the serial merge places them in Global before checker workers
     // and in-session interface round trips use the non-mutating `find` path.
     // `getOrPut` below may grow the interner's byte buffer, so retain an
@@ -849,8 +849,8 @@ fn declareSchema(l: *Lower, node: NodeIndex) Allocator.Error!void {
     }
     const index = try l.newDecl(.schema, d.name, d.header);
     try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
-    // A schema is deliberately absent from `values` and `types`: S2 adds
-    // the separate namespace and resolves its members (schema.md §3).
+    // A schema is deliberately absent from `values` and `types`: resolution
+    // adds the separate namespace and resolves its members (schema.md §3).
     try l.declareName(&l.schemas, l.tokenSymbol(d.name), d.name, index, .duplicate_declaration, false);
 }
 
@@ -1183,7 +1183,7 @@ fn lowerWhere(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex) Allocat
         // occurrence: the annotation's occurrences are not the clause's,
         // and one constraint's are not the next one's. Without the reset,
         // `where a.compare : equatable a, a -> Order` — core's own
-        // spelling after S6 — is `equatable_not_first_occurrence`.
+        // spelling — is `equatable_not_first_occurrence`.
         l.type_vars_seen.clearRetainingCapacity();
         const type_inst = try l.lowerType(c.type_expr);
         // The closure rule, read off the instructions the type just made:
@@ -1220,7 +1220,7 @@ fn lowerWhere(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex) Allocat
 }
 
 // ---------------------------------------------------------------------------
-// Unresolved schema plans (schema.md §4, S1)
+// Unresolved schema plans (schema.md §4)
 // ---------------------------------------------------------------------------
 
 fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
@@ -1652,7 +1652,7 @@ fn schemaNamespaceRef(l: *Lower, token: TokenIndex, tag: Inst.Tag) Allocator.Err
     if (first_dot < text.len) {
         // The LONGEST explicit alias that is a prefix of `text` ending at a
         // dot with a further dot after it: `text` cut at each such dot,
-        // longest first (CK-165: a probe per dot, not a scan per import).
+        // longest first (a probe per dot, not a scan per import).
         var best_len: usize = 0;
         var best_module: ?Symbol = null;
         const last_dot = std.mem.lastIndexOfScalar(u8, text, '.').?;
@@ -1686,7 +1686,7 @@ fn couldBeSchemaQualified(l: *const Lower, token: TokenIndex) bool {
     const first_dot = std.mem.indexOfScalar(u8, text, '.') orelse return false;
     const last_dot = std.mem.lastIndexOfScalar(u8, text, '.').?;
     // Each question is a probe per DOT of the token, never a scan of the
-    // schema table or the import table (CK-165): an alias that is a prefix
+    // schema table or the import table: an alias that is a prefix
     // of `text` ending at a dot is `text` cut at that dot.
     if (l.isAnyAlias(text[0..last_dot])) return false;
     const root_schema = if (l.interner.find(text[0..first_dot])) |root| l.schemas.contains(root) else false;
@@ -1724,7 +1724,7 @@ fn importModule(l: *const Lower, import_index: u32) Symbol {
 }
 
 /// The explicit import whose alias is spelled `text` — the first to take
-/// it — or null. One hash probe, not a scan of the import table (CK-165).
+/// it — or null. One hash probe, not a scan of the import table.
 fn importWithAlias(l: *const Lower, text: []const u8) ?u32 {
     const symbol = l.interner.find(text) orelse return null;
     return l.import_by_alias.get(symbol);
@@ -1892,7 +1892,8 @@ fn lowerTypeFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRang
         if (l.tree.nodeTag(f) != .record_type_field) continue;
         const name_token = l.tree.nodeMainToken(f);
         const symbol = l.tokenSymbol(name_token);
-        // CK-44: the check a literal has always had. The field is still
+        // A duplicate field name in a record TYPE is the error a duplicate
+        // in a record literal has always been. The field is still
         // lowered, so its type is resolved and reported like any other,
         // but it is not kept: `TypeStore`'s records have one field per
         // name (`Solve.gatherFields`), and the first `a` is the one read.
@@ -2539,8 +2540,8 @@ fn lowerBindings(
                 l.popScope(inner_mark);
                 const record = try l.addExtra(Bir.LetDef{
                     // Phase 1 bound it: a `let_def` binds exactly one
-                    // local, `local_start` (CK-95: a search of the
-                    // declaration's locals per binding was quadratic).
+                    // local, `local_start` (a search of the declaration's
+                    // locals per binding would be quadratic).
                     .local = row.local_start,
                     .annotation = annotation,
                     .params_start = params.start,
@@ -2613,8 +2614,8 @@ fn lowerBindings(
 /// `let`, lambda or `case` lies inside the range of the binding that
 /// contains it, so a reference from one of those to a binding of THIS
 /// block is attributed to the binding it runs inside, for free. Resolution
-/// is hot and pays nothing; this walk is once per `let`, and linear in it
-/// (CK-95): each binding's edges are a contiguous run, since they are read
+/// is hot and pays nothing; this walk is once per `let`, and linear in it:
+/// each binding's edges are a contiguous run, since they are read
 /// binding by binding, and the visited set is reset where it was set.
 fn checkLetOrder(
     l: *Lower,
@@ -2680,7 +2681,7 @@ fn checkLetOrder(
             seen[e.to] = true;
             try touched.append(l.scratch_allocator, e.to);
             if (try l.reachesTooSoon(edges.items, starts, bindings, seen, &touched, &work, e.to, k)) |hit| {
-                // CK-46: the binding reached may be `k` itself — `n = get ()`
+                // The binding reached may be `k` itself — `n = get ()`
                 // where `get` reads `n` — and then it is not "further down".
                 const forward: Diagnostics.Item.Forward = if (hit.to == k) .self_through else .through;
                 try l.reportForward(e.token, local_tokens[hit.local - first_local], forward);
@@ -3546,7 +3547,7 @@ test "`::` desugars to List.cons, not Basics.cons" {
     // matching Elm, where `(::)` is `List.cons`. Assuming `Basics` for
     // every operator emitted `import_value Basics.cons` — a name no
     // interface has — and nothing noticed, because name resolution against
-    // interfaces is M2. The home module is per operator for this reason.
+    // interfaces came later. The home module is per operator for this reason.
     try expectDecls(
         \\f x xs =
         \\    x :: xs
@@ -4343,7 +4344,7 @@ test "duplicate declarations, types, constructors, type parameters and fields" {
 }
 
 test "every repeated type parameter is reported once, in parameter order" {
-    // `lowerTypeParams` sorts a copy rather than comparing every pair (R3):
+    // `lowerTypeParams` sorts a copy rather than comparing every pair:
     // the reports must still come out one per repeat, left to right, with
     // interleaved names each against their own first occurrence.
     try expectErrors(

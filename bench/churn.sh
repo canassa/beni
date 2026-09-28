@@ -65,7 +65,7 @@
 #     not do: `dump --stage=raw` prints only the modules named on the
 #     command line.
 #
-# What this script could not measure until slice zero, and now can. Every
+# What the per-declaration edit classes cannot see. Every
 # edit class E1–E3poly edits the declaration whose record it compares, so
 # none of them could see a record moved by an edit to a DIFFERENT module.
 # That is a real failure mode and it was a real defect: `Interface.Term`'s
@@ -557,7 +557,7 @@ classes="E1 E2 E3 E3poly"
 # see a cross-module effect — every edit class below edits the declaration
 # whose dump it diffs — which is why the `TypeId` leak of `plans/m4-plan.md`
 # §2.2 had to be caught by a black-box scenario instead of by a bench row.
-# `check --iface-hash` (M4 slice zero, `fast-compiler.md` §8) prints one
+# `check --iface-hash` (`fast-compiler.md` §8) prints one
 # `<package>:<Module> <32 hex digits>` line for EVERY module, core included,
 # so "how many OTHER modules would be re-checked?" becomes a number: the
 # firewall's own quantity, and the one report 19 §16 left open.

@@ -105,8 +105,8 @@ pub const Scan = struct {
     /// They are collected because the build RENAMES a sibling as it copies
     /// it out (`js/Emit.zig`: `<Module>.foreign.mjs`, so that every emitted
     /// file is `.mjs` per backend.md §2), and a relative specifier written
-    /// against the source names would then point at nothing. Rewriting them
-    /// is M3b's; refusing them is M3a's, because the alternative is a build
+    /// against the source names would then point at nothing. They are
+    /// refused rather than rewritten, because the alternative is a build
     /// that succeeds and a program that cannot load.
     relative_imports: []const Located,
 };

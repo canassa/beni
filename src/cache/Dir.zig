@@ -1,10 +1,9 @@
 //! The cache directory (docs/design/fast-compiler.md §8, *The persistent
 //! cache, and its key*; `frontend.md` §1 for the two flags).
 //!
-//! `--cache-dir=<path>`, and **there is no default: in M4-1 the cache is
-//! opt-in**. A cache that is on by default must be right about every input,
-//! and the fixtures that establish that are this slice's product rather than
-//! its premise. It becomes the default in M4-3.
+//! `--cache-dir=<path>`, or `.beni-cache/` by default (`default_path`). A
+//! cache that is on by default must be right about every input, and it
+//! became the default only once its fixtures established that.
 //!
 //! Inside it, one file per module, **content-addressed by the key**:
 //! `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec`, two levels so no directory
@@ -39,7 +38,7 @@
 //! artifact carries a SipHash over its own body; a same-length file with
 //! flipped bits is refused by that and not by the name.
 //!
-//! **No garbage collection in M4-1** and no size cap: entries accumulate at
+//! **No garbage collection** and no size cap: entries accumulate at
 //! ~2 kB per checked module per distinct key, and the remedy is deleting the
 //! directory, which is always safe.
 //!
@@ -119,7 +118,7 @@ pub fn fromCli(io: Io, cache: Cli.Cache, failure: *?Failure) OpenError!?Dir {
     if (cache.off) return null;
     const path = cache.dir orelse default_path;
     if (cache.dir == null) {
-        // **The default, since M4-3.** `.beni-cache/` beside the invocation,
+        // **The default.** `.beni-cache/` beside the invocation,
         // created on demand — and a failure to create it is NOT the exit-2
         // case that a named one is. A person who wrote `--cache-dir` meant
         // that directory and a typo must not become a mysteriously slow
@@ -138,7 +137,7 @@ pub fn fromCli(io: Io, cache: Cli.Cache, failure: *?Failure) OpenError!?Dir {
 /// directory**, not the manifest's and not a user-wide one.
 ///
 /// *Rejected: XDG* — a user-wide directory needs a garbage collector and a size
-/// cap, and M4-3 deliberately has neither. *Rejected: beside `beni.json`* —
+/// cap, and this cache deliberately has neither. *Rejected: beside `beni.json`* —
 /// `check` may run with no manifest at all, so the rule would have two cases.
 /// The key holds no path, so one project checked from two working directories
 /// gets two directories of identical entries: correct, duplicated, and the
@@ -161,8 +160,8 @@ pub fn close(d: *Dir) void {
 pub const name_len = "v4294967295/".len + 2 + 1 + 30 + ".bec".len;
 
 /// The two file kinds the directory holds, under two different keys
-/// (`fast-compiler.md` §8): M4-1's cache entry under the MODULE key, and
-/// M4-2's front-end artifact under the FILE key. Same fan-out, same
+/// (`fast-compiler.md` §8): the module cache entry under the MODULE key, and
+/// the front-end artifact under the FILE key. Same fan-out, same
 /// directory, same "a bad file is a MISS" posture — a file is named by one
 /// key or it is not content-addressed, which is why there are two files and
 /// not two independently-keyed sections of one.
@@ -248,7 +247,7 @@ pub fn load(d: *const Dir, gpa: Allocator, key: Key.Key) ?[]u8 {
 /// 5.76, and `open`+`mmap`+`munmap` is 4.99 whether the loader touches one
 /// byte or every page — so what an `mmap` costs at this granularity is the
 /// syscall pair and not the paging. One mapping over MANY entries is the
-/// shape that wins, and that is the pack file, which is M4-4's.
+/// shape that wins, and that is a pack file, which is future work.
 ///
 /// `scratch` is the worker's own buffer and grows to the largest artifact
 /// that worker has read; `gpa` owns it and the caller frees it once.

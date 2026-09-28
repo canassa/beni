@@ -6,10 +6,10 @@
 //! rank `generalized`, when its group is declared, before any body of the
 //! group is generated. Every use instantiates that scheme. Only the body is
 //! checked against a RIGID reading, made at the frame's own rank with every
-//! variable it makes in the frame's pool (CK-10 item 1), so the boundary's
+//! variable it makes in the frame's pool, so the boundary's
 //! generality check (§8.3) can see whether a rigid escaped.
 //!
-//! **Generation runs in solving order** (§6.2, *As built by R4b*): a `let`'s
+//! **Generation runs in solving order** (§6.2): a `let`'s
 //! groups first to last, each group's bindings declared before any is
 //! defined, then the body. A `let` pattern's pattern is generated with its
 //! binding's declaration, so its variables exist before a sibling is
@@ -53,8 +53,7 @@ pub const Member = struct {
 /// with, so a variable a constraint names is the one the annotation
 /// introduced (static-dispatch-spike.md §2.4) — and attach each
 /// variable's constraints to it: requirements on P2's scheme, givens on a
-/// body's rigid reading (checker-v2.md §4.2). v1's `attachWhere`, rules
-/// verbatim.
+/// body's rigid reading (checker-v2.md §4.2).
 pub fn attachWhere(cx: *const Context, d: Bir.Decl, b: *Types.Builder, decl: u32) Error!void {
     const bir = cx.bir;
     const clause = bir.declWhere(d);
@@ -95,7 +94,7 @@ pub fn attachWhere(cx: *const Context, d: Bir.Decl, b: *Types.Builder, decl: u32
         const set = try store.addConstraints(built.items);
         const root = store.find(target);
         switch (store.content(root)) {
-            // Copied and changed in one field (CK-18).
+            // Copied and changed in one field.
             inline .flex, .rigid => |flags, tag| {
                 var with = flags;
                 with.constraints = set.toOptional();
@@ -134,8 +133,7 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
             m.check = v.toOptional();
             g.decl_scheme[m.decl] = v.toOptional();
         }
-        // The top-level header is a binder (§6.3), reported at the body as
-        // v1 reports it.
+        // The top-level header is a binder (§6.3), reported at the body.
         _ = try g.header(m.check.unwrap().?, d.body.unwrap().?, bir.symbol(d.name).toOptional());
     }
     var parts: std.ArrayList(Constraint) = .empty;
@@ -191,7 +189,7 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
 /// The body of a value declaration, checked against `target`. Its parameters
 /// are binders of the group's frame, occurs-checked at its boundary — which
 /// follows the body directly, so a `binders_end` of their own would only
-/// walk the same types twice (checker-v2.md §18, *As built by R4b*).
+/// walk the same types twice (checker-v2.md §18).
 fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
     const bir = g.cx.bir;
     const body = d.body.unwrap() orelse return g.true_();
@@ -215,7 +213,7 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
 }
 
 /// A schema declaration's `via` conversions, each checked against the
-/// endpoint type `Schema.State` expects (v1's rule).
+/// endpoint type `Schema.State` expects.
 fn schemaDecl(g: *Generator, index: u32) Error!Constraint {
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
@@ -314,7 +312,7 @@ fn bindingGroup(g: *Generator, members: []const Bir.Inst.Index) Error!Tree.Let {
 
 /// Give a binding its variable before any body of the group is generated,
 /// and return the variable its BODY is checked against. A `let` pattern's
-/// pattern is generated here, into `parts` (§6.2, *As built by R4b*).
+/// pattern is generated here, into `parts` (§6.2).
 fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constraint)) Error!Var {
     const bir = g.cx.bir;
     const data = bir.instData(m);
@@ -328,7 +326,7 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
                 const scheme = try g.cx.readAnnotation(&scheme_builder, a, @intFromEnum(g.decl));
                 const check = (try rigidReading(g, a, scheme, name, null)).check;
                 // An Elm curried annotation: its uses are not held to it
-                // (checker.md §8.7, CK-56), as at the top level.
+                // (checker.md §8.7), as at the top level.
                 if (g.cx.store.isCurried(scheme, @intCast(bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index).len))) {
                     g.setLocal(def.local, try g.cx.store.freshErr(TypeStore.generalized));
                 } else {
@@ -381,7 +379,7 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
 }
 
 // ---------------------------------------------------------------------------
-// The `let` SCC (§4.4, §6.2 *As built by R4b*)
+// The `let` SCC (§4.4, §6.2)
 // ---------------------------------------------------------------------------
 
 const Groups = struct { order: []Bir.Inst.Index, starts: []u32 };
@@ -390,7 +388,7 @@ const Groups = struct { order: []Bir.Inst.Index, starts: []u32 };
 /// first. An edge runs from a binding to the one that binds a local it
 /// names: a `let_def` binds its own local, a pattern binds every variable
 /// in it. An annotated `let_def` is never a target — its scheme is its
-/// annotation. The Tarjan pass is v1's (`Constrain.sccGroups`, kept).
+/// annotation. The Tarjan pass is `Scc.zig`'s.
 fn sccOfLet(g: *Generator, defs: []const Bir.Inst.Index) Error!Groups {
     const scratch = g.cx.scratch;
     const bir = g.cx.bir;
@@ -484,8 +482,8 @@ fn patternLocals(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32)) 
 }
 
 /// Every local a subtree references, with repeats: the caller deduplicates
-/// the EDGES (`edge_mark`), so a scan here would only make it quadratic, as
-/// v1's was. Iterative: an expression may be 4096 levels deep.
+/// the EDGES (`edge_mark`), so a scan here would only make it quadratic.
+/// Iterative: an expression may be 4096 levels deep.
 fn collectLocalRefs(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32)) Error!void {
     const bir = g.cx.bir;
     const scratch = g.cx.scratch;
@@ -503,8 +501,7 @@ fn collectLocalRefs(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32
 }
 
 /// Push every operand instruction of `inst`: one exhaustive switch, so a new
-/// Bir form is a compile error here and not a silent missed edge. (v1's
-/// `Constrain.pushChildren`, which is private to v1.)
+/// Bir form is a compile error here and not a silent missed edge.
 pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.Index)) Error!void {
     const data = bir.instData(inst);
     switch (bir.instTag(inst)) {

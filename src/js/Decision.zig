@@ -34,7 +34,7 @@
 //! only GROUPS rows by their head: every order is still the rows' own, and
 //! nothing iterates the table.
 //!
-//! **Linear in the rows at each node** (CK-88, R12). A column's rows are
+//! **Linear in the rows at each node**. A column's rows are
 //! grouped by head once, in one pass (`group`), and each specialisation reads
 //! only its own group and the wildcard rows — never the whole matrix again.
 //! Before, the key set, the column choice's distinct count and the
@@ -56,7 +56,7 @@ pub const no_node: u32 = std.math.maxInt(u32);
 /// What the tree has to read out of the module. A `Bir` and the interfaces
 /// of everything it imports, which is all a constructor's declaring type
 /// takes: `Exhaustive.ctorUnion` reads exactly these two for exactly this,
-/// and for the same reason (`fast-compiler.md` §8.1 — in M4 a dependency's
+/// and for the same reason (`fast-compiler.md` §8.1 — a cached dependency's
 /// `Bir` may not be in memory and its interface always is).
 pub const Context = struct {
     bir: *const Bir,
@@ -70,7 +70,7 @@ pub const Context = struct {
 /// The path and not an expression, because §7 emits an occurrence as a
 /// member chain REBUILT at each use — every value is immutable and every
 /// step is a property read, so re-reading costs nothing and there is no
-/// `const $p$k` per edge for M3c to fail to eliminate.
+/// `const $p$k` per edge for the release optimiser to fail to eliminate.
 pub const Occ = struct {
     root: u32,
     parent: u32 = no_parent,
@@ -511,7 +511,7 @@ const Builder = struct {
     /// what makes the choice input-derived (CLAUDE.md rule 5) — and it falls
     /// out of scanning left to right and improving only on a strict win.
     ///
-    /// The distinct count is the size of the column's head table (CK-88):
+    /// The distinct count is the size of the column's head table:
     /// one hashed insert per row, where comparing each row with every row
     /// above it was quadratic.
     fn chooseColumn(b: *Builder, m: Matrix) Allocator.Error!u32 {
@@ -558,7 +558,7 @@ const Builder = struct {
 
     /// Column `col`'s rows grouped by head, in one pass: each row's head is
     /// looked up once in the head table, and the groups are laid out by a
-    /// counting sort that keeps every group in row order (CK-88).
+    /// counting sort that keeps every group in row order.
     fn group(b: *Builder, m: Matrix, col: u32) Allocator.Error!Grouping {
         const ctx: HeadContext = .{ .bir = b.cx.bir };
         b.table.clearRetainingCapacity();
@@ -604,7 +604,7 @@ const Builder = struct {
 
     /// The specialisation of `m` by `key` at `col`: `group`'s rows for the
     /// key and the wildcard rows, merged back into row order. No other row
-    /// can match `key`, so none is read (CK-88).
+    /// can match `key`, so none is read.
     fn specialiseGroup(b: *Builder, m: Matrix, col: u32, key: Head, keyed: []const u32, wild: []const u32) Allocator.Error!Matrix {
         const arity = arityOf(key);
         const cols = try b.arena.alloc(u32, m.cols.len - 1 + arity);

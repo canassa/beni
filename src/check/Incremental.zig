@@ -5,8 +5,7 @@
 //! interface hash and dependency digest (`publish`), and close `core_surface`
 //! (`closeCoreSurface`).
 //!
-//! Moved verbatim out of `src/check/Check.zig`'s `Driver` by R4a
-//! (checker-v2.md §19, §19.1). Each function takes the `Driver` as its first
+//! Part of the `Driver` (checker-v2.md §19, §19.1). Each function takes the `Driver` as its first
 //! parameter and `Driver.zig` names it as a method, so the schedule calls
 //! `d.claim(…)` exactly as before. The checker id is part of the key through
 //! the own-terms blob `cache/Key.zig` builds (checker-v2.md §14.3), not here.
@@ -123,8 +122,8 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
 }
 
-/// `--cutoff-compare`: `m`'s key under the TRANSITIVE recipe M4-1 and M4-2
-/// used, beside the cutoff key the run is now driven by.
+/// `--cutoff-compare`: `m`'s key under the older TRANSITIVE recipe, beside
+/// the cutoff key the run is now driven by.
 ///
 /// It is itself inductive — over `compare`, not over the keys in use — so
 /// it reproduces the old recipe exactly, including its `core_epoch` term.
@@ -197,7 +196,7 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     }, m, imports.items);
 }
 
-/// The covered-read self-check (`reads.zig`, `plans/m4-3.md` §9 M3-a).
+/// The covered-read self-check (`reads.zig`, `plans/m4-3.md` §9).
 ///
 /// A module that read a fact about a module its key cannot see move is an
 /// incomplete enumeration, which is a stale answer waiting for the right
@@ -235,8 +234,7 @@ pub fn verifyReads(d: *Driver, m: Graph.Index, recorder: *const reads.Recorder) 
 /// Nothing of the check runs for this module: no constraint generation,
 /// solving, exhaustiveness, binding groups, publication, elaboration or
 /// `Cycles.run`. What does run is exactly these four steps, in this order,
-/// and this function is all four (CK-15: the header once promised four and
-/// the body did six; R12 deleted the old step 4, v1's capability rebuild):
+/// and this function is all four:
 ///
 ///   1. the record replaces the shell;
 ///   2. the dispatch table and the schema plan replace theirs;
@@ -272,9 +270,9 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     //    once per module per build — here for the same reason publication
     //    does it for a miss, and against whichever record ended up in the
     //    slot. Every imported term reader indexes it. The module's derived
-    //    contexts are published in its interface (checker-v2.md §14.2 *as
-    //    amended by R8a*), which the record just installed carries: a
-    //    dependent reads them there, and nothing is recomputed (I10, CK-26).
+    //    contexts are published in its interface (checker-v2.md §14.2),
+    //    which the record just installed carries: a dependent reads them
+    //    there, and nothing is recomputed — one answer per module.
     const ref_ids = &d.types.ref_ids[m.int()];
     gpa.free(ref_ids.*);
     ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);

@@ -293,8 +293,8 @@ function measureTree(outDir) {
     const bytes = readFileSync(join(outDir, rel));
     raw += bytes.length;
     chunks.push(bytes);
-    // `_core/_derived.mjs` is the derived-comparison runtime (backend.md §4,
-    // R8e): the whole file is charged to `engine`.
+    // `_core/_derived.mjs` is the derived-comparison runtime (backend.md §4):
+    // the whole file is charged to `engine`.
     if (rel.split(sep).join("/").endsWith("_core/_derived.mjs")) {
       derivedFunctions += 1;
       derivedBytes += bytes.length;
@@ -575,9 +575,8 @@ function main() {
     };
 
     // A module the BACK END cannot compile is dropped and the rest rebuilt,
-    // because dropping one can break its dependents. `?` was the common
-    // cause until M3b emitted it; what is left is a module naming a package
-    // that does not exist, and that is a fact about this milestone that
+    // because dropping one can break its dependents. What can cause it is a
+    // module naming a package that does not exist, and that is a fact that
     // belongs on the line rather than in a crash.
     let kept = [...modules];
     let ok = false;

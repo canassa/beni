@@ -1,24 +1,23 @@
-//! One elaboration unit (checker-v2.md §12.2, §13.1 *Amended by R6b*): the
+//! One elaboration unit (checker-v2.md §12.2, §13.1): the
 //! terms of one site (its callee and evidence roots) or of one derived row's
 //! body, built as a DAG and written in topological order.
 //!
 //! A node is one term whose arguments are other nodes of the unit. A wanted
 //! is ONE node per unit and context, whichever of its aliases reaches it, so
 //! an answer the resolver shared (§9.5's memo) is one term here too, and
-//! `==` on a doubling DAG of a type costs its distinct nodes (CK-80).
+//! `==` on a doubling DAG of a type costs its distinct nodes.
 //!
 //! **The context** of a node is the kind of its nearest `derived` or
 //! `ext_derived` ancestor (a row body's positions are inside their row), or
 //! none. It is part of the key because it decides how an `undetermined`
-//! answer is written (`Elaborate.undetermined`, B1 and CK-103 of R6b's
-//! review): the leaf takes its method from that ancestor in `Lower`, so the
+//! answer is written (`Elaborate.undetermined`): the leaf takes its method from that ancestor in `Lower`, so the
 //! leaf is written only where the ancestor's kind IS the wanted's method.
 //!
 //! `emit` writes the nodes reachable from the roots in REVERSE POST-ORDER —
 //! owners before arguments, so every argument's index is greater than
 //! every owner's even where a node is shared, and a unit with no sharing
-//! reads in pre-order, as v1's converter writes every table — by explicit
-//! stacks (I4).
+//! reads in pre-order — by explicit stacks, so no walk stops at a fixed
+//! depth.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -55,7 +54,7 @@ nodes: std.ArrayList(Node) = .empty,
 node_args: std.ArrayList(u32) = .empty,
 /// Each wanted's node. A site's unit is a handful of nodes, so the first
 /// `inline_len` are searched in `inline_keys` and only a larger unit hashes
-/// (CK-131: the hashing was a seventh of P6 on 6 000 tuple comparisons).
+/// (hashing every unit cost a seventh of P6 on 6 000 tuple comparisons).
 memo: std.AutoHashMapUnmanaged(Key, u32) = .empty,
 inline_keys: [inline_len]Key = undefined,
 inline_nodes: [inline_len]u32 = undefined,

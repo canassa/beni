@@ -107,7 +107,7 @@ pub const State = struct {
 
     /// Endpoint `ep`'s declaration-generic parameter `j` of schema `decl`: the
     /// generalised variable its endpoint expansion and payloads are written
-    /// over (checker-v2.md §11.5 *as built by R8b*: the derived-context
+    /// over (checker-v2.md §11.5: the derived-context
     /// fixpoint substitutes its markers for them).
     pub fn param(s: *const State, decl: u32, j: u32, ep: Interface.SchemaCtor.Endpoint) Var {
         const p = s.params[s.params_start[decl] + j];
@@ -150,8 +150,8 @@ pub const State = struct {
     }
 
     /// `lookupOpaque`, except that an endpoint of no arguments is a fresh
-    /// copy too, never the shared root (checker v2, R8b: checker-v2.md §11.5
-    /// *as built by R8b*). A derived-context pass reads a payload that names
+    /// copy too, never the shared root (checker-v2.md §11.5). A
+    /// derived-context pass reads a payload that names
     /// an endpoint through this, after the schema's group is done, so every
     /// pass gets fresh variables — the resolver keys shared answers by root,
     /// and a pass must not share one with a pass of another approximation or
@@ -388,7 +388,7 @@ pub const State = struct {
     }
 
     /// A copy of `root` with `old` replaced by `new`, memoised per copied node
-    /// (a map, not a store-sized array: R8b's `lookupFresh` copies once per
+    /// (a map, not a store-sized array: `lookupFresh` copies once per
     /// pass).
     fn copyEndpoint(s: *State, root: Var, old: []const Var, new: []const Var) Allocator.Error!Var {
         var memo: std.AutoHashMapUnmanaged(Var, Var) = .empty;

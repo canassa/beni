@@ -1,4 +1,4 @@
-//! Derived contexts (checker-v2.md §11.1, §11.2, D4; *As built by R8a*): the
+//! Derived contexts (checker-v2.md §11.1, §11.2): the
 //! ONE answer to "what does `T args` need to derive `eq` or `compare`", for
 //! every own nominal type of the module. The derivability verdict
 //! (`Instances.derivability`), derivation at a use (`Instances`), P5's rows
@@ -21,18 +21,18 @@
 //! answer off what is left: every wanted still OPEN on marker `i` is the
 //! entry `(i, its method, its type)` (Rule U1 keeps one per name); a failed
 //! position is `absent`; a marker a specialised instance bound to a ground
-//! type is a PIN (CK-159: the type derives only at that argument), and one
+//! type is a PIN (the type derives only at that argument), and one
 //! that became anything else but a distinct plain flex is `absent`. A worklist
 //! re-runs exactly the passes that read an entry that grew; entries only
 //! move up the lattice `present(∅) ⊂ present(more) ⊂ absent`, so it ends.
 //!
-//! **Reading the approximation, or running fresh** (§11.2, round 4 R8-1). A
+//! **Reading the approximation, or running fresh** (§11.2). A
 //! query for a type of unit `U` reads the approximation of `U`'s innermost
 //! run when no top-level-kind group frame lies above that run's frame (the
 //! run's own passes, and anything they ask directly); when one does — the
 //! run's resolution nested a group whose body asks again — it runs a FRESH
 //! fixpoint for `U`. Dependency units are run first, in order, so a chain of
-//! types never recurses natively (I4).
+//! types never recurses natively (no walk stops at a fixed depth).
 //!
 //! **In flight** (§11.2's closed and parametric branches). A pass that meets
 //! an own unannotated method whose group is `checking` does not link it
@@ -84,7 +84,7 @@ pub const Status = enum(u8) {
     present,
     /// Not derived: the module declares a value of the method's name, `pub`
     /// or not, which the module rule makes every one of its types' method
-    /// (§11.3, D1): `module_pub` says which.
+    /// (§11.3): `module_pub` says which.
     own_method,
     /// A `foreign type`: no body to derive over.
     foreign,
@@ -97,16 +97,16 @@ pub const Status = enum(u8) {
     absent_private,
     /// §11.2's parametric in-flight case: `culprit` names the method.
     needs_annotation,
-    /// A pass ran out of the resolver's step budget (R8b's review, B1): no
+    /// A pass ran out of the resolver's step budget: no
     /// answer, and the use says `nesting_too_deep` — never an absent that
     /// reads as "does not support".
     absent_budget,
     /// A payload's method exists and has the wrong type for a requirement
-    /// the pass made of it (static-dispatch-spike.md §10.13, CK-116):
+    /// the pass made of it (static-dispatch-spike.md §10.13):
     /// `culprit` is the `TypeId` whose method it is, `method` its name.
     absent_requirement,
     /// A payload position met `err` and nothing else failed (checker-v2.md
-    /// §12.2 *amended by R15-fix-G*, CK-178): that `err` has its message,
+    /// §12.2): that `err` has its message,
     /// said where it was made, so the type's method is no answer and the
     /// use is `poisoned`, in silence — never "does not support `==`".
     poisoned,
@@ -117,11 +117,12 @@ pub const Status = enum(u8) {
 pub const Entry = struct { param: u16, method: Symbol, slot: u32 = none };
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
 
-/// A PIN (§11.2 *as amended by R15-fix-E*, CK-159): a payload's specialised
+/// A PIN (§11.2): a payload's specialised
 /// method (`H.eq : Holder Int, Holder Int -> Bool`) bound marker `param` to
 /// the ground type at element `slot` of the answer's `template`. The type
 /// derives only where `args[param]` is that type: a use unifies the two, and
-/// no evidence rides on a pin, so it is no entry and no row parameter (D4).
+/// no evidence rides on a pin, so it is no entry and no row parameter: a
+/// derived function takes one evidence parameter per context entry.
 pub const Pin = struct { param: u16, slot: u32 };
 
 pub const Answer = struct {
@@ -147,14 +148,14 @@ pub const Answer = struct {
     /// method is not `eq` or `compare`, over the type's template parameters
     /// (`paramsOf`), an entry's `slot` its element. One tuple per answer, so a
     /// use substitutes the arguments once and a row publishes one scheme,
-    /// however many entries it has (R8a's review).
+    /// however many entries it has.
     template: Var.Optional = .none,
 };
 
 /// A closed in-flight method a run met: replayed for every asker (§11.2).
 /// `template` is the frozen tuple `( receiver, method type )`. Or, `post`, a
 /// closed type whose payloads a pass could not read because a schema they
-/// go through is in flight (§11.5 *as amended by R8b's review*): replayed
+/// go through is in flight (§11.5): replayed
 /// as a DEFERRED check of `type_id`'s `method`, made once P4 is over.
 const Replay = struct { slot: u32, decl: u32, method: Symbol, template: Var = undefined, post: bool = false, type_id: Types.TypeId = .none };
 
@@ -188,7 +189,7 @@ const Run = struct {
     /// declares it, and its name.
     private: ?struct { type_id: Types.TypeId, method: Symbol } = null,
     /// The pass met a payload's method of the wrong type for a requirement
-    /// (CK-116): the type whose method it is, and its name.
+    /// the type whose method it is, and its name.
     requirement: ?struct { type_id: Types.TypeId, method: Symbol } = null,
     /// It read another run's approximation, which an exact unit graph
     /// rules out (`noteApprox`): not memoised, and `internal`.
@@ -196,9 +197,9 @@ const Run = struct {
     /// It read a generational result: memoised under the generation only.
     generational: bool = false,
     /// Per slot: its last pass's positions, committed to `bodies` with the
-    /// answers when the run is memoised permanently (R8a's review, S4: a
-    /// nested fresh run of the same unit must not leave its bodies beside
-    /// the outer run's answers).
+    /// answers when the run is memoised permanently (a nested fresh run of
+    /// the same unit must not leave its bodies beside the outer run's
+    /// answers).
     bodies: []Body = &.{},
 };
 
@@ -234,14 +235,15 @@ params: []Range = &.{},
 param_vars: std.ArrayList(Var) = .empty,
 runs: std.ArrayList(Run) = .empty,
 /// How many unit fixpoints this module ran (`run`), for the
-/// `derived_context_runs` counter: the I10 witness (checker-v2.md §14.3 *as
-/// built by R10*). A cache hit runs none, because nothing of the check runs.
+/// `derived_context_runs` counter: the witness that whether `T` answers `m`
+/// has one answer per module (checker-v2.md §14.3). A cache hit runs none,
+/// because nothing of the check runs.
 runs_total: u64 = 0,
 /// Bumped whenever a group completes (§11.2, *Memo generations*).
 generation: u32 = 0,
 /// The module declares a value named `eq` / `compare`, `pub` or not: the
 /// module rule answers every type of the module with it, so none derives
-/// (§11.3, D1 as amended 2026-09-24).
+/// (§11.3, as amended 2026-09-24).
 module_has: [2]bool = .{ false, false },
 /// ... and that value is `pub`: an importer may call it (`own_method` in
 /// the record), where a private one is `private_method` there (§14.2).
@@ -252,7 +254,7 @@ quiet_items: std.ArrayList(Report.Item) = .empty,
 /// A stamp per unit for `ensure`'s walk.
 seen: []u32 = &.{},
 walks: u32 = 0,
-/// The module declares a schema (R8b).
+/// The module declares a schema.
 has_schemas: bool = false,
 /// §11.4's gate per local type (`Marker.functionFree`): known for
 /// `gate_gen` (the generation, or 0 for good in a module without schemas),
@@ -320,11 +322,11 @@ pub fn init(cx: *const Context) Error!Contexts {
     const bir = cx.bir;
     var c: Contexts = .{ .cx = cx };
     // A value of the method's name, `pub` or not: the module rule answers
-    // every type of the module with it, and none derives (§11.3, D1). A
+    // every type of the module with it, and none derives (§11.3). A
     // private one answers only this module's uses; from any other module,
     // reaching it — directly or through anything derived — is
-    // `private_method` (R8b: v1 derived and published the rows anyway,
-    // `dispatch/PrivateEqStillDerives`).
+    // `private_method`, and no row is derived or published for it
+    // (`dispatch/PrivateEqStillDerives`).
     for (bir.decls) |d| {
         if (d.kind == .schema) c.has_schemas = true;
         if (!d.kind.isValue()) continue;
@@ -397,7 +399,7 @@ pub fn init(cx: *const Context) Error!Contexts {
     return c;
 }
 
-// The unit graph, in `ContextUnits.zig` since R12 (checker-v2.md §19.1).
+// The unit graph lives in `ContextUnits.zig` (checker-v2.md §19.1).
 pub const initUnits = ContextUnits.initUnits;
 pub const pushUnit = ContextUnits.pushUnit;
 pub const membersOf = ContextUnits.membersOf;
@@ -431,8 +433,7 @@ fn id(c: *const Contexts, t: u32) Types.TypeId {
 /// beside `pub compare : number, number -> Order` and `pub foreign eq`, and
 /// the table derives `Order`'s `compare` and both of `Never`'s
 /// (static-dispatch-spike.md §3.2). Their rows must say so, or an importer
-/// finds no `compare` for `Order` (CK-130: first seen when R9 made v2 check
-/// `core`).
+/// finds no `compare` for `Order` (which `core` itself relies on).
 pub fn moduleRuleAnswers(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
     if (!c.module_has[@intFromEnum(kind)]) return false;
     return tableRow(c.cx.types, type_id, kind) == null;
@@ -441,7 +442,7 @@ pub fn moduleRuleAnswers(c: *const Contexts, type_id: Types.TypeId, kind: Kind) 
 /// Whether `kind` on this module's `type_id` is answered by no derived
 /// context of its own: the module rule's method, or §3.2's `primitive` row
 /// (`Bool` and `Order`'s `eq` in `core/Basics.beni`, whatever values the
-/// module declares; R9's review, nit 1). Read as `own_method`: nothing is
+/// module declares). Read as `own_method`: nothing is
 /// derived, and nothing is emitted for it (P5).
 pub fn notDerived(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
     return tableRow(c.cx.types, type_id, kind) == .primitive or c.moduleRuleAnswers(type_id, kind);
@@ -450,7 +451,7 @@ pub fn notDerived(c: *const Contexts, type_id: Types.TypeId, kind: Kind) bool {
 /// A row of §3.2's table (static-dispatch-spike.md §3.2).
 pub const TableRow = enum { primitive, derived };
 
-/// THE statement of §3.2's table (R9's review, nit 1): `eq` and `compare`
+/// THE statement of §3.2's table: `eq` and `compare`
 /// on `Int`, `Float`, `Bool`, `Char` and `String`, and `Order`'s `eq`,
 /// are `primitive`; `Order`'s `compare` (not alphabetic) and both of
 /// `Never`'s are `derived`; any other type has no row. The resolver
@@ -474,7 +475,7 @@ pub fn local(c: *const Contexts, type_id: Types.TypeId) ?u32 {
 }
 
 /// Whether a fixpoint answers local type `t`: a nominal `type` of this
-/// module, a tagged schema's two endpoints among them (§11.5, R8b). A record
+/// module, a tagged schema's two endpoints among them (§11.5). A record
 /// schema's endpoints are aliases, whose expansion answers.
 pub fn derives(c: *const Contexts, t: u32) bool {
     const e = c.cx.types.entry(c.id(t));
@@ -559,7 +560,7 @@ fn noteApprox(c: *Contexts, s: *const Solve, ri: u32, slot: u32) Error!void {
     const reader = c.active(s) orelse return;
     const r = &c.runs.items[reader];
     if (reader != ri) {
-        // Never, once the unit graph is exact (`complete`, R8b's review):
+        // Never, once the unit graph is exact (`complete`):
         // a run started inside `ri`'s pass that reads `ri`'s unit would make
         // the two one strongly connected component, so one unit. Were it to
         // happen, the reader is not memoised and the compiler says so
@@ -606,8 +607,7 @@ pub fn query(s: *Solve, type_id: Types.TypeId, kind: Kind, origin: Bir.Inst.Inde
         const t = c.local(type_id).?;
         const u = c.unit_of[t];
         // Only a valid memo's replay list is this generation's: a `peek`
-        // that answered without one (`own_method`) replays nothing (R8a's
-        // review, nit).
+        // that answered without one (`own_method`) replays nothing.
         if (u != none and c.valid(u) and c.readable(s, u) == null) try replay(s, u, kind, origin, asker);
         return a;
     }
@@ -620,7 +620,7 @@ pub fn query(s: *Solve, type_id: Types.TypeId, kind: Kind, origin: Bir.Inst.Inde
 }
 
 /// Unit `u`'s result, computed if it is not valid: its dependencies first,
-/// in order, so no chain of types recurses natively (I4).
+/// in order, so no chain of types recurses natively.
 pub fn ensure(s: *Solve, unit: u32) Error!void {
     const c = &s.contexts;
     // A unit is named by a member across a merge (`complete`).
@@ -677,8 +677,8 @@ fn walk(c: *Contexts, s: *Solve, u: u32) Error!bool {
     return true;
 }
 
-/// P5, first: the comparisons deferred while a schema was in flight (§11.5
-/// *as amended by R8b's review*), each checked against the one verdict now
+/// P5, first: the comparisons deferred while a schema was in flight
+/// (§11.5), each checked against the one verdict now
 /// that every group is done; a refusal is said at its use, which is
 /// rejected, so P6 elaborates no answer that has no row.
 pub fn checkDeferred(s: *Solve) Error!void {
@@ -703,8 +703,8 @@ pub fn checkDeferred(s: *Solve) Error!void {
         try Derivable.report(s, d.origin, v, d.method, verdict);
         if (d.wanted.unwrap()) |w| try Resolve.reject(s, w, false);
     }
-    // The §11.4 gates a marker walk could not read (R8b's round-2 review,
-    // B1): the obligation's question, asked again of the type now that every
+    // The §11.4 gates a marker walk could not read: the obligation's
+    // question, asked again of the type now that every
     // group is done; one message per question, as the walk says it.
     const gates = try scratch.dupe(DeferredGate, c.deferred_gates.items);
     defer scratch.free(gates);
@@ -744,7 +744,7 @@ pub fn settleAll(s: *Solve) Error!void {
 }
 
 /// One replay item per closed in-flight method unit `u`'s result reached:
-/// an ordinary wanted in the asker's frame (§11.2, R8-3).
+/// an ordinary wanted in the asker's frame (§11.2).
 fn replay(s: *Solve, u: u32, kind: Kind, origin: Bir.Inst.Index, asker: Evidence.WantedId) Error!void {
     const c = &s.contexts;
     const r = c.replay_of[u];
@@ -803,7 +803,7 @@ fn run(s: *Solve, u: u32) Error!void {
     const slots: u32 = @intCast(members.len * 2);
 
     // A run has a step budget of its own: what a type derives is the type's,
-    // not whoever asked first (R8b's round-2 review, S1).
+    // not whoever asked first.
     const asker_steps = s.resolver.steps;
     s.resolver.steps = 0;
     defer s.resolver.steps = asker_steps;
@@ -841,8 +841,7 @@ fn run(s: *Solve, u: u32) Error!void {
     while (c.runs.items[ri].worklist.pop()) |slot| {
         c.runs.items[ri].queued[slot] = false;
         // Entries only climb a finite lattice, so the worklist ends; a pass
-        // that did not climb would loop, and says so instead (R8b's
-        // review, S3).
+        // that did not climb would loop, and says so instead.
         passes += 1;
         if (passes > max_passes) {
             try s.report.internal(cx.bir.decls[cx.types.entry(c.id(members[slot / 2])).decl.int()].inst_start, "a derived-context fixpoint did not converge (checker-v2.md §11.2)");
@@ -863,7 +862,7 @@ fn run(s: *Solve, u: u32) Error!void {
             // Keep the newest templates. `same` does not compare them, and
             // need not: a template's leaves are the type's parameters or
             // ground, and a marker that is bound is `absent`, so a template
-            // changes only with the set (§11.2 *as built by R8a*, S5).
+            // changes only with the set (§11.2).
             if (std.debug.runtime_safety) try assertSameTemplate(s, r.approx[slot], got);
             r.approx[slot] = got;
             continue;
@@ -920,8 +919,8 @@ fn run(s: *Solve, u: u32) Error!void {
 pub fn sayInternals(s: *Solve, real: *Report) Error!void {
     const c = &s.contexts;
     // A run nested inside another run's pass: `real` is the same quiet
-    // report, and the outermost run says what gathered (R8b's review round:
-    // appending to the list being read lost them, and leaked).
+    // report, and the outermost run says what gathered (appending to the
+    // list being read would lose them, and leak).
     if (c.quiet == real) return;
     const gpa = c.cx.gpa;
     for (c.quiet_items.items) |item| {
@@ -949,7 +948,7 @@ fn assertSameTemplate(s: *Solve, a: Answer, b: Answer) Error!void {
 /// a pass met first can change between them); `own_method` and `foreign`
 /// never move. So an oscillation between two absents (culprits a pass meets
 /// in a different order) is not caught here; the worklist's cap, `internal`
-/// past 2²² passes, bounds it (R8b's round-2 review, nit).
+/// past 2²² passes, bounds it.
 fn climbs(c: *const Contexts, old: Answer, new: Answer) bool {
     switch (old.status) {
         .own_method, .foreign => return new.status == old.status,
@@ -959,7 +958,7 @@ fn climbs(c: *const Contexts, old: Answer, new: Answer) bool {
     if (new.status != .present) return new.status != .own_method and new.status != .foreign;
     // Both sorted by `(param, method text)`: one merge walk.
     // A pin is a constraint on its parameter at least as strong as any
-    // entry on it (CK-159): an old entry may give way to a new pin, and an
+    // entry on it: an old entry may give way to a new pin, and an
     // old pin stays.
     const new_pins = c.pinsOf(new);
     for (c.pinsOf(old)) |p| {
@@ -984,7 +983,7 @@ fn hasPin(pins: []const Pin, param: u16) bool {
     return false;
 }
 
-/// Passes one run may make before it is `internal` (S3 of R8b's review): a
+/// Passes one run may make before it is `internal`: a
 /// hang guard, far above what a lattice of any real width climbs through.
 const max_passes: u32 = 1 << 22;
 
@@ -1027,8 +1026,9 @@ pub fn readPayloads(s: *Solve, t: u32) Error!?Payloads {
     }
     var b = cx.builder(.flex, s.frame().rank);
     defer b.deinit();
-    // Every endpoint a payload names, a fresh copy (`Schema.State.lookupFresh`,
-    // R8b): no two passes share a root the resolver keys an answer by.
+    // Every endpoint a payload names, a fresh copy
+    // (`Schema.State.lookupFresh`): no two passes share a root the resolver
+    // keys an answer by.
     b.schema_lookup = Schema.State.lookupFresh;
     for (params, markers) |p, *v| {
         v.* = try s.fresh(.{ .flex = .{ .name = p.toOptional() } });
@@ -1046,7 +1046,7 @@ pub fn readPayloads(s: *Solve, t: u32) Error!?Payloads {
     return .{ .markers = markers, .args = args.items, .origin = d.inst_start };
 }
 
-/// A tagged schema endpoint's payloads (§11.5 *as built by R8b*): what
+/// A tagged schema endpoint's payloads (§11.5): what
 /// `Schema.State` elaborated for its variants, over the schema's own
 /// generalised parameters, instantiated in the current frame with the
 /// markers for those parameters — the same read a `type`'s constructors
@@ -1080,7 +1080,7 @@ fn endpointOf(cx: *const Context, type_id: Types.TypeId) @import("../resolve/Int
 /// A schema with a `via` whose payloads local type `t` reads (its own, as a
 /// program endpoint, or a record schema it names) and whose group is still
 /// in flight: its `via` targets are not inferred yet, so the pass cannot
-/// read them (§11.5 *as built by R8b*). The schema's declaration, or none.
+/// read them (§11.5). The schema's declaration, or none.
 fn endpointInFlight(s: *Solve, t: u32) u32 {
     const c = &s.contexts;
     if (c.refs_by_type.len == 0) return none;
@@ -1145,7 +1145,7 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
     const wanted_start: u32 = @intCast(s.evidence.wanteds.items.len);
     const quiet_start = c.quiet_items.items.len;
     // An endpoint whose schema is in flight: its `via` targets are not
-    // inferred yet (§11.5 *as built by R8b*).
+    // inferred yet (§11.5).
     const schema = endpointInFlight(s, t);
     if (schema != none) {
         // A CLOSED type (no parameters): its answer is deferred, as a closed
@@ -1167,7 +1167,7 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
     c.runs.items[ri].bodies[slot] = .{ .markers = p.markers, .ids = ids, .set = true };
     // A budget that ran out inside the pass — the resolver's steps, or a
     // nested check refused at demand — said so to the quiet report: the
-    // entry is no answer, and the use says it (R8b's review, B1).
+    // entry is no answer, and the use says it.
     for (c.quiet_items.items[@min(quiet_start, c.quiet_items.items.len)..]) |item| {
         if (item.code == .nesting_too_deep) return .{ .status = .absent_budget };
     }
@@ -1177,7 +1177,7 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
 /// What a pass's positions say (§11.2): `needs_annotation` when a parametric
 /// in-flight method was met; `absent` when a position failed, a marker
 /// stopped being a distinct plain flex or a pin (bound to a ground type:
-/// `pins`, CK-159), or a wanted of the pass is left open
+/// `pins`), or a wanted of the pass is left open
 /// on anything but a marker; else `present`, one entry per wanted open on a
 /// marker, sorted by `(param, method text)`, each of another method than
 /// `eq` or `compare` with its type frozen over the template parameters.
@@ -1195,7 +1195,7 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     else
         .{ .status = if (r.saw_function) .absent_function else .absent_other };
     // A failed position is the answer; a POISONED one only when nothing
-    // else failed (`Status.poisoned`, CK-178), and never over a reason the
+    // else failed (`Status.poisoned`), and never over a reason the
     // run recorded.
     var poisoned = false;
     for (ids, 0..) |wid, k| switch (s.evidence.get(wid).state) {
@@ -1209,8 +1209,8 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
     };
     if (poisoned) return if (failed.status == .absent_other) .{ .status = .poisoned } else failed;
     // Every marker a distinct plain flex or a PIN — bound to a ground type,
-    // by a payload's specialised method (CK-159) — found in linear time: each
-    // flex root is stamped `seen` (R8a's reviews: a type of tens of
+    // by a payload's specialised method — found in linear time: each
+    // flex root is stamped `seen` (a type may have tens of
     // thousands of parameters). The ground walks come first, as they stamp
     // with marks of their own.
     var pinned = try std.DynamicBitSetUnmanaged.initEmpty(scratch, markers.len);
@@ -1269,10 +1269,10 @@ fn collect(c: *Contexts, s: *Solve, ri: u32, t: u32, markers: []const Var, ids: 
         }
         // The `equatable` flag a payload's method put on the parameter — a
         // quantifier of its scheme that `Basics.eq` compares — or an open
-        // `equatable` row riding on it (R8a's review, B1): not an evidence
+        // `equatable` row riding on it: not an evidence
         // wanted, but a requirement of the argument all the same. It is the
         // entry `(i, eq)`, as a boundary's flag is (`Derivable.boundaryStep`)
-        // and as v1's requirement bits said, so an argument that holds a
+        // so an argument that holds a
         // function is refused at the use.
         if (!asks_eq and (flags.equatable or s.obligations.openEquatable(flags.obls) != null)) {
             try c.entries.append(scratch, .{ .param = @intCast(i), .method = InternPool.WellKnown.eq.symbol() });
@@ -1391,7 +1391,7 @@ fn entryLessThan(interner: *const InternPool.Global, a: Entry, b: Entry) bool {
 /// other is closed: no entry, the wanted answered as a group call (its body
 /// term is P5's, when `decl` is done), and `( receiver, method type )`
 /// recorded for replay — the method-type check is the asker's ordinary
-/// wanted, in the asker's frame, never this frame's (round 4, R8-3).
+/// wanted, in the asker's frame, never this frame's.
 pub fn inFlight(s: *Solve, ri: u32, wid: Evidence.WantedId, decl: u32) Error!void {
     const c = &s.contexts;
     const w = s.evidence.get(wid);
@@ -1450,7 +1450,7 @@ pub fn groupDone(c: *Contexts) void {
 /// A run's pass met another module's private method, declared by the
 /// module of `type_id`: an `absent` entry is `private_method` at the use
 /// (§11.2, §11.3).
-/// A run's pass met a payload's method of the wrong type (CK-116): its
+/// A run's pass met a payload's method of the wrong type: its
 /// entry is `absent_requirement`, naming it, unless a private method was
 /// met first.
 pub fn noteRequirement(c: *Contexts, s: *const Solve, type_id: Types.TypeId, method: Symbol) void {

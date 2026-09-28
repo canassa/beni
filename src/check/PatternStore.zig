@@ -1,7 +1,7 @@
 //! The simplified pattern language `Exhaustive.zig` analyses
 //! (docs/design/checker.md §6.6): `anything`, a `literal`, or a `ctor` of a
-//! finite union, in one flat store. Split out of `Exhaustive.zig` by R12,
-//! which had grown past `checker-v2.md` §19.1's 1 500 lines; `Exhaustive`
+//! finite union, in one flat store. Kept apart from `Exhaustive.zig` to
+//! hold both under `checker-v2.md` §19.1's 1 500 lines; `Exhaustive`
 //! re-exports every name, so `Exhaustive.PatIndex` and the rest are
 //! unchanged for their readers.
 

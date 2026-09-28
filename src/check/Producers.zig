@@ -1,8 +1,8 @@
 //! What a message about a recursive group says, read syntactically off the
-//! Bir (checker-v2.md §10.6, §10.7 R7-2, §10.8), so that it is a function of
+//! Bir (checker-v2.md §10.6, §10.7, §10.8), so that it is a function of
 //! the program and never of the declaration order: which members produced
-//! the values a refused use names (D14's hint), and a cycle through a merged
-//! group. Error paths only; split out of `Recursion.zig` (R7's review, S4).
+//! the values a refused use names (the recursive group's hint), and a cycle
+//! through a merged group. Error paths only; kept apart from `Recursion.zig`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -14,7 +14,7 @@ const Decl = @import("constrain/Decl.zig");
 const Symbol = InternPool.Symbol;
 const Error = Allocator.Error;
 
-/// D14's hint (§10.7) for a mismatch at `region` in declaration `decl`,
+/// The recursive group's hint (§10.7) for a mismatch at `region` in declaration `decl`,
 /// `call` the call it is an argument of (if any), once `decl`'s merge class
 /// is final: the members that produced what the refused use names, else
 /// every unannotated member of the class, sorted by text. Allocated with
@@ -60,7 +60,7 @@ pub fn hintText(gs: *Groups, decl: u32, region: Bir.Inst.Index, call: Bir.Inst.O
 }
 
 /// The declaration whose instructions hold `inst`, or null. A linear scan: an
-/// error path, once per D14 mismatch.
+/// error path, once per recursive-group mismatch.
 pub fn declOf(bir: *const Bir, inst: Bir.Inst.Index) ?u32 {
     for (bir.decls, 0..) |d, i| {
         if (inst.int() >= d.inst_start.int() and inst.int() < d.inst_end.int()) return @intCast(i);
@@ -119,7 +119,7 @@ pub fn classOf(gs: *Groups, decl: u32) Error![]u32 {
 /// `via` is the one local of the context those producers came through, if
 /// they came through exactly one and none was referenced directly.
 /// The members of `class` whose references produced the values the refused
-/// use names (§10.7, R7-2): its context is the body of the `let` function
+/// use names (§10.7): its context is the body of the `let` function
 /// the use calls when the mismatch is one of its arguments (`q "s"` names
 /// `q`'s body), else the innermost `let` function around `region`, else
 /// `region` itself; the members referenced there, by value or by a method
@@ -312,7 +312,7 @@ const Body = struct {
 // A cycle through a merged group (§10.6)
 // ---------------------------------------------------------------------------
 
-/// A cycle through the merged group `decl` belongs to (§10.6, CK-70): its
+/// A cycle through the merged group `decl` belongs to (§10.6): its
 /// members in call order, from the one whose name is smallest by text back
 /// to it; null when `decl`'s group merged with no other. The edges are read
 /// off the members' Bir — value references, and method calls by a member's

@@ -5,26 +5,26 @@
 //! **Why a second IR at all** is §9.2: Elm's author measured lowering
 //! straight to a byte builder as neutral for throughput and kept the
 //! intermediate form anyway, because the peephole and specialisation passes
-//! have to pattern-match on generated structure. M3c's optimiser is that
-//! pass list; M3a's job is to give it something to match on.
+//! have to pattern-match on generated structure. The release optimiser is
+//! that pass list; this IR's job is to give it something to match on.
 //!
 //! Shape, after `Bir` and `std.zig.Zir`: one `MultiArrayList(Node)` of
 //! `{tag, pos, lhs, rhs}` records plus one `extra: []u32` sidecar for
 //! everything variable-length, one `string_bytes` for literal text, and one
 //! `names` column. Every reference is a `u32` index into a named array
 //! wrapped in an `enum(u32)`; there is no pointer and no slice anywhere, so
-//! a node is trivially copyable and M4 can map the whole thing.
+//! a node is trivially copyable and a cache can map the whole thing.
 //!
 //! **Names are `Name`s, never strings** (§3). A `Name` is a pair of
 //! interned `Symbol`s — an optional module qualifier and a base — plus a
-//! disambiguator. Renaming in M3c is then a rewrite of the `names` column
+//! disambiguator. Renaming under `--release` is then a rewrite of the `names` column
 //! and of nothing else: no node holds text, and two names are equal exactly
 //! when their `NameIndex`es are. The printer is the only thing that turns a
 //! `Name` back into bytes.
 //!
 //! **Every node carries a source position from the start** (§9.6), a byte
 //! offset into the module's source or `Node.no_pos` for a node the lowering
-//! invented. Source maps are off in M3a and the field is still here on
+//! invented. Source maps are not written yet and the field is still here on
 //! purpose: Elm never threaded positions through codegen and consequently
 //! has no source maps at all, and retrofitting one means touching every
 //! pass rather than only the printer. An offset and not a `{line, col}`
@@ -50,7 +50,7 @@ extra: []const u32,
 /// Owned. Literal text: number spellings verbatim, decoded string bytes.
 string_bytes: []const u8,
 /// Owned. The one name column; every name-carrying slot is a `NameIndex`
-/// into it, so M3c's renaming is a rewrite of this array alone.
+/// into it, so `--release` renaming is a rewrite of this array alone.
 names: []const Name,
 /// The module's top-level statements, in emission order: the `import`s
 /// first, then one declaration per emitted value, then one `export`.
@@ -145,8 +145,7 @@ pub const Node = struct {
         return_stmt,
         /// `if (cond) { … } else { … }`. `lhs` condition, `rhs` extra `If`.
         if_stmt,
-        /// `label: while (true) { … }` — the tail-call loop of §8, which
-        /// M3b fills. `lhs` is a `NameIndex` (the label, or `.none`), `rhs`
+        /// `label: while (true) { … }` — the tail-call loop of §8. `lhs` is a `NameIndex` (the label, or `.none`), `rhs`
         /// is extra `SubRange` of statements.
         while_true,
         /// `break label;` / `continue label;`. `lhs` is a `NameIndex` or
@@ -255,7 +254,7 @@ pub const BinaryOp = enum(u8) {
     ge,
     logical_and,
     logical_or,
-    /// `|`, which M3b's `Int32` needs (`x | 0`).
+    /// `|`, which `Int32` needs (`x | 0`).
     bit_or,
 
     /// JavaScript's precedence, higher binds tighter. The printer
@@ -332,7 +331,7 @@ pub const UnaryOp = enum(u8) {
 ///
 /// Why a pair and not one interned `"Module$base"`: interning the
 /// concatenation would put a string build on the hot path of every
-/// reference, and would make M3c's rename a string rewrite instead of a
+/// reference, and would make `--release`'s rename a string rewrite instead of a
 /// symbol swap. Why a disambiguator: two locals in sibling branches of one
 /// function can share a source name, and JavaScript's scoping is not
 /// beni's.
@@ -537,10 +536,9 @@ pub fn inlineRange(d: Node.Data) SubRange {
 /// Push the operand expressions of expression `node` onto `stack` in
 /// REVERSE print order, so that popping them visits them in print order.
 ///
-/// This is how a pass walks an expression without one stack frame per link
-/// (CK-81): the tree is as deep as the longest chain the compiler built — a
-/// derived `eq` over a 60 000-field record is one `&&` 60 000 deep, and a list
-/// literal was one nested object per element until R2c — so every walker keeps its own
+/// This is how a pass walks an expression without one stack frame per link:
+/// the tree is as deep as the longest chain the compiler built — a
+/// derived `eq` over a 60 000-field record is one `&&` 60 000 deep — so every walker keeps its own
 /// explicit stack and asks this for the children. A leaf pushes nothing, and
 /// so does an `arrow`: its body is a statement list, which each caller walks
 /// in its own way (or, for `Opt.exprUses`, deliberately not at all).
@@ -565,7 +563,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         },
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
-        // so a new tag is a compile error here and in both printers (CK-81).
+        // so a new tag is a compile error here and in both printers.
         .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
     }
@@ -868,7 +866,7 @@ pub const nesting = struct {
 /// Names are deduplicated through a hash map keyed by the `Name` VALUE and
 /// not by a dense id, so the house rule of §5 is satisfied: a `Name` is a
 /// sparse key (a pair of interner indices), exactly the case the rule
-/// exempts. Deduplicating matters because M3c's renamer wants one row per
+/// exempts. Deduplicating matters because the release renamer wants one row per
 /// distinct identifier, and because a reference is then an integer compare.
 pub const Builder = struct {
     gpa: Allocator,
@@ -967,7 +965,7 @@ pub const Builder = struct {
     /// (`Height`): the longest path from any of them down to a leaf, each
     /// step costing what its construct costs an engine's parser. One walk
     /// over an explicit stack, so a tree of any depth is measured in constant
-    /// Zig stack (CK-81). `Lower` asks it only of a declaration with enough
+    /// Zig stack. `Lower` asks it only of a declaration with enough
     /// nodes to be over either budget (`nesting.could_exceed`).
     pub fn measure(b: *const Builder, gpa: Allocator, stmts: []const Node.Index) Allocator.Error!Height {
         const Entry = struct { node: u32, whole: u32, scopes: u32 };

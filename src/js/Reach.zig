@@ -68,7 +68,7 @@
 //! `Bir` and the dispatch table and BEFORE lowering, so an unreachable
 //! declaration is never lowered at all and the pass pays for itself in emit
 //! time. §10's colouring wants the same graph, before anything has been
-//! assigned to a file, and M4 can cache a module's edge list against the
+//! assigned to a file, and a cache can keep a module's edge list against the
 //! §8.1 key.
 //!
 //! **Determinism.** Every node identity is input-derived end to end: a

@@ -1,6 +1,6 @@
 //! Token and comment records (docs/design/frontend.md §3.2, language.md §2.2).
 //!
-//! The lexer (M1a, `Tokenizer.zig`) fills a `TokenList`; this file only fixes
+//! The lexer (`Tokenizer.zig`) fills a `TokenList`; this file only fixes
 //! the shapes. A token is thirteen bytes in four SoA columns: the tag, the
 //! byte offset of its first byte, its 0-based line (so the parser can decide
 //! layout per token without a binary search — language.md §4) and a payload
@@ -121,7 +121,7 @@ pub const Tag = enum(u8) {
     underscore,
     /// `..`, which no construct uses: it is lexed as one token only so
     /// that Elm's `exposing (T(..))` gets one diagnostic (language.md §2.2,
-    /// §5.2; CK-47).
+    /// §5.2).
     dot_dot,
     question,
 

@@ -1,6 +1,6 @@
 //! A written type as position-free, name-carrying bytes — the one digest input
 //! nothing in the compiler computes today (`checker.md` §7, *The dependency
-//! digest*; `plans/m4-3.md` §9 M3-b).
+//! digest*).
 //!
 //! **What it is for.** An `alias` term's range in an interface record is its
 //! arguments followed by the ACTUAL type, so a `pub type alias` a scheme of its
@@ -297,11 +297,11 @@ fn named(
     args: []const Bir.Inst.Index,
     depth: u32,
 ) Allocator.Error!void {
-    // A schema endpoint is a named type like any other (R15-fix-D, CK-126):
-    // it was `err` here, so an alias whose body names a schema's `Type`
-    // digested alike whatever it named, and a private record schema's
-    // endpoint — read through the alias from the plan — could change
-    // under a cached dependent.
+    // A schema endpoint is a named type like any other: were it `err` here,
+    // an alias whose body names a schema's `Type` would digest alike
+    // whatever it named, and a private record schema's endpoint — read
+    // through the alias from the plan — could change under a cached
+    // dependent.
     const id: Types.TypeId = Types.headId(cx.types, cx.module, t, data);
     const who = cx.types.named(id) orelse return tag(gpa, out, .err);
     try tag(gpa, out, .named);
@@ -487,7 +487,7 @@ fn appendInt(gpa: Allocator, out: *std.ArrayList(u8), comptime T: type, value: T
 /// The encoding rendered as source-shaped text, so a golden is readable and a
 /// test can assert what the bytes MEAN rather than only that two of them
 /// differ. Nothing in the compiler reads this on a code path; it is the round
-/// trip `plans/m4-3.md` §9 M3-b asks for, and it is total — every byte the
+/// trip the dependency digest's design asks for, and it is total — every byte the
 /// writer can produce has a rendering, so a decoder that fell off the end of
 /// the stream would show up as a failure here.
 pub fn render(gpa: Allocator, out: *std.ArrayList(u8), bytes: []const u8) Allocator.Error!void {

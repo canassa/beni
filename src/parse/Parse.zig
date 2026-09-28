@@ -1,5 +1,5 @@
 //! The parser (docs/design/language.md §3–§4, §6.5–§6.6, §10; frontend.md
-//! §3.5, §8 M1b). Tokens in, an `Ast` out; never fails on user input.
+//! §3.5, §8). Tokens in, an `Ast` out; never fails on user input.
 //!
 //! Shape, after `std.zig.Parse`: predictive recursive descent for
 //! declarations, types and patterns; Pratt for expressions with the fixed
@@ -111,7 +111,7 @@ last_error_start: u32 = std.math.maxInt(u32),
 /// a declaration even when no one path is that long — except across
 /// SIBLINGS (`Siblings`): a `let`'s bindings and body and a `case`'s
 /// scrutinee and branches are charged as the deepest of them, not their
-/// sum (CK-166), because none of them is below another. What still adds
+/// sum, because none of them is below another. What still adds
 /// up — say 4096 operators spread over the arguments of one call — is
 /// nothing a person writes, and what does is a generated file that would
 /// otherwise crash us.
@@ -725,8 +725,8 @@ fn parseImport(p: *Parse) Allocator.Error!Index {
     return p.addNode(.{ .tag = .import, .main_token = import_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
 
-/// An upper name in an `exposing` list, and Elm's `T(..)` after it (D8 as
-/// amended, CK-47). beni exposes constructors by name beside the type
+/// An upper name in an `exposing` list, and Elm's `T(..)` after it (the
+/// owner's decision that it gets a message of its own). beni exposes constructors by name beside the type
 /// (language.md §5.2), so `(..)` is `expected_token` at its `(` — ONE
 /// diagnostic, where the lexer and the parser used to report the `(` and
 /// each dot. The node keeps the `(` as its `lhs` (0 when there is none):
@@ -978,7 +978,7 @@ fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
     if (p.peek() != .comma and p.peek() != .r_brace and p.peek() != .eof) {
         // The field's value did not end where a field ends: what was
         // written is not a schema field, so its value is the placeholder
-        // (CK-148), never the prefix that happened to parse. Schema records
+        // never the prefix that happened to parse. Schema records
         // promise sibling recovery at comma/brace (§2), which generic
         // delimiter recovery cannot provide because it skips to the closing
         // brace: consume the broken field's tail only.
@@ -1022,8 +1022,8 @@ fn parseLayoutSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Ind
         while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
         break :blk value;
     };
-    // A tail means the value is not what was written: the placeholder
-    // (CK-148), as in the brace form (`parseSchemaField`).
+    // A tail means the value is not what was written: the placeholder,
+    // as in the brace form (`parseSchemaField`).
     if (try p.finishLayoutField(.error_type)) |bad| {
         operand = bad;
         p.shrinkScratch(mark);
@@ -1217,8 +1217,7 @@ fn isWhereToken(p: *const Parse, t: TokenIndex) bool {
 }
 
 /// WhereClause := 'where' Constraint (',' Constraint)*  (§2.1). Empty when
-/// no clause follows, which is every declaration outside the spike's own
-/// fixtures and all of `core/` until S6.
+/// no clause follows.
 fn parseWhere(p: *Parse) Allocator.Error!SubRange {
     if (!p.atWhereClause()) return p.listToRange(&.{});
     _ = p.next(); // `where`
@@ -1911,9 +1910,9 @@ fn enterSpine(p: *Parse) Allocator.Error!bool {
 /// `let`'s bindings and its body, a `case`'s branches. The tree below the
 /// node is as deep as its DEEPEST child, not as the sum of them, so the
 /// spine charges one child leaves behind are not the next child's to pay
-/// (CK-166: a flat `let` of 5 000 `x{i} = x{i-1} + 1` spent the budget on
-/// its 4 097th binding and was refused 907 times, "nested more than 4096
-/// levels deep" about a block nested two deep). Each child starts from the
+/// (otherwise a flat `let` of 5 000 `x{i} = x{i-1} + 1` would spend the
+/// budget on its 4 097th binding and be refused 907 times, "nested more than
+/// 4096 levels deep" about a block nested two deep). Each child starts from the
 /// depth at `beginSiblings`; `endSiblings` leaves the counter at the
 /// deepest child's, which is the height of what was built, so the node
 /// stays charged for it if a loop later hangs a chain above it.
@@ -2731,7 +2730,7 @@ fn parseParams(p: *Parse) Allocator.Error!SubRange {
 fn canStartPatAtom(tag: Tag) bool {
     return switch (tag) {
         // `.float` starts no pattern (language.md §3, `PatAtom`), but it is
-        // taken as the start of one so `parsePatAtom` can say so (CK-45, D8)
+        // taken as the start of one so `parsePatAtom` can say so
         // rather than end the `case` in a layout error.
         .underscore, .lower_ident, .upper_ident, .qualified_upper, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .invalid => true,
         else => false,
@@ -2789,7 +2788,8 @@ fn parsePatCtor(p: *Parse) Allocator.Error!Index {
 }
 
 /// A float literal where a pattern was needed: `unexpected_token` with a
-/// message of its own (owner decision D8, CK-45). The grammar has no float
+/// message of its own (the owner's decision: only the message was
+/// wrong, so there is no new code). The grammar has no float
 /// pattern (language.md §3, `PatAtom`) — matching on `==` of a float is not
 /// something a `case` should promise — so the literal is consumed and
 /// stands as an error pattern, and the `case` goes on with its branches

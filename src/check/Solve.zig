@@ -7,7 +7,7 @@
 //! rank above every open frame (`Groups.zig`, §10) — and one per `let`
 //! group. A top-level-kind frame merged into one below it (§10.4) runs steps
 //! 1 and 2 only and hands down (`Groups.handDown`). At every other frame's
-//! boundary, in this order (I16):
+//! boundary, in this order (nothing unifies after generalisation starts):
 //!
 //!   1. settle — drain the frame's own `ready` queue (a `let` frame's is
 //!      its top-level-kind frame's, §9.1), `equatable` rows included. No
@@ -16,23 +16,23 @@
 //!      so a variable's rank now says whether it escapes;
 //!   3. defaults — every `try` on this frame's open list whose target still
 //!      sits at its rank is decided as `Result`; one whose target escaped
-//!      moves to its frame's list (§8.6, D2 as amended); if one was decided,
+//!      moves to its frame's list (§8.6); if one was decided,
 //!      or anything was readied, back to 1;
 //!   4. occurs over the frame's binders — parameters and pattern variables,
 //!      then headers — one run of shared epochs (`Walk.Occurs`,
 //!      `structural`): a cycle is `infinite_type` at the binder and its node
-//!      is poisoned (§8.2, CK-04, CK-57). No `touched` walk: §18's fallback.
+//!      is poisoned (§8.2). No `touched` walk: §18's fallback.
 //!      Then from every wanted's method type and open obligation riding on the
-//!      pool (R6a);
+//!      pool;
 //!   5. quantify what is still at the young rank — at a `let`,
-//!      what D5 does not generalise is held at the enclosing rank first
-//!      (`Resolve.holdLet`, §8.4 *As built by R14*);
-//!   6. check every annotated binding's rigids (§8.3, I1): still rigid, and
+//!      what §8.4 does not generalise is held at the enclosing rank first
+//!      (`Resolve.holdLet`);
+//!   6. check every annotated binding's rigids (§8.3): still rigid, and
 //!      generalised — an escaped one is `rigid_mismatch` at its first
-//!      capture (CK-01), and the binding's scheme is poisoned;
+//!      capture, and the binding's scheme is poisoned;
 //!   7. close — an obligation still open on a variable step 5 quantified is
 //!      reported (`tuple_index`, `interpolatable`) or folded (`equatable`)
-//!      (§8.5); one on an escaped variable stays attached to it (I3). At the
+//!      (§8.5); one on an escaped variable stays attached to it. At the
 //!      top level, promotion and the proven-undetermined default
 //!      (`Resolve.close`, §9.4);
 //!   8. pop.
@@ -40,21 +40,21 @@
 //! **Obligations** (§4.5, §8.5, §8.6) are `Decide.zig`'s: a `tuple_index`,
 //! `interpolatable` or `try` node is decided at once when what decides it is
 //! already known, and otherwise becomes a row of `Obligations` riding on its
-//! deciding flex variables, its dependants lowered to its owner's rank (I15 as
-//! amended). `unify`
+//! deciding flex variables, its dependants lowered to its owner's rank.
+//! `unify`
 //! readies it when one of them is bound; the queue is drained after every
 //! constraint node (§9.1's eager draining) and at step 1.
 //!
 //! **Wanteds** (§4.2, §9) are `Resolve.zig`'s: a `method` node creates one
 //! and resolves it at once when its receiver is known (Rule U0), an
-//! instantiation creates one per requirement (I5), and `unify` readies them
+//! instantiation creates one per requirement, and `unify` readies them
 //! onto the same queue as obligations, drained in one `seq` order.
 //!
 //! **Errors never stop the build.** A failed unification reports once and
 //! poisons both sides (research/02 §6), and a second bad argument to the
-//! same call is poisoned quietly (v1's `last_bad_call`).
+//! same call is poisoned quietly.
 //!
-//! The solver reads no generation-time context (I11): every reference was
+//! The solver reads no generation-time context: every reference was
 //! resolved to a variable by the generator, or names an instruction whose
 //! type `Instantiate.reference` reads from the Bir or an interface.
 
@@ -120,8 +120,8 @@ nest_units: u32 = 0,
 /// How deep resolution is recursing into derived positions (`Resolve.position`),
 /// which the nesting budget also counts (§10.2).
 resolve_depth: u32 = 0,
-/// Open frames that are a recursive group's (D14, §10.7): none, and D14 has
-/// nothing to look up.
+/// Open frames that are a recursive group's (§10.7): none, and canonical
+/// pessimism has nothing to look up.
 recursive_frames: u32 = 0,
 /// The current top-level-kind frame's `ready` list, held here while its
 /// frame is current (its `Queue.ready` is empty meanwhile), so the check
@@ -134,13 +134,13 @@ ready_queue: u32 = Generalize.Queue.none,
 free_queues: std.ArrayList(u32) = .empty,
 /// The `ready` buffers of popped queues, for the next frames to reuse.
 spare: std.ArrayList(std.ArrayList(u32)) = .empty,
-/// The call whose arguments already produced a message (v1's rule).
+/// The call whose arguments already produced a message.
 last_bad_call: Bir.Inst.OptionalIndex = .none,
 depth: u32 = 0,
 generalisations: u64 = 0,
 /// The module's wanteds and givens (§4.2), resolved by `Resolve.zig`.
 evidence: Evidence = .{},
-/// The resolver's own tables (§9): one owner, `Resolve.zig` (S7).
+/// The resolver's own tables (§9): one owner, `Resolve.zig`.
 resolver: Resolve.State = .{},
 /// The module's derived contexts (§11.2): set by `Module` in P1.
 contexts: Contexts = undefined,
@@ -151,7 +151,7 @@ module_report: *Report = undefined,
 /// the group being solved its monomorphic variable (Module's table).
 decl_scheme: []const Var.Optional = &.{},
 /// P3's own-name index: every value of this module by name, sorted by
-/// symbol (§5, CK-42).
+/// symbol (§5).
 own_values: []const OwnValue = &.{},
 /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
 informational: bool = false,
@@ -221,14 +221,14 @@ pub fn fresh(s: *Solve, content: TypeStore.Content) Error!Var {
 /// Poison `v`'s root. A flex that carried obligations settles them: nothing
 /// can decide them now, so each is closed as a decision on `err` would close
 /// it — its results poisoned, in silence (§7.1's rule for `err`), without a
-/// trip through the queue (review S7).
+/// trip through the queue.
 pub fn poison(s: *Solve, v: Var) Error!void {
     const st = s.store();
     const root = st.find(v);
     const flags: TypeStore.Flags = switch (st.content(root)) {
         .flex => |f| f,
         // A rigid's constraints are givens, not wanteds: only its rows (an
-        // interpolation held on it, CK-154) are settled.
+        // interpolation held on it) are settled.
         .rigid => |f| {
             st.setContent(root, .err);
             if (f.obls != .none) try Decide.settle(s, f.obls);
@@ -245,7 +245,7 @@ pub fn poison(s: *Solve, v: Var) Error!void {
     var i: u32 = 0;
     while (i < n) : (i += 1) {
         const id = s.evidence.slotAt(Evidence.position(st, set.set, i)).asWanted() orelse {
-            _ = try s.expect(false, s.unifier.region, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+            _ = try s.expect(false, s.unifier.region, "a method requirement on a flex is paired with no wanted (checker-v2.md §4.2)");
             continue;
         };
         const w = s.evidence.ptr(id);
@@ -259,22 +259,22 @@ pub fn poison(s: *Solve, v: Var) Error!void {
 /// broken invariant is never a silent drop.
 pub fn expect(s: *Solve, cond: bool, region: Bir.Inst.Index, what: []const u8) Error!bool {
     if (cond) return true;
-    if (std.debug.runtime_safety) std.debug.panic("checker v2 invariant: {s}", .{what});
+    if (std.debug.runtime_safety) std.debug.panic("checker invariant: {s}", .{what});
     try s.report.internal(region, what);
     return false;
 }
 
-/// Every requirement the last instantiation copied became a wanted (S2).
+/// Every requirement the last instantiation copied became a wanted.
 pub fn paired(s: *Solve, region: Bir.Inst.Index) Error!void {
     if (s.instantiate.unpaired == 0) return;
     s.instantiate.unpaired = 0;
-    _ = try s.expect(false, region, "an instantiation's requirement is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+    _ = try s.expect(false, region, "an instantiation's requirement is paired with no wanted (checker-v2.md §4.2)");
 }
 
 /// After an instantiation at `inst`: the wanteds it made, in the callee's
-/// canonical order (I5), are its `inst_evidence` row — recorded HERE, where
-/// they are created, so R6b reads the order and never recomputes it (review
-/// B4). An entry the copy could not pair is `internal` (S2).
+/// canonical order, are its `inst_evidence` row — recorded HERE, where
+/// they are created, so elaboration reads the order and never recomputes
+/// it. An entry the copy could not pair is `internal`.
 pub fn instantiated(s: *Solve, inst: Bir.Inst.Index) Error!void {
     try s.paired(inst);
     const made = s.instantiate.made.items;
@@ -284,7 +284,7 @@ pub fn instantiated(s: *Solve, inst: Bir.Inst.Index) Error!void {
 }
 
 /// The value of this module named `name`, `pub` or not: P3's index (§5),
-/// one binary search, never a scan of the declarations (CK-42).
+/// one binary search, never a scan of the declarations.
 pub fn ownValue(s: *const Solve, name: InternPool.Symbol) ?u32 {
     var lo: usize = 0;
     var hi: usize = s.own_values.len;
@@ -316,9 +316,8 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
     // The parser bounds how deep one declaration's expressions nest, and a
     // `let`'s groups are a TAIL chain the loop below walks without
     // recursing, so an accepted file cannot reach this. If one ever does it
-    // says so (I4): v1 returned here in silence, and a `let` of 5 000
-    // bindings lost its last constraints and published a wrong scheme
-    // (CK-91).
+    // says so: returning here in silence would drop the last constraints of
+    // a deep `let` and publish a wrong scheme.
     if (s.depth - s.depth_base > Tree.Generator.max_depth) {
         return s.report.nestingTooDeep(s.tree.node(first).region, Tree.Generator.max_depth);
     }
@@ -386,7 +385,7 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
             .demand => try Groups.demanded(s, node),
             .internal => {
                 try s.poison(@enumFromInt(node.a));
-                try s.report.internal(node.region, "checker v2 met a form its subset excludes; the subset gate (checker-v2.md §5, *As built by R4b*) should have refused this module");
+                try s.report.internal(node.region, "the checker met a form its subset excludes; the subset gate (checker-v2.md §5) should have refused this module");
             },
         }
         // Eager draining (§9.1): what this node readied is decided now, at
@@ -397,9 +396,9 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
 
 /// A record literal's fields: their conjunction's children solved from the
 /// literal's own frame, not through a frame and a depth unit of the
-/// conjunction's own. A literal nested d deep was 2d units deep, and one
-/// past about 2 100 levels was refused though the parser accepts 4 096
-/// (CK-114); now it is d, one unit per level like every other expression.
+/// conjunction's own: a literal nested d deep is d units deep, one unit per
+/// level like every other expression, so the checker accepts every depth
+/// the parser does.
 inline fn solveFields(s: *Solve, fields: Constraint) Error!void {
     if (fields == .none) return;
     const node = s.tree.node(fields);
@@ -407,13 +406,13 @@ inline fn solveFields(s: *Solve, fields: Constraint) Error!void {
     for (s.tree.constraints(node.a, node.b)) |child| try s.solve(child);
 }
 
-/// §6.5 as built by R5: whether a record literal is checked against the
-/// expectation first (pushed down, as v1 does) — because the meeting cannot
+/// §6.5: whether a record literal is checked against the
+/// expectation first (pushed down) — because the meeting cannot
 /// fail on a field name, on closedness or on a kind. That is an unkinded
 /// variable; a closed record with exactly the literal's field names; or a
 /// record open on a flex whose names are all the literal's. Otherwise the
 /// fields are constrained first, so the message shows the literal's own
-/// field types (CK-59): a `number` or `appendable` variable (review S1), a
+/// field types: a `number` or `appendable` variable, a
 /// missing or unexpected name, or a row on a rigid.
 fn takesFields(s: *Solve, expected: Var, literal: Var) Error!bool {
     const st = s.store();
@@ -478,7 +477,7 @@ pub const Outcome = enum { ok, reported, suppressed };
 
 pub fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Outcome {
     // A call's argument meeting its parameter is where a comparison's
-    // `equatable` question is asked (§11.4 *As built by R5*).
+    // `equatable` question is asked (§11.4).
     const result = try s.unifier.unifyAt(expected, actual, region, category.tag == .call_arg);
     try s.reportJoins();
     const problem = switch (result) {
@@ -501,7 +500,7 @@ pub fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, cate
 
 /// Rule-U1 joins the last unification left disagreeing (`Unify.join_failures`):
 /// `method_constraint_mismatch` at the younger wanted's origin, both method
-/// types poisoned (v1's `unifyPending`).
+/// types poisoned.
 /// `unify` without a message of its own: the caller reports what failed.
 /// A Rule-U1 join inside it is still reported (`reportJoins`).
 pub fn unifyQuiet(s: *Solve, a: Var, b: Var, region: Bir.Inst.Index) Error!bool {
@@ -528,7 +527,8 @@ pub fn reportJoins(s: *Solve) Error!void {
 }
 
 fn reportFailure(s: *Solve, region: Bir.Inst.Index, category: Category, expected: Var, actual: Var, problem: ?Unify.Problem) Error!void {
-    // A mismatch D14 caused says so (§10.7): read now, before the report
+    // A mismatch canonical pessimism caused says so (§10.7): read now,
+    // before the report
     // poisons both sides; written when the class is final (§10.8).
     const d14 = !s.report.quiet and try Recursion.involved(s, expected, actual);
     const before = s.report.items.items.len;
@@ -542,7 +542,7 @@ fn reportFailure(s: *Solve, region: Bir.Inst.Index, category: Category, expected
 fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expected: Var, actual: Var, problem: ?Unify.Problem) Error!void {
     const r = s.report;
     // A cycle on either side is the mistake, and the failure its consequence
-    // (§7.3 *amended by R15-fix-G*, CK-177): `[ x, ( x, x ), { zb = x } ]`
+    // (§7.3): `[ x, ( x, x ), { zb = x } ]`
     // is `a = ( a, a )`, never a mismatch printing that tuple unrolled.
     // Unification does not occurs-check a binding — the boundary does
     // (§8.2) — so a cycle made earlier in the group is still here. Only on
@@ -561,14 +561,14 @@ fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expe
         .unknown_field => |f| try r.unknownField(region, f.names, f.actual, f.expected),
         .record_not_closed => |f| try r.recordNotClosed(region, f.actual, f.expected),
         // §7.3: past the guard, a reported refusal and never "ok".
-        // A cycle is `infinite_type`, never "nested too deep" (review B1):
+        // A cycle is `infinite_type`, never "nested too deep":
         // the error path looked for one from both sides above.
         .too_deep => try r.nestingTooDeep(region, Unify.max_depth),
     }
 }
 
 /// Which side was an annotation's promise, for `rigid_mismatch`: looked for
-/// through an alias, which is a name for its expansion (CK-176: `Id b` is
+/// through an alias, which is a name for its expansion (`Id b` is
 /// the rigid `b`, and the hint names it).
 fn rigidOf(s: *Solve, expected: Var, actual: Var) ?Report.Rigid {
     const st = s.store();
@@ -580,7 +580,7 @@ fn rigidOf(s: *Solve, expected: Var, actual: Var) ?Report.Rigid {
 }
 
 // ---------------------------------------------------------------------------
-// Calls: checker.md §8.3, v1's rule verbatim
+// Calls: checker.md §8.3
 // ---------------------------------------------------------------------------
 
 fn call(s: *Solve, node: Tree.Node) Error!void {
@@ -593,7 +593,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
     const arg_regions = s.argRegions(node.region);
     // The callee's instantiation row, taken HERE: the callee expression is
     // solved just before the call node and the arguments just after, so a
-    // row for the callee's instruction is the last one now (round-2 S1).
+    // row for the callee's instruction is the last one now.
     const callee_row = s.calleeRow(node.region);
 
     // A nullary constructor pattern: the constructor's type is the
@@ -657,7 +657,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
         }
     }
     // What the arguments readied is decided before the result meets its
-    // expectation (review F6.1): a method the callee's requirement finds
+    // expectation: a method the callee's requirement finds
     // wrong is reported as that, and poisons its result, so the result's
     // mismatch — its consequence — is not reported beside it.
     if (s.readied()) try Decide.drain(s, s.frame().queue, false);
@@ -683,8 +683,8 @@ fn calleeRow(s: *Solve, call_inst: Bir.Inst.Index) ?usize {
     return rows.len - 1;
 }
 
-/// A call whose result met its expectation with a message (review F6.1, as
-/// narrowed by round 2's S1): a requirement of the callee's instantiation
+/// A call whose result met its expectation with a message: a requirement
+/// of the callee's instantiation
 /// whose method type reaches a variable of the callee's result had that
 /// variable read off the same wrong result, so it is the message's
 /// consequence and fails in silence (one failure, one owner). A requirement
@@ -761,9 +761,9 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // 4. Occurs over the binders — patterns and parameters first, so a
     // cycle one carries is named by it, then headers; a lambda's or a
     // branch's were checked by its `binders_end`. Only binders: Elm's
-    // placement, §18's fallback (*As built by R4b*).
+    // placement, §18's fallback.
     var run: Walk.Occurs = .begin(s.store());
-    // The whole run stamps what it proves (CK-93): a header walk may stop at
+    // The whole run stamps what it proves: a header walk may stop at
     // a node a pattern's walk blackened, whose variables must be stamped too.
     run.proves = true;
     run.limit = Unify.max_depth;
@@ -780,15 +780,15 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
         }
     }
     // ... and from every wanted and obligation riding on the frame's pool
-    // (§8.1 step 4 as R4b's review restated it, S4): a cycle closed through
+    // (§8.1 step 4): a cycle closed through
     // a requirement no binder reaches.
     const f = s.frame();
     const requirements = s.evidence.wanteds.items.len != f.wanteds_start or s.obligations.rows.items.len != f.rows_start;
     if (requirements) try s.occursRequirements(&run);
-    // 5. Quantify. At a `let`, what §8.4 *As built by R14* does not
-    // generalise (D5: no function binding reaches it, a value binding does,
+    // 5. Quantify. At a `let`, what §8.4 does not
+    // generalise (no function binding reaches it, a value binding does,
     // or only dot-calls ride on it) stays at the enclosing rank, with its
-    // method types (I15).
+    // method types.
     if (!top and requirements) try Resolve.holdLet(s, rank, binders);
     s.carriers.clearRetainingCapacity();
     s.resolver.wanters.clearRetainingCapacity();
@@ -796,20 +796,19 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // 6. The generality check.
     for (annotated) |i| try Generalize.generality(s, s.tree.annotated.items[i], top);
     // 7. Close what rides on a quantified variable (§8.5). What rides on an
-    // escaped one stays attached to it (I3). At the top level, promotion and
+    // escaped one stays attached to it. At the top level, promotion and
     // the proven-undetermined default (§9.4).
     try Decide.close(s);
-    // A `let` function binding's own requirements are promoted to it (D5).
+    // A `let` function binding's own requirements are promoted to it (§8.4).
     if (!top and s.resolver.wanters.items.len != 0) try Resolve.closeLet(s, binders);
     if (members) |m| {
         if (s.resolver.wanters.items.len != 0) {
-            // Step 7 unifies nothing in R6a: a default answers `undetermined`, a
-            // promotion `promoted` (§8.1 *As built by R6a*, the restated assert),
-            // reported in a release build too (review S8).
+            // Step 7 unifies nothing: a default answers `undetermined`, a
+            // promotion `promoted` (§8.1), reported in a release build too.
             const before = s.unifier.unifications;
             try Resolve.close(s, m);
             const region: Bir.Inst.Index = if (m.len != 0) s.cx.bir.decls[m[0]].body.unwrap() orelse @enumFromInt(0) else @enumFromInt(0);
-            _ = try s.expect(s.unifier.unifications == before, region, "step 7 of a top-level boundary unified (checker-v2.md §8.1 *As built by R6a*)");
+            _ = try s.expect(s.unifier.unifications == before, region, "step 7 of a top-level boundary unified (checker-v2.md §8.1)");
         }
     }
 }
@@ -878,15 +877,14 @@ pub fn occursBinder(s: *Solve, run: *Walk.Occurs, b: Generalize.Binder) Error!vo
 }
 
 /// One `infinite_type` for the cycles reachable from `from`, at `region`
-/// (§8.2, as amended by R4b's review):
+/// (§8.2):
 ///
-///   - the cycle drawn is the one a search in field-NAME order meets first
-///     (S5, I13), not whichever the store's symbol order reaches;
+///   - the cycle drawn is the one a search in field-NAME order meets first,
+///     not whichever the store's symbol order reaches;
 ///   - a cycle whose drawing would show a poisoned node (`?`) is a
-///     consequence of a message already given, and is poisoned silently
-///     (F4);
+///     consequence of a message already given, and is poisoned silently;
 ///   - then EVERY cycle reachable from `from` is poisoned, not only the one
-///     drawn, so no use of the binder meets another and reports again (F3).
+///     drawn, so no use of the binder meets another and reports again.
 pub fn reportCycle(s: *Solve, region: Bir.Inst.Index, name: Tree.Symbol.Optional, from: Var, found: ?Var) Error!void {
     const st = s.store();
     const gpa = s.cx.gpa;

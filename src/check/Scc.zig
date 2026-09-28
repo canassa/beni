@@ -1,7 +1,6 @@
 //! Minimal mutually recursive groups over an index graph, dependencies
-//! first: an iterative Tarjan and a counting sort. Shared by both checkers'
-//! top-level and `let` binding groups; moved out of v1's `Constrain.zig` by
-//! R4b's review (S2).
+//! first: an iterative Tarjan and a counting sort. Shared by the checker's
+//! top-level and `let` binding groups.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

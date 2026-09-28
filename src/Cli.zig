@@ -73,7 +73,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// `raw` is `interface`'s record verbatim rather than its rendered form
 /// (`dump/interface.zig`'s `writeRaw`): the pretty dump goes through the
 /// type renderer, which re-sorts a record's fields by text, so it cannot
-/// see a difference in the bytes `fast-compiler.md` §8.1 has M4 hashing.
+/// see a difference in the bytes `fast-compiler.md` §8.1 hashes.
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
 pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch };
@@ -108,7 +108,7 @@ pub const Common = struct {
     /// diagnostic goes.
     explain: bool = false,
     /// `--roundtrip-interfaces` — **hidden**, and hidden on purpose
-    /// (`fast-compiler.md` §8's *The interface hash, and slice zero*).
+    /// (`fast-compiler.md` §8's *The interface hash*).
     ///
     /// Every module's record is written to bytes and read back IN PLACE the
     /// moment its check finishes, so every dependent, every dump, every
@@ -157,10 +157,10 @@ pub const Common = struct {
 /// living here rather than on `Common`.
 pub const Cache = struct {
     /// `--cache-dir=<path>`: keep checked modules between runs in this
-    /// directory. **Null means `.beni-cache/` in the working directory since
-    /// M4-3** (`Dir.default_path`), the slice whose cutoff makes a cache worth
-    /// having — and whose harness is what established that it is right about
-    /// every input, which was the condition.
+    /// directory. **Null means `.beni-cache/` in the working directory**
+    /// (`Dir.default_path`): the interface cutoff makes a cache worth
+    /// having, and its harness established that it is right about every
+    /// input, which was the condition for making it the default.
     ///
     /// The difference between null and a named path is what a FAILURE means: a
     /// named directory that cannot be created is exit 2 with the path, because
@@ -186,11 +186,11 @@ pub const Cache = struct {
     /// before a byte is ever written to disk.
     keys: bool = false,
     /// `--frontend-keys` — hidden, `check`'s alone, and `--cache-keys`' twin
-    /// (M4-2, `frontend.md` §1). One `<path> <32 hex digits>` line per FILE
+    /// (`frontend.md` §1). One `<path> <32 hex digits>` line per FILE
     /// on stdout, sorted by path.
     ///
     /// The two are printed side by side in the edit-scenario table because
-    /// the DIVERGENCE between them is the whole reason M4-2 exists: a body
+    /// the DIVERGENCE between them is the whole reason the front-end cache exists: a body
     /// edit in a leaf moves one file key and three module keys, so the leaf
     /// re-lowers and its importers re-check without re-lowering. A key per
     /// file and not per module, because the front end is per file — a path
@@ -210,7 +210,7 @@ pub const Cache = struct {
     dep_digest: bool = false,
     /// `--cutoff-compare` — hidden, `check`'s alone. Compute the CUTOFF key
     /// beside the one the run uses, and print a second `--cache-keys` block
-    /// for it (`fast-compiler.md` §8, `plans/m4-3.md` §9 M3-e).
+    /// for it (`fast-compiler.md` §8).
     ///
     /// It exists for ONE assertion, over two runs of an edited tree: **old key
     /// equal ⇒ new key equal.** The cutoff key is COARSER than the transitive
@@ -630,12 +630,11 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         return .{ .usage = u };
     }
     defer s.positionals.deinit(gpa);
-    // `--release` is no longer refused: M3c's first slice implements it
-    // (backend.md §2, §9). `--source-maps` keeps its own refusal, and keeps
-    // it in a `--release` build too, so the pair exits 2 on this line.
+    // `--release` is implemented (backend.md §2, §9). `--source-maps` keeps
+    // its own refusal, and keeps it in a `--release` build too, so the pair
+    // exits 2 on this line.
     //
-    // Same rule, same milestone argument: source maps are M5 (backend.md
-    // §11). A flag that is accepted and does nothing makes a user believe
+    // Source maps are not implemented yet (backend.md §11). A flag that is accepted and does nothing makes a user believe
     // they asked for something — they would go looking for a `.map` that a
     // successful, silent build never wrote.
     if (s.specific.source_maps) {
@@ -924,7 +923,7 @@ test "build: the platform is required, --release is accepted and --source-maps i
 test "check and dump take --platform; fmt does not, and neither does a per-file stage" {
     // It was `build`'s alone until 2026-09-18, and that was an accident of
     // the flag arriving with the backend rather than a decision: `check` is
-    // what an editor, a hook, CI, M4's daemon and M5's LSP run, and no real
+    // what an editor, a hook, CI, a daemon and an LSP run, and no real
     // program resolves without its platform (frontend.md §1, boundary.md
     // §5.3).
     try expectCommand(
@@ -1013,7 +1012,7 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try testing.expect(std.mem.indexOf(u8, usage, "roundtrip") == null);
 
     // The third, appended 2026-09-19 with `backend.md` §9's refusal of
-    // `Debug` under `--release` (queue slice 50). It is `build`'s alone —
+    // `Debug` under `--release`. It is `build`'s alone —
     // nothing else emits — and it is hidden for the same reason: the corpus
     // harness needs it to keep running the `--release` second pass over the
     // 24 `run/` fixtures that use `Debug.log`, and a user does not.
@@ -1059,7 +1058,7 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try testing.expect(std.mem.indexOf(u8, usage, "dispatch-") == null);
 
     // `--roundtrip-frontend` is the fifth, and the first that is not the
-    // checker's (`plans/m4-2.md` M2-c). It is on `Common` because `dump` and
+    // checker's. It is on `Common` because `dump` and
     // `fmt` are the identity oracles it is asserted against.
     try expectCommand(
         .{ .check = .{ .common = .{ .roundtrip_frontend = true }, .paths = &.{"src"} } },
@@ -1127,9 +1126,9 @@ test "usage text mentions every subcommand" {
 }
 
 test "--checker is gone with v1: an unknown option" {
-    // `checker-v2.md` §20.1: the hidden, test-only `--checker=v1|v2` existed
-    // R4–R11 and was deleted with v1 at R12, so it is an ordinary unknown
-    // option now, on every command that checks.
+    // `checker-v2.md` §20.1: the hidden, test-only `--checker=v1|v2` was
+    // deleted with the old checker, so it is an ordinary unknown option,
+    // on every command that checks.
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "check", "--checker=v2", "src" });
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "build", "--platform=node", "--checker=v1", "src" });
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "dump", "--stage=types", "--checker=v2", "M.beni" });

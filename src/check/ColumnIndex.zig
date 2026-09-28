@@ -1,5 +1,5 @@
 //! Column zero of a pattern matrix, indexed by the alternative that heads
-//! each row (CK-167). `Exhaustive`'s two relations ask three questions of
+//! each row. `Exhaustive`'s two relations ask three questions of
 //! that column — which alternatives appear (`collect`), which rows a
 //! specialisation by EACH alternative keeps (`split`), and, as a `case` is
 //! read branch by branch, which rows above a new branch share its head

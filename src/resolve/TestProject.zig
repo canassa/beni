@@ -31,7 +31,7 @@ pub const Module = struct {
     rel_start: u32 = 0,
 };
 
-/// What the project runs. `resolve_phases` stops at names (M2a); the
+/// What the project runs. `resolve_phases` stops at names; the
 /// checker's tests pass `check_phases` and ask for the stores to be kept so
 /// they can look at the types afterwards.
 pub const Options = struct {

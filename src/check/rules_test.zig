@@ -1,28 +1,21 @@
 //! Structural rules of `src/check/` that its shared store cannot enforce by
-//! construction, enforced by reading the sources (R4b's review, S2, S6;
-//! restated by R12 when v1 was deleted and `src/check2/` took this name).
+//! construction, enforced by reading the sources.
 //!
-//! - **I2: children only through `Walk` (S6).** A type's children — a
+//! - **Children only through `Walk`.** A type's children — a
 //!   range's variables, a record's fields, a variable's constraints — are
 //!   read only in `Walk.zig`, and in `Unify.zig` and `Instantiate.zig`, which
 //!   pair two structures and copy one. Anyone may read a node's TAG and flags.
 //!   The files kept from before the rewrite that own, serialise or print a
 //!   type (`shared_child_readers`) are the exception, and a listed one.
-//! - **The table's structural bits have listed readers (review S4, R8a,
-//!   R8b).** `Types.isEquatable` is read by `Marker.zig`'s structural bit
+//! - **The table's structural bits have listed readers.**
+//!   `Types.isEquatable` is read by `Marker.zig`'s structural bit
 //!   (§11.4) alone, and a `foreign type`'s DECLARED `equatable` bit by
 //!   `Derivable.foreignDerives` and `Publish` alone: §11.2's derived contexts
 //!   (`Contexts.zig`) are the one answer to "does this type derive". The
 //!   table's other two bits, `comparable` and `has_function`, have no reader
-//!   in the checker at all (the cache's digest reads them). Until R12 this
-//!   fence also listed v1's capability API — the settle, its per-module bits
-//!   and the schema endpoints' settled properties — which R12 deleted.
+//!   in the checker at all (the cache's digest reads them).
 //! - **No file over §19.1's 1 500 lines** (`checker-v2.md` §19.1): a file
 //!   past it is split, as §19.1's notes record each time one was.
-//!
-//! (The fence that kept v1 deletable, S2 — nothing imports v1's
-//! `Constrain.zig` or `Solve.zig`, only the driver its `Check.zig` — held
-//! until R12 deleted all three.)
 //!
 //! The file list is checked against the directory, so a new file cannot slip
 //! past any of them.
@@ -93,7 +86,7 @@ const files = [_]File{
     .{ .path = "constrain/Tree.zig", .text = @embedFile("constrain/Tree.zig") },
 };
 
-/// May read children (I2).
+/// May read children.
 const child_readers = [_][]const u8{ "Walk.zig", "Unify.zig", "Instantiate.zig" };
 
 /// Kept from before the rewrite (`checker-v2.md` §19's KEPT list), and they
@@ -125,7 +118,7 @@ fn isComment(line: []const u8) bool {
     return std.mem.startsWith(u8, t, "//");
 }
 
-test "I2: only Walk, Unify and Instantiate read a type's children" {
+test "only Walk, Unify and Instantiate read a type's children" {
     var bad: usize = 0;
     for (files) |f| {
         if (listed(f.path, &child_readers) or listed(f.path, &shared_child_readers)) continue;
@@ -150,8 +143,8 @@ const Fenced = struct { pattern: []const u8, readers: []const []const u8 };
 
 /// `Types.zig` builds the bits and `Schemes.zig` writes a blank entry for a
 /// poisoned id; every other file is held to the list. `e.equatable` and
-/// `).equatable` catch the other spellings of the same read (R8b's review,
-/// S4); "e.equatable" is also inside "entry.equatable", which is not a second
+/// `).equatable` catch the other spellings of the same read;
+/// "e.equatable" is also inside "entry.equatable", which is not a second
 /// read in a file allowed the first.
 const fenced = [_]Fenced{
     .{ .pattern = "isEquatable(", .readers = &.{"Marker.zig"} },

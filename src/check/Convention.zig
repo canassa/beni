@@ -1,17 +1,17 @@
 //! One calling convention for a constrained value (docs/design/checker-v2.md
-//! §12.5, slice R2b; `static-dispatch-spike.md` §8.1–§8.2 and §9.2 *The wide
+//! §12.5; `static-dispatch-spike.md` §8.1–§8.2 and §9.2 *The wide
 //! form*).
 //!
 //! A value that takes evidence has hidden leading parameters, and four passes
 //! have to agree about what they mean: `js/Lower` DEFINES the value and CALLS
 //! it and REFERENCES it in value position, and `check/Cycles` decides whether
-//! its initialiser RUNS at module load. Before R2b each of them read the
-//! declaration's parameter count on its own, and they disagreed: a
-//! zero-parameter value of function type, `h = maxOf` under a `where`, was
-//! defined `($m) => value`, called `h(ev, 1, 2)` and, imported, eta-expanded
-//! over its type's arity — three conventions for one value (CK-33) — and an
-//! evidence-only constant counted as deferring though every read runs it
-//! (CK-34). Every one of those readings is now a function of this file.
+//! its initialiser RUNS at module load. Each reading is a function of this
+//! file, so they cannot disagree: were each to read the declaration's
+//! parameter count on its own, a zero-parameter value of function type,
+//! `h = maxOf` under a `where`, could be defined `($m) => value`, called
+//! `h(ev, 1, 2)` and, imported, eta-expanded over its type's arity — three
+//! conventions for one value — and an evidence-only constant could count as
+//! deferring though every read runs it.
 //!
 //! **The three conventions.** A value is
 //!
@@ -94,8 +94,8 @@ pub fn ofDecl(dispatch: *const Dispatch, bir: *const Bir, decl: u32) Use {
     };
 }
 
-/// A `let` function binding D5 generalised (`Dispatch.lets[i]`,
-/// checker-v2.md §8.4 *As built by R14*): only a FUNCTION binding — written
+/// A generalised `let` function binding (`Dispatch.lets[i]`,
+/// checker-v2.md §8.4): only a FUNCTION binding — written
 /// parameters, or a `lambda` right-hand side — ever takes evidence, so its
 /// convention is `function`, over those parameters (the value restriction
 /// keeps a `thunk` from arising at a `let`).
@@ -140,7 +140,7 @@ pub fn ofImport(interfaces: []const Interface, module: Graph.Index, value: u32) 
 /// body when that body is a function type, looking through `alias` terms as
 /// `TypeStore.paramCount` does for the exporter's `value_arity` — so
 /// `pub same : Pred a` with `type alias Pred a = a -> Bool` has arity 1 on
-/// both sides of the boundary (CK-84). Zero for a non-function.
+/// both sides of the boundary. Zero for a non-function.
 pub fn importArity(interfaces: []const Interface, module: Graph.Index, value: u32) u32 {
     if (module.int() >= interfaces.len) return 0;
     const iface = &interfaces[module.int()];
@@ -186,10 +186,10 @@ pub const Definition = enum {
     /// `($m…, $p1…$pn) => body($p1…$pn)`: a zero-parameter `function` whose
     /// body is not a lambda, applied to fresh parameters over its type's
     /// arity. The body is computed once per evidence (`Lower.memoArrow`,
-    /// CK-85, R8a; `language.md` §6),
+    /// `language.md` §6),
     /// and for `Cycles` it is still a VALUE (`defers`).
     applied,
-    /// `($m…) => value`, its value kept per evidence (CK-85, R8a).
+    /// `($m…) => value`, its value kept per evidence.
     thunk,
 };
 
@@ -208,11 +208,11 @@ pub fn definition(c: Convention, decl_params: u32, body_is_lambda: bool) Definit
 /// the SOURCE: a value written with parameters or with a `lambda` as its
 /// whole body is a function and defers; every other value is a value, and
 /// may not be reachable from its own initialiser, whether or not a `where`
-/// gives it evidence. So `constant`, `thunk` (every read runs it, CK-34)
+/// gives it evidence. So `constant`, `thunk` (every read runs it)
 /// and `applied` (`h = compose h g` under a `where`: the emitter makes it an
 /// arrow, but the source wrote a value, and its twin without the `where` is
-/// refused) all RUN. The manager's decision on R2b's review (B1): a `where`
-/// is a type annotation and must not change which programs are accepted.
+/// refused) all RUN: a `where` is a type annotation and must not change
+/// which programs are accepted.
 pub fn defers(d: Definition) bool {
     return switch (d) {
         .params, .lambda => true,
@@ -251,13 +251,13 @@ pub fn referenceArity(u: Use) ?u32 {
 
 /// The widest derived function that takes its evidence one parameter per
 /// position; a wider one, of any shape, takes one array. An ABI number of
-/// the BACKEND's, deliberately not tied to the checker: it equals CK-79's
-/// cap on a record `==` today, which is why no golden moved, and R8a lifting
-/// that cap must not change the calling convention with it. Under Node 24: a
+/// the BACKEND's, deliberately not tied to the checker: it equals the
+/// checker's cap on a record `==` today, and lifting that cap must not
+/// change the calling convention with it. Under Node 24: a
 /// 60 002-argument call from inside another function
 /// overflows the default stack, and a function of more than 65 535
-/// parameters is a `SyntaxError` in V8 (CK-81). In browsers (R2c,
-/// `backend.md` §4): an n-parameter function called with n arguments loads
+/// parameters is a `SyntaxError` in V8. In browsers
+/// (`backend.md` §4): an n-parameter function called with n arguments loads
 /// up to 59 610 in Chrome, 65 078 in Firefox and past 70 000 in WebKit, so
 /// 4 096 is fourteen times under the scarcest for one call; under recursion
 /// a call that wide overflows Node about 13 levels deep
@@ -280,9 +280,9 @@ test "of: evidence decides plain, the type decides function or thunk" {
     try t.expectEqual(Convention.plain, of(2, false, 2, 0));
     try t.expectEqual(Convention.function, of(2, false, 2, 1));
     try t.expectEqual(Convention.function, of(0, true, 2, 1));
-    // CK-33: `h = maxOf`, no parameters, a function TYPE.
+    // `h = maxOf`, no parameters, a function TYPE.
     try t.expectEqual(Convention.function, of(0, false, 2, 1));
-    // CK-34: `zs : List a where a.eq …`.
+    // `zs : List a where a.eq …`.
     try t.expectEqual(Convention.thunk, of(0, false, 0, 1));
 }
 

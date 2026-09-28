@@ -22,11 +22,10 @@
 //! one thread rather than growing a second scheduling rule for the case
 //! where the answer is already "this project does not compile".
 //!
-//! Moved out of `src/check/Check.zig` by R4a (checker-v2.md §19: "moved
-//! verbatim"). The key, load, install and publish steps a module goes
-//! through on its worker are `Incremental.zig`'s; this file is the schedule
-//! and, per module, a cache hit's install or `Module.check` (`checkInner`).
-//! (Until R12 `checkInner` also chose the checker, v1's or v2's.)
+//! The key, load, install and publish steps a module goes through on its
+//! worker are `Incremental.zig`'s (checker-v2.md §19); this file is the
+//! schedule and, per module, a cache hit's install or `Module.check`
+//! (`checkInner`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -70,7 +69,7 @@ plans: []SchemaPlan,
 /// releases its dependents: whether an error reached it — its own (an
 /// earlier phase's, which quiets it, or its check's), or any dependency's,
 /// transitively. A clean module's `<error>` scheme is always one of these
-/// (§12.2 *amended by R15-fix-A*); `Module.assertErrorsReported` holds a
+/// (§12.2); `Module.assertErrorsReported` holds a
 /// module with none to having no `err` of its own making.
 tainted: []bool = &.{},
 /// What each module's cache key can see move (`reads.zig`). Empty outside

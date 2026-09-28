@@ -1,12 +1,12 @@
 //! Deciding obligations (checker-v2.md §4.5, §8.1 steps 1, 3 and 7, §8.5,
 //! §8.6, §11.4): the half of the solver that answers the questions an
-//! obligation asks, split out of `Solve.zig` by R5's review (S5, §19.1).
+//! obligation asks, kept apart from `Solve.zig` (§19.1).
 //!
 //! A `tuple_index`, `interpolatable` or `try` node calls `begin`: the row is
 //! decided at once when what decides it is already known — a `try` when
-//! EITHER side is (D2 as amended) — and is otherwise attached to its deciding
-//! flex roots, its dependants lowered to its owner's rank (§4.5, *Amended by
-//! R5's review*). `unify` readies it when one of them is bound; `drain`
+//! EITHER side is (§8.6) — and is otherwise attached to its deciding
+//! flex roots, its dependants lowered to its owner's rank (§4.5). `unify`
+//! readies it when one of them is bound; `drain`
 //! decides what is ready, after every constraint node (§9.1's eager
 //! draining) and at the boundary's step 1. `defaults` is step 3, `close` step
 //! 7.
@@ -46,7 +46,7 @@ pub fn begin(s: *Solve, id: Id) Error!void {
 }
 
 /// Attach an open obligation to its deciding flex roots, lower its
-/// dependants to its owner's rank (I15 as amended: never the reverse), and
+/// dependants to its owner's rank (never the reverse, §4.5), and
 /// put a `try` on the open list of the frame at its target's rank (§8.1
 /// step 3).
 fn attach(s: *Solve, id: Id) Error!void {
@@ -56,11 +56,12 @@ fn attach(s: *Solve, id: Id) Error!void {
     for (row.vars[0..row.deciding()], 0..) |v, slot| {
         const root = st.find(v);
         var flags = st.content(root).flex;
-        // Copied and changed in one field (CK-18).
+        // Copied and changed in one field.
         flags.obls = try s.obligations.with(gpa, flags.obls, id, slot == row.owner());
         st.setContent(root, .{ .flex = flags });
     }
-    // D14 (§10.7) first, so the `?` list the row joins is its lowered
+    // The canonical pessimism of recursive groups (§10.7) first, so the
+    // `?` list the row joins is its lowered
     // target's.
     if (s.recursive_frames != 0) try Recursion.row(s, id);
     const rank = try lowerDependants(s, row);
@@ -90,7 +91,7 @@ fn lowerDependants(s: *Solve, row: Row) Error!u32 {
 /// so the eager drain after a constraint node (`boundary == false`) sets it
 /// aside, and the boundary's step 1 walks it over the type as it then
 /// stands: the message shows `number -> number` where an early walk showed
-/// `a -> b` (§11.4 *As built by R5*).
+/// `a -> b` (§11.4).
 pub fn drain(s: *Solve, q: u32, boundary: bool) Error!void {
     const gpa = s.cx.gpa;
     // The current frame's queue, whose `ready` list `Solve` holds (and
@@ -196,7 +197,7 @@ fn interpolatable(s: *Solve, id: Id, row: Row) Error!void {
         // Any other is refused, but not here: held on the rigid until its
         // binder's boundary, whose step 7 reports it (`close`) — unless
         // step 6 finds the rigid escaped, reports THAT and poisons it, which
-        // settles the row in silence (CK-154: one mistake, one message).
+        // settles the row in silence (one mistake, one message).
         .rigid => |flags| if (flags.kind != .number) {
             const root = st.find(row.vars[0]);
             if (st.rank(root) == TypeStore.generalized) return s.report.ambiguousInterpolation(row.region);
@@ -218,7 +219,7 @@ fn interpolatable(s: *Solve, id: Id, row: Row) Error!void {
 
 /// The marker walk of §11.4 on a variable that became known. A question
 /// already answered "no" at its origin says nothing more: one question, one
-/// message, however many variables it was carried to (I13).
+/// message, however many variables it was carried to.
 fn equatable(s: *Solve, id: Id, row: Row) Error!void {
     if (s.obligations.row(row.origin).reported) return;
     const st = s.store();
@@ -307,7 +308,7 @@ fn applied(s: *Solve, id: TypeStore.TypeId, error_var: ?Var, value: Var) Error!V
 }
 
 /// Report a `?` that cannot apply, naming the leg (`checker.md` §8.6), and
-/// poison its subject and value as v1 does, so nothing downstream repeats it.
+/// poison its subject and value, so nothing downstream repeats it.
 fn tryFailed(s: *Solve, row: Row, leg: Messages.TryLeg) Error!void {
     try Messages.tryShape(s.report, row.region, leg, row.vars[0], row.vars[1]);
     try s.poison(row.vars[0]);
@@ -319,7 +320,7 @@ fn tryFailed(s: *Solve, row: Row, leg: Messages.TryLeg) Error!void {
 /// rank) whose target, after rank adjustment, still sits at `rank` are
 /// decided as `Result`, oldest first. A row whose target escaped moves to
 /// the list of the frame it escaped to, so a row is looked at once per frame
-/// it passes through (CK-98). True when a default was applied or anything
+/// it passes through. True when a default was applied or anything
 /// was readied: step 1 runs again.
 pub fn defaults(s: *Solve, rank: u32) Error!bool {
     const gpa = s.cx.gpa;
@@ -341,7 +342,7 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
         try decide(s, id, true);
         applied_any = true;
         // A default can ready a wanted whose resolution decides another
-        // `?` (R6a, N9): drained before the next default is applied.
+        // `?`: drained before the next default is applied.
         if (s.readied()) try drain(s, s.frame().queue, false);
         // The default's consequence demanded a group that merged this
         // frame into one below (§10.4, §10.8): a merged frame applies no
@@ -360,7 +361,7 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
 /// emitted code must know the element, and the conversion), and an
 /// `equatable` one is the flag the variable already carries into its scheme.
 /// The `tuple_index` rows go first, and poison their results: a `${…}` part
-/// that is such a result was already reported, as the tuple's (I12).
+/// that is such a result was already reported, as the tuple's.
 pub fn close(s: *Solve) Error!void {
     const st = s.store();
     inline for (.{ true, false }) |tuples| {
@@ -389,7 +390,7 @@ pub fn close(s: *Solve) Error!void {
 
 /// `Solve.poison` on a flex that carries rows: nothing can decide them now,
 /// so each is settled as a decision on `err` would settle it — done, and its
-/// results poisoned — without going through the queue (review S7).
+/// results poisoned — without going through the queue.
 pub fn settle(s: *Solve, set: Obligations.Set) Error!void {
     for (s.obligations.members(set)) |id| {
         const row = s.obligations.rowPtr(id);

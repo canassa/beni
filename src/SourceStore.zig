@@ -14,9 +14,9 @@
 //!
 //! A file also has a PACKAGE (checker.md §4.1): a module's identity is
 //! `(package, module name)`, not its name alone, so two packages may each
-//! have a `List` and an importer's own package is searched first. M2 has
-//! exactly two — the user's `app` and the embedded `core` — but nothing
-//! here assumes that. The core package's bytes are usually `@embedFile`d
+//! have a `List` and an importer's own package is searched first. The
+//! checker began with exactly two — the user's `app` and the embedded
+//! `core` — but nothing here assumes that. The core package's bytes are usually `@embedFile`d
 //! into the binary rather than read, which is what `File.embedded` marks;
 //! `--core-root` reads them from disk instead and they are ordinary files
 //! of package `core`.
@@ -54,8 +54,8 @@ pub const Index = enum(u32) {
 /// Which package a file belongs to (checker.md §4.1, fast-compiler.md
 /// §3.1 "Project model"). Declaration order is the search order: an import
 /// resolves in the importing module's own package first, then `core`.
-/// Dependencies as packages are M4; the column exists now so M4 needs no
-/// retrofit.
+/// Dependencies as packages are future work; the column exists now so they
+/// need no retrofit.
 /// `platform` is a package whose manifest says `"platform": true`
 /// (`docs/design/boundary.md` §2): it may write `foreign`, it owns the
 /// `Program` type and `main`'s shape, and anyone may publish one. It sits
@@ -449,7 +449,7 @@ fn isUpperIdent(s: []const u8) bool {
 /// Whether `index`'s bytes are already in the store: an embedded file, whose
 /// bytes are in the binary's rodata, or one a worker has read.
 ///
-/// M4-2 needs it because the front-end cache turns the per-file phase inside
+/// The front-end cache needs it because it turns the per-file phase inside
 /// out: the source has to be READ before the file key can be computed, and
 /// the key decides whether the lexer runs at all — so `read` is called from
 /// two places on a miss and must be idempotent between them. Comparing

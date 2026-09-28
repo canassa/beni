@@ -6,7 +6,7 @@
 //! is no pointer and no slice into the source anywhere in it: every
 //! reference is a `u32` index into `nodes`, `extra`, the token list or the
 //! comment list, so the whole thing is three flat arrays that copy, cache
-//! and (in M4) mmap without a fixup pass.
+//! and (in a daemon) mmap without a fixup pass.
 //!
 //! The tree is LOSSLESS together with the token and comment arrays and the
 //! line-start table: every construct keeps a node, including grouping
@@ -158,7 +158,7 @@ pub const Node = struct {
         import,
         /// One name in an `exposing` list. `main_token` is the identifier
         /// (lower or upper); `lhs` is the `(` of Elm's `T(..)` written after
-        /// it (reported as `expected_token`, CK-47), or 0; `rhs` unused.
+        /// it (reported as `expected_token`), or 0; `rhs` unused.
         exposed,
 
         // ---- Declarations ----------------------------------------------

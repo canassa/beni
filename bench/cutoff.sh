@@ -25,7 +25,7 @@
 # gate: §10.1's five-module project against every edit class of the table,
 # including both DEMONSTRATED miscompiles. This script is the full cross over
 # every module of every project, it is a documented command rather than a gate,
-# and its wall time is reported. Over ten minutes on the M4 plan's machine it
+# and its wall time is reported. Over ten minutes on the reference machine it
 # samples with a fixed stride, seeded and printed, exactly as §10.2 specifies
 # the fallback rather than discovering it.
 #

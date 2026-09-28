@@ -1,5 +1,5 @@
 //! Typed `Bir` to `JsIr` (docs/design/backend.md §4): the mapping table of
-//! §4, construct by construct, for the subset M3a needs.
+//! §4, construct by construct.
 //!
 //! **Statements, not an IIFE per `let`.** beni's `let` and `case` are
 //! expressions and JavaScript's are not, so every lowering function takes
@@ -32,14 +32,14 @@
 //!   emit a call without knowing anything about the callee.
 //!
 //! **Representation** is §9.4's, with three departures that `backend.md` §4
-//! now records under "Corrections from M3a": `Basics.Bool` is a JavaScript
+//! now records under its corrections: `Basics.Bool` is a JavaScript
 //! boolean, "nullary constructor is the bare tag" is split on whether the
 //! TYPE has any payload at all, and `&&`/`||` are lowered here rather than
 //! peepholed at print time because for those two it is the semantics and not
 //! an optimisation. `CtorRep` and `logicalOp` carry the argument in full.
 //!
 //! **Positions.** Every node carries the byte offset of the token its `Bir`
-//! instruction came from (§9.6). Maps are off in M3a; the offsets are here
+//! instruction came from (§9.6). Maps are not written yet; the offsets are here
 //! because retrofitting them means touching this file, the printer and
 //! every pass between.
 
@@ -60,8 +60,8 @@ const Inst = Bir.Inst;
 const Node = JsIr.Node;
 const Symbol = InternPool.Symbol;
 
-/// What lowering could not translate. M3a implements every construct of
-/// backend.md §4 except `?`, which §1 assigns to M3b; the guard reports
+/// What lowering could not translate. Every construct of backend.md §4 is
+/// implemented; the guard reports
 /// rather than falling through, because an unhandled tag that silently
 /// emitted nothing would be a program that compiles and computes the wrong
 /// answer.
@@ -102,8 +102,8 @@ pub const Input = struct {
     graph: *const Graph,
     interfaces: []const Interface,
     /// What the checker decided about every method call of this module
-    /// (static-dispatch-spike.md §7). S4 and S5 lower from it; what S5
-    /// cannot honour is still REFUSED rather than emitted wrongly.
+    /// (static-dispatch-spike.md §7). Lowering reads it; what it cannot
+    /// honour is REFUSED rather than emitted wrongly.
     dispatch: *const Dispatch,
     /// The session's type table, read as a **name, declaration and
     /// derivability service** and as nothing else.
@@ -123,8 +123,8 @@ pub const Input = struct {
     /// `derivedBodyExists` reads `Entry.kind` to answer whether the module
     /// that owns an `ext_derived` target actually emitted a body for it — a
     /// `foreign type` has no constructors and so no module wrote one (A.55,
-    /// A.60); the rest is the owner's published row (`Entry.equatable`
-    /// was read too, for v1's records, until R12). After §5.2 no program can make
+    /// A.60); the rest is the owner's published row.
+    /// After §5.2 no program can make
     /// that answer `false`, so what is left is the guard against a table
     /// the checker did not write. That is still a question about the TABLE
     /// and not about a value, but it is a judgement and not a lookup, and
@@ -143,8 +143,8 @@ pub const Input = struct {
     /// The declaration that is this build's entry point, when it is in this
     /// module: `main` (boundary.md §5). It is exported whether or not it is
     /// `pub`, because the entry file imports it and `main` is not something
-    /// a program's own modules call — the same reason M3d's `lazy`
-    /// declarations will be exported from their chunks.
+    /// a program's own modules call — the same reason a chunked build's
+    /// `lazy` declarations will be exported from their chunks.
     entry_decl: ?u32 = null,
     /// §9's survivor sets, for the WHOLE program: what this module lowers,
     /// exports and imports is restricted to them, and the debug self-check
@@ -158,7 +158,7 @@ pub const Input = struct {
     live: ?*const Reach.Result = null,
     /// The specifier of `_core/_derived.mjs`, the one engine a build's derived
     /// comparisons continue in past the depth limit (`backend.md` §4,
-    /// *Derived comparisons do not grow the native stack*; R8e, O3), relative
+    /// *Derived comparisons do not grow the native stack*), relative
     /// to THIS module's output file.
     derived_runtime: []const u8 = "./_core/_derived.mjs",
 };
@@ -290,8 +290,8 @@ const CtorRep = union(enum) {
     bare_tag,
     /// `{$: "Tag", a, b, …}`, padded to `fields` slots.
     tagged: struct { fields: u32 },
-    /// A record alias's implicit constructor (backend.md §4's row, owner
-    /// decision D12): the RECORD it builds, keys sorted by name text as
+    /// A record alias's implicit constructor (backend.md §4's row, the
+    /// owner's decision): the RECORD it builds, keys sorted by name text as
     /// every record literal's are (`recordNode`), and no tag. A pattern over
     /// it reads the fields by name (`argName`). Where the names come from is
     /// `RecordRep`'s.
@@ -304,7 +304,7 @@ const RecordRep = union(enum) {
     /// that names the fields.
     local: u32,
     /// Another module's: its interface constructor row, which carries the
-    /// names since interface v3 (`checker-v2.md` §14.2, CK-39) — the
+    /// names since interface v3 (`checker-v2.md` §14.2) — the
     /// declaring module's Bir is not this backend's to read.
     imported: struct { module: Graph.Index, ctor: u32 },
 };
@@ -325,7 +325,7 @@ const derived_group = 1024;
 
 /// How deep a derived `eq` or `compare` recurses on the native stack before
 /// it continues from an explicit one (`backend.md` §4, *Derived comparisons
-/// do not grow the native stack*, CK-128). One unit is one hop from a
+/// do not grow the native stack*). One unit is one hop from a
 /// derived body to the comparison it calls — a derived function, an
 /// evidence closure, `List.eq` — and costs a few hundred bytes of stack;
 /// 400 of them stay well inside the scarcest engine's default stack while
@@ -360,7 +360,7 @@ const steps_positional = 16;
 /// `nesting.scope_budget`. Shorter chains keep the nested form they always had.
 const chain_min = 16;
 
-/// The most `case` labels one `switch` is written with (CK-88, R12).
+/// The most `case` labels one `switch` is written with.
 /// SpiderMonkey — Firefox and its shell alike — refuses a `switch` of more
 /// than 65 046 (`backend.md` §4's table), and every other engine measured
 /// takes 300 000; this is four times under the one that refuses. A fan with
@@ -393,8 +393,8 @@ const Lowerer = struct {
     well: WellKnown,
     /// The last record alias `recordNames` answered for, and its names: a
     /// pattern reads its arguments one `argName` at a time, and computing
-    /// the names once per argument made a k-field pattern O(k²) scratch
-    /// (R3's review, N3). The slice lives in `scratch`, which outlives the
+    /// the names once per argument would make a k-field pattern O(k²)
+    /// scratch. The slice lives in `scratch`, which outlives the
     /// module's lowering.
     record_names: ?struct { rep: RecordRep, names: []const Symbol } = null,
     diagnostics: std.ArrayList(Item) = .empty,
@@ -434,7 +434,7 @@ const Lowerer = struct {
     /// Set while the body of a WIDE derived function is lowered
     /// (`Convention.derivedEvidence`): its one evidence parameter, the
     /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
-    /// §9.2, CK-81).
+    /// §9.2).
     wide_evidence: ?JsIr.NameIndex = null,
     /// Set while the body of a derived function is lowered: which of its
     /// two forms is being built, and whether the direct one calls anything
@@ -444,8 +444,8 @@ const Lowerer = struct {
     /// The index of the derived row being lowered (`selfLoopParts`).
     derived_row: ?u32 = null,
     /// Per derived row of this module, whether it is a LEAF (`leafRows`):
-    /// it cannot recurse, so it is emitted exactly as before R8d and a call
-    /// of it passes no depth.
+    /// it cannot recurse, so it is emitted directly, with no depth, and a
+    /// call of it passes no depth.
     leaf: []const bool = &.{},
     /// Where a tall evidence closure is bound (`hoistEvidence`): the
     /// statement list of the expression being lowered, set by `expr` and
@@ -458,11 +458,10 @@ const Lowerer = struct {
     /// The same for an evidence term, in closures (`termValues`).
     term_depth: u32 = 0,
     /// Per term of the table, whether more than one owner names it: a table
-    /// may SHARE a term (checker-v2.md §13.1 as amended by R6b). A shared
+    /// may SHARE a term (checker-v2.md §13.1). A shared
     /// evidence closure is bound to a `const` once and read by name
     /// (`termValues`), so the JavaScript of `==` on a type that is a doubling
-    /// DAG is linear in its distinct nodes (CK-80's `build` half). v1's
-    /// tables share nothing, so nothing of theirs moves.
+    /// DAG is linear in its distinct nodes.
     shared: []const bool = &.{},
     /// Per term, whether it and everything below it add up
     /// (`termShapeOk`), judged once, bottom-up.
@@ -503,7 +502,7 @@ const Lowerer = struct {
         /// `direct` is the function every caller calls; `steps` is its
         /// generator twin, `function* <base>$$steps`, which yields each call
         /// it would have made to the engine (`_derived$deep`) instead of making it.
-        /// `forward` (R8e, O2) is the direct form of a FORWARDER, a function whose
+        /// `forward` is the direct form of a FORWARDER, a function whose
         /// every depth-taking call is in tail position: it has no steps and
         /// no prologue, and hands a tail call past the limit to the engine as
         /// a request (`forwardTail`).
@@ -645,8 +644,8 @@ const Lowerer = struct {
     }
 
     /// `$l<inst>$<k>`: the k-th evidence parameter of the `let` function
-    /// binding D5 generalised at `let_def` `inst` (checker-v2.md §8.4 *As
-    /// built by R14*, backend.md §4). The instruction makes it unique in the
+    /// binding generalised at `let_def` `inst` (checker-v2.md §8.4,
+    /// backend.md §4). The instruction makes it unique in the
     /// declaration, so an inner binding never shadows an outer name a
     /// closure inside it also captures.
     fn letEvidenceName(l: *Lowerer, inst: Inst.Index, k: u32) !JsIr.NameIndex {
@@ -677,8 +676,8 @@ const Lowerer = struct {
     }
 
     /// `<Module>$<base>` for a value this module SYNTHESISES rather than
-    /// declares (§8.5): the primitive comparators of §9.1 today, the
-    /// derived functions of §9 when S5 lands.
+    /// declares (§8.5): the primitive comparators of §9.1 and the
+    /// derived functions of §9.
     fn synthesisedName(l: *Lowerer, base: []const u8) !JsIr.NameIndex {
         const symbol = try l.interner.getOrPut(l.gpa, base);
         return l.name(.{ .module = l.module_name.toOptional(), .base = symbol, .tag = JsIr.Name.no_tag });
@@ -874,7 +873,7 @@ const Lowerer = struct {
     /// Every declaration of this module that one declaration's dispatch
     /// sites reach: the sites' own targets, the evidence they hand over and,
     /// through every derived row they name, what that row's body names (a
-    /// derived function runs its body when it is called: CK-104). Flat, in
+    /// derived function runs its body when it is called). Flat, in
     /// site order, so `emissionOrder` walks it with one index like the `refs`
     /// run beside it. `Edges.termsEdges` visits each term once, so a table
     /// that shares terms costs its distinct terms (checker-v2.md §13.1).
@@ -928,7 +927,7 @@ const Lowerer = struct {
         // the canonical order of §7.2. HOW the value is defined around them
         // is `Convention`'s (checker-v2.md §12.5) — the same answer every
         // call, every reference and the cycle check read, so the definition
-        // and its uses cannot disagree (CK-33).
+        // and its uses cannot disagree.
         const use = Convention.ofDecl(l.in.dispatch, l.bir, index);
         const evidence: u32 = use.evidence;
         switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
@@ -950,15 +949,15 @@ const Lowerer = struct {
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
             .applied => try l.constDecl(out, n, try l.appliedArrow(out, l.bir.symbol(d.name), evidence, use.arity, body, p), p),
-            // `($m…) => value`, its value kept per evidence (CK-85).
+            // `($m…) => value`, its value kept per evidence.
             .thunk => try l.constDecl(out, n, try l.memoArrow(out, l.bir.symbol(d.name), evidence, &.{}, body, p), p),
             .constant => {
                 var stmts: StmtList = .empty;
                 const value = try l.expr(&stmts, body);
                 // A constant whose lowering needed statements cannot be a
                 // bare `const`: wrap it in a called arrow, which is the one
-                // place M3a emits an IIFE and the one place §9.2's peephole
-                // exists to remove later.
+                // place lowering emits an IIFE and the one place §9.2's
+                // peephole exists to remove.
                 if (stmts.items.len == 0) {
                     try l.constDecl(out, n, value, p);
                     return;
@@ -975,13 +974,13 @@ const Lowerer = struct {
     /// `applied`): `h = maxOf` under a `where`. It is defined over its
     /// type's parameters so that it is called flat, `h(ev, a, b)`, like
     /// every other constrained function, and so that an importer, which
-    /// sees only the type, calls it the same way (CK-33).
+    /// sees only the type, calls it the same way.
     ///
     /// When the body is a reference to a function that takes evidence of its
     /// own — the common `h = maxOf` — the call goes straight to it,
     /// `maxOf(ev…, $p1…$pn)`, rather than through its eta-expansion: there
     /// is nothing to compute. Any other body is computed once per evidence
-    /// (`memoArrow`, CK-85) and the value it gives is called.
+    /// (`memoArrow`) and the value it gives is called.
     fn appliedArrow(l: *Lowerer, out: *StmtList, decl_name: Symbol, evidence: u32, arity: u32, body: Inst.Index, p: u32) !Node.Index {
         const args = try l.scratch.alloc(Node.Index, arity);
         const names = try l.scratch.alloc(JsIr.NameIndex, arity);
@@ -1003,7 +1002,7 @@ const Lowerer = struct {
     /// `($m…, $p…) => { … return D$ev$v($p…); }` — a constrained value with
     /// no parameters whose body is not a lambda (an `applied` function value,
     /// or a `thunk`), defined so that its body runs ONCE PER EVIDENCE and not
-    /// at every read or call (CK-85, R8a; `language.md` §6 *Evaluation
+    /// at every read or call (`language.md` §6 *Evaluation
     /// order*). The value is a function of its evidence alone, so the last
     /// evidence and the value it gave are kept in two module-level `let`s,
     /// `D$ev$k<i>` and `D$ev$v`, declared above the definition:
@@ -1138,7 +1137,7 @@ const Lowerer = struct {
         if (siblings.items.len != 0 and l.in.sibling.len != 0) {
             try out.append(l.scratch, try l.importStatement(l.in.sibling, siblings.items));
         }
-        // The runtime, when this module's derived functions reach it (R8e, O3).
+        // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
         // Then one statement per other module, in first-reference order.
         // References to one module are not contiguous in `needed` — a
@@ -1246,7 +1245,7 @@ const Lowerer = struct {
         defer l.case_depth = depth;
         // The evidence parameters come FIRST, before the declaration's own
         // (§8.1): `$m$<k>` for a declaration, `$l<inst>$<k>` for a `let`
-        // function binding D5 generalised (`ev_let`, backend.md §4). A lambda
+        // function binding that generalised (`ev_let`, backend.md §4). A lambda
         // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
@@ -1347,7 +1346,7 @@ const Lowerer = struct {
         self: Self,
         evidence: u32,
         /// The `let_def` whose `$l…` names the evidence slots are, or `.none`
-        /// for a declaration's `$m…` (D5, backend.md §4).
+        /// for a declaration's `$m…` (backend.md §4).
         ev_let: Inst.OptionalIndex = .none,
         slots: []Slot,
 
@@ -1437,7 +1436,7 @@ const Lowerer = struct {
         var loop_body: StmtList = .empty;
         // The prologue. One `const` per carried slot rather than one
         // comma-separated declaration: joining them is §9 item 5's variable
-        // joining, a printer decision and M3c's, not this slice's.
+        // joining, a printer decision and not lowering's.
         for (slots) |slot| {
             if (!slot.carried or slot.body == .none) continue;
             try l.constDecl(&loop_body, slot.body, try l.ident(slot.param, p), p);
@@ -1601,7 +1600,7 @@ const Lowerer = struct {
         const local = l.locals[index];
         // The local INDEX is the disambiguator: two sibling branches may
         // each bind `x`, and JavaScript's block scoping would hide one
-        // behind the other in the shapes M3b's decision trees produce.
+        // behind the other in the shapes the decision trees produce.
         // Distinct indices therefore get distinct names, and the source
         // name is still the prefix so a stack trace reads.
         const n = if (local.name.unwrap()) |symbol| try l.name(.{
@@ -1735,8 +1734,8 @@ const Lowerer = struct {
     ///
     /// A record alias's constructor PATTERN (`nameOf (User n _) = n`) is
     /// accepted by the front end, and it is irrefutable — one constructor —
-    /// so it compiles to these reads with no test (the manager's decision of
-    /// 2026-09-24 under rule 7, CK-78).
+    /// so it compiles to these reads with no test (decided 2026-09-24 under
+    /// rule 7).
     fn argName(l: *Lowerer, via: ?Inst.Index, i: u32) !Symbol {
         if (via) |ref| {
             if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
@@ -1763,8 +1762,8 @@ const Lowerer = struct {
             return .{ .boolean = iface.symbols[@intFromEnum(c.name)] == InternPool.WellKnown.True.symbol() };
         }
         // A record alias's constructor builds the record, whichever module
-        // declared it (backend.md §4's row, D12; interface v3 carries the
-        // names, CK-39).
+        // declared it (backend.md §4's row; interface v3 carries the
+        // names).
         if (c.result == .record_alias) return .{ .record = .{ .imported = .{ .module = module, .ctor = ctor_index } } };
         if (max == 0) return .bare_tag;
         return .{ .tagged = .{ .fields = max } };
@@ -1858,7 +1857,7 @@ const Lowerer = struct {
     ///
     /// The nested literal is one object per element, so a written list of a
     /// few thousand elements — which the parser does not charge, being
-    /// width and not depth — was a module no engine would load (CK-83). An
+    /// width and not depth — would be a module no engine would load. An
     /// array literal is flat in every engine at any length measured, its
     /// elements are evaluated left to right as the nested literal's were,
     /// and the cells are the same `{$, a, b}` shape in the same key order,
@@ -2135,8 +2134,7 @@ const Lowerer = struct {
                 // expression counts toward this one, and past the spill the
                 // expression holding the lambda is bound to a `const` where
                 // it stands, like any other (`backend.md` §4). Without this
-                // a `view` of `List.map`s twenty deep was refused (review of
-                // R2c, S1).
+                // a `view` of `List.map`s twenty deep would be refused.
                 const height = l.expr_height;
                 l.expr_height = 0;
                 const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs));
@@ -2511,7 +2509,8 @@ const Lowerer = struct {
 
     /// How many evidence arguments the function a term names takes — the
     /// one counting function, `Dispatch.requirementCount`. `Lower` only
-    /// ASSERTS with it (I7, checker-v2.md §13.3): the arguments themselves
+    /// ASSERTS with it (every term has as many arguments as its callee has
+    /// requirements, checker-v2.md §13.3): the arguments themselves
     /// are the term's own `args`.
     fn requirementCount(l: *Lowerer, t: Dispatch.Term) u32 {
         return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types, l.interner);
@@ -2658,8 +2657,8 @@ const Lowerer = struct {
         l.shape_ok = ok;
         // The same one pass for `derivedBodiesExist`. A walk from each root
         // visited a SHARED term once per path to it, and a table shares
-        // terms (CK-80): `==` on a type that doubles 32 times was 2³² visits
-        // and a build that never finished (CK-136). A term's answer depends
+        // terms: `==` on a type that doubles 32 times would be 2³² visits
+        // and a build that never finished. A term's answer depends
         // only on the terms after it, so judging each once from the last is
         // linear in the table.
         const bodies = try l.scratch.alloc(bool, d.terms.len);
@@ -2697,8 +2696,8 @@ const Lowerer = struct {
     /// Which derived rows of this module are LEAVES (`backend.md` §4,
     /// *Derived comparisons do not grow the native stack*): rows whose
     /// comparison cannot come back to a derived function, and so need no
-    /// depth, no steps and no engine. They are emitted byte for byte as
-    /// before R8d, and they are most of what a program compares: a record
+    /// depth, no steps and no engine. They are emitted directly, and they
+    /// are most of what a program compares: a record
     /// of primitives, a `type Shape = Circle Point Float | …`.
     ///
     /// - A record, tuple or `()` row is a leaf when EVERY use of it in this
@@ -2753,7 +2752,7 @@ const Lowerer = struct {
             for (d.derived, 0..) |row, r| {
                 if (row.shape != .nominal or rank[r] != infinite) continue;
                 var deepest: u32 = 0;
-                // A tail self-call is a loop (R8e), not a call: `L = Cons Int L`
+                // A tail self-call is a loop, not a call: `L = Cons Int L`
                 // is a leaf.
                 const loops = try l.selfLoopParts(@intCast(r), row);
                 const ok = for (d.argsAt(row.body), loops) |part, loops_here| {
@@ -2866,7 +2865,7 @@ const Lowerer = struct {
     /// a closure of known arity.
     ///
     /// **At `arity == 0` the expansion is the CALL** — `<name>(<bound…>)`
-    /// and not `() => <name>(<bound…>)` (A.85, queue row 57). A.25's reason
+    /// and not `() => <name>(<bound…>)` (A.85). A.25's reason
     /// is a statement about FUNCTION-typed values, and a declaration of no
     /// parameters is not one: `blank : List a where a.eq : …` is a list, so
     /// a closure around it is a value of the wrong TYPE rather than a
@@ -2926,9 +2925,7 @@ const Lowerer = struct {
     //
     // A well-known method the checker resolved to a SHAPE rather than to a
     // value. The function is generated here, against the representation of
-    // `backend.md` §4 and the `parts` contract of §9. S5 emits `eq`; the
-    // `compare` half is S6's, so its rows are skipped and a site that names
-    // one is still refused.
+    // `backend.md` §4 and the `parts` contract of §9.
     //
     // Two things vary and the table keeps them apart (A.46): a `Derived`
     // ROW is the function — keyed on its shape, one evidence parameter per
@@ -2958,8 +2955,7 @@ const Lowerer = struct {
     /// every derived function is an arrow, so a reference from one to
     /// another is resolved when it is called — and the `$order` tables are
     /// the one exception, being object literals the `compare` that indexes
-    /// them reads. S5 emits no `$order` table because it emits no
-    /// `compare`; the run is where S6 puts them.
+    /// them reads.
     fn synthesisedValues(l: *Lowerer) ![]const Node.Index {
         var tables: std.ArrayList(Synth) = .empty;
         var list: std.ArrayList(Synth) = .empty;
@@ -3116,7 +3112,7 @@ const Lowerer = struct {
         const outer = l.derived_body;
         defer l.derived_body = outer;
         // A leaf (`leafRows`) is lowered with no body state at all, which is
-        // exactly how every derived function was lowered before R8d.
+        // exactly as a function that cannot recurse needs.
         if (leaf) {
             l.derived_body = null;
             return .{ .arrow = (try l.derivedForm(row)) orelse return null, .steps = null };
@@ -3145,7 +3141,7 @@ const Lowerer = struct {
         // A body that passed no depth is a leaf: it is what it always was,
         // byte for byte, and has no twin.
         if (!body.passes) return .{ .arrow = arrow, .steps = null };
-        // R8e (O2): every depth-taking call in tail position makes a
+        // Every depth-taking call in tail position makes a
         // FORWARDER — no prologue, no steps (`forwardTail`).
         if (body.depth_calls == body.tail_calls) {
             body.mode = .forward;
@@ -3627,7 +3623,7 @@ const Lowerer = struct {
     }
 
     /// `if (!a) { return false; }` for every term a looping arm compares
-    /// before it continues (`nominalArrow`, R8e): the direct form tests the
+    /// before it continues (`nominalArrow`): the direct form tests the
     /// term, the steps form awaits it first (`awaitRequest`).
     fn guardConjunction(l: *Lowerer, out: *StmtList, c: *Conjunction, p: u32) !void {
         for (c.terms.items) |term| {
@@ -3647,7 +3643,7 @@ const Lowerer = struct {
         return one;
     }
 
-    /// Per position of nominal derived row `r`'s body (R8e, O1): whether it is
+    /// Per position of nominal derived row `r`'s body: whether it is
     /// the LAST position of its constructor and compares the row's own type
     /// with the row's own evidence, unchanged — `Cons Int L`'s `L`, a tree's
     /// right child. Such a position is a tail self-call, and the function
@@ -3799,7 +3795,7 @@ const Lowerer = struct {
             const then = [_]Node.Index{try l.returnStmt(answer, p)};
             try l.ifStatement(&stmts, differs, &then, p);
         }
-        // R8e (O1): an arm whose LAST position is the function itself with its
+        // An arm whose LAST position is the function itself with its
         // own evidence loops instead of calling (`selfLoopParts`).
         const loops = try l.selfLoopParts(l.derived_row orelse std.math.maxInt(u32), row);
         var looped = false;
@@ -3932,9 +3928,8 @@ const Lowerer = struct {
             // `Float` it settles on. `Basics.eq` IS that answer.
             //
             // INVARIANT, and it is the CHECKER's to hold: `undetermined`
-            // means exactly that and nothing else. v1's converter wrote it
-            // for a legacy `err` part (until R12), and what pins which programs make one
-            // is `tests/corpus/dispatch/ErrParts`.
+            // means exactly that and nothing else. What pins which programs
+            // make one is `tests/corpus/dispatch/ErrParts`.
             .undetermined => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
             .derived, .ext_derived => {
                 if (!l.derivedBodyExists(t)) {
@@ -4043,7 +4038,7 @@ const Lowerer = struct {
     ///
     /// A term whose argument count and requirement count disagree has no
     /// honest call at all, so it is refused rather than guessed at — the
-    /// I7 assert, again, where it is cheap (checker-v2.md §13.3).
+    /// evidence-count assert, again, where it is cheap (checker-v2.md §13.3).
     fn namedPartCall(
         l: *Lowerer,
         part: Dispatch.TermIndex,
@@ -4099,7 +4094,7 @@ const Lowerer = struct {
     }
 
     /// Which runtime loop stands in for `List.eq` or `List.compare` when
-    /// derived code calls it (R8e, O3), or null for any other value.
+    /// derived code calls it, or null for any other value.
     /// `core/List.js` stays as it was; the runtime's copies take the depth.
     fn listRuntime(l: *Lowerer, t: Dispatch.Term) ?Runtime {
         const list = l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) orelse return null;
@@ -4139,7 +4134,7 @@ const Lowerer = struct {
     /// a hand-built table gets here, and the in-source test below is what
     /// holds it.
     ///
-    /// **No depth cap** (CK-87, R8a): the tree cannot point back at itself
+    /// **No depth cap**: the tree cannot point back at itself
     /// (checker-v2.md §13.1: every argument follows its owner), so the old
     /// 32-level `parts` cap guarded no cycle, and refused an unannotated
     /// record literal 33 levels deep. The recursion is as deep as the type,
@@ -4241,11 +4236,10 @@ const Lowerer = struct {
                 const entry = l.in.types.entry(use.type);
                 if (entry.kind != .adt) return false;
                 // The declaring module's published row says whether it emits
-                // the function (checker-v2.md §14.2 *as amended by R8a*): the
+                // the function (checker-v2.md §14.2): the
                 // one answer. A record the checker wrote has a row for every
                 // type it can reach, so no row is a table the checker did not
-                // write, and a wall. (Until R12 no row read the session
-                // table's structural bits, for a record v1 wrote.)
+                // write, and a wall.
                 const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner, use.type, use.kind) orelse return false;
                 return published.row.status == .present;
             },
@@ -4260,8 +4254,8 @@ const Lowerer = struct {
         };
     }
 
-    /// The three exports of `_core/_derived.mjs` (R8e, O3;
-    /// `src/js/derived_runtime.mjs`): the engine and `List`'s two loops as
+    /// The three exports of `_core/_derived.mjs`
+    /// (`src/js/derived_runtime.mjs`): the engine and `List`'s two loops as
     /// derived code calls them, with a depth.
     const Runtime = enum {
         deep,
@@ -4386,7 +4380,7 @@ const Lowerer = struct {
         return l.codePointCall(try l.bindSubject(out, value, p), p);
     }
 
-    /// **The I7 assert, again, where it is cheap** (checker-v2.md §2, §13.3).
+    /// **The evidence-count assert, again, where it is cheap** (checker-v2.md §2, §13.3).
     /// `Dispatch.finish`'s caller already refused a table that does not add
     /// up — on every module that reported no error — so this is the second
     /// line: a table that reached the backend some other way (a cache entry,
@@ -4395,7 +4389,7 @@ const Lowerer = struct {
     ///
     /// Two checks, in the order they were always made: every derived term
     /// in the trees names a function some module writes, and the trees are
-    /// what I7 says — `expected` roots, each term's `args` as long as its
+    /// what checker-v2.md §2's invariant says — `expected` roots, each term's `args` as long as its
     /// callee's requirement count, no `field` among them.
     fn refuseEvidence(l: *Lowerer, inst: Inst.Index, roots: []const Dispatch.TermIndex, expected: u32) !bool {
         for (roots) |root| {
@@ -4411,7 +4405,7 @@ const Lowerer = struct {
     }
 
     /// Whether every derived term in the tree under `i` names a function
-    /// some module writes: `readTable` judged each term once (CK-136).
+    /// some module writes: `readTable` judged each term once.
     fn derivedBodiesExist(l: *Lowerer, i: Dispatch.TermIndex) bool {
         return i.int() < l.bodies_ok.len and l.bodies_ok[i.int()];
     }
@@ -4467,7 +4461,7 @@ const Lowerer = struct {
             \\
             \\`docs/design/checker-v2.md` §13.1 gives every call one evidence root per
             \\requirement of the function it calls, and every term as many arguments as
-            \\the function it names has requirements (invariant I7). The tree the checker
+            \\the function it names has requirements. The tree the checker
             \\recorded here does not — either a term names something §8.2 cannot pass,
             \\or a callee's evidence count here disagrees with the one in its own module.
             \\
@@ -4513,8 +4507,8 @@ const Lowerer = struct {
 
     /// An `undetermined` leaf with no enclosing derived function: nothing
     /// says which method it answers, so there is no honest structural
-    /// answer to give (checker-v2.md §13.1, as amended by R2a). v1's
-    /// converter never writes one, because a legacy `err` SITE becomes no
+    /// answer to give (checker-v2.md §13.1). The old converter never wrote
+    /// one, because a legacy `err` SITE becomes no
     /// term at all.
     const undetermined_without_method =
         \\The table answers a hidden argument with the `undetermined` default outside any
@@ -4629,7 +4623,7 @@ const Lowerer = struct {
     }
 
     /// The evidence a derived CALLEE passes: its own arguments, after the
-    /// I7 assert over them, with the site's roots required empty (a derived
+    /// evidence-count assert over them, with the site's roots required empty (a derived
     /// function's evidence rides on the term, A.46). Null when refused.
     fn derivedCalleeEvidence(
         l: *Lowerer,
@@ -4695,7 +4689,7 @@ const Lowerer = struct {
         // converter turns into no term — and a program that failed to check
         // never reaches here, because `beni build` refuses to emit a project
         // that has an error diagnostic; so it is a compiler bug and says so
-        // rather than emitting `undefined(…)` and exiting 0 (queue row 75).
+        // rather than emitting `undefined(…)` and exiting 0.
         const callee, const roots = (try l.calleeOf(inst)) orelse
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const target = l.in.dispatch.term(callee);
@@ -5166,7 +5160,7 @@ const Lowerer = struct {
                     );
                     const n = try l.localName(payload.local);
                     const self: Loop.Self = .{ .local = payload.local };
-                    // A function binding D5 generalised takes its evidence
+                    // A function binding that generalised takes its evidence
                     // first, named `$l<inst>$<k>` (backend.md §4).
                     const evidence: u32 = if (l.in.dispatch.letIndex(def)) |i| l.in.dispatch.lets[i].requirements.len else 0;
                     const ev_let: Inst.OptionalIndex = if (evidence != 0) def.toOptional() else .none;
@@ -5771,7 +5765,7 @@ const Lowerer = struct {
                 @intFromEnum(record),
             ));
         }
-        // At most `max_switch_cases` labels a `switch` (CK-88): a longer fan
+        // At most `max_switch_cases` labels a `switch`: a longer fan
         // is consecutive `switch`es, the `default:` in the last. Every case
         // body leaves — a `return`, a `continue`, a `break` out of the
         // `case`'s block or to a shared leaf — which one `switch` already
@@ -5893,8 +5887,8 @@ const Lowerer = struct {
     /// An occurrence as a member chain down from its root, built once and
     /// reused. The chain is rebuilt rather than bound to a `const $p$k` per
     /// edge: every value is immutable and every step is a property read, so
-    /// re-reading costs nothing and there is no live binding for M3c's
-    /// dead-binding pass to fail to remove (§7).
+    /// re-reading costs nothing and there is no live binding for the release
+    /// optimiser's dead-binding pass to fail to remove (§7).
     fn occNode(l: *Lowerer, c: *Case, occ: u32) Allocator.Error!Node.Index {
         if (c.occ_nodes[occ].unwrap()) |node| return node;
         const o = c.tree.occs[occ];
@@ -6049,7 +6043,7 @@ const Lowerer = struct {
 // asserted on the emitted JavaScript, the same shape `check/Check.zig` uses
 // for types and for the same reason: the bytes are the only thing a person
 // can read, and asserting the `JsIr` node graph instead would test an
-// implementation that M3b and M3c are going to rewrite.
+// implementation that the optimiser is free to rewrite.
 //
 // What is asserted here is SHAPE — that a saturated call became a direct
 // call, that `if` became a conditional expression, that a constructor of a
@@ -6620,13 +6614,13 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     try testing.expectEqual(diagnostic.Code.internal, result.diagnostics[0].code);
 }
 
-test "the I7 assert counts the roots and every term's arguments, in both directions" {
+test "the evidence-count assert counts the roots and every term's arguments, in both directions" {
     // A SYNTHETIC `Dispatch` table, and that is the whole reason this test
     // is in-source rather than in `tests/corpus/` (CLAUDE.md rule 3 makes
     // the corpus the coverage and this the supplement it cannot reach):
     // once the checker is right, NO beni program can produce a malformed
     // table, so the only way to prove the wall stops one is to build one by
-    // hand (checker-v2.md §13.3: `evidenceShapeOk` became the I7 assert).
+    // hand (checker-v2.md §13.3: `evidenceShapeOk` is the evidence-count assert).
     //
     // What it pins is §7.2's promise that a caller/callee disagreement is
     // "a caught bug rather than a silent miscompile". Two roots for a

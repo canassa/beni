@@ -30,7 +30,7 @@ pub fn build(
     schemas: *const Schema.State,
     /// Per declaration, its endpoints' property bytes `(program, encoded)`
     /// as the checker read them off its derived contexts (checker-v2.md
-    /// §11.5 *as built by R8b*).
+    /// §11.5).
     properties: []const [2]u8,
 ) Allocator.Error!SchemaPlan {
     var b: Builder = .{

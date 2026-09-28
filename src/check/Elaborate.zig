@@ -1,12 +1,13 @@
-//! P6, elaboration (checker-v2.md §12.2, §12.3, §13): THE one place v2
-//! builds evidence trees.
+//! P6, elaboration (checker-v2.md §12.2, §12.3, §13): THE one place the
+//! checker builds evidence trees.
 //!
 //! Everything it reads was recorded when it was decided, and nothing here
-//! recounts it (v1's root cause #1):
+//! recounts it:
 //!
 //!   - a `method_call`/`type_dispatch`'s callee wanted (`inst_callee`);
 //!   - an instantiation's wanteds, in the callee's canonical order, as
-//!     `Solve.instantiated` recorded them (`inst_evidence`, I5);
+//!     `Solve.instantiated` recorded them (`inst_evidence`: one wanted per
+//!     requirement of the scheme);
 //!   - each wanted's answer, followed through `alias` chains;
 //!   - each declaration's requirement list and its quantifier roots
 //!     (`Resolve.close`, or an annotation's givens);
@@ -15,8 +16,9 @@
 //!
 //! A `promoted` answer is `(root, method)`: its index is found in the list
 //! of a binder around the SITE — the promoting `let` bindings whose `let_def`
-//! holds it, innermost first (D5, `LetScopes`), then its declaration (§12.3
-//! *as built by R14*) — and a reference to an unannotated member of the group
+//! holds it, innermost first (a constrained `let` generalises, checker-v2.md §21;
+//! `LetScopes`), then its declaration (§12.3) — and a reference to an
+//! unannotated member of the group
 //! being checked, or to a promoting `let` of its own recursive group — which
 //! instantiated nothing, so it has no `inst_evidence` — is a group call,
 //! whose arguments come from the callee's final list by §12.3's cases 1 to
@@ -26,24 +28,25 @@
 //! (`internal`, §12.3).
 //!
 //! **What never becomes a term.** An `open` or `ready` wanted is `internal`
-//! (I6), never a structural answer (v1's root cause #6) — except OPEN on a
-//! P5 marker for the row's own method, which is exactly the row's context
-//! entry. A `failed` wanted (or an alias chain that ends in one: R6a's
-//! round-2 nit) means an error was reported: the site keeps its callee, for
+//! (every wanted is answered exactly once, §12.2), never a structural answer
+//! — except OPEN on a P5 marker for the row's own method, which is exactly
+//! the row's context entry. A `failed` wanted (or an alias chain that ends
+//! in one) means an error was reported: the site keeps its callee, for
 //! `Cycles`, and no evidence. In a module that reported nothing that is the
 //! compiler's own failure: it is returned in `Output.internals`, which the
 //! module reports after the last pass that can report an error (§13.1's
-//! rule for the I7 assert). A `poisoned` wanted met `err`, whose message
-//! may be a DEPENDENCY's (CK-141): its site is written the same way, and
-//! returned in `Output.poisoned`, which is no fault and which I7 skips.
+//! rule for the assert that a term's arguments match its callee's evidence
+//! count). A `poisoned` wanted met `err`, whose message may be a
+//! DEPENDENCY's: its site is written the same way, and returned in
+//! `Output.poisoned`, which is no fault and which that assert skips.
 //!
 //! **The table's shape.** Each site and each derived row's body is one unit
 //! (`Unit.zig`): a DAG of distinct answers, written owners first. An
 //! `undetermined` answer is the `undetermined` leaf only where `Lower` can
 //! tell its method — below a derived ancestor whose kind IS the wanted's
 //! method — and everywhere else the structural function for the wanted's
-//! own method (`Basics.eq`, or `num_compare` for `compare`): v1's table,
-//! except where v1 put an `eq` leaf in a `compare` slot (CK-103). `derived`
+//! own method (`Basics.eq`, or `num_compare` for `compare`) — never an `eq`
+//! leaf in a `compare` slot. `derived`
 //! rows are sorted by emitted name text last, and every index is remapped
 //! once.
 
@@ -85,8 +88,8 @@ pub const Input = struct {
     roots: []const Var,
     /// Per declaration, its published scheme (case 3's reachability test).
     decl_scheme: []const Var.Optional,
-    /// The promoting `let` function bindings, by instruction (D5, §13.1
-    /// *amended by R14*), their requirements in `requirements`/`roots`, and
+    /// The promoting `let` function bindings, by instruction (§13.1), their
+    /// requirements in `requirements`/`roots`, and
     /// each one's generalised header (case 3's reachability test).
     lets: []const Dispatch.LetInfo = &.{},
     let_schemes: []const Var = &.{},
@@ -112,8 +115,8 @@ pub const Output = struct {
     /// Owned by the scratch arena.
     internals: []const Internal,
     /// The instructions whose site was not written because a wanted met
-    /// `err` (`Evidence.State.poisoned`), ascending: I7 does not hold them
-    /// to a tree (§12.2 *Amended by R15-fix-A*, CK-141). Owned by the
+    /// `err` (`Evidence.State.poisoned`), ascending: the evidence-count
+    /// assert does not hold them to a tree (§12.2). Owned by the
     /// scratch arena.
     poisoned: []const Bir.Inst.Index,
 };
@@ -123,8 +126,8 @@ pub const Output = struct {
 pub const Binder = union(enum) { none, decl: u32, row: u32 };
 
 /// Why a unit failed: a wanted `failed` (this module reported it), one
-/// `poisoned` (it met an `err` whose message may be a dependency's:
-/// CK-141), or the compiler's own fault.
+/// `poisoned` (it met an `err` whose message may be a dependency's), or the
+/// compiler's own fault.
 pub const Why = enum { failed, poisoned, internal };
 
 /// A derived row being built.
@@ -171,7 +174,7 @@ stacks: Walk.Stacks = .{},
 /// Why the last unit failed.
 why: Why = .failed,
 what: []const u8 = "",
-/// Which promoting `let`s enclose each instruction (§12.3 *as built by R14*).
+/// Which promoting `let`s enclose each instruction (§12.3).
 scopes: LetScopes = .{},
 /// The innermost promoting `let` around the site being built, or `no_let`
 /// (a P5 row, or a site no such `let` holds).
@@ -309,12 +312,12 @@ fn siteRows(e: *Elaborate) Error!void {
     defer e.scratch.free(rows);
     std.mem.sort(Evidence.InstEvidence, rows, {}, instLessThan);
     // A reference's evidence rides on the `call` that applies it, when one
-    // does (§13.1 as R2a wrote it: `Lower` reads a call's site for its
-    // callee's hidden arguments, a bare reference's for its own).
+    // does (§13.1: `Lower` reads a call's site for its callee's hidden
+    // arguments, a bare reference's for its own).
     //
     // Only the evidence and group events are moved onto their call, so a
-    // module with neither — most of them — needs no scan at all (R8c's
-    // profile); where one is needed, the map is a dense array over the
+    // module with neither — most of them — needs no scan at all; where one
+    // is needed, the map is a dense array over the
     // instructions, not a hash of every `call`.
     const requirements = for (e.in.decls) |d| {
         if (d.requirements.len != 0) break true;
@@ -341,8 +344,8 @@ fn siteRows(e: *Elaborate) Error!void {
                     if (std.sort.binarySearch(Evidence.InstEvidence, rows, inst, instOrder) != null) continue;
                     try events.append(e.scratch, .{ .inst = inst, .what = .{ .group = target } });
                 },
-                // The same inside a recursive `let` (§12.3 *as built by
-                // R14*): a `local` naming a promoting `let_def` of its own
+                // The same inside a recursive `let` (§12.3): a `local`
+                // naming a promoting `let_def` of its own
                 // group instantiated nothing.
                 .local => {
                     const l = e.letOfLocal(@intCast(decl_index), bir.instData(inst).lhs) orelse continue;
@@ -415,7 +418,7 @@ const Owner = struct {
 
 /// One site: its callee and roots built as ONE unit, so what they share is
 /// written once. A unit that fails leaves nothing behind — no term, and no
-/// structural row it made (review N1).
+/// structural row it made.
 fn site(e: *Elaborate, event: Event) Error!void {
     const rows_len = e.rows.items.len;
     const symbols_len = e.symbols.items.len;
@@ -449,7 +452,7 @@ fn site(e: *Elaborate, event: Event) Error!void {
     switch (e.why) {
         .failed => try e.internal(event.inst, "a wanted of this site failed, but nothing was reported (checker-v2.md §12.2)"),
         // No site, and no fault: the build that would lower it has an
-        // error, maybe only in a dependency (§12.2 *Amended by R15-fix-A*).
+        // error, maybe only in a dependency (§12.2).
         .poisoned => try e.poisoned.append(e.scratch, event.inst),
         .internal => try e.internal(event.inst, e.what),
     }
@@ -512,7 +515,7 @@ fn groupNodes(e: *Elaborate, callee: u32, binder: Binder, ctx: Ctx, out: *std.Ar
 }
 
 /// The same for a callee whose final list is the run `r` of `requirements`
-/// and `roots`: a declaration's, or a promoting `let`'s (D5).
+/// and `roots`: a declaration's, or a promoting `let`'s.
 fn groupNodesOf(e: *Elaborate, r: Dispatch.Range, binder: Binder, ctx: Ctx, out: *std.ArrayList(u32)) Error!bool {
     for (e.in.requirements[r.start..][0..r.len], e.in.roots[r.start..][0..r.len]) |req, q| {
         const t: Dispatch.Term = if (e.paramFor(binder, q, req.method)) |p|
@@ -543,7 +546,7 @@ fn letOfLocal(e: *const Elaborate, decl: u32, local: u32) ?u32 {
 }
 
 /// `(q, method)` as a parameter of a binder around the site, innermost
-/// first (§12.3 cases 1 and 2, *as built by R14*): the promoting `let`s
+/// first (§12.3 cases 1 and 2): the promoting `let`s
 /// whose `let_def` holds the site, then its declaration.
 fn paramFor(e: *Elaborate, binder: Binder, q: Var, method: Symbol) ?Dispatch.Term.Param {
     const st = e.in.cx.store;
@@ -571,7 +574,7 @@ fn inList(e: *const Elaborate, r: Dispatch.Range, root: Var, method: Symbol) ?u3
 /// §12.3's case 3: `q` is in no list of a binder around the site, which is
 /// sound only when none of their types reaches `q` — else the lists disagree
 /// with the types, and that is `internal` ("in the member's type, but not in
-/// its list", review S1).
+/// its list").
 fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Error!?Dispatch.Term {
     const st = e.in.cx.store;
     var l = e.site_let;
@@ -596,7 +599,8 @@ fn caseThree(e: *Elaborate, binder: Binder, q: Var, method: Symbol, ctx: Ctx) Er
 /// The proven-undetermined answer for `method`: the `undetermined` leaf
 /// where `Lower` will read the right method off the nearest derived
 /// ancestor (`ctx` is that method), the structural function itself
-/// everywhere else (B1, CK-103); a method that is not well known has none.
+/// everywhere else, so an `eq` leaf never lands in a `compare` slot; a
+/// method that is not well known has none.
 fn undetermined(e: *Elaborate, method: Symbol, ctx: Ctx) ?Dispatch.Term {
     const is_eq = method == InternPool.WellKnown.eq.symbol();
     if (!is_eq and method != InternPool.WellKnown.compare.symbol()) {
@@ -684,7 +688,7 @@ fn termOf(e: *Elaborate, id: WantedId, binder: Binder, ctx: Ctx, node: u32) Erro
         .answered, .promoted, .defaulted => {},
     }
     return switch (ev.answer(id)) {
-        .none, .alias => e.failTerm(.internal, "a wanted was answered with nothing (checker-v2.md §12.2, I6)"),
+        .none, .alias => e.failTerm(.internal, "a wanted was answered with nothing (checker-v2.md §12.2)"),
         .param => |p| switch (binder) {
             .decl => |d| if (d == p.decl)
                 .{ .param = .{ .binder = .decl, .k = @intCast(p.k) } }
@@ -758,7 +762,7 @@ fn derivedTerm(e: *Elaborate, id: WantedId, dv: @FieldType(Evidence.Answer, "der
         const index = e.own.get(.{ .type_id = dv.type_id, .kind = kind }) orelse
             return e.failTerm(.internal, "a derived answer names a type of this module that has no derived row (checker-v2.md §11.2, §12.4)");
         if (!e.rows.items[index].alive) return e.failTerm(.internal, "a derived answer names a derived row whose body could not be written (checker-v2.md §12.4)");
-        if (e.rows.items[index].context != subs.len) return e.failTerm(.internal, "a derived answer's arguments are not its row's context (checker-v2.md §13.1, I7)");
+        if (e.rows.items[index].context != subs.len) return e.failTerm(.internal, "a derived answer's arguments are not its row's context (checker-v2.md §13.1)");
         return e.withArgs(node, .{ .derived = .{ .index = index } }, subs, inner);
     }
     const shape = (try e.shapeOf(w.receiver, subs.len)) orelse return null;
@@ -903,7 +907,8 @@ fn finish(e: *Elaborate) Error!Output {
         const r = e.rows.items[old];
         const start: u32 = @intCast(contexts.items.len);
         if (r.eager != no_row) {
-            // A nominal row: its inferred context (D4, §11.2).
+            // A nominal row: its inferred context (one evidence parameter
+            // per entry, §11.2).
             try contexts.appendSlice(gpa, e.row_entries.items[r.entries.start..][0..r.entries.len]);
         } else {
             // A structural row: one parameter per position, the row's own
@@ -936,8 +941,7 @@ fn finish(e: *Elaborate) Error!Output {
 }
 
 /// `<Module>$<Type>$<kind>` for a nominal row — the declaring module, this
-/// one — and `<Module>$<kind>$<shape>` for a structural one (v1's
-/// `DerivedNamer`).
+/// one — and `<Module>$<kind>$<shape>` for a structural one.
 fn nameOf(e: *Elaborate, r: Row) Error![]const u8 {
     const cx = e.in.cx;
     const interner = cx.interner;

@@ -31,7 +31,7 @@
 //! chain — `const x = p.a; const y = x.b; return f(y);` — collapses as the
 //! printer follows `y` to `x.b` and then `x` to `p.a`. The chain is acyclic by
 //! construction (a binding is inlined only into a LATER statement), and it
-//! is COMPRESSED as it is recorded (`compress`, CK-190): for `const x = p;
+//! is COMPRESSED as it is recorded (`compress`): for `const x = p;
 //! const y = x; f(y)` the use of `y` records `p` directly and not the `x`
 //! that `y`'s initialiser reads, so the printer follows exactly one step per
 //! `ident` whatever the chain's length. It used to follow up to 64
@@ -141,7 +141,7 @@ const Opt = struct {
     ir: *const JsIr,
     /// Where `stack` grows. The plan's own arena: nothing here is freed early.
     arena: Allocator,
-    /// The explicit stack every expression walk shares (CK-81): each walk
+    /// The explicit stack every expression walk shares: each walk
     /// owns the entries above the length it found, so the walks nest.
     stack: std.ArrayList(Index) = .empty,
     /// Which top-level declaration `uses`, `decls` and `assigned` describe.
@@ -269,7 +269,7 @@ const Opt = struct {
     /// and not `a`, but a chain rooted at `a` is refused either way: the
     /// cheaper rule is the one nobody has to reason about at a call site.
     ///
-    /// No budget (CK-190's audit): running out of one here would leave the
+    /// No budget: running out of one here would leave the
     /// root unmarked — "not assigned", the unsafe answer — so the walk goes
     /// to the root of the chain. It is linear in the chain and the IR is a
     /// tree, so it ends.
@@ -300,7 +300,7 @@ const Opt = struct {
         try o.countStmts(f.body());
     }
 
-    /// Iterative, over `stack` (CK-81, `JsIr.pushOperands`): an expression
+    /// Iterative, over `stack` (`JsIr.pushOperands`): an expression
     /// is as deep as the longest chain the compiler built.
     fn countExpr(o: *Opt, root: Index) Allocator.Error!void {
         const base = o.stack.items.len;
@@ -406,7 +406,7 @@ const Opt = struct {
 
     /// The node a substitution records: `value` itself, or — when `value` is
     /// an `ident` that is already some earlier binding's single use — what
-    /// THAT substitution records. **Path compression at creation** (CK-190),
+    /// THAT substitution records. **Path compression at creation**,
     /// and the reason `Plan.replacement` is one step with no budget.
     ///
     /// The invariant is that no recorded target is itself a substituted

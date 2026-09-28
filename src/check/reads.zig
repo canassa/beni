@@ -1,7 +1,7 @@
-//! The covered-read self-check (`plans/m4-3.md` §9 M3-a, `fast-compiler.md`
+//! The covered-read self-check (`plans/m4-3.md` §9, `fast-compiler.md`
 //! §8, *The firewall cutoff, and the dependency digest*).
 //!
-//! **What it is for.** M4-3 lets the cache SKIP a module's check on the
+//! **What it is for.** The firewall cutoff lets the cache SKIP a module's check on the
 //! strength of an argument — the enumeration of `plans/m4-3.md` §3, which says
 //! what a dependent's check can observe about its dependencies. A wrong
 //! enumeration is a stale answer that depends on history and shows up only

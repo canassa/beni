@@ -1,35 +1,33 @@
-//! The **`equatable` marker walk** (checker-v2.md §11.4), split out of
-//! `Instances.zig` by R6a's review (nit): R5 built it as the first part of
-//! the capability file. The marker walk of §11.4 (CK-16, CK-17, CK-18),
-//! the structural guarantee explicit `Basics.eq` and `Basics.neq` ask for.
-//! The marker is never an `eq` method, and the resolver never reads it
-//! (CK-19). The walk:
+//! The **`equatable` marker walk** (checker-v2.md §11.4): the structural
+//! guarantee explicit `Basics.eq` and `Basics.neq` ask for.
+//! The marker is never an `eq` method, and the resolver never reads it.
+//! The walk:
 //!
-//!   - takes `structural` successors (I2), with a growable stack and a
-//!     visited mark (I4, CK-17): a width of 100 000 fields is walked to the
+//!   - takes `structural` successors, with a growable stack and a
+//!     visited mark: a width of 100 000 fields is walked to the
 //!     end, and a cycle is walked once (the occurs check reports it);
 //!   - at a nominal `T args` asks the gate for `T` itself — for a
 //!     `foreign type` declared `equatable` (`Types.isEquatable`), for any
-//!     other no function reachable from its payloads (`functionFree`, R8b's
-//!     review round: through its module's schema endpoints and `via`
+//!     other no function reachable from its payloads (`functionFree`:
+//!     through its module's schema endpoints and `via`
 //!     targets, or its record's `no_function`) — and then descends only
 //!     into the
-//!     arguments whose parameter occurs in a constructor payload (D10,
+//!     arguments whose parameter occurs in a constructor payload (§11.4,
 //!     `payload_params`): computed from this module's own declaration, or
 //!     read from interface v3 for another module's, so a phantom function
-//!     argument is fine (CK-23, for the marker) and an opaque type's hidden
+//!     argument is fine and an opaque type's hidden
 //!     payloads are never read;
 //!   - **propagates** the flag to every flex it met — only once the answer is
 //!     `yes` — and gives each a row of the SAME question (`origin`) at the
 //!     same region, so what it later becomes is asked that question where it
-//!     was raised, and one question says "no" once (R5's review, B1);
+//!     was raised, and one question says "no" once;
 //!   - **requires** the flag of a rigid it meets, and without it answers
-//!     `rigid` (CK-16's `same`: "the annotation says ANY type").
+//!     `rigid` ("the annotation says ANY type").
 //!
-//! It answers `yes` or why not. It has no "unknown" (I8). It writes
+//! It answers `yes` or why not. It has no "unknown". It writes
 //! nothing on the way: a failure leaves no flag behind, so how many
 //! flexes it reached before failing — which depends on symbol ids — changes
-//! nothing (I13). Which failure is reported cannot depend on symbol ids
+//! nothing. Which failure is reported cannot depend on symbol ids
 //! either: only on a failure does it walk again, with every record's fields
 //! in name-text order, to choose the one it reports.
 
@@ -83,7 +81,7 @@ solve: *Solve,
 /// The gates this walk found unknown (a schema in flight), and at what.
 unknown_gates: std.ArrayList(struct { type_id: Types.TypeId, v: Var }) = .empty,
 /// The rank of the current frame when it is a fixpoint frame, else 0, set
-/// by the caller: §11.2's frame assert (CK-117) covers the flags this walk
+/// by the caller: §11.2's frame assert covers the flags this walk
 /// writes, as `Unify.assertContained` covers a merge.
 fixpoint_rank: u32 = 0,
 
@@ -101,8 +99,7 @@ pub fn deinit(in: *Marker) void {
     in.unknown_gates.deinit(gpa);
 }
 
-/// The gate for `T` itself (§11.4 *as amended by R8b's review rounds*,
-/// CK-120): `functionFree`. Unknown while a schema its payloads go through
+/// The gate for `T` itself (§11.4): `functionFree`. Unknown while a schema its payloads go through
 /// is in flight: then it passes for now, and the walk's question is asked
 /// again of `T` in P5 (`unknown_gates`, handed to `Contexts.deferred_gates` when
 /// the walk says yes).
@@ -119,16 +116,14 @@ fn gate(in: *Marker, id: Types.TypeId, root: Var) Error!bool {
 /// its payloads — through its module's own types and schema endpoints
 /// (their `via` targets as inferred so far), and the gate of every other
 /// module's type; another module's type is its published `no_function`
-/// (§14.2 *as amended by R8b*; from R9 every record a v2 build reads is
-/// v2's, §22.1). Memoised per local type in
+/// (§14.2, §22.1). Memoised per local type in
 /// `Contexts` for the current generation (a group completing may infer a
 /// `via` target), permanently in a module without schemas; a walk that
 /// finds no function proves it of every type it met.
 ///
-/// Before R8b's review round the gate of a plain type was the table-build
-/// bit, which cannot see a `via` target: `==` on a type wrapping an
-/// endpoint that holds a function was refused, and `Basics.eq` on it
-/// accepted (CK-120).
+/// The gate is not the table-build bit, which cannot see a `via` target:
+/// with it, `==` on a type wrapping an endpoint that holds a function
+/// would be refused, and `Basics.eq` on it accepted.
 pub fn functionFree(cx: *const Context, contexts: *Contexts, solve: ?*Solve, id: Types.TypeId) Error!?bool {
     if (id == .none or id.int() >= cx.types.entries.len) return true;
     const entry = cx.types.entry(id);
@@ -140,7 +135,7 @@ pub fn functionFree(cx: *const Context, contexts: *Contexts, solve: ?*Solve, id:
     // Every schema with a `via` the walk can reach, demanded (as for a
     // derived context, `Contexts.complete`) — so an unchecked schema's
     // unfilled target never reads as "no function" — and none in flight;
-    // else unknown, and nothing memoised (R8b's round-2 review, B1). After
+    // else unknown, and nothing memoised. After
     // P4 (`solve` null) every group is done and P5 completed the graph.
     if (solve) |s| {
         if (!try Contexts.complete(s, &.{own})) return null;
@@ -158,7 +153,7 @@ pub fn functionFree(cx: *const Context, contexts: *Contexts, solve: ?*Solve, id:
     try pushPayloads(cx, contexts, own, &stack);
     const seen = store.nextMark();
     // A mark of its own, taken inside the marker walk's epoch: a node that
-    // walk re-marks may be visited twice, which is harmless (review N8).
+    // walk re-marks may be visited twice, which is harmless.
     const ok = while (stack.pop()) |next| {
         const root, const content = store.resolved(next);
         if (store.mark(root) == seen) continue;
@@ -229,7 +224,7 @@ fn pushPayloads(cx: *const Context, contexts: *Contexts, t: u32, stack: *std.Arr
 /// row of the same origin at the same region — only then, so a failure
 /// leaves nothing behind that could report the same question again, and how
 /// many flexes the walk reached before it failed (which depends on symbol
-/// ids) changes nothing (I13, review B1).
+/// ids) changes nothing.
 pub fn equatable(in: *Marker, v: Var, region: Bir.Inst.Index, origin: Obligations.Id) Error!Answer {
     in.met.clearRetainingCapacity();
     in.unknown_gates.clearRetainingCapacity();
@@ -243,9 +238,9 @@ pub fn equatable(in: *Marker, v: Var, region: Bir.Inst.Index, origin: Obligation
             if (std.debug.runtime_safety and in.fixpoint_rank != 0) {
                 const rank = store.rank(root);
                 if (rank != TypeStore.generalized and rank < in.fixpoint_rank)
-                    std.debug.panic("a fixpoint frame's marker walk flagged a variable of an older frame (checker-v2.md §11.2, CK-117)", .{});
+                    std.debug.panic("a fixpoint frame's marker walk flagged a variable of an older frame (checker-v2.md §11.2)", .{});
             }
-            // The flags copied and one field changed, never rebuilt (CK-18).
+            // The flags copied and one field changed, never rebuilt.
             var flagged = store.content(root).flex;
             if (flagged.equatable) continue;
             flagged.equatable = true;
@@ -255,7 +250,7 @@ pub fn equatable(in: *Marker, v: Var, region: Bir.Inst.Index, origin: Obligation
         }
         return .yes;
     }
-    // Which failure is said is chosen in name-text order (I13).
+    // Which failure is said is chosen in name-text order.
     return in.walk(v, .choose);
 }
 
@@ -301,7 +296,7 @@ fn walk(in: *Marker, v: Var, comptime mode: Mode) Error!Answer {
                     if (!try in.gate(a.type, root)) return .opaque_type;
                     // `payloadParams` may read an own declaration, taking
                     // marks of its own mid-walk: a node it re-marks can be
-                    // visited twice, which is harmless (review N8).
+                    // visited twice, which is harmless.
                     const bits = try in.payloadParams(a.type);
                     var i: u32 = a.args.len;
                     // Pushed last to first, so the arguments are walked in order.
@@ -318,7 +313,7 @@ fn walk(in: *Marker, v: Var, comptime mode: Mode) Error!Answer {
 }
 
 /// Push every `structural` successor of `root`, last first, so they are
-/// walked in order (review N4).
+/// walked in order.
 fn pushReversed(in: *Marker, root: Var) Error!void {
     const start = in.stack.items.len;
     var n: u32 = 0;
@@ -339,10 +334,10 @@ fn has(bits: Bits, i: usize) bool {
     return words[i / 32] & (@as(u32, 1) << @intCast(i % 32)) != 0;
 }
 
-/// Which parameters of `id` occur in a constructor payload (D10): this
+/// Which parameters of `id` occur in a constructor payload (§11.4): this
 /// module's own declaration read now, another module's from its interface
 /// (§14.2): its exported row, or the hidden row of a private type an importer
-/// reaches (R8b). Every parameter when that cannot be known — a type with no
+/// reaches. Every parameter when that cannot be known — a type with no
 /// row, a record not yet filled, a schema
 /// endpoint — which is the side that asks more, never less.
 fn payloadParams(in: *Marker, id: Types.TypeId) Error!Bits {
@@ -376,7 +371,7 @@ fn fill(in: *Marker, id: Types.TypeId) Error!u32 {
         return start;
     }
     // Its exported row, or the hidden row of a private type an importer
-    // reaches through a published scheme (§14.2 *as amended by R8a*; R8b).
+    // reaches through a published scheme (§14.2).
     if (entry.module.int() >= cx.interfaces.len) return all;
     const iface = cx.iface(entry.module);
     const facts = iface.typeFacts(cx.interner, entry.name) orelse return all;

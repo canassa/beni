@@ -104,7 +104,7 @@ pub fn load(
 /// re-interned on cross-process loads and 0 of them would have missed `find`*:
 /// every string a cache entry names is one some module of this build already
 /// interned, because an entry names declarations and modules of this build and
-/// M4-2 re-interns every module's whole `Bir.symbols` column on every run.
+/// the front-end cache re-interns every module's whole `Bir.symbols` column on every run.
 ///
 /// **And the posture is DEGRADE, not trap.** A `find` miss is a cache MISS and
 /// the module is checked, never an `internal` — so even if the argument is one
@@ -259,7 +259,7 @@ fn matchesShell(loaded: *const Interface, shell: *const Interface) bool {
 const testing = std.testing;
 
 test "a record whose shape disagrees with the shell is a miss, not a miscompile" {
-    // `plans/m4-1.md` §6.2 row 21. A fabricated record with one extra `pub`
+    // A fabricated record with one extra `pub`
     // value — the shape a key collision or a moved file would produce — must
     // be refused, because `Provenance` is indexed by slot and installing this
     // record would put one declaration's scheme under another's name.

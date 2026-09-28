@@ -210,7 +210,7 @@ pub const Module = struct {
     current: u32 = 0,
     /// The locals of the declaration being assigned, in emission order.
     order: std.ArrayList(NameIndex) = .empty,
-    /// `collectExpr`'s explicit stack (CK-81), shared by the walks it nests.
+    /// `collectExpr`'s explicit stack, shared by the walks it nests.
     stack: std.ArrayList(Index) = .empty,
     /// The ordinals the globals this declaration mentions were given, as a
     /// bitset over the range a local could possibly be assigned from. A global
@@ -284,9 +284,9 @@ pub const Module = struct {
         // "cannot fire" is the claim, and a check is how a claim survives an
         // edit. It checks the stronger claim, that the ordinals INCREASE
         // along `order` (which `see` keeps free of repeats), because that is
-        // linear: the all-pairs form was quadratic in a declaration's locals,
-        // 46 s of a safety build's `--release` on a derived `compare` with
-        // 65 535 `$o$<i>` (CK-81).
+        // linear: the all-pairs form would be quadratic in a declaration's
+        // locals, 46 s of a safety build's `--release` on a derived `compare`
+        // with 65 535 `$o$<i>`.
         for (m.order.items[0..m.order.items.len -| 1], m.order.items[@min(1, m.order.items.len)..]) |a, b| {
             if (m.local[a.unwrap().?] < m.local[b.unwrap().?]) continue;
             m.failure = .{ .kind = .collision, .name = a };
@@ -383,7 +383,7 @@ pub const Module = struct {
         try m.collectList(f.body(), mentioned);
     }
 
-    /// Iterative, over `stack` (CK-81, `JsIr.pushOperands`), in print order:
+    /// Iterative, over `stack` (`JsIr.pushOperands`), in print order:
     /// an expression is as deep as the longest chain the compiler built. A
     /// `member`'s key and a `property`'s key are PROPERTY names and are item
     /// 4's, not this pass's, so no operand walk yields them.

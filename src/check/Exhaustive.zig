@@ -32,7 +32,7 @@
 //! range; for an imported one, from the importing side's `Interface`, which
 //! keeps a type's constructors adjacent and in declaration order for
 //! exactly this. Going through the interface and not the dependency's Bir is
-//! the firewall of `fast-compiler.md` §8.1: in M4 a dependency's Bir may not
+//! the firewall of `fast-compiler.md` §8.1: with the on-disk cache a dependency's Bir may not
 //! be in memory at all, and its interface always is.
 //!
 //! **Nothing here reads a solved type**, and that is not an oversight. The
@@ -54,8 +54,7 @@
 //! such a `case` is exhaustive and reports nothing. That falls out; there is
 //! no special case for it.
 //!
-//! **A lookup table does not go through either relation** (`Flat`, queue
-//! slices 22 and 25). A `case` whose every branch is a KEY — `_`, a literal,
+//! **A lookup table does not go through either relation** (`Flat`). A `case` whose every branch is a KEY — `_`, a literal,
 //! a nullary constructor, or a tuple/single-constructor wrapper of those — is
 //! a lookup table, and for one of those "is this row useful?" is set
 //! membership rather than a matrix specialisation — Maranget §4's
@@ -110,39 +109,35 @@ pub const max_examples = 3;
 /// Row visits and recursive steps one `case` may spend before it is
 /// refused.
 ///
-/// **Measured, not guessed**, and re-measured twice on 2026-09-18: by queue
-/// slice 22, when `Flat` took the quadratic out of a one-column lookup table,
-/// and by slice 25, when it took it out of a KEYED one. The note before those
-/// said 200 000 was nineteen times the costliest `case` in the repository and
-/// also that ~440 `Int` literals or ~310 constructors reached it — both true,
-/// and together they say the default refused ordinary code. The fix was the
-/// algorithm first and the number second, twice.
+/// **Measured, not guessed** (2026-09-18). `Flat` takes the quadratic out of
+/// one-column and KEYED lookup tables, so the default does not refuse
+/// ordinary code.
 ///
 /// What a lookup table costs, by turning the budget down until the answer
 /// changes (`n` branches plus a wildcard, except where the key is a complete
 /// product and needs none):
 ///
-/// | shape | before | now |
-/// |---|---|---|
-/// | 500 `Int` literals | 253 508 | **1 002** |
-/// | 2 000 `Int` literals | 4 014 008 | **4 002** |
-/// | 10 000 `Int` literals | ~100 000 000 | **20 002** |
-/// | 320 nullary constructors | 207 039 | **640** |
-/// | 2 000 nullary constructors | ~8 000 000 | **4 000** |
-/// | 500 `( Int, Int )` pairs | 757 514 | **3 002** |
-/// | 1 580 `( Int, Int )` pairs | 6 352 912 | **9 482** |
-/// | 5 000 `( Int, Int )` pairs | 55 075 006 | **30 002** |
-/// | 500 pairs of two 40-ctor enums | 527 090 | **3 002** |
-/// | 1 580 pairs of two 40-ctor enums | 5 343 192 | **9 482** |
-/// | 5 000 pairs of two 80-ctor enums | 50 473 290 | **30 002** |
+/// | shape | steps |
+/// |---|---|
+/// | 500 `Int` literals | **1 002** |
+/// | 2 000 `Int` literals | **4 002** |
+/// | 10 000 `Int` literals | **20 002** |
+/// | 320 nullary constructors | **640** |
+/// | 2 000 nullary constructors | **4 000** |
+/// | 500 `( Int, Int )` pairs | **3 002** |
+/// | 1 580 `( Int, Int )` pairs | **9 482** |
+/// | 5 000 `( Int, Int )` pairs | **30 002** |
+/// | 500 pairs of two 40-ctor enums | **3 002** |
+/// | 1 580 pairs of two 40-ctor enums | **9 482** |
+/// | 5 000 pairs of two 80-ctor enums | **30 002** |
 ///
 /// So a one-column table costs **2 per branch** and a pair **6** — three to
 /// simplify `( 1, 2 )` and three to walk and hash it — and neither squares.
-/// End to end in a Debug build, the 5 000-row pair goes from **6.3 s to
-/// 0.15 s** and the 5 000-row enum pair from **6.8 s to 0.22 s**.
+/// End to end in a Debug build, the 5 000-row pair checks in **0.15 s** and
+/// the 5 000-row enum pair in **0.22 s**.
 ///
 /// **What still squares** is a row the key path is not allowed to decide,
-/// which after slice 25 means one wildcard CELL in an otherwise concrete row:
+/// which means one wildcard CELL in an otherwise concrete row:
 /// `case ( a, b ) of ( 1, _ ) -> …`, a table with a per-row default. That is
 /// `Flat`'s CUT, it is still 2n², and 1 580 rows of it come to **5 087 257**
 /// steps. That is the shape this number is now sized for.
@@ -154,11 +149,9 @@ pub const max_examples = 3;
 /// under the depth guard. `parse/good/ManyBranches`, 100 `Int` branches and
 /// the old champion at ~10 500, spends **202**. The two tables themselves:
 /// `check/good/LookupTable`, 460 `Int` branches, **922**, and
-/// `check/good/PairLookupTable`, 1 800 pair rows that the default REFUSED
-/// before slice 25 at 6 587 936, **10 802**. (Each of the three tree maxima
-/// is one step higher than slice 22 measured, because `Flat` now charges for
-/// the node it looks at before it discovers it cannot read the shape. It used
-/// to peek for free; work done is work charged.)
+/// `check/good/PairLookupTable`, 1 800 pair rows, **10 802**. (`Flat` charges
+/// for the node it looks at before it discovers it cannot read the shape:
+/// work done is work charged.)
 ///
 /// **The default is 5 000 000**, by the rule "a budget a `case` a person
 /// wrote never meets, that still bounds an adversarial one to well under a
@@ -218,7 +211,7 @@ pub const Error = Allocator.Error;
 const Fail = Allocator.Error || Abort;
 
 // ---------------------------------------------------------------------------
-// The simplified pattern language, in `PatternStore.zig` since R12
+// The simplified pattern language, in `PatternStore.zig`
 // ---------------------------------------------------------------------------
 
 pub const PatIndex = PatternStore.PatIndex;
@@ -324,8 +317,8 @@ pub fn run(
 /// with no second "how many constructors has this type?" test to disagree
 /// with the first.
 ///
-/// **An answer that could not be computed is a refusal**, here and — since
-/// queue slice 14 — at a `case` too. The two messages differ because the two
+/// **An answer that could not be computed is a refusal**, here and at a
+/// `case` too. The two messages differ because the two
 /// ways out differ: this position has no branch to fall through to, so the
 /// advice is "`case` on it instead", while a `case` can be split or given a
 /// bigger budget. A matrix this file cannot READ (`error.Malformed`) is still
@@ -428,7 +421,7 @@ fn one(
     // answers are the same answers.
     var flat: Flat = .{ .arena = arena };
     var flat_column = true;
-    // Every admitted row by its head, for `usefulRow` (CK-167).
+    // Every admitted row by its head, for `usefulRow`.
     var heads: ColumnIndex.Heads = .{};
     for (branches, 0..) |b, i| {
         // The PATTERN, not the branch: a redundant branch is a statement
@@ -482,7 +475,7 @@ fn one(
 
     // A key space with every point taken is exhaustive, and saying so here
     // is what keeps `isExhaustive`'s arm that specialises by every
-    // alternative (linear since CK-167's `split`, but still a matrix built
+    // alternative (linear through `split`, but still a matrix built
     // per alternative) off a `case` that lists a hundred constructors, or
     // ten thousand pairs of them.
     // Every other answer is delegated, witnesses and all, so there is one
@@ -537,7 +530,7 @@ fn one(
 /// of which must be `_`/a variable/a record, a literal, or a constructor of a
 /// real choice that is **nullary or has only wildcard arguments** (`C x`
 /// matches every value `C` builds, so it is one point of its column exactly
-/// as `C` would be — CK-167). Anything else — a constructor with a narrower
+/// as `C` would be). Anything else — a constructor with a narrower
 /// argument that is one alternative of several, a column that mixes literals with
 /// constructors (which is `error.Malformed`, and whose silence is the general
 /// path's to keep), a row that unwraps to a different spine than the rows
@@ -581,10 +574,10 @@ fn one(
 ///
 /// The budget is charged **1 per node the walk visits**, which is what
 /// building and probing the key costs: 1 for a bare literal or nullary
-/// constructor, 3 for `( 1, 2 )`. That leaves a single-column table at the 2
-/// steps a branch it cost before this slice. It is not free:
-/// `--pattern-budget=1` still refuses the first branch of any `case`, which is
-/// what the black-box scenarios of queue slice 14 assert.
+/// constructor, 3 for `( 1, 2 )`. That leaves a single-column table at 2
+/// steps a branch. It is not free: `--pattern-budget=1` still refuses the
+/// first branch of any `case`, which is what the pattern-budget black-box
+/// scenarios assert.
 const Flat = struct {
     arena: Allocator,
     /// The spine the first all-concrete row fixed (`unwrap`'s tokens). A row
@@ -662,9 +655,9 @@ const Flat = struct {
                 // wildcard arguments — `C x`, `C _ _` — it is a key: it
                 // matches exactly the values built by `C`, whatever they
                 // carry, which is the point `rowKey` (the alternative) and
-                // `covered` (a point per alternative) take it for (CK-167:
-                // `C0 x -> … C1999 x ->` went through the general relation,
-                // quadratic, and ran out of budget). A narrower argument is
+                // `covered` (a point per alternative) take it for, so
+                // `C0 x -> … C1999 x ->` stays linear instead of going
+                // through the quadratic general relation. A narrower argument is
                 // exactly the recursion this path exists to avoid.
                 for (an.pats.args(c)) |arg| {
                     try an.spend(1);
@@ -815,8 +808,8 @@ const Analysis = struct {
     /// matrix can no more prove a branch redundant than it can prove one
     /// missing. So the whole `case` is refused, with a message that names the
     /// budget and the two ways past it. The three alternatives are all worse:
-    /// a wrong warning, a compiler that does not terminate, or — the one that
-    /// was here until queue slice 14 — silence, which hands an unproven
+    /// a wrong warning, a compiler that does not terminate, or silence,
+    /// which hands an unproven
     /// `case` to a decision tree that carries no default arm.
     /// `error{OverBudget}` and not `Abort`: running out of budget is the
     /// only way this can fail, and `Flat.admit` — which cannot go too deep

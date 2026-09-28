@@ -3,22 +3,22 @@
 //! **A wanted is one method requirement at one use**: "whatever type ends up
 //! as `receiver` has a method `method` of type `method_type` here". It is
 //! created by a `method` node (a dot-call, an operator, a `type_dispatch`),
-//! by instantiating a scheme with requirements (one per requirement: I5), or
+//! by instantiating a scheme with requirements (one per requirement), or
 //! by resolving another wanted (a sub-wanted: an instance's context, or a
-//! derived shape's position). It is answered exactly once (I6), by the
+//! derived shape's position). It is answered exactly once, by the
 //! resolver (`Resolve.zig`): a given, an instance, a primitive, a promotion
 //! to a parameter or the proven-undetermined default.
 //!
-//! **Where a wanted rides** (§4.1, *Decided by R5*, and as R6a writes it
-//! down). An OPEN wanted on a flex receiver is one entry of that flex's
+//! **Where a wanted rides** (§4.1). An OPEN wanted on a flex receiver is one entry of that flex's
 //! `Flags.constraints` — the shared set `Schemes.Writer` publishes and
 //! `Render` prints — so a flex's constraint set is exactly its open
 //! wanteds. The pairing is by POSITION in the store's append-only
 //! `constraints` table: `slots[p]` names the wanted (or, on a rigid, the
 //! given) whose entry sits at position `p`. A position never changes
-//! meaning, and every place v2 makes an entry — attaching, a merge's union,
-//! an instantiation's copy, an imported scheme's read — writes its slot in
-//! the same step. An entry v2 did not make (none today) reads `none`.
+//! meaning, and every place the checker makes an entry — attaching, a
+//! merge's union, an instantiation's copy, an imported scheme's read —
+//! writes its slot in the same step. An entry the checker did not make
+//! (none today) reads `none`.
 //!
 //! **A given is a `where` clause's requirement on an annotation's rigid
 //! variable** (§4.2): the rigid's own constraint set, read with the
@@ -26,8 +26,9 @@
 //! canonical order (§12.1). Rigid sets are never rebuilt, so a given's
 //! position is its identity.
 //!
-//! No write here is journalled: v2 has no speculation (§7.5), so I14 holds
-//! by absence — `Resolve` asserts that no snapshot is open.
+//! No write here is journalled: the checker has no speculation (§7.5), so
+//! nothing written during a probe can survive a rollback, by absence —
+//! `Resolve` asserts that no snapshot is open.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -86,12 +87,12 @@ pub const State = enum(u8) {
     /// consequence of one: a lineage whose root's message was said, a
     /// requirement of a call whose result met its expectation with one.
     failed,
-    /// Rejected in silence against `err` (§7.1, §12.2 *Amended by
-    /// R15-fix-A*): its receiver, or a descendant's, was poisoned, and the
-    /// poison's message is said wherever the `err` was made — this module
-    /// or a DEPENDENCY, whose `<error>` value an importer reads (CK-141).
-    /// So a poisoned wanted, unlike a `failed` one, does not mean this
-    /// module reported anything: P6 writes no site for it and I7 skips its
+    /// Rejected in silence against `err` (§7.1, §12.2): its receiver, or a
+    /// descendant's, was poisoned, and the poison's message is said
+    /// wherever the `err` was made — this module or a DEPENDENCY, whose
+    /// `<error>` value an importer reads. So a poisoned wanted, unlike a
+    /// `failed` one, does not mean this module reported anything: P6 writes
+    /// no site for it and the evidence-count assert skips its
     /// instruction, because the build that would lower it has an error
     /// somewhere and never reaches the backend.
     poisoned,
@@ -103,11 +104,11 @@ pub const State = enum(u8) {
 };
 
 /// What a wanted is bound to: the evidence TERM before elaboration (§4.2).
-/// P6 (R6b) turns these into `Dispatch.Term` trees; R6a records them.
+/// P6 turns these into `Dispatch.Term` trees; the resolver records them.
 pub const Answer = union(enum(u8)) {
     none,
     /// The `k`th evidence parameter of declaration `decl` (§4.3's
-    /// `Binder.decl`; `let_def` binders are R14's, derived ones R8a's): a
+    /// `Binder.decl`, a `let_def` or a derived row): a
     /// given, whose `k` is its annotation's own.
     param: struct { decl: u32, k: u32 },
     /// Promoted (§9.4): the requirement `(root, method)` of the group's
@@ -128,7 +129,7 @@ pub const Answer = union(enum(u8)) {
     /// The callee of a dot-call on a record's function field.
     field,
     /// An in-flight member of the group being checked (§10.3): its
-    /// arguments come from the member's final list (§12.3, R6b).
+    /// arguments come from the member's final list (§12.3).
     group_call: u32,
 };
 
@@ -154,20 +155,20 @@ pub const Wanted = struct {
     /// too (`joinField`): only then may a record met late answer it as a field
     /// call (static-dispatch-spike.md §11 *Deferred receiver*, amended
     /// 2026-09-26). A scheme's requirement joined in has no field accessor to
-    /// be (R7's round-2 review, X1). Kept on the older wanted, the one an
+    /// be. Kept on the older wanted, the one an
     /// `alias` chain ends at.
     field_ok: bool = false,
     /// When `field_ok` was cleared by a join: the requirement joined in, where
     /// a refusal on a record is reported (the use that needs a method).
     blocked_at: Bir.Inst.OptionalIndex = .none,
-    /// The `ready` queue of the frame current at creation (§9.1, round 4
-    /// R4-1): where a unification readies it, whichever frame unified.
+    /// The `ready` queue of the frame current at creation (§9.1): where a
+    /// unification readies it, whichever frame unified.
     frame: u32,
     state: State = .open,
     /// An instantiated requirement's quantifier name — the `a` of the
     /// callee's `where a.compare` — kept here because its receiver is
     /// bound to a type before a message about the clause is written
-    /// (static-dispatch-spike.md §10.13, CK-55).
+    /// (static-dispatch-spike.md §10.13).
     receiver_name: Symbol.Optional = .none,
 
     pub const no_decl: u32 = std.math.maxInt(u32);
@@ -213,7 +214,7 @@ pub const Slot = enum(u32) {
 
 /// One `ready` queue item: an obligation id, or a wanted id with this bit
 /// set. Both share one `seq`, so a queue of both drains in creation order
-/// (§9.1, round 4 S4-4).
+/// (§9.1).
 pub const queued_wanted: u32 = 1 << 31;
 
 pub const Callee = struct { inst: Bir.Inst.Index, wanted: WantedId };
@@ -230,14 +231,15 @@ slots: std.ArrayList(Slot) = .empty,
 callees: std.ArrayList(Callee) = .empty,
 
 /// Per instruction that instantiated a scheme with requirements, its
-/// wanteds in the scheme's canonical order (§4.2's `inst_evidence`, I5):
+/// wanteds in the scheme's canonical order (§4.2's `inst_evidence`), one
+/// per requirement:
 /// a range of `args`. P6 reads it as it stands.
 inst_evidence: std.ArrayList(InstEvidence) = .empty,
 /// Per annotated declaration with a `where` clause, its givens: a run of
 /// `givens`.
 given_ranges: std.AutoHashMapUnmanaged(u32, Range) = .empty,
 
-/// §9.5's class flag (CK-37): per concrete receiver root, the methods a
+/// §9.5's class flag: per concrete receiver root, the methods a
 /// rejection has already reported there. `Unify` moves a root's flags to
 /// the survivor of every merge (OR-merged on union).
 rejected: std.AutoHashMapUnmanaged(Var, std.ArrayList(Flag)) = .empty,
@@ -274,7 +276,7 @@ pub fn setRejected(e: *Evidence, gpa: Allocator, root: Var, flag: Flag) Error!vo
 
 /// A merge made `kept` the root of `dropped`'s class: its flags move there.
 pub inline fn mergeRejected(e: *Evidence, gpa: Allocator, dropped: Var, kept: Var) Error!void {
-    // Inline, with the rest out of line: most modules flag nothing (R14b).
+    // Inline, with the rest out of line: most modules flag nothing.
     if (dropped == kept or e.rejected.count() == 0) return;
     return mergeRejectedSlow(e, gpa, dropped, kept);
 }
@@ -360,8 +362,7 @@ pub fn position(store: *const TypeStore, set: TypeStore.ConstraintSet.Optional, 
 }
 
 /// What rides on `set` under `name`: nothing, its wanted, or an entry paired
-/// with none — which a live flex never has, and the caller says `internal`
-/// (review S2).
+/// with none — which a live flex never has, and the caller says `internal`.
 pub const Named = union(enum) { absent, unpaired, wanted: WantedId };
 
 pub fn named(e: *const Evidence, store: *const TypeStore, set: Walk.Constraints, name: Symbol) Named {

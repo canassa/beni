@@ -10,7 +10,7 @@
 //! is written as a `dropped_events` counter so a truncated trace says so.
 //! With the flag off, every entry point is one `enabled` check and a return.
 //!
-//! Counters are what the M4 incrementality tests assert ("dependents were not
+//! Counters are what the incrementality tests assert ("dependents were not
 //! re-checked"), which is why they exist before there is anything to count.
 
 const std = @import("std");
@@ -77,8 +77,8 @@ pub const Phase = enum {
     /// it**, inside the per-file phase (`fast-compiler.md` §8, `plans/m4-2.md`
     /// §6 A). Not a serial pass and not a pass of its own: that phase already
     /// does file I/O, is already parallel, and already reports nothing on
-    /// failure. Its own row because the cold-path cost of six times M4-1's
-    /// bytes is the number §6 B was argued on.
+    /// failure. Its own row because the cold-path cost of six times the module
+    /// cache's bytes is the number §6 B was argued on.
     frontend_store,
     /// Reading, validating, verifying and re-interning one file's front-end
     /// artifact, on the worker, in place of `read`+`lex`+`parse`+`lower`
@@ -111,7 +111,7 @@ pub const Phase = enum {
     /// between events: P5's eager derived contexts and rows, P6's
     /// elaboration into the dispatch table, P8's publication of the
     /// interface record, and P9's round trips, cycle check, evidence assert
-    /// and schema plan. Emitted by `--checker=v2` only (R8c).
+    /// and schema plan.
     derived,
     elaborate,
     publish,
@@ -144,7 +144,7 @@ pub const Counter = enum {
     /// silently stop formatting show up as a zero here.
     formatted_bytes,
     /// Modules in the graph, edges between them, and interfaces built
-    /// (checker.md §4). M4's incrementality tests assert these did NOT
+    /// (checker.md §4). The incrementality tests assert these did NOT
     /// move when only a body changed, which is why they exist now.
     modules,
     edges,
@@ -153,20 +153,19 @@ pub const Counter = enum {
     /// `beni build` wrote. They are counters and not a line on stdout
     /// because `frontend.md` §1 gives stdout to the product and stderr to
     /// diagnostics, and a build's product is the files themselves — so
-    /// "how much did it write" belongs in the trace, where M4's
+    /// "how much did it write" belongs in the trace, where the
     /// incrementality tests can assert that an edit rewrote ONE file.
     emitted_files,
     emitted_bytes,
-    /// The checker's work (checker.md §9). M4's incrementality tests assert
-    /// these did NOT move when only a body changed. `obligations` and the
-    /// five `constraints_*` counters were v1's, and went with it (R12): the
-    /// checker that stayed never wrote them.
+    /// The checker's work (checker.md §9). The incrementality tests assert
+    /// these did NOT move when only a body changed.
     unifications,
     generalisations,
     instantiations,
     /// v2's derived-context fixpoints over the modules it checked
     /// (`Check.Counters.derived_context_runs`): 0 on a fully warm run, the
-    /// I10 witness (checker-v2.md §14.3 *as built by R10*).
+    /// witness that a cache hit installs the published derived contexts
+    /// instead of recomputing them (checker-v2.md §14.3).
     derived_context_runs,
     /// The persistent cache (`fast-compiler.md` §8). Modules whose entry was
     /// loaded and installed, modules whose entry was absent or unusable, and
@@ -183,8 +182,8 @@ pub const Counter = enum {
     /// Bytes written to the cache directory this run, over the entries that
     /// were actually stored. Zero without `--cache-dir`.
     cache_bytes,
-    /// The front-end cache (`fast-compiler.md` §8, M4-2). **These three are
-    /// the load-bearing half of the slice**: a phase that did not run is
+    /// The front-end cache (`fast-compiler.md` §8). **These three are
+    /// the load-bearing half of the cache's tests**: a phase that did not run is
     /// otherwise indistinguishable from a phase that ran fast, and §12's rule
     /// that a cost which does not appear in the trace defeats the instrument
     /// has a converse — a SAVING that does not appear in a counter is a

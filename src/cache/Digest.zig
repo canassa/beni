@@ -15,7 +15,7 @@
 //! types     type_count: u32, then per type in the set below, sorted by name
 //!           TEXT:
 //!             name_len: u32, name
-//!             arity: u16               (a `u8` in version 1: CK-38)
+//!             arity: u16               (a `u8` in version 1)
 //!             kind: u8                 adt | alias | foreign
 //!             flags: u8                bit 0 opaque, bit 1 equatable,
 //!                                      bit 2 comparable, bit 3 has_function
@@ -64,7 +64,7 @@
 //! set names, which reaches the same answer as expanding the aliases would, in
 //! linear time and with no blow-up. A private type nothing mentions is still in
 //! no record, no dependent can name it, and it is still in no digest — which is
-//! what keeps `plans/m4-1.md` §6.1's row 5.
+//! what keeps adding such a type from moving any dependent's key.
 //!
 //! **Sorted by name TEXT and keyed by NAME, never by ordinal and never by
 //! `TypeId`**: a `TypeId` is a whole-program dense index and a declaration
@@ -91,8 +91,8 @@ pub const magic = "BENIDEP\x00";
 /// inside the module key, so a bump discards every entry — the only migration
 /// a cache ever needs.
 ///
-/// Version 2 (slice R3, `checker-v2.md` §14.2): `arity` is a `u16`, with
-/// interface v3's `Type.arity` (CK-38).
+/// Version 2 (`checker-v2.md` §14.2): `arity` is a `u16`, with
+/// interface v3's `Type.arity`.
 pub const digest_version: u32 = 2;
 
 pub const Digest = [16]u8;
@@ -352,8 +352,8 @@ pub fn collect(
     //    table", and derivation is EAGER — `Check` derives `eq` and `compare`
     //    for every nominal type the module declares, used or not (A.23) — so
     //    the unrestricted set moves when a PRIVATE type nothing names is added,
-    //    which is §10.1 row 7 and `plans/m4-1.md` §6.1's row 5, the one the
-    //    whole `TypeId`-is-not-a-dependency argument exists to keep. Measured:
+    //    which is the case the whole `TypeId`-is-not-a-dependency argument
+    //    exists to keep (`checker.md` §10.1). Measured:
     //    without the restriction, adding `type Unmentioned = U Int` to a leaf
     //    moved every digest in the project. A dependent names a derived
     //    function through `ext_derived`, which spells the TYPE, so a row it
@@ -464,8 +464,8 @@ fn push(scratch: Allocator, ids: *IdSet, id: Types.TypeId) Allocator.Error!void 
 }
 
 /// The digest's type set: the ids in first-pushed order, and one bit per type
-/// of the module for membership (CK-143: the linear `contains` it replaced
-/// made the digest quadratic in a module's types). Every id pushed is the
+/// of the module for membership (a linear `contains` would make the digest
+/// quadratic in a module's types). Every id pushed is the
 /// module's own (`Types.find` of its own name, `type_body.collectLocal*`), so
 /// the bits cover the module's range of the table; an id outside it would be
 /// a broken invariant, and is ignored rather than trusted.

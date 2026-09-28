@@ -4,7 +4,7 @@
 //! Elm code — module docs, a few imports, a record alias, a custom type,
 //! `init`/`update`/`view`-style functions, mostly small helpers, some large
 //! `case`, records, pipelines, lambdas, interpolated and multiline strings —
-//! in the language of docs/design/language.md, so the M1 front end runs over
+//! in the language of docs/design/language.md, so the front end runs over
 //! it clean. The §2 performance budget is stated against this corpus, so it
 //! must be honest: every construct here is one the grammar (§3) and the
 //! layout rules (§4) accept, and nothing here shadows, duplicates or leaves a
@@ -68,10 +68,10 @@ pub const default_seed: u64 = 0xBE21;
 ///   - one module in sixteen builds a `Dict` and a `Set` with **no**
 ///     comparator argument (§5.3), through method calls `acc.insert k v`.
 ///
-/// **The dispatch tree does not parse until S2 lands the `where` clause.**
-/// The dot-call form already parses (§1.1: `x.m a` needs no grammar
-/// change), so what stops it today is the annotations, not the calls. It is
-/// generated now so the harness, the baselines and the file-list comparison
+/// The dot-call form needs no grammar change (§1.1: `x.m a`); the `where`
+/// clauses in the annotations are what the dispatch tree adds. It was
+/// generated before either parsed, so the harness, the baselines and the
+/// file-list comparison
 /// are in place before the language changes under them.
 pub const Mode = enum { plain, dispatch };
 
@@ -166,7 +166,7 @@ pub fn moduleCount(seed: u64, target_lines: u64) !u32 {
 ///     `builders` does not, so the record term moves with `width` alone.
 pub const WideShape = struct {
     /// Fields in the `Wide` alias, and so in every literal and update over
-    /// it. Floored at the 100 the review asked for and capped at 800,
+    /// it. Floored at 100 and capped at 800,
     /// which is the widest record the quadratic was ever measured at;
     /// past that the file is mostly one record.
     width: u32,
@@ -442,7 +442,7 @@ const Wide = struct {
 /// does not carry ten megabytes of `1, 1, 1, …` forever.
 ///
 /// Only `big-list` is over the 200 ms that earns a permanent place (500 ms,
-/// 228 MB peak at M1d); the other three are here because they are the same
+/// 228 MB peak when measured); the other three are here because they are the same
 /// shape one size down and are what the next regression will be measured
 /// against.
 pub const Pathological = struct {
@@ -490,8 +490,8 @@ pub const Pathological = struct {
         /// change), so on `master` this module is a chain of *row-polymorphic
         /// field calls* — `x` is inferred as an open record of `n` function
         /// fields — and the baseline it produces measures record extension
-        /// and field lookup, NOT method constraints. After S3 the same bytes
-        /// are a chain of `n` METHOD CONSTRAINTS on a type variable.
+        /// and field lookup, NOT method constraints. With static dispatch the
+        /// same bytes are a chain of `n` METHOD CONSTRAINTS on a type variable.
         ///
         /// The two numbers are therefore both meaningful and must never be
         /// read as before/after of the same mechanism: the `master` run is
@@ -594,7 +594,7 @@ pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!voi
 /// (`a -> Int`, `n` constraints) rather than growing a result variable per
 /// link as well.
 ///
-/// On `master` and on this branch before S3 the same text checks CLEAN as a
+/// Without static dispatch the same text checks CLEAN as a
 /// chain of row-polymorphic field calls; see `Pathological.Case` for why the
 /// two baselines are not the same measurement.
 fn writeConstraintChain(w: *Io.Writer, n: u32) Io.Writer.Error!void {
@@ -605,7 +605,7 @@ fn writeConstraintChain(w: *Io.Writer, n: u32) Io.Writer.Error!void {
         \\--!
         \\--! This checks clean BEFORE static dispatch too, as a chain of
         \\--! row-polymorphic field calls on an open record of `n` function fields.
-        \\--! After S3 the same bytes are `n` method constraints on a type variable.
+        \\--! With dispatch the same bytes are `n` method constraints on a type variable.
         \\--! The two runs measure different mechanisms and are labelled separately.
         \\
         \\
@@ -1263,7 +1263,7 @@ const Module = struct {
         // declarations are private in both trees, and this one is annotated
         // exactly when the plain one would have been. Interface writing is
         // what §7 M1b is most sensitive to (`fillInterface` is per exported
-        // value; the M2d entry in bench/README.md measures it at 19x), so a
+        // value; the 2026-09-13 entries in bench/README.md measure it at 19x), so a
         // dispatch tree with 14 % more `pub` values would report the cost of
         // exporting as a cost of dispatch.
         //
@@ -1677,7 +1677,7 @@ const Module = struct {
         // through an `exposing` list that does not name it, or through an
         // alias. This is the call shape that forces an implicit graph edge,
         // and the reason the generated corpus is worth running the checker
-        // over at all once S3 lands.
+        // over at all.
         if (g.exposed_count > 0 and g.chance(50)) {
             const k = g.exposed[g.rng.uintLessThan(usize, g.exposed_count)];
             if (g.dispatch()) {
@@ -1899,9 +1899,7 @@ test "the dispatch corpus is a pure function of seed and index, and is not the p
 }
 
 test "dispatch modules respect the lexical rules the lexer enforces" {
-    // The same claim the plain corpus makes. It is the ONLY end-to-end
-    // statement available about the dispatch tree until S2 lands the
-    // syntax, because until then `beni check` on it cannot parse.
+    // The same claim the plain corpus makes, about the dispatch tree.
     var out: Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
     for (0..40) |i| {
@@ -1929,8 +1927,8 @@ test "the dispatch tree is the same project as the plain one, written with dispa
     //
     //   - the module list and the declaration names (the project itself);
     //   - the count of `pub` values, because writing the interface is what
-    //     the checker is most sensitive to (bench/README.md's M2d entry
-    //     measures `fillInterface` at 19x on a module whose declarations
+    //     the checker is most sensitive to (bench/README.md's 2026-09-13
+    //     entries measure `fillInterface` at 19x on a module whose declarations
     //     are `pub`);
     //   - the count of ANNOTATED declarations, because an annotation is a
     //     written type to check against rather than one to infer;

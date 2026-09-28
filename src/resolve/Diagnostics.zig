@@ -1,4 +1,4 @@
-//! The prose for the M2a resolution diagnostics (checker.md §8, language.md
+//! The prose for the name-resolution diagnostics (checker.md §8, language.md
 //! §10), kept apart from the pass that finds them for the reason the lexer's
 //! and the parser's are: an item is `(code, where, a name or two)` while the
 //! pass runs, and the sentences are written only for the items that survive
@@ -44,7 +44,7 @@ pub const Context = struct {
 
 pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Writer.Error!void {
     switch (code) {
-        // Elm's `exposing (T(..))` (CK-47, D8 as amended). The parser
+        // Elm's `exposing (T(..))`. The parser
         // reported it at the `(`; this is the same diagnostic with the
         // constructors the imported module's interface lists — `available`
         // — spelled into the form beni wants (language.md §5.2).
@@ -57,7 +57,7 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             , .{ cx.name, cx.name, cx.name });
             // A constructor with the type's own name is exposed by naming
             // the type (language.md §5.2): listing it again is refused as a
-            // duplicate (checker.md §8.7, CK-86).
+            // duplicate (checker.md §8.7).
             var same_name = false;
             for (cx.available) |ctor| {
                 if (std.mem.eql(u8, ctor, cx.name)) {
@@ -231,7 +231,7 @@ fn expectMessage(expected: []const u8, code: diagnostic.Code, cx: Context) !void
     try testing.expectEqualStrings(expected, out.written());
 }
 
-test "every M2a resolution code renders prose naming what failed" {
+test "every name-resolution code renders prose naming what failed" {
     try expectMessage(
         "I cannot find a module named `Json.Decode`.\n\nI looked in this project and in the core package. Check the spelling, or check\nthat a file named `Json.Decode.beni` exists under the source root.",
         .unknown_module,

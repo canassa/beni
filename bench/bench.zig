@@ -20,7 +20,7 @@
 //! `docs/design/static-dispatch-spike.md` instead — the same modules, the same
 //! declaration names, the same size, with method calls, `where` clauses,
 //! `==` on records and custom types and comparator-free `Dict`/`Set`; it is
-//! the C1 corpus of that plan's §7 and it does NOT parse until S2).
+//! the C1 corpus of that plan's §7).
 //!
 //! `--pathological=constraint-chain=<n>` is the §7 M2 case: `n` unannotated
 //! `pub` functions, each adding one method constraint to the scheme the one
@@ -181,7 +181,7 @@ pub fn main(init: std.process.Init) !u8 {
     // Outside `total`: serializing an interface is not a phase of a cold
     // build and never runs in one. It is the row `plans/m4-slice-zero.md`
     // §8 items 1–3 ask for, so a warm build's cost can be argued about
-    // with numbers before D1 is taken.
+    // with numbers.
     const ifaces = try measureIface(gpa, io, corpus, options.iterations);
     try printIfaceLine(stdout, ifaces);
 
@@ -497,7 +497,7 @@ fn measureLower(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
 /// The serial half of `check` (checker.md §4): the module graph and
 /// cross-module resolution, over a project that has ALREADY been lowered.
 /// Measured through a whole `Session` rather than by calling `Graph.build`
-/// directly, because what M2a has to keep honest is the cost `check` pays
+/// directly, because what this line has to keep honest is the cost `check` pays
 /// — including the core package, which every run now carries.
 const ResolveMeasurement = struct {
     modules: u64 = 0,
@@ -564,8 +564,8 @@ const CheckMeasurement = struct {
     instantiations: u64 = 0,
     /// The derived-context fixpoints v2 ran (`Contexts.run`, checker-v2.md
     /// §11.2), summed over the modules it CHECKED. A module installed from
-    /// the cache runs none: its rows are read off its record (I10, §14.3 *as
-    /// built by R10*), which is what a warm run's 0 here says.
+    /// the cache runs none: its rows are read off its record (checker-v2.md
+    /// §14.3), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
     diagnostics: u64 = 0,
     /// The check step alone.
@@ -712,7 +712,7 @@ fn printEmitLine(writer: *Io.Writer, m: EmitMeasurement) !void {
 /// used to print nothing at all, which is the one failure mode a benchmark
 /// line must not have — a missing field reads as "the feature costs
 /// nothing" rather than as a bug.
-/// The serialized interface (M4 slice zero): how big a module's record is,
+/// The serialized interface: how big a module's record is,
 /// what the three operations over it cost, and what a whole check costs
 /// with every record round-tripped.
 ///

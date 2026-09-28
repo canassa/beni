@@ -21,8 +21,7 @@
 //! first `evidence` line, so neither can be mistaken for the other; below
 //! those two keywords, arguments are bare terms (checker-v2.md §13.2).
 //!
-//! **A shared term is printed once** (CK-136, §13.2 as amended by
-//! R15-fix-B): a term more than one owner names, with arguments of its own,
+//! **A shared term is printed once** (checker-v2.md §13.2): a term more than one owner names, with arguments of its own,
 //! prints in full as `<term> #<n>` the first time and as `<term> = #<n>`
 //! after, so the dump is linear in the table rather than in its paths.
 
@@ -61,7 +60,7 @@ pub fn write(
     // else; one with any prints every value declaration in SOURCE order, so
     // the requirement lists read as the parameter lists they are.
     if (dispatch.isEmpty()) return;
-    // Which terms more than one owner names (CK-136): the table shares
+    // Which terms more than one owner names: the table shares
     // terms, and a tree printed as a tree is exponential in a doubling DAG.
     // The same count `js/Lower.zig`'s `readTable` takes.
     const labels = try gpa.alloc(u32, dispatch.terms.len);
@@ -84,7 +83,8 @@ pub fn write(
         try w.print("  decl {s} evidence={d} arity={d} convention={s}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, info.value_arity, @tagName(info.convention) });
         for (requirements, 0..) |e, k| try cx.writeRequirement(w, k, e);
     }
-    // D5's promoting `let` function bindings (§13.1 *amended by R14*), by
+    // The `let` function bindings that generalise and promote their
+    // requirements (checker-v2.md §8.4, §13.1), by
     // instruction, each with its requirement list.
     for (dispatch.lets) |let| {
         const r = let.requirements;
@@ -180,8 +180,7 @@ const Context = struct {
     ///
     /// A SHARED term with arguments is printed in full once, the first time
     /// the dump reaches it, as `<term> #<n>`; every later occurrence is
-    /// `<term> = #<n>` with nothing under it (CK-136, checker-v2.md §13.2 as
-    /// amended by R15-fix-B). `n` counts in print order, so it is as stable
+    /// `<term> = #<n>` with nothing under it (checker-v2.md §13.2). `n` counts in print order, so it is as stable
     /// as the lines around it. A term with no arguments prints the same one
     /// line either way and is never labelled.
     fn writeTermLine(cx: *Context, w: *std.Io.Writer, i: Dispatch.TermIndex, level: usize) Error!void {

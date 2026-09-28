@@ -18,11 +18,11 @@
 //!
 //! **Format v3** carries checker-v2.md §13.1's tree record: the `terms` and
 //! `args` of every evidence tree, one `site` per instruction, `decls` with
-//! their arity and calling convention (§12.5; byte 10 of the row, added by
-//! R2b — v2, R2a's, had no convention), the (empty until R14) `lets`,
+//! their arity and calling convention (§12.5; byte 10 of the row, which
+//! format v2 did not have), the `lets`,
 //! `requirements`, each derived function's `contexts` and `body`. Version 1
 //! held the flat sites and `parts` of static-dispatch-spike.md §7.1; a v1 or
-//! v2 sidecar is a miss. Version 4 (R8a, CK-82) widens a context entry's `param`
+//! v2 sidecar is a miss. Version 4 widens a context entry's `param`
 //! to a `u32` in the same 8-byte row: a record past 65 535 fields has that
 //! many positions.
 //!
@@ -344,10 +344,9 @@ const Writer = struct {
     seen: std.StringHashMapUnmanaged(u32) = .empty,
     module_refs: std.ArrayList(ModuleRow) = .empty,
     type_refs: std.ArrayList(TypeRow) = .empty,
-    /// Row → its index in `module_refs` / `type_refs`. The tables were
-    /// searched linearly, once per term and per derived row's shape, which
-    /// made writing a module of n types' dispatch table O(n²): CK-107,
-    /// `cache_store` at 20 / 72 ms for 6 000 / 12 000 types. The rows keep
+    /// Row → its index in `module_refs` / `type_refs`, so the tables are not
+    /// searched linearly once per term and per derived row's shape, which
+    /// would make writing a module of n types' dispatch table O(n²). The rows keep
     /// their first-occurrence order, so the bytes do not move.
     module_index: std.AutoHashMapUnmanaged(ModuleRow, u32) = .empty,
     type_index: std.AutoHashMapUnmanaged(TypeRow, u32) = .empty,
@@ -475,7 +474,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Globa
     return decode(gpa, bytes, &in);
 }
 
-/// `read`, through `getOrPut`. M4-1's cross-process load is the case that
+/// `read`, through `getOrPut`. The cache's cross-process load is the case that
 /// can legitimately miss — a name this session never interned — and it runs
 /// serially before any worker starts, which is where growing the pool
 /// belongs.
@@ -788,7 +787,7 @@ pub fn verify(l: *const Loaded) bool {
             .derived => |u| if (u.index >= d.derived.len) return false,
             // `decls` has one row per `Bir.Decl` of the module (`finish`),
             // so it bounds a `top` without the Bir: `Lower.termName` indexes
-            // `bir.decls` with only a debug assert (review of R2a, N5).
+            // `bir.decls` with only a debug assert.
             .top => |u| if (u.decl.int() >= d.decls.len) return false,
             .param => |p| switch (p.binder) {
                 .derived => |index| if (index >= d.derived.len) return false,
@@ -1219,7 +1218,7 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
 }
 
 test "an argument that does not follow its owner is BadSidecar, not a cycle handed to the backend" {
-    // checker-v2.md §13.1 as amended by R2a: terms are allocated in
+    // checker-v2.md §13.1: terms are allocated in
     // pre-order, so every argument's index is greater than its owner's, and
     // that is what lets every walker recurse without a guard. A file is not
     // trusted to keep the rule: `verify` checks it, so a sidecar whose term
@@ -1250,7 +1249,7 @@ test "an argument that does not follow its owner is BadSidecar, not a cycle hand
 }
 
 test "a top term naming a declaration past the module's is BadSidecar" {
-    // Review of R2a, N5: `Lower.termName` indexes `bir.decls` by a `top`
+    // `Lower.termName` indexes `bir.decls` by a `top`
     // term's declaration with only a debug assert, so an index past the
     // module's declarations must not survive the load. `decls` has one row
     // per `Bir.Decl` (`Module.zig`'s P6 writes one each), which bounds it without
@@ -1277,7 +1276,7 @@ test "a top term naming a declaration past the module's is BadSidecar" {
 }
 
 test "a decl row whose convention finish could not have written is BadSidecar" {
-    // R2b (checker-v2.md §12.5): `Convention.of` makes a row `plain` exactly
+    // checker-v2.md §12.5: `Convention.of` makes a row `plain` exactly
     // when it has no requirements, and a `thunk` only at arity 0. A row that
     // says otherwise would hand `Lower` a definition and its callers two
     // different conventions, so it is refused on load like any other

@@ -1,5 +1,5 @@
 //! The checker → backend dispatch table (docs/design/checker-v2.md §13, which
-//! replaced static-dispatch-spike.md §7's flat record at slice R2a): one per
+//! replaced static-dispatch-spike.md §7's flat record): one per
 //! module, flat, index-based, immutable once built.
 //!
 //! The backend sees no types (`backend.md` §3), so everything the checker
@@ -11,10 +11,8 @@
 //! as `args`, a range of further terms, so the shape of the hidden arguments
 //! is IN the table and nothing downstream recounts it (§13.3).
 //!
-//! **One vocabulary.** Until R12 a second one lived here too: v1's flat form
-//! of static-dispatch-spike.md §7 (`Target`, `FlatSite`, `FlatDerived` and
-//! the `Builder` whose `finish` converted them into trees). It went with v1;
-//! the checker writes the trees directly (checker-v2.md §12.2, `Unit.zig`).
+//! **One vocabulary.** The checker writes the trees directly (checker-v2.md
+//! §12.2, `Unit.zig`); there is no flat form to convert from.
 //!
 //! **Sorted before anything indexes it.** `derived` is sorted by emitted name
 //! text before the table is published, and every `derived` term and `Binder.derived`
@@ -95,12 +93,12 @@ pub const TermIndex = enum(u32) {
     };
 };
 
-/// What a `param` term's `k` counts the requirements OF (§13.1, amended by
-/// R2a). `decl` carries no index: a site belongs to exactly one declaration,
+/// What a `param` term's `k` counts the requirements OF (§13.1).
+/// `decl` carries no index: a site belongs to exactly one declaration,
 /// the one whose instruction range holds it.
 pub const Binder = union(enum(u8)) {
     decl,
-    /// A generalised constrained `let` function binding (D5, R14): its
+    /// A generalised constrained `let` function binding (§8.4): its
     /// `let_def`, which has a row of `lets`.
     let: Bir.Inst.Index,
     /// A derived function's context entry, by SORTED `derived` index.
@@ -123,14 +121,12 @@ pub const Term = union(enum(u8)) {
     ext_derived: ExtDerivedUse,
     primitive: Primitive,
     /// §9.4's proven-undetermined default, lowered as the structural answer
-    /// (`Basics.eq`, or `num_compare` for `compare`). v1's converter wrote
-    /// it for a legacy `err` PART, which is exactly how `Lower` answered one
-    /// before R2a (checker-v2.md §13.1).
+    /// (`Basics.eq`, or `num_compare` for `compare`) (checker-v2.md §13.1).
     undetermined,
     /// A record receiver: a plain field call. A callee only.
     field,
 
-    /// `k` is a `u32` since dispatch format 4 (R8a's reviews): a derived row
+    /// `k` is a `u32` since dispatch format 4: a derived row
     /// can have more than 65 535 context entries or positions.
     pub const Param = struct { binder: Binder, k: u32 };
     pub const Top = struct { decl: Bir.DeclIndex, args: Range = .empty };
@@ -181,9 +177,8 @@ pub const DeclInfo = struct {
     convention: Convention = .plain,
 };
 
-/// A generalised constrained `let` function binding (D5). The column existed,
-/// EMPTY, from R2a, and R14 fills it (checker-v2.md §13.1 *amended by R14*),
-/// with no format bump (N6).
+/// A generalised constrained `let` function binding (checker-v2.md §8.4,
+/// §13.1).
 pub const LetInfo = struct { inst: Bir.Inst.Index, requirements: Range };
 
 /// One evidence parameter: which quantifier of its scheme it came from, and
@@ -194,11 +189,11 @@ pub const Requirement = struct {
     method: Symbol,
 };
 
-/// One evidence parameter of a derived function (D4). v1 writes "one per
-/// type parameter, field or element, method = the derived method" — its ABI.
+/// One evidence parameter of a derived function: one per entry of its
+/// inferred context (checker-v2.md §11.2).
 pub const ContextEntry = struct {
-    /// A `u32` since dispatch format 4 (checker-v2.md §11.2 *as built by
-    /// R8a*, CK-82): a structural row has one entry per position, and a
+    /// A `u32` since dispatch format 4 (checker-v2.md §11.2): a structural
+    /// row has one entry per position, and a
     /// record past 65 535 fields has more positions than a `u16` counts.
     param: u32,
     method: Symbol,
@@ -244,7 +239,7 @@ args: []const TermIndex = &.{},
 sites: []const Site = &.{},
 /// One per `Bir.Decl`.
 decls: []const DeclInfo = &.{},
-/// One per promoting `let` function binding, sorted by `inst` (D5, R14).
+/// One per promoting `let` function binding, sorted by `inst` (§8.4).
 lets: []const LetInfo = &.{},
 requirements: []const Requirement = &.{},
 contexts: []const ContextEntry = &.{},
@@ -352,7 +347,7 @@ pub fn shapeNames(d: *const Dispatch, r: Range) []const Symbol {
 }
 
 // ---------------------------------------------------------------------------
-// Counting, once (I7)
+// Counting, once (the evidence-count invariant)
 // ---------------------------------------------------------------------------
 
 /// `Convention.of` over declaration `i` of `bir` (checker-v2.md §12.5): its
@@ -382,14 +377,12 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
 }
 
 /// Another module's derived `kind` of type `id`, as its declaring module
-/// published it (checker-v2.md §14.2 *as amended by R8a*): the record and
+/// published it (checker-v2.md §14.2): the record and
 /// the context range of its row — exported or hidden — or null when the
 /// record has none. A record the checker writes has a row for every type
 /// it can reach (§14.2), so a null is a record that disagrees with the term
-/// that names the type. Until R12 a null read as v1's ABI — one entry per
-/// type parameter, each the derived method — because v1's records had no
-/// hidden rows; R12 deleted v1, and a null now counts no evidence, which
-/// I7 then refuses as `internal` rather than answering for a record no
+/// that names the type. A null counts no evidence, which the evidence-count
+/// check then refuses as `internal` rather than answering for a record no
 /// checker wrote.
 pub fn publishedContext(interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global, id: TypeId, kind: Derived.Kind) ?struct { iface: *const Interface, row: Interface.Derived } {
     if (id == .none) return null;
@@ -418,7 +411,7 @@ fn publishedMethod(interfaces: []const Interface, types: *const Types, interner:
     return p.iface.symbol(e.method);
 }
 
-/// How many evidence arguments the function a term names takes (I7):
+/// How many evidence arguments the function a term names takes:
 /// `DeclInfo` for a value of this module, the interface scheme for an
 /// imported one, the context for a derived function and, for another
 /// module's derived function, its published context's length (§14.2).
@@ -438,7 +431,7 @@ pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interfa
 
 /// The requirement count of the value a Bir REFERENCE names: a `top`, an
 /// `ext_value`, or a `local` naming a generalised `let` function binding
-/// with requirements (D5, checker-v2.md §13.1 *amended by R14*) — whose
+/// with requirements (checker-v2.md §13.1) — whose
 /// local index is `owner`'s, the declaration holding the reference, which a
 /// caller that met no `let` row may leave null. Anything else — a lambda, a
 /// constructor, any other local — takes none.
@@ -505,7 +498,8 @@ fn ownerAt(owners: []const u32, inst: u32) ?u32 {
     return owners[inst];
 }
 
-/// I7 (checker-v2.md §2, §13.1): every term's argument count is its callee's
+/// The evidence-count invariant (checker-v2.md §2, §13.1): every term's
+/// argument count is its callee's
 /// requirement count, and every site's root count is the instantiated
 /// scheme's. Appends the instruction of every site that breaks it — and, for
 /// a derived row whose body does, the type's first instruction — to `out`.
@@ -516,7 +510,7 @@ fn ownerAt(owners: []const u32, inst: u32) ?u32 {
 /// `method_call`/`type_dispatch` site with no callee.
 ///
 /// A PREDICATE over the table, with nothing reported: its caller
-/// turns each instruction into one `internal`, never a panic (S10).
+/// turns each instruction into one `internal`, never a panic.
 pub fn checkI7(
     d: *const Dispatch,
     bir: *const Bir,
@@ -696,9 +690,8 @@ const I7 = struct {
 
     /// Whether term `i` and everything below it add up, given the answer
     /// for every term after it: one pass from the last term to the first,
-    /// so a term SHARED by several owners (checker-v2.md §13.1 as amended by
-    /// R6b) is judged once — the recursive walk this replaced was
-    /// exponential on a doubling DAG (CK-80).
+    /// so a term SHARED by several owners (checker-v2.md §13.1) is judged
+    /// once — a recursive walk would be exponential on a doubling DAG.
     fn localOk(cx: I7, below: []const bool, i: u32) bool {
         const d = cx.d;
         const t = d.terms[i];
@@ -719,8 +712,7 @@ const I7 = struct {
 
     const Visit = struct { term: u32, ctx: u8, method: Symbol.Optional };
 
-    /// Where an `undetermined` leaf may stand (§13.1 as amended by R6b's
-    /// review, B1 and CK-103): `Lower` takes its method from the nearest
+    /// Where an `undetermined` leaf may stand (§13.1): `Lower` takes its method from the nearest
     /// `derived`/`ext_derived` ancestor (or row, for a body position), so it
     /// must have one, of the method its slot asks for. Everywhere else the
     /// table must name the structural function. Each `(term, ancestor kind,
@@ -730,7 +722,7 @@ const I7 = struct {
     fn placement(cx: I7, bir: *const Bir, gpa: Allocator, out: *std.ArrayList(Bir.Inst.Index)) Allocator.Error!void {
         const d = cx.d;
         // `placed` refuses only at an `undetermined` term, so a table with
-        // none has nothing to place: most tables (R14b).
+        // none has nothing to place: most tables.
         for (d.terms) |t| {
             if (t == .undetermined) break;
         } else return;
@@ -756,7 +748,7 @@ const I7 = struct {
             if (@as(u64, site.evidence.start) + site.evidence.len > d.args.len) continue;
             stack.clearRetainingCapacity();
             var owner: ?Term = null;
-            // A `let` callee's slots are its own list's (§13.1 *amended by R14*).
+            // A `let` callee's slots are its own list's (§13.1).
             var let_slots: []const Requirement = &.{};
             if (site.callee.unwrap()) |callee| {
                 if (callee.int() >= d.terms.len) continue;
@@ -849,9 +841,9 @@ const TestBir = struct {
     }
 };
 
-test "the I7 assert refuses a hand-corrupted table and accepts the table it came from" {
-    // checker-v2.md §13.1: I7 is asserted and its caller reports each
-    // violation as `internal`, never a panic (S10). A PREDICATE here, so the
+test "the evidence-count assert refuses a hand-corrupted table and accepts the table it came from" {
+    // checker-v2.md §13.1: the evidence count is asserted and its caller
+    // reports each violation as `internal`, never a panic. A PREDICATE here, so the
     // corruption can be made by hand: one argument too few, one root too
     // many, an argument that points BACK at its owner, and a method call
     // with no callee.
@@ -863,8 +855,7 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     tb.insts.items(.data)[2] = .{ .lhs = 1, .rhs = 0 };
     tb.bir.insts = tb.insts.slice();
 
-    // A correct table, written as the trees it is (R12 deleted v1's flat
-    // builder, which these tests used to go through): the call passes
+    // A correct table, written as the trees it is: the call passes
     // declaration 0 its one argument, which is itself `top 0` applied to a
     // primitive, and the method call's callee is a primitive.
     const requirements = [_]Requirement{.{ .quantified = 0, .var_name = .none, .method = @enumFromInt(1) }};
@@ -937,8 +928,8 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     try testing.expectEqual(@as(usize, 0), bad.items.len);
 }
 
-test "the I7 assert accepts a term shared by two owners and judges it once" {
-    // checker-v2.md §13.1 as amended by R6b: a table may share a term (a DAG
+test "the evidence-count assert accepts a term shared by two owners and judges it once" {
+    // checker-v2.md §13.1: a table may share a term (a DAG
     // whose every argument still follows every owner). Declaration 0 takes
     // two requirements; the call passes two roots, each `derived 0` (one
     // context entry) over the SAME primitive term.

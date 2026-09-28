@@ -163,8 +163,8 @@ pub fn declEdges(
     // Through the rows this module derives: a derived function RUNS the
     // values its body names when it is called, so a constant that calls one
     // depends on them — for its place in emission order and for the cycle
-    // check (CK-104: `main` calling `Main$W$$eq`, whose body reads a
-    // `Main$key` emitted after `main`, threw at load).
+    // check (else `main` calling `Main$W$$eq`, whose body reads a
+    // `Main$key` emitted after `main`, would throw at load).
     try termsEdges(out, scratch, dispatch, roots.items, true);
 }
 
@@ -194,9 +194,9 @@ pub fn termEdges(
 /// TERM ONCE. A `param` is a parameter and a `field` is a property read, so
 /// neither names anything that is emitted.
 ///
-/// A table may share a term between owners (checker-v2.md §13.1 as amended
-/// by R6b: v2 writes one term per distinct answer of a site, so `==` on a
-/// type that is a doubling DAG is linear in its distinct nodes, CK-80), and
+/// A table may share a term between owners (checker-v2.md §13.1: the
+/// checker writes one term per distinct answer of a site, so `==` on a
+/// type that is a doubling DAG is linear in its distinct nodes), and
 /// a walk that expanded the sharing would be exponential in its depth. A
 /// table without sharing yields exactly the edges the recursive walk did.
 /// An explicit stack, and no depth guard: every argument's index is greater
@@ -410,9 +410,9 @@ test "an argument that points back at its owner is not followed" {
 }
 
 test "a term shared by two owners is walked once" {
-    // checker-v2.md §13.1 as amended by R6b: v2 writes one term per distinct
+    // checker-v2.md §13.1: the checker writes one term per distinct
     // answer of a site, so `( x, [ x ] ) == …` shares `x`'s derived term
-    // between the tuple and the list (CK-80). Term 0 is the tuple's
+    // between the tuple and the list. Term 0 is the tuple's
     // `derived 0`, whose two arguments are term 1 (`derived 1`, `x`'s) and
     // term 2 (`ext`, the list's `eq`), and term 2's one argument is term 1
     // again. The walk yields each term's edge once, in pre-order.

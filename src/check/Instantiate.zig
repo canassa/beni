@@ -1,13 +1,13 @@
-//! Instantiation (checker-v2.md §4.2, §6.6, S-2): copying a generalised
+//! Instantiation (checker-v2.md §4.2, §6.6): copying a generalised
 //! type into the current frame, and building the type a reference names.
 //!
-//! **The rank and the pool are explicit** (round 3, S-2): everything made
+//! **The rank and the pool are explicit**: everything made
 //! here is made at the current frame's rank and joins its young pool, so the
 //! boundary adjusts and generalises it like any other variable.
 //!
-//! **`copy` is iterative** (I4). v1's `copyHelp` recursed and, past its
-//! guard, shared the rest of the scheme with the copy — "less general, never
-//! more", but still a silent answer at a depth. Here a first pass allocates
+//! **`copy` is iterative**: no walk stops at a fixed depth without
+//! reporting, so a deep scheme is never silently shared with its copy. A
+//! first pass allocates
 //! one fresh variable per generalised node reachable from the scheme (the
 //! memo is the descriptor's `copy` field, so sharing survives: `(y, y)`
 //! copies `y` once) and a second fills each copy's content with its
@@ -15,13 +15,14 @@
 //! shared, as in Elm: that is what keeps a lambda parameter monomorphic.
 //! Constraint method types are successors (`Walk.owned`) and so
 //! are copied through the same memo (§4.2), and each requirement the copy
-//! makes becomes a wanted of the instantiating instruction (I5,
-//! `want`) — as does each requirement an imported scheme is read with.
+//! makes becomes a wanted of the instantiating instruction (one per
+//! requirement, `want`) — as does each requirement an imported scheme is
+//! read with.
 //!
 //! **What a reference names** is resolved from the module's own Bir or a
 //! dependency's INTERFACE, never a dependency's Bir (`fast-compiler.md`
-//! §8.1), exactly as v1's `schemeOf` does. `.local` and `.top` are not here:
-//! the generator resolved them to a variable (I11, §6.2).
+//! §8.1). `.local` and `.top` are not here: the generator resolved them to
+//! a variable, and the solver reads no generation-time context (§6.2).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -51,7 +52,7 @@ instantiations: u64 = 0,
 /// The declaration being solved, for a too-deep note (§15.2): set by the
 /// solver at each `member` node.
 decl: ?u32 = null,
-/// Where an instantiation's requirements become wanteds (I5, §4.2): one per
+/// Where an instantiation's requirements become wanteds (§4.2): one per
 /// requirement of the scheme, with the instruction that instantiated it as
 /// their origin. Null in a unit test with no evidence tables.
 evidence: ?*Evidence = null,
@@ -66,15 +67,15 @@ origin: Bir.Inst.Index = @enumFromInt(0),
 /// instance's context, §9.3 step 4), or none: the lineage of §9.5.
 parent: Evidence.WantedId.Optional = .none,
 /// The wanteds the last `copy` or `reference` created, in the scheme's
-/// canonical order (I5).
+/// canonical order.
 made: std.ArrayList(Evidence.WantedId) = .empty,
 /// Constraint entries the copy in progress made (`mappedConstraints`).
 entries: u32 = 0,
 /// Instantiations whose entries were not all paired with a wanted: the
-/// solver reports each as `internal` (S2).
+/// solver reports each as `internal`.
 unpaired: u32 = 0,
 /// The interface term memo every imported scheme and constructor is read
-/// through (`Schemes.TermMemo`, R14b).
+/// through (`Schemes.TermMemo`).
 term_memo: Schemes.TermMemo = .{},
 
 pub fn deinit(in: *Instantiate) void {
@@ -139,7 +140,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
         const c = store.copy(r).unwrap().?;
         store.setContent(c, try in.mapped(r));
     }
-    // The requirements it copied become wanteds, in canonical order (I5),
+    // The requirements it copied become wanteds, in canonical order,
     // read off the scheme while the memo still maps it to the copy.
     if (in.entries != 0) try in.wantInOrder(root, true);
     const result = store.copy(root).unwrap().?;
@@ -149,7 +150,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
 }
 
 // ---------------------------------------------------------------------------
-// Templates (checker-v2.md §11.2 *As built by R8a*)
+// Templates (checker-v2.md §11.2)
 // ---------------------------------------------------------------------------
 
 /// A TEMPLATE of `v`: the whole type graph reachable from it, of any rank,
@@ -159,7 +160,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
 /// derived context keeps of a method type its fixpoint frame computed
 /// (`Contexts`): the frame's variables are discarded, so a type that outlives
 /// it is copied out, over the type's own template parameters (`to`), and
-/// instantiated later with `substitute`. Iterative, like `copy` (I4).
+/// instantiated later with `substitute`. Iterative, like `copy`.
 pub fn freeze(in: *Instantiate, v: Var, from: []const Var, to: []const Var) Error!Var {
     const store = in.cx.store;
     const gpa = in.cx.gpa;
@@ -233,14 +234,15 @@ fn mappedConstraints(in: *Instantiate, flags: TypeStore.Flags) Error!TypeStore.C
     return (try store.addConstraints(built)).toOptional();
 }
 
-/// I5, by construction: the requirements of `scheme` become wanteds in
+/// One wanted per requirement, by construction: the requirements of
+/// `scheme` become wanteds in
 /// §12.1's canonical order (`Evidence.requirements`, the one function the
 /// writer, promotion and P6 read), so an instantiation's evidence is in the
 /// order its callee takes it and nothing downstream reorders it. For a copy
 /// (`copied`) each requirement's receiver is its quantifier's copy; an
 /// imported scheme's variables are its own. Every entry the copy made must be
 /// paired: one that is not counts in `unpaired`, which the solver reports as
-/// `internal` (§4.2 *As built by R6a*).
+/// `internal` (§4.2).
 fn wantInOrder(in: *Instantiate, scheme: Var, copied: bool) Error!void {
     if (in.evidence == null) return;
     const store = in.cx.store;
@@ -261,7 +263,7 @@ fn wantInOrder(in: *Instantiate, scheme: Var, copied: bool) Error!void {
     if (made != in.entries) in.unpaired += 1;
 }
 
-/// One requirement of the scheme being instantiated becomes a wanted (I5):
+/// One requirement of the scheme being instantiated becomes a wanted:
 /// its receiver is the copy of the quantifier, its method type the copy of
 /// the requirement's, and it rides on the receiver at `position` — an open
 /// entry of a fresh variable's set, until a unification readies it.
@@ -305,7 +307,7 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
     return switch (store.content(r)) {
         .err => .err,
         .flex, .rigid => |flags| blk: {
-            // The flags copied and changed field by field (CK-18): the
+            // The flags copied and changed field by field: the
             // constraints mapped through the memo, and no obligation — a
             // generalised variable carries none open (§8.1 step 7), and a
             // copy must not share a row with its scheme.

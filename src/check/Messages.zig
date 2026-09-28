@@ -1,10 +1,9 @@
-//! Checker v2's own message texts (checker-v2.md §15.3; `checker.md` §8.5,
-//! §8.6): the annotation escape of §8.3 (CK-01), the infinite type written
-//! as its structure (§8.2, CK-57), and the three legs of a failed `?` (§8.6,
-//! CK-51). Split out of `Report.zig` by R5's review (S5, §19.1), which keeps
-//! the emit path, `quiet` and the failure bits; every text here ends in
-//! `Report.emit`, the one path to the module's list (§15.1). v1 keeps its own
-//! texts until the cut-over.
+//! The checker's own message texts (checker-v2.md §15.3; `checker.md` §8.5,
+//! §8.6): the annotation escape of §8.3, the infinite type written as its
+//! structure (§8.2), and the three legs of a failed `?` (§8.6). Kept apart
+//! from `Report.zig` (§19.1), which keeps the emit path, `quiet` and the
+//! failure bits; every text here ends in `Report.emit`, the one path to the
+//! module's list (§15.1).
 
 const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
@@ -27,7 +26,7 @@ fn renderContext(r: *const Report) Render.Context {
 
 /// `infinite_type` at `region`, for binder `name` (or "here"), with the
 /// cycle through `cycle` — a union-find root on the cycle — written down
-/// once, every inner occurrence named (§8.2, CK-57).
+/// once, every inner occurrence named (§8.2).
 ///
 /// The node's own content is printed through a detached copy while the node
 /// itself reads as a plain variable, so the printer names it where it
@@ -104,7 +103,8 @@ pub fn inferredTooDeep(r: *Report, region: Bir.Inst.Index, name: Symbol.Optional
     try r.emit(.{ .code = .nesting_too_deep, .module = r.module, .region = region, .message = message });
 }
 
-/// `rigid_mismatch` for an annotation escape (§8.3, D7, CK-01): binding
+/// `rigid_mismatch` for an annotation escape (§8.3; the owner's decision
+/// that an escape needs no new code): binding
 /// `binding` declares `scheme`, and its variable `rigid` was tied to a type
 /// of `enclosing`, the declaration it is written in.
 pub fn escape(
@@ -145,7 +145,7 @@ pub fn escape(
     try r.emit(.{ .code = .rigid_mismatch, .module = r.module, .region = region, .message = message });
 }
 
-/// Which leg of a `?` failed (§8.6, §15.3; `checker.md` §8.6, CK-51).
+/// Which leg of a `?` failed (§8.6, §15.3; `checker.md` §8.6).
 pub const TryLeg = enum {
     /// The subject is not a `Result` or a `Maybe`.
     neither,
@@ -232,7 +232,7 @@ fn firstArg(store: *TypeStore, v: Var) ?Var {
 }
 
 /// `nesting_too_deep` when one top-level group's method resolution takes
-/// more than `budget` steps (§9.5; review F1): the receiver types it builds
+/// more than `budget` steps (§9.5): the receiver types it builds
 /// nest further than the checker follows. It shares the code with the
 /// parser's and the type printer's limit for the same reason they share it:
 /// the program is deeper than the compiler reads, and naming an inner part
@@ -270,7 +270,7 @@ pub fn nestingAtDemand(r: *Report, region: Bir.Inst.Index, name: Symbol) Error!v
 }
 
 /// `type_mismatch` for a member of a group that is recursive through method
-/// calls (§10.4, §10.6, CK-70), used at a type another use in the group
+/// calls (§10.4, §10.6), used at a type another use in the group
 /// already fixed: inside the group the member has one type (§10.3). `cycle`
 /// is the group's cycle, starting and ending at the member whose name is
 /// smallest by text, so the text is the same in every declaration order.
@@ -301,7 +301,7 @@ pub fn recursiveMethod(r: *Report, region: Bir.Inst.Index, method: Symbol, found
     try r.emit(.{ .code = .type_mismatch, .module = r.module, .region = region, .message = message });
 }
 
-/// `method_needs_annotation` for §11.2's one surviving case (D3 as amended):
+/// `method_needs_annotation` for §11.2's one surviving case (§21.1):
 /// comparing `shown` needs a derived `eq` or `compare` whose context is
 /// indexed by a type parameter and depends on `culprit`, an own method
 /// without an annotation that is being checked right now. An annotation on
@@ -309,7 +309,7 @@ pub fn recursiveMethod(r: *Report, region: Bir.Inst.Index, method: Symbol, found
 ///
 /// `schema`: the culprit is a schema whose group is in flight, so its `via`
 /// targets — the payloads of the endpoint being compared — are not inferred
-/// yet (§11.5 *as built by R8b*), and the type has a parameter (a closed one
+/// yet (§11.5), and the type has a parameter (a closed one
 /// is deferred): an annotation on the conversion (`conversion`, when it is
 /// a top-level value) takes it out of the schema's group.
 pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, schema: bool, culprit: Symbol, conversion: ?Symbol) Error!void {
@@ -355,12 +355,13 @@ pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, me
 }
 
 /// `private_method` at a use that reaches another module's private method
-/// (checker-v2.md §11.3, D1 as amended 2026-09-24). A receiver that IS the
-/// private method's type keeps v1's text (`x.eq`, `M.T 1 == M.T 11`); one
+/// (checker-v2.md §11.3: private methods answer dispatch only inside their
+/// module). A receiver that IS the private method's type gets the plain
+/// text (`x.eq`, `M.T 1 == M.T 11`); one
 /// that reaches it through something derived — a wrapper, a tuple, a record,
 /// a list, or a type of a third module whose published row says so (§14.2)
 /// — says which type inside it holds the private method, and that no
-/// comparison outside the declaring module may use it (R8b).
+/// comparison outside the declaring module may use it.
 pub fn privateMethod(r: *Report, region: Bir.Inst.Index, shown: Var, culprit: Types.TypeId, method: Symbol) Error!void {
     const env = r.env;
     const entry = env.types.entry(culprit);
@@ -405,7 +406,7 @@ pub const RequirementTypes = struct { wanted: Var, found: Var };
 /// `==` (or `compare`) refused because a method a derived answer needs — a
 /// payload's own `eq`, or a requirement a payload's method carries in its
 /// `where` clause — exists and has the wrong type (static-dispatch-spike.md
-/// §10.13, CK-116). `shown` is the value the author compared, `culprit` the
+/// §10.13). `shown` is the value the author compared, `culprit` the
 /// type whose method `need` failed. `types` when the use decided it; a
 /// reason read from a context's answer or a published row has none.
 /// A payload a derived context's answer names (`Contexts.Answer.payload`,
@@ -490,11 +491,11 @@ pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method:
     try r.emit(.{ .code = if (is_eq) .not_equatable else .no_methods_on_shape, .module = r.module, .region = region, .message = message });
 }
 
-/// The specialised method that pins a derived type's argument (CK-159).
+/// The specialised method that pins a derived type's argument.
 pub const PinCulprit = struct { type_id: Types.TypeId, method: Symbol };
 
 /// `==` (or `compare`) refused because the derived answer's type PINS an
-/// argument (checker-v2.md §11.2 *as amended by R15-fix-E*, CK-159): a
+/// argument (checker-v2.md §11.2): a
 /// payload's method is specialised (`H.eq : Holder Int, …`), so the type
 /// derives only at that argument. `shown` is the value the author compared,
 /// `pinned` the type as it derives, `culprit` the method when known.

@@ -1,9 +1,6 @@
 //! The per-module context the shared diagnostic texts read
-//! (`Diagnostics.Reporter.env`). Moved out of v1's `Constrain.zig` by R4b's
-//! review (S2), so the texts would not depend on it; R12 deleted v1 and with
-//! it every field only v1's generator and solver read; R13 the two no text
-//! read (`artifacts`, `schemas`: checker-v2.md §15.1). It is built only
-//! inside `Report.zig`.
+//! (`Diagnostics.Reporter.env`): only what the texts read (checker-v2.md
+//! §15.1). It is built only inside `Report.zig`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -20,15 +17,15 @@ pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
 /// One variable a `let` held at the enclosing rank rather than generalise
-/// (checker-v2.md §8.4 *As built by R14*); see `Env.monomorphic`.
+/// (checker-v2.md §8.4); see `Env.monomorphic`.
 pub const Monomorphic = struct {
     v: Var,
     method: Symbol,
     why: Why,
 
     pub const Why = enum(u8) {
-        /// Only dot-calls' own requirements ride on it (D5's row of
-        /// 2026-09-26): the call may still be a record's field.
+        /// Only dot-calls' own requirements ride on it (checker-v2.md
+        /// §21.1, 2026-09-26): the call may still be a record's field.
         dot_call,
         /// A `let` value or pattern binding reaches it (the value
         /// restriction).
@@ -37,7 +34,7 @@ pub const Monomorphic = struct {
         /// defaulted, where it escapes to.
         unreached,
         /// A function binding over `max_inferred_constraints` (spike §10.11)
-        /// is held whole, as before D5 (R14's review B2).
+        /// is held whole, not generalised.
         cap,
     };
 };
@@ -70,8 +67,8 @@ pub const Env = struct {
     /// ordinary `type_mismatch` at the second use, by which time the
     /// constraint has been discharged against the first use's type and
     /// nothing in the store says why the binding was monomorphic. Without
-    /// this the hint on that message told the author to check their
-    /// arithmetic (M7).
+    /// this the hint on that message would tell the author to check their
+    /// arithmetic.
     monomorphic: *std.ArrayList(Monomorphic),
     /// Another module's interface record, noted for the covered-read
     /// self-check (`reads.zig`, `plans/m4-3.md` §3.2 rows 17–22 and 25–27).

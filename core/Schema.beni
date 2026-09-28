@@ -1,6 +1,6 @@
 --! The public types shared by schema declarations, schema runners and the
 --! schema library. The engine owns their JavaScript representation; the
---! ordinary builders and operations arrive with schema S3.
+--! ordinary builders and operations are not written yet.
 
 --| A field which may be absent from an external value.
 pub type Presence a

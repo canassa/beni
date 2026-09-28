@@ -8,7 +8,7 @@
 //! is what lets anyone ship a Bun platform, a Deno platform or a Workers
 //! platform without a compiler change (§5.1).
 //!
-//! M3a reads exactly five keys, and M4's package manifest will be a superset
+//! The build reads exactly five keys, and a package manifest will be a superset
 //! rather than a replacement:
 //!
 //! ```json
@@ -33,7 +33,7 @@
 //!   `Main` that rule exists to make unreachable.
 //!
 //! An unknown key is ignored rather than rejected: a manifest is a forward
-//! compatibility surface, and M4 adds to it.
+//! compatibility surface, and packages will add to it.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

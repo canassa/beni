@@ -38,7 +38,7 @@
 -- One op is one `compare` call: 3 types x 500 elements x 2 000 repetitions,
 -- the repetitions run as 4 x 500 because `List.range 1 2000` was close to the
 -- JavaScript stack limit when this was written. **The tail-call loop landed
--- on 2026-09-18 in `bbfc869`**, so the split is now vestigial for a compiler
+-- on 2026-09-18**, so the split is now vestigial for a compiler
 -- at or after it and still mandatory for the C0 baseline binary; it is left
 -- alone because the `-- ops:` count and the checksum are cited.
 import List

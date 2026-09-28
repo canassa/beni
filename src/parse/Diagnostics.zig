@@ -6,7 +6,7 @@
 //! demanded and the offset of the token that set it — so the message can be
 //! rendered later from `(item, source bytes, line table)` without the parser
 //! formatting anything while it runs. That keeps the parse loop free of text
-//! work, lets the daemon (M4) re-report a cached file's errors, and puts
+//! work, lets a daemon re-report a cached file's errors, and puts
 //! every sentence in one place, `message`, where it can be read as prose.
 //!
 //! The register is Elm's (language.md §10, last paragraph): what the parser
@@ -94,9 +94,9 @@ pub const Construct = enum {
     branch,
     constraint,
     /// Not a construct that was missing but one that is not allowed: a
-    /// float literal in a pattern (CK-45, D8), which has its own message.
+    /// float literal in a pattern, which has its own message.
     float_pattern,
-    /// Elm's `T(..)` in an `exposing` list (CK-47, D8 as amended): the head
+    /// Elm's `T(..)` in an `exposing` list: the head
     /// range is `T`. When the program is resolved, the constructors are
     /// named in its text (`Session.rewriteMessage`).
     expose_all,

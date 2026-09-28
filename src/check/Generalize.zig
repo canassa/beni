@@ -1,22 +1,22 @@
 //! Frames, rank adjustment and quantification (checker-v2.md §8.1, §8.4).
 //!
-//! Elm's `generalize` with pools per rank, as v1 has it, except that:
+//! Elm's `generalize` with pools per rank, except that:
 //!
-//!   - the rank walk is ITERATIVE and has no depth guard (I4): v1's
-//!     `adjustRank` recursed and, past its guard, answered with the
-//!     variable's own rank, silently;
-//!   - it takes its successors from `Walk.owned` (I2), so a
+//!   - the rank walk is ITERATIVE and has no depth guard: no walk stops at
+//!     a fixed depth without reporting, so a deep type never silently keeps
+//!     the variable's own rank;
+//!   - it takes its successors from `Walk.owned`, so a
 //!     variable's requirements and obligations are adjusted with it;
-//!   - a frame is explicit (§7.5, §8.1, S-2): its rank, its young pool, the
+//!   - a frame is explicit (§7.5, §8.1): its rank, its young pool, the
 //!     binders its occurs check starts from and its open-`?` list (§8.1
 //!     step 3). It keeps no `touched` list: §18's
-//!     measurement put the walk over it at 4 % of the check phase, so R4b
-//!     took §18's fallback, Elm's placement (binders only).
+//!     measurement put the walk over it at 4 % of the check phase, so the
+//!     checker takes §18's fallback, Elm's placement (binders only).
 //!
 //! It also holds the frame stack's primitives — push, pop, and a merged
 //! frame's queue handed down (§9.1, §10.4) — and step 6, the generality
 //! check (§8.3), as §19.1 lays out; the boundary's occurs check (step 4)
-//! and its order are `Solve.zig`'s (moved here by R7's review, S4).
+//! and its order are `Solve.zig`'s.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -32,7 +32,7 @@ pub const Var = TypeStore.Var;
 pub const Error = Allocator.Error;
 
 /// A merge that lowered a rigid's rank, or bound an outer flex to a younger
-/// structure (§7.1, *As built by R4b*): where an escape (§8.3) is reported.
+/// structure (§7.1): where an escape (§8.3) is reported.
 pub const Capture = struct { v: Var, region: Bir.Inst.Index };
 
 /// One binder a boundary occurs-checks (§6.3): a pattern variable, a
@@ -42,13 +42,13 @@ pub const Binder = struct {
     region: Bir.Inst.Index,
     name: InternPool.Symbol.Optional,
     /// The declaration it belongs to: who an `infinite_type` found from it is
-    /// attributed to (§15.2, review S10).
+    /// attributed to (§15.2).
     decl: ?u32 = null,
     kind: Kind = .pattern,
     /// A `let` or top-level header, whatever `kind` says: `bindersEnd`
     /// rewrites a `let` header inside a lambda or a branch to `.ended` (its
-    /// occurs check is done), and D5 still needs to know it is a header
-    /// (`Resolve.holdLet`, R14's review B1).
+    /// occurs check is done), and generalising a constrained `let` still
+    /// needs to know it is a header (`Resolve.holdLet`).
     header: bool = false,
 
     pub const Kind = enum(u8) {
@@ -76,8 +76,8 @@ pub const Annotated = struct {
     name: InternPool.Symbol.Optional,
     /// The declaration it is written in (§8.3's message, §15.2).
     decl: u32,
-    /// A `let` binding's annotation, which takes no `where` (§10.4's hint,
-    /// CK-53); false for a top-level declaration's.
+    /// A `let` binding's annotation, which takes no `where` (§10.4's hint);
+    /// false for a top-level declaration's.
     let: bool = false,
 };
 
@@ -90,7 +90,7 @@ pub const Frame = struct {
     pool: std.ArrayList(Var) = .empty,
     /// The open `?` obligations whose target sits at this frame's rank
     /// (§4.5, §8.1 step 3): what its default step reads. A row whose target
-    /// escapes moves to the list of the frame it escaped to, once (CK-98).
+    /// escapes moves to the list of the frame it escaped to, once.
     tries: std.ArrayList(u32) = .empty,
     /// The module capture list's length when the frame was pushed.
     captures_start: u32 = 0,
@@ -110,7 +110,8 @@ pub const Frame = struct {
     /// only, and hands its pool, binders, `?` list and members down.
     merged: bool = false,
     /// In a recursive group — a value SCC of two or more members, or a group
-    /// that has merged — so D14's canonical pessimism applies (§10.7).
+    /// that has merged — so the canonical pessimism of recursive groups
+    /// applies (§10.7).
     recursive: bool = false,
     /// What the frames merged into this one handed down, for its boundary;
     /// null until one does (kept out of line: most frames never merge).
@@ -140,7 +141,7 @@ pub const Frame = struct {
     }
 };
 
-/// One top-level-kind frame's `ready` queue (§9.1, round 3 B-1): what a
+/// One top-level-kind frame's `ready` queue (§9.1): what a
 /// unification readied for a wanted or obligation created under that frame.
 /// A frame drains only its own, so a nested group never decides its
 /// demander's items. When a merged frame hands down, its items are re-pointed
@@ -175,7 +176,7 @@ pub const Queue = struct {
 /// (§9.1). Also P5's frame (`Eager.zig`), which has no tree and no boundary.
 pub fn pushFrame(s: *Solve, rank: u32, kind: Frame.Kind) Error!void {
     // `Generalize.quantify` hands an escaped variable to `frames[rank - 1]`:
-    // a frame's rank is its depth (review N4).
+    // a frame's rank is its depth.
     std.debug.assert(rank == s.frames.items.len + 1);
     const gpa = s.cx.gpa;
     const queue: u32 = switch (kind) {
@@ -234,7 +235,7 @@ pub fn popFrame(s: *Solve) void {
     if (f.recursive) s.recursive_frames -= 1;
     if (f.kind != .let) {
         // A top-level-kind frame leaves nothing readied behind it: every row
-        // is decided by its last drain, or settled by `poison` (review S7);
+        // is decided by its last drain, or settled by `poison`;
         // a merged one handed its queue down first (`Groups.handDown`).
         const q = &s.queues.items[f.queue];
         std.debug.assert(f.queue == s.ready_queue and s.ready.items.len == 0 and q.isEmpty());
@@ -271,7 +272,7 @@ fn takeReady(s: *Solve, q: u32) void {
 // Step 6: the generality check (§8.3)
 // ---------------------------------------------------------------------------
 
-/// §8.3 (I1): every rigid of an annotated binding's checked reading must
+/// §8.3: every rigid of an annotated binding's checked reading must
 /// still be a rigid root, and generalised. One message per binding.
 pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
     const st = s.store();
@@ -284,17 +285,17 @@ pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
             // Already reported where it was poisoned.
             .err => continue,
             .rigid => {},
-            else => return s.report.internal(a.annotation, "an annotation's type variable stopped being rigid (checker-v2.md §8.3, invariant I1)"),
+            else => return s.report.internal(a.annotation, "an annotation's type variable stopped being rigid (checker-v2.md §8.3)"),
         }
         for (rigids[0..i]) |other| {
-            if (st.find(other) == root) return s.report.internal(a.annotation, "two type variables of one annotation became one (checker-v2.md §8.3, invariant I1)");
+            if (st.find(other) == root) return s.report.internal(a.annotation, "two type variables of one annotation became one (checker-v2.md §8.3)");
         }
         if (st.rank(root) == TypeStore.generalized) continue;
         // A top-level rigid has nothing to escape into (§8.3): a failure is
         // the compiler's.
-        if (top) return s.report.internal(a.annotation, "a top-level annotation's type variable was not generalised (checker-v2.md §8.3, invariant I1)");
+        if (top) return s.report.internal(a.annotation, "a top-level annotation's type variable was not generalised (checker-v2.md §8.3)");
         // Every escaped rigid is poisoned, the message said once: a second
-        // one kept rigid would report what rides on it (CK-154).
+        // one kept rigid would report what rides on it.
         if (!reported) {
             reported = true;
             const region = try captureOf(s, root) orelse a.annotation;
@@ -302,7 +303,7 @@ pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
             try Messages.escape(s.report, region, a.name, enclosing, a.scheme, root);
             // The scheme, so callers are not held to the false promise, and the
             // rigid itself, so what the body tied it to (a lambda parameter, say)
-            // adds no second message about `a` outside `g` (F5).
+            // adds no second message about `a` outside `g`.
             try s.poison(a.scheme);
         }
         try s.poison(root);
@@ -310,7 +311,7 @@ pub fn generality(s: *Solve, a: Annotated, top: bool) Error!void {
 }
 
 /// The first capture since the current frame was pushed whose node is the
-/// escaped rigid or reaches it (§7.1, *As built by R4b*).
+/// escaped rigid or reaches it (§7.1).
 fn captureOf(s: *Solve, rigid: Var) Error!?Bir.Inst.Index {
     const start = s.frame().captures_start;
     for (s.captures.items[start..]) |c| {
@@ -335,9 +336,9 @@ fn bucketLessThan(_: void, a: Entry, b: Entry) bool {
 /// one pass. Afterwards a variable's rank says whether it escapes.
 ///
 /// With `compact`, a pool member merged away is dropped from the pool once
-/// its root has been walked (R8c): every later pass over the pool —
+/// its root has been walked: every later pass over the pool —
 /// occurs from its requirements, rule (a), quantification — skips it
-/// anyway, and v2 has no speculation to undo the merge (§7.5). A frame
+/// anyway, and the checker has no speculation to undo the merge (§7.5). A frame
 /// handed down (`Groups.handDown`) keeps its pool whole.
 pub fn adjustRanks(
     store: *TypeStore,
@@ -369,13 +370,12 @@ pub fn adjustRanks(
         e.* = .{ .v = root, .bucket = @min(store.rank(root), young) };
         all_young = all_young and e.bucket == young;
     }
-    // One bucket: pool order is already the sorted order (the common case,
-    // R8c's profile).
+    // One bucket: pool order is already the sorted order (the common case).
     if (all_young) {
         for (entries) |e| {
             // A root an earlier walk reached is done: its own walk would
             // return its rank and write nothing (`settled`), so it is not
-            // entered (R14b). Nothing merges during the walks, so `e.v` is
+            // entered. Nothing merges during the walks, so `e.v` is
             // still a root.
             if (store.mark(e.v) == visit_mark) continue;
             _ = try adjustRank(store, stacks, gpa, young_mark, visit_mark, young, e.v);
@@ -416,8 +416,8 @@ pub fn adjustRanks(
     }
 }
 
-/// How a node's rank folds its successors' (Elm's `adjustRankContent`, in
-/// v1's exact form): a variable is its group's rank whatever it carries; a
+/// How a node's rank folds its successors' (Elm's `adjustRankContent`): a
+/// variable is its group's rank whatever it carries; a
 /// function, an alias and a record are the maximum of their successors; an
 /// application, a tuple, a unit and `{}` are at least `outermost`.
 const Fold = struct { maxes: bool, floor: u32 };
@@ -443,8 +443,8 @@ const RankFrame = Walk.RankFrame;
 /// A node's `owned` successors are pushed onto `stacks.rank_kids` when it is
 /// entered, last first, and entered one at a time as they are popped: the
 /// same depth-first order as a cursor over `Walk.owned`, without decoding
-/// the node's content once per successor (R8c). A young leaf with nothing
-/// riding on it is answered at once, with no frame (v1's `adjustRank`).
+/// the node's content once per successor. A young leaf with nothing
+/// riding on it is answered at once, with no frame (as Elm's `adjustRank`).
 fn adjustRank(
     store: *TypeStore,
     stacks: *Walk.Stacks,
@@ -540,7 +540,7 @@ fn settled(store: *TypeStore, root: Var, mark: u32, visit_mark: u32, group_rank:
 /// One successor of the node `enter` descends into. What can be answered at
 /// once is — a node that is not young, and a young leaf — exactly as its own
 /// visit would answer it later: neither answer depends on what the walk has
-/// seen, so taking it early changes no rank (R8c). The rest are pushed, to
+/// seen, so taking it early changes no rank. The rest are pushed, to
 /// be entered in order.
 const Successor = struct {
     store: *TypeStore,

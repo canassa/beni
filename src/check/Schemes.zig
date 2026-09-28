@@ -5,7 +5,7 @@
 //! **Why terms at all.** A `TypeStore` is per module and is released as soon
 //! as the interface has been extracted (§5), so a `Var` means nothing to a
 //! dependent. An interface has to outlive every store, be comparable by
-//! value for the firewall of `fast-compiler.md` §8.1, and in M4 be mapped
+//! value for the firewall of `fast-compiler.md` §8.1, and be mapped
 //! from disk with no fixup pass — which is exactly a `MultiArrayList` of
 //! `{tag, lhs, rhs}` plus one `extra` sidecar and one symbol column.
 //!
@@ -67,7 +67,7 @@ pub const Writer = struct {
     /// index four entries.
     ref_ids: std.ArrayList(TypeStore.TypeId) = .empty,
     /// `ref_ids` inverted: a type's row, so `typeRefOf` is O(1) and not a
-    /// scan per mention (CK-124: quadratic in a module's named types).
+    /// scan per mention, which would be quadratic in a module's named types.
     ref_index: std.AutoHashMapUnmanaged(TypeStore.TypeId, u32) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     /// `Var → TermIndex` for the scheme being written; dense over the
@@ -78,21 +78,19 @@ pub const Writer = struct {
     /// `Var → quantified index` for the scheme being written, under the
     /// same stamp.
     quantified: []u32 = &.{},
-    /// **Epoch marks** (`checker-v2.md` §14.2, CK-41): slot `v` of `memo`
+    /// **Epoch marks** (`checker-v2.md` §14.2): slot `v` of `memo`
     /// and `quantified` is live only when `stamp[v] == epoch`, and a reset
     /// is one increment. Nothing is cleared per scheme, and the three
     /// arrays grow to at least TWICE their length when the store outgrows
     /// them, so growing is amortised.
     ///
     /// Both halves are load-bearing. Clearing the whole array per scheme
-    /// made writing an interface quadratic in the module's size (the
+    /// would make writing an interface quadratic in the module's size (the
     /// store has one variable per instruction, and a module exporting `n`
-    /// values resets `n` times); Elm's `touched` list fixed that, but the
-    /// arrays were still reallocated and memset to the store's EXACT size
-    /// whenever it had grown — and `fillCtorTerms` grows the store before
-    /// every constructor, so one type of `n` constructors cost O(n × store):
-    /// 390 ms at 4 000 constructors and 1 416 ms at 8 000 on 050cd2d
-    /// (ReleaseFast), a ratio of 3.6.
+    /// values resets `n` times); and reallocating the arrays to the store's
+    /// EXACT size whenever it grew would too, because `fillCtorTerms` grows
+    /// the store before every constructor, so one type of `n` constructors
+    /// would cost O(n × store). Growth is amortised instead.
     stamp: []u32 = &.{},
     epoch: u32 = 0,
     quantified_count: u32 = 0,
@@ -387,8 +385,7 @@ pub const Writer = struct {
     /// module's own source — the `pub` declarations in name order, each
     /// term walked in the order `writeVar` descends.
     /// Public for a publisher that names a type outside any term: a
-    /// `private_method` row's culprit (checker-v2.md §14.2 *as amended by
-    /// R8b*).
+    /// `private_method` row's culprit (checker-v2.md §14.2).
     pub fn typeRefOf(w: *Writer, id: TypeStore.TypeId) Error!Interface.TypeRefIndex {
         const t = w.types.named(id) orelse return .none;
         if (w.ref_index.get(id)) |i| return @enumFromInt(i);
@@ -461,7 +458,7 @@ pub const Writer = struct {
                     // worker interned which file (`InternPool`'s header) —
                     // so writing them in the store's order would make the
                     // bytes of `terms`, `extra` AND the `quantified`
-                    // numbering a function of `--jobs`. §8.1 has M4 hashing
+                    // numbering a function of `--jobs`. §8.1 has the cache hashing
                     // this record; a hash of a scheduling-dependent byte
                     // layout is a cache that misses at random.
                     std.mem.sort(TypeStore.Field, fields, w.interner, fieldNameLessThan);
@@ -519,7 +516,7 @@ pub const Writer = struct {
             // `Interface.Quantified.name`.
             // A name that disagrees with the kind is not published: it was
             // inherited through a merge, which member order decides
-            // (checker.md §8.7, CK-94 and its F8).
+            // (checker.md §8.7).
             .name = if (flags.name.unwrap()) |n|
                 (if (Render.nameAgreesWithKind(w.interner.slice(n), flags.kind)) @enumFromInt(try w.symbolIndex(n)) else .none)
             else
@@ -610,11 +607,11 @@ fn constraintLessThan(
 /// parameters then result, arguments in order, record fields by name TEXT
 /// then the extension, an alias's arguments then its expansion.
 ///
-/// **An explicit stack, with no depth cap** (CK-135). It recursed, and
-/// stopped in silence at `Writer.max_depth`: a variable 2^10 tuple levels
-/// down (`w x = ( x, x )` applied ten times) was left out of a scheme's
-/// canonical order while `Instantiate` counted it, so an instantiation's
-/// requirement was paired with no wanted (I5, I4). A node is marked when it
+/// **An explicit stack, with no depth cap.** A walk that stopped in silence
+/// at `Writer.max_depth` would leave a variable 2^10 tuple levels down
+/// (`w x = ( x, x )` applied ten times) out of a scheme's canonical order
+/// while `Instantiate` counted it, so an instantiation's requirement would
+/// be paired with no wanted. A node is marked when it
 /// is POPPED and its successors are pushed in reverse, which visits them in
 /// exactly the recursive order. The writer's own bound is not this walk's:
 /// a type too deep to WRITE is reported by the writer (`too_deep`), and the
@@ -679,8 +676,8 @@ fn pushReversed(stack: *std.ArrayList(Var), gpa: Allocator, vars: []const Var) E
 
 /// A reader's memo of an interface's terms, by term index: one variable per
 /// term, so a term referenced twice becomes one variable (`instantiate`).
-/// Kept by a module's check and reused by every instantiation it makes
-/// (R14b): a slot holds a variable only while its stamp is the current
+/// Kept by a module's check and reused by every instantiation it makes:
+/// a slot holds a variable only while its stamp is the current
 /// read's, so starting a read is one increment, not a clear of a table as
 /// long as the whole interface, which an instantiation of a small scheme
 /// from `core` paid on every use.
@@ -736,7 +733,7 @@ pub fn instantiate(
     return instantiateWith(iface, type_ids, store, scheme_index, rank, scratch, &memo, scratch);
 }
 
-/// `instantiate` with the caller's memo, allocated with `gpa` (R14b).
+/// `instantiate` with the caller's memo, allocated with `gpa`.
 pub fn instantiateWith(
     iface: *const Interface,
     type_ids: []const TypeStore.TypeId,
@@ -821,7 +818,7 @@ pub fn instantiateCtor(
     return instantiateCtorWith(iface, type_ids, store, ctor_index, type_id, rank, scratch, &memo, scratch);
 }
 
-/// `instantiateCtor` with the caller's memo, allocated with `gpa` (R14b).
+/// `instantiateCtor` with the caller's memo, allocated with `gpa`.
 pub fn instantiateCtorWith(
     iface: *const Interface,
     type_ids: []const TypeStore.TypeId,
@@ -858,7 +855,7 @@ pub fn instantiateCtorWith(
     for (words, args) |word, *v| v.* = try reader.read(@enumFromInt(word));
 
     // The result: the owning type applied to its own parameters — or, for
-    // a record alias's constructor (interface v3, CK-39), the alias of the
+    // a record alias's constructor (interface v3), the alias of the
     // RECORD its fields make, argument `i` being field `i` of the row's
     // declaration-order names. That is exactly what the declaring module's
     // own check builds for it (`Types.Builder.apply` on the alias), so a
@@ -909,7 +906,7 @@ const Reader = struct {
         defer r.depth -= 1;
         // Silence is right HERE and nowhere else in this file: the writer
         // refuses to emit a term deeper than `max_depth`, so a well-formed
-        // interface cannot trip this. What can is a record M4 mapped from
+        // interface cannot trip this. What can is a record mapped from
         // disk that does not describe itself, and there is no source
         // position in THIS module to point a message at — the module that
         // wrote it reported when it wrote it.
@@ -959,8 +956,8 @@ const Reader = struct {
             .alias => blk: {
                 const words = r.iface.range(t.rhs);
                 // An alias range is its arguments followed by the
-                // expansion, so it is never empty; a malformed one — M4
-                // will map these from disk — must poison rather than
+                // expansion, so it is never empty; a malformed one — the
+                // cache maps these from disk — must poison rather than
                 // underflow the length.
                 if (words.len == 0) break :blk try r.store.freshErr(r.rank);
                 const args = try r.scratch.alloc(Var, words.len - 1);
@@ -1374,11 +1371,10 @@ fn nthChildOf(store: *TypeStore, root: Var, n: u32) ?Var {
 /// `instantiate`, and assert the two render identically and share the same
 /// number of variables.
 ///
-/// This is the only part of the M4 firewall that can be tested today
-/// (`fast-compiler.md` §8.1): the interface is the whole contract between a
-/// module and its dependents, and until M4 maps one from disk, a round trip
-/// through the term language is the closest thing to a dependent reading
-/// it. It is a property test rather than a golden because the failures it
+/// This tests the interface firewall (`fast-compiler.md` §8.1) from inside
+/// one process: the interface is the whole contract between a module and
+/// its dependents, and a round trip through the term language is the
+/// closest thing to a dependent reading it. It is a property test rather than a golden because the failures it
 /// is looking for — a field order that depends on scheduling, an `err` term
 /// smuggled into an otherwise concrete type, a quantifier numbered by
 /// accident — do not show on any one hand-written example.

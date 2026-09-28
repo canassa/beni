@@ -1,9 +1,9 @@
 //! The units of `Contexts.zig`'s fixpoint (checker-v2.md §11.2, §11.5): the
 //! strongly connected components of the module's "payload mentions" graph
 //! over its own types, and their completion as a `via` target's mentions
-//! arrive (`complete`). Split out of `Contexts.zig` by R12, which had grown
-//! past `checker-v2.md` §19.1's 1 500 lines (since R8b's rounds); the
-//! functions are still `Contexts`' own, re-exported there by name.
+//! arrive (`complete`). Kept apart from `Contexts.zig` to hold both under
+//! `checker-v2.md` §19.1's 1 500 lines; the functions are still
+//! `Contexts`' own, re-exported there by name.
 
 const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
@@ -74,8 +74,7 @@ pub fn noteVia(c: *Contexts, t: u32, decl: u32) Error!void {
 }
 
 /// Make the unit graph exact around `seeds` before a unit of theirs runs,
-/// or their §11.4 gate is walked (§11.5 *as amended by R8b's review
-/// rounds*): walking the local types reachable from them, every schema with
+/// or their §11.4 gate is walked (§11.5): walking the local types reachable from them, every schema with
 /// a `via` that one of them reads is demanded (§10.2) by the frame that
 /// asked, and once its group is done its `via` targets' mentions become
 /// edges of every type that reads it, and the walk goes on through them.
@@ -280,7 +279,7 @@ pub fn viaEdges(c: *Contexts, from: u32, decl: u32) Error!bool {
 
 /// Local type `t`'s own `type`s mentioned in declaration `d`'s payloads,
 /// through aliases, as edges `t → mentioned`. A schema's references are its
-/// payloads' (§11.5, R8b): another tagged schema's two nominal endpoints, a
+/// payloads' (§11.5): another tagged schema's two nominal endpoints, a
 /// record schema's own references (its endpoints are aliases). What a `via`
 /// conversion's type mentions is known only once its group is checked: the
 /// type records that it reads the schema (`noteVia`), and `complete` adds

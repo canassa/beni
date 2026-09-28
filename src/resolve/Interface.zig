@@ -6,17 +6,18 @@
 //! module must not recompile its dependents unless this record changed.
 //! That is why it is a value — three sorted tables and a symbol column, no
 //! pointers, no slices into the Bir — rather than a view onto the module:
-//! M2 compares it by value, M4 hashes it and maps it from disk unchanged.
+//! the checker compares it by value, the cache hashes it and loads it from
+//! disk unchanged.
 //!
-//! M2a built the SKELETON: which names are public, what kind each is, how
+//! Resolution builds the SKELETON: which names are public, what kind each is, how
 //! many arguments each constructor takes, which types are opaque, foreign
 //! or equatable — everything cross-module NAME resolution needs, and a
-//! lexical fact needing no inference. M2b adds the TYPES: `schemes` and
+//! lexical fact needing no inference. The checker adds the TYPES: `schemes` and
 //! `terms` (checker.md §7), filled from the solved store once a module is
 //! checked, and the `scheme` slot each value already carried. The tables
 //! are a flat term language rather than store variables because a store is
 //! per module and dies with it, while an interface outlives every store and
-//! in M4 is mapped from disk.
+//! may be loaded from disk.
 //!
 //! `check/Schemes.zig` is the only thing that writes or reads them: it
 //! turns a solved `Var` into terms and instantiates terms back into another
@@ -25,7 +26,7 @@
 //! **Order is by name text, not by symbol.** A `Symbol` is an index into a
 //! pool whose numbering depends on which worker interned which file first
 //! (`InternPool`'s header), so sorting by id would make the record — and
-//! in M4 its hash — depend on `--jobs`. Sorting by the bytes makes the
+//! its hash — depend on `--jobs`. Sorting by the bytes makes the
 //! table, the dump and the future hash a function of the source alone, and
 //! a lookup is a binary search over short strings.
 //! **The purity rule** (checker.md §7, decided 2026-09-18): every byte of
@@ -76,11 +77,11 @@ type_refs: []const TypeRef,
 /// Owned. Every OTHER nominal type of this module that a `type_refs` row
 /// names — a private `type` or `foreign type` an importer can reach through
 /// a published term — with its derived rows, sorted by name text
-/// (`checker-v2.md` §14.2 *Amended by R8a*, CK-89). Never a declaration:
+/// (`checker-v2.md` §14.2). Never a declaration:
 /// resolution does not read it. Empty in a record the old checker wrote.
 hidden_types: []const HiddenType = &.{},
 /// Owned. The one symbol column; every name above is an index into it,
-/// exactly as `Bir` does it, so a remap is one loop and M4 can map the
+/// exactly as `Bir` does it, so a remap is one loop and the cache can load the
 /// whole record without a fixup pass.
 symbols: []const Symbol,
 
@@ -94,8 +95,8 @@ pub const SchemaIndex = enum(u32) { _ };
 pub const SchemaMemberIndex = enum(u32) { _ };
 pub const SchemaCtorIndex = enum(u32) { _ };
 
-/// Index into `schemes`, which M2b adds. Every value carries one now so
-/// the record's layout does not change when it arrives.
+/// Index into `schemes`, which the checker fills. Every value carries one,
+/// so the record's layout does not change when it is filled.
 pub const SchemeIndex = enum(u32) {
     none = std.math.maxInt(u32),
     _,
@@ -193,8 +194,8 @@ pub const Quantified = struct {
     /// A `Symbol` is an index into the session's interner, whose numbering
     /// depends on which worker interned which file (`InternPool`'s header)
     /// — so a `Symbol` written straight into `extra` would put a
-    /// scheduling-dependent word into the bytes `fast-compiler.md` §8.1 has
-    /// M4 hashing, and the hash of an unchanged module would move with
+    /// scheduling-dependent word into the bytes `fast-compiler.md` §8.1
+    /// hashes, and the hash of an unchanged module would move with
     /// `--jobs`. Every other name in this record is a `SymbolIndex` for
     /// exactly that reason; this one was the exception.
     name: SymbolIndex.Optional,
@@ -207,7 +208,7 @@ pub const Quantified = struct {
     /// header gives for every other order in this record: a `Symbol` is an
     /// index into the session interner and its numbering depends on which
     /// worker interned which file, and these bytes are what
-    /// `fast-compiler.md` §8.1 has M4 hashing.
+    /// `fast-compiler.md` §8.1 hashes.
     ///
     /// `var(i)` inside a constraint's term means quantifier `i` of the SAME
     /// scheme, exactly as it does in the body, so a dependent rebuilds the
@@ -279,7 +280,7 @@ pub const Value = struct {
     /// JavaScript binding on the module-qualified name, so the interface
     /// has to say which names are bound that way.
     is_foreign: bool,
-    /// The inferred or annotated scheme. `none` for the whole of M2a.
+    /// The inferred or annotated scheme. `none` until the module is checked.
     scheme: SchemeIndex,
 };
 
@@ -297,7 +298,7 @@ pub const Type = struct {
     /// Type parameters. Types are always fully applied (checker.md
     /// Appendix A), so this is exactly how many arguments a use must have.
     ///
-    /// A `u16` since interface v3 (`checker-v2.md` §14.2, CK-38): as a `u8`
+    /// A `u16` since interface v3 (`checker-v2.md` §14.2): as a `u8`
     /// it saturated at 255, so a 256-parameter type was imported as a
     /// 255-parameter one. Lowering refuses a declaration of more than
     /// `max_type_params` (`too_many_type_parameters`), so no cast into this
@@ -310,9 +311,9 @@ pub const Type = struct {
     /// `equatable foreign type T` (checker.md Appendix B): values of this
     /// type may be compared with `==`. Only ever set on a `foreign` type;
     /// for an `adt` or `alias` the answer follows from its fields and is
-    /// M2b's to compute.
+    /// the checker's to compute.
     is_equatable: bool,
-    /// `checker-v2.md` §11.4's gate for an `adt` (R8b's review round, CK-120):
+    /// `checker-v2.md` §11.4's gate for an `adt`:
     /// no function is reachable from its payloads, through its own module's
     /// types, schema endpoints and `via` targets and the published gates of
     /// everything else. Written by the new checker; the old one writes
@@ -322,14 +323,15 @@ pub const Type = struct {
     ctors_end: u32,
     /// The parameters that occur in a constructor payload, as a bitset: an
     /// `extra` range of `⌈arity / 32⌉` words, parameter `i` at bit `i % 32`
-    /// of word `i / 32` (`checker-v2.md` §14.2, D10). Every bit is set for
+    /// of word `i / 32` (`checker-v2.md` §11.4, §14.2: the `equatable`
+    /// marker walk descends into payloads, not type arguments). Every bit is set for
     /// a `foreign type`, whose payloads nobody can see; an alias has none.
     /// Filled when the module is checked, from EVERY constructor — an
     /// opaque type's hidden ones included, which is the point: the marker
     /// walk must not read them from another module. `no_terms` until then.
     payload_params: u32 = no_terms,
     /// What an importer resolves `==` and `compare` on this type against
-    /// when the type declares no method of its own (§14.2, D4): the
+    /// when the type declares no method of its own (§11.2, §14.2): the
     /// derived function's context, or why there is none. Filled when the
     /// module is checked; `unchecked` until then.
     eq: Derived = .{},
@@ -353,10 +355,10 @@ pub const max_type_params: u32 = Bir.max_type_params;
 
 pub const DerivedKind = enum { eq, compare };
 
-/// A private nominal type of this module an importer can reach (§14.2 *as
-/// amended by R8a*): the facts of a `Type` row an importer reads, and no
+/// A private nominal type of this module an importer can reach
+/// (checker-v2.md §14.2): the facts of a `Type` row an importer reads, and no
 /// constructors — it cannot name them. A tagged schema endpoint named by a
-/// published term has one too (R8b), its name `Schema.Type` or
+/// published term has one too, its name `Schema.Type` or
 /// `Schema.Encoded`, `no_function` its §11.4 gate.
 pub const HiddenType = struct {
     name: SymbolIndex,
@@ -392,11 +394,10 @@ pub const TypeFacts = struct {
 };
 
 /// The facts of this module's nominal type `name`: its `types` row, else its
-/// `hidden_types` row, else null. A record the old checker (v1) wrote had no
-/// hidden rows, and `check/Dispatch.zig` read v1's ABI for one until R12
-/// deleted v1; every record a build reads is the checker's, so its callers
-/// say `internal` for a null (`check/Instances.zig`'s `derivedNominal`;
-/// checker-v2.md §14.2 *as amended by R8a*, §22.1).
+/// `hidden_types` row, else null. Every record a build reads is the
+/// checker's, which writes a hidden row for every type an importer can
+/// reach, so its callers say `internal` for a null
+/// (`check/Instances.zig`'s `derivedNominal`; checker-v2.md §14.2, §22.1).
 pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
     if (find(iface, interner, Type, iface.types, name)) |i| {
         const t = iface.types[i];
@@ -409,7 +410,7 @@ pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, na
     return null;
 }
 
-/// One entry of a `present` context (§14.2 *as amended by R8a*).
+/// One entry of a `present` context (checker-v2.md §14.2).
 pub const ContextEntry = struct {
     param: u16,
     method: SymbolIndex,
@@ -424,8 +425,8 @@ pub const context_words = 3;
 
 /// The scheme of a present row's method types, or `none` when every entry
 /// is `eq` or `compare`: its body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`, the
-/// type's parameters and then one method type per `slot` (§14.2 *as amended
-/// by R8a*, after its review: one scheme per row, not per entry).
+/// type's parameters and then one method type per `slot` (checker-v2.md
+/// §14.2: one scheme per row, not per entry).
 pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
     const words = iface.range(context);
     if (words.len == 0) return .none;
@@ -434,7 +435,7 @@ pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
 
 /// A `private_method` row's culprit (`Derived.Status.private_method`): the
 /// type whose module declares the private method, and its name; a
-/// `requirement` row's (R13, CK-116), the type whose method failed. Null for a
+/// `requirement` row's, the type whose method failed. Null for a
 /// range not of that shape (`iface_bytes.verify` refuses one).
 pub fn privateCulprit(iface: *const Interface, context: u32) ?struct { type_ref: TypeRefIndex, method: SymbolIndex } {
     if (context == no_terms) return null;
@@ -463,15 +464,15 @@ pub fn contextLen(iface: *const Interface, context: u32) u32 {
     return @intCast((words.len - 1) / context_words);
 }
 
-/// One exported type's derived `eq` or `compare` (`checker-v2.md` §14.2, D4,
-/// I10): `present` with a context — an `extra` range of the row's scheme word
+/// One exported type's derived `eq` or `compare` (`checker-v2.md` §11.2,
+/// §14.2; a cache hit installs it without recomputing): `present` with a context — an `extra` range of the row's scheme word
 /// (`contextScheme`) and then `(param, method, slot)` triples
 /// (`ContextEntry`), sorted by `(param, method text)`, `method` a
 /// `SymbolIndex` — or absent, with the reason.
 ///
 /// The old checker writes exactly its own ABI: one entry per type parameter,
 /// each naming the method being derived, `slot` and the scheme `none`. The new checker
-/// writes its inferred contexts (D4) in the same format.
+/// writes its inferred contexts (one entry per evidence parameter) in the same format.
 pub const Derived = struct {
     status: Status = .unchecked,
     /// An `extra` range of `1 + 3 × entries` words when `status == .present`,
@@ -504,7 +505,7 @@ pub const Derived = struct {
         unanswerable,
         /// A type alias, which is not nominal: its expansion answers.
         alias,
-        /// D1 (`checker-v2.md` §11.3, §14.2 *as amended by R8b*): the method
+        /// A private method (`checker-v2.md` §11.3, §14.2): the method
         /// is a PRIVATE method of some module, which no other module may
         /// use — the type's own module's, under the module rule, or one a
         /// payload's context reaches. `context` is a range of two words,
@@ -514,19 +515,19 @@ pub const Derived = struct {
         private_method,
         /// A payload's method exists and has the wrong type for a
         /// requirement the context makes of it (static-dispatch-spike.md
-        /// §10.13, `checker-v2.md` §14.2 *as amended by R13*, CK-116):
+        /// §10.13, `checker-v2.md` §14.2):
         /// `context` is `(type_ref, method)` as for `private_method` — the
         /// type whose method it is — so the importer's message names it.
         requirement,
     };
 };
 
-/// What a constructor builds (`checker-v2.md` §14.2, CK-39).
+/// What a constructor builds (`checker-v2.md` §14.2).
 pub const CtorResult = enum(u8) {
     /// `T p0 … pk`: a constructor of a `type`.
     nominal,
     /// The record a `type alias` of a record body names: its implicit
-    /// constructor, whose value IS the record (D12, `backend.md` §4).
+    /// constructor, whose value IS the record (`backend.md` §4).
     record_alias,
 };
 
@@ -547,10 +548,10 @@ pub const Ctor = struct {
     /// from the interface ALONE. Without it the solver had to open the
     /// declaring module's `Bir` and find the constructor by NAME, which
     /// breaks checker.md §4.5 ("the checker never looks a name up again")
-    /// and the firewall of `fast-compiler.md` §8.1 — in M4 a dependency's
+    /// and the firewall of `fast-compiler.md` §8.1 — a cached dependency's
     /// Bir may not be in memory at all, only this record.
     ///
-    /// `no_terms` until the declaring module has been checked: M2a builds
+    /// `no_terms` until the declaring module has been checked: resolution builds
     /// the skeleton before any inference has run, and a module that failed
     /// to lower never gets further.
     arg_terms: u32 = no_terms,
@@ -559,7 +560,7 @@ pub const Ctor = struct {
     /// declaration order, `types[type].arity` of them. Meaningless while
     /// `arg_terms` is `no_terms`.
     quantified_start: u32 = 0,
-    /// What the constructor's application IS (interface v3, CK-39): the
+    /// What the constructor's application IS (interface v3): the
     /// owning type applied to its parameters, or a record alias's record.
     result: CtorResult = .nominal,
     /// For a `record_alias` constructor, its field names in DECLARATION
@@ -567,7 +568,7 @@ pub const Ctor = struct {
     /// `SymbolIndex` words; `no_terms` for a nominal one. The alias body's
     /// record term cannot give them: its fields are canonicalised by name
     /// text, and the constructor's argument order is the declaration's
-    /// (`checker-v2.md` §14.2, the R1-review amendment). The backend emits an
+    /// (`checker-v2.md` §14.2). The backend emits an
     /// imported alias's constructor as the record, and reads its pattern's
     /// arguments, by these names.
     fields: u32 = no_terms,
@@ -695,8 +696,8 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
 }
 
 /// `extra[start..][0..len]`, the shape every range in `terms` uses. A
-/// malformed header yields an empty range instead of trapping: M4 maps this
-/// record from disk, and a record that does not describe itself must not be
+/// malformed header yields an empty range instead of trapping: the cache
+/// loads this record from disk, and a record that does not describe itself must not be
 /// able to crash the compiler.
 pub fn range(iface: *const Interface, start: u32) []const u32 {
     if (start >= iface.extra.len) return &.{};
@@ -707,8 +708,8 @@ pub fn range(iface: *const Interface, start: u32) []const u32 {
 }
 
 /// The term at `index`, or `err` for `none` and for an index this record
-/// does not describe. Bounds-checked for the reason `range` is: M4 maps
-/// these from disk, and a record that does not describe itself must not be
+/// does not describe. Bounds-checked for the reason `range` is: the cache
+/// loads these from disk, and a record that does not describe itself must not be
 /// able to crash the compiler — nor to mislead it, which is why the
 /// degraded answer is `err` (the tag every reader already poisons on) and
 /// not some other term's bytes (checker.md §7's *The serialized form*).
@@ -718,7 +719,7 @@ pub fn term(iface: *const Interface, index: TermIndex) Term {
 }
 
 /// The type an `app` or `alias` term names, or null for `none` and for an
-/// index this record does not describe — M4 maps these from disk, and a
+/// index this record does not describe — the cache loads these from disk, and a
 /// record that does not describe itself must not be able to crash the
 /// compiler (`range`'s comment).
 pub fn typeRef(iface: *const Interface, index: TypeRefIndex) ?TypeRef {
@@ -763,7 +764,7 @@ pub fn quantifiedConstraint(iface: *const Interface, q: Quantified, j: u32) Quan
 /// The `i`th parameter of the type that declares `c`, as a quantifier.
 /// Laid out exactly like a `Scheme`'s quantified list — see
 /// `Ctor.quantified_start`. An out-of-range read yields a plain `a`, so a
-/// record M4 mapped from disk that does not describe itself cannot trap.
+/// record loaded from disk that does not describe itself cannot trap.
 pub fn ctorQuantified(iface: *const Interface, c: Ctor, i: u32) Quantified {
     const at = c.quantified_start + i * Quantified.words;
     if (at + Quantified.words > iface.extra.len) return .{ .kind = 0, .equatable = false, .name = .none };
@@ -929,7 +930,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
     for (bir.interface) |di| {
         const d = bir.decl(di);
         if (d.kind.isValue()) continue;
-        if (d.kind == .schema) continue; // S1 refusal runs before this; S2 adds its own table.
+        if (d.kind == .schema) continue; // Schemas have their own table.
         try type_decls.append(gpa, di);
         try b.types.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(d.name)),
@@ -962,7 +963,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
             for (bir.declCtors(owner), owner.ctors_start..) |c, bir_index| {
                 const name = try b.symbolIndex(bir.symbol(c.name));
                 // A record alias's implicit constructor carries its field
-                // names, argument `i` being field `i` (§14.2, CK-39) — a
+                // names, argument `i` being field `i` (§14.2) — a
                 // lexical fact, so the skeleton has it before any check.
                 const result: CtorResult, const fields = if (owner.kind == .type_alias)
                     .{ .record_alias, try b.aliasFieldNames(owner) }
@@ -1314,7 +1315,7 @@ test "a module with no pub declarations has an empty interface" {
 // The bounds-checked posture (checker.md §7, *The serialized form*).
 //
 // Every accessor above answers a DEGRADED value rather than trapping, because
-// M4 loads these records from bytes and a record that does not describe itself
+// the cache loads these records from bytes and a record that does not describe itself
 // must be able to crash neither the compiler nor the answer. The records below
 // are ones no writer produces: every index in them is out of range on purpose.
 // ---------------------------------------------------------------------------

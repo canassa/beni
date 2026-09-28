@@ -1,6 +1,6 @@
 //! The interface record as BYTES (docs/design/checker.md §7, *The
 //! serialized form*), and the hash over them (`fast-compiler.md` §8's *The
-//! interface hash, and slice zero*).
+//! interface hash*).
 //!
 //! `write` turns an `Interface` into the format; `read` turns the format
 //! back into an `Interface`; `hash` is `SipHash128(1, 3)` over the bytes in
@@ -36,7 +36,7 @@
 //! pool would race with every other worker's. Within one session the lookup
 //! cannot legitimately miss — every string in a record that session wrote
 //! was interned by that session — so a miss is `error.UnknownSymbol`, which
-//! the caller reports as `internal`. M4-1's cross-process load is the case
+//! the caller reports as `internal`. The cache's cross-process load is the case
 //! that can miss; it runs serially before any worker starts, and `getOrPut`
 //! belongs there.
 //!
@@ -69,16 +69,15 @@ pub const magic = "BENIIFC\x00";
 
 /// Bumped whenever the meaning of any byte changes. An interface change is
 /// a version bump and a cache discard, never a migration into spare bytes:
-/// the alignment padding below is padding and NOT a reserved field
-/// (`plans/m4-plan.md` D4).
-/// 5 (R8b): a derived row may be `private_method`, with its culprit
-/// (`checker-v2.md` §14.2 *as amended by R8b*).
-/// 6 (R13): a derived row may be `requirement`, with its culprit in the same
-/// two words (§14.2 *as amended by R13*, CK-116).
+/// the alignment padding below is padding and NOT a reserved field.
+/// 5: a derived row may be `private_method`, with its culprit
+/// (`checker-v2.md` §14.2).
+/// 6: a derived row may be `requirement`, with its culprit in the same
+/// two words (§14.2).
 pub const format_version: u32 = 6;
 
 /// The fifteen columns, in this order and no other (`hidden_types` since
-/// format 4, `checker-v2.md` §14.2 *as amended by R8a*). `terms` is split into
+/// format 4, `checker-v2.md` §14.2). `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
 /// that is what the record already is and what §8.3 wants to map.
 pub const Column = enum(u32) {
@@ -395,7 +394,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Globa
     return decode(gpa, bytes, &in);
 }
 
-/// `read`, through `getOrPut`. M4-1's cross-process load is the case the
+/// `read`, through `getOrPut`. The cache's cross-process load is the case the
 /// header reserves this for: a record written by an earlier process names
 /// strings this session may never have interned, and the load runs serially
 /// before any worker starts, which is where growing the pool belongs.
@@ -879,7 +878,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
 /// `extra[start..][0..extra[start]]`, or null when the header or the words
 /// leave the column. The shape `Interface.range` reads, checked instead of
 /// degraded.
-/// A type row's interface v3 facts (§14.2, *as amended by R8a*): the
+/// A type row's interface v3 facts (checker-v2.md §14.2): the
 /// `payload_params` bitset, and each derived row `present` with a range of
 /// `(param, symbol slot, scheme or none)` triples, parameters below the
 /// arity, strictly increasing by `(param, method text)`, or absent with
@@ -894,7 +893,7 @@ fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arit
     }
     const n = Interface.context_words;
     for ([_]Interface.Derived{ eq, compare }) |d| {
-        // D1's row (§14.2 *as amended by R8b*): `(type_ref, method)`, a type
+        // A private method's row (§14.2): `(type_ref, method)`, a type
         // this record names and a symbol.
         if (d.status == .private_method or d.status == .requirement) {
             const words = rangeOf(iface, d.context) orelse return false;
@@ -1265,8 +1264,8 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     const compare = try global.getOrPut(testing.allocator, "compare");
     // extra: [0] fields range (x, x); [3] bitset, 300 parameters = 10 words;
     // [14] context, (299, compare) then (299, eq) — `compare` sorts first —
-    // the row's scheme word (none), then three words per entry, no slot (§14.2
-    // *as amended by R8a*).
+    // the row's scheme word (none), then three words per entry, no slot
+    // (§14.2).
     var extra: [22]u32 = @splat(0);
     extra[0] = 2;
     extra[1] = 1;
@@ -1375,7 +1374,7 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     no_row_scheme[18] = 0;
     try testing.expect(!verify(&record(&good_types, &good_ctors, &no_row_scheme, &symbols), &global));
 
-    // A hidden row (CK-89) round-trips with its facts, and is held to the
+    // A hidden row round-trips with its facts, and is held to the
     // same rules; hidden rows are sorted by name text.
     const hidden = [_]Interface.HiddenType{
         .{ .name = @enumFromInt(3), .arity = 300, .kind = .adt, .is_equatable = false, .payload_params = 3, .eq = .{ .status = .present, .context = 14 }, .compare = .{ .status = .function } },

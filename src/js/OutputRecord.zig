@@ -1,16 +1,16 @@
 //! The record of what a build wrote into `--out`, and the removal of what
 //! an earlier build wrote there and this one did not (`backend.md` §2, *The
 //! output directory holds what the last build wrote, and nothing it wrote
-//! before*; CK-163).
+//! before*).
 //!
 //! The record is `_manifest.txt` at the root of `--out`: a first line
 //! `beni-manifest 1`, then `<hash> <path>` per file, the hash the 64-bit
 //! Wyhash of the bytes written as 16 lower-case hex digits. Everything here
 //! errs toward leaving a file where it is: a path that could leave `--out`,
 //! bytes that are no longer what beni wrote, or a path that is, on this file
-//! system, the same file as one this build writes (CK-191: `Ab.mjs` and
+//! system, the same file as one this build writes (`Ab.mjs` and
 //! `AB.mjs` on APFS) all mean "not beni's to delete". And a `_manifest.txt` that is not in this format at all is not
-//! beni's to overwrite (CK-192): `read` says so, and the build is refused.
+//! beni's to overwrite: `read` says so, and the build is refused.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -47,13 +47,13 @@ pub const Previous = union(enum) {
     /// A file of that name that is not beni's record — the header is not
     /// `beni-manifest 1`, a line is not `<16 hex digits> <path>`, or it
     /// cannot be read at all. Somebody else's file, which a build must
-    /// neither overwrite nor act on (CK-192).
+    /// neither overwrite nor act on.
     unrecognised,
 };
 
 /// Read the previous build's record. Paths point into `arena`.
 ///
-/// **Strict** since CK-192: every line after the header must have the
+/// **Strict**: every line after the header must have the
 /// record's shape, and the last may only be the empty one after the final
 /// newline, or the file is not beni's. A well-formed line whose path would
 /// leave `--out` is still skipped rather than refused: it is beni's format,
@@ -105,7 +105,7 @@ pub const Verdict = union(enum) {
     stale,
 };
 
-/// A lookup of the new build's paths, exact and folded (CK-191).
+/// A lookup of the new build's paths, exact and folded.
 pub const Written = struct {
     exact: std.StringHashMapUnmanaged(void) = .empty,
     folded: std.StringHashMapUnmanaged([]const u8) = .empty,
@@ -163,8 +163,8 @@ pub fn write(arena: Allocator, io: Io, out_dir: []const u8, entries: []const Ent
 /// module always prefers. Returns how many files it removed.
 ///
 /// **A stale path equal to a written one under ASCII case folding** is
-/// removed only when the file system says the two names are two files
-/// (CK-191). `Ab.mjs` from the last build and `AB.mjs` from this one are
+/// removed only when the file system says the two names are two files.
+/// `Ab.mjs` from the last build and `AB.mjs` from this one are
 /// one file on APFS and NTFS, and there a byte-for-byte comparison read the
 /// file just written, found the old hash when the bytes happened to agree,
 /// and deleted it. On a case-sensitive file system they are two, and the
@@ -221,7 +221,7 @@ test "a record path is acted on only when it stays inside the output directory" 
     try testing.expect(!isContained(file_name));
 }
 
-test "only beni's own format parses as a record (CK-192)" {
+test "only beni's own format parses as a record" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -242,7 +242,7 @@ test "only beni's own format parses as a record (CK-192)" {
     }) |text| try testing.expectEqual(Previous.unrecognised, try parse(a, text));
 }
 
-test "a stale path is compared with the written ones exactly, then under ASCII case folding (CK-191)" {
+test "a stale path is compared with the written ones exactly, then under ASCII case folding" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();

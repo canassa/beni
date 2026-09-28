@@ -8,7 +8,7 @@
 -- derivation costs against a hand-written comparator.
 --
 -- Same range-depth constraint as R1, and the same note that it is now
--- vestigial for a compiler at or after `bbfc869`: nested small ranges,
+-- vestigial for a compiler with the tail-call loop: nested small ranges,
 -- `List.foldl` for every loop.
 import Dict
 import List

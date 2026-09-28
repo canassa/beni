@@ -17,18 +17,18 @@
 //! input alone (`fast-compiler.md` §10): it used to be `Global.merge` per
 //! worker in worker index order, which numbered a symbol by which worker
 //! the `next_file` race handed its file to, and the first choice made by id
-//! that reached an output — `unifyRecord`'s — varied between identical runs
-//! (CK-71). Ids are still not a stable ORDER for anything a user sees: they
+//! that reached an output — `unifyRecord`'s — varied between identical runs.
+//! Ids are still not a stable ORDER for anything a user sees: they
 //! shift with every edit to an earlier file, so a user-visible choice goes
 //! by text.
 //!
-//! `Global` is thread-confined to that merge step in M1. Sharding it for
+//! `Global` is thread-confined to that merge step. Sharding it for
 //! concurrent lookups (Zig's `InternPool` encoding with the thread id in the
-//! high bits) is M4 work and is deliberately not started here.
+//! high bits) is daemon work and is deliberately not started here.
 //!
 //! Hash: an FxHash-style multiply-xor, one multiply per byte, because the
 //! tokenizer feeds bytes one at a time as it scans and identifiers are short.
-//! Measured in M1a against `std.hash.Wyhash` streamed byte by byte, on the
+//! Measured against `std.hash.Wyhash` streamed byte by byte, on the
 //! generated 100k-line corpus (ReleaseFast, best of 5, single thread, lex
 //! phase including interning): see `hasher_kind` for the numbers. Both forms
 //! are kept behind that comptime switch so the measurement can be repeated
@@ -58,7 +58,7 @@ pub const Symbol = enum(u32) {
 /// this many symbols: a `Symbol` is a u32 index into a u32-offset pool.
 pub const unmapped: Symbol = @enumFromInt(std.math.maxInt(u32));
 
-/// Which streaming hash `Hasher` is. Measured in M1a on the generated
+/// Which streaming hash `Hasher` is. Measured on the generated
 /// 100k-line corpus (`zig build bench -- --generate=100000`: 626 files,
 /// 1.82 MB, 299k tokens; lex phase including interning, ReleaseFast, best
 /// of 5, three runs each):
@@ -147,7 +147,7 @@ const WyhashHasher = struct {
 /// entries come and go from the MIDDLE of this list as the language changes —
 /// `composeL`/`composeR` went with `>>` and `<<`, then `apL`/`apR` with the
 /// desugaring of `|>` and `<|` — so an index is not a value to persist. When
-/// M4's daemon starts writing indices into an on-disk cache, that cache has
+/// a daemon starts writing indices into an on-disk cache, that cache has
 /// to be keyed on the compiler build, not merely checked for new names at the
 /// end. The set is `main`, the prelude module names (language.md Appendix
 /// A), the core function each operator of language.md §6.5 desugars to, and
@@ -410,7 +410,7 @@ pub const Local = struct {
 
     /// The symbol for `bytes` if this pool already has it, and null
     /// otherwise — a lookup, never an insertion. Lowering asks it whether a
-    /// prefix of a qualified token names an import alias (CK-165): a text
+    /// prefix of a qualified token names an import alias: a text
     /// the pool has never seen cannot be one.
     pub fn find(local: *const Local, bytes: []const u8) ?Symbol {
         return local.pool.find(bytes);
@@ -419,7 +419,7 @@ pub const Local = struct {
 
 /// The session's interner: well-known symbols first, then every worker's
 /// symbols in merge order. Thread-confined to the merge step and the serial
-/// phases after it (sharding for concurrent access is M4).
+/// phases after it (sharding for concurrent access is daemon work).
 pub const Global = struct {
     pool: Pool = .{},
 
@@ -459,7 +459,7 @@ pub const Global = struct {
     /// record that session wrote was interned by that session — so the
     /// caller turns a miss into `internal` rather than growing the pool.
     ///
-    /// M4-1's cross-process load is the case that CAN miss, and it runs
+    /// The cache's cross-process load is the case that CAN miss, and it runs
     /// serially before any worker starts, which is where `getOrPut` belongs.
     pub fn find(global: *const Global, bytes: []const u8) ?Symbol {
         return global.pool.find(bytes);
@@ -469,7 +469,7 @@ pub const Global = struct {
     /// has it: the step `Session.run` takes for each symbol a file
     /// references, walking the files in index order, so that global ids
     /// are numbered by the input and not by which worker lexed what
-    /// (CK-71, `fast-compiler.md` §10). `remap` starts all `unmapped`.
+    /// (`fast-compiler.md` §10). `remap` starts all `unmapped`.
     pub fn mergeOne(global: *Global, gpa: Allocator, local: *const Local, remap: []Symbol, symbol: Symbol) Allocator.Error!void {
         const i = @intFromEnum(symbol);
         if (remap[i] != unmapped) return;
@@ -708,7 +708,7 @@ test "no leak when allocation fails mid-insert" {
 
 /// Tests only: every symbol of `local`, in LOCAL order, through `mergeOne`.
 /// The compiler never merges a whole pool at once — `Session.mergeInterners`
-/// goes file by file (CK-71) — so this lives beside the tests and not on
+/// goes file by file — so this lives beside the tests and not on
 /// `Global`, where it would invite a worker-order merge back.
 fn mergeAllForTest(global: *Global, gpa: Allocator, local: *const Local) Allocator.Error![]Symbol {
     const remap = try gpa.alloc(Symbol, local.count());

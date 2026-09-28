@@ -167,7 +167,7 @@ the Roc commit, the generator hash and the beni commit.
   background load; the load averages at the start and the end are printed
   with every table, and R² shows a bad fit.
 
-## History: the hand-written ports (2026-09-27, `f38eb30`)
+## History: the hand-written ports (2026-09-27)
 
 Before the generator, this directory held three hand-written programs (an
 interpreter, a red-black tree and a data pipeline) ported to five languages

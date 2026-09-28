@@ -3,7 +3,7 @@
 //! private method, a shape with no methods, the `where` clause messages;
 //! `==`, interpolation, tuple indexes and `?` refused; and a cyclic
 //! top-level value (checker.md §6.7, whose graph is half the dispatch table).
-//! Split out of `Diagnostics.zig` by R12, which had grown past
+//! Kept apart from `Diagnostics.zig` to hold both under
 //! `checker-v2.md` §19.1's 1 500 lines. They are still `Diagnostics.Reporter`'s
 //! methods, re-exported there by name, so every caller reads
 //! `r.unknownMethod(…)` as before.
@@ -98,7 +98,7 @@ pub fn unknownMethod(
 /// `f -1` is `f - 1` (`language.md` §6.5): a named function as the left
 /// operand of a binary `-` whose right one is a number literal is nearly
 /// always a negative argument written without its parentheses, and the hint
-/// writes them (CK-162, Elm's hint). The checker sees no whitespace, so the
+/// writes them (Elm's hint). The checker sees no whitespace, so the
 /// sentence is true of `f - 1` as well. False, for `Reporter.typeHint`'s
 /// generic hint, when the shape is not that one. Here and not in
 /// `Diagnostics.zig` for §19.1's line budget.
@@ -196,7 +196,7 @@ pub fn undeterminedMethodReceiver(
 ///
 /// With `declaration` (the method's name token), it is said once at the
 /// method, not at a call: a well-known method no use of the type can call
-/// (CK-168), and `wanted` is the use-independent type.
+/// and `wanted` is the use-independent type.
 pub fn methodSignatureMismatch(
     r: *Reporter,
     region: Bir.Inst.Index,
@@ -252,7 +252,7 @@ fn signatureExplanation(r: *Reporter, w: *std.Io.Writer, module: Graph.Index, ty
             \\
         , .{ type_text, module_text, method_text, module_text }) catch return error.OutOfMemory;
     } else {
-        // No other type of the module is involved (§10.13, CK-52).
+        // No other type of the module is involved (§10.13).
         w.print(
             \\
             \\
@@ -267,7 +267,7 @@ fn signatureExplanation(r: *Reporter, w: *std.Io.Writer, module: Graph.Index, ty
 }
 
 /// §11's module-rule clash is what happened exactly when the method's first
-/// parameter is ANOTHER type its module declares (§10.13, CK-52;
+/// parameter is ANOTHER type its module declares (§10.13;
 /// checker-v2.md §15.4).
 pub fn clashes(r: *const Reporter, module: Graph.Index, type_name: Symbol, method_type: Var) bool {
     const st = r.env.store;
@@ -322,7 +322,7 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
             \\
             \\A derived `{s}` on a record is one generated function with a parameter per
             \\field, and past {d} of them a JavaScript engine can run out of stack calling
-            \\it, so I stop here rather than build a program that may throw (CK-79).
+            \\it, so I stop here rather than build a program that may throw.
             \\
             \\Hint: compare by the fields that decide the order, or split the record into
             \\nested records.
@@ -332,8 +332,7 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
         return;
     }
     if (shape == .open_record) {
-        // A.28, said to an author who wrote an operator (§10.3 *amended by
-        // R13*, CK-54).
+        // A.28, said to an author who wrote an operator (§10.3).
         w.print("I cannot derive `{s}` for an open record:\n\n    ", .{method_text}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
         const ext = openRecordExt(r, &namer, v);
@@ -428,8 +427,7 @@ pub fn missingWhereConstraint(
     method: Symbol,
     fn_var: Var,
     /// The `let` binding whose annotation holds the variable, if one does:
-    /// its annotation cannot take the `where` (§10.4 *amended by R13*,
-    /// CK-53).
+    /// its annotation cannot take the `where` (§10.4).
     let_binding: Symbol.Optional,
 ) Error!void {
     if (r.quiet) return;
@@ -553,8 +551,7 @@ pub fn tooManyInferredConstraints(
     count: u32,
     limit: u32,
     names: []const Symbol,
-    /// Each name's receiver, named as a `where` clause names it (§10.11
-    /// *amended by R13*, CK-58).
+    /// Each name's receiver, named as a `where` clause names it (§10.11).
     receivers: []const Var,
 ) Error!void {
     if (r.quiet) return;
@@ -590,7 +587,7 @@ pub fn tooManyInferredConstraints(
 }
 
 /// §10.9. Informational, `warning`, and — since A.83 — emitted by
-/// default, for a module of the ROOT package only: what plan §7's M3
+/// default, for a module of the ROOT package only: what the spike's
 /// churn measurement counts, and what tells the author of an
 /// unannotated `pub` declaration that its interface now has a suffix.
 pub fn ambiguousMethodReceiver(
@@ -729,7 +726,7 @@ pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: Equata
             \\It has more than {d} fields. `==` on a record calls one generated function
             \\with a parameter per field, and past {d} of them a JavaScript engine can run
             \\out of stack calling it, so I stop here rather than build a program that may
-            \\throw (CK-79).
+            \\throw.
             \\
             \\Hint: `Basics.eq a b` compares records structurally, field by field, with no
             \\limit on width — it does not call a custom `eq` of a type inside them.
@@ -877,7 +874,7 @@ pub fn cyclicValue(
     path: []const []const u8,
     through: ?[]const u8,
     /// A value on the circle that takes evidence and is therefore
-    /// computed when first used with its evidence (CK-85), not once at load
+    /// computed when first used with its evidence, not once at load
     /// (`Convention`'s `thunk` and `applied`, checker-v2.md §12.5).
     per_use: ?[]const u8,
 ) Error!void {
@@ -932,7 +929,7 @@ pub fn cyclicValue(
 }
 
 /// The name `namer` gave an open record's extension variable, for §10.3's
-/// open-record text (CK-54): the same `r` the rendered record shows.
+/// open-record text: the same `r` the rendered record shows.
 fn openRecordExt(r: *Reporter, namer: *Render.Namer, v: Var) []const u8 {
     const st = r.env.store;
     var tail = v;
@@ -952,7 +949,7 @@ fn openRecordExt(r: *Reporter, namer: *Render.Namer, v: Var) []const u8 {
 }
 
 /// §10.13: a `where` clause's method type against the well-known method it
-/// resolved to (the `.where_clause` category, CK-55). `expected` is the
+/// resolved to (the `.where_clause` category). `expected` is the
 /// method's own type, `receiver, receiver -> Bool|Order`, and `actual` the
 /// clause's, both at this use.
 pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporter.Clause, expected: Var, actual: Var) Error!void {

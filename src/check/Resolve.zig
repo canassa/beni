@@ -6,28 +6,29 @@
 //!
 //! | Root | Action |
 //! |------|--------|
-//! | `flex` of kind `number`, `eq`/`compare` | the `number` bridge (D9 as amended): unify the method type with `t, t -> Bool\|Order`, answer `primitive` |
+//! | `flex` of kind `number`, `eq`/`compare` | the `number` bridge (checker-v2.md §9.2): unify the method type with `t, t -> Bool\|Order`, answer `primitive` |
 //! | any other `flex` | ride on it (Rule U1's join with a wanted of the same name), open |
-//! | `rigid` | a given: unify the method types, answer `param`; else the bridge on a `number` rigid; else `missing_where_constraint` (or `type_dispatch_needs_annotation`) at `w.origin` (CK-48), once per rigid, method and use |
-//! | `err` | `poisoned`, silently (its message is where the `err` was made: CK-141) |
+//! | `rigid` | a given: unify the method types, answer `param`; else the bridge on a `number` rigid; else `missing_where_constraint` (or `type_dispatch_needs_annotation`) at `w.origin`, once per rigid, method and use |
+//! | `err` | `poisoned`, silently (its message is where the `err` was made) |
 //! | a structure | `Instances.lookup` (§9.3): the well-known table, the module rule, matching, derivation |
 //!
 //! **When** (§9.1): inline at the `method` node when the receiver is
 //! already known (Rule U0, `immediate`); otherwise when `unify` readies it,
-//! in the drain that runs after every constraint node (eager draining,
-//! round 3 B-1) and at every boundary's step 1 — in `seq` order, shared with
+//! in the drain that runs after every constraint node (eager draining)
+//! and at every boundary's step 1 — in `seq` order, shared with
 //! the obligations.
 //!
 //! **Promotion and the proven-undetermined default** (§9.4) are step 7 of
 //! the top-level boundary: `close`; at a `let` boundary they are `holdLet`
 //! (step 5: what a `let` does not generalise drops to the enclosing rank)
 //! and `closeLet` (step 7: a function binding's own requirements promoted to
-//! it, §8.4 *As built by R14*, D5). A promoted wanted
+//! it, §8.4). A promoted wanted
 //! records its requirement `(root, method)`, never an index: the index is the
 //! site's member's, which P6 computes by §12.3.
 //!
 //! **One failure, one owner.** A rejected wanted fails its whole lineage in
-//! silence (a parent is never `answered` over a failed argument, I6/I8), and
+//! silence (a parent is never `answered` over a failed argument, and no
+//! failure to decide is read as success), and
 //! a concrete receiver that rejected a method rejects it again in silence —
 //! §9.5's class flag, which `Unify` carries to the survivor of every merge.
 //!
@@ -36,9 +37,9 @@
 //! coloured per `(node, method)`, and every top-level group has a step budget,
 //! reported when spent — which is what stops a non-cyclic chain that grows
 //! (a `where` clause may constrain another parameter, so a repeated receiver
-//! is no cycle: round-2 review, N1).
+//! is no cycle).
 //!
-//! **No speculation** (§7.5, I14, CK-35): nothing here may run while a
+//! **No speculation** (§7.5): nothing here may run while a
 //! snapshot is open — checked, and `internal` if it ever is.
 
 const std = @import("std");
@@ -64,35 +65,35 @@ const Error = Solve.Error;
 const WantedId = Evidence.WantedId;
 
 /// The cap on an unannotated declaration's inferred requirements
-/// (static-dispatch-spike.md §6.4, §10.11): v1's, unchanged.
+/// (static-dispatch-spike.md §6.4, §10.11).
 pub const max_inferred_constraints = 64;
 /// How many names `too_many_inferred_constraints` lists.
 const named_in_cap_message = 5;
-/// The backstop on resolution steps (§9.5, round 4 S4-3), per top-level
+/// The backstop on resolution steps (§9.5), per top-level
 /// group: a runaway resolution is one group's, and a module of many ordinary
-/// groups never reaches it (review F1).
+/// groups never reaches it.
 pub const step_budget: u32 = 1 << 20;
 
-/// The resolver's own tables (review S7): one owner.
+/// The resolver's own tables: one owner.
 pub const State = struct {
     /// Step 5's quantified variables that still carry wanteds (step 7).
     wanters: std.ArrayList(Var) = .empty,
     /// Per concrete receiver root and well-known method, the wanted that
     /// answered it with a DERIVED shape — the one answer that depends on the
-    /// receiver alone (review B3): a DAG-shaped type is resolved once per
-    /// node (CK-80). A method found by the module rule is instantiated per
+    /// receiver alone: a DAG-shaped type is resolved once per
+    /// node. A method found by the module rule is instantiated per
     /// use and never shared.
     derived: std.AutoHashMapUnmanaged(MemoKey, WantedId) = .empty,
     /// The `(root, method kind)` pairs the derivability walk proved
     /// derivable over a GROUND subgraph — no variable below, so the verdict
     /// cannot change (`Derivable.derivability`). A dense column indexed by
-    /// the root, one bit per kind (CK-131: as a hash map, its hashing was
-    /// half of the walk's cost).
+    /// the root, one bit per kind (a hash map's hashing would be half of the
+    /// walk's cost).
     derivable: Derivable.GroundMemo = .{},
     /// The ground shapes proved derivable, by structure (`Derivable.Shapes`).
     shapes: Derivable.Shapes = .{},
     /// The pairs the walk proved derivable over a subgraph with variables
-    /// below (CK-111): true until a leaf below is given successors. The walk
+    /// below: true until a leaf below is given successors. The walk
     /// records each leaf it meets as proved (`TypeStore.prove`: a leaf is
     /// trivially acyclic), so such a write voids the proofs, and the memo is
     /// kept only while `TypeStore.proof_voids` is `derivable_open_voids`. A
@@ -100,14 +101,14 @@ pub const State = struct {
     /// its subtree, and walked each one again: O(d²).
     derivable_open: std.AutoHashMapUnmanaged(Derivable.PairKey, void) = .empty,
     derivable_open_voids: u64 = std.math.maxInt(u64),
-    /// `missing_where_constraint`s said, per use, rigid and method (F4).
+    /// `missing_where_constraint`s said, per use, rigid and method.
     missing: std.AutoHashMapUnmanaged(MissingKey, void) = .empty,
     /// Per imported method, receiver type and well-known name, its plain
-    /// shape or null (`Instances.plainImported`, CK-131): read off the
-    /// interface once, keyed by every input of the verdict (CK-137).
+    /// shape or null (`Instances.plainImported`): read off the
+    /// interface once, keyed by every input of the verdict.
     plain: std.AutoHashMapUnmanaged(Instances.PlainKey, ?Instances.Plain) = .empty,
     /// The own well-known methods said once at their declaration, per type
-    /// (`Instances.signatureOnce`, CK-168).
+    /// (`Instances.signatureOnce`).
     signatures: std.AutoHashMapUnmanaged(Instances.SignatureKey, TypeStore.Var) = .empty,
     /// Steps in the current top-level group.
     steps: u32 = 0,
@@ -118,8 +119,7 @@ pub const State = struct {
     /// Each row's quantifier, as a root: what P6 matches a `promoted`
     /// answer and a group call against (§12.3), never recomputed.
     requirement_roots: std.ArrayList(Var) = .empty,
-    /// What each promoting `let` function binding kept (§8.4 *As built by
-    /// R14*): its `let_def`, a range of `requirement_rows`, and its header.
+    /// What each promoting `let` function binding kept (§8.4): its `let_def`, a range of `requirement_rows`, and its header.
     let_rows: std.ArrayList(LetRow) = .empty,
 
     pub fn deinit(r: *State, gpa: Allocator) void {
@@ -194,24 +194,24 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
     defer s.report.at(saved);
     const w = s.evidence.get(id);
     s.report.at(if (w.decl == Evidence.Wanted.no_decl) saved else w.decl);
-    // I14: a probe never resolves (§7.5).
-    if (!try s.expect(st.depth == 0, w.origin, "the resolver ran inside a speculation (checker-v2.md §7.5, I14)")) return reject(s, id, false);
+    // A probe never resolves (§7.5).
+    if (!try s.expect(st.depth == 0, w.origin, "the resolver ran inside a speculation (checker-v2.md §7.5)")) return reject(s, id, false);
 
     s.resolver.steps += 1;
     if (s.resolver.steps == step_budget) try Messages.resolutionBudget(s.report, w.origin, step_budget);
     if (s.resolver.steps >= step_budget) return reject(s, id, true);
-    // D14 (§10.7): in a recursive group, a wanted on a group-level
+    // Canonical pessimism (§10.7): in a recursive group, a wanted on a group-level
     // receiver is pessimistic whether it resolves now or rides on a flex.
     if (s.recursive_frames != 0) try Recursion.wanted(s, id);
 
     const root, const content = st.resolved(w.receiver);
     switch (content) {
         // A poisoned receiver has its message, said where the `err` was
-        // made — maybe in a dependency (CK-141): `poisoned`, in silence
+        // made — maybe in a dependency: `poisoned`, in silence
         // (§7.1, §12.2). An over-long alias chain `resolved` answers as
         // `err` too.
         .err => return poisoned(s, id),
-        // `resolved` never stops at an alias (nit).
+        // `resolved` never stops at an alias.
         .alias => {
             _ = try s.expect(false, w.origin, "`TypeStore.resolved` returned an alias (checker-v2.md §9.2)");
             return reject(s, id, false);
@@ -232,7 +232,7 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             // `root, root -> Bool|Order` (a derived shape's position, a
             // plain method's requirement readied at the element): the
             // answer `Instances.lookup` would give, without its
-            // unification, which could only succeed (CK-131). A nullary
+            // unification, which could only succeed. A nullary
             // application is on no cycle, and no derived answer is ever
             // remembered for a table primitive (`memoised`).
             if (Instances.tablePrimitive(s, w.method, flat)) |p| {
@@ -241,18 +241,18 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             }
             // A receiver on a cycle is one `infinite_type`, before anything
             // is shared or looked up (§9.5, the cycle test that replaced the
-            // lineage rule: round-2 review, N1).
+            // lineage rule).
             //
             // A receiver an earlier cycle test proved acyclic, whose proof
             // nothing has voided since (`TypeStore.acyclic`), is not walked
             // again: a position of a receiver just resolved is in the graph
-            // its parent's test proved (CK-111). Debug checks the proof on
+            // its parent's test proved. Debug checks the proof on
             // shallow positions (a check at every depth would make a Debug
             // build quadratic again).
             if (std.debug.runtime_safety and s.resolve_depth < 64 and st.proved(root)) {
                 var run: Walk.Occurs = .begin(st);
                 run.trusts = false;
-                if (try run.check(st, &s.stacks, s.cx.gpa, root) != null) std.debug.panic("a receiver proved acyclic is on a cycle (checker-v2.md §8.2, CK-111)", .{});
+                if (try run.check(st, &s.stacks, s.cx.gpa, root) != null) std.debug.panic("a receiver proved acyclic is on a cycle (checker-v2.md §8.2)", .{});
             }
             if (try Instances.cyclic(s, id, root)) return;
             if (s.evidence.isRejected(root, flagOf(w))) return reject(s, id, true);
@@ -274,10 +274,10 @@ fn flagOf(w: Evidence.Wanted) Evidence.Flag {
 
 /// `id` is rejected; its message, if any, is the caller's. Its lineage
 /// fails with it, in silence: a derived or instance answer whose argument
-/// failed is no answer (I6, I8; review S3). The method type is poisoned when
-/// `poison` (v1's rule: what the call returns is then silent), never the
-/// receiver (§9.5: a rejection does not silence the receiver's other uses,
-/// CK-37); a concrete receiver is flagged for this method, so a later
+/// failed is no answer. The method type is poisoned when
+/// `poison` (what the call returns is then silent), never the
+/// receiver (§9.5: a rejection does not silence the receiver's other
+/// uses); a concrete receiver is flagged for this method, so a later
 /// wanted of the same method there fails in silence.
 pub fn reject(s: *Solve, id: WantedId, poison: bool) Error!void {
     rejectLineage(s, id, .failed);
@@ -290,16 +290,17 @@ pub fn reject(s: *Solve, id: WantedId, poison: bool) Error!void {
 
 /// `id` met `err` (its receiver, or a variable of it, was poisoned): it is
 /// `poisoned`, and so is every ancestor not already rejected, in silence
-/// (§12.2 *Amended by R15-fix-A*, CK-141). The poison's message was said
+/// (§12.2). The poison's message was said
 /// where the `err` was made — this module, or a dependency whose `<error>`
 /// value this module reads — so nothing here may assume THIS module
-/// reported: P6 writes no site for a poisoned wanted, and I7 skips it.
+/// reported: P6 writes no site for a poisoned wanted, and the evidence
+/// count check skips it.
 pub fn poisoned(s: *Solve, id: WantedId) Error!void {
     rejectLineage(s, id, .poisoned);
 }
 
 /// `id` and its lineage rejected as `state` (a `failed` or `poisoned`
-/// wanted's parent is no answer: I6, I8); an ancestor already rejected
+/// wanted's parent is no answer); an ancestor already rejected
 /// keeps its own reason, and ends the walk.
 fn rejectLineage(s: *Solve, id: WantedId, state: Evidence.State) void {
     s.evidence.ptr(id).state = state;
@@ -366,10 +367,10 @@ pub fn hasWellKnownType(s: *Solve, name: Symbol, method_type: Var, root: Var) bo
 pub fn unifyWellKnown(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
     // Already that type (a comparison's operands, a position): the
-    // unification could only succeed, silently (CK-131).
+    // unification could only succeed, silently.
     if (hasWellKnownType(s, w.method, w.method_type, root)) return true;
     const wanted = try wellKnownType(s, w.method, root);
-    // A clause's declared type against the method's: `.where_clause` (CK-55),
+    // A clause's declared type against the method's: `.where_clause`,
     // with the clause its message names (static-dispatch-spike.md §10.13).
     const category: Tree.Category = .{ .tag = if (w.kind == .where_clause) .where_clause else .general };
     if (w.kind == .where_clause) s.report.texts.clause = .{ .variable = w.receiver_name, .method = w.method };
@@ -377,10 +378,10 @@ pub fn unifyWellKnown(s: *Solve, id: WantedId, root: Var) Error!bool {
     return try s.unify(wanted, w.method_type, w.origin, category) == .ok;
 }
 
-/// **The `number` bridge** (D9 as amended, §9.2): a `number` is `Int` or
+/// **The `number` bridge** (§9.2): a `number` is `Int` or
 /// `Float`, and §3.2's table answers both alike, so `eq`/`compare` on one
 /// needs no evidence — once the declared method type is checked against the
-/// well-known one (CK-21).
+/// well-known one.
 fn bridge(s: *Solve, id: WantedId, root: Var) Error!void {
     const w = s.evidence.get(id);
     if (!try unifyWellKnown(s, id, root)) return reject(s, id, false);
@@ -388,30 +389,31 @@ fn bridge(s: *Solve, id: WantedId, root: Var) Error!void {
 }
 
 /// A wanted on a flex rides on it: one entry of its constraint set (§4.1,
-/// *Decided by R5*). A wanted of the same name already there is Rule U1's
+/// as decided). A wanted of the same name already there is Rule U1's
 /// join: the older answers both, the younger is `alias(older)` and the two
 /// method types must agree (`method_constraint_mismatch` at the younger's
 /// origin otherwise). The method type is lowered to the receiver's rank
-/// (I15). An entry that is not paired with a wanted is `internal` (S2).
+/// (so no variable reachable from it outranks the receiver). An entry that
+/// is not paired with a wanted is `internal`.
 fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void {
     const st = s.store();
     const gpa = s.cx.gpa;
     const w = s.evidence.get(id);
-    // §11.2's frame assert (CK-117; `Unify.assertContained`): a wanted made
+    // §11.2's frame assert (`Unify.assertContained`): a wanted made
     // while a fixpoint frame is current rides on that frame's variables,
     // never on an older frame's, whose wanteds would then carry the pass.
     if (std.debug.runtime_safety) {
         const f = s.frame();
         const rank = st.rank(root);
         if (f.kind == .fixpoint and rank != TypeStore.generalized and rank < f.rank)
-            std.debug.panic("a fixpoint frame's wanted rides on a variable of an older frame (checker-v2.md §11.2, CK-117)", .{});
+            std.debug.panic("a fixpoint frame's wanted rides on a variable of an older frame (checker-v2.md §11.2)", .{});
     }
     s.evidence.ptr(id).state = .open;
     const set = Walk.constraints(flags);
     switch (s.evidence.named(st, set, w.method)) {
         .absent => {},
         .unpaired => {
-            _ = try s.expect(false, w.origin, "a method requirement on a variable is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+            _ = try s.expect(false, w.origin, "a method requirement on a variable is paired with no wanted (checker-v2.md §4.2)");
             return reject(s, id, false);
         },
         .wanted => |other| {
@@ -419,8 +421,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
             // A failed wanted left on a live flex (a call's requirement
             // failed in silence, `Solve.failInstantiation`) is no answer: the
             // new wanted takes its place in the set, open, and is never
-            // aliased to it (§4.2: a flex's set is its open wanteds; round-2
-            // review, S1).
+            // aliased to it (§4.2: a flex's set is its open wanteds).
             if (s.evidence.get(other).state.rejected()) {
                 try replaceEntry(s, root, flags, other, id);
                 try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
@@ -483,8 +484,8 @@ fn replaceEntry(s: *Solve, root: Var, flags: TypeStore.Flags, was: WantedId, now
     st.setContent(root, .{ .flex = with });
 }
 
-/// The two method types of a Rule-U1 join must agree (v1's
-/// `unifyPending`): `method_constraint_mismatch` at the younger's origin,
+/// The two method types of a Rule-U1 join must agree:
+/// `method_constraint_mismatch` at the younger's origin,
 /// both types poisoned.
 pub fn joinTypes(s: *Solve, younger: WantedId, older: WantedId) Error!void {
     const y = s.evidence.get(younger);
@@ -497,8 +498,8 @@ pub fn joinTypes(s: *Solve, younger: WantedId, older: WantedId) Error!void {
 
 /// §9.2's `rigid` row: a given answers (its method type checked against the
 /// wanted's), else the `number` bridge on a `number` rigid, else the
-/// annotation does not allow the method — reported at the USE (CK-48), once
-/// per rigid, method and use (F4: a rigid met twice inside one derived shape
+/// annotation does not allow the method — reported at the USE, once
+/// per rigid, method and use (a rigid met twice inside one derived shape
 /// is one missing clause).
 fn rigid(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void {
     const w = s.evidence.get(id);
@@ -526,7 +527,7 @@ fn rigid(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void 
 
 /// The `let` binding whose annotation holds rigid `root`, if one does: a
 /// `let` annotation takes no `where`, so §10.4's hint must not suggest one
-/// (static-dispatch-spike.md §10.4 *amended by R13*, CK-53). An error path
+/// (static-dispatch-spike.md §10.4). An error path
 /// only: a walk of the group's annotated bindings.
 fn letBindingOf(s: *Solve, root: Var) Symbol.Optional {
     const st = s.store();
@@ -539,7 +540,7 @@ fn letBindingOf(s: *Solve, root: Var) Symbol.Optional {
     return .none;
 }
 
-/// §6.6 as refined by R6a's review (S6): a given on a `number` rigid for
+/// §6.6: a given on a `number` rigid for
 /// `eq` or `compare` is the `number` bridge's, so its declared type is
 /// checked against `number, number -> Bool|Order` where the clause is
 /// written, before the body uses it. Called at the declaration's `member`
@@ -568,7 +569,7 @@ pub fn checkGivens(s: *Solve, decl: u32) Error!void {
 /// A well-known wanted on a concrete receiver whose derived answer the module
 /// already has: answered `alias` of it — its own method type checked against
 /// `root, root -> Bool|Order` first, a unification that reports, never a
-/// test (review B3). A hit that has since failed is never shared.
+/// test. A hit that has since failed is never shared.
 fn memoised(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
     const hit = s.resolver.derived.get(.{ .root = root, .method = w.method }) orelse return false;
@@ -589,14 +590,14 @@ pub fn remember(s: *Solve, id: WantedId, root: Var) Error!void {
 /// A sub-wanted of `parent`: `method` on `receiver` at a fresh
 /// `receiver, receiver -> Bool|Order` (a derived shape's position), stepped
 /// at once. Its own resolution runs the derivability verdict again: nothing
-/// is taken on trust from the parent's walk (review B1).
+/// is taken on trust from the parent's walk.
 pub fn position(s: *Solve, parent: WantedId, receiver: Var) Error!WantedId {
     const p = s.evidence.get(parent);
     const method_type = try wellKnownType(s, p.method, receiver);
     const id = try create(s, p.method, receiver, method_type, p.origin, p.kind, parent.toOptional());
     s.evidence.ptr(id).decl = p.decl;
     // Resolution recursing into positions spends native stack the nesting
-    // budget counts (§10.2; R7's review, S7).
+    // budget counts (§10.2).
     s.resolve_depth += 1;
     defer s.resolve_depth -= 1;
     try step(s, id, false);
@@ -618,7 +619,7 @@ fn lineageOrigin(s: *const Solve, id: WantedId) Bir.Inst.Index {
 // Step 7 of a top-level boundary (§8.1, §9.4)
 // ---------------------------------------------------------------------------
 
-/// CK-106: inside a binding group of two or more members, a requirement on a
+/// Inside a binding group of two or more members, a requirement on a
 /// `number`-kinded variable whose method is not `eq` or `compare`, which some
 /// member's type does not reach. That member fixed the variable with a
 /// literal (`ma 0 3`), so for its uses the receiver is a `number` never
@@ -698,7 +699,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
         for (reqs.items) |r| {
             try promoted.put(scratch, r.root, {});
             const id = s.evidence.slotAt(r.position).asWanted() orelse {
-                _ = try s.expect(false, d.body.unwrap().?, "a promoted requirement is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+                _ = try s.expect(false, d.body.unwrap().?, "a promoted requirement is paired with no wanted (checker-v2.md §4.2)");
                 continue;
             };
             const wp = s.evidence.ptr(id);
@@ -707,12 +708,12 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
             s.evidence.setAnswer(id, .{ .promoted = .{ .root = r.root, .method = r.method } });
         }
         // A scheme that failed publishes `<error>` (§14.1) and says nothing
-        // more about its requirements (review F6).
+        // more about its requirements.
         if (try Walk.hasError(st, &s.stacks, s.cx.gpa, header) != .clean) continue;
         if (!d.is_pub) continue;
         const region = d.body.unwrap().?;
         // A `pub` constant whose inferred scheme needs evidence would turn
-        // into a thunk of it (§10.10, narrowed by R2b's review).
+        // into a thunk of it (§10.10).
         if (d.params == 0 and st.paramCount(header) == 0) {
             try s.report.constrainedConstant(region, d.name_token, bir.symbol(d.name), st.flagsOf(reqs.items[0].root).name, reqs.items[0].method);
             continue;
@@ -738,7 +739,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const id = s.evidence.slotAt(Evidence.position(st, set.set, i)).asWanted() orelse {
-                _ = try s.expect(false, set.at(st, i).region, "a requirement on a quantified variable is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+                _ = try s.expect(false, set.at(st, i).region, "a requirement on a quantified variable is paired with no wanted (checker-v2.md §4.2)");
                 continue;
             };
             const w = s.evidence.get(id);
@@ -774,7 +775,7 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
         }
         try promoted.put(s.cx.scratch, r.root, {});
         const id = s.evidence.slotAt(r.position).asWanted() orelse {
-            _ = try s.expect(false, d.body.unwrap().?, "a requirement over the cap is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+            _ = try s.expect(false, d.body.unwrap().?, "a requirement over the cap is paired with no wanted (checker-v2.md §4.2)");
             continue;
         };
         s.evidence.ptr(id).state = .failed;
@@ -793,7 +794,7 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
 }
 
 // ---------------------------------------------------------------------------
-// Steps 5 and 7 of a `let` boundary (§8.4 *As built by R14*, D5)
+// Steps 5 and 7 of a `let` boundary (§8.4)
 // ---------------------------------------------------------------------------
 
 /// What a header binder of a `let` frame is, for §8.4's three rules.
@@ -814,9 +815,10 @@ fn letBinding(s: *const Solve, b: Tree.Binder) LetBinding {
 /// root carrying an open wanted is quantified only when a function binding
 /// of the frame reaches it, no value or pattern binding does, and not every
 /// wanted on it is a dot-call's own. Everything else drops, with its method
-/// types, to the enclosing rank (I15), where the enclosing frame receives it
+/// types, to the enclosing rank, where the enclosing frame receives it
 /// — rule (a)'s mechanism, for what §8.4 still holds. Each held root is
-/// recorded for `type_mismatch`'s A.30 hint and for D14 (`Recursion`).
+/// recorded for `type_mismatch`'s A.30 hint and for canonical pessimism
+/// in recursive groups (`Recursion`).
 pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
     const st = s.store();
     const gpa = s.cx.gpa;
@@ -869,8 +871,7 @@ pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
     // Over the cap (spike §10.11), a function binding is held whole rather
     // than refused: a `let` annotation cannot carry the `where` clause that
     // lifts the cap at the top level, so a refusal would have no escape
-    // hatch (rule 7), and v1 and pre-R14 v2 built such a helper
-    // monomorphically (R14's review B2). The count is what `closeLet` would
+    // hatch (rule 7); such a helper is built monomorphically. The count is what `closeLet` would
     // promote: every entry on a young root the binding reaches and the
     // rules above do not hold.
     for (binders) |i| {
@@ -906,7 +907,8 @@ pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
 }
 
 /// Whether every open wanted riding on `v` is a dot-call's own
-/// (`Wanted.field_ok`): the owner's D5 row of 2026-09-26.
+/// (`Wanted.field_ok`): the owner's decision of 2026-09-26 that a `let`
+/// over only dot-calls' requirements is not generalised over them.
 fn onlyDotCalls(s: *Solve, v: Var) bool {
     const st = s.store();
     const set = Walk.constraints(st.flagsOf(v));
@@ -957,7 +959,7 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
             try s.resolver.requirement_rows.append(s.cx.gpa, .{ .quantified = r.quantified, .var_name = st.flagsOf(r.root).name, .method = r.method });
             try s.resolver.requirement_roots.append(s.cx.gpa, r.root);
             const id = s.evidence.slotAt(r.position).asWanted() orelse {
-                _ = try s.expect(false, b.region, "a `let` binding's promoted requirement is paired with no wanted (checker-v2.md §4.2 *As built by R6a*)");
+                _ = try s.expect(false, b.region, "a `let` binding's promoted requirement is paired with no wanted (checker-v2.md §4.2)");
                 continue;
             };
             const wp = s.evidence.ptr(id);
@@ -975,14 +977,13 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
     // holds because `holdLet` decides "reached" by `Schemes.quantifierOrder`,
     // the very walk `Evidence.requirements` lists a scheme's requirements by:
     // change one and the other must follow. Asked only of a module that has
-    // reported nothing, so an error's poisoned types never reach the assert
-    // (R14's review S2).
+    // reported nothing, so an error's poisoned types never reach the assert.
     if (s.module_report.errors == 0 and !s.module_report.quiet) for (s.resolver.wanters.items) |v| {
         const root = st.find(v);
         if (listed.contains(root)) continue;
         if (st.content(root) != .flex or !carriesOpen(s, root)) continue;
         const region: Bir.Inst.Index = if (binders.len != 0) s.tree.binders.items[binders[0]].region else @enumFromInt(0);
-        _ = try s.expect(false, region, "a `let` quantified a constrained variable no function binding lists (checker-v2.md §8.4 *As built by R14*)");
+        _ = try s.expect(false, region, "a `let` quantified a constrained variable no function binding lists (checker-v2.md §8.4)");
         break;
     };
 }

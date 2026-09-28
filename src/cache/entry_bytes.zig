@@ -19,7 +19,7 @@
 //!
 //! **`interface` is the bytes `iface_bytes.write` produced, verbatim**, so
 //! `iface_bytes.hash` over that section IS the interface hash the firewall
-//! compares and M4-3 re-derives nothing. This file therefore does not know
+//! compares, and the cutoff re-derives nothing. This file therefore does not know
 //! what is inside it — it is a container over four opaque byte strings, and
 //! `dispatch` and `schema_plan` are opaque to it in the same way.
 //!
@@ -49,10 +49,10 @@ pub const magic = "BENICAC\x00";
 
 /// Bumped whenever the meaning of any byte changes. A format change is a
 /// version bump and a cache discard, never a migration into spare bytes
-/// (`plans/m4-plan.md` D4) — and the compiler build id in the key means a
+/// — and the compiler build id in the key means a
 /// version bump is belt and braces rather than the only defence.
 ///
-/// 3 since slice R2a: the `dispatch` section became `dispatch_bytes` format 2,
+/// 3: the `dispatch` section became `dispatch_bytes` format 2,
 /// checker-v2.md §13.1's evidence trees (§14.3).
 pub const format_version: u32 = 3;
 

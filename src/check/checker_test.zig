@@ -1,9 +1,7 @@
 //! The checker, exercised through the real pipeline over sources in memory:
 //! inference, generalisation, annotations, records, poisoning, `?`,
 //! exhaustiveness and the usefulness budget, asserted on `dump --stage=types`
-//! and on diagnostic codes. Moved out of v1's `Check.zig` by R12 when v1 was
-//! deleted: since the cut-over (R11) they ran under v2, the default, and they
-//! are the checker's, not v1's (`plans/checker-rewrite.md` R12).
+//! and on diagnostic codes.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -1132,12 +1130,11 @@ test "the usefulness budget: an analysis that would cost too much is refused, no
     // with a hang is not a test; proving it by turning the budget down to
     // where an ordinary `case` cannot be analysed is.
     //
-    // Until queue slice 14 the second line of this test expected `&.{}` —
-    // silence — and that silence was a miscompile: `backend.md` §7's
-    // decision tree emits no default arm because the checker is supposed to
-    // have proved exhaustiveness, so a `case` the checker never decided
-    // falls into its last edge and answers wrongly at exit 0. An analysis
-    // that gave up now SAYS it gave up.
+    // Silence here would be a miscompile: `backend.md` §7's decision tree
+    // emits no default arm because the checker is supposed to have proved
+    // exhaustiveness, so a `case` the checker never decided would fall into
+    // its last edge and answer wrongly at exit 0. An analysis that gave up
+    // SAYS it gave up.
     const source =
         \\pub f : Maybe Int -> Int
         \\f m =
@@ -1176,7 +1173,7 @@ test "the usefulness budget: an irrefutable position refuses instead of going si
     // guarantee that `backend.md` §4's unchecked destructure stands on, so
     // there the undecided answer has always been a refusal (checker.md §6.6).
     //
-    // Both answers are refusals since slice 14; what differs is the message
+    // Both answers are refusals; what differs is the message
     // and the way out. A `case` can be split or given a bigger budget; an
     // irrefutable position has no branch to fall through to at all, so its
     // message says "`case` on it instead".

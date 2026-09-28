@@ -80,15 +80,15 @@ pub const Namer = struct {
     /// How many generated (`a`, `b`, …) names have been handed out.
     generated: u32 = 0,
     /// How many type nodes this message may still print (`checker.md` §8.2's
-    /// third bound, CK-92). Past it a node prints `…`. A diagnostic's type is
+    /// third bound). Past it a node prints `…`. A diagnostic's type is
     /// printed as a TREE, so a shared or cyclic graph — `x = ( x, x )`, a
-    /// doubling `let` — printed 2^24 leaves under `max_depth` alone, hundreds
-    /// of megabytes for a two-line program. The dumps, whose output is a
+    /// doubling `let` — would print 2^24 leaves under `max_depth` alone,
+    /// hundreds of megabytes for a two-line program. The dumps, whose output is a
     /// type's whole text, set it to `unlimited`.
     budget: u32 = message_budget,
-    /// The roots being printed, outermost first (CK-177): a node met again
+    /// The roots being printed, outermost first: a node met again
     /// inside itself is a CYCLE, printed `…` there rather than unrolled
-    /// until `budget` runs out — which printed `x = ( x, x )` as 4 096
+    /// until `budget` runs out, which would print `x = ( x, x )` as 4 096
     /// nodes of tuple. Never deeper than `max_depth`, so it is inline.
     path: [max_depth + 2]Var = undefined,
     path_len: u32 = 0,
@@ -164,7 +164,7 @@ pub fn generatedName(gpa: Allocator, i: u32) Allocator.Error![]const u8 {
 }
 
 /// What a flex or rigid variable prefers to print as (checker.md §8.7,
-/// CK-94): its own name when it has one that agrees with its kind, else its
+/// its own name when it has one that agrees with its kind, else its
 /// kind, else nothing (a generated `a`, `b`, …). A name that does not start
 /// with the kind's text was inherited through unification — `cons`'s `a`
 /// merged with a literal's `number` — and printing it would hide the kind
@@ -552,7 +552,7 @@ pub const PatPrec = enum {
     top,
     /// An argument of a constructor: `Just (Node a b)`, `Just (x :: xs)`.
     arg,
-    /// Left of a `::`: `(a :: b) :: c`, but `Circle _ :: _` (CK-60).
+    /// Left of a `::`: `(a :: b) :: c`, but `Circle _ :: _`.
     head,
 };
 
@@ -642,7 +642,7 @@ fn writePat(
             if (args.len == 0) return w.writeAll(text);
             // An argument-taking constructor needs parentheses only as an
             // ARGUMENT: `Just (Node a b)`. At the head of a `::` it needs
-            // none, `Group (Circle _ :: _)` (Elm's `patternToDoc`, CK-60).
+            // none, `Group (Circle _ :: _)` (Elm's `patternToDoc`).
             const wrap = prec == .arg;
             if (wrap) try w.writeByte('(');
             try w.writeAll(text);

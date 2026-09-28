@@ -1,4 +1,4 @@
-//! P5 (checker-v2.md §5, §11.2, §12.4; *As built by R8a*): the eager derived
+//! P5 (checker-v2.md §5, §11.2, §12.4): the eager derived
 //! rows of every nominal type this module declares (A.23), and their bodies.
 //!
 //! **Why eager, and why here.** The declaring module is checked and lowered
@@ -7,8 +7,8 @@
 //! or not, and `Reach` drops what nothing reaches (static-dispatch-
 //! spike.md §8.5).
 //!
-//! **Which rows, and their contexts, are the derived contexts'** (`Contexts`,
-//! D4): P4 is over, so every unit is settled from `done` inputs
+//! **Which rows, and their contexts, are the derived contexts'** (`Contexts`;
+//! one evidence parameter per context entry): P4 is over, so every unit is settled from `done` inputs
 //! (`Contexts.settleAll`), and a type gets a row for a method exactly when
 //! its context is `present` — with that context as the row's evidence
 //! parameters, one per entry, in `(param, method text)` order. Nothing here
@@ -83,7 +83,7 @@ pub fn build(e: *Eager, s: *Solve) Error!void {
     try Contexts.checkDeferred(s);
     const c = &s.contexts;
     for (bir.decls, 0..) |d, i| {
-        // A `type`, or a tagged schema's two nominal endpoints (§11.5, R8b).
+        // A `type`, or a tagged schema's two nominal endpoints (§11.5).
         const ids: [2]Types.TypeId = switch (d.kind) {
             .type => .{ cx.types.ofDecl(cx.module, @enumFromInt(i)), .none },
             .schema => .{ cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .type), cx.types.ofSchemaDecl(cx.module, @enumFromInt(i), .encoded) },
@@ -105,11 +105,10 @@ pub fn build(e: *Eager, s: *Solve) Error!void {
     s.report = try Contexts.quietReport(s);
     defer s.report = real;
     // A frame of its own, with its own step budget and derived memo, so
-    // nothing P4 shared can answer a position P5 resolves here (review N4).
+    // nothing P4 shared can answer a position P5 resolves here.
     // A KEPT body was resolved in P4, under P4's memo: that is sound only
     // because `Builder.read` gives every pass fresh variables, so no root
-    // of a kept body is shared with anything the memo holds (R8a's review,
-    // S4).
+    // of a kept body is shared with anything the memo holds.
     s.resolver.steps = 0;
     s.resolver.derived.clearRetainingCapacity();
     try Generalize.pushFrame(s, @intCast(s.frames.items.len + 1), .fixpoint);
@@ -226,12 +225,12 @@ fn rowRegion(e: *const Elaborate, i: u32) Bir.Inst.Index {
 
 /// An open wanted: in a P5 row, one riding on marker `i` for method `m'` is
 /// the row's context entry `(i, m')`, its `param derived row k`; an open
-/// wanted anywhere else is `internal` (I6).
+/// wanted anywhere else is `internal` (§12.2).
 pub fn marker(e: *Elaborate, id: Evidence.WantedId, binder: Elaborate.Binder) ?Dispatch.Term {
     const w = e.in.evidence.get(id);
     const i = switch (binder) {
         .row => |i| i,
-        else => return e.failTerm(.internal, "a wanted is still open at elaboration (checker-v2.md §12.2, I6)"),
+        else => return e.failTerm(.internal, "a wanted is still open at elaboration (checker-v2.md §12.2)"),
     };
     if (w.state == .open) {
         const root = e.in.cx.store.find(w.receiver);
