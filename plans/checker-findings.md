@@ -5223,7 +5223,14 @@ with a red fixture on `8f78224` before its fix.*
 - **Expected** `List A.Type`, `Maybe A.Type`: one name met twice with the same arguments agrees.
 - **Fixture** `check/good/SchemaEndpointMeetsItself.beni`, red `exit=0 iface-differs`.
 - **Slice** the last review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §7.1 and §21.1's D16 *amended 2026-09-29*: two
+  uses of one name keep it when their arguments unify (an injective alias) or are already the
+  same types for good — the same classes or copies with the same heads and no flex below
+  (`Unify.sameArguments`, at most 64 pairs). A zero-argument alias, an endpoint included, always
+  agrees; the general rule also keeps `Tagged String` met twice for a non-injective `Tagged`,
+  which printed `List Int`. No corpus message changed. Promoted:
+  `tests/corpus/check/good/SchemaEndpointMeetsItself.beni`, with `Tagged` added (twice the same
+  arguments, and two different).
 
 ### CK-211 — A safety build re-walks a proved receiver's whole graph per wanted
 
@@ -5499,7 +5506,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-207 | diagnostic-quality | K13 | promoted: `check/bad/DerivedPinnedThroughHelper/`; new `…Imported/` | the final review's fixes (fixed) |
 | CK-208 | diagnostic-quality | K13 | promoted: `check/bad/DotCallEqRefusal.beni` | the final review's fixes (fixed) |
 | CK-209 | diagnostic-quality | K14 | promoted: `build_test.zig` "an unreadable _manifest.txt refuses the build …" | the final review's fixes (fixed) |
-| CK-210 | diagnostic-quality | K12 | `check/good/SchemaEndpointMeetsItself.beni` | the last review's fixes |
+| CK-210 | diagnostic-quality | K12 | promoted: `check/good/SchemaEndpointMeetsItself.beni` | the last review's fixes (fixed) |
 | CK-211 | performance | K11 | promoted: `abuse_test.zig` "a wide alias DAG checks on a safety build …" | the last review's fixes (fixed) |
 | CK-212 | latent | K14 | `scenario/CK-212` | the last review's fixes |
 | CK-213 | diagnostic-quality | K14 | `scenario/CK-213` | the last review's fixes |

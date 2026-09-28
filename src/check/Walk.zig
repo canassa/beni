@@ -873,7 +873,7 @@ pub fn sameShape(store: *TypeStore, gpa: Allocator, a: Var, b: Var, limit: u32) 
     return true;
 }
 
-fn sameHead(store: *TypeStore, x: Var, y: Var) bool {
+pub fn sameHead(store: *TypeStore, x: Var, y: Var) bool {
     const cx = store.content(x);
     const cy = store.content(y);
     if (std.meta.activeTag(cx) != std.meta.activeTag(cy)) return false;

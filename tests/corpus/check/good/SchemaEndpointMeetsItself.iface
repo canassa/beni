@@ -2,6 +2,10 @@ module SchemaEndpointMeetsItself
   value h : number -> List A.Type
   value k : number -> List A.Type
   value la : List A.Type
+  value lb : List (Tagged Bool)
+  value lt : List (Tagged String)
   value ma : Maybe A.Type
+  value pickDiffering : Bool -> List Int
+  value pickTagged : Bool -> List (Tagged String)
   value two : Bool -> List A.Type
   value twoMaybe : Bool -> Maybe A.Type

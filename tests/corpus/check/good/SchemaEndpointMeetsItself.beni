@@ -1,0 +1,84 @@
+-- check/good: a schema endpoint that meets ITSELF keeps its name ("agree
+-- or expand", checker-v2.md §7.1: the same name with the same arguments
+-- keeps it). Both branches of `two` are `List A.Type`, both of `twoMaybe`
+-- `Maybe A.Type`, and the recursive pair `h`/`k` returns `List A.Type` from
+-- both members. `Tagged` drops its parameter, so it is not injective, and
+-- still `pickTagged` meets `Tagged String` twice and keeps it; only
+-- `pickDiffering`, `Tagged String` against `Tagged Bool`, shows the
+-- expansion. An endpoint counted as a non-injective alias, and two uses of
+-- one expanded even over the same arguments: every one of these printed
+-- the expansion, `List { x : Int }` and `List Int`.
+schema A =
+    x : Int
+
+
+pub la : List A.Type
+la =
+    []
+
+
+pub ma : Maybe A.Type
+ma =
+    Nothing
+
+
+pub two c =
+    if c then
+        la
+
+    else
+        la
+
+
+pub twoMaybe c =
+    if c then
+        ma
+
+    else
+        ma
+
+
+pub h n =
+    if n == 0 then
+        la
+
+    else
+        k (n - 1)
+
+
+pub k n =
+    if n == 0 then
+        la
+
+    else
+        h (n - 1)
+
+
+type alias Tagged t =
+    Int
+
+
+pub lt : List (Tagged String)
+lt =
+    []
+
+
+pub lb : List (Tagged Bool)
+lb =
+    []
+
+
+pub pickTagged c =
+    if c then
+        lt
+
+    else
+        lt
+
+
+pub pickDiffering c =
+    if c then
+        lt
+
+    else
+        lb

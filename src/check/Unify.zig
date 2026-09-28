@@ -681,10 +681,12 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
 ///
 /// **Agree or expand** (checker-v2.md §7.1, §21.1). The name a
 /// class shows is kept only while every name it meets agrees: two aliases
-/// of one injective name whose arguments unify. Two different names, two
-/// uses of a non-injective alias (whose arguments are never unified), and
-/// an alias against an unnamed type — its expansion, or a rigid, a
-/// structure — each unify the expansions and then show the EXPANSION: the
+/// of one injective name whose arguments unify, or two uses of any one name
+/// whose arguments are already the same types for good (`sameArguments`) —
+/// a zero-argument alias and a schema endpoint met twice among them. Two
+/// different names, two uses of a non-injective alias over arguments that
+/// are not (which are never unified), and an alias against an unnamed type
+/// — its expansion, or a rigid, a structure — each unify the expansions and then show the EXPANSION: the
 /// alias's class joins it (`expand`). "One name, or none" is commutative,
 /// associative and idempotent, so the name an inferred type shows is a
 /// function of the names it met, never of the order it met them in, at
@@ -697,10 +699,14 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
     if (ca == .alias and cb == .alias) {
         const aa = ca.alias;
         const ab = cb.alias;
-        if (aa.type != ab.type or aa.args.len != ab.args.len or !u.types.isInjective(aa.type)) {
+        const same_name = aa.type == ab.type and aa.args.len == ab.args.len;
+        if (!same_name or (!u.types.isInjective(aa.type) and !u.sameArguments(aa.args, ab.args))) {
             // Two names, or two uses of a name whose arguments say nothing
-            // (a dropped parameter): the expansions meet, and each name
-            // shows its expansion.
+            // (a dropped parameter) and differ: the expansions meet, and
+            // each name shows its expansion. The same name over the same
+            // arguments agrees whether or not the alias is injective —
+            // a zero-argument alias, a schema endpoint's included, always
+            // does.
             if (xa != xb and !try u.go(xa, xb)) return false;
             try u.expand(ra);
             try u.expand(rb);
@@ -812,6 +818,53 @@ pub fn expand(u: *Unify, alias: Var) Error!void {
     const keep = st.expandAlias(a, end);
     try u.evidence.mergeRejected(u.gpa, a, keep);
 }
+
+/// Whether two argument lists are the same types, position by position, for
+/// good: the same classes or copies of one type — the same heads all the way
+/// down (`lt : List (Tagged String)` read at two uses copies its `String`) —
+/// with no flex anywhere. A flex could still be bound, or joined with
+/// another, so whether it matches would depend on when the two names met,
+/// and the name shown on the order of the program (I9); a rigid is one
+/// identity for good. Unifying such lists decides nothing, and an alias over
+/// them is one type whatever it does with its arguments. Two empty lists
+/// are the same. The comparison stops at `same_arguments_cap` pairs and
+/// answers no, which only costs the name, and the same in every order.
+fn sameArguments(u: *Unify, left: TypeStore.Range, right: TypeStore.Range) bool {
+    const st = u.store;
+    const l = st.vars(left);
+    const r = st.vars(right);
+    if (l.len != r.len) return false;
+    var stack: [same_arguments_cap][2]Var = undefined;
+    var len: usize = 0;
+    var budget: u32 = same_arguments_cap;
+    for (l, r) |a, b| {
+        stack[0] = .{ a, b };
+        len = 1;
+        while (len != 0) {
+            len -= 1;
+            const x = st.find(stack[len][0]);
+            const y = st.find(stack[len][1]);
+            if (st.content(x) == .flex or st.content(y) == .flex) return false;
+            if (budget == 0) return false;
+            budget -= 1;
+            // One class is the same type now, and for good once no flex is
+            // below it: its children are walked like two copies'.
+            if (x != y and !Walk.sameHead(st, x, y)) return false;
+            var n: u32 = 0;
+            while (Walk.child(st, x, n, .structural)) |cx| : (n += 1) {
+                const cy = Walk.child(st, y, n, .structural) orelse return false;
+                if (len == stack.len) return false;
+                stack[len] = .{ cx, cy };
+                len += 1;
+            }
+            if (Walk.child(st, y, n, .structural) != null) return false;
+        }
+    }
+    return true;
+}
+
+/// How many pairs of nodes `sameArguments` compares before it gives up.
+const same_arguments_cap = 64;
 
 /// Unify two argument lists elementwise, re-slicing the range each time:
 /// unifying appends to `extra` and would dangle a view taken once.
