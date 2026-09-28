@@ -169,6 +169,7 @@ against it** — the same position the sheet already takes on component librarie
 | **W30** | |
 | **W31** | |
 | **W32** | |
+| **JSX compiler** | **Copy Solid 2's JSX compiler** (2026-09-29): the reference implementation for how beni compiles JSX is dom-expressions' Rust compiler, `references/dom-expressions/packages/compiler` (OXC-based, ~24.5k lines of Rust) — its static-template extraction, hole classification, event handling and runtime calls are ported to Zig rather than designed afresh. The JSX items above (W29–W34) are answered in its terms. |
 | **W33** | |
 | **W34** | |
 | **W35** | |
