@@ -1,19 +1,19 @@
-//! `zig build test-time-report`, end to end on one corpus fixture: the
-//! report tool runs a child `zig build test-blackbox-corpus` with timing on,
-//! every corpus process writes its records, and the report comes out whole.
+//! `zig build test-time-report`'s tool, end to end on one corpus fixture:
+//! the report tool runs the corpus walker with timing on, the walker writes
+//! its records, and the report comes out whole.
 //!
-//! The child build reuses what the enclosing build already compiled (the
-//! build graph makes this test wait for the corpus binary and the report
-//! tool), so the run costs seconds: one fixture, five walker processes.
-//! `BENI_TIME_REPORT_EXE`, `BENI_ZIG_EXE` and `BENI_CHILD_BUILD_ARGS` come
-//! from `build.zig`.
+//! The walker runs directly, one part of it, rather than under a child
+//! `zig build`: the build runner's own work cost more CPU than the walker,
+//! the tool and this test together, and what is under test is the tool and
+//! the records. `BENI_TIME_REPORT_EXE` and `BENI_CORPUS_TEST_EXE` come from
+//! `build.zig`.
 
 const std = @import("std");
 const testing = std.testing;
 const world = @import("world.zig");
 const World = world.World;
 
-/// The one fixture the child build runs: a small `parse/good` file, one
+/// The one fixture the walker runs: a small `parse/good` file, one
 /// `dump` of it.
 const fixture = "tests/corpus/parse/good/BlankLines.beni";
 
@@ -37,15 +37,15 @@ test "the time report of one corpus fixture has every table and names the fixtur
         try std.fmt.allocPrint(arena, "--out={s}", .{report}),
         "--top=5",
         "--",
-        try testing.environ.getAlloc(arena, "BENI_ZIG_EXE"),
-        "build",
-        "test-blackbox-corpus",
-        "-Dcorpus=" ++ fixture,
+        try testing.environ.getAlloc(arena, "BENI_CORPUS_TEST_EXE"),
     });
-    var extra = std.mem.tokenizeScalar(u8, try testing.environ.getAlloc(arena, "BENI_CHILD_BUILD_ARGS"), ' ');
-    while (extra.next()) |arg| try argv.append(arena, arg);
-    // The child build needs the dev shell's `PATH` and Zig cache variables.
+    // The walker's knobs as `build.zig` pinned them for this test, then the
+    // one part and the one fixture.
     var env = try testing.environ.createMap(arena);
+    try env.put("BENI_CORPUS_PART", "parse");
+    try env.put("BENI_CORPUS_ONLY", fixture);
+    // The walker's own CPU budget is not what this test is about.
+    _ = env.swapRemove("BENI_TEST_BUDGET_MS");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -80,16 +80,8 @@ test "the time report of one corpus fixture has every table and names the fixtur
         "### Harness overhead against children",
         "### Repeated invocations",
     }), headings.items);
-    // Every part of the walker ran and recorded itself, even the four the
-    // filter left with nothing to do.
-    std.mem.sort([]const u8, steps.items, {}, lessThan);
-    try testing.expectEqualDeep(@as([]const []const u8, &.{
-        "corpus_test part build",
-        "corpus_test part check",
-        "corpus_test part parse",
-        "corpus_test part run_dev",
-        "corpus_test part run_release",
-    }), steps.items);
+    // The walker's process recorded itself under its part.
+    try testing.expectEqualDeep(@as([]const []const u8, &.{"corpus_test part parse"}), steps.items);
     // The one case: its kind and its one `dump`; the CPU figures vary.
     try testing.expectEqual(1, fixture_rows.items.len);
     try testing.expectEqualStrings("parse_good", cell(fixture_rows.items[0], 2));
@@ -99,14 +91,12 @@ test "the time report of one corpus fixture has every table and names the fixtur
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // One record file per walker process, and the run's own measurements.
+    // The walker's record file, and the run's own measurements.
     const files = try w.listFiles("records");
-    try testing.expectEqual(6, files.len);
-    for (files[0..5]) |name| {
-        try testing.expect(std.mem.startsWith(u8, name, "corpus_test-"));
-        try testing.expect(std.mem.endsWith(u8, name, ".jsonl"));
-    }
-    try testing.expectEqualStrings("run.json", files[5]);
+    try testing.expectEqual(2, files.len);
+    try testing.expect(std.mem.startsWith(u8, files[0], "corpus_test-"));
+    try testing.expect(std.mem.endsWith(u8, files[0], ".jsonl"));
+    try testing.expectEqualStrings("run.json", files[1]);
 }
 
 /// The text of the `index`-th cell of a Markdown table row, trimmed.
@@ -118,8 +108,4 @@ fn cell(row: []const u8, index: usize) []const u8 {
         if (i == index) return std.mem.trim(u8, c, " ");
     }
     return "";
-}
-
-fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-    return std.mem.lessThan(u8, a, b);
 }

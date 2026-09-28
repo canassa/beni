@@ -413,9 +413,11 @@ pub fn build(b: *std.Build) void {
     // that runs one scenario program (`run_hash_probe.zig`, compiled without
     // `-Dtest-filter` so a filter never empties it) and the summary tool as
     // programs, on an index and a corpus of their own, so they need all
-    // three installed.
+    // three installed. The test-time report's smoke test times the walker
+    // too.
+    const tools = std.Build.Step.InstallArtifact.Options{ .dest_dir = .{ .override = .{ .custom = "tools" } } };
+    const corpus_tool_install = b.addInstallArtifact(corpus_test, tools);
     {
-        const tools = std.Build.Step.InstallArtifact.Options{ .dest_dir = .{ .override = .{ .custom = "tools" } } };
         const probe = b.addTest(.{
             .name = "run_hash_probe",
             .test_runner = testRunner(b),
@@ -432,7 +434,7 @@ pub fn build(b: *std.Build) void {
         run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
         run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", b.getInstallPath(.prefix, "tools/run_hash_probe"));
         run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", b.getInstallPath(.prefix, "tools/run-hash-summary"));
-        run.step.dependOn(&b.addInstallArtifact(corpus_test, tools).step);
+        run.step.dependOn(&corpus_tool_install.step);
         run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
         run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
         step.dependOn(&run.step);
@@ -593,21 +595,17 @@ pub fn build(b: *std.Build) void {
         run.has_side_effects = true;
         b.step("test-time-report", "Run `gates` (or -Dtime-step) with every test timed; write the tables into plans/test-time-report.md").dependOn(&run.step);
     }
-    // The smoke test runs the report tool around a child build of one
-    // corpus fixture, so it needs the tool, Zig, and the corpus binary the
-    // child reuses already compiled (it passes on `-Dllvm` and
-    // `-Doptimize` for the same reason: a different compiler would be a
-    // minute's compile).
+    // The smoke test runs the report tool around the corpus walker on one
+    // fixture, so it needs the tool and the walker installed.
     {
         const tool_install = b.addInstallArtifact(time_report_exe, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
         const smoke = bb.artifact("tests/blackbox/time_report_test.zig");
         const smoke_step = bb.fileStep("tests/blackbox/time_report_test.zig");
         const run = bb.run(smoke, .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_TIME_REPORT_EXE", b.getInstallPath(.prefix, "tools/time-report"));
-        run.setEnvironmentVariable("BENI_ZIG_EXE", b.graph.zig_exe);
-        run.setEnvironmentVariable("BENI_CHILD_BUILD_ARGS", std.mem.join(b.allocator, " ", childBuildArgs(b, optimize, llvm, &.{}, "")) catch @panic("OOM"));
+        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
         run.step.dependOn(&tool_install.step);
-        run.step.dependOn(&corpus_test.step);
+        run.step.dependOn(&corpus_tool_install.step);
         smoke_step.dependOn(&run.step);
         blackbox_step.dependOn(smoke_step);
     }
