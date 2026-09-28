@@ -584,14 +584,14 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
 // calls deep, none of which Zig's own backend inlines.
 
 /// Push `items` in order.
-fn pushAll(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+inline fn pushAll(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
     const at = stack.items.len;
     if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
     stack.items.len = at + items.len;
     @memcpy(stack.items[at..], items);
 }
 
-fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+inline fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
     const at = stack.items.len;
     if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
     stack.items.len = at + items.len;
@@ -601,7 +601,7 @@ fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []cons
 
 /// The top of a walker's stack, taken off; null when it is empty. What
 /// `ArrayList.pop` does, without its calls.
-pub fn popOperand(stack: *std.ArrayList(Node.Index)) ?Node.Index {
+pub inline fn popOperand(stack: *std.ArrayList(Node.Index)) ?Node.Index {
     const len = stack.items.len;
     if (len == 0) return null;
     stack.items.len = len - 1;
@@ -960,6 +960,11 @@ pub const Builder = struct {
     }
 
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
+        return b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
+    }
+
+    /// `addNode` from the node's fields, with no `Node` built on the way.
+    pub fn addParts(b: *Builder, node_tag: Node.Tag, node_pos: u32, lhs: u32, rhs: u32) Allocator.Error!Node.Index {
         const index = b.nodes.len;
         if (index == b.nodes.capacity) {
             try b.nodes.ensureUnusedCapacity(b.gpa, 1);
@@ -970,9 +975,9 @@ pub const Builder = struct {
         const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@intFromEnum(NodeList.Field.tag)]);
         const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.pos)]));
         const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@intFromEnum(NodeList.Field.data)]));
-        tags[index] = node.tag;
-        positions[index] = node.pos;
-        datas[index] = node.data;
+        tags[index] = node_tag;
+        positions[index] = node_pos;
+        datas[index] = .{ .lhs = lhs, .rhs = rhs };
         return @enumFromInt(index);
     }
 

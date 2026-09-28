@@ -490,6 +490,9 @@ const Lowerer = struct {
     /// The shared terms already bound in `bound_out`, by term index.
     bound: IndexMap(JsIr.NameIndex) = .empty,
     bound_out: ?*StmtList = null,
+    /// `slotName`'s answers by slot, interned once: a wide constructor
+    /// asks for each of its slots per use and per derived position.
+    slot_names: std.ArrayList(Symbol.Optional) = .empty,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -564,7 +567,7 @@ const Lowerer = struct {
     }
 
     fn add(l: *Lowerer, tag: Node.Tag, p: u32, lhs: u32, rhs: u32) !Node.Index {
-        return l.b.addNode(.{ .tag = tag, .pos = p, .data = .{ .lhs = lhs, .rhs = rhs } });
+        return l.b.addParts(tag, p, lhs, rhs);
     }
 
     fn name(l: *Lowerer, n: JsIr.Name) !JsIr.NameIndex {
@@ -638,7 +641,16 @@ const Lowerer = struct {
     /// use. Positional and not the field's own name, because a constructor
     /// argument has no name and a tuple element has no name either.
     fn slotName(l: *Lowerer, index: u32) !Symbol {
-        var buf: [8]u8 = undefined;
+        if (index < l.slot_names.items.len) {
+            if (l.slot_names.items[index].unwrap()) |known| return known;
+        } else try l.slot_names.appendNTimes(l.scratch, .none, index + 1 - l.slot_names.items.len);
+        const symbol = try l.spellSlot(index);
+        l.slot_names.items[index] = symbol.toOptional();
+        return symbol;
+    }
+
+    fn spellSlot(l: *Lowerer, index: u32) !Symbol {
+        var buf: [16]u8 = undefined;
         const spelled = if (index < 26)
             std.fmt.bufPrint(&buf, "{c}", .{@as(u8, 'a') + @as(u8, @intCast(index))}) catch unreachable
         else
