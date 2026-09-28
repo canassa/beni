@@ -632,7 +632,13 @@ test "an inner frame's variable bound to an outer one escapes; its own is quanti
     try testing.expectEqual(@as(usize, 2), frames[0].pool.items.len);
 }
 
-test "rank adjustment walks a 100 000-deep type without recursion" {
+test "rank adjustment walks a type deeper than a recursive walk survives" {
+    // On `small_stack`'s few pages, where a walk that recursed per level
+    // would overflow at a fraction of `Walk.deep_type`.
+    try @import("../small_stack.zig").run(adjustDeepType, .{});
+}
+
+fn adjustDeepType() !void {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
     var stacks: Walk.Stacks = .{};
@@ -641,7 +647,7 @@ test "rank adjustment walks a 100 000-deep type without recursion" {
     defer pool.deinit(testing.allocator);
     const outer = try store.freshFlex(1);
     var v = outer;
-    for (0..100_000) |_| {
+    for (0..Walk.deep_type) |_| {
         const args = try store.addVars(&.{v});
         v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 3);
         try pool.append(testing.allocator, v);

@@ -768,14 +768,29 @@ test "occurs finds a cycle through a record and none through a constraint's meth
     try testing.expectEqual(@as(?Var, null), child(&store, y, 0, .structural));
 }
 
-test "a 100 000-deep type goes through occurs, the error scan and lowerTo" {
+const small_stack = @import("../small_stack.zig");
+
+/// Twice the depth at which the smallest recursive walk there is — one
+/// frame per level, reading one child and nothing else — overflows
+/// `small_stack.size` on the Debug test binary: it finished 4 000 levels
+/// and overflowed at 10 000. A walk that recursed per level cannot get
+/// through a type this deep on that stack.
+pub const deep_type = 20_000;
+
+test "a type deeper than a recursive walk survives goes through occurs, the error scan and lowerTo" {
+    // The walks keep their own stack (`Stacks`), so they run on
+    // `small_stack`'s few pages at any depth.
+    try small_stack.run(walkDeepType, .{});
+}
+
+fn walkDeepType() !void {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
     var stacks: Stacks = .{};
     defer stacks.deinit(testing.allocator);
     var v = try store.fresh(.err, 5);
     const bottom = v;
-    for (0..100_000) |_| {
+    for (0..deep_type) |_| {
         const args = try store.addVars(&.{v});
         v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, 5);
     }
