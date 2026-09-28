@@ -851,6 +851,34 @@ with its category (Elm's split). Inside `unify`:
     capture, on the error path only.
 - **records** use the four-way merge-join of today, producing a normalised record (§4.1).
 
+*Amended by R15-fix-C (2026-09-28, CK-169, CK-172, CK-173, CK-174): an alias is a name, and
+`unify` never closes a cycle through an alias's `actual`.* Every unification with an alias on
+either side goes through one row (`Unify.throughAlias`), which first resolves each alias side to
+the end of its chain:
+
+- **Two sides whose chains end at one variable are one type**, and nothing is written. Before,
+  `x ⊓ Id x` bound `x` to the alias whose expansion is `x` — a cycle through `actual`, which the
+  binder's occurs check then called an INFINITE TYPE `a = Id a` (CK-172) — and two aliases of one
+  name, one the other's argument, merged into a node whose `actual` reached itself.
+- **A variable meets the expansion when the expansion is a variable.** `rigid ⊓ alias` answered
+  "no" without looking through (`unwrapId : Id a -> a` was a rigid mismatch, CK-173), and a
+  `number` flex tested its kind against an alias of the literal's own flex and failed
+  (`wrap 1 == wrap 1` was a kind mismatch, CK-174). Only a **flex ⊓ alias of a structure or `err`**
+  binds the flex to the alias by name, so a message still prints `Id Int` where the program wrote
+  it.
+- **Two aliases of one name** unify their arguments pairwise and merge, keeping the name, unless the
+  arguments' unification has already joined them or their expansions; **otherwise the two
+  expansions meet directly**, not one link per recursion, which spent §7.3's depth on a long chain.
+
+With this row no write makes an alias reach itself through `actual` (every other writer of an
+`alias` — the builder, instantiation, the interface readers — copies an acyclic one), and
+`TypeStore.resolved` walks a chain with **no bound**: its 1 024-link guard answered `err` past it,
+silently (CK-169, CK-170; §12.2 *amended by R15-fix-C*). A chain longer than the store has
+variables would be this invariant broken, and panics. `resolved` **compresses** as `find` does:
+each alias on the walked path gets `actual` = the chain's end, journalled like any content write,
+so a chain is walked in full once. An alias's name and arguments, all `Render` prints, are
+untouched.
+
 ### 7.2 Choice among failures is by text (I13, CK-07)
 
 `unifyRecord` unifies every shared field and collects the failures. The one returned is the
@@ -923,6 +951,20 @@ The builder carries the aliases being expanded around a read (`Builder.expanding
 inside its own expansion is `err` (`recursive_alias`, reported; a cycle across modules is an
 `import_cycle`). The depth bound alone did not stop `type alias A = ( A, A )`, which doubles per
 level: 2^512 reads before the bound.
+
+*Amended by R15-fix-C (2026-09-28, CK-171): an alias applied to the same arguments is expanded
+once per read.* The aliases a written type names are a DAG even when the type is a tree —
+`A{i} = ( A{i-1}, A{i-1} )` — and `Builder.aliasBody` expanded each USE, so `f : A18 -> A18` was
+2^18 bodies (18 s in Debug). The builder of a read keeps `aliases`, `(alias, argument roots) →
+the alias variable`, shared by the builders it makes for alias bodies (across modules too), and
+an alias met again is that variable: a read costs its distinct pairs, and the store holds the DAG
+instantiation's `copy` memo already makes. Sharing is sound — an alias's expansion is a function
+of its arguments, and one type named twice is one type. An entry is made only when its expansion
+is finished, so an alias inside its own expansion still reaches the `expanding` test above. The
+memo is per read, never per store: two annotations get separate variables (their ranks and modes
+differ, and a poison of one must not reach the other). `==` over the depth-64 DAG builds in
+0.2 s (Debug). CK-144 (the same chain's interface terms, quadratic in bytes) is a different
+place — the interface writer — and is not changed by this.
 
 ### 7.5 Speculation (I14, CK-35)
 
@@ -2960,6 +3002,35 @@ those instructions to I7. This is sound because the `err` has a message wherever
 so the build that would lower the module stops at that error and never reaches the backend —
 and `Lower` still refuses a missing site, the backstop if an `<error>` were ever published
 without a message (CK-142 was such a path).
+
+*Amended by R15-fix-C (2026-09-28, CK-169, CK-170): "the `err` has a message wherever it was
+made" is made true, and checked.* It was false in one place: `TypeStore.resolved` answered `err`
+for an alias chain past 1 024 links — no message, and `err` unifies with anything — so `p == p`
+over a 1 200-link chain checked clean and `build` said INTERNAL ERROR, and `String.isEmpty p.0`
+over a number built. `resolved` now has no bound (§7.1 *amended by R15-fix-C*). Every producer of
+`err` in `src/check` was then audited, and each either reports where it makes the `err` or is
+downstream of a message already written:
+
+| Producer | Why its `err` has a message |
+|---|---|
+| `TypeStore.resolved`'s guard | **removed** (it was the silent one) |
+| `Builder.read` past `max_depth` | sets `too_deep`; `readAnnotation` reports `nesting_too_deep`, and so do `Publish`'s constructor reading, `Contexts` (`null` → at the use) and `Instantiate.ownCtor`; `Marker`'s and `Publish`'s second reading of the same constructor arguments are covered by the first |
+| `Builder.read`'s other tags, `named` with no type, `apply` at a wrong arity or inside its own expansion, `aliasBody` with no body | an earlier phase reported (unresolved name, parser placeholder, `wrong_type_arity`, `recursive_alias`, `import_cycle`, a parse error): the module is quiet, or the alias's module is a dependency with an error |
+| `Builder.named`, a private record schema's endpoint through another module's alias | **not covered**: CK-126, still pending; the check below catches it in Debug (its red is now `crash=ABRT`) |
+| `Builder.schemaMember`, `InterfaceTerms`/`Schemes` readers (`.err` term, a scheme `none`, a depth past the writer's bound) | the dependency's message: its publisher reported the `<error>` (§14.1 *amended by R15-fix-A*) or the depth (`nesting_too_deep` at the same bound); an index out of range is a malformed record, which no compiler-written interface is |
+| P2 and a `let`'s Elm-curried annotation (`Module`, `constrain/Decl`) | reported at the body (CK-56) |
+| `Schema.State` placeholders and malformed-plan rows | never read (a declaration that is not a schema), or the parser/resolution reported; `copyHelp` past 512 levels is the publisher's `nesting_too_deep` for a published endpoint (CK-13) — a private one deeper is a residual for the schema slices, with no runtime path |
+| `Solve.poison` | after the report at the same site (mismatch, arity, not-a-function, occurs, escape, `internal`), or on a reference whose scheme is refused (this module's failed declaration, reported) or missing (a dependency's) |
+| `Decide`, `Resolve.reject`, `Instances` | after a rejection reported here, or as a `poisoned` lineage (above); inside a derived-context pass (§11.2) a rejection is an answer ("not derivable") on the pass's own variables, which it discards |
+| `Unify` (`merge(…, .err)`), `Instantiate` (copy of `.err`) | propagation: one side was `err` already |
+
+**The check** (`Module.assertErrorsReported`, Debug only, as I7's panic is): a module that reported
+no error, and whose dependencies — transitively — reported none (`Driver.tainted`, `Input.
+dependency_errors`: an earlier phase's error, a poisoned graph node, or a checker error), must end
+with no `poisoned` wanted and no `err` reachable from any declaration's or local's type. One walk
+over those types. It runs over every gate; on `346268b`'s `resolved` it fires on CK-169's
+fixtures. (The whole store is not walked: a derived-context pass leaves `err`s on the variables of
+its discarded frames, which are answers, not holes.)
 
 ### 12.3 Calls inside a binding group (CK-30, CK-31)
 

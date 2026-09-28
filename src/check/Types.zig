@@ -968,6 +968,19 @@ pub const Builder = struct {
     /// The depth bound alone did not stop it — `type alias A = ( A, A )`
     /// doubles per level, 2^512 reads before the bound (CK-140).
     expanding: ?*const Expansion = null,
+    /// Every alias this read has expanded, by `(alias, argument roots)`:
+    /// the `alias` variable made for it (CK-171). A written type is a tree
+    /// but the aliases it names are a DAG — `A{i} = ( A{i-1}, A{i-1} )` —
+    /// and expanding each use again made `A18` 2^18 bodies. Here an alias
+    /// applied to the same arguments is one variable wherever the read
+    /// meets it, so a read costs its distinct `(alias, arguments)` pairs.
+    /// Sharing is sound: an alias's expansion is a function of its
+    /// arguments, and one type named twice is one type (instantiation's
+    /// `copy` memo makes the same DAGs). Owned by the outermost builder of
+    /// a read; the builders `aliasBody` makes for bodies borrow it
+    /// (`shared`), so one read shares across modules too.
+    aliases: AliasMemo = .empty,
+    shared: ?*AliasMemo = null,
     /// Set when `max_depth` stopped the walk, so the caller can REPORT
     /// before it uses the poisoned result. "Errors never stop the build"
     /// (`fast-compiler.md` §5) means a poisoned variable after a message,
@@ -983,6 +996,22 @@ pub const Builder = struct {
 
     /// One alias being expanded, and the expansion around it.
     pub const Expansion = struct { id: TypeId, outer: ?*const Expansion };
+
+    /// `aliases`: the key is the alias's `TypeId` followed by its
+    /// arguments' roots, copied into `scratch`.
+    pub const AliasMemo = std.HashMapUnmanaged([]const u32, Var, MemoContext, std.hash_map.default_max_load_percentage);
+    const MemoContext = struct {
+        pub fn hash(_: MemoContext, key: []const u32) u64 {
+            return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(key));
+        }
+        pub fn eql(_: MemoContext, a: []const u32, b: []const u32) bool {
+            return std.mem.eql(u32, a, b);
+        }
+    };
+
+    fn memo(b: *Builder) *AliasMemo {
+        return b.shared orelse &b.aliases;
+    }
 
     pub const Error = Allocator.Error;
 
@@ -1176,17 +1205,33 @@ pub const Builder = struct {
     pub fn apply(b: *Builder, id: TypeId, args: []const Var) Error!Var {
         const e = b.types.entry(id);
         if (args.len != e.arity) return b.store.freshErr(b.varRank());
-        const range = try b.store.addVars(args);
         if (e.kind != .alias) {
-            return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = range } } }, b.varRank());
+            return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = try b.store.addVars(args) } } }, b.varRank());
+        }
+        // Expanded already in this read (`aliases`, CK-171). An entry is
+        // made only once its expansion is finished, so an alias inside its
+        // own expansion is never found here and reaches the test below.
+        const key = try b.scratch.alloc(u32, args.len + 1);
+        key[0] = @intFromEnum(id);
+        for (args, key[1..]) |arg, *k| k.* = b.store.find(arg).int();
+        const table = b.memo();
+        if (table.get(key)) |v| {
+            b.scratch.free(key);
+            return v;
         }
         // Inside its own expansion: recursive, and reported (`expanding`).
         var at = b.expanding;
         while (at) |x| : (at = x.outer) {
-            if (x.id == id) return b.store.freshErr(b.varRank());
+            if (x.id == id) {
+                b.scratch.free(key);
+                return b.store.freshErr(b.varRank());
+            }
         }
+        const range = try b.store.addVars(args);
         const actual = try b.aliasBody(e, id, args);
-        return b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
+        const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
+        try b.memo().put(b.scratch, key, v);
+        return v;
     }
 
     /// Expand an alias's body once, under its parameters.
@@ -1223,6 +1268,7 @@ pub const Builder = struct {
         inner.depth = b.depth;
         const here: Expansion = .{ .id = id, .outer = b.expanding };
         inner.expanding = &here;
+        inner.shared = b.memo();
         // A schema endpoint in the body is read as the caller would read
         // it written directly (CK-122): through the caller's schema lookup
         // when the alias is the checked module's own, and through the
@@ -1249,6 +1295,9 @@ pub const Builder = struct {
 
     pub fn deinit(b: *Builder) void {
         b.scope.deinit(b.scratch);
+        var keys = b.aliases.keyIterator();
+        while (keys.next()) |k| b.scratch.free(k.*);
+        b.aliases.deinit(b.scratch);
     }
 };
 

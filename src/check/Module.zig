@@ -55,6 +55,7 @@ const Elaborate = @import("Elaborate.zig");
 const Groups = @import("Groups.zig");
 const Contexts = @import("Contexts.zig");
 const Decl = @import("constrain/Decl.zig");
+const Walk = @import("Walk.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -85,6 +86,9 @@ pub const Input = struct {
     informational: bool = false,
     /// This module's slot of `Check.modules`, under `keep_stores`.
     keep: ?*Check.Module = null,
+    /// An error reached a dependency, transitively (`Driver.tainted`): an
+    /// `err` this module meets may carry that dependency's message.
+    dependency_errors: bool = false,
 };
 
 pub fn check(in: Input) Error!Check.Counters {
@@ -263,6 +267,7 @@ pub fn check(in: Input) Error!Check.Counters {
         try report.flush();
         // Last, so every error the module has gates it (v1's rule, S2).
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
+        if (std.debug.runtime_safety and report.errors == 0 and !in.dependency_errors) try assertErrorsReported(store, scratch, p6, &.{ decl_scheme, decl_display, local_type });
     }
     // Gated on NO error in the module, after the last pass that can report
     // one (CK-15).
@@ -495,6 +500,38 @@ fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
     const out = try scratch.alloc(u32, groups.group_of.len);
     for (out, groups.group_of) |*o, g| o.* = if (g == Groups.none) g else groups.root(g);
     return out;
+}
+
+/// **Every `err` has a message** (§12.2 *amended by R15-fix-C*), checked: in
+/// a module that reported no error, and whose dependencies reported none
+/// (`Input.dependency_errors`), no declaration's or local's type reaches an
+/// `err`, and no wanted is `poisoned`. `err` means "a message was written
+/// for this"; a producer that makes one without it — `TypeStore.resolved`'s
+/// old guard was one (CK-169) — turns a wrong program into a silent hole and
+/// a `poisoned` wanted into an INTERNAL ERROR at `build`. Only the types the
+/// module's declarations and locals HAVE are walked: a derived-context pass
+/// (§11.2) rejects a payload's wanted against the variables of its own frame,
+/// which it discards, and that rejection is an answer ("not derivable"), not
+/// a hole. Debug only, as I7's panic is (§13.1): one walk over those types,
+/// each node once.
+fn assertErrorsReported(store: *TypeStore, scratch: Allocator, p6: P6Faults, tables: []const []const Var.Optional) Error!void {
+    const seen = store.nextMark();
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(scratch);
+    for (tables) |table| for (table) |t| if (t.unwrap()) |v| try stack.append(scratch, v);
+    var errs: usize = 0;
+    while (stack.pop()) |next| {
+        const root = store.find(next);
+        if (store.mark(root) == seen) continue;
+        store.setMark(root, seen);
+        if (store.content(root) == .err) errs += 1;
+        var n: u32 = 0;
+        while (Walk.child(store, root, n, .structural)) |c| : (n += 1) try stack.append(scratch, c);
+    }
+    if (errs != 0 or p6.poisoned.len != 0) std.debug.panic(
+        "an `err` without a message: {d} in the types of declarations and locals, and {d} poisoned instruction(s), in a module that reported no error and whose dependencies reported none (checker-v2.md §12.2 *amended by R15-fix-C*)",
+        .{ errs, p6.poisoned.len },
+    );
 }
 
 /// I7 (§2, §13.1) over the finished table, the one the backend will read:

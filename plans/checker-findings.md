@@ -3544,6 +3544,9 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   expand. A hidden endpoint row for a private schema a `pub` alias body names, or `alias_body`.
 - **Fixture** `tests/pending/check/bad/PrivateRecordSchemaAliasAcrossModules` (red under both).
 - **Slice** unassigned: the schema slices' owner or R9 (interface work).
+- **Note** (R15-fix-C, 2026-09-28) the Debug check `Module.assertErrorsReported` (§12.2 *amended
+  by R15-fix-C*) catches this silent `err`: the fixture's red is `crash=ABRT` in Debug; release
+  still accepts it.
 
 ### CK-127 — Lowering a `let` of many bindings is quadratic
 
@@ -4325,6 +4328,12 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Fixture** `check/bad/AliasChainNotEquatable.beni` (red `exit=0 codes=none`) and
   `run/AliasChainThroughLet.beni` (red `dev: exit=1 codes=internal×1`).
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C (2026-09-28), `checker-v2.md` §7.1 and §12.2 *amended by
+  R15-fix-C*. `TypeStore.resolved` has no bound and compresses the chain it walks; `Unify` never
+  closes a cycle through an alias's `actual` (`throughAlias`), which is what makes the walk finite.
+  `Module.assertErrorsReported` (Debug) holds a clean module to no `poisoned` wanted and no `err` in
+  its declarations' and locals' types, and fires on both fixtures at 346268b's `resolved`. Promoted:
+  `tests/corpus/check/bad/AliasChainNotEquatable.beni`, `tests/corpus/run/AliasChainThroughLet.beni`.
 
 ### CK-170 — An alias chain past 1 024 links unifies with anything (unsound)
 
@@ -4336,6 +4345,9 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** the TYPE MISMATCH two calls (800 links) report at `p.0`.
 - **Fixture** `check/bad/AliasChainKeepsItsType.beni`, red `exit=0 codes=none`.
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C with CK-169. The TYPE MISMATCH is `kind_mismatch` at `.0`, as
+  the two-call oracle twin reports (the pending `.codes` guessed `type_mismatch`). Promoted:
+  `tests/corpus/check/bad/AliasChainKeepsItsType.beni`.
 
 ### CK-171 — An alias DAG is expanded as a tree: exponential in its depth
 
@@ -4347,6 +4359,10 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** each alias expanded once per (alias, arguments) and annotation: linear in the depth.
 - **Fixture** `scenario/CK-171` (`test-pending-perf`, depth 9 / 18), red `slow`.
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C (2026-09-28), `checker-v2.md` §7.4 *amended by R15-fix-C*:
+  `Types.Builder.aliases` expands each `(alias, argument roots)` once per read, shared by the
+  builders of alias bodies. Depth 18 checks in 0.13 s in Debug (18 s before); `==` over the
+  depth-64 DAG builds in 0.2 s. `scenario/CK-171` promoted into `perf_test.zig` (`test-perf`).
 
 ### CK-172 — A variable unified with an alias of itself is an INFINITE TYPE
 
@@ -4361,6 +4377,8 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   variable is a no-op.
 - **Fixture** `run/AliasOfItselfUnifies.beni`, red `dev: exit=1 codes=infinite_type×1`.
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C (2026-09-28), `checker-v2.md` §7.1 *amended by R15-fix-C*
+  (`Unify.throughAlias`). Promoted into `tests/corpus/run/`.
 
 ### CK-173 — A rigid variable does not unify with an alias that expands to it
 
@@ -4371,6 +4389,8 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
 - **Expected** it checks: `Id a` is `a`.
 - **Fixture** `run/RigidMeetsAliasOfItself.beni`, red `dev: exit=1 codes=rigid_mismatch×1`.
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C (2026-09-28), `checker-v2.md` §7.1 *amended by R15-fix-C*
+  (`Unify.throughAlias`). Promoted into `tests/corpus/run/`.
 
 ### CK-174 — A kinded variable meeting an alias of a variable is a kind mismatch
 
@@ -4385,6 +4405,8 @@ entry says so and has none. Every entry's slice is **R15-fix**, the slices that 
   variables meeting.
 - **Fixture** `run/NumberUnderAliasCompared.beni`, red `dev: exit=1 codes=kind_mismatch×1`.
 - **Slice** R15-fix-C.
+- **Status** fixed by R15-fix-C (2026-09-28), `checker-v2.md` §7.1 *amended by R15-fix-C*
+  (`Unify.throughAlias`). Promoted into `tests/corpus/run/`.
 
 ## Summary table
 
@@ -4562,12 +4584,12 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-166 | diagnostic-quality | K14 | `scenario/CK-166` | R15-fix (frontend) |
 | CK-167 | valid-program-rejected | K11 | `scenario/CK-167` | R15-fix |
 | CK-168 | diagnostic-quality | K13 | `check/bad/OwnMethodSignatureReportedOnce.beni` | R15-fix |
-| CK-169 | compiler-crash-or-hang | K3 | `check/bad/AliasChainNotEquatable.beni`, `run/AliasChainThroughLet.beni` | R15-fix-C |
-| CK-170 | unsound-runtime | K3 | `check/bad/AliasChainKeepsItsType.beni` | R15-fix-C |
-| CK-171 | performance | K11 | `scenario/CK-171` (`test-pending-perf`) | R15-fix-C |
-| CK-172 | valid-program-rejected | K3 | `run/AliasOfItselfUnifies.beni` | R15-fix-C |
-| CK-173 | valid-program-rejected | K5 | `run/RigidMeetsAliasOfItself.beni` | R15-fix-C |
-| CK-174 | valid-program-rejected | K5 | `run/NumberUnderAliasCompared.beni` | R15-fix-C |
+| CK-169 | compiler-crash-or-hang | K3 | `check/bad/AliasChainNotEquatable.beni`, `run/AliasChainThroughLet.beni` | R15-fix-C (fixed, promoted) |
+| CK-170 | unsound-runtime | K3 | `check/bad/AliasChainKeepsItsType.beni` | R15-fix-C (fixed, promoted) |
+| CK-171 | performance | K11 | promoted: `perf_test.zig` "CK-171" (`test-perf`) | R15-fix-C (fixed, promoted) |
+| CK-172 | valid-program-rejected | K3 | `run/AliasOfItselfUnifies.beni` | R15-fix-C (fixed, promoted) |
+| CK-173 | valid-program-rejected | K5 | `run/RigidMeetsAliasOfItself.beni` | R15-fix-C (fixed, promoted) |
+| CK-174 | valid-program-rejected | K5 | `run/NumberUnderAliasCompared.beni` | R15-fix-C (fixed, promoted) |
 
 Totals:
 - 174 entries (CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.

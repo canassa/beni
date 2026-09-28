@@ -66,6 +66,13 @@ kept: []Module,
 /// One per module, written by the worker that checked it.
 dispatch: []Dispatch,
 plans: []SchemaPlan,
+/// Per module, written by the worker that checked it before `finish`
+/// releases its dependents: whether an error reached it — its own (an
+/// earlier phase's, which quiets it, or its check's), or any dependency's,
+/// transitively. A clean module's `<error>` scheme is always one of these
+/// (§12.2 *amended by R15-fix-A*); `Module.assertErrorsReported` holds a
+/// module with none to having no `err` of its own making.
+tainted: []bool = &.{},
 /// What each module's cache key can see move (`reads.zig`). Empty outside
 /// a safe build and on a cyclic project, and then the self-check is off.
 coverage: reads.Coverage = .empty,
@@ -362,6 +369,10 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
 }
 
 fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
+    const dependency_errors = d.dependencyErrors(m);
+    defer if (m.int() < d.tainted.len) {
+        d.tainted[m.int()] = dependency_errors or d.reportedError(m);
+    };
     if (m.int() < d.options.cached.len) {
         if (d.options.cached[m.int()]) |*loaded| {
             const file = d.graph.moduleFile(m);
@@ -402,5 +413,26 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .roundtrip_dispatch = d.options.roundtrip_dispatch,
         .informational = d.options.informational,
         .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
+        .dependency_errors = dependency_errors,
     });
+}
+
+/// Whether an error reached one of `m`'s dependencies (`tainted`). Every
+/// dependency has finished: `m` was not ready before.
+fn dependencyErrors(d: *const Driver, m: Graph.Index) bool {
+    for (d.graph.dependencies(m)) |dep| {
+        if (dep.int() >= d.tainted.len or d.tainted[dep.int()]) return true;
+    }
+    return false;
+}
+
+/// Whether `m` itself carries an error: an earlier phase reported one (it
+/// was checked quietly), the graph poisoned it, or its check reported one.
+fn reportedError(d: *const Driver, m: Graph.Index) bool {
+    if (m.int() < d.options.quiet.len and d.options.quiet[m.int()]) return true;
+    if (d.graph.isPoisoned(m)) return true;
+    for (d.per_module[m.int()].items) |item| {
+        if (item.severity == .@"error") return true;
+    }
+    return false;
 }

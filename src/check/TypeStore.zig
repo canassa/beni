@@ -640,22 +640,57 @@ pub fn resolvedContent(store: *TypeStore, v: Var) Content {
     return c;
 }
 
+/// `resolvedContent` with the root the walk ended on.
+///
+/// **No bound, and no `err` it did not find** (R15-fix-C, CK-169, CK-170).
+/// An alias chain is as long as the program makes it — nested annotations,
+/// and every flex that absorbed an alias by name — so a chain of 1 200
+/// links is an ordinary type. The walk used to stop at 1 024 links and
+/// answer `err`, which reports nothing and unifies with anything: `check`
+/// exited 0 over a comparison it could not dispatch, and a wrong use built.
+/// Termination is `Unify`'s invariant instead: it never closes a cycle
+/// through `actual` (`Unify.throughAlias`), and every other writer of an
+/// `alias` copies an acyclic one; a chain longer than the store has
+/// variables is that invariant broken, a compiler bug, and panics.
+///
+/// **The walk compresses** as `find` does: every alias on the path gets
+/// `actual` = the end, journalled like any content write, so a chain is
+/// walked in full once and every later walk is one step. An alias's
+/// `actual` is its expansion's representative, and the end is the same
+/// type; the alias itself — its name and arguments, all `Render` prints —
+/// is untouched.
 pub fn resolved(store: *TypeStore, v: Var) struct { Var, Content } {
-    var root = store.find(v);
-    var guard: u32 = 0;
+    const start = store.find(v);
+    var root = start;
+    var links: u32 = 0;
     while (true) {
         const c = store.content(root);
         switch (c) {
-            // An alias chain is as deep as the source nests aliases, and
-            // `recursive_alias` has already refused the cyclic ones; the
-            // guard is belt and braces against a poisoned chain.
             .alias => |a| {
-                guard += 1;
-                if (guard > 1024) return .{ root, .err };
+                links += 1;
+                if (links > store.count()) @panic("an alias chain is a cycle through `actual` (TypeStore.resolved; checker-v2.md §7.1 *amended by R15-fix-C*)");
                 root = store.find(a.actual);
             },
-            else => return .{ root, c },
+            else => {
+                if (links > 1) store.compressAliases(start, root);
+                return .{ root, c };
+            },
         }
+    }
+}
+
+/// Point every alias on the chain from `start` at `end` (`resolved`).
+fn compressAliases(store: *TypeStore, start: Var, end: Var) void {
+    var at = start;
+    while (at != end) {
+        const a = store.content(at).alias;
+        const next = store.find(a.actual);
+        if (a.actual != end) {
+            var shortened = a;
+            shortened.actual = end;
+            store.setContent(at, .{ .alias = shortened });
+        }
+        at = next;
     }
 }
 
@@ -990,6 +1025,30 @@ test "resolved looks through an alias chain to the expansion" {
     const root, const c = store.resolved(outer);
     try testing.expectEqual(int, root);
     try testing.expectEqual(@as(TypeId, @enumFromInt(7)), c.structure.app.type);
+}
+
+test "resolved walks an alias chain of any length and compresses it (CK-169)" {
+    var store: TypeStore = .init(testing.allocator);
+    defer store.deinit();
+    const int = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(7), .args = .empty } } }, 1);
+    var at = int;
+    for (0..3000) |_| at = try store.fresh(.{ .alias = .{ .type = @enumFromInt(1), .args = .empty, .actual = at } }, 1);
+    // Past the old guard of 1 024 links: the structure, never `err`.
+    const root, const c = store.resolved(at);
+    try testing.expectEqual(int, root);
+    try testing.expect(c == .structure);
+    // Every alias on the path now names the end, and is still an alias.
+    try testing.expectEqual(int, store.content(at).alias.actual);
+    try testing.expect(store.content(at) == .alias);
+    // Under a mark the compression is journalled like any write.
+    var again = int;
+    for (0..3) |_| again = try store.fresh(.{ .alias = .{ .type = @enumFromInt(1), .args = .empty, .actual = again } }, 1);
+    const before = store.content(again).alias.actual;
+    const snap = store.beginSpeculation();
+    _ = store.resolved(again);
+    try testing.expectEqual(int, store.content(again).alias.actual);
+    try testing.expect(store.rollback(snap));
+    try testing.expectEqual(before, store.content(again).alias.actual);
 }
 
 test "rollback restores descriptors and discards variables and extra made since the mark" {

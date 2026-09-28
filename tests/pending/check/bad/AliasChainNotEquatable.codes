@@ -1,2 +1,0 @@
-# CK-169: the comparison of a function, 1 200 aliases deep.
-not_equatable 25:7 contains "String -> Int"

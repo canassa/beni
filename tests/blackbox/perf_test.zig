@@ -317,6 +317,32 @@ fn sharedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
+// CK-171 (R15-fix-C, found by R15-fix-A's review; promoted from
+// `pending_test.zig`): an alias DAG was expanded as a tree. `A0 = Int`,
+// `A{i} = ( A{i-1}, A{i-1} )` and one `f : A{n} -> A{n}`:
+// `Types.Builder.aliasBody` read each alias's body once per USE, 2^n
+// expansions for n declarations. `Builder.aliases` expands each `(alias,
+// argument roots)` once per read (checker-v2.md §7.4 *amended by
+// R15-fix-C*). Calibration (ReleaseFast, CPU): 346268b checks depth 9 / 18 in
+// 7 / 535 ms (ratio 76; 18 s at 18 in Debug); fixed, both at the floor.
+test "CK-171: an annotation over a doubling alias DAG is linear in its depth" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("D9.beni", try aliasDag(s.arena(), 9));
+    try s.w.write("D18.beni", try aliasDag(s.arena(), 18));
+    try s.finish("CK-171", try s.ratio("D9.beni", "D18.beni", 9));
+}
+
+/// `type alias A0 = Int`, `type alias A{i} = ( A{i-1}, A{i-1} )` up to
+/// `depth`, and `f : A{depth} -> A{depth}`.
+fn aliasDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 =\n    Int\n\n\n");
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} =\n    ( A{d}, A{d} )\n\n\n", .{ i, i - 1, i - 1 });
+    try out.print(arena, "f : A{d} -> A{d}\nf x =\n    x\n", .{ depth, depth });
+    return out.items;
+}
+
 // CK-101's timing twin (R6a's review, B2): `==` on a doubling DAG whose every
 // level passes two method boundaries that alternate the method — `A`'s `eq`
 // asks its payload for `compare`, `B`'s `compare` asks for `eq`. v2's

@@ -450,6 +450,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
 
     const ca = st.content(ra);
     const cb = st.content(rb);
+    if (ca == .alias or cb == .alias) return u.throughAlias(ra, ca, rb, cb);
     // **Coinduction** (§7.3, *As built by R4b's review*). Only two
     // non-variables recurse, and only they can meet again on a cycle: a pair
     // already being unified further up is assumed equal, so a cyclic graph —
@@ -463,11 +464,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
         if (u.isActive(ra, rb)) return true;
         try u.pushActive(ra, rb);
         defer u.popActive();
-        return switch (ca) {
-            .alias => |aa| u.alias(ra, aa, rb, cb),
-            .structure => |sa| u.structure(ra, sa, rb, cb),
-            else => unreachable,
-        };
+        return u.structure(ra, ca.structure, rb, cb);
     }
     return switch (ca) {
         .err => {
@@ -479,7 +476,7 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
         },
         .flex => |fa| u.flex(ra, fa, rb, cb),
         .rigid => |fa| u.rigid(ra, fa, rb, cb),
-        .alias => |aa| u.alias(ra, aa, rb, cb),
+        .alias => unreachable, // `throughAlias`
         .structure => |sa| u.structure(ra, sa, rb, cb),
     };
 }
@@ -597,7 +594,8 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
             try u.bind(ra, fa, rb, cb);
             return true;
         },
-        .alias, .structure => {
+        .alias => unreachable, // `throughAlias`
+        .structure => {
             if (fa.kind != .any and !u.kindAccepts(fa.kind, rb)) {
                 return u.fail(.{ .kind_not_satisfied = .{ .kind = fa.kind } });
             }
@@ -641,34 +639,82 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
         },
         // Two rigids, or a rigid against a real type: the annotation
         // promised more than the code delivers.
-        .rigid, .structure, .alias => return false,
+        .rigid, .structure => return false,
+        .alias => unreachable, // `throughAlias`
     }
 }
 
-fn alias(u: *Unify, ra: Var, aa: TypeStore.Alias, rb: Var, cb: TypeStore.Content) Error!bool {
+/// Unify two types at least one of which is an alias (checker-v2.md §7.1
+/// *amended by R15-fix-C*). An alias is a NAME for its expansion, so:
+///
+///   - **two types whose expansions end at one variable are one type**, and
+///     nothing is written. Merging them anyway closed a cycle through an
+///     alias's `actual`: `x` against `Id x` bound `x` to an alias whose
+///     expansion is `x` (a false INFINITE TYPE, CK-172), and two same-named
+///     aliases, one the other's argument, merged into a node that expands
+///     to itself — the cycle `TypeStore.resolved` once stopped at 1 024
+///     links with a silent `err` (CK-169). With this row no write makes an
+///     alias reach itself through `actual`, which is what lets `resolved`
+///     walk with no bound;
+///   - a **variable** meets the alias's expansion when that expansion is a
+///     variable too: a `number` flex against `Id number` is two flexes
+///     (CK-174), a rigid against `Id a` is `a` against `a` (CK-173). Only a
+///     flex against an alias of a STRUCTURE absorbs it by name, so a message
+///     still prints `Id Int` where the program wrote it;
+///   - two aliases of the same name unify their arguments and keep the
+///     name; otherwise the expansions meet, directly — not one link per
+///     recursion, which spent `max_depth` on a long chain.
+fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStore.Content) Error!bool {
     const st = u.store;
-    switch (cb) {
+    const xa, const xca = if (ca == .alias) st.resolved(ra) else .{ ra, ca };
+    const xb, const xcb = if (cb == .alias) st.resolved(rb) else .{ rb, cb };
+    if (xa == xb) return true;
+    if (ca == .alias and cb == .alias) {
+        const aa = ca.alias;
+        const ab = cb.alias;
+        if (aa.type != ab.type or aa.args.len != ab.args.len) return u.go(xa, xb);
+        if (u.isActive(ra, rb)) return true;
+        try u.pushActive(ra, rb);
+        defer u.popActive();
+        if (!try u.pairs(aa.args, ab.args)) return false;
+        // The arguments' unification may have joined the two, or their
+        // expansions: then there is nothing to merge, and merging would
+        // make the survivor's `actual` reach itself.
+        const na = st.find(ra);
+        const nb = st.find(rb);
+        if (na == nb) return true;
+        const ya, _ = st.resolved(na);
+        const yb, _ = st.resolved(nb);
+        if (ya == yb) return true;
+        _ = try u.merge(na, nb, st.content(nb));
+        return true;
+    }
+    // One side is an alias; `r`, `c` the other.
+    const alias_left = ca == .alias;
+    const r = if (alias_left) rb else ra;
+    const c = if (alias_left) cb else ca;
+    const x = if (alias_left) xa else xb;
+    const xc = if (alias_left) xca else xcb;
+    switch (c) {
         .err => {
             _ = try u.merge(ra, rb, .err);
             return true;
         },
-        // The flex side absorbs the alias, name and all.
-        .flex => |fb| {
-            if (fb.kind != .any and !u.kindAccepts(fb.kind, ra)) {
-                return u.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
-            }
-            try u.equatableMeets(fb, ra);
-            try u.bind(rb, fb, ra, .{ .alias = aa });
-            return true;
+        .flex => |f| switch (xc) {
+            .flex, .rigid => return if (alias_left) u.go(x, r) else u.go(r, x),
+            // The flex absorbs the alias, name and all.
+            else => {
+                const named = if (alias_left) ra else rb;
+                if (f.kind != .any and !u.kindAccepts(f.kind, named)) {
+                    return u.fail(.{ .kind_not_satisfied = .{ .kind = f.kind } });
+                }
+                try u.equatableMeets(f, named);
+                try u.bind(r, f, named, st.content(named));
+                return true;
+            },
         },
-        .rigid => return u.go(aa.actual, rb),
-        .alias => |ab| {
-            if (aa.type != ab.type or aa.args.len != ab.args.len) return u.go(aa.actual, ab.actual);
-            if (!try u.pairs(aa.args, ab.args)) return false;
-            _ = try u.merge(st.find(ra), st.find(rb), .{ .alias = ab });
-            return true;
-        },
-        .structure => return u.go(aa.actual, rb),
+        .rigid, .structure => return if (alias_left) u.go(x, r) else u.go(r, x),
+        .alias => unreachable,
     }
 }
 
@@ -697,7 +743,7 @@ fn structure(u: *Unify, ra: Var, sa: TypeStore.Structure, rb: Var, cb: TypeStore
             return true;
         },
         .rigid => return false,
-        .alias => |ab| return u.go(ra, ab.actual),
+        .alias => unreachable, // `throughAlias`
         .structure => |sb| return u.flat(ra, sa, rb, sb),
     }
 }

@@ -339,7 +339,13 @@ pub fn run(
     var coverage: reads.Coverage = try .build(gpa, graph);
     defer coverage.deinit(gpa);
 
+    // Which modules carry an error, their own or a dependency's (`Driver.tainted`).
+    const tainted = try gpa.alloc(bool, modules);
+    defer gpa.free(tainted);
+    @memset(tainted, false);
+
     var driver: Driver = .{
+        .tainted = tainted,
         .gpa = gpa,
         .io = io,
         .graph = graph,

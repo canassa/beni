@@ -2729,6 +2729,46 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     `scenario/CK-140` promoted into `abuse_test.zig` with both mutual forms. Gates,
     `test-pending` (the rest still red for their recorded reasons) and `test-perf` green.
 
+#### R15-fix-C — Alias chains, the alias DAG, and every `err` with its message (added by the manager, 2026-09-28)
+
+- **Goal.** R15-fix-A's review: `TypeStore.resolved` turned an alias chain past 1 024 links into a
+  silent `err` (D1, CK-169: `check` 0, `build` INTERNAL ERROR; D1b, CK-170: a wrong use builds),
+  and an alias DAG was expanded as a tree (D3, CK-171: 18 s for depth 18). Make "every `err` has a
+  message wherever it was made" true and enforced, and remove the cap's silent path.
+- **As built (2026-09-28).** Red first (`bc464c6`: six fixtures and `scenario/CK-171`, each red on
+  346268b for its recorded reason); spec in `checker-v2.md` §7.1, §7.4 and §12.2, each *amended by
+  R15-fix-C*.
+  - **Why the store had a guard.** It was "belt and braces" against a cycle through `actual` — and
+    `Unify` could make one. Writing the fixtures found three more findings from that one place:
+    `x ⊓ Id x` bound `x` to its own alias (a false INFINITE TYPE, CK-172), `rigid ⊓ alias` never
+    looked through (CK-173), and a `number` flex tested its kind against an alias of a variable
+    (CK-174). `Unify.throughAlias` is now the one row for an alias on either side: sides whose
+    chains end at one variable are one type and nothing is written; a variable meets the expansion
+    when it is a variable; only a flex against an alias of a structure binds by name; same-named
+    aliases unify arguments, re-check, then merge. No write closes a cycle through `actual`.
+  - **`resolved`** has no bound (a chain longer than the store's variables panics: the invariant
+    broken) and compresses the path it walks, journalled, as `find` does.
+  - **CK-171.** `Types.Builder.aliases`: `(alias, argument roots) →` the alias variable, per read,
+    shared by the body builders. Depth 18: 18 s → 0.13 s (Debug); `==` over depth 64 builds in
+    0.2 s.
+  - **The audit** of every `err` producer in `src/check` is the table in §12.2 *amended by
+    R15-fix-C*. One producer is not covered: CK-126 (a private record schema's endpoint through
+    another module's alias; pending, unassigned).
+  - **The check.** `Module.assertErrorsReported` (Debug): a module that reported no error and whose
+    dependencies, transitively (`Driver.tainted`), reported none has no `poisoned` wanted and no
+    `err` reachable from a declaration's or local's type. With `Unify` as it was on 346268b it
+    fires on CK-169's two fixtures; it fires on CK-126's (its red is now `crash=ABRT`). The whole
+    store is not walked: a derived-context pass leaves answered `err`s on its discarded frames.
+  - **Evidence.** No golden moved. `test-perf` "CK-171" (promoted): depth 9 / 18 check in 7 / 535
+    ms on 346268b, 6 / 6 ms now (ReleaseFast, CPU). `zig build bench -- --generate=100000
+    --iterations=5`, three interleaved pairs: check 70.2 / 69.6 / 72.1 ms on 346268b against
+    69.2 / 69.0 / 69.3 ms. Gates, `test-pending` (the rest red for their recorded reasons),
+    `test-pending-perf` and `test-perf` green.
+  - **Not fixed.** CK-144: the interface writer still writes each scheme's alias expansions whole
+    (60 / 120 aliases: 1 021 311 / 4 140 487 bytes). The builder's DAG does not reach it — each
+    annotation is its own read — and linear bytes need alias references by name in interface terms
+    (an interface version), which is its own slice.
+
 ---
 
 ## 4. CK → slice index
@@ -2761,6 +2801,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R14b | CK-134 (fixed; the bench is its instrument, `checker-v2.md` §18) | — | — |
 | R15-fix-B | CK-136 (`run/EvidenceDagBuildDepth32`; new `dispatch/SharedEvidenceDag`, `perf_test.zig` "CK-136"), CK-138 (`run/ArrowBodyStartsWithRecord`; new `run/ArrowBodyLeftmostBrace`) | — | perf study item 1 (the emitter's specifier table) |
 | R15-fix-A | CK-135, 137, 139, 141, 142 (`tests/corpus/`), CK-140 (`abuse_test.zig`) | — | — |
+| R15-fix-C | CK-169, 170, 172, 173, 174 (`tests/corpus/`), CK-171 (`perf_test.zig`) — all six found and fixed in the slice | — | the `err`-producer audit and its Debug check (`checker-v2.md` §12.2); CK-144 not fixed (the interface writer) |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
