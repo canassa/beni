@@ -1544,12 +1544,8 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
     try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
     try expectSameTree(&w, arena, "cold", "warm");
-    const cold_run = try w.node("cold/_main.mjs");
-    const warm_run = try w.node("warm/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), cold_run.exit_code);
-    try testing.expectEqual(@as(u8, 0), warm_run.exit_code);
-    try testing.expectEqualStrings("True\nFalse\n", cold_run.stdout);
-    try testing.expectEqualStrings(cold_run.stdout, warm_run.stdout);
+    try w.expectProgram("cold/_main.mjs", .{ .stdout = "True\nFalse\n" });
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "True\nFalse\n" });
 
     const edited_inner = try std.mem.replaceOwned(u8, arena, inner, "labelLeft == labelRight", "labelLeft /= labelRight");
     try w.write("src/Inner.beni", edited_inner);
@@ -1571,9 +1567,7 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
     try testing.expectEqualStrings(body_oracle.result.stderr, body.result.stderr);
     try testing.expectEqual(@as(u64, 1), body.counters.checked);
     try expectSameTree(&w, arena, "body-oracle", "body");
-    const body_run = try w.node("body/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), body_run.exit_code);
-    try testing.expectEqualStrings("False\nTrue\n", body_run.stdout);
+    try w.expectProgram("body/_main.mjs", .{ .stdout = "False\nTrue\n" });
 
     const private_inner = try std.mem.replaceOwned(u8, arena, edited_inner, "pub eq", "eq");
     try w.write("src/Inner.beni", private_inner);
@@ -1689,11 +1683,8 @@ test "a constrained function constant keeps one calling convention across warm r
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
     try expectSameTree(&w, arena, "cold", "warm");
-    const cold_run = try w.node("cold/_main.mjs");
-    const warm_run = try w.node("warm/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), cold_run.exit_code);
-    try testing.expectEqualStrings(expected, cold_run.stdout);
-    try testing.expectEqualStrings(expected, warm_run.stdout);
+    try w.expectProgram("cold/_main.mjs", .{ .stdout = expected });
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = expected });
 
     const edits = [_]struct { body: []const u8, name: []const u8 }{
         .{ .body = "h a b =\n    maxOf a b\n", .name = "params" },
@@ -1725,9 +1716,7 @@ test "a constrained function constant keeps one calling convention across warm r
         // `Leaf` alone: its interface did not move, so `Top` is a hit.
         try testing.expectEqual(@as(u64, 1), built.counters.checked);
         try expectSameTree(&w, arena, oracle, out);
-        const ran = try w.node(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}));
-        try testing.expectEqual(@as(u8, 0), ran.exit_code);
-        try testing.expectEqualStrings(expected, ran.stdout);
+        try w.expectProgram(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}), .{ .stdout = expected });
     }
 }
 
@@ -2313,12 +2302,9 @@ test "a warm build emits byte-identical JavaScript, and it runs" {
     // └─────────────────────────────────────────┘
     // And the program the warm build wrote actually runs, which is the only
     // assertion that can catch a table that survived the format and means
-    // something else.
-    const ran = try w.node("warm/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), ran.exit_code);
-    // `Rect 3 4` is the bigger of the two — a derived `compare` orders by
-    // constructor first — so the area is 12.
-    try testing.expectEqualStrings("12\n", ran.stdout);
+    // something else. `Rect 3 4` is the bigger of the two — a derived
+    // `compare` orders by constructor first — so the area is 12.
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "12\n" });
 }
 
 /// Every file under `want` is under `got`, with the same name and the same
@@ -3074,10 +3060,7 @@ test "an imported type of 4 097 parameters compares across modules in the wide f
         if (built.result.exit_code != 0) std.debug.print("{s}: {s}\n", .{ pass.what, built.result.stderr });
         try testing.expectEqual(@as(u8, 0), built.result.exit_code);
         try testing.expectEqualStrings("", built.result.stderr);
-        const program = try w.node(world.entry_file);
-        try testing.expectEqualStrings("", program.stderr);
-        try testing.expectEqualStrings(pass.expected, program.stdout);
-        try testing.expectEqual(@as(u8, 0), program.exit_code);
+        try w.expectProgram(world.entry_file, .{ .stdout = pass.expected });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY SIDE EFFECTS                 │
@@ -3577,12 +3560,9 @@ test "a warm build after an edit that moves a derived context writes what a cold
     // same edited project cold into another cache; then an edit that moves
     // no interface (a comment in `H`), warm.
     const first = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=first", "src" }), "first.json");
-    const first_run = try w.node("first/_main.mjs");
     try w.write("src/H.beni", holder_by_eq);
     const warm = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=warm", "src" }), "warm.json");
-    const warm_run = try w.node("warm/_main.mjs");
     const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=d", "--out=cold", "src" }), "cold.json");
-    const cold_run = try w.node("cold/_main.mjs");
     try w.write("src/H.beni", "-- a comment moves no interface\n" ++ holder_by_eq);
     const comment = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=comment", "src" }), "comment.json");
 
@@ -3594,9 +3574,9 @@ test "a warm build after an edit that moves a derived context writes what a cold
         try testing.expectEqualStrings("", r.result.stderr);
     }
     // By `key`, both pairs agree; by structural `eq`, neither does.
-    try testing.expectEqualStrings("True\nTrue\n", first_run.stdout);
-    try testing.expectEqualStrings("False\nFalse\n", warm_run.stdout);
-    try testing.expectEqualStrings(cold_run.stdout, warm_run.stdout);
+    try w.expectProgram("first/_main.mjs", .{ .stdout = "True\nTrue\n" });
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "False\nFalse\n" });
+    try w.expectProgram("cold/_main.mjs", .{ .stdout = "False\nFalse\n" });
     // `H`, and `Outer` and `Main` behind its moved interface, re-checked;
     // `Keyed` and core were hits.
     try testing.expectEqual(@as(u64, 3), warm.counters.misses);
@@ -3673,9 +3653,7 @@ fn expectOutcome(w: *World, arena: std.mem.Allocator, case: EditCase, state: usi
     switch (case.states[state].expect) {
         .prints => |text| {
             try testing.expectEqual(@as(u8, 0), r.result.exit_code);
-            const program = try w.node(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}));
-            try testing.expectEqual(@as(u8, 0), program.exit_code);
-            try testing.expectEqualStrings(text, program.stdout);
+            try w.expectProgram(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}), .{ .stdout = text });
         },
         .codes => |codes| {
             try testing.expectEqual(@as(u8, if (codes.len == 0) 0 else 1), r.result.exit_code);
@@ -3822,7 +3800,7 @@ test "a cache hit installs the published derived contexts and runs no fixpoint" 
     try testing.expectEqual(@as(u64, 0), body.counters.derived);
     // A cold build derives them all again (the counter counts).
     try testing.expectEqual(cold.counters.derived, oracle.counters.derived);
-    try testing.expectEqualStrings("True\nFalse\n", (try w.node("body/_main.mjs")).stdout);
+    try w.expectProgram("body/_main.mjs", .{ .stdout = "True\nFalse\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │

@@ -67,16 +67,12 @@ test "a program computes something and prints the right answer" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{"Main.beni"});
+    const r = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "55\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectBuilt(r.build);
-    const program = r.program orelse return error.NothingRan;
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("55\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try expectBuilt(r);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -148,13 +144,11 @@ test "a module in a subdirectory comes out in a subdirectory of out/" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("42\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "42\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -200,7 +194,6 @@ test "every emitted file is .mjs, the hand-written ones included" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -208,9 +201,7 @@ test "every emitted file is .mjs, the hand-written ones included" {
     // Node warns on stderr, it does not fail — so a stray `.js` would pass
     // an exit-code assertion. Both halves are checked: the tree has no `.js`
     // in it, and running the program says nothing at all.
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("10!\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "10!\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -241,16 +232,12 @@ test "a non-zero exit code from the platform reaches the process" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{"Main.beni"});
+    const r = try w.buildAndRun(&.{"Main.beni"}, .{ .exit_code = 3, .stdout = "could not read the file\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectBuilt(r.build);
-    const program = r.program orelse return error.NothingRan;
-    try testing.expectEqual(@as(u8, 3), program.exit_code);
-    try testing.expectEqualStrings("could not read the file\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try expectBuilt(r);
 }
 
 test "a build is byte-identical at every --jobs" {
@@ -454,9 +441,7 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     try expectBuilt(one_r);
     try expectBuilt(many_r);
     try expectSameTree(&w, "one-rel", "many-rel");
-    const release_program = try w.node("one-rel/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), release_program.exit_code);
-    try testing.expectEqualStrings("12\n", release_program.stdout);
+    try w.expectProgram("one-rel/_main.mjs", .{ .stdout = "12\n" });
     // Every file, not a chosen few: the point is that NOTHING moved, and a
     // list of names is a list of the places somebody thought to look.
     const files = try w.listFiles("one");
@@ -479,9 +464,7 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY STATE                            │
     // └─────────────────────────────────────────┘
-    const program = try w.node("one/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("12\n", program.stdout);
+    try w.expectProgram("one/_main.mjs", .{ .stdout = "12\n" });
 }
 
 /// The SHA-256 of `bytes`, hex, in a per-call buffer.
@@ -530,13 +513,11 @@ test "a saturated n-ary call emits a direct JavaScript call" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("42\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "42\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -588,13 +569,11 @@ test "modules import each other through ESM, and the program runs" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("49\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "49\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -631,13 +610,11 @@ test "a platform anyone may publish: a package that declares itself one in its m
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("hello!\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "hello!\n" });
 }
 
 test "a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_`" {
@@ -683,16 +660,13 @@ test "a user module may be called `Core.List` or `Platform.Node`, because the re
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // 1 + 2 + 3 = 6, thrice 18, twice 36. A `Core.List` that had overwritten
     // core's own `List` could not have produced it.
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("36\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "36\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -741,13 +715,11 @@ test "a platform may declare the entry file's name, and that is what the build w
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node("out/_start.mjs");
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("hello!\n", program.stdout);
+    try w.expectProgram("out/_start.mjs", .{ .stdout = "hello!\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -1118,14 +1090,11 @@ test "a sibling may import a package, because the copy does not touch a bare spe
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("hello on a host!\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "hello on a host!\n" });
     try expectEveryFileIsEsm(&w, "out");
 }
 
@@ -1239,13 +1208,11 @@ test "a concrete foreign constant is allowed, because core's own `pi` is one" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni", "Tau.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("6.283185307179586!\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "6.283185307179586!\n" });
 }
 
 test "check 4: a constrained foreign whose sibling forgot the evidence parameter" {
@@ -1375,9 +1342,7 @@ test "check 4: a foreign typed through an alias counts the alias's parameters, a
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
-    const ran = try w.node("out/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), ran.exit_code);
-    try testing.expectEqualStrings("same!\n", ran.stdout);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "same!\n" });
 
     // And the count is the alias's: two parameters are one too many.
     try w.write("myplat/Prog.js",
@@ -1629,7 +1594,6 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1637,9 +1601,7 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
     // `twice 2` is 4 and `thrice (pick 5)` is 15, so the sum is 19 — which
     // is only reached when `allEq` received its evidence parameter in front
     // and compared elements rather than a function against a list.
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("19!\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "19!\n" });
 }
 
 test "a constrained `foreign` in value position inside its own module keeps its declared arity" {
@@ -1748,7 +1710,6 @@ test "a constrained `foreign` in value position inside its own module keeps its 
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1756,9 +1717,7 @@ test "a constrained `foreign` in value position inside its own module keeps its 
     // Both answers both ways round: the defect crashed on the first, and a
     // sibling forgiving enough to survive it would have answered the second
     // wrong, which is the failure mode worth guarding.
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("TFTF!\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "TFTF!\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -1856,14 +1815,11 @@ test "an unconstrained `foreign` in value position inside its own module is the 
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("12TF!\n", program.stdout);
-    try testing.expectEqualStrings("", program.stderr);
+    try w.expectProgram(world.entry_file, .{ .stdout = "12TF!\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -2221,8 +2177,7 @@ test "a rebuild into the same --out holds exactly a fresh build's files, and a u
     try testing.expectEqual(@as(u8, 0), second.exit_code);
     try testing.expectEqualStrings("", second.stderr);
     try testing.expectEqual(@as(u8, 0), fresh.exit_code);
-    const ran = try w.node("out/_main.mjs");
-    try testing.expectEqualStrings("x\n", ran.stdout);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "x\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -2353,7 +2308,7 @@ test "a stale path that is the same file as a written one under case folding is 
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), second.exit_code);
     try testing.expectEqualStrings("", second.stderr);
-    try testing.expectEqualStrings("1\n", (try w.node("out/_main.mjs")).stdout);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "1\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -2493,9 +2448,7 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
-    const program = try w.node(world.entry_file);
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("x\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "x\n" });
 
     try testing.expectEqual(@as(u8, 2), both.exit_code);
     try testing.expectEqualStrings(
@@ -2582,12 +2535,8 @@ test "--release refuses a build that reaches Debug; the same program builds and 
     // lowering, so there is not even a half-written tree to clean up.
     try testing.expect(!w.exists("rel"));
 
-    const dev_run = try w.node("dev/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), dev_run.exit_code);
-    try testing.expectEqualStrings("report: 3\n3\n", dev_run.stdout);
-    const allowed_run = try w.node("allow/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), allowed_run.exit_code);
-    try testing.expectEqualStrings("report: 3\n3\n", allowed_run.stdout);
+    try w.expectProgram("dev/_main.mjs", .{ .stdout = "report: 3\n3\n" });
+    try w.expectProgram("allow/_main.mjs", .{ .stdout = "report: 3\n3\n" });
 }
 
 test "a Debug call that reachability drops does not refuse the release build" {
@@ -2631,9 +2580,7 @@ test "a Debug call that reachability drops does not refuse the release build" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    const program = try w.node(world.entry_file);
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("x\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "x\n" });
     // And the proof that it really was dropped rather than merely quiet:
     // core's `Debug` module is not in the output tree at all.
     try testing.expect(!w.exists("out/_core/Debug.mjs"));
@@ -2856,19 +2803,13 @@ test "Debug.todo compiles as anything and crashes with its message when reached"
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const program = try w.node(world.entry_file);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // The reachable branch never prints: `printLines` needs the whole list
     // before it writes anything, so the throw comes first.
-    try testing.expectEqual(@as(u8, 1), program.exit_code);
-    try testing.expectEqualStrings("", program.stdout);
-    if (std.mem.indexOf(u8, program.stderr, "Error: TODO: the negative case") == null) {
-        std.debug.print("expected the todo message on stderr, got:\n{s}\n", .{program.stderr});
-        return error.MissingTodoMessage;
-    }
+    try w.expectProgram(world.entry_file, .{ .exit_code = 1, .stdout = "", .stderr = .{ .contains = "Error: TODO: the negative case" } });
 }
 
 test "an unknown platform is a usage failure that names the ones that ship" {
@@ -3045,6 +2986,11 @@ fn expectEveryFileIsEsm(w: *World, dir: []const u8) !void {
 // environment: `churn.sh` is a POSIX shell script and cannot find `awk`
 // without a `PATH`. `std.process.run` inherits it when no `environ_map` is
 // given, and resolves `argv[0]` on it, which is also how `sh` is found.
+//
+// They run Node every time, with no run hash: the program under test is the
+// instrument itself, a script that runs beni and measures what it wrote,
+// and what it prints is a property of the machine, so there is no expected
+// output a hash could stand for.
 // ─────────────────────────────────────────────────────────────────────────
 
 const HarnessRun = struct {
@@ -3742,16 +3688,13 @@ test "an unannotated pub function constant with a constraint builds and runs" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{ "Main.beni", "M.beni" });
+    const r = try w.buildAndRun(&.{ "Main.beni", "M.beni" }, .{ .stdout = "f\nt\nt\n2\n9\nb\n2\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
     // Three warnings and no error: the inferred interface carries a `where`.
-    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, r.build.stderr, "CONSTRAINT IN AN INFERRED INTERFACE"));
-    try testing.expect(std.mem.indexOf(u8, r.build.stderr, "CONSTRAINED CONSTANT") == null);
-    const program = r.program.?;
-    try testing.expectEqual(@as(u8, 0), program.exit_code);
-    try testing.expectEqualStrings("f\nt\nt\n2\n9\nb\n2\n", program.stdout);
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, r.stderr, "CONSTRAINT IN AN INFERRED INTERFACE"));
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "CONSTRAINED CONSTANT") == null);
 }

@@ -348,20 +348,29 @@ fixture, tool, harness overhead and repeated commands — into
 one full gates run, so it is not a tier; unset, the recording costs nothing.
 Read CPU time, not wall: under load only CPU time is stable.
 
-**`run/` runs Node only on JavaScript it has not verified.** Each
+**The suites run Node only on JavaScript they have not verified.** Each
 `tests/corpus/run/` fixture carries a `.run-hash` (`_expected.run-hash` in a
 project): per build, dev and release, a SHA-256 of the whole emitted output
 tree, the golden and the Node version, written only after that JavaScript ran
-and matched (`tests/blackbox/run_hash.zig`). The walker always builds; when
-the digest is listed it skips Node, and otherwise runs it exactly as before,
-so a change to emitted code is never unverified. The gates print one line
-when builds ran for want of a hash — never a failure. After a change to the
-emitter, the runtime, `core/` or a `run/` golden, or a Node upgrade, run
-`zig build test-run-hashes` (takes `-Dcorpus` and `-Dllvm`) and commit the
-rewritten `.run-hash` files with the change: it runs every selected program
-and records a hash only for a build whose output matched, so a mismatch is
-reported and gets none. On a merge conflict in `.run-hash` files, take
-either side and regenerate.
+and matched (`tests/blackbox/run_hash.zig`). A black-box scenario runs its
+program through `World.expectProgram` or `World.buildAndRun`, which take the
+expected exit code, stdout and stderr up front: the digest covers them, the
+script and the output tree holding it, and the Node version, and the verified
+ones are lines of `tests/blackbox/run-hashes.txt` (`<test name> #<n>
+<digest>`). The harness always builds; when the digest is listed it skips
+Node, and otherwise runs it exactly as before, so a change to emitted code
+or to an expectation is never unverified. The build asks `node --version`
+once and hands it to every test process. The gates print one line when
+programs ran for want of a hash — never a failure. After a change to the
+emitter, the runtime, `core/`, a `run/` golden or a scenario's expected
+output, or a Node upgrade, run `zig build test-run-hashes` (takes
+`-Dtest-filter`, `-Dcorpus` and `-Dllvm`) and commit the rewritten
+`.run-hash` files and index with the change: it runs every selected program
+and records a hash only for a run that did what its test expects, so a
+mismatch is reported and gets none. The index is merged after the last test
+process, so a recording whose tests fail leaves it unchanged. On a merge
+conflict in either, take either side and regenerate. `run_hash_test.zig`'s
+scenarios run Node on purpose every time: they test the skip.
 
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on

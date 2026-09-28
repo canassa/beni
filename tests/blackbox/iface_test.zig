@@ -783,10 +783,7 @@ test "a build whose evidence crosses modules is byte-identical through all three
     // └─────────────────────────────────────────┘
     // `Rect 3 4` is the bigger of the two — a derived `compare` orders by
     // constructor first — and two equal lists compare equal element-wise.
-    const ran = try w.node("tripped/_main.mjs");
-    try testing.expectEqual(@as(u8, 0), ran.exit_code);
-    try testing.expectEqualStrings("largest\nrect\nsame\n", ran.stdout);
-    try testing.expectEqualStrings("", ran.stderr);
+    try w.expectProgram("tripped/_main.mjs", .{ .stdout = "largest\nrect\nsame\n" });
 }
 
 test "an importer's type error names the imported types identically through the round trip" {

@@ -16,6 +16,9 @@
 //!     time in milliseconds (`zig build` does not show them), then a
 //!     summary; exit 1 on any failure, leak or logged error.
 //!
+//! `--node-version=<text>` hands the black-box harness the Node version the
+//! build asked for once (`node_version`).
+//!
 //! `BENI_TEST_TIMING=<dir>` makes the process record each test's wall and
 //! CPU time, and everything the black-box harness spawns, into `<dir>`
 //! (`timing.zig`); `zig build test-time-report` reads the records.
@@ -31,6 +34,12 @@ const Io = std.Io;
 const testing = std.testing;
 /// The recorder, reached by the black-box harness as `@import("root").timing`.
 pub const timing = @import("timing.zig");
+
+/// `--node-version=<text>`: what `node --version` printed, asked once by
+/// the build for every test process (`build.zig`), so a black-box process
+/// does not start Node to learn it (`tests/blackbox/run_hash.zig`). Empty
+/// when not given, and then the harness asks Node itself.
+pub var node_version: []const u8 = "";
 
 comptime {
     if (builtin.fuzz) @compileError("tests/test_runner.zig does not support -ffuzz builds");
@@ -59,6 +68,8 @@ pub fn main(init: std.process.Init.Minimal) void {
         } else if (std.mem.startsWith(u8, arg, "--seed=")) {
             testing.random_seed = std.fmt.parseUnsigned(u32, arg["--seed=".len..], 0) catch
                 @panic("unable to parse --seed command line argument");
+        } else if (std.mem.startsWith(u8, arg, "--node-version=")) {
+            node_version = arg["--node-version=".len..];
         } else if (std.mem.startsWith(u8, arg, "--cache-dir=")) {
             // Only a fuzzing build reads it.
         } else {

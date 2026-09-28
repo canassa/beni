@@ -182,18 +182,16 @@ fn wideRecursiveTypeCompares(n: usize, levels: []const u8) !void {
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+        // The cell that differs is the innermost one (`n == levels` is
+        // built first), so every comparison walks every level. The
+        // program's output is asserted as it runs.
+        const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = "True\nFalse\nTrue\n" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
         // └─────────────────────────────────────┘
-        // The cell that differs is the innermost one (`n == levels` is
-        // built first), so every comparison walks every level.
-        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("True\nFalse\nTrue\n", r.program.?.stdout);
-        try testing.expectEqualStrings("", r.program.?.stderr);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
     }
 }
 
@@ -281,23 +279,18 @@ test "recursion THROUGH a hand-written parametric method still grows the native 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ "--no-cache", "Box.beni", "Main.beni" });
+        // The program's output is asserted as it runs. Past the stack,
+        // the stack trace's frames and paths vary; the error does not.
+        const r = try w.buildAndRun(&.{ "--no-cache", "Box.beni", "Main.beni" }, if (std.mem.eql(u8, depth, "100"))
+            .{ .stdout = "True\n" }
+        else
+            .{ .stdout = "", .exit_code = 1, .stderr = .{ .contains = "RangeError: Maximum call stack size exceeded" } });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
         // └─────────────────────────────────────┘
-        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-        try testing.expectEqualStrings("", r.build.stderr);
-        const program = r.program.?;
-        if (std.mem.eql(u8, depth, "100")) {
-            try testing.expectEqualStrings("True\n", program.stdout);
-            try testing.expectEqual(@as(u8, 0), program.exit_code);
-        } else {
-            // The stack trace's frames and paths vary; the error does not.
-            try testing.expectEqualStrings("", program.stdout);
-            try testing.expectEqual(@as(u8, 1), program.exit_code);
-            try testing.expect(std.mem.indexOf(u8, program.stderr, "RangeError: Maximum call stack size exceeded") != null);
-        }
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
     }
 }
 
@@ -742,16 +735,14 @@ test "a pathologically nested expression is EMITTED without a stack overflow, an
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+    // The program's output is asserted as it runs.
+    const r = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = "4001\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
-    try testing.expectEqualStrings("", r.build.stderr);
-    try testing.expectEqualStrings("4001\n", r.program.?.stdout);
-    try testing.expectEqualStrings("", r.program.?.stderr);
-    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
 }
 
 test "functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run" {
@@ -785,14 +776,14 @@ test "functions nested past what Firefox parses are one nesting_too_deep from bu
             // ┌─────────────────────────────────┐
             // │ EXECUTE                         │
             // └─────────────────────────────────┘
-            const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+            // The program's output is asserted as it runs.
+            const built = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = "1\n" });
 
             // ┌─────────────────────────────────┐
             // │ VERIFY OUTPUT                   │
             // └─────────────────────────────────┘
-            try testing.expectEqual(@as(u8, 0), ran.build.exit_code);
-            try testing.expectEqualStrings("", ran.build.stderr);
-            try testing.expectEqualStrings("1\n", ran.program.?.stdout);
+            try testing.expectEqual(@as(u8, 0), built.exit_code);
+            try testing.expectEqualStrings("", built.stderr);
             continue;
         }
 

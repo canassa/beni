@@ -110,15 +110,14 @@ test "== on a record builds and runs at the widest positional evidence and at a 
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const ran = try w.buildAndRun(&.{ "--no-cache", "Wide.beni" });
+        // The program's output is asserted as it runs.
+        const built = try w.buildAndRun(&.{ "--no-cache", "Wide.beni" }, .{ .stdout = "eq\n" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
         // └─────────────────────────────────────┘
-        try expectExited(ran.build, 0);
-        try testing.expectEqualStrings("", ran.build.stderr);
-        try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
-        try testing.expectEqualStrings("eq\n", ran.program.?.stdout);
+        try expectExited(built, 0);
+        try testing.expectEqualStrings("", built.stderr);
     }
 }
 
@@ -148,15 +147,14 @@ test "`==` and `<` on a record one field past the positional evidence limit buil
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const ran = try w.buildAndRun(&.{ "--no-cache", "--jobs=1", "Main.beni" });
+    // The program's output is asserted as it runs.
+    const built = try w.buildAndRun(&.{ "--no-cache", "--jobs=1", "Main.beni" }, .{ .stdout = "eq\nne\nlt\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectExited(ran.build, 0);
-    try testing.expectEqualStrings("", ran.build.stderr);
-    try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
-    try testing.expectEqualStrings("eq\nne\nlt\n", ran.program.?.stdout);
+    try expectExited(built, 0);
+    try testing.expectEqualStrings("", built.stderr);
 }
 
 // A nominal payload record of 65 537 fields. The eager pass probed `T`'s
@@ -196,9 +194,7 @@ test "a nominal payload of 65 537 fields checks, and builds and runs or is refus
     try testing.expect(built.term == .exited);
     if (built.exit_code == 0) {
         try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
-        const program = try w.node(world.entry_file);
-        try testing.expectEqual(@as(u8, 0), program.exit_code);
-        try testing.expectEqualStrings("eq\nne\n", program.stdout);
+        try w.expectProgram(world.entry_file, .{ .stdout = "eq\nne\n" });
     } else {
         try expectExited(built, 1);
         try testing.expect(built.diagnostics.len != 0);
@@ -251,15 +247,14 @@ test "a 2 000-element list and 2 000-term + and ++ chains build and run, in both
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
         for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
-            const r = try w.buildAndRun(&.{ flag, file });
+            // The program's output is asserted as it runs.
+            const r = try w.buildAndRun(&.{ flag, file }, .{ .stdout = "2000\n" });
 
             // ┌─────────────────────────────────┐
             // │ VERIFY OUTPUT                   │
             // └─────────────────────────────────┘
-            try expectExited(r.build, 0);
-            try testing.expectEqualStrings("", r.build.stderr);
-            try testing.expectEqualStrings("2000\n", r.program.?.stdout);
-            try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+            try expectExited(r, 0);
+            try testing.expectEqualStrings("", r.stderr);
         }
     }
 }
@@ -299,17 +294,14 @@ test "a written operator chain runs at the widest the parser admits, and one ter
             // │ EXECUTE                         │
             // └─────────────────────────────────┘
             if (n == case.width) {
-                const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
-                const released = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" });
+                // The programs' output is asserted as they run.
+                const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" }, .{ .stdout = case.expected });
+                const released = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" }, .{ .stdout = case.expected });
 
                 // ┌─────────────────────────────┐
                 // │ VERIFY OUTPUT               │
                 // └─────────────────────────────┘
-                for ([_]World.BuildAndRun{ ran, released }) |r| {
-                    try expectExited(r.build, 0);
-                    try testing.expectEqualStrings(case.expected, r.program.?.stdout);
-                    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
-                }
+                for ([_]world.Result{ ran, released }) |r| try expectExited(r, 0);
                 continue;
             }
             const refused = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Main.beni" });
@@ -479,16 +471,14 @@ test "a case of 16 400 literal branches builds as switches of at most 16 384 lab
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
+        // The program's output is asserted as it runs.
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" }, .{ .stdout = "1\n16384\n16385\n16400\n-1\n-1\n" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
         // └─────────────────────────────────────┘
-        try expectExited(r.build, 0);
-        try testing.expectEqualStrings("", r.build.stderr);
-        try testing.expectEqualStrings("1\n16384\n16385\n16400\n-1\n-1\n", r.program.?.stdout);
-        try testing.expectEqualStrings("", r.program.?.stderr);
-        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+        try expectExited(r, 0);
+        try testing.expectEqualStrings("", r.stderr);
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY SIDE EFFECTS                 │

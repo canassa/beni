@@ -27,6 +27,7 @@
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
+const run_hash = @import("run_hash.zig");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
@@ -110,6 +111,23 @@ pub const Result = struct {
     cpu_ms: ?i64 = null,
 };
 
+/// What a scenario asserts about one run of an emitted program under Node
+/// (`World.expectProgram`). All of it is part of the program's run hash, so
+/// a scenario whose expectation changes runs the program again.
+pub const Expected = struct {
+    exit_code: u8 = 0,
+    stdout: []const u8,
+    stderr: Stderr = .{ .exact = "" },
+
+    pub const Stderr = union(enum) {
+        /// stderr is exactly this text.
+        exact: []const u8,
+        /// stderr holds this text somewhere: for a message Node frames
+        /// with a stack trace whose paths and line numbers are its own.
+        contains: []const u8,
+    };
+};
+
 pub const RunOptions = struct {
     /// Leave stderr alone: no `--diagnostics=json` is added and nothing is
     /// parsed. For scenarios that assert the text renderer or usage errors.
@@ -191,12 +209,6 @@ pub const World = struct {
         world.node_exe = findOnPath(world.arena.allocator(), io, "node");
         return world;
     }
-
-    pub const BuildAndRun = struct {
-        build: Result,
-        /// Null when the build failed, so nothing was run.
-        program: ?Result,
-    };
 
     /// Remove the project tree and free every result.
     pub fn deinit(world: *World) void {
@@ -427,6 +439,10 @@ pub const World = struct {
     /// program is the thing under test and what it printed is the
     /// assertion. A bug that changes emitted SHAPE but not behaviour must
     /// not fail here; a bug that changes behaviour must.
+    ///
+    /// It always starts Node. A scenario runs its program through
+    /// `expectProgram` instead, which skips Node for a run already verified;
+    /// this is what that and the corpus walker call when a run is not.
     pub fn node(world: *World, script: []const u8) !Result {
         return world.nodeWith(script, default_timeout_ms);
     }
@@ -440,21 +456,55 @@ pub const World = struct {
         return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir }, timeout_ms);
     }
 
-    /// `beni build --platform=node --out=out <paths>`, then `node out/_main.mjs`.
-    /// The whole second boundary in one call, because every `run/` fixture
-    /// and every codegen scenario wants exactly this pair.
+    /// Assert that `node <script>`, run in the project directory, does what
+    /// `expected` says — or, when this exact output tree, expectation and
+    /// Node were verified together before, skip Node and take the recorded
+    /// verdict (`run_hash.zig`, *Program runs*). The tree is the directory
+    /// holding `script`.
     ///
-    /// `build` is always returned; `program` is null when the build did not
-    /// exit 0, so a scenario asserts the compile before the run rather than
-    /// reading a stale `out/`.
-    pub fn buildAndRun(world: *World, args: []const []const u8) !BuildAndRun {
+    /// This is how a scenario runs an emitted program: the expectation is
+    /// given up front because it is part of what the record covers, so an
+    /// edited expectation runs the program again. A mismatch prints the
+    /// program's streams and fails the test.
+    pub fn expectProgram(world: *World, script: []const u8, expected: Expected) !void {
+        const got = try world.checkProgram(script, expected) orelse return;
+        std.debug.print(
+            "`node {s}` did not do what the test expects\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n--- exit {d} ---\n",
+            .{ script, got.stdout, got.stderr, got.exit_code },
+        );
+        try std.testing.expectEqualStrings(expected.stdout, got.stdout);
+        try std.testing.expectEqual(expected.exit_code, got.exit_code);
+        switch (expected.stderr) {
+            .exact => |text| try std.testing.expectEqualStrings(text, got.stderr),
+            .contains => |text| if (std.mem.indexOf(u8, got.stderr, text) == null) return error.StderrLacksText,
+        }
+        // `checkProgram` said it differs, so one of the above has failed.
+        return error.ProgramMismatch;
+    }
+
+    /// `expectProgram` for a scenario that reports a mismatch itself: null
+    /// when the program did what `expected` says (or was verified before),
+    /// else what it did.
+    pub fn checkProgram(world: *World, script: []const u8, expected: Expected) !?Result {
+        return run_hash.checkProgram(world, script, expected);
+    }
+
+    /// `beni build --platform=node --out=out <args>`, then `expectProgram`
+    /// on `out/_main.mjs`: the whole second boundary in one call. Returns
+    /// the build's result for the scenario to assert on; a build that does
+    /// not exit 0 prints its streams and fails before anything runs.
+    pub fn buildAndRun(world: *World, args: []const []const u8, expected: Expected) !Result {
         const arena = world.arena.allocator();
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.appendSlice(arena, &.{ "build", "--platform=node", "--out=" ++ default_out });
         try argv.appendSlice(arena, args);
         const built = try world.runWith(argv.items, .{ .raw_diagnostics = true });
-        if (built.exit_code != 0) return .{ .build = built, .program = null };
-        return .{ .build = built, .program = try world.node(entry_file) };
+        if (built.exit_code != 0) {
+            std.debug.print("beni build exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ built.exit_code, built.stdout, built.stderr });
+            return error.BuildFailed;
+        }
+        try world.expectProgram(entry_file, expected);
+        return built;
     }
 
     pub fn runWith(world: *World, args: []const []const u8, options: RunOptions) !Result {

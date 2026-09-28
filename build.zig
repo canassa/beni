@@ -29,11 +29,13 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
-//! And the corpus's run hashes, not a gate either:
-//!   zig build test-run-hashes     run every tests/corpus/run/ program under
-//!                                 Node and record a hash of each output that
-//!                                 matched (`tests/blackbox/run_hash.zig`);
-//!                                 takes -Dcorpus and -Dllvm
+//! And the run hashes, not a gate either:
+//!   zig build test-run-hashes     run every tests/corpus/run/ program and
+//!                                 every program a black-box scenario runs
+//!                                 under Node, and record a hash of each
+//!                                 that did what its test expects
+//!                                 (`tests/blackbox/run_hash.zig`); takes
+//!                                 -Dtest-filter, -Dcorpus and -Dllvm
 //! And where the test time goes, not a gate either:
 //!   zig build test-time-report    run `gates` (or `-Dtime-step=<step>`) with
 //!                                 every test process timed, and write the
@@ -264,7 +266,25 @@ pub fn build(b: *std.Build) void {
     // name without `_test`, `_` spelled `-`), so a change can run the one
     // suite it touches.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
+    // The run-hash tool (`tests/run_hash_summary.zig`): it prints what the
+    // processes did with their run hashes, merges a recording into the
+    // index, and asks Node its version.
+    const summary_exe = b.addExecutable(.{
+        .name = "run-hash-summary",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/run_hash_summary.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    // `node --version`, asked once per build and handed to every black-box
+    // process (`--node-version=`), which feeds it to every run hash instead
+    // of starting Node to learn it.
+    const node_probe = b.addRunArtifact(summary_exe);
+    node_probe.addArg("node-version");
+    node_probe.has_side_effects = true;
     const bb: Blackbox = .{
+        .node_version = node_probe.captureStdOut(.{}),
         .b = b,
         .target = target,
         .optimize = optimize,
@@ -275,7 +295,20 @@ pub fn build(b: *std.Build) void {
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
     };
-    for ([_]struct { []const u8, u32 }{
+    // A process that runs an emitted program skips Node when the run's
+    // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
+    // step writes its counts into a directory of this build's own, and
+    // `run-hash-summary` prints them as one line once every process is
+    // done — straight to the terminal, because a passing test that writes
+    // to stderr reads as a failed command. The `test-blackbox-<file>` steps
+    // run their own processes, which report nothing, except the corpus's,
+    // which prints its own line.
+    const counts_dir = b.getInstallPath(.prefix, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
+    const gate_counts_dir = b.fmt("{s}-all", .{counts_dir});
+    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, &.{});
+    blackbox_step.dependOn(&gate_summary.step);
+    // The suites `test-run-hashes` records, with their process counts.
+    const suites = [_]struct { []const u8, u32 }{
         .{ "tests/blackbox/blackbox_test.zig", 6 },
         .{ "tests/blackbox/abuse_test.zig", 3 },
         .{ "tests/blackbox/abuse_wide_test.zig", 4 },
@@ -288,13 +321,15 @@ pub fn build(b: *std.Build) void {
         .{ "tests/blackbox/frontend_test.zig", 1 },
         .{ "tests/blackbox/iface_test.zig", 1 },
         .{ "tests/blackbox/ordering_test.zig", 2 },
-    }) |suite| {
+    };
+    var suite_tests: [suites.len]*std.Build.Step.Compile = undefined;
+    for (suites, &suite_tests) |suite, *t| {
         // The walker's knobs are pinned on every binary, not only the
         // walker: `run.setEnvironmentVariable` is the one place a test's
         // environment is decided.
-        const file_step = bb.fileStep(suite[0]);
-        bb.runSharded(file_step, bb.artifact(suite[0]), .{ .root = "tests/corpus" }, suite[1]);
-        blackbox_step.dependOn(file_step);
+        t.* = bb.artifact(suite[0]);
+        bb.runSharded(bb.fileStep(suite[0]), t.*, .{ .root = "tests/corpus" }, suite[1]);
+        bb.runSharded(&gate_summary.step, t.*, .{ .root = "tests/corpus", .report_dir = gate_counts_dir }, suite[1]);
     }
     // The corpus's knobs (`plans/checker-rewrite.md` §2.4), pinned EMPTY —
     // which the walker reads as unset — so a variable exported in the
@@ -304,45 +339,65 @@ pub fn build(b: *std.Build) void {
     // `-Dcorpus`, which `gates` refuses.
     //
     // `run/` skips Node for a build whose output tree carries a recorded run
-    // hash (`tests/blackbox/run_hash.zig`); each part writes its counts into
-    // a directory of this build's own, and `run-hash-summary` prints them as
-    // one line once every part is done — straight to the terminal, because a
-    // passing test that writes to stderr reads as a failed command.
+    // hash, and its parts report into the same directory.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
-    const summary_exe = b.addExecutable(.{
-        .name = "run-hash-summary",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/run_hash_summary.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    const counts_dir = b.getInstallPath(.prefix, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
-    const corpus_summary = runHashSummary(b, summary_exe, counts_dir);
+    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, &.{});
     for (std.enums.values(corpus_parts.Part)) |part| {
         corpus_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = counts_dir }).step);
+        gate_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = gate_counts_dir }).step);
     }
     corpus_step.dependOn(&corpus_summary.step);
-    blackbox_step.dependOn(corpus_step);
 
-    // Record the run hashes: every `run/` program runs under Node, and each
-    // fixture's `.run-hash` is rewritten with the builds that matched their
-    // golden. One process for both builds of a fixture, so one worker writes
-    // each record. Takes `-Dcorpus` and `-Dllvm`; not a gate.
-    const record_summary = runHashSummary(b, summary_exe, b.fmt("{s}-record", .{counts_dir}));
-    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = b.fmt("{s}-record", .{counts_dir}) }).step);
-    b.step("test-run-hashes", "Run every tests/corpus/run/ program under Node and record the hash of each output that matched").dependOn(&record_summary.step);
+    // Record the run hashes: every `run/` program and every program a
+    // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
+    // rewritten with the builds that matched their golden (one process for
+    // both builds of a fixture, so one worker writes each record), and
+    // `tests/blackbox/run-hashes.txt` with the scenario runs that did what
+    // their test expects. `-Dtest-filter` narrows the scenarios, and the
+    // index keeps every other test's lines; `-Dcorpus` alone records only
+    // the corpus. Takes `-Dllvm`; not a gate. The index is merged after the
+    // last process, so a recording whose tests fail changes no line of it.
+    const record_dir = b.fmt("{s}-record", .{counts_dir});
+    const records_scenarios = test_filters.len != 0 or corpus_only.len == 0;
+    const record_summary = runHashSummary(b, summary_exe, record_dir, if (!records_scenarios)
+        &.{}
+    else if (test_filters.len == 0)
+        &.{ "--index=tests/blackbox/run-hashes.txt", "--whole" }
+    else
+        &.{"--index=tests/blackbox/run-hashes.txt"});
+    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }).step);
+    if (records_scenarios) for (suites, suite_tests) |suite, t| {
+        bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }, suite[1]);
+    };
+    b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
 
-    // The run hashes' own scenarios drive the corpus walker as a program,
-    // on a corpus of their own, so they need its binary installed.
+    // The run hashes' own scenarios drive the corpus walker, a test binary
+    // that runs one scenario program (`run_hash_probe.zig`, compiled without
+    // `-Dtest-filter` so a filter never empties it) and the summary tool as
+    // programs, on an index and a corpus of their own, so they need all
+    // three installed.
     {
-        const install = b.addInstallArtifact(corpus_test, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
+        const tools = std.Build.Step.InstallArtifact.Options{ .dest_dir = .{ .override = .{ .custom = "tools" } } };
+        const probe = b.addTest(.{
+            .name = "run_hash_probe",
+            .test_runner = testRunner(b),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tests/blackbox/run_hash_probe.zig"),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
+            }),
+        });
         const file = "tests/blackbox/run_hash_test.zig";
         const step = bb.fileStep(file);
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
-        run.step.dependOn(&install.step);
+        run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", b.getInstallPath(.prefix, "tools/run_hash_probe"));
+        run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", b.getInstallPath(.prefix, "tools/run-hash-summary"));
+        run.step.dependOn(&b.addInstallArtifact(corpus_test, tools).step);
+        run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
+        run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
     }
@@ -547,10 +602,13 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(fmt_step);
 }
 
-/// `run-hash-summary <dir>`, printing to the terminal.
-fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8) *std.Build.Step.Run {
+/// `run-hash-summary <dir> <args>` in the repo root, printing to the
+/// terminal.
+fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, args: []const []const u8) *std.Build.Step.Run {
     const run = b.addRunArtifact(exe);
     run.addArg(dir);
+    run.addArgs(args);
+    run.setCwd(b.path("."));
     run.stdio = .inherit;
     run.has_side_effects = true;
     return run;
@@ -988,6 +1046,9 @@ const HarnessEnvironment = struct {
 /// optimize mode and run from the repo root.
 const Blackbox = struct {
     b: *std.Build,
+    /// What `node --version` printed, asked once per build; every process
+    /// gets it as `--node-version=` (`tests/test_runner.zig`).
+    node_version: std.Build.LazyPath,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     diagnostic: *std.Build.Module,
@@ -1041,6 +1102,7 @@ const Blackbox = struct {
     /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = runTests(bb.b, t);
+        r.addPrefixedFileContentArg("--node-version=", bb.node_version);
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,
             .fast => bb.perf_install,

@@ -3122,12 +3122,11 @@ test "a derived compare compiles, and so does List's" {
         \\
     );
 
-    const listed = try w.buildAndRun(&.{"Main.beni"});
-    try testing.expectEqual(@as(u8, 0), listed.build.exit_code);
-    try testing.expectEqual(@as(usize, 0), listed.build.diagnostics.len);
+    const listed = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), listed.exit_code);
+    try testing.expectEqual(@as(usize, 0), listed.diagnostics.len);
     // A shorter list is `LT` against a longer one with the same prefix
     // (§9.5), which is Elm's order.
-    try testing.expectEqualStrings("True\n", listed.program.?.stdout);
     // And the call is `List$compare` with the ELEMENT's comparator as the
     // hidden first argument (§8.1, A.7) — not a structural walk, and not
     // the JavaScript `<`.
@@ -3162,10 +3161,9 @@ test "a derived compare compiles, and so does List's" {
         \\        ]
         \\
     );
-    const ok = try w.buildAndRun(&.{"Main.beni"});
-    try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
-    try testing.expectEqual(@as(usize, 0), ok.build.diagnostics.len);
-    try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+    const ok = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
+    try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
 }
 
 test "a derived eq calls the user's own eq, across a module boundary" {
@@ -3231,9 +3229,8 @@ test "a derived eq calls the user's own eq, across a module boundary" {
     const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
     try testing.expect(std.mem.indexOf(u8, table.stdout, "callee derived 0\n    arg ext Id eq\n") != null);
 
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqualStrings("True\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
 
     // The emitted body is the record shape's, parameterised by the field's
     // evidence (§9.2, A.46) — one function, and the `Id$eq` that tells it
@@ -3264,9 +3261,8 @@ test "a derived eq calls the user's own eq, across a module boundary" {
         \\        ]
         \\
     );
-    const ok = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
-    try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+    const ok = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
 }
 
 test "a list whose elements have an eq of their own calls it, across a module boundary" {
@@ -3327,12 +3323,11 @@ test "a list whose elements have an eq of their own calls it, across a module bo
         \\
     );
 
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqual(@as(usize, 0), built.build.diagnostics.len);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\nFalse\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     // `Id 1 2` and `Id 1 99` share a major number, so `Id`'s own `eq` says
     // they are equal and the structural walk would have said they are not.
-    try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
     // The evidence crosses the boundary by name: `Main` imports `Id$eq`
     // from `Id.mjs` and hands it to `List$eq`.
     const main_js = try w.read("out/Main.mjs");
@@ -3360,9 +3355,8 @@ test "a list whose elements have an eq of their own calls it, across a module bo
         \\        ]
         \\
     );
-    const ok = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
-    try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+    const ok = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
 }
 
 test "evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess" {
@@ -3438,11 +3432,9 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
         \\    Node.printLines [ if Deep.same then "same" else "structural" ]
         \\
     );
-    const ran = try w.buildAndRun(&.{"src"});
-    try testing.expectEqualStrings("", ran.build.stderr);
-    try testing.expectEqual(@as(u8, 0), ran.build.exit_code);
-    try testing.expectEqualStrings("same\n", ran.program.?.stdout);
-    try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
+    const ran = try w.buildAndRun(&.{"src"}, .{ .stdout = "same\n" });
+    try testing.expectEqualStrings("", ran.stderr);
+    try testing.expectEqual(@as(u8, 0), ran.exit_code);
 }
 
 test "a constrained value in a part position is handed its own evidence" {
@@ -3507,10 +3499,9 @@ test "a constrained value in a part position is handed its own evidence" {
     try testing.expect(at != null);
     try testing.expect(std.mem.startsWith(u8, table.stdout[at.? + "callee derived 0\n    arg ext Lib eq\n".len ..], "      primitive strict_eq\n"));
 
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqual(@as(usize, 0), built.build.diagnostics.len);
-    try testing.expectEqualStrings("True\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     // And the call passes the evidence: `Lib$eq` is reached through the
     // eta-expansion of §8.2 with its `$m$0` bound, not by bare name.
     const main_js = try w.read("out/Main.mjs");
@@ -3608,10 +3599,9 @@ test "a private eq wins inside its module and is private_method from every other
         \\        ]
         \\
     );
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqualStrings("", built.build.stderr);
-    try testing.expectEqualStrings("True\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualStrings("", built.stderr);
 }
 
 test "core/Basics carries the derived rows §3.2's table asks it for" {
@@ -3680,9 +3670,8 @@ test "core/Basics carries the derived rows §3.2's table asks it for" {
         \\    Node.printLines [ show (compare 1 2 < compare 3 3) ]
         \\
     );
-    const built = try w.buildAndRun(&.{"Main.beni"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqualStrings("True\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "True\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
     const basics = try w.read("out/_core/Basics.mjs");
     const table = std.mem.indexOf(u8, basics, "const Basics$Order$$order = ");
     const compare = std.mem.indexOf(u8, basics, "const Basics$Order$$compare = ");
@@ -3752,9 +3741,8 @@ test "a derived method of a submodule's namesake type does not collide with its 
         \\
     );
 
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqualStrings("True\nTrue\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\nTrue\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
 
     // Two imports, two names, one statement each.
     const main = try w.read("out/Main.mjs");
@@ -3813,9 +3801,8 @@ test "a type that is not pub still exports the method another module derives for
         \\
     );
 
-    const built = try w.buildAndRun(&.{"src"});
-    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
-    try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
+    const built = try w.buildAndRun(&.{"src"}, .{ .stdout = "True\nFalse\n" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
     const hidden = try w.read("out/Hidden.mjs");
     try testing.expect(std.mem.indexOf(u8, hidden, "export { Hidden$Wrapped$$eq,") != null);
     // `Hidden$Wrapped$$compare` was derived as eagerly as its `eq` and is
@@ -3933,8 +3920,7 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
     // └─────────────────────────────────────────┘
     // 1 * 3 * 3. `NaN` is what a dropped or misplaced evidence argument
     // prints, and it is the failure this scenario exists to catch.
-    const program = try w.node(world.entry_file);
-    try testing.expectEqualStrings("9\n", program.stdout);
+    try w.expectProgram(world.entry_file, .{ .stdout = "9\n" });
 }
 
 test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
@@ -5068,10 +5054,8 @@ test "a `case` the checker could not decide never reaches the default-free decis
         \\    Node.printLines [ name 0, name 999 ]
         \\
     );
-    const fixed = try w.buildAndRun(&.{"Main.beni"});
-    try testing.expectEqual(@as(u8, 0), fixed.build.exit_code);
-    const program = fixed.program orelse return error.BuildFailed;
-    try testing.expectEqualStrings("zero\nother\n", program.stdout);
+    const fixed = try w.buildAndRun(&.{"Main.beni"}, .{ .stdout = "zero\nother\n" });
+    try testing.expectEqual(@as(u8, 0), fixed.exit_code);
 }
 
 // ---------------------------------------------------------------------------

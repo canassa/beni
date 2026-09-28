@@ -336,8 +336,8 @@ test "every `--|     expr == value` in core compiles in its own module and is tr
         return error.DocExampleDoesNotCompile;
     }
 
-    const ran = try w.node(world.entry_file);
-    if (ran.exit_code != 0 or ran.stdout.len != 0) {
+    // Every example true: the program prints nothing.
+    if (try w.checkProgram(world.entry_file, .{ .stdout = "" })) |ran| {
         var lines = std.mem.splitScalar(u8, ran.stdout, '\n');
         while (lines.next()) |line| {
             if (line.len == 0) continue;

@@ -175,6 +175,15 @@ a new or re-blessed `run/` fixture, or a Node upgrade, run `zig build
 test-run-hashes` (with `-Dcorpus=run/MyFixture` for one) and commit the rewritten files. It never records a hash for a
 build whose output does not match — that build is reported and gets none.
 
+A black-box scenario that runs its program does it through
+`w.expectProgram(script, .{ .stdout = …, .exit_code = …, .stderr = … })` or
+`w.buildAndRun(args, expected)`, never `w.node` and assertions after it: the
+expectation is given up front because it is part of the run's hash, whose
+verified lines live in `tests/blackbox/run-hashes.txt`. `w.checkProgram`
+returns what the program did instead of failing, for a scenario that
+reports a mismatch itself. After adding or changing such a scenario, run
+`zig build test-run-hashes -Dtest-filter=<its name>` and commit the index.
+
 ## Golden output: narrow, normalized, blessable
 
 Goldens are for codegen *shape* claims that running the program cannot observe:

@@ -113,10 +113,13 @@ fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {
     try s.w.write("Main.beni", try source(a, path, .reversed));
     const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
     if (built.exit_code != 0) return s.finish(try s.failed(built));
-    const program = try s.w.node(world.entry_file);
     const expected = try readRepo(a, twin);
-    const same = program.exit_code == 0 and std.mem.eql(u8, program.stdout, expected);
-    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=0 stdout-differs", .detail = if (same) "" else program.stdout[0..@min(program.stdout.len, 300)] });
+    const differs = try s.w.checkProgram(world.entry_file, .{ .stdout = expected });
+    try s.finish(.{
+        .green = differs == null,
+        .signature = if (differs == null) "" else "exit=0 stdout-differs",
+        .detail = if (differs) |program| program.stdout[0..@min(program.stdout.len, 300)] else "",
+    });
 }
 
 /// `path`'s program with its declarations reversed checks clean.
