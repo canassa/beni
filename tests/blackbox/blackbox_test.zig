@@ -5849,14 +5849,14 @@ test "schemas check and dump, while emit refuses before entry discovery and writ
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 12 }, .end = .{ .line = 4, .col = 16 } },
         .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is checked, but its parse and print are not generated until schema\nS4.",
+        .message = "This schema is checked, but its parse and print are not generated yet.",
     }});
     const no_main_expected = @as([]const diagnostic.Diagnostic, &.{.{
         .code = .not_implemented,
         .severity = .@"error",
         .span = .{ .file = "NoMain.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 13 } },
         .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is checked, but its parse and print are not generated until schema\nS4.",
+        .message = "This schema is checked, but its parse and print are not generated yet.",
     }});
 
     // ┌─────────────────────────────────────────┐

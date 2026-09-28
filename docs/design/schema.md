@@ -824,7 +824,7 @@ fixtures assert complete values.
 Checking accepts schema programs in `check` and in resolution-requiring dumps.
 `build` still reports `not_implemented` on the schema name from `Emit.run`,
 before entry discovery or any output: “This schema is checked, but its parse
-and print are not generated until schema S4.” This replaces the frontend's
+and print are not generated yet.” This replaces the frontend's
 refusal; a successful check does not claim executable runners. A frontend or
 checker error keeps its own diagnostic without adding this refusal.
 
@@ -1192,5 +1192,5 @@ Checking moves the temporary wall rather than removing it. `check` accepts a val
 schema program and all resolution-requiring dumps see these interface members.
 `build` stops in `Emit.run`, before `findEntry` and before writing any path,
 with `not_implemented` on the schema name: “This schema is checked, but its
-parse and print are not generated until schema S4.” A schema program cannot
+parse and print are not generated yet.” A schema program cannot
 build successfully without its runners.

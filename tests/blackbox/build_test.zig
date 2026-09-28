@@ -2499,7 +2499,7 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
 
     try testing.expectEqual(@as(u8, 2), both.exit_code);
     try testing.expectEqualStrings(
-        "beni: --source-maps is not implemented until M5; this build would write no .map file\n",
+        "beni: --source-maps is not implemented yet; this build would write no .map file\n",
         both.stderr,
     );
 
@@ -2804,7 +2804,7 @@ test "--source-maps is refused rather than silently writing no .map file" {
     // `--release` is refused for the same reason.
     try testing.expectEqual(@as(u8, 2), r.exit_code);
     try testing.expectEqualStrings(
-        "beni: --source-maps is not implemented until M5; this build would write no .map file\n",
+        "beni: --source-maps is not implemented yet; this build would write no .map file\n",
         r.stderr,
     );
 

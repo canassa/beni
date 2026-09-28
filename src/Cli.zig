@@ -51,7 +51,7 @@ pub const usage =
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
     \\  --out=<dir>               output directory (default: out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
-    \\  --source-maps             emit .map files (not implemented until M5)
+    \\  --source-maps             emit .map files (not implemented yet)
     \\  --release                 dead bindings out, short names, compact printing, joined consts
     \\
     \\fmt options:
@@ -638,7 +638,7 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     // they asked for something — they would go looking for a `.map` that a
     // successful, silent build never wrote.
     if (s.specific.source_maps) {
-        return .{ .usage = .init("beni: --source-maps is not implemented until M5; this build would write no .map file", .{}) };
+        return .{ .usage = .init("beni: --source-maps is not implemented yet; this build would write no .map file", .{}) };
     }
     const platform = s.specific.platform orelse
         return .{ .usage = .init("beni: build needs --platform=<name>", .{}) };
@@ -903,18 +903,18 @@ test "build: the platform is required, --release is accepted and --source-maps i
     );
     try expectUsage("beni: option '--release' does not take a value", &.{ "build", "--platform=node", "--release=yes", "src" });
     try expectUsage(
-        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        "beni: --source-maps is not implemented yet; this build would write no .map file",
         &.{ "build", "--platform=node", "--source-maps", "src" },
     );
     // Refused before the platform is missed: the flag is wrong whatever
     // else the line says. `--release --source-maps` exits 2 on the
     // source-map line, because that half is still unimplemented (§2).
     try expectUsage(
-        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        "beni: --source-maps is not implemented yet; this build would write no .map file",
         &.{ "build", "--source-maps", "src" },
     );
     try expectUsage(
-        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        "beni: --source-maps is not implemented yet; this build would write no .map file",
         &.{ "build", "--platform=node", "--release", "--source-maps", "src" },
     );
     try expectUsage("beni: option '--source-maps' does not take a value", &.{ "build", "--platform=node", "--source-maps=yes", "src" });

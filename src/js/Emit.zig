@@ -397,7 +397,7 @@ const Emitter = struct {
                     .not_implemented,
                     file,
                     decl.name_token,
-                    "This schema is checked, but its parse and print are not generated until schema S4.",
+                    "This schema is checked, but its parse and print are not generated yet.",
                     .{},
                 );
             }
@@ -595,7 +595,7 @@ const Emitter = struct {
                     \\`<Module>{s}`, so that every emitted file is an ES module by extension
                     \\(`docs/design/backend.md` §2). A specifier that names a file would then point
                     \\at a name that no longer exists, and the build would succeed while the program
-                    \\failed to load. Rewriting them is M3b's; for now, import a package
+                    \\failed to load. Beni cannot rewrite them yet; for now, import a package
                     \\(`node:process`, a dependency) or inline the helper.
                 ,
                     .{ specifier.text, std.fs.path.basename(sibling_path), foreign_extension },

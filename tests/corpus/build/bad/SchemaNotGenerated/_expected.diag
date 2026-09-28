@@ -1,1 +1,1 @@
-[{"code":"not_implemented","severity":"error","span":{"file":"Main.beni","start":{"line":2,"col":12},"end":{"line":2,"col":16}},"title":"NOT IMPLEMENTED YET","message":"This schema is checked, but its parse and print are not generated until schema\nS4."}]
+[{"code":"not_implemented","severity":"error","span":{"file":"Main.beni","start":{"line":2,"col":12},"end":{"line":2,"col":16}},"title":"NOT IMPLEMENTED YET","message":"This schema is checked, but its parse and print are not generated yet."}]
