@@ -446,6 +446,11 @@ pub const Local = struct {
 /// phases after it (sharding for concurrent access is daemon work).
 pub const Global = struct {
     pool: Pool = .{},
+    /// Per symbol, its position among the symbols `rankByText` saw, in byte
+    /// order of their text; empty until it runs, and short of any symbol
+    /// interned after it. A sort by text over many names reads these
+    /// integers instead of comparing their bytes (`textRank`).
+    text_rank: []u32 = &.{},
 
     /// Registers the `WellKnown` symbols so their indices are fixed.
     pub fn init(gpa: Allocator) Allocator.Error!Global {
@@ -456,7 +461,24 @@ pub const Global = struct {
     }
 
     pub fn deinit(global: *Global, gpa: Allocator) void {
+        gpa.free(global.text_rank);
         global.pool.deinit(gpa);
+    }
+
+    /// Keep `rank`, allocated with `gpa`, as every symbol's position in text
+    /// order (`textRank`); it must order the symbols as their texts do.
+    /// What it answers is only ever an ORDER the texts already have, so a
+    /// sort that reads it and one that does not agree.
+    pub fn setTextRank(global: *Global, gpa: Allocator, rank: []u32) void {
+        gpa.free(global.text_rank);
+        global.text_rank = rank;
+    }
+
+    /// `symbol`'s position in text order (`rankByText`), or null when it
+    /// has none.
+    pub inline fn textRank(global: *const Global, symbol: Symbol) ?u32 {
+        const i = @intFromEnum(symbol);
+        return if (i < global.text_rank.len) global.text_rank[i] else null;
     }
 
     pub fn count(global: *const Global) u32 {

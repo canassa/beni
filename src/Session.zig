@@ -59,6 +59,7 @@ const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
+const TypeStore = @import("check/TypeStore.zig");
 const Key = @import("cache/Key.zig");
 const FileKey = @import("cache/FileKey.zig");
 const CacheDir = @import("cache/Dir.zig");
@@ -1350,6 +1351,9 @@ fn resolveSerial(session: *Session) RunError!void {
 /// would number a symbol by which worker the `next_file` race handed its
 /// file to, so any choice made by id would
 /// change between runs of the same input at the same `--jobs`.
+/// How many interned names make `mergeInterners` rank them by text.
+const rank_by_text_from = 1 << 14;
+
 fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
     const gpa = session.gpa;
     const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
@@ -1381,6 +1385,11 @@ fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
     defer gpa.free(locals);
     for (session.workers, locals) |*worker, *local| local.* = &worker.interner;
     try session.interner.mergeRest(gpa, locals, remaps);
+    // A project this many names long has rows long enough that sorting them
+    // by text is worth ranking every name once: the checker sorts each wide
+    // record's fields by text several times over. Below it the ranking
+    // would cost more than the sorts it saves.
+    if (session.interner.count() >= rank_by_text_from) try TypeStore.rankByText(gpa, &session.interner);
     return remaps;
 }
 

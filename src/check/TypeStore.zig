@@ -920,6 +920,19 @@ pub fn sortByText(comptime T: type, scratch: Allocator, interner: *const InternP
     if (items.len < 2) return;
     const keyed = try scratch.alloc(Keyed, items.len);
     defer scratch.free(keyed);
+    // Every name ranked by text already (`Global.rankByText`): the rank is
+    // the key, whole, and equal ranks are equal names.
+    ranked: {
+        var sorted = true;
+        for (items, keyed, 0..) |item, *k, i| {
+            k.* = .{ .key = interner.textRank(item.name) orelse break :ranked, .at = @intCast(i) };
+            if (i != 0 and k.key < keyed[i - 1].key) sorted = false;
+        }
+        if (sorted) return;
+        const tmp = try scratch.alloc(Keyed, items.len);
+        defer scratch.free(tmp);
+        return permute(T, scratch, items, sortKeyed(keyed, tmp));
+    }
     var sorted = true;
     for (items, keyed, 0..) |item, *k, i| {
         k.* = .{ .key = textPrefix(interner.slice(item.name)), .at = @intCast(i) };
@@ -947,6 +960,20 @@ pub fn sortByText(comptime T: type, scratch: Allocator, interner: *const InternP
         start = end;
     }
     try permute(T, scratch, items, order);
+}
+
+/// Rank every symbol `interner` holds by its text (`Global.setTextRank`),
+/// by the same sort `sortByText` runs.
+pub fn rankByText(allocator: Allocator, interner: *InternPool.Global) Allocator.Error!void {
+    const Named = struct { name: Symbol };
+    const n = interner.count();
+    const names = try allocator.alloc(Named, n);
+    defer allocator.free(names);
+    for (names, 0..) |*named, i| named.* = .{ .name = @enumFromInt(i) };
+    try sortByText(Named, allocator, interner, names);
+    const positions = try allocator.alloc(u32, n);
+    for (names, 0..) |named, position| positions[@intFromEnum(named.name)] = @intCast(position);
+    interner.setTextRank(allocator, positions);
 }
 
 /// Whether `a`'s name orders before `b`'s by text: the prefixes when they
@@ -981,11 +1008,16 @@ fn sortKeyed(keyed: []Keyed, tmp: []Keyed) []Keyed {
     }
     var src = keyed;
     var dst = tmp;
+    // The bytes in which some key differs from the first, found in one scan:
+    // a byte every key shares is not counted at all.
+    var varies: u64 = 0;
+    const first = keyed[0].key;
+    for (keyed) |k| varies |= k.key ^ first;
     for (0..8) |pass| {
         const shift: u6 = @intCast(pass * 8);
+        if (@as(u8, @truncate(varies >> shift)) == 0) continue;
         var counts: [256]u32 = @splat(0);
         for (src) |k| counts[@as(u8, @truncate(k.key >> shift))] += 1;
-        if (counts[@as(u8, @truncate(src[0].key >> shift))] == src.len) continue;
         var sum: u32 = 0;
         for (&counts) |*c| {
             const n = c.*;
