@@ -169,7 +169,7 @@ internals: std.ArrayList(Internal) = .empty,
 poisoned: std.ArrayList(Bir.Inst.Index) = .empty,
 /// `Eager.markerKeys`: row `marker_row`'s open-wanted lookup.
 marker_row: u32 = std.math.maxInt(u32),
-marker_keys: std.AutoHashMapUnmanaged(MarkerKey, u32) = .empty,
+marker_keys: std.HashMapUnmanaged(MarkerKey, u32, MarkerKey.HashContext, std.hash_map.default_max_load_percentage) = .empty,
 stacks: Walk.Stacks = .{},
 /// Why the last unit failed.
 why: Why = .failed,
@@ -223,7 +223,23 @@ pub const LetScopes = struct {
     }
 };
 
-pub const MarkerKey = struct { root: Var, method: Symbol };
+pub const MarkerKey = struct {
+    root: Var,
+    method: Symbol,
+
+    /// Two multiplications, where `std`'s default ran Wyhash over the key:
+    /// a derived row of 65 600 context entries looks one up per entry.
+    pub const HashContext = struct {
+        pub fn hash(_: HashContext, k: MarkerKey) u64 {
+            return (@as(u64, @intFromEnum(k.root)) *% 0x9E37_79B9_7F4A_7C15) ^
+                (@as(u64, @intFromEnum(k.method)) *% 0xC2B2_AE3D_27D4_EB4F);
+        }
+
+        pub fn eql(_: HashContext, a: MarkerKey, b: MarkerKey) bool {
+            return a.root == b.root and a.method == b.method;
+        }
+    };
+};
 
 /// Build the table's trees. The caller owns the output's slices.
 pub fn run(in: Input) Error!Output {

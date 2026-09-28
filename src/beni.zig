@@ -111,6 +111,7 @@ pub const check = struct {
     pub const Groups = @import("check/Groups.zig");
     pub const Incremental = @import("check/Incremental.zig");
     pub const Instances = @import("check/Instances.zig");
+    pub const int_hash = @import("check/int_hash.zig");
     pub const Instantiate = @import("check/Instantiate.zig");
     pub const InterfaceTerms = @import("check/InterfaceTerms.zig");
     pub const Marker = @import("check/Marker.zig");

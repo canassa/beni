@@ -27,6 +27,7 @@ const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
+const int_hash = @import("int_hash.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
 
@@ -68,7 +69,7 @@ pub const Writer = struct {
     ref_ids: std.ArrayList(TypeStore.TypeId) = .empty,
     /// `ref_ids` inverted: a type's row, so `typeRefOf` is O(1) and not a
     /// scan per mention, which would be quadratic in a module's named types.
-    ref_index: std.AutoHashMapUnmanaged(TypeStore.TypeId, u32) = .empty,
+    ref_index: int_hash.Map(TypeStore.TypeId, u32) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     /// `Var → TermIndex` for the scheme being written; dense over the
     /// store. Never a map: a `Var` is a dense id and the house rules forbid
@@ -106,6 +107,10 @@ pub const Writer = struct {
     /// further quantifier, and a quantifier's four words have to stay
     /// contiguous.
     pending_roots: std.ArrayList(Var) = .empty,
+    /// Terms of the ranges being written, innermost last: `writeRange`
+    /// leaves a range here for its caller to copy into `extra` and pop, so
+    /// a type costs no allocation per application or function it holds.
+    stack: std.ArrayList(u32) = .empty,
     depth: u32 = 0,
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
@@ -143,6 +148,7 @@ pub const Writer = struct {
         w.symbols.deinit(w.gpa);
         w.pending_flags.deinit(w.gpa);
         w.pending_roots.deinit(w.gpa);
+        w.stack.deinit(w.gpa);
         w.gpa.free(w.memo);
         w.gpa.free(w.quantified);
         w.gpa.free(w.stamp);
@@ -429,23 +435,23 @@ pub const Writer = struct {
                 .unit => return try w.memoise(root, try w.term(.unit, 0, 0)),
                 .empty_record => return try w.memoise(root, try w.term(.empty_record, 0, 0)),
                 .func => |f| {
-                    const words = try w.writeRange(w.store.vars(f.params));
-                    defer w.gpa.free(words);
-                    const start = try w.addRange(words);
+                    const base = try w.writeRange(w.store.vars(f.params));
+                    const start = try w.addRange(w.stack.items[base..]);
+                    w.stack.shrinkRetainingCapacity(base);
                     const result = try w.writeVar(f.result);
                     return try w.memoise(root, try w.term(.func, start, result.int()));
                 },
                 .app => |a| {
-                    const words = try w.writeRange(w.store.vars(a.args));
-                    defer w.gpa.free(words);
-                    const start = try w.addRange(words);
+                    const base = try w.writeRange(w.store.vars(a.args));
+                    const start = try w.addRange(w.stack.items[base..]);
+                    w.stack.shrinkRetainingCapacity(base);
                     const ref = try w.typeRefOf(a.type);
                     return try w.memoise(root, try w.term(.app, ref.int(), start));
                 },
                 .tuple => |t| {
-                    const words = try w.writeRange(w.store.vars(t));
-                    defer w.gpa.free(words);
-                    const start = try w.addRange(words);
+                    const base = try w.writeRange(w.store.vars(t));
+                    const start = try w.addRange(w.stack.items[base..]);
+                    w.stack.shrinkRetainingCapacity(base);
                     return try w.memoise(root, try w.term(.tuple, start, 0));
                 },
                 .record => |r| {
@@ -461,7 +467,7 @@ pub const Writer = struct {
                     // numbering a function of `--jobs`. §8.1 has the cache hashing
                     // this record; a hash of a scheduling-dependent byte
                     // layout is a cache that misses at random.
-                    std.mem.sort(TypeStore.Field, fields, w.interner, fieldNameLessThan);
+                    try TypeStore.sortByText(TypeStore.Field, w.gpa, w.interner, fields);
                     const words = try w.gpa.alloc(u32, fields.len * 2);
                     defer w.gpa.free(words);
                     for (fields, 0..) |f, i| {
@@ -474,14 +480,11 @@ pub const Writer = struct {
                 },
             },
             .alias => |a| {
-                const args = w.store.vars(a.args);
-                const words = try w.gpa.alloc(u32, args.len + 1);
-                defer w.gpa.free(words);
-                const copied = try w.gpa.dupe(Var, args);
-                defer w.gpa.free(copied);
-                for (copied, 0..) |arg, i| words[i] = (try w.writeVar(arg)).int();
-                words[args.len] = (try w.writeVar(a.actual)).int();
-                const start = try w.addRange(words);
+                const base = try w.writeRange(w.store.vars(a.args));
+                const actual = try w.writeVar(a.actual);
+                try w.stack.append(w.gpa, actual.int());
+                const start = try w.addRange(w.stack.items[base..]);
+                w.stack.shrinkRetainingCapacity(base);
                 const ref = try w.typeRefOf(a.type);
                 return try w.memoise(root, try w.term(.alias, ref.int(), start));
             },
@@ -493,13 +496,19 @@ pub const Writer = struct {
         return t;
     }
 
-    fn writeRange(w: *Writer, vars: []const Var) Error![]u32 {
-        const copied = try w.gpa.dupe(Var, vars);
-        defer w.gpa.free(copied);
-        const out = try w.gpa.alloc(u32, copied.len);
-        errdefer w.gpa.free(out);
-        for (copied, out) |v, *o| o.* = (try w.writeVar(v)).int();
-        return out;
+    /// Write each of `vars` and leave their terms on `stack`, from the
+    /// returned index to its end, for the caller to take and pop. The vars
+    /// are copied onto the stack first and read back from it, so a slice
+    /// of the store may move under the walk without harm.
+    fn writeRange(w: *Writer, vars: []const Var) Error!usize {
+        const base = w.stack.items.len;
+        try w.stack.ensureUnusedCapacity(w.gpa, vars.len);
+        for (vars) |v| w.stack.appendAssumeCapacity(v.int());
+        for (base..base + vars.len) |i| {
+            const t = try w.writeVar(@enumFromInt(w.stack.items[i]));
+            w.stack.items[i] = t.int();
+        }
+        return base;
     }
 
     fn quantifierOf(w: *Writer, root: Var, flags: TypeStore.Flags) Error!u32 {
@@ -590,10 +599,6 @@ pub fn quantifierOrder(
     }
 }
 
-fn fieldNameLessThan(interner: *const InternPool.Global, a: TypeStore.Field, b: TypeStore.Field) bool {
-    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
-}
-
 fn constraintLessThan(
     interner: *const InternPool.Global,
     a: TypeStore.MethodConstraint,
@@ -648,7 +653,7 @@ fn orderWalk(
                     const fields = try gpa.dupe(TypeStore.Field, store.fields(r.fields));
                     defer gpa.free(fields);
                     // By name TEXT, which is what the writer descends in.
-                    std.mem.sort(TypeStore.Field, fields, interner, fieldNameLessThan);
+                    try TypeStore.sortByText(TypeStore.Field, gpa, interner, fields);
                     var i = fields.len;
                     while (i > 0) {
                         i -= 1;
