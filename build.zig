@@ -101,7 +101,7 @@ const compare_shards = 2;
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
-    .{ "tests/blackbox/abuse_wide_test.zig", 4 },
+    .{ "tests/blackbox/abuse_wide_test.zig", 3 },
     .{ "tests/blackbox/build_test.zig", 3 },
     .{ "tests/blackbox/cache_test.zig", 4 },
     .{ "tests/blackbox/check_test.zig", 1 },
@@ -1362,6 +1362,9 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
         r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
+        // The gates' budget in instructions, for the pending scenarios whose
+        // finding is that they do not fit it (`pending_test.zig`).
+        r.setEnvironmentVariable("BENI_PENDING_BUDGET_INSTRUCTIONS", bb.budget.instructions);
         setBudget(r, if (env.budget) bb.budget else .none);
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,

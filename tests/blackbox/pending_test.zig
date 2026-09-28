@@ -2,7 +2,8 @@
 //! test per finding of `plans/checker-findings.md` that a corpus
 //! fixture cannot state, because its claim is about TIME, or about a program
 //! too wide or deep to check in (generated, as `abuse_test.zig` generates
-//! its inputs). Run only by `zig build test-pending`
+//! its inputs), or because the scenario costs more than the gates' test
+//! budget (`over-budget`, in the budget's instructions). Run only by `zig build test-pending`
 //! and `zig build test-pending-perf`, never by the gates: every scenario here
 //! is expected to be RED on the checker the gates run.
 //!
@@ -79,6 +80,11 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
     .{ .name = "scenario/CK-144", .step = .fast },
+    // Over the test budget (`over-budget`): measured on the ReleaseSafe
+    // binary the gates run, in the budget's unit, and promoted back into
+    // the file they came from once they fit.
+    .{ .name = "scenario/CK-198", .step = .fast },
+    .{ .name = "scenario/CK-199", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -138,6 +144,161 @@ fn aliasChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.items;
 }
 
+// `==` on a record DERIVES one function with a parameter per field, and a
+// JavaScript call that wide overflows the engine's stack: under Node 24 a
+// 65 530-field `r == r` built and then threw `RangeError`. Past 4 096
+// positions the evidence is one array (`static-dispatch-spike.md` §9.2), so
+// this width builds and runs. It came from `abuse_wide_test.zig` and goes
+// back there when it fits the test budget: today one build is about 5.3
+// billion instructions against 4.3, spent emitting the record's derived
+// function and literal (about 5 MB of JavaScript) and re-copying its type at
+// each use (`plans/checker-findings.md`).
+test "== on a record of 65 530 fields, a width that threw, builds and runs" {
+    var s = try Scenario.init("CK-198");
+    defer s.deinit();
+    const budget = try s.budget();
+    try s.w.write("Wide.beni", try wideEqProgram(s.arena(), 65_530));
+    const counter = budget.counter;
+    const before = counter.read();
+    const built = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--no-cache", "Wide.beni" }, .{ .raw_diagnostics = true });
+    const spent = counter.read() - before;
+    if (built.exit_code != 0) return s.finish(try s.failed(built));
+    const ran = try s.w.node(world.entry_file);
+    if (!std.mem.eql(u8, ran.stdout, "eq\n")) return s.finish(.{ .green = false, .signature = "wrong-output", .detail = ran.stdout });
+    try s.finish(s.againstBudget(spent, budget.limit, "one build"));
+}
+
+/// A program printing `eq` or `ne` for `r == r`, where `r` has `n` fields.
+fn wideEqProgram(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Node exposing (Program)\n\n\nr =\n    { ");
+    for (1..n + 1) |i| {
+        if (i != 1) try out.appendSlice(arena, ", ");
+        try out.print(arena, "f{d} = {d}", .{ i, i });
+    }
+    try out.appendSlice(arena, " }\n\n\nmain : Program\nmain =\n    Node.printLines [ if r == r then \"eq\" else \"ne\" ]\n");
+    return out.items;
+}
+
+// `static-dispatch-spike.md` §9.2's wide form across a module boundary: past
+// 4 096 evidence entries a derived function takes ONE array `$m`, and every
+// caller packs the same count, which an importer reads from the interface.
+// `T` has 4 097 parameters. Three builds over one cache directory, one per
+// place the count comes from: cold (the interface in memory), warm under
+// `--release` (`Main`'s cached dispatch table), and `Main` edited (`Main`
+// checked against `Wide`'s loaded record). It came from `cache_test.zig` and
+// goes back there when it fits the test budget: today the three builds are
+// about 4.8 billion instructions against 4.3, most of it emitting `T`'s
+// derived `eq` and `compare` in both forms (`plans/checker-findings.md`).
+test "an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm" {
+    var s = try Scenario.init("CK-199");
+    defer s.deinit();
+    const budget = try s.budget();
+    const arena = s.arena();
+    const n = 4_097;
+    try wideImportProject(&s.w, arena, n, "");
+    const expected = "True\nFalse\nTrue\nFalse\n";
+    const passes = [_]struct {
+        what: []const u8,
+        edit: ?[]const u8,
+        release: bool,
+        /// Null on the cold pass, which checks core too: there it is
+        /// `hits == 0` that says nothing came from the cache.
+        checked: ?u64,
+        hits_at_least: u64,
+        expected: []const u8,
+    }{
+        .{ .what = "cold", .edit = null, .release = false, .checked = null, .hits_at_least = 0, .expected = expected },
+        .{ .what = "warm, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected },
+        .{ .what = "Main edited", .edit = ", show (y == y)", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
+    };
+    var spent: u64 = 0;
+    for (passes, 0..) |pass, i| {
+        if (pass.edit) |extra| try wideImportProject(&s.w, arena, n, extra);
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(arena, &.{ "build", "--platform=node", "--out=out", "--cache-dir=cache", "--jobs=1" });
+        if (pass.release) try argv.append(arena, "--release");
+        try argv.append(arena, try std.fmt.allocPrint(arena, "--self-profile=pass{d}.json", .{i}));
+        try argv.appendSlice(arena, &.{ "Main.beni", "Wide.beni" });
+        const before = budget.counter.read();
+        const built = try s.w.runWith(argv.items, .{ .raw_diagnostics = true });
+        spent += budget.counter.read() - before;
+        if (built.exit_code != 0) return s.finish(try s.failed(built));
+        const ran = try s.w.node(world.entry_file);
+        if (!std.mem.eql(u8, ran.stdout, pass.expected)) return s.finish(.{ .green = false, .signature = "wrong-output", .detail = pass.what });
+        const counters = try cacheCounters(&s.w, arena, try std.fmt.allocPrint(arena, "pass{d}.json", .{i}));
+        const as_expected = if (pass.checked) |checked|
+            counters.checked == checked and counters.hits >= pass.hits_at_least
+        else
+            counters.hits == 0 and counters.checked >= 2;
+        if (!as_expected) return s.finish(.{ .green = false, .signature = "cache-use", .detail = pass.what });
+        // The importer packs the array: one `$m` of 4 097 entries per call,
+        // never 4 097 arguments. (`--release` renames.)
+        if (!pass.release) {
+            const main_js = try s.w.read("out/Main.mjs");
+            if (std.mem.indexOf(u8, main_js, "Wide$T$$eq([") == null or std.mem.indexOf(u8, main_js, "Wide$T$$compare([") == null)
+                return s.finish(.{ .green = false, .signature = "positional", .detail = pass.what });
+        }
+    }
+    try s.finish(s.againstBudget(spent, budget.limit, "three builds"));
+}
+
+/// `Wide.beni`: `pub type T a0 … a<n-1> = Mk a0 … a<n-1>`. And `Main.beni`:
+/// `x` and `y` of it, all fields `1 … n` except `y`'s last, which is 0, and
+/// a `main` printing `x == x`, `x == y`, `y < x` and `x < y` — then
+/// `extra`, so a second version of `Main` can differ from the first.
+fn wideImportProject(w: *World, arena: std.mem.Allocator, n: usize, extra: []const u8) !void {
+    var wide: std.ArrayList(u8) = .empty;
+    try wide.appendSlice(arena, "pub type T");
+    for (0..n) |i| try wide.print(arena, " a{d}", .{i});
+    try wide.appendSlice(arena, "\n    = Mk");
+    for (0..n) |i| try wide.print(arena, " a{d}", .{i});
+    try wide.appendSlice(arena, "\n");
+    try w.write("Wide.beni", wide.items);
+
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(arena, "import Node exposing (Program)\nimport Wide\n\n\nx =\n    Wide.Mk");
+    for (1..n + 1) |i| try main.print(arena, " {d}", .{i});
+    try main.appendSlice(arena, "\n\n\ny =\n    Wide.Mk");
+    for (1..n + 1) |i| try main.print(arena, " {d}", .{if (i == n) 0 else i});
+    try main.print(arena,
+        \\
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (x == x), show (x == y), show (y < x), show (x < y){s} ]
+        \\
+    , .{extra});
+    try w.write("Main.beni", main.items);
+}
+
+/// The two `--self-profile` counters a cache pass is judged by.
+fn cacheCounters(w: *World, arena: std.mem.Allocator, trace: []const u8) !struct { hits: u64, checked: u64 } {
+    const Event = struct {
+        ph: []const u8,
+        args: struct { cache_hits: ?u64 = null, modules_checked: ?u64 = null } = .{},
+    };
+    const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, arena, try w.read(trace), .{ .ignore_unknown_fields = true });
+    var hits: u64 = 0;
+    var checked: u64 = 0;
+    for (parsed.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.cache_hits) |v| hits = v;
+        if (e.args.modules_checked) |v| checked = v;
+    }
+    return .{ .hits = hits, .checked = checked };
+}
+
 // The list stays honest: every `RED` entry names a pending fixture that
 // exists or a scenario of this file. A fixture promoted into the corpus takes
 // its line with it; a stale one would make rule (d) silently check nothing.
@@ -172,9 +333,10 @@ fn exists(path: []const u8) bool {
 const Verdict = struct {
     green: bool,
     /// `tests/pending/RED`'s vocabulary, extended for time: `slow` (the
-    /// ratio or the bound was exceeded on every run), `timeout`, or the
-    /// walker's `exit=<n> first=<code>` when a run did not even finish the
-    /// way the scenario needs.
+    /// ratio or the bound was exceeded on every run), `timeout`,
+    /// `over-budget` (more instructions than the gates' test budget), or
+    /// the walker's `exit=<n> first=<code>` when a run did not even finish
+    /// the way the scenario needs.
     signature: []const u8,
     detail: []const u8,
 };
@@ -370,6 +532,30 @@ const Scenario = struct {
         };
     }
 
+    /// The gates' test budget in instructions (`BENI_PENDING_BUDGET_INSTRUCTIONS`,
+    /// which `build.zig` sets from `-Dtest-budget`), and a counter of the
+    /// instructions every process this scenario spawns from now on retires.
+    /// A machine that cannot count them skips the scenario: its verdict
+    /// would be in another unit than the gates'.
+    fn budget(s: *Scenario) !struct { limit: u64, counter: world.timing.Counter } {
+        const text = testing.environ.getAlloc(s.arena(), "BENI_PENDING_BUDGET_INSTRUCTIONS") catch "";
+        const limit = std.fmt.parseUnsigned(u64, text, 10) catch {
+            std.debug.print("{s}: no instruction budget to measure against (BENI_PENDING_BUDGET_INSTRUCTIONS); skipped\n", .{s.name});
+            return error.SkipZigTest;
+        };
+        const counter = world.timing.Counter.open() orelse {
+            std.debug.print("{s}: no instruction counter could be opened (perf_event_open); skipped\n", .{s.name});
+            return error.SkipZigTest;
+        };
+        return .{ .limit = limit, .counter = counter };
+    }
+
+    /// `over-budget` when `spent` instructions exceed the gates' `limit`.
+    fn againstBudget(s: *Scenario, spent: u64, limit: u64, what: []const u8) Verdict {
+        const detail = std.fmt.allocPrint(s.arena(), "{s}: {d} million instructions; the test budget is {d} million", .{ what, spent / 1_000_000, limit / 1_000_000 }) catch "";
+        return .{ .green = spent <= limit, .signature = if (spent <= limit) "" else "over-budget", .detail = detail };
+    }
+
     /// Print the verdict and apply rules (b) and (d).
     fn finish(s: *Scenario, v: Verdict) !void {
         if (v.green) {
@@ -378,7 +564,7 @@ const Scenario = struct {
             std.debug.print("PENDING  RED    {s}  {s}  [{s}]  {s}\n", .{ s.id, s.name, v.signature, v.detail });
         }
         if (v.green) {
-            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario) or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
+            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario), the gated file it came from (an over-budget one), or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
             return error.PendingScenarioIsGreen;
         }
         // Rule (d) and the record half of rule (a), as the corpus walker

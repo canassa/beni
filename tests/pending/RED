@@ -58,3 +58,8 @@ scenario/CK-144 superlinear
 # CK-195 and CK-197 into tests/corpus/, CK-194 into perf_test.zig, CK-196
 # into ordering_test.zig), and CK-179 with them under D16 (into
 # ordering_test.zig). CK-144 is the one left.
+# The tests over the gates' test budget of 4 300 million instructions
+# (2026-09-28): parked here until the compiler fits them, then promoted
+# back into abuse_wide_test.zig and cache_test.zig.
+scenario/CK-198 over-budget
+scenario/CK-199 over-budget
