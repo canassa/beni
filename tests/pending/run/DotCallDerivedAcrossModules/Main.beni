@@ -1,0 +1,31 @@
+import M exposing (High, Level, Low, Tag)
+import Node exposing (Program)
+
+
+type Local
+    = One
+    | Two
+
+
+before x y =
+    x.compare y == LT
+
+
+yes : Bool -> String
+yes b =
+    if b then
+        "T"
+    else
+        "F"
+
+
+main : Program
+main =
+    Node.printLines
+        [ yes ((High).compare Low == GT)
+        , yes ((Tag 2).eq (Tag 2))
+        , yes ((Tag "a").compare (Tag "b") == LT)
+        , yes (before Low High)
+        , yes (before Two One)
+        , yes (M.isLow Low)
+        ]

@@ -1,0 +1,2 @@
+# The refusal names the constructor and the payload that asks for it.
+not_equatable Main.beni:11:13 contains "its `SNode` holds:" contains "S (Holder a)"

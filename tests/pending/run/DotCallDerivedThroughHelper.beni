@@ -1,0 +1,49 @@
+-- CK-161: (D15) an unannotated function's dot-call `x.compare y` promotes a
+-- requirement, and each use of the function answers it: with the DERIVED
+-- `compare` of a type that declares none (`Colour`, `Pair Colour`), with the
+-- table's on a primitive, and on a closed record, where the promoted
+-- requirement has no field accessor to be and derives as `<` does. At
+-- 275b203 `before Red Blue` and `before (Pair …) (Pair …)` are UNKNOWN
+-- METHOD ("`before` calls `x.compare` and has no annotation") and the
+-- record NO METHODS HERE. Oracle twin: `before` annotated `before : a, a ->
+-- Bool where a.compare : a, a -> Order` prints the same.
+import Node exposing (Program)
+
+
+type Colour
+    = Red
+    | Blue
+
+
+type Pair a
+    = Pair a a
+
+
+before x y =
+    x.compare y == LT
+
+
+same x y =
+    x.eq y
+
+
+yes : Bool -> String
+yes b =
+    if b then
+        "T"
+    else
+        "F"
+
+
+main : Program
+main =
+    Node.printLines
+        [ yes (before Red Blue)
+        , yes (before Blue Red)
+        , yes (before (Pair Red Blue) (Pair Blue Red))
+        , yes (before 1 2)
+        , yes (before "b" "a")
+        , yes (before { k = 1, v = Red } { k = 1, v = Blue })
+        , yes (same (Pair 1 2) (Pair 1 2))
+        , yes (same Red Blue)
+        ]

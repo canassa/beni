@@ -1,0 +1,15 @@
+-- CK-195: a wrong own-method signature is one mistake across modules too.
+-- `pub eq : T, Int -> Bool` is written for `T` (its first parameter) and
+-- fits no use of `T`: `T, T -> Bool` is what `==` needs. Nothing in this
+-- module compares a `T`, and at 275b203 it checks clean — CK-168's report
+-- is made by a use — while `Main`, which compares two, gets one TYPE
+-- MISMATCH per use ("`M.eq` is not the method this call needs"). Expected:
+-- one message, here, at the method, as a use in this module would give it;
+-- `Main`'s uses refused with it, in silence.
+pub type T
+    = T Int
+
+
+pub eq : T, Int -> Bool
+eq (T a) b =
+    a == b

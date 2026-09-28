@@ -1,0 +1,11 @@
+import H
+
+
+type S a
+    = SLeaf a
+    | SNode (S (H.Holder a))
+
+
+same : Bool
+same =
+    SLeaf 1 == SLeaf 1

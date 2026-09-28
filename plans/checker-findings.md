@@ -4702,6 +4702,70 @@ concurrently (it took CK-175 to CK-179); CK-180 to CK-189 are unused.*
 - **Status** fixed by R15-fix-H (2026-09-28): the walk is total, on a growing stack. Promoted into
   `tests/corpus/build/bad/`.
 
+*CK-194 to CK-197 were added on 2026-09-28 by R15-fix-I, from the manager's residues of R15-fix-H's
+review; written red on `275b203` before any fix (their own commit).*
+
+### CK-194 — A chain of bindings each wrapping the last is quadratic, and ends in OutOfMemory
+
+- **Severity** compiler-crash-or-hang (exit 2 with no diagnostic). **Area** instantiation and the
+  boundary's walks over an inferred type that grows by one level per binding. **Class** K3.
+  **Sources** the manager (residue of R15-fix-H's review).
+- **Program** `x0 = 0`, then `x{i} = Just x{i-1}` for i up to n: `x{n}`'s type is `n` levels deep.
+- **Observed** at `275b203`, ReleaseFast, `check --jobs=1`: 5 000 links 2.0 s, 10 000 links 8.4 s
+  (ratio 4.1: quadratic); 20 000 links `beni: OutOfMemory`, exit 2, no diagnostic. Debug: 1 000 /
+  2 000 / 4 000 links 2.0 / 7.5 / 29.4 s. **Where** (perf): `Instantiate.copy` 61 % (each use of
+  `x{i-1}` copies its whole generalised type — every node of a top-level type is quantified, the
+  closed ones too, because a top-level frame's rank is `outermost`, which is also the floor an
+  application's rank is folded from), the binder's occurs check 17 % and `adjustRanks` 16 %, each
+  over the copy: O(i) per link, O(n²) in time and in the store's memory. The same with `x0 = "s"`.
+- **Expected** linear-ish, or §7.3's documented `nesting_too_deep` — never an out-of-memory exit.
+- **Fixture** `scenario/CK-194` (`test-pending-perf`), red `slow`.
+- **Slice** R15-fix-I.
+
+### CK-195 — A wrong own-method signature is reported once per use in every importer
+
+- **Severity** diagnostic-quality. **Area** CK-168's report across modules. **Class** K13.
+  **Sources** the manager (residue of CK-168).
+- **Program** `M`: `pub type T = T Int`, `pub eq : T, Int -> Bool`, no use of `==`. `Main`: two
+  `M.T 1 == M.T 1`.
+- **Observed** `M` checks clean (CK-168's report is made by a use, and `M` has none); `Main` gets
+  one TYPE MISMATCH "`M.eq` is not the method this call needs" per use.
+- **Expected** one message, at the method, in `M`: the mistake is the method's, and it is `M`'s
+  exported API.
+- **Fixture** `check/bad/OwnMethodSignatureAcrossModules/` (`.codes`), red `exit=1
+  codes=type_mismatch×2 why=count`.
+- **Slice** R15-fix-I.
+
+### CK-196 — Two types refusing one own method print in the order their uses were checked
+
+- **Severity** nondeterminism (I9: what a refused program prints). **Area**
+  `Instances.signatureOnce` (CK-168). **Class** K12. **Sources** the manager (confirm-or-refute).
+- **Program** `type T = T Int`, `type V = V Int`, `pub eq : T, Int -> Bool`, a `==` on a `T` and
+  one on a `V`; then the same declarations in the reverse order.
+- **Observed** *Refuted as stated, confirmed in part.* The SET of codes and positions is the same in
+  both orders: two TYPE MISMATCHes, both at `eq`'s declaration ("cannot be the `eq` of `T`" and
+  "… of `V`", the module-rule clash). But the two share one position, so they print in the order
+  the uses were checked, which follows declaration order: `T`'s first in one order, `V`'s in the
+  other. And it is two messages for one mistake (`eq`'s type).
+- **Expected** one message per method, the same in every order.
+- **Fixture** `scenario/CK-196` (`test-pending`), red `order-dependent`.
+- **Slice** R15-fix-I.
+
+### CK-197 — A pinned type refused through a recursive payload does not say which payload
+
+- **Severity** diagnostic-quality. **Area** `Messages.requirementFailed`'s text when a context's
+  answer is `absent_requirement` with no types (CK-116, CK-159). **Class** K13. **Sources** the
+  manager (minor residue of R15-fix-E).
+- **Program** `H.eq : Holder Int, Holder Int -> Bool`; `type S a = SLeaf a | SNode (S (H.Holder
+  a))`; `SLeaf 1 == SLeaf 1`.
+- **Observed** NOT EQUATABLE "`S number` … It holds a `Holder`, and comparing that needs the `eq` of
+  `Holder` at a type that `H.eq` does not have." Correct (no `S` can be compared: the recursion
+  asks for `Holder (Holder a)`), but it names neither the payload nor the type it is asked at.
+- **Expected** the constructor and payload that fail, and the type the method is asked at.
+- **Fixture** `check/bad/DerivedPinnedRecursive/` (`.codes`), red `exit=1 codes=not_equatable×1
+  why=message`.
+- **Slice** R15-fix-I.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
