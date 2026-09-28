@@ -61,6 +61,9 @@ const perf_shards = 7;
 /// this many, the slowest single test is the whole step.
 const unit_shards = 12;
 
+/// The same for the compare generator's unit tests.
+const compare_shards = 2;
+
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
 /// in core names `core/Basics.beni` whether it came from the embedded copy
@@ -176,14 +179,14 @@ pub fn build(b: *std.Build) void {
     // the process whose number is its index modulo the count, so the suite
     // takes about as long as its slowest test instead of the sum of all.
     for (0..unit_shards) |k| {
-        const run = b.addRunArtifact(beni_tests);
+        const run = runTests(b, beni_tests);
         run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, unit_shards }));
         run.setName(b.fmt("run beni tests shard {d}/{d}", .{ k, unit_shards }));
         test_step.dependOn(&run.step);
     }
-    test_step.dependOn(&b.addRunArtifact(diagnostic_tests).step);
-    test_step.dependOn(&b.addRunArtifact(gen_tests).step);
-    test_step.dependOn(&b.addRunArtifact(time_report_tests).step);
+    test_step.dependOn(&runTests(b, diagnostic_tests).step);
+    test_step.dependOn(&runTests(b, gen_tests).step);
+    test_step.dependOn(&runTests(b, time_report_tests).step);
 
     // ---- ReleaseFast and ReleaseSafe compilers. ----
     // Each has its own module instances, because a module's optimize mode is
@@ -240,7 +243,7 @@ pub fn build(b: *std.Build) void {
     for ([_]struct { []const u8, u32 }{
         .{ "tests/blackbox/blackbox_test.zig", 6 },
         .{ "tests/blackbox/abuse_test.zig", 6 },
-        .{ "tests/blackbox/abuse_wide_test.zig", 3 },
+        .{ "tests/blackbox/abuse_wide_test.zig", 5 },
         .{ "tests/blackbox/build_test.zig", 3 },
         .{ "tests/blackbox/cache_test.zig", 4 },
         .{ "tests/blackbox/check_test.zig", 1 },
@@ -343,7 +346,9 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "compare_options", .module = compare_options.createModule() }},
         }),
     });
-    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+    // Sharded like the unit tests: one of its tests takes most of a second
+    // and the rest add up to as much again.
+    const compare_tests = b.addTest(.{
         .name = "compare_gen_unit_test",
         .filters = test_filters,
         .test_runner = testRunner(b),
@@ -353,7 +358,13 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{.{ .name = "compare_options", .module = compare_options.createModule() }},
         }),
-    })).step);
+    });
+    for (0..compare_shards) |k| {
+        const run = runTests(b, compare_tests);
+        run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, compare_shards }));
+        run.setName(b.fmt("run compare generator tests shard {d}/{d}", .{ k, compare_shards }));
+        test_step.dependOn(&run.step);
+    }
     inline for (.{
         .{ "compare-gen", "gen", "Generate the cross-language benchmark's projects (docs/design/compare-bench.md §12)" },
         .{ "compare", "run", "Run the cross-language type-checking benchmark; needs `nix develop .#compare` (compare-bench.md §12)" },
@@ -478,6 +489,18 @@ fn childBuildArgs(
     for (test_filters) |filter| args.append(b.allocator, b.fmt("-Dtest-filter={s}", .{filter})) catch @panic("OOM");
     if (corpus_only.len != 0) args.append(b.allocator, b.fmt("-Dcorpus={s}", .{corpus_only})) catch @panic("OOM");
     return args.items;
+}
+
+/// A run of a test binary. Marked as having side effects, which is true of
+/// every one of them (the black-box ones spawn the compiler and write
+/// temporary projects) and which is what skips the build runner's cache
+/// check: that check hashes the whole test executable, 114 MB for the unit
+/// tests, before every run, and can never hit, because each invocation
+/// passes the test binary a fresh `--seed`.
+fn runTests(b: *std.Build, t: *std.Build.Step.Compile) *std.Build.Step.Run {
+    const run = b.addRunArtifact(t);
+    run.has_side_effects = true;
+    return run;
 }
 
 /// `tests/test_runner.zig`: std's runner plus `BENI_TEST_SHARD`, which lets
@@ -931,7 +954,7 @@ const Blackbox = struct {
     /// build's whole environment, and one stray `export
     /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
-        const r = bb.b.addRunArtifact(t);
+        const r = runTests(bb.b, t);
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,
             .fast => bb.perf_install,
