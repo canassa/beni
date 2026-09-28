@@ -54,6 +54,7 @@ const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
 const Edges = @import("../check/Edges.zig");
+const U32Set = @import("../u32_set.zig").U32Set;
 const Types = @import("../check/Types.zig");
 
 const Inst = Bir.Inst;
@@ -496,6 +497,8 @@ const Lowerer = struct {
     /// The three primitive comparators' names (`primitiveValue`), interned
     /// the first time: a wide type names one per evidence slot.
     prim_names: [3]JsIr.NameIndex = @splat(.none),
+    /// `apply`, interned the first time a steps form spreads a call.
+    apply_symbol: Symbol.Optional = .none,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -532,7 +535,7 @@ const Lowerer = struct {
         /// a request (`forwardTail`).
         mode: enum { direct, forward, steps } = .direct,
         /// The direct and forward forms' depth-taking calls, by node.
-        calls: IndexMap(void) = .empty,
+        calls: U32Set = .{},
         /// How many depth-taking calls the direct form made, and how many
         /// of them it returned (`derivedReturn`): equal makes a forwarder.
         depth_calls: u32 = 0,
@@ -541,6 +544,8 @@ const Lowerer = struct {
         depth: JsIr.NameIndex,
         /// What a call from this body adds to the depth.
         weight: u32,
+        /// `weight` as its decimal text, spelled once for every call.
+        weight_text: []const u8 = "",
         /// Whether the direct form made a call that takes a depth. A body
         /// that made none — every position a primitive, or a hand-written
         /// method — cannot recurse and is emitted exactly as before.
@@ -553,7 +558,7 @@ const Lowerer = struct {
         /// `$e`, the steps form's one temporary (`awaitRequest`), once used.
         temp: ?JsIr.NameIndex = null,
         /// The steps form's requests (`depthCall`), by node.
-        requests: IndexMap(void) = .empty,
+        requests: U32Set = .{},
     };
 
     // ---- Small helpers ----------------------------------------------------
@@ -2949,6 +2954,13 @@ const Lowerer = struct {
         }
     }
 
+    fn applySymbol(l: *Lowerer) !Symbol {
+        if (l.apply_symbol.unwrap()) |s| return s;
+        const s = try l.interner.getOrPut(l.gpa, "apply");
+        l.apply_symbol = s.toOptional();
+        return s;
+    }
+
     fn primName(l: *Lowerer, slot: usize, base: []const u8) !JsIr.NameIndex {
         if (l.prim_names[slot] == .none) l.prim_names[slot] = try l.synthesisedName(base);
         return l.prim_names[slot];
@@ -3174,6 +3186,7 @@ const Lowerer = struct {
             .pack = if (evidence > steps_positional) evidence else 0,
             .base = base,
         };
+        body.weight_text = try std.fmt.allocPrint(l.scratch, "{d}", .{body.weight});
         l.derived_body = &body;
         const arrow = (try l.derivedForm(row)) orelse return null;
         // A body that passed no depth is a leaf: it is what it always was,
@@ -3275,11 +3288,10 @@ const Lowerer = struct {
             .direct, .forward => {
                 body.passes = true;
                 body.depth_calls += 1;
-                var buf: [12]u8 = undefined;
-                const weight = try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{body.weight}) catch unreachable, p);
+                const weight = try l.numberNode(body.weight_text, p);
                 all[args.len] = try l.binary(.add, try l.ident(body.depth, p), weight, p);
                 const made = try l.call(callee, all, p);
-                try body.calls.put(l.scratch, made.int(), {});
+                _ = try body.calls.insert(l.scratch, made.int());
                 return made;
             },
             .steps => {
@@ -3290,10 +3302,10 @@ const Lowerer = struct {
                 const request = if (all.len > steps_positional) blk: {
                     const range = try l.b.addRange(all);
                     const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
-                    const apply = try l.member(callee, try l.interner.getOrPut(l.gpa, "apply"), p);
+                    const apply = try l.member(callee, try l.applySymbol(), p);
                     break :blk try l.call(apply, &.{ try l.nullNode(p), array }, p);
                 } else try l.call(callee, all, p);
-                try body.requests.put(l.scratch, request.int(), {});
+                _ = try body.requests.insert(l.scratch, request.int());
                 return request;
             },
         }

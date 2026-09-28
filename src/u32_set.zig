@@ -39,6 +39,17 @@ pub const U32Set = struct {
         }
     }
 
+    /// Whether `key`, which is never `empty`, is in the set.
+    pub fn contains(s: *const U32Set, key: u32) bool {
+        if (s.slots.len == 0) return false;
+        const mask = s.slots.len - 1;
+        var i = slot(key, s.slots.len);
+        while (true) : (i = (i + 1) & mask) {
+            if (s.slots[i] == key) return true;
+            if (s.slots[i] == empty) return false;
+        }
+    }
+
     fn grow(s: *U32Set, gpa: Allocator) Allocator.Error!void {
         const len = @max(16, s.slots.len * 2);
         const slots = try gpa.alloc(u32, len);

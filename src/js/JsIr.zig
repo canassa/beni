@@ -588,7 +588,8 @@ inline fn pushAll(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []co
     const at = stack.items.len;
     if (stack.capacity - at < items.len) try stack.ensureUnusedCapacity(gpa, items.len);
     stack.items.len = at + items.len;
-    @memcpy(stack.items[at..], items);
+    // One to three nodes: element by element, where `@memcpy` is a call.
+    for (items, 0..) |item, i| stack.items.ptr[at + i] = item;
 }
 
 inline fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
