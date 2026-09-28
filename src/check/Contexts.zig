@@ -700,8 +700,8 @@ pub fn checkDeferred(s: *Solve) Error!void {
         const saved = s.report.current;
         defer s.report.at(saved);
         s.report.at(d.decl);
-        const dot_call = if (d.wanted.unwrap()) |wanted| s.evidence.get(wanted).kind == .dot_call else false;
-        try Derivable.report(s, d.origin, v, d.method, verdict, dot_call);
+        const kind: Evidence.Kind = if (d.wanted.unwrap()) |wanted| s.evidence.get(wanted).kind else .well_known;
+        try Derivable.report(s, d.origin, v, d.method, verdict, kind);
         if (d.wanted.unwrap()) |w| try Resolve.reject(s, w, false);
     }
     // The §11.4 gates a marker walk could not read: the obligation's
@@ -717,7 +717,7 @@ pub fn checkDeferred(s: *Solve) Error!void {
         const saved = s.report.current;
         defer s.report.at(saved);
         s.report.at(g.decl);
-        try s.report.notEquatable(g.region, g.v, .opaque_type, false);
+        try s.report.notEquatable(g.region, g.v, .opaque_type, .{ .marker = s.obligations.row(g.origin).call });
     }
 }
 

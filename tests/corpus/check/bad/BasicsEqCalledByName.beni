@@ -1,0 +1,8 @@
+-- check/bad: a mismatch at an argument of `Basics.eq`, called by name,
+-- names the function the program called. The six comparison operators
+-- lower to method calls, so a call of their core function is always one
+-- written by hand; it was reported as "the 2nd argument to (==)", an
+-- operator this program never wrote.
+x : Bool
+x =
+    Basics.eq 1 "a"

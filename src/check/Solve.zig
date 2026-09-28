@@ -484,7 +484,7 @@ pub fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, cate
     // A call's argument meeting its parameter is where a comparison's
     // `equatable` question is asked (§11.4).
     const result = if (category.tag == .call_arg)
-        try s.unifier.unifyArgument(expected, actual, region)
+        try s.unifier.unifyArgument(expected, actual, region, category.owner)
     else
         try s.unifier.unify(expected, actual, region);
     try s.reportJoins();
@@ -564,7 +564,7 @@ fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expe
     switch (p) {
         .kinds => |k| try r.kindMismatch(region, k.left, k.right),
         .kind_not_satisfied => |k| try r.kindNotSatisfied(region, category, k.kind, expected, actual),
-        .not_equatable_rigid => |v| try r.notEquatableRigid(region, v),
+        .not_equatable_rigid => |v| try r.notEquatableRigid(region, v, if (category.tag == .call_arg) category.owner else .none),
         .missing_field => |f| try r.missingField(region, f.names, f.actual, f.expected),
         .unknown_field => |f| try r.unknownField(region, f.names, f.actual, f.expected),
         .record_not_closed => |f| try r.recordNotClosed(region, f.actual, f.expected),

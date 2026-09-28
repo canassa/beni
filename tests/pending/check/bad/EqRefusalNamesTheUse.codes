@@ -1,6 +1,0 @@
-# Each refusal names the requirement or function the program wrote.
-not_equatable 21:5 contains "`.eq`, which `h` requires" lacks "`==`"
-not_equatable 26:16 contains "`Basics.eq`" lacks "`==`"
-not_equatable 31:17 contains "`Basics.neq`" lacks "`==`"
-not_equatable 40:5 contains "`.eq`" lacks "`==`"
-not_equatable 49:5 contains "`==`" lacks "`.eq`"

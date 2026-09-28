@@ -449,9 +449,9 @@ pub const PayloadSite = struct { owner: Types.TypeId, payload: u32 };
 /// its type over the type's own parameters.
 pub const Payload = struct { owner: Symbol, ctor: Symbol, v: Var };
 
-/// `dot_call`: the use is a dot-call `.eq`, which the text names instead
-/// of `==`.
-pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Types.TypeId, need: Symbol, types: ?RequirementTypes, payload: ?Payload, dot_call: bool) Error!void {
+/// `use`: what the program wrote, which the text names
+/// (`DispatchTexts.eqName`).
+pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Types.TypeId, need: Symbol, types: ?RequirementTypes, payload: ?Payload, use: Diagnostics.Reporter.EqUse) Error!void {
     const env = r.env;
     const interner = env.interner;
     const entry = env.types.entry(culprit);
@@ -464,9 +464,12 @@ pub fn requirementFailed(r: *Report, region: Bir.Inst.Index, shown: Var, method:
     const module_text = interner.slice(env.graph.moduleName(entry.module));
     const type_text = interner.slice(entry.name);
     const need_text = interner.slice(need);
-    const eq_op = if (dot_call) "`.eq`" else "`==`";
+    const eq_op = try r.texts.eqName(r.gpa, use);
+    defer r.gpa.free(eq_op);
     if (is_eq) {
-        w.print("I cannot compare these values with {s}:\n\n    ", .{eq_op}) catch return error.OutOfMemory;
+        w.print("I cannot compare these values with {s}", .{eq_op}) catch return error.OutOfMemory;
+        if (r.texts.eqRequirer(use)) |f| w.print(", which `{s}` requires", .{f}) catch return error.OutOfMemory;
+        w.writeAll(":\n\n    ") catch return error.OutOfMemory;
     } else {
         w.print("This type has no `{s}`:\n\n    ", .{interner.slice(method)}) catch return error.OutOfMemory;
     }
@@ -534,8 +537,8 @@ pub const PinCulprit = struct { type_id: Types.TypeId, method: Symbol };
 /// payload's method is specialised (`H.eq : Holder Int, …`), so the type
 /// derives only at that argument. `shown` is the value the author compared,
 /// `pinned` the type as it derives, `culprit` the method when known;
-/// `dot_call` when the use is a dot-call `.eq`, which the text names.
-pub fn pinnedDerived(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, pinned: Var, culprit: ?PinCulprit, dot_call: bool) Error!void {
+/// `use` what the program wrote, which the text names.
+pub fn pinnedDerived(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, pinned: Var, culprit: ?PinCulprit, use: Diagnostics.Reporter.EqUse) Error!void {
     const env = r.env;
     const interner = env.interner;
     const is_eq = method == InternPool.WellKnown.eq.symbol();
@@ -544,9 +547,13 @@ pub fn pinnedDerived(r: *Report, region: Bir.Inst.Index, shown: Var, method: Sym
     var namer: Render.Namer = .init(r.gpa);
     defer namer.deinit();
     const w = &out.writer;
-    const op = if (!is_eq) "`compare`" else if (dot_call) "`.eq`" else "`==`";
+    const eq_op = try r.texts.eqName(r.gpa, use);
+    defer r.gpa.free(eq_op);
+    const op = if (!is_eq) "`compare`" else eq_op;
     if (is_eq) {
-        w.print("I cannot compare these values with {s}:\n\n    ", .{op}) catch return error.OutOfMemory;
+        w.print("I cannot compare these values with {s}", .{op}) catch return error.OutOfMemory;
+        if (r.texts.eqRequirer(use)) |f| w.print(", which `{s}` requires", .{f}) catch return error.OutOfMemory;
+        w.writeAll(":\n\n    ") catch return error.OutOfMemory;
     } else {
         w.print("This type has no `{s}`:\n\n    ", .{interner.slice(method)}) catch return error.OutOfMemory;
     }

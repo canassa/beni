@@ -242,18 +242,21 @@ pub fn kindNotSatisfied(r: *Report, region: Bir.Inst.Index, category: Category, 
     try r.flush();
 }
 
-pub fn notEquatableRigid(r: *Report, region: Bir.Inst.Index, v: Var) Error!void {
-    try r.texts.notEquatable(region, v, .rigid_variable, false);
+/// `Basics.eq` or `Basics.neq` on a rigid variable, at an argument of
+/// `call` (`.none` when no call's argument asked): the call is what the
+/// text names.
+pub fn notEquatableRigid(r: *Report, region: Bir.Inst.Index, v: Var, call: Bir.Inst.OptionalIndex) Error!void {
+    try r.texts.notEquatable(region, v, .rigid_variable, .{ .marker = call });
     try r.flush();
 }
 
 pub const EquatableReason = Diagnostics.Reporter.EquatableReason;
+pub const EqUse = Diagnostics.Reporter.EqUse;
 
-/// The `equatable` marker walk's refusal (§11.4), the shared text.
-/// `dot_call`: the refused use is a dot-call `.eq`, which the text names
-/// instead of `==`.
-pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason, dot_call: bool) Error!void {
-    try r.texts.notEquatable(region, v, reason, dot_call);
+/// The `equatable` marker walk's refusal (§11.4), the shared text. `use`
+/// is what the program wrote, which the text names.
+pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason, use: EqUse) Error!void {
+    try r.texts.notEquatable(region, v, reason, use);
     try r.flush();
 }
 

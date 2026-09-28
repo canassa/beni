@@ -1,4 +1,4 @@
--- CK-214: a refused comparison names what the program wrote. `F` holds a
+-- check/bad: a refused comparison names what the program wrote. `F` holds a
 -- function, so it has no `eq`. `viaWhere` passes one to `h`, whose `where`
 -- clause requires `.eq`, and `viaBasics` and `viaBasicsNeq` call `Basics.eq`
 -- and `Basics.neq` by name: each NOT EQUATABLE names that requirement or

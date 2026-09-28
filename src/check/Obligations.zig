@@ -99,6 +99,10 @@ pub const Row = struct {
     /// `equatable`, on an origin row: its question has been answered "no",
     /// so no row of the same origin reports again.
     reported: bool = false,
+    /// `equatable`, on an origin row: the call whose argument asked the
+    /// question — `Basics.eq x y` — which its refusal names, or `.none`
+    /// when a flag met a structure elsewhere.
+    call: Bir.Inst.OptionalIndex = .none,
 
     /// How many of `vars` decide the row: binding one readies it.
     pub fn deciding(r: Row) u32 {

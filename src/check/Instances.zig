@@ -72,7 +72,7 @@ pub fn lookup(s: *Solve, id: WantedId, root: Var, flat: TypeStore.Structure, imm
             s.contexts.noteFunction(s);
             // `eq` on a function keeps `not_equatable`, the better message.
             if (w.method == InternPool.WellKnown.eq.symbol()) {
-                try s.report.notEquatable(w.origin, root, .function, w.kind == .dot_call);
+                try s.report.notEquatable(w.origin, root, .function, .of(w.kind, w.origin));
             } else {
                 try s.report.noMethodsOnShape(w.origin, w.method, root, .function);
             }
@@ -728,7 +728,7 @@ fn refuseRequirement(s: *Solve, id: WantedId, culprit: Types.TypeId, need: Symbo
     const reported = top != id and s.evidence.get(top).state.rejected();
     if (!reported) {
         const t = s.evidence.get(top);
-        try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types, null, t.kind == .dot_call);
+        try Messages.requirementFailed(s.report, t.origin, t.receiver, t.method, culprit, need, types, null, .of(t.kind, t.origin));
     }
     try Resolve.reject(s, id, id != top);
     if (!reported and top != id) try Resolve.reject(s, top, true);
@@ -746,7 +746,7 @@ fn refusePinned(s: *Solve, id: WantedId, pinned: Var, culprit: ?Messages.PinCulp
     try Resolve.reject(s, id, id != top);
     if (reported) return;
     const t = s.evidence.get(top);
-    try Messages.pinnedDerived(s.report, t.origin, t.receiver, t.method, pinned, culprit, t.kind == .dot_call);
+    try Messages.pinnedDerived(s.report, t.origin, t.receiver, t.method, pinned, culprit, .of(t.kind, t.origin));
     if (top != id) try Resolve.reject(s, top, true);
 }
 
@@ -794,7 +794,7 @@ fn refuseDerived(s: *Solve, id: WantedId, root: Var, reason: Diagnostics.Reporte
     const t = s.evidence.get(top);
     const shown = if (top == id) root else t.receiver;
     if (t.method == InternPool.WellKnown.eq.symbol()) {
-        try s.report.notEquatable(t.origin, shown, reason, t.kind == .dot_call);
+        try s.report.notEquatable(t.origin, shown, reason, .of(t.kind, t.origin));
     } else {
         try s.report.noMethodsOnShape(t.origin, t.method, shown, .not_orderable);
     }

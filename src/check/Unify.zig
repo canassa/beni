@@ -120,6 +120,10 @@ region: Bir.Inst.Index = @enumFromInt(0),
 /// The region `unifyArgument` asks a comparison's question at, until the
 /// first pair `go` examines takes it: only that top pair may ask (§11.4).
 question_at: ?Bir.Inst.Index = null,
+/// The call whose argument `unifyArgument` is unifying, `.none` for any
+/// other unification: an `equatable` question this unification asks
+/// records it, and the question's refusal names it (§11.4).
+question_call: Bir.Inst.OptionalIndex = .none,
 problem: ?Problem = null,
 /// The pairs of non-variables being unified, outermost first: the
 /// coinduction of §7.3. Each pair is stored in the order `(min, max)` of
@@ -137,7 +141,7 @@ unifications: u64 = 0,
 
 /// Unify `a` with `b`. What it does depends on the two types alone.
 pub fn unify(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
-    return u.start(a, b, region, null);
+    return u.start(a, b, region, null, .none);
 }
 
 /// A call's argument meeting its parameter (§11.4): `unify`, plus
@@ -146,15 +150,16 @@ pub fn unify(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
 /// question on it, the question is created here, at `region`, on `a`'s root: a
 /// comparison's answer is reported at the call that compared, not where
 /// the variable later becomes a type. No pair below the top one asks.
-pub fn unifyArgument(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
-    return u.start(a, b, region, region);
+pub fn unifyArgument(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, call: Bir.Inst.OptionalIndex) Error!Result {
+    return u.start(a, b, region, region, call);
 }
 
-fn start(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, question_at: ?Bir.Inst.Index) Error!Result {
+fn start(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, question_at: ?Bir.Inst.Index, call: Bir.Inst.OptionalIndex) Error!Result {
     u.problem = null;
     u.region = region;
     u.depth = 0;
     u.question_at = question_at;
+    u.question_call = call;
     if (try u.go(a, b)) return .ok;
     const problem = u.problem;
     u.problem = null;
@@ -406,6 +411,7 @@ fn finishJoins(u: *Unify, root: Var, joins: []const Join, lowered: []const Var) 
 fn equatableMeets(u: *Unify, flags: TypeStore.Flags, other: Var) Error!void {
     if (!flags.equatable or u.obligations.openEquatable(flags.obls) != null) return;
     const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{other}, 0, null);
+    u.obligations.rowPtr(id).call = u.question_call;
     u.obligations.rowPtr(id).state = .ready;
     try u.enqueue(u.obligations.rowPtr(id).frame, id.int());
 }
@@ -569,6 +575,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content,
             // comparison, not where `r` later becomes a record).
             if (question_at) |at| if (joined.equatable and u.obligations.openEquatable(joined.obls) == null) {
                 const id = try u.obligations.create(u.gpa, .equatable, at, &.{ra}, 0, null);
+                u.obligations.rowPtr(id).call = u.question_call;
                 joined.obls = try u.obligations.with(u.gpa, joined.obls, id, true);
             };
             // Neither side carries a wanted: the common case, and nothing

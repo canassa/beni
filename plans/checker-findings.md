@@ -5307,7 +5307,17 @@ with a red fixture on `8f78224` before its fix.*
 - **Fixture** `check/bad/EqRefusalNamesTheUse.beni`, red `exit=1 codes=not_equatable×5
   why=message`.
 - **Slice** the last review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §15.3 *amended again 2026-09-29*: the texts take
+  what the use was written as (`DispatchTexts.EqUse`) instead of a dot-call flag, and name it
+  (`eqName`, `eqRequirer`): a method call by its spelling, a `where` requirement "`.eq`, which
+  `h` requires", the marker by the `Basics.eq`/`Basics.neq` call its question records
+  (`Obligations.Row.call`, set by `Unify.unifyArgument`), or `Basics.eq` "which `same2` requires"
+  at a call of a function that inherited the marker. Fourteen goldens moved, each from `==` to
+  `Basics.eq` (or the requirement). Writing the fixture found the same fault in `type_mismatch`:
+  `Basics.eq 1 "a"` said "the 2nd argument to (==)"; `Reporter.operatorCallee` no longer maps the
+  six comparisons, which lower to method calls. Promoted:
+  `tests/corpus/check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni`,
+  red on the base.
 
 ## Summary table
 
@@ -5520,7 +5530,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-211 | performance | K11 | promoted: `abuse_test.zig` "a wide alias DAG checks on a safety build …" | the last review's fixes (fixed) |
 | CK-212 | latent | K14 | promoted: `build_test.zig` (two symbolic-link tests) | the last review's fixes (fixed) |
 | CK-213 | diagnostic-quality | K14 | promoted: `build_test.zig` "a _manifest.txt that cannot be written …" | the last review's fixes (fixed) |
-| CK-214 | diagnostic-quality | K13 | `check/bad/EqRefusalNamesTheUse.beni` | the last review's fixes |
+| CK-214 | diagnostic-quality | K13 | promoted: `check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni` | the last review's fixes (fixed) |
 
 Totals:
 - 202 entries (CK-210 to CK-214 added 2026-09-29 from the last review of the checker; CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.

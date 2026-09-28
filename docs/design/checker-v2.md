@@ -4080,6 +4080,23 @@ reached through an unannotated function is the pin's `not_equatable` at the use,
 comparison's is, never a `type_mismatch` against the function that built the value (§11.2,
 *amended 2026-09-29*).
 
+*Amended again 2026-09-29: every refused comparison is named as written* (`DispatchTexts.eqName`,
+`EqUse`). Item (2) left two uses named `==`: a `where a.eq` requirement met at a call of the
+function that declares it, and `Basics.eq` or `Basics.neq` called by name, whose refusal is the
+§11.4 marker's. Now a use whose origin is a method call is named by its spelling (`==`, `/=`,
+`.eq`); a `where` clause's requirement is `.eq`, with the function that requires it — "I cannot
+compare these values with `.eq`, which `h` requires"; a promoted dot-call `.eq`; a promoted
+operator `==`. The marker's question records the call whose argument asked it
+(`Obligations.Row.call`) and is named `Basics.eq` or `Basics.neq` as called; at a call of any
+other function — one whose inferred type took the marker from them — `Basics.eq`, "which `same2`
+requires". The rigid-variable hint names the same function. **One body, both spellings:** a body
+that uses one value as `x.eq x` and as `x == x` promotes one `eq` requirement (Rule U1 joins the
+two wanteds into the older), which keeps the kind of the first use in source order, so its uses
+elsewhere name `.eq` or `==` by that first use — a function of the source, never of declaration
+order. And a `type_mismatch` at an argument of `Basics.eq` (or `lt`, `gt`, `le`, `ge`, `neq`)
+called by name names the function, not an operator: the six comparisons lower to method calls, so
+such a call is never an operator's desugaring (`Reporter.operatorCallee`).
+
 ### 15.4 Regions and categories
 
 - The resolver reports at `w.origin`, the instruction in this module (spike §6.2's promise).

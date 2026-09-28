@@ -1021,6 +1021,9 @@ pub const Reporter = struct {
     // The texts of static dispatch and of the obligations (§10, checker.md
     // §8.4), in `DispatchTexts.zig` (checker-v2.md §19.1).
     pub const EquatableReason = enum { function, opaque_type, rigid_variable, too_wide };
+    pub const EqUse = DispatchTexts.EqUse;
+    pub const eqName = DispatchTexts.eqName;
+    pub const eqRequirer = DispatchTexts.eqRequirer;
     pub const unknownMethod = DispatchTexts.unknownMethod;
     pub const undeterminedMethodReceiver = DispatchTexts.undeterminedMethodReceiver;
     pub const methodSignatureMismatch = DispatchTexts.methodSignatureMismatch;
@@ -1266,6 +1269,13 @@ pub const Reporter = struct {
     /// except `::`, which lowers to `core/List`'s `cons`.
     fn operatorCallee(r: *const Reporter, module: Graph.Index, symbol: Symbol) ?[]const u8 {
         const spelling = operatorSpelling(symbol) orelse return null;
+        // The six comparisons lower to method calls, never to a call of
+        // their core function (static-dispatch-spike.md §3.1), so a call of
+        // `Basics.eq` or `Basics.lt` is one the program wrote by name.
+        const wk = InternPool.WellKnown;
+        inline for (.{ wk.eq, wk.neq, wk.lt, wk.gt, wk.le, wk.ge }) |comparison| {
+            if (symbol == comparison.symbol()) return null;
+        }
         const owner: InternPool.WellKnown =
             if (symbol == InternPool.WellKnown.cons.symbol()) .List else .Basics;
         const declared = r.env.graph.find(.core, owner.symbol()) orelse return null;

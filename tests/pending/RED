@@ -77,4 +77,5 @@
 # re-walk is quadratic on a wide alias DAG, a symbolic link in --out is
 # written through, a failed record write names the directory, and a refused
 # comparison names `==` for a `where` requirement and for `Basics.eq`.
-tests/pending/check/bad/EqRefusalNamesTheUse.beni exit=1 codes=not_equatable×5 why=message
+# All five fixed and promoted the same day (CK-211 into abuse_test.zig,
+# CK-212 and CK-213 into build_test.zig, the rest into tests/corpus/).

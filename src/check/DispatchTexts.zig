@@ -669,17 +669,132 @@ fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
     return best;
 }
 
-/// `not_equatable`. `dot_call`: the refused use is a dot-call `.eq` —
-/// written, or reached through a function whose requirement it promoted —
-/// and the text names it, never an operator the program did not write.
-pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason, dot_call: bool) Error!void {
+/// What a refused comparison was written as, which a `not_equatable` text
+/// names (`eqName`) — never an operator the program did not write
+/// (checker-v2.md §15.3).
+pub const EqUse = union(enum) {
+    /// A wanted's use: its kind and origin. An operator (`==`, `/=`), a
+    /// dot-call `.eq` — written, or promoted to the function the origin
+    /// names — or a `where` clause's requirement of that function.
+    wanted: struct { kind: TypeStore.MethodConstraint.Origin, origin: Bir.Inst.Index },
+    /// The `equatable` marker's question (§11.4), asked at an argument of
+    /// this call — `Basics.eq`, `Basics.neq`, or a function whose type
+    /// carries the marker from them — or `.none` when no call's argument
+    /// asked it.
+    marker: Bir.Inst.OptionalIndex,
+
+    pub fn of(kind: TypeStore.MethodConstraint.Origin, origin: Bir.Inst.Index) EqUse {
+        return .{ .wanted = .{ .kind = kind, .origin = origin } };
+    }
+};
+
+/// The comparison a `not_equatable` text names, in backticks, as the program
+/// wrote it (checker-v2.md §15.3), owned by `gpa`:
+///
+///   - a use whose origin is a method call, as written: `==`, `/=`, `.eq`;
+///   - any other wanted by its kind: a dot-call promoted to a function, or
+///     a `where` clause's requirement, `.eq`; an operator promoted, `==`;
+///   - the `equatable` marker's question as `Basics.eq` or `Basics.neq`,
+///     the functions that carry the marker, as the program called it. A
+///     question asked at a call of any other function — one whose inferred
+///     type took the marker from them — is `Basics.eq`'s, and `eqRequirer`
+///     names that function.
+///
+/// A body that uses one value as `x.eq x` and `x == x` promotes one
+/// requirement, the first in source order, and its uses are named after it.
+pub fn eqName(r: *const Reporter, gpa: std.mem.Allocator, use: EqUse) error{OutOfMemory}![]u8 {
+    const bir = r.env.bir;
+    switch (use) {
+        .wanted => |w| {
+            if (w.origin.int() < bir.insts.len and bir.instTag(w.origin) == .method_call) {
+                const m = bir.extraData(@enumFromInt(bir.instData(w.origin).rhs), Bir.MethodCall);
+                if (m.origin.spelling()) |op| return std.fmt.allocPrint(gpa, "`{s}`", .{op});
+                return std.fmt.allocPrint(gpa, "`.{s}`", .{r.env.interner.slice(bir.symbol(m.name))});
+            }
+            return gpa.dupe(u8, switch (w.kind) {
+                .dot_call, .where_clause, .type_dispatch => "`.eq`",
+                .well_known => "`==`",
+            });
+        },
+        .marker => |call| {
+            const callee = markerCallee(r, call);
+            if (callee == .basics) return std.fmt.allocPrint(gpa, "`{s}.{s}`", .{ callee.basics.module, callee.basics.name });
+            return gpa.dupe(u8, "`Basics.eq`");
+        },
+    }
+}
+
+/// The function that required the refused comparison, when the use is a
+/// call of it: `h`, for `h (F f)` under `h : a -> Bool where a.eq : …`; and
+/// `same`, for `same f f` where `same x y = Basics.eq x y`.
+pub fn eqRequirer(r: *const Reporter, use: EqUse) ?[]const u8 {
+    switch (use) {
+        .wanted => |w| {
+            if (w.kind != .where_clause) return null;
+            const bir = r.env.bir;
+            if (w.origin.int() >= bir.insts.len or bir.instTag(w.origin) == .method_call) return null;
+            const callee = r.calleeOf(w.origin);
+            return switch (callee.kind) {
+                .function, .value => callee.name,
+                else => null,
+            };
+        },
+        .marker => |call| return switch (markerCallee(r, call)) {
+            .other => |name| name,
+            .basics, .none => null,
+        },
+    }
+}
+
+/// Which function a marker question was asked at an argument of:
+/// `Basics.eq` or `Basics.neq` themselves (`basics`, with the module name
+/// as imported and the function's), another named function (`other`), or
+/// none that can be named.
+const MarkerCallee = union(enum) {
+    basics: struct { module: []const u8, name: []const u8 },
+    other: []const u8,
+    none,
+};
+
+fn markerCallee(r: *const Reporter, call: Bir.Inst.OptionalIndex) MarkerCallee {
+    const bir = r.env.bir;
+    const at = call.unwrap() orelse return .none;
+    if (at.int() >= bir.insts.len or bir.instTag(at) != .call) return .none;
+    const reference: Bir.Inst.Index = @enumFromInt(bir.instData(at).lhs);
+    if (reference.int() >= bir.insts.len) return .none;
+    if (bir.instTag(reference) == .ext_value) {
+        const data = bir.instData(reference);
+        if (data.lhs >= r.env.interfaces.len) return .none;
+        const module: Graph.Index = @enumFromInt(data.lhs);
+        const iface = r.env.iface(module);
+        if (data.rhs >= iface.values.len) return .none;
+        const name = iface.valueName(@enumFromInt(data.rhs));
+        const wk = InternPool.WellKnown;
+        const basics = r.env.graph.find(.core, wk.Basics.symbol());
+        const is_basics = if (basics) |b| b == module else false;
+        if (is_basics and (name == wk.eq.symbol() or name == wk.neq.symbol())) {
+            return .{ .basics = .{ .module = r.env.interner.slice(r.env.graph.moduleName(module)), .name = r.env.interner.slice(name) } };
+        }
+        return .{ .other = r.env.interner.slice(name) };
+    }
+    const callee = r.describe(reference);
+    return switch (callee.kind) {
+        .function, .value => .{ .other = callee.name },
+        else => .none,
+    };
+}
+
+pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason, use: EqUse) Error!void {
     var out = r.writer();
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
     defer namer.deinit();
     const w = &out.writer;
-    const op = if (dot_call) "`.eq`" else "`==`";
-    w.print("I cannot compare these values with {s}:\n\n    ", .{op}) catch return error.OutOfMemory;
+    const op = try r.eqName(r.gpa, use);
+    defer r.gpa.free(op);
+    w.print("I cannot compare these values with {s}", .{op}) catch return error.OutOfMemory;
+    if (r.eqRequirer(use)) |f| w.print(", which `{s}` requires", .{f}) catch return error.OutOfMemory;
+    w.writeAll(":\n\n    ") catch return error.OutOfMemory;
     Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
     switch (reason) {
         .function => w.writeAll(
@@ -702,16 +817,16 @@ pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: Equata
             \\comparable only when it is declared `equatable`.
             \\
         , .{op}) catch return error.OutOfMemory,
-        .rigid_variable => w.writeAll(
+        .rigid_variable => w.print(
             \\
             \\
             \\The annotation says ANY type can flow through here, and not every type can
             \\be compared — a function cannot.
             \\
             \\Hint: make the annotation concrete, or take an equality function as an
-            \\argument instead of using `==`.
+            \\argument instead of using {s}.
             \\
-        ) catch return error.OutOfMemory,
+        , .{op}) catch return error.OutOfMemory,
         .too_wide => w.print(
             \\
             \\
