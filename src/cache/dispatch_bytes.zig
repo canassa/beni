@@ -12,9 +12,9 @@
 //! **It is also where a silent miscompile can hide**, which is why this file
 //! is written the way it is. `plans/m4-plan.md` §8 risk 2 names the
 //! configuration: a cached callee and a recompiled caller computing the
-//! hidden-parameter order independently. `--roundtrip-dispatch` over the
-//! whole corpus is one of the two things standing between that and a wrong
-//! program, and the acceptance matrix's warm axis is the other.
+//! hidden-parameter order independently. `--roundtrip-dispatch` on a build
+//! whose evidence crosses modules is one of the two things standing between
+//! that and a wrong program, and a warm build from the cache is the other.
 //!
 //! **Format v3** carries checker-v2.md §13.1's tree record: the `terms` and
 //! `args` of every evidence tree, one `site` per instruction, `decls` with
@@ -1112,7 +1112,27 @@ test "a wrong magic, an unknown version and a short file are all BadSidecar" {
 // every mutation required to end in an error or in a table that `verify`
 // accepts. Deterministic, and run under `zig build test`, which is Debug, so
 // a read past a slice is a panic rather than a silent wrong answer.
-test "fuzz: a mutated sidecar never reads back as an unverified one" {
+
+/// Which part of the mutation sweep below a test runs: they are three tests so
+/// that the test runner's shards can run them at the same time.
+const SweepPart = enum { systematic, random_first, random_second };
+
+test "fuzz: a sidecar truncated or with a bit flipped never reads back as an unverified one" {
+    try mutatedSidecarSweep(.systematic);
+}
+
+test "fuzz: a sidecar with random bytes overwritten never reads back as an unverified one, first seed" {
+    try mutatedSidecarSweep(.random_first);
+}
+
+test "fuzz: a sidecar with random bytes overwritten never reads back as an unverified one, second seed" {
+    try mutatedSidecarSweep(.random_second);
+}
+
+/// Random single-byte writes per random part of the sweep.
+const random_writes = 15_000;
+
+fn mutatedSidecarSweep(part: SweepPart) !void {
     var p = try TestProject.initWith(testing.allocator, &.{
         .{ .path = "F.beni", .source =
         \\pub type Tree a
@@ -1167,14 +1187,14 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
         }
     }.go;
 
-    {
+    if (part == .systematic) {
         var len: usize = 0;
         while (len <= bytes.len) : (len += if (len < body_start) 1 else 4) {
             attempts += 1;
             try check(bytes[0..len], &p.session.interner, &loaded_count);
         }
     }
-    {
+    if (part == .systematic) {
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
         for (0..body_start) |i| {
@@ -1186,7 +1206,7 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
             }
         }
     }
-    {
+    if (part == .systematic) {
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
         for (body_start..bytes.len) |i| {
@@ -1198,12 +1218,12 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
             }
         }
     }
-    {
-        var prng: std.Random.DefaultPrng = .init(0xD15_A7CE);
+    if (part != .systematic) {
+        var prng: std.Random.DefaultPrng = .init(if (part == .random_first) 0xD15_A7CE else ~@as(u64, 0xD15_A7CE));
         const random = prng.random();
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
-        for (0..30_000) |_| {
+        for (0..random_writes) |_| {
             const at = random.uintLessThan(usize, bytes.len);
             const was = copy[at];
             copy[at] = random.int(u8);
@@ -1214,7 +1234,7 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
     }
 
     try testing.expect(loaded_count > 100);
-    try testing.expect(attempts > 30_000);
+    try testing.expect(attempts >= @as(usize, if (part == .systematic) 1_000 else random_writes));
 }
 
 test "an argument that does not follow its owner is BadSidecar, not a cycle handed to the backend" {

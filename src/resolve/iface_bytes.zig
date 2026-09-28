@@ -1485,7 +1485,26 @@ test "a column offset past the end, and a strings record that overruns the blob"
 //
 // Deterministic: a fixed seed, a fixed corpus and a fixed mutation
 // schedule, so a failure reproduces exactly.
-test "fuzz: a mutated record never reads back as an unverified one" {
+/// Which part of the mutation sweep below a test runs: they are three tests so
+/// that the test runner's shards can run them at the same time.
+const SweepPart = enum { systematic, random_first, random_second };
+
+test "fuzz: a record truncated or with a bit flipped never reads back as an unverified one" {
+    try mutatedRecordSweep(.systematic);
+}
+
+test "fuzz: a record with random bytes overwritten never reads back as an unverified one, first seed" {
+    try mutatedRecordSweep(.random_first);
+}
+
+test "fuzz: a record with random bytes overwritten never reads back as an unverified one, second seed" {
+    try mutatedRecordSweep(.random_second);
+}
+
+/// Random single-byte writes per random part of the sweep.
+const random_writes = 15_000;
+
+fn mutatedRecordSweep(part: SweepPart) !void {
     var p = try TestProject.initWith(testing.allocator, &.{
         .{ .path = "F.beni", .source =
         \\pub type Tree a
@@ -1544,7 +1563,7 @@ test "fuzz: a mutated record never reads back as an unverified one" {
     // 1. Truncation at every byte: the whole header and table, then every
     //    fourth byte of the body (a column boundary is always at a multiple
     //    of four, so this hits all of them).
-    {
+    if (part == .systematic) {
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
         var len: usize = 0;
@@ -1557,7 +1576,7 @@ test "fuzz: a mutated record never reads back as an unverified one" {
     // 2. Every bit of the header and the column table flipped, one at a
     //    time: this is where a length or an offset lives, and where a
     //    mutation is most likely to produce a plausible-looking record.
-    {
+    if (part == .systematic) {
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
         for (0..body_start) |i| {
@@ -1572,7 +1591,7 @@ test "fuzz: a mutated record never reads back as an unverified one" {
 
     // 3. Every byte of the body flipped in its high and low bits, which is
     //    what turns an index into one that is out of range.
-    {
+    if (part == .systematic) {
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
         for (body_start..bytes.len) |i| {
@@ -1586,12 +1605,12 @@ test "fuzz: a mutated record never reads back as an unverified one" {
     }
 
     // 4. Random single-byte writes, fixed seed.
-    {
-        var prng: std.Random.DefaultPrng = .init(0xBE1_1FACE);
+    if (part != .systematic) {
+        var prng: std.Random.DefaultPrng = .init(if (part == .random_first) 0xBE1_1FACE else ~@as(u64, 0xBE1_1FACE));
         const random = prng.random();
         const copy = try gpa.dupe(u8, bytes);
         defer gpa.free(copy);
-        for (0..30_000) |_| {
+        for (0..random_writes) |_| {
             const at = random.uintLessThan(usize, bytes.len);
             const was = copy[at];
             copy[at] = random.int(u8);
@@ -1605,5 +1624,5 @@ test "fuzz: a mutated record never reads back as an unverified one" {
     // lands in padding, or in a byte the format does not read, must still
     // produce a readable record.
     try testing.expect(loaded > 100);
-    try testing.expect(attempts > 30_000);
+    try testing.expect(attempts >= @as(usize, if (part == .systematic) 1_000 else random_writes));
 }
