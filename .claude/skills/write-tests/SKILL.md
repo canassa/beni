@@ -21,9 +21,10 @@ smallest boundary that still represents it?* There are exactly three answers her
 
 ### Boundary 1 — the compiler binary (the default, ~80% of tests)
 
-`zig build test-blackbox`. The REAL compiler, built ReleaseSafe and installed
-at `./zig-out/safe/bin/beni` (`./zig-out/quick/bin/beni` under `-Dquick`;
-`BENI_EXE` either way), is spawned as a child process
+`zig build test-blackbox`. The REAL compiler, built ReleaseSafe by Zig's
+self-hosted backend and installed at `./zig-out/safe/bin/beni`
+(`./zig-out/safe-llvm/bin/beni`, built by LLVM, under `-Dllvm`; `BENI_EXE`
+either way), is spawned as a child process
 against a temp project directory, configured **only** through CLI flags, env
 vars and the files on disk. Inputs are `.beni` sources and
 a manifest; outputs are the emitted JS, the diagnostics on stderr, the exit code,
@@ -171,8 +172,7 @@ Node for a build whose digest is listed and run it otherwise, so they verify
 every change whether or not the hashes are current; stale ones only cost
 Node runs, reported as one line. After an emitter, runtime or `core/` change,
 a new or re-blessed `run/` fixture, or a Node upgrade, run `zig build
-test-run-hashes` (with `-Dcorpus=run/MyFixture` for one, `-Dquick` while
-iterating) and commit the rewritten files. It never records a hash for a
+test-run-hashes` (with `-Dcorpus=run/MyFixture` for one) and commit the rewritten files. It never records a hash for a
 build whose output does not match — that build is reported and gets none.
 
 ## Golden output: narrow, normalized, blessable
@@ -291,17 +291,21 @@ shell, never a host binary, so CI and laptops agree on the version.
 
 CLAUDE.md's *Testing tiers* is the rule; in short:
 
-- **Tier 0, while writing the test** — run only what it touches, with the
-  compiler built by the self-hosted backend (`-Dquick`, a 3 s compile instead
-  of 73 s, every safety check intact):
-  - one fixture or kind: `zig build test-blackbox-corpus -Dquick -Dcorpus=run/MyFixture`
+The black-box steps spawn a ReleaseSafe beni built by Zig's self-hosted
+backend: a 3 s compile, every safety check intact, debug info kept.
+
+- **Tier 0, while writing the test** — run only what it touches:
+  - one fixture or kind: `zig build test-blackbox-corpus -Dcorpus=run/MyFixture`
     (the path substring; also blesses with `BENI_WRITE_EXPECTED=1`);
-  - one black-box file: `zig build test-blackbox-<file> -Dquick`, narrowed
+  - one black-box file: `zig build test-blackbox-<file>`, narrowed
     to one test with `-Dtest-filter=<part of its name>`;
   - unit tests: `zig build test -Dtest-filter=<name>`;
-  - a pending fixture: `zig build test-pending -Dquick -Dcorpus=<path>`.
-- **Tier 1, when it looks done** — `zig build gates -Dquick`.
-- **Tier 2, once, right before committing** — `zig build gates`.
+  - a pending fixture: `zig build test-pending -Dcorpus=<path>`.
+- **Tier 1, once, when it is done and before committing** — `zig build gates`.
+- **Extra, only when it applies** — `zig build gates -Dllvm`: the LLVM
+  build users get, about 70 s more compile. Run it once for a change that
+  is sensitive to the code generator or to safety checks, before a
+  release, or when the owner asks.
 
 To prove a fixture fails before the fix (rule 3), run it at Tier 0 with the
 fix set aside, not the whole suite. Never run two full suites at once, never
@@ -329,5 +333,5 @@ spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 - [ ] Happy path first and complete; errors last and verifying no side effects.
 - [ ] Banners present; one `test` per scenario; no fixed sleeps, only bounded waits.
 - [ ] Every new parser has a fuzz test in the hermetic suite.
-- [ ] Tier 0 and Tier 1 green (`zig build gates -Dquick`); no leaked process
-      or temp dir. Tier 2 (`zig build gates`) runs once, before the commit.
+- [ ] Tier 0 green while writing, then `zig build gates` green once, before
+      the commit (plus `-Dllvm` when it applies); no leaked process or temp dir.

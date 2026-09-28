@@ -106,10 +106,13 @@ zig build gates            # test, test-blackbox and fmt-check, concurrently
 BENI_WRITE_EXPECTED=1 zig build test-blackbox   # bless corpus goldens (BENI_BLESS_ONLY=<substr>)
 ```
 
-Test in the tiers of CLAUDE.md's *Testing tiers*: a targeted run with
-`-Dquick` while editing (`-Dtest-filter=`, `-Dcorpus=`, `test-blackbox-<file>`),
-`zig build gates -Dquick` when the change looks done, and `zig build gates`
-once, right before committing.
+Test in the tiers of CLAUDE.md's *Testing tiers*: a targeted run while
+editing (`-Dtest-filter=`, `-Dcorpus=`, `test-blackbox-<file>`), then
+`zig build gates` once, when the change is done. The black-box suites spawn
+a ReleaseSafe beni built by Zig's self-hosted backend (seconds to compile);
+`zig build gates -Dllvm` runs them on the LLVM build users get, about 70 s
+more, for codegen- or safety-sensitive changes, before a release, or when
+the owner asks.
 
 **Submodule vs. toolchain — know which to trust for what.** The vendored
 `references/zig` submodule is at master (`0.16.0-2129-gd84959d9e2`), roughly 2,100

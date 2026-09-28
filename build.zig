@@ -8,10 +8,13 @@
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!   zig build gates           the three gates above, in one build graph
 //!
-//! Options that make a run cheaper while a change is being written (the tiers
-//! in CLAUDE.md, *Testing tiers*):
-//!   -Dquick               build the black-box compiler with Zig's self-hosted
-//!                         backend: still ReleaseSafe, compiled in seconds
+//! The black-box suites spawn a ReleaseSafe `beni` built by Zig's
+//! self-hosted backend, compiled in seconds. One option switches them to the
+//! LLVM build, the code users get, at about a minute's single-threaded
+//! compile (CLAUDE.md, *Testing tiers*):
+//!   -Dllvm                build the black-box compiler with LLVM instead
+//!
+//! Options that make a run cheaper while a change is being written:
 //!   -Dtest-filter=<text>  compile only the tests whose name contains <text>
 //!                         (repeatable), in every test binary a step builds
 //!   -Dcorpus=<text>       run only the corpus fixtures whose path contains
@@ -30,7 +33,7 @@
 //!   zig build test-run-hashes     run every tests/corpus/run/ program under
 //!                                 Node and record a hash of each output that
 //!                                 matched (`tests/blackbox/run_hash.zig`);
-//!                                 takes -Dcorpus and -Dquick
+//!                                 takes -Dcorpus and -Dllvm
 //! And where the test time goes, not a gate either:
 //!   zig build test-time-report    run `gates` (or `-Dtime-step=<step>`) with
 //!                                 every test process timed, and write the
@@ -57,13 +60,13 @@ const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
 const perf_bin_dir = "perf/bin";
 
 /// Where the ReleaseSafe compiler every other black-box suite spawns is
-/// installed, under the prefix.
+/// installed, under the prefix: the one Zig's self-hosted backend builds.
 const safe_bin_dir = "safe/bin";
 
-/// Where the same compiler is installed when `-Dquick` builds it with Zig's
-/// self-hosted backend: its own directory, so switching between the two
-/// never overwrites the other's binary and each stays cached.
-const quick_bin_dir = "quick/bin";
+/// Where the same compiler is installed when `-Dllvm` builds it with LLVM:
+/// its own directory, so switching between the two never overwrites the
+/// other's binary and each stays cached.
+const safe_llvm_bin_dir = "safe-llvm/bin";
 
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
@@ -91,7 +94,7 @@ const platforms_dir = "platforms";
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const quick = b.option(bool, "quick", "Build the black-box compiler with Zig's self-hosted backend: ReleaseSafe, every safety check kept, compiled in seconds instead of LLVM's minute") orelse false;
+    const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
     const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
 
@@ -234,11 +237,13 @@ pub fn build(b: *std.Build) void {
     // `zig-out/safe/bin/beni`: bounds, overflow and `unreachable` still trap,
     // and every invariant check the compiler gates on
     // `std.debug.runtime_safety` still runs, at a fraction of Debug's cost.
-    // `-Dquick` builds it with the self-hosted backend instead, into
-    // `zig-out/quick/bin/beni`: the same safety checks in less optimised
-    // code, compiled in seconds where LLVM takes more than a minute.
-    const safe_dir = if (quick) quick_bin_dir else safe_bin_dir;
-    const safe = compiler(b, target, .ReleaseSafe, if (quick) .self_hosted else .llvm);
+    // Zig's self-hosted backend builds it, in seconds where LLVM takes more
+    // than a minute on one thread; its code is slower, and it is not the
+    // code users get. `-Dllvm` builds it with LLVM instead, into
+    // `zig-out/safe-llvm/bin/beni`: the same safety checks in the shipped
+    // code generator's output.
+    const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
+    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
 
     // ---- Black-box suite. ----
@@ -324,7 +329,7 @@ pub fn build(b: *std.Build) void {
     // Record the run hashes: every `run/` program runs under Node, and each
     // fixture's `.run-hash` is rewritten with the builds that matched their
     // golden. One process for both builds of a fixture, so one worker writes
-    // each record. Takes `-Dcorpus` and `-Dquick`; not a gate.
+    // each record. Takes `-Dcorpus` and `-Dllvm`; not a gate.
     const record_summary = runHashSummary(b, summary_exe, b.fmt("{s}-record", .{counts_dir}));
     record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = b.fmt("{s}-record", .{counts_dir}) }).step);
     b.step("test-run-hashes", "Run every tests/corpus/run/ program under Node and record the hash of each output that matched").dependOn(&record_summary.step);
@@ -485,7 +490,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    const child_build_args = childBuildArgs(b, optimize, quick, test_filters, corpus_only);
+    const child_build_args = childBuildArgs(b, optimize, llvm, test_filters, corpus_only);
     {
         const run = b.addRunArtifact(time_report_exe);
         run.addArg("run");
@@ -498,7 +503,7 @@ pub fn build(b: *std.Build) void {
     }
     // The smoke test runs the report tool around a child build of one
     // corpus fixture, so it needs the tool, Zig, and the corpus binary the
-    // child reuses already compiled (it passes on `-Dquick` and
+    // child reuses already compiled (it passes on `-Dllvm` and
     // `-Doptimize` for the same reason: a different compiler would be a
     // minute's compile).
     {
@@ -508,7 +513,7 @@ pub fn build(b: *std.Build) void {
         const run = bb.run(smoke, .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_TIME_REPORT_EXE", b.getInstallPath(.prefix, "tools/time-report"));
         run.setEnvironmentVariable("BENI_ZIG_EXE", b.graph.zig_exe);
-        run.setEnvironmentVariable("BENI_CHILD_BUILD_ARGS", std.mem.join(b.allocator, " ", childBuildArgs(b, optimize, quick, &.{}, "")) catch @panic("OOM"));
+        run.setEnvironmentVariable("BENI_CHILD_BUILD_ARGS", std.mem.join(b.allocator, " ", childBuildArgs(b, optimize, llvm, &.{}, "")) catch @panic("OOM"));
         run.step.dependOn(&tool_install.step);
         run.step.dependOn(&corpus_test.step);
         smoke_step.dependOn(&run.step);
@@ -552,17 +557,17 @@ fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8) 
 }
 
 /// The options of this build that a child `zig build` needs to build and run
-/// the same thing: `-Doptimize`, `-Dquick`, `-Dtest-filter`, `-Dcorpus`.
+/// the same thing: `-Doptimize`, `-Dllvm`, `-Dtest-filter`, `-Dcorpus`.
 fn childBuildArgs(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
-    quick: bool,
+    llvm: bool,
     test_filters: []const []const u8,
     corpus_only: []const u8,
 ) []const []const u8 {
     var args: std.ArrayList([]const u8) = .empty;
     if (optimize != .Debug) args.append(b.allocator, b.fmt("-Doptimize={t}", .{optimize})) catch @panic("OOM");
-    if (quick) args.append(b.allocator, "-Dquick") catch @panic("OOM");
+    if (llvm) args.append(b.allocator, "-Dllvm") catch @panic("OOM");
     for (test_filters) |filter| args.append(b.allocator, b.fmt("-Dtest-filter={s}", .{filter})) catch @panic("OOM");
     if (corpus_only.len != 0) args.append(b.allocator, b.fmt("-Dcorpus={s}", .{corpus_only})) catch @panic("OOM");
     return args.items;
@@ -606,13 +611,13 @@ fn compiler(
     mode: std.builtin.OptimizeMode,
     backend: Backend,
 ) struct { beni: *std.Build.Module, exe: *std.Build.Step.Compile } {
-    // The LLVM ReleaseSafe compiler is built without debug info: it is the
-    // longest compile after a change under `src/` (the gates wait for it),
-    // and debug info is about a quarter of that time. Its safety checks are
-    // unaffected; a panic it hits prints no symbolised stack trace, so a
-    // crash is traced by re-running the command with `zig-out/bin/beni` or
-    // under `-Dquick`, whose self-hosted build keeps its debug info because
-    // there it costs little.
+    // The LLVM ReleaseSafe compiler (`-Dllvm`) is built without debug info:
+    // it is the longest compile after a change under `src/`, and debug info
+    // is about a quarter of that time. Its safety checks are unaffected; a
+    // panic it hits prints no symbolised stack trace, so a crash is traced
+    // by re-running the command with `zig-out/bin/beni` or without `-Dllvm`,
+    // whose self-hosted build keeps its debug info because there it costs
+    // little.
     const strip: ?bool = if (mode == .ReleaseSafe and backend == .llvm) true else null;
     const diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
@@ -991,7 +996,7 @@ const Blackbox = struct {
     /// `-Dcorpus`, pinned as `BENI_CORPUS_ONLY` on every run.
     corpus_only: []const u8,
     /// Where the ReleaseSafe compiler is installed under the prefix:
-    /// `safe_bin_dir`, or `quick_bin_dir` under `-Dquick`.
+    /// `safe_bin_dir`, or `safe_llvm_bin_dir` under `-Dllvm`.
     safe_dir: []const u8,
     /// Install `<safe_dir>/beni` and `perf_bin_dir/beni`.
     safe_install: *std.Build.Step,

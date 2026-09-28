@@ -809,7 +809,7 @@ regenerates §8:
 
 ```sh
 zig build test-time-report                      # times `zig build gates`
-zig build test-time-report -Dtime-step=test-blackbox -Dquick
+zig build test-time-report -Dtime-step=test-blackbox -Dllvm
 zig build test-time-report -- --out=- --top=20  # print instead of writing here
 ```
 

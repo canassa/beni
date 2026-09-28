@@ -56,7 +56,7 @@ hashes), the golden the build is compared with (`.expected`, or
 `.release-expected` for the release build when there is one) and the Node
 version. Any change to one of them makes the build run under Node again,
 exactly as it would with no record, and the gates say in one line how many
-did. `zig build test-run-hashes` (with `-Dcorpus`, `-Dquick`) runs the
+did. `zig build test-run-hashes` (with `-Dcorpus`, `-Dllvm`) runs the
 selected programs and rewrites their records with the builds whose output
 matched; a build that fails is reported and left without a line. Regenerate
 after a change to what the compiler emits (the emitter, the runtime,
