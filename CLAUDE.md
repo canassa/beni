@@ -223,6 +223,7 @@ zig build test            # hermetic unit tests
 zig build test-blackbox   # spawns a ReleaseSafe beni (zig-out/safe/bin) against temp projects
 zig build test-perf       # timing scenarios on a ReleaseFast beni (zig-out/perf/bin); not a gate
 zig build bench -- --generate=100000   # per-phase throughput, ReleaseFast
+zig build test-bench      # the benchmark generators' own tests; not a gate
 zig build fmt-check       # zig fmt --check over src, build.zig, tests, bench
 zig build gates           # the three gates (rule 4), concurrently
 zig build --list-steps
@@ -289,6 +290,9 @@ Only when relevant:
 
 - `zig build test-perf` (21 s, ReleaseFast) when the change can move
   performance or touches a timing scenario;
+- `zig build test-bench` when the change touches `bench/` or the language
+  the cross-language benchmark prints: benchmarks are not part of the
+  gates;
 - `zig build test-pending` (under 2 s, takes `-Dquick`) when adding,
   changing or promoting a fixture under `tests/pending/`;
 - the determinism test is inside `gates`; there is nothing extra to run.

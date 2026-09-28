@@ -1,5 +1,5 @@
 //! The generator as a library, for `tests/blackbox/compare_gen_test.zig`
-//! (docs/design/compare-bench.md §15: beni's printer in the gates).
+//! (docs/design/compare-bench.md §15: beni's printer, run by `test-bench`).
 
 pub const gen = @import("gen.zig");
 pub const print = @import("print/print.zig");

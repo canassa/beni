@@ -36,6 +36,9 @@
 //!                                 every test process timed, and write the
 //!                                 tables into plans/test-time-report.md
 //!                                 (`tests/time_report.zig`)
+//! And the benchmarks' own tests — benchmarks are not part of the gates:
+//!   zig build test-bench          the generators' unit tests, and the check
+//!                                 that beni accepts the benchmark's program
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -190,8 +193,13 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run.step);
     }
     test_step.dependOn(&runTests(b, diagnostic_tests).step);
-    test_step.dependOn(&runTests(b, gen_tests).step);
     test_step.dependOn(&runTests(b, time_report_tests).step);
+
+    // The benchmarks' own tests: the generators' unit tests and the check
+    // that beni accepts the cross-language benchmark's program. Benchmarks
+    // are not part of the gates, so this step is not either.
+    const bench_test_step = b.step("test-bench", "Run the benchmark generators' tests (not a gate)");
+    bench_test_step.dependOn(&runTests(b, gen_tests).step);
 
     // ---- ReleaseFast and ReleaseSafe compilers. ----
     // Each has its own module instances, because a module's optimize mode is
@@ -374,7 +382,7 @@ pub fn build(b: *std.Build) void {
     // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
     // The generator is its own target: it imports nothing from `src/`. It
     // runs ReleaseFast (it generates and prints ~1 M nodes per round); its
-    // unit tests run in `test` at the build's mode, like `bench/gen.zig`'s.
+    // unit tests run in `test-bench` at the build's mode, like `bench/gen.zig`'s.
     // The beni it times is the ReleaseFast one of `test-pending-perf`.
     const compare_options = b.addOptions();
     compare_options.addOption([]const u8, "generator_hash", compareGeneratorHash(b));
@@ -406,7 +414,7 @@ pub fn build(b: *std.Build) void {
         const run = runTests(b, compare_tests);
         run.setEnvironmentVariable("BENI_TEST_SHARD", b.fmt("{d}/{d}", .{ k, compare_shards }));
         run.setName(b.fmt("run compare generator tests shard {d}/{d}", .{ k, compare_shards }));
-        test_step.dependOn(&run.step);
+        bench_test_step.dependOn(&run.step);
     }
     inline for (.{
         .{ "compare-gen", "gen", "Generate the cross-language benchmark's projects (docs/design/compare-bench.md §12)" },
@@ -423,7 +431,7 @@ pub fn build(b: *std.Build) void {
         if (!std.mem.eql(u8, s[1], "gen") and !std.mem.eql(u8, s[1], "render")) run.step.dependOn(&perf_install.step);
         b.step(s[0], s[2]).dependOn(&run.step);
     }
-    // The beni printer in the gates (compare-bench.md §15): the generated
+    // The beni printer (compare-bench.md §15), in `test-bench`: the generated
     // project at seed 1, size 1, both modes, must check.
     const compare_lib = b.createModule(.{ .root_source_file = b.path("bench/compare/gen/lib.zig"), .target = target, .optimize = optimize });
     const compare_bb = b.addTest(.{
@@ -442,7 +450,7 @@ pub fn build(b: *std.Build) void {
     });
     const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
     compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
-    blackbox_step.dependOn(compare_bb_step);
+    bench_test_step.dependOn(compare_bb_step);
 
     // ---- Where the test time goes. ----
     // `time-report` runs a step of this build again, in a child `zig build`,

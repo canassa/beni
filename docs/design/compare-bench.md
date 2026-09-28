@@ -796,8 +796,8 @@ the load, and the family units are lighter than §4's calibration, not heavier.
 
 ## 15. Testing the generator
 
-- **Unit tests** in `bench/compare/gen/`, run by `zig build test`, because they are hermetic, as
-  `bench/gen.zig`'s are:
+- **Unit tests** in `bench/compare/gen/`, run by `zig build test-bench`, as `bench/gen.zig`'s
+  are. Benchmarks are not part of the gates (the owner, 2026-09-28), so neither are their tests:
   - determinism (two generations hash equal) and the prefix property (§3.2);
   - the oracle accepts every family at sizes 1–4 over 16 seeds;
   - the oracle **rejects** hand-built bad trees, one per rule of §3.7;
@@ -806,11 +806,10 @@ the load, and the family units are lighter than §4's calibration, not heavier.
   - one small golden per printer, for a hand-built tree covering each node kind.
 - **`zig build compare-smoke`** (§12), run before any published measurement and in CI where the
   compare shell exists.
-- **beni's printer in the gates.** `test-blackbox` gains one case: generate seed 1, size 1, both
+- **beni's printer, in `test-bench`.** One black-box case: generate seed 1, size 1, both
   modes, beni only, and require `beni check` to exit 0. beni is the language that changes under
-  this repository. Without this case a language change would silently break the benchmark until
-  the next manual run. A failure there is either a beni regression or a printer that must follow
-  the language.
+  this repository, so this is the step to run after a change to the language. A failure there is
+  either a beni regression or a printer that must follow the language.
 
 ## 16. What is replaced
 
@@ -893,6 +892,8 @@ questions are kept as they were asked; each decision follows it.
 5. **The beni generator case in `test-blackbox`** (§15) makes a benchmark printer part of the
    gates. *Recommended:* yes. It is one size-1 check that takes about 10 ms, and it keeps the only
    printer whose language changes weekly from rotting unnoticed. **Decided:** yes.
+   **Reversed** (the owner, 2026-09-28): benchmarks are not part of the gates. The case and the
+   generators' unit tests run under `zig build test-bench`.
 6. **Is TypeScript in the headline tables?** Its program differs more than the others' do: it
    always annotates parameters, it has no `Int`/`Float` split, and its assignability is structural.
    *Recommended:* yes, as the last column, with the footnote of §2.6 and §6.3 on every cell. Its

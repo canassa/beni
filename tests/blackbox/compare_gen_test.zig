@@ -1,12 +1,12 @@
-//! beni's printer of the cross-language benchmark, in the gates
-//! (docs/design/compare-bench.md §15, owner's decision 2026-09-27).
+//! beni's printer of the cross-language benchmark, run by `zig build
+//! test-bench` (docs/design/compare-bench.md §15). Benchmarks are not part
+//! of the gates (the owner, 2026-09-28).
 //!
 //! The generator writes the benchmark's beni project at seed 1, size 1, in
 //! both annotation modes, and the installed binary must check it clean. beni
-//! is the one language of the benchmark that changes under this repository:
-//! without this case a language change would break the benchmark silently
-//! until its next manual run. A failure here is either a beni regression or
-//! a printer that must follow the language.
+//! is the one language of the benchmark that changes under this repository,
+//! so this is the step to run after a change to the language. A failure here
+//! is either a beni regression or a printer that must follow the language.
 //!
 //! The generator reaches this file as the `compare_gen` module; it imports
 //! nothing of the compiler, so the black-box rule holds.
