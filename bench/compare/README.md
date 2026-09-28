@@ -42,6 +42,7 @@ zig build compare-smoke                    # size 1, both modes: acceptance only
 zig build compare                          # the full run: results/<date>.json and the tables below
 zig build compare -- --quick --langs=beni,elm,gleam,roc,typescript
 zig build compare-gen -- --seed=0x1 --size=2 --annotate=0 --langs=roc
+zig build compare-render -- --from=bench/compare/results/2026-09-27.json   # the tables again, no run
 ```
 
 ## Results
@@ -54,13 +55,13 @@ Run `2026-09-27`: seed 0xBE11C0DE, sizes 1 2 4 8 16, 7 runs per point, CPU 2 pin
 | language | annotated ms/unit | ms/1k nodes | × beni | R² | wall ms/unit | inferred ms/unit | ms/1k nodes | × beni | R² | wall ms/unit |
 |---|---|---|---|---|---|---|---|---|---|---|
 | beni | 6.07 | 0.736 | 1.0× | 0.9971 | 6.12 | 6.56 | 0.795 | 1.0× | 0.9833 | 6.61 |
-| Elm | 27.40 | 3.323 | 4.5× | 0.9987 | 28.10 | 30.15 | 3.656 | 4.6× | 0.9960 | 31.27 |
+| Elm | 27.40 | 3.323 | 4.5× | 0.9987 | 28.10 | 30.15 | 3.656 | 4.6× | 0.9960 | 31.28 |
 | Gleam | 22.22 | 2.694 | 3.7× | 0.9985 | 22.59 | 20.73 | 2.514 | 3.2× | 0.9993 | 21.18 |
-| Roc² | 92.57 | 11.226 | 15.2× | 0.9989 | 93.68 | 89.08 | 10.803 | 13.6× | 0.9971 | 90.11 |
+| Roc² | 92.57 | 11.226 | 15.3× | 0.9989 | 93.68 | 89.08 | 10.803 | 13.6× | 0.9971 | 90.11 |
 | PureScript | 1003.58 | 121.701 | 165.3× | 0.9979 | 1013.10 | 942.50 | 114.294 | 143.8× | 0.9993 | 949.31 |
-| TypeScript¹ | 39.61 | 4.803 | 6.5× | 0.9999 | 39.85 | 39.47 | 4.787 | 6.0× | 0.9982 | 39.70 |
+| TypeScript¹ | 39.61 | 4.804 | 6.5× | 0.9999 | 39.85 | 39.47 | 4.787 | 6.0× | 0.9982 | 39.70 |
 
-² Roc's `check` also lowers and evaluates constants at compile time (compare-bench.md §9). Less its own `--timings` figure for *Shared Lowering and Compile-Time Evaluation* (measured once per point, in the warm-up), Roc's total slope is 79.53 ms/unit annotated (14% of it) and 78.72 ms/unit inferred (12% of it). This side figure subtracts a phase time Roc reports itself; the headline stays the whole `check`.
+² Roc's `check` command is 15.3× beni's annotated and 13.6× beni's inferred, and most of that command is not type checking. Profiled on 2026-09-28 at Roc `a3ce7f1`, on the total project at size 16, its time splits into about 33% type inference and exhaustiveness (about 28 ms per unit, 5.5× beni), 39% publishing a hashed checked-module artifact for its monomorphising native backend (`CheckedTypeStore.fromModule` and its helpers, which `check` always does), 13% canonicalisation, 10% lowering, native code generation and compile-time evaluation, and 2% parsing. Roc's own `--timings` counts the publishing as *Type Checking*, so no figure here is derived from it. **The recursion family is flagged:** there canonicalisation, mostly its dependency graph, is 52% of Roc's time, so Roc's recursion column measures its dependency analysis more than its type checking (compare-bench.md §9, §10.7).
 
 **Per family, annotated mode**, CPU ms per 1 000 nodes (slope over the family's own projects; additivity is Σ families / total):
 
@@ -69,12 +70,12 @@ Run `2026-09-27`: seed 0xBE11C0DE, sizes 1 2 4 8 16, 7 runs per point, CPU 2 pin
 | inference | 0.757 | 7.159 | 2.583 | 11.913 | 104.116 | 3.733 |
 | polymorphism | 0.716 | 7.538 | 2.383 | 9.131 | 138.410 | 6.793 |
 | patterns | 0.670 | 6.689 | 2.229 | 12.718 | 102.414 | 3.594 |
-| depth | 0.597 | 5.146 | 2.024 | 6.023 | 167.638 | 3.866 |
-| recursion | 0.642 | 6.830 | 2.774 | 13.458 | 112.221 | 4.390 |
+| depth | 0.597 | 5.146 | 2.024 | 6.023 | 167.638 | 3.867 |
+| recursion | 0.642 | 6.830 | 2.774 | 13.458² | 112.221 | 4.391 |
 | data | 0.606 | 5.099 | 2.773 | 12.599 | 79.654 | 3.807 |
 | imports | 0.913 | 7.874 | 3.702 | 17.448 | 77.656 | 8.564 |
 | everyday | 0.802 | 7.691 | 2.973 | 9.980 | 114.154 | 7.230 |
-| total | 0.736 | 3.323 | 2.694 | 11.226 | 121.701 | 4.803 |
+| total | 0.736 | 3.323 | 2.694 | 11.226 | 121.701 | 4.804 |
 | additivity | 0.93 | 1.97 | 0.96 | 1.02 | 0.93 | 0.99 |
 
 **Per family, inferred mode**, CPU ms per 1 000 nodes (slope over the family's own projects; additivity is Σ families / total):
@@ -85,7 +86,7 @@ Run `2026-09-27`: seed 0xBE11C0DE, sizes 1 2 4 8 16, 7 runs per point, CPU 2 pin
 | polymorphism | 0.526 | 7.332 | 2.344 | 7.767 | 97.237 | 5.382 |
 | patterns | 0.695 | 7.056 | 2.052 | 12.227 | 92.609 | 3.659 |
 | depth | 0.546 | 5.072 | 1.814 | 6.608 | 166.126 | 3.675 |
-| recursion | 0.567 | 6.271 | 2.647 | 14.575 | 133.800 | 4.821 |
+| recursion | 0.567 | 6.271 | 2.647 | 14.575² | 133.800 | 4.821 |
 | data | 0.607 | 5.331 | 2.560 | 12.637 | 86.265 | 3.569 |
 | imports | 0.878 | 8.559 | 3.157 | 15.189 | 115.966 | 7.354 |
 | everyday | 0.612 | 8.014 | 2.693 | 9.401 | 110.871 | 7.250 |
@@ -139,13 +140,20 @@ the Roc commit, the generator hash and the beni commit.
   to default, so the generator keeps conditions and calls to generated
   functions tied to run-time values, and the Roc printer writes a type suffix
   (`37.I64`) on literals the checker might default (§19 V2).
-- **Roc's `check` also evaluates constants.** Besides parsing and checking,
-  it runs *Shared Lowering and Compile-Time Evaluation*: monotype
-  specialisation, ARC, native code generation for the constants, and running
-  that code. A review measured it at about 14–17% of Roc's slope with
-  `roc check --timings`. The headline keeps the whole `check`, as for every
-  language; a side figure subtracts Roc's own `--timings` number for that
-  phase, measured once per point in the warm-up.
+- **Roc's `check` is more than type checking.** Its row times the whole
+  command, as every row does, and is labelled that way: Roc's `check` is
+  about 15× beni's, not Roc's type checker. A CPU profile (2026-09-28, Roc
+  `a3ce7f1`, the total project at size 16) splits it into about 33% type
+  inference and exhaustiveness (about 28 ms per unit, 5.5× beni), 39%
+  publishing a hashed checked-module artifact for Roc's monomorphising native
+  backend (`CheckedTypeStore.fromModule` and its helpers; `check` always does
+  this), 13% canonicalisation, 10% lowering, native code generation and
+  compile-time evaluation, and 2% parsing. Roc's `--timings` counts the
+  publishing as *Type Checking*, so no side figure is derived from it. In the
+  **recursion** family canonicalisation, mostly its dependency graph, is 52%
+  of Roc's time, and that column is flagged. The measurement itself is fair:
+  Roc is built as its releases are (ReleaseFast, musl, baseline CPU), and
+  `--no-cache --jobs=1` is its fastest cold single-thread configuration.
 - **Elm's runtime options inflate its per-family slopes.** The `elm` binary is
   linked with `-with-rtsopts "-N -qg -A128m"`: a 128 MB allocation area. A
   single-family project allocates less than that, so every run pays the
@@ -153,7 +161,8 @@ the Roc commit, the generator hash and the beni commit.
   With `+RTS -A4m` a review measured the inference slope fall from about 6 to
   2.7 ms per unit while the total slope stayed at about 29. That is why Elm's
   additivity is near 2: its per-family figures are upper bounds, and its total
-  row is unaffected. The timed command keeps Elm's own defaults.- **Elm** does not generalise an unannotated mutually recursive group, so
+  row is unaffected. The timed command keeps Elm's own defaults.
+- **Elm** does not generalise an unannotated mutually recursive group, so
   outside its group a generic member of one is used at one type only, in every
   language (§6.2, §19 V9).
 - **TypeScript**¹ checks a different kind of program in its own idiom:

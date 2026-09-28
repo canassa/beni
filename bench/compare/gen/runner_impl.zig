@@ -342,7 +342,7 @@ fn timed(c: *Ctx, p: Point, confirm: bool) !Result {
     const env = try envFor(c, p.lang);
     if (confirm) {
         // Roc's warm-up also reports its phases (§9): its compile-time
-        // evaluation is disclosed, and subtracted in a side column.
+        // evaluation is recorded in the results file, and not reported.
         if (p.lang == .roc) try argv.insert(c.a, argv.items.len - 1, "--timings");
         const t0 = Io.Timestamp.now(c.io, .awake);
         const r = try runCmd(c, argv.items, p.dir, env);

@@ -571,7 +571,7 @@ The table is part of the contract. A change is a new row version and a note in t
 | beni | `beni check --no-cache --jobs=1 --platform=node .` | Also checks embedded `core/` and the node platform. Writes nothing. | `.beni-cache/` |
 | Elm | `elm make src/Main.elm --output=/dev/null +RTS -N1 -RTS` | Writes `.elmi`/`.elmo` per module. No JS. Checks elm/core's artifacts. | `elm-stuff/` |
 | Gleam | `gleam check` | Writes cache artefacts. JS target. No thread switch, so `taskset` alone limits it. | the project's `build/dev/javascript/compare/` |
-| Roc (v2, 2026-09-27) | `roc check --no-cache --jobs=1 Main.roc` | Writes nothing: with `--no-cache` no `~/.cache/roc` is created. Builtins are in the binary. `--jobs=1` runs one OS thread (§19 V2). **It also evaluates constants** (added 2026-09-28): a phase `--timings` calls *Shared Lowering and Compile-Time Evaluation* (monotype specialisation, ARC, native code generation, and running the code), about 14–17% of Roc's slope in a review's measurement. The whole command is the headline; the warm-up runs it with `--timings` and the report gives a side figure less that phase. v1 was alpha4's `--max-threads 1`. | nothing |
+| Roc (v2, 2026-09-27) | `roc check --no-cache --jobs=1 Main.roc` | Writes nothing: with `--no-cache` no `~/.cache/roc` is created. Builtins are in the binary. `--jobs=1` runs one OS thread (§19 V2). **Most of the command is not type checking** (amended 2026-09-28, after a CPU profile at `a3ce7f1` of the total project at size 16): about 33% is type inference and exhaustiveness (about 28 ms per unit, 5.5× beni), 39% publishes a hashed checked-module artifact for its monomorphising native backend (`CheckedTypeStore.fromModule` and its helpers, always on in `check`), 13% is canonicalisation, 10% lowering, native code generation and compile-time evaluation (the phase `--timings` calls *Shared Lowering and Compile-Time Evaluation*), and 2% parsing. In the recursion family canonicalisation, mostly its dependency graph, is 52% of Roc's time. `--timings` counts the publishing as *Type Checking*, so no figure is derived from it: the README reports Roc's row as what it is, the cost of Roc's `check` command, and gives the profile's split beside it (§10.7). The warm-up still runs with `--timings` and the results file keeps the *Shared Lowering* time per size, unreported. The measurement is fair: Roc is built as its releases are (ReleaseFast, musl, baseline CPU), and `--no-cache --jobs=1` is its fastest cold single-thread configuration. v1 was alpha4's `--max-threads 1`. | nothing |
 | PureScript (v2, 2026-09-27) | `purs compile '<deps>' 'src/**/*.purs' -o output --codegen corefn +RTS -N1 -RTS` | CoreFn and externs for every project module, and re-parsing every dependency module. No JavaScript: V5 found `--codegen corefn` still type-checks every module. v1 was the default `js` codegen. | `output/`, then the deps-only `output/` is restored untimed |
 | TypeScript | `GOMAXPROCS=1 tsc -p . --singleThreaded` (with `noEmit` in `tsconfig.json`) | Parses and binds `lib.es5.d.ts` (never checked: `skipLibCheck`). Unused-name analysis (`noUnusedLocals`/`Parameters`). Writes nothing. §9.1. | nothing: no `incremental`, so no `.tsbuildinfo` |
 
@@ -658,7 +658,7 @@ These rules are kept from the earlier method, where they worked.
      mostly the step from 8 to 16 units. Small sizes still anchor the intercept.
 7. **Disclosed differences.** The README carries §9's work column, §2.2's Gleam-`case` and
    PureScript-instance notes, §2.5's Roc note, §2.6's TypeScript caveats and §6.3's annotation asymmetry (as a footnote on every TypeScript cell), the machine, and the load averages at the start
-   and end. `--multi` drops rule 3 and is never headline. Added 2026-09-28: Roc's compile-time evaluation (§9) and Elm's `-A128m` runtime default, which inflates its single-family slopes and leaves its total row unaffected (§18 status).
+   and end. `--multi` drops rule 3 and is never headline. Added 2026-09-28: Roc's compile-time evaluation (§9) and Elm's `-A128m` runtime default, which inflates its single-family slopes and leaves its total row unaffected (§18 status). **Amended 2026-09-28, after a profile of Roc:** Roc's row is labelled as the cost of Roc's `check` command, never as its type checking; beside it the README gives §9's dated phase split (profiled at Roc `a3ce7f1`, the total project at size 16), flags Roc's recursion column, where canonicalisation is 52% of its time, and gives no figure derived from `--timings`, which counts Roc's artifact publishing as type checking. The side figure "less compile-time evaluation" that the README carried until then read as Roc's checking time and is withdrawn.
 
 ## 11. Confirmation, and a compiler that says no
 
@@ -693,6 +693,7 @@ over it fails loudly: an unmeasurable point is not silently dropped from a fit.
 | `zig build compare-smoke` | Size 1, both modes, runs 1: acceptance by all six compilers and no timing. It lives in the compare shell and is not in the three gates. |
 | `zig build compare -- --prepare` (amended 2026-09-27) | Fetches and builds the dependencies of §8.2, Roc included, and stops. A plain `zig build compare` also prepares whatever is missing first. |
 | `zig build compare-gen -- --golden` (added 2026-09-27) | Rewrites the printer goldens of §15 in `gen/print/golden/`. |
+| `zig build compare-render -- --from=bench/compare/results/<name>.json` (added 2026-09-28) | Rewrites the README block of §13.2 from a committed results file, with no compiler run. It prints the fits the run recorded, so a change to how the tables are worded reaches the published numbers without re-measuring; a figure recorded to one decimal more than the table prints can round differently in its last digit. |
 
 - The default seed is fixed in `main.zig` (`0xBE11C0DE`), so the published tables are reproducible
   with no arguments.
@@ -754,7 +755,7 @@ The file records:
 Every language key in `lang_order` appears under `langs`, including `typescript`. A run with
 `--langs` omits the others and records the omission in `lang_order`.
 
-The schema number bumps on any incompatible change. **Schema 2** (2026-09-28) replaces a project's `samples`, `medians`, `slope_ms_per_unit`, `slope_min`, `intercept_ms`, `r2`, `ms_per_1k_nodes` and `ms_per_1k_tokens` by `cpu_samples` and `wall_samples`, and two fits, `cpu` and `wall`, each with those fields; adds `"headline": "cpu"`; makes `additivity` a `{ cpu, wall }` pair; and for Roc adds `compile_time_evaluation_ms` per size and a `cpu_less_compile_time_evaluation` fit.
+The schema number bumps on any incompatible change. **Schema 2** (2026-09-28) replaces a project's `samples`, `medians`, `slope_ms_per_unit`, `slope_min`, `intercept_ms`, `r2`, `ms_per_1k_nodes` and `ms_per_1k_tokens` by `cpu_samples` and `wall_samples`, and two fits, `cpu` and `wall`, each with those fields; adds `"headline": "cpu"`; makes `additivity` a `{ cpu, wall }` pair; and for Roc adds `compile_time_evaluation_ms` per size and a `cpu_less_compile_time_evaluation` fit. Both stay in the file and are not reported (§9, §10.7).
 
 ### 13.2 README
 
@@ -765,6 +766,8 @@ the runner writes three tables:
 1. total slopes per language × mode (ms/unit, ms/1k nodes, and ratios to beni);
 2. per-family slope in ms/1k nodes, one table for the annotated mode;
 3. the same for the inferred mode.
+
+Below the tables, a footnote on Roc's row gives §9's profile split, and Roc's recursion cells carry its mark (§10.7). `compare render` regenerates the block from a results file (§12); the block is never edited by hand.
 
 Outside the markers the README is hand-written, and the runner never touches it.
 

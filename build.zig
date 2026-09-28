@@ -20,6 +20,7 @@
 //!   zig build compare-gen         write the generated projects
 //!   zig build compare             time them; results/<date>.json and README
 //!   zig build compare-smoke       size 1, both modes: acceptance only
+//!   zig build compare-render      the README tables again, from a results file
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
@@ -298,6 +299,7 @@ pub fn build(b: *std.Build) void {
         .{ "compare-gen", "gen", "Generate the cross-language benchmark's projects (docs/design/compare-bench.md §12)" },
         .{ "compare", "run", "Run the cross-language type-checking benchmark; needs `nix develop .#compare` (compare-bench.md §12)" },
         .{ "compare-smoke", "smoke", "Size 1, both modes: every compiler accepts the generated projects (compare-bench.md §12)" },
+        .{ "compare-render", "render", "Rewrite the benchmark README tables from a results file: -- --from=bench/compare/results/<name>.json (compare-bench.md §12)" },
     }) |s| {
         const run = b.addRunArtifact(compare_exe);
         run.addArg(s[1]);
@@ -305,7 +307,7 @@ pub fn build(b: *std.Build) void {
         if (b.args) |args| run.addArgs(args);
         // Timing and acceptance are facts about the machine now, never cached.
         run.has_side_effects = true;
-        if (!std.mem.eql(u8, s[1], "gen")) run.step.dependOn(&perf_install.step);
+        if (!std.mem.eql(u8, s[1], "gen") and !std.mem.eql(u8, s[1], "render")) run.step.dependOn(&perf_install.step);
         b.step(s[0], s[2]).dependOn(&run.step);
     }
     // The beni printer in the gates (compare-bench.md §15): the generated

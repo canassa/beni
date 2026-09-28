@@ -30,8 +30,10 @@ pub const Input = struct {
 };
 
 /// What a series fits (§10.6, amended 2026-09-28): CPU time (user + sys)
-/// is the headline, wall time is recorded beside it, and for Roc a side
-/// figure subtracts its own compile-time evaluation (§9).
+/// is the headline, and wall time is recorded beside it. For Roc the results
+/// file also keeps a fit less its `--timings` compile-time evaluation (§9);
+/// the README does not report it: `--timings` counts Roc's artifact publishing
+/// as type checking, so what remains is not a checking figure.
 const Metric = enum { cpu, wall, cpu_less_cte };
 
 /// One (language, mode, project): its points by size and the fits.
@@ -46,7 +48,11 @@ const Series = struct {
     tokens_per_unit: f64 = 0,
     lines_per_unit: f64 = 0,
 
+    /// Set by `render`: the per-1k figure the results file recorded.
+    recorded_per1k: ?f64 = null,
+
     fn per1k(s: Series) f64 {
+        if (s.recorded_per1k) |x| return x;
         return if (s.nodes_per_unit == 0) 0 else s.slope / s.nodes_per_unit * 1000;
     }
     fn per1kTokens(s: Series) f64 {
@@ -202,9 +208,15 @@ pub fn write(in: Input) !u8 {
     try Io.Dir.cwd().writeFile(in.io, .{ .sub_path = path, .data = json.written() });
     try in.out.print("compare: wrote {s}\n", .{path});
 
-    // The README block (§13.2), generated whole: never edited by hand.
+    try writeReadme(in, cpu, wall, name);
+    return 0;
+}
+
+/// The README block (§13.2), generated whole: never edited by hand.
+fn writeReadme(in: Input, cpu: Grid, wall: Grid, name: []const u8) !void {
+    const a = in.a;
     var md: Io.Writer.Allocating = .init(a);
-    try tables(in, &md.writer, cpu, wall, net, name);
+    try tables(in, &md.writer, cpu, wall, name);
     try in.out.writeAll(md.written());
     const readme_path = try std.fmt.allocPrint(a, "{s}/bench/compare/README.md", .{in.o.repo});
     const readme = try Io.Dir.cwd().readFileAlloc(in.io, readme_path, a, .limited(1 << 22));
@@ -214,7 +226,154 @@ pub fn write(in: Input) !u8 {
     const e = std.mem.indexOf(u8, readme, end) orelse return error.NoMarkers;
     const updated = try std.mem.concat(a, u8, &.{ readme[0 .. b + begin.len], "\n", md.written(), readme[e..] });
     try Io.Dir.cwd().writeFile(in.io, .{ .sub_path = readme_path, .data = updated });
+}
+
+/// `compare render --from=results/<name>.json` (§12): rewrite the README
+/// block from a committed results file, with no compiler run, so a change
+/// to how the tables are worded reaches the published numbers without
+/// re-measuring them.
+pub fn render(a: Allocator, io: Io, o: runner.Options, from: []const u8, out: *Io.Writer) !u8 {
+    const bytes = try Io.Dir.cwd().readFileAlloc(io, from, a, .limited(1 << 26));
+    const root = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{});
+    const top = root.object;
+    if (int(top.get("schema").?) != 2) return error.UnsupportedSchema;
+
+    const generator = top.get("generator").?.object;
+    var sizes: std.ArrayList(u32) = .empty;
+    for (generator.get("sizes").?.array.items) |s| try sizes.append(a, @intCast(int(s)));
+    var opts = o;
+    opts.seed = try std.fmt.parseInt(u64, generator.get("seed").?.string, 0);
+    opts.runs = @intCast(int(generator.get("runs").?));
+    opts.generator_hash = generator.get("hash").?.string;
+    const machine_obj = top.get("machine").?.object;
+    opts.cpu = @intCast(int(machine_obj.get("cpu_pinned").?));
+    const load = machine_obj.get("loadavg").?.object;
+    const toolchain_obj = top.get("toolchain").?.object;
+
+    var langs: std.ArrayList(Lang) = .empty;
+    for (top.get("lang_order").?.array.items) |l| try langs.append(a, Lang.parse(l.string) orelse return error.UnknownLanguage);
+    opts.langs = langs.items;
+
+    var modes: std.ArrayList(Mode) = .empty;
+    var points: std.ArrayList(impl.Point) = .empty;
+    const langs_obj = top.get("langs").?.object;
+    for (langs.items) |lang| {
+        const modes_obj = langs_obj.get(@tagName(lang)).?.object.get("modes").?.object;
+        for ([_]Mode{ .annotated, .inferred }) |mode| {
+            const mode_obj = (modes_obj.get(@tagName(mode)) orelse continue).object;
+            if (std.mem.indexOfScalar(Mode, modes.items, mode) == null) try modes.append(a, mode);
+            const projects_obj = mode_obj.get("projects").?.object;
+            for (impl.projects, 0..) |proj, pi| {
+                const p = (projects_obj.get(proj.name()) orelse continue).object;
+                const size_obj = p.get("size").?.object;
+                const cpu_obj = p.get("cpu_samples").?.object;
+                const wall_obj = p.get("wall_samples").?.object;
+                const cte_obj = if (p.get("compile_time_evaluation_ms")) |v| v.object else null;
+                for (sizes.items) |size| {
+                    const key = try std.fmt.allocPrint(a, "{d}", .{size});
+                    const st = size_obj.get(key).?.object;
+                    var point: impl.Point = .{
+                        .lang = lang,
+                        .mode = mode,
+                        .project = pi,
+                        .size = size,
+                        .dir = "",
+                        .nodes = @intCast(int(st.get("nodes").?)),
+                        .stats = .{
+                            .tokens = @intCast(int(st.get("tokens").?)),
+                            .lines = @intCast(int(st.get("lines").?)),
+                            .annotations = @intCast(int(st.get("annotations").?)),
+                            .explicit_type_args = @intCast(int(st.get("explicit_type_args").?)),
+                            .invoked_arrows = @intCast(int(st.get("invoked_arrows").?)),
+                            .modules = @intCast(int(st.get("modules").?)),
+                        },
+                        .roc_cte_ms = if (cte_obj) |c| float(c.get(key).?) else 0,
+                    };
+                    for (cpu_obj.get(key).?.array.items) |x| try point.cpu_samples.append(a, float(x));
+                    for (wall_obj.get(key).?.array.items) |x| try point.samples.append(a, float(x));
+                    try points.append(a, point);
+                }
+            }
+        }
+    }
+    opts.modes = modes.items;
+
+    const stem = std.fs.path.stem(from);
+    const in: Input = .{
+        .a = a,
+        .io = io,
+        .o = opts,
+        .points = points.items,
+        .unit_nodes = @splat(0),
+        .sizes = sizes.items,
+        .load_start = triple(load.get("start").?),
+        .load_end = triple(load.get("end").?),
+        .started = .zero,
+        .offline = top.get("offline").?.bool,
+        .versions = @splat(""),
+        .out = out,
+        .machine = .{ .cpu = machine_obj.get("cpu").?.string, .nproc = @intCast(int(machine_obj.get("nproc").?)), .kernel = machine_obj.get("kernel").?.string },
+        .toolchain = .{
+            .nixpkgs_compare_rev = toolchain_obj.get("nixpkgs_compare_rev").?.string,
+            .zig = toolchain_obj.get("zig").?.string,
+            .beni_commit = toolchain_obj.get("beni_commit").?.string,
+            .beni_dirty = toolchain_obj.get("beni_dirty").?.bool,
+            .roc_commit = toolchain_obj.get("roc_commit").?.string,
+        },
+    };
+    // The samples were written rounded to two decimals, so a fit redone from
+    // them can move a printed digit: the fits the run recorded replace it.
+    // Those recorded to one more decimal than the table prints can still
+    // round differently in their last digit.
+    var cpu = grid(in, .cpu);
+    var wall = grid(in, .wall);
+    for (langs.items) |lang| {
+        const li = @intFromEnum(lang);
+        const modes_obj = langs_obj.get(@tagName(lang)).?.object.get("modes").?.object;
+        for ([_]Mode{ .annotated, .inferred }, 0..) |mode, mi| {
+            const mode_obj = (modes_obj.get(@tagName(mode)) orelse continue).object;
+            const projects_obj = mode_obj.get("projects").?.object;
+            for (impl.projects, 0..) |proj, pi| {
+                const p = (projects_obj.get(proj.name()) orelse continue).object;
+                if (cpu[li][mi][pi]) |*s| recorded(s, p.get("cpu").?.object);
+                if (wall[li][mi][pi]) |*s| recorded(s, p.get("wall").?.object);
+            }
+        }
+    }
+    try writeReadme(in, cpu, wall, stem);
     return 0;
+}
+
+/// Replace a refit by the fit the run recorded, which it made before the
+/// samples were rounded for the file.
+fn recorded(s: *Series, fit_obj: std.json.ObjectMap) void {
+    s.slope = float(fit_obj.get("slope_ms_per_unit").?);
+    s.slope_min = float(fit_obj.get("slope_min").?);
+    s.intercept = float(fit_obj.get("intercept_ms").?);
+    s.r2 = float(fit_obj.get("r2").?);
+    s.recorded_per1k = float(fit_obj.get("ms_per_1k_nodes").?);
+}
+
+fn int(v: std.json.Value) i64 {
+    return switch (v) {
+        .integer => |i| i,
+        .float => |f| @intFromFloat(f),
+        else => unreachable,
+    };
+}
+
+fn float(v: std.json.Value) f64 {
+    return switch (v) {
+        .integer => |i| @floatFromInt(i),
+        .float => |f| f,
+        .number_string => |s| std.fmt.parseFloat(f64, s) catch unreachable,
+        else => unreachable,
+    };
+}
+
+fn triple(v: std.json.Value) [3]f64 {
+    const xs = v.array.items;
+    return .{ float(xs[0]), float(xs[1]), float(xs[2]) };
 }
 
 /// Σ family slopes / total slope (§10.6).
@@ -227,7 +386,7 @@ fn additivity(s: [n_proj]?Series) f64 {
     return if (total.slope == 0) 0 else sum / total.slope;
 }
 
-fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, net: Grid, name: []const u8) !void {
+fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, name: []const u8) !void {
     const langs = in.o.langs;
     const tot = n_proj - 1;
     try w.print("Run `{s}`: seed 0x{X}, sizes", .{ name, in.o.seed });
@@ -251,14 +410,20 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, net: Grid, name: []co
         }
         try w.writeAll("\n");
     }
-    // Roc's side figure (§9): never the headline.
-    if (net[@intFromEnum(Lang.roc)][0][tot] != null or net[@intFromEnum(Lang.roc)][1][tot] != null) {
-        try w.writeAll("\n² Roc's `check` also lowers and evaluates constants at compile time (compare-bench.md §9). Less its own `--timings` figure for *Shared Lowering and Compile-Time Evaluation* (measured once per point, in the warm-up), Roc's total slope is");
-        for ([_]usize{ 0, 1 }, 0..) |mi, i| if (net[@intFromEnum(Lang.roc)][mi][tot]) |s| {
-            const full = cpu[@intFromEnum(Lang.roc)][mi][tot].?;
-            try w.print("{s} {d:.2} ms/unit {s} ({d:.0}% of it)", .{ if (i > 0) " and" else "", s.slope, if (mi == 0) "annotated" else "inferred", if (full.slope == 0) 0 else 100 * (1 - s.slope / full.slope) });
+    // What Roc's `check` spends its time on (§9, §10.7): a profile, dated
+    // and disclosed, never a figure derived from Roc's `--timings`.
+    const roc = @intFromEnum(Lang.roc);
+    if (cpu[roc][0][tot] != null or cpu[roc][1][tot] != null) {
+        try w.writeAll("\n² Roc's `check` command is");
+        for ([_]usize{ 0, 1 }, 0..) |mi, i| if (cpu[roc][mi][tot]) |s| {
+            const base = if (mi == 0) beni_a else beni_i;
+            try w.print("{s} {d:.1}× beni's {s}", .{ if (i > 0) " and" else "", if (base == 0) 0 else s.per1k() / base, if (mi == 0) "annotated" else "inferred" });
         };
-        try w.writeAll(". This side figure subtracts a phase time Roc reports itself; the headline stays the whole `check`.\n");
+        try w.writeAll(", and most of that command is not type checking. " ++ roc_profile.split);
+        if (!std.mem.startsWith(u8, in.toolchain.roc_commit, roc_profile.commit)) {
+            try w.print(" This run measured Roc `{s}`, not the profiled commit.", .{in.toolchain.roc_commit[0..@min(in.toolchain.roc_commit.len, 7)]});
+        }
+        try w.writeAll("\n");
     }
     // 2 and 3. Per family, ms per 1 000 nodes.
     for ([_]usize{ 0, 1 }) |mi| {
@@ -271,7 +436,11 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, net: Grid, name: []co
         for (0..n_proj) |pi| {
             try w.print("| {s} |", .{impl.projects[pi].name()});
             for (langs) |lang| {
-                if (cpu[@intFromEnum(lang)][mi][pi]) |s| try w.print(" {d:.3} |", .{s.per1k()}) else try w.writeAll(" — |");
+                if (cpu[@intFromEnum(lang)][mi][pi]) |s| {
+                    // Roc's recursion cell is mostly canonicalisation (²).
+                    const flagged = lang == .roc and impl.projects[pi] == .family and impl.projects[pi].family == .recursion;
+                    try w.print(" {d:.3}{s} |", .{ s.per1k(), if (flagged) "²" else "" });
+                } else try w.writeAll(" — |");
             }
             try w.writeAll("\n");
         }
@@ -304,6 +473,22 @@ fn tables(in: Input, w: *Io.Writer, cpu: Grid, wall: Grid, net: Grid, name: []co
         }
     };
 }
+
+/// Where Roc's `check` time goes, from a CPU profile (compare-bench.md §9,
+/// §10.7). The runner does not measure this: it is one profile of one
+/// commit, stated with its date and commit wherever it is printed.
+const roc_profile = struct {
+    const commit = "a3ce7f1";
+    const split =
+        "Profiled on 2026-09-28 at Roc `a3ce7f1`, on the total project at size 16, its time splits into " ++
+        "about 33% type inference and exhaustiveness (about 28 ms per unit, 5.5× beni), " ++
+        "39% publishing a hashed checked-module artifact for its monomorphising native backend " ++
+        "(`CheckedTypeStore.fromModule` and its helpers, which `check` always does), " ++
+        "13% canonicalisation, 10% lowering, native code generation and compile-time evaluation, and 2% parsing. " ++
+        "Roc's own `--timings` counts the publishing as *Type Checking*, so no figure here is derived from it. " ++
+        "**The recursion family is flagged:** there canonicalisation, mostly its dependency graph, is 52% of Roc's time, " ++
+        "so Roc's recursion column measures its dependency analysis more than its type checking (compare-bench.md §9, §10.7).";
+};
 
 fn langName(l: Lang) []const u8 {
     return switch (l) {

@@ -19,6 +19,8 @@ pub const Options = struct {
     cpu: u32 = 2,
     label: ?[]const u8 = null,
     out: ?[]const u8 = null,
+    /// `compare render --from=<results file>` (§12).
+    from: ?[]const u8 = null,
     prepare: bool = false,
     /// `compare gen --golden`: rewrite `print/golden/` (§15).
     golden: bool = false,
@@ -72,6 +74,8 @@ pub fn parseOptions(a: Allocator, args: []const []const u8) !Options {
             o.label = val;
         } else if (std.mem.eql(u8, key, "--out")) {
             o.out = val;
+        } else if (std.mem.eql(u8, key, "--from")) {
+            o.from = val;
         } else if (std.mem.eql(u8, key, "--golden")) {
             o.golden = true;
         } else if (std.mem.eql(u8, key, "--prepare")) {

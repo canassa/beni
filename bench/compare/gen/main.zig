@@ -5,6 +5,7 @@
 //!                 [--modes=annotated,inferred] [--cpu=2] [--quick] [--label=…] [--online]
 //!                 [--timeout=300]
 //!   compare smoke size 1, both modes, one untimed run: acceptance only
+//!   compare render --from=FILE  rewrite the README tables from a results file
 //!
 //! `zig build compare-gen`, `zig build compare` and `zig build compare-smoke`
 //! run these (§12). The generator does not import `src/`, and `src/` does not
@@ -55,6 +56,12 @@ pub fn main(init: std.process.Init) !u8 {
     } else if (std.mem.eql(u8, cmd, "smoke")) {
         opts.smoke = true;
         return runner.run(gpa, io, arena, opts, stdout, stderr, init.environ_map);
+    } else if (std.mem.eql(u8, cmd, "render")) {
+        const from = opts.from orelse {
+            try stderr.writeAll("compare render: needs --from=<results file>\n");
+            return 2;
+        };
+        return @import("report.zig").render(arena, io, opts, from, stdout);
     }
     try stderr.print("compare: unknown command {s}\n", .{cmd});
     return 2;
