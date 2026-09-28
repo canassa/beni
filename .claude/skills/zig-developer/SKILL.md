@@ -106,7 +106,10 @@ zig build gates            # test, test-blackbox and fmt-check, concurrently
 BENI_WRITE_EXPECTED=1 zig build test-blackbox   # bless corpus goldens (BENI_BLESS_ONLY=<substr>)
 ```
 
-Always `zig build` and `zig build gates` after changes, before reporting done.
+Test in the tiers of CLAUDE.md's *Testing tiers*: a targeted run with
+`-Dquick` while editing (`-Dtest-filter=`, `-Dcorpus=`, `test-blackbox-<file>`),
+`zig build gates -Dquick` when the change looks done, and `zig build gates`
+once, right before committing.
 
 **Submodule vs. toolchain — know which to trust for what.** The vendored
 `references/zig` submodule is at master (`0.16.0-2129-gd84959d9e2`), roughly 2,100

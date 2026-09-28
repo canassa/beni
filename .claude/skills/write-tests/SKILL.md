@@ -22,7 +22,8 @@ smallest boundary that still represents it?* There are exactly three answers her
 ### Boundary 1 — the compiler binary (the default, ~80% of tests)
 
 `zig build test-blackbox`. The REAL compiler, built ReleaseSafe and installed
-at `./zig-out/safe/bin/beni` (`BENI_EXE`), is spawned as a child process
+at `./zig-out/safe/bin/beni` (`./zig-out/quick/bin/beni` under `-Dquick`;
+`BENI_EXE` either way), is spawned as a child process
 against a temp project directory, configured **only** through CLI flags, env
 vars and the files on disk. Inputs are `.beni` sources and
 a manifest; outputs are the emitted JS, the diagnostics on stderr, the exit code,
@@ -116,7 +117,8 @@ builds a binary on tagged releases. Three failure modes to design against:
 - Verify side effects *and their absence*: on a failed compile, assert that no
   output file was written and no cache entry was created.
 - Put a new parser behind a fuzz harness in the hermetic suite.
-- Run `zig build test` and `zig build test-blackbox` green before reporting.
+- Run the tiers of CLAUDE.md's *Testing tiers* green before reporting (see
+  *Running the tests* below).
 
 ## CRITICAL: assertions must be broad
 
@@ -274,6 +276,26 @@ and **Node 24**, so Boundary 2 (running the emitted JavaScript) is available fro
 the first test — build it in rather than deferring it. Invoke Node through the dev
 shell, never a host binary, so CI and laptops agree on the version.
 
+## Running the tests: cheapest tier first
+
+CLAUDE.md's *Testing tiers* is the rule; in short:
+
+- **Tier 0, while writing the test** — run only what it touches, with the
+  compiler built by the self-hosted backend (`-Dquick`, a 3 s compile instead
+  of 73 s, every safety check intact):
+  - one fixture or kind: `zig build test-blackbox-corpus -Dquick -Dcorpus=run/MyFixture`
+    (the path substring; also blesses with `BENI_WRITE_EXPECTED=1`);
+  - one black-box file: `zig build test-blackbox-<file> -Dquick`, narrowed
+    to one test with `-Dtest-filter=<part of its name>`;
+  - unit tests: `zig build test -Dtest-filter=<name>`;
+  - a pending fixture: `zig build test-pending -Dquick -Dcorpus=<path>`.
+- **Tier 1, when it looks done** — `zig build gates -Dquick`.
+- **Tier 2, once, right before committing** — `zig build gates`.
+
+To prove a fixture fails before the fix (rule 3), run it at Tier 0 with the
+fix set aside, not the whole suite. Never run two full suites at once, never
+re-run a green one, and read a failure from the log instead of re-running.
+
 ## Checklist before reporting done
 
 - [ ] Right boundary: the binary, unless it is a semantics question (run the JS) or
@@ -288,5 +310,5 @@ shell, never a host binary, so CI and laptops agree on the version.
 - [ ] Happy path first and complete; errors last and verifying no side effects.
 - [ ] Banners present; one `test` per scenario; no fixed sleeps, only bounded waits.
 - [ ] Every new parser has a fuzz test in the hermetic suite.
-- [ ] `zig build test` and `zig build test-blackbox` both green; no leaked process
-      or temp dir.
+- [ ] Tier 0 and Tier 1 green (`zig build gates -Dquick`); no leaked process
+      or temp dir. Tier 2 (`zig build gates`) runs once, before the commit.

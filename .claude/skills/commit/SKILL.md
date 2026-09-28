@@ -72,9 +72,13 @@ If nothing fits, use ✨ and pick a clear subject.
    covers these), and never a Zulip API key or any `ZULIP_*` credential — those
    live in the environment, never in the repo. If something odd is staged, flag it
    rather than committing it blindly.
-3. **For code changes**, if you haven't already verified them this session, run
-   `zig build gates` (`test`, `test-blackbox` and `fmt-check` at once) in the dev
-   shell (`direnv exec . …`) before committing. Don't commit red or unformatted code.
+3. **For code changes**, run Tier 2 of CLAUDE.md's *Testing tiers* once, right
+   before committing: `zig build gates` (`test`, `test-blackbox` and
+   `fmt-check` at once, LLVM, no `-Dquick`, no filter) in the dev shell
+   (`direnv exec . …`). A green `-Dquick` or filtered run is not this gate, and
+   neither is a Tier 2 run from before the last edit. If Tier 2 already passed
+   on exactly the tree being committed, do not run it again. Don't commit red
+   or unformatted code.
 4. **Prefer several focused commits over one sprawling one.** If the work spans
    the front end and the docs, that is two commits, not one with two emoji.
 5. **Pick the emoji** from the map and **write the message** (subject + tight
