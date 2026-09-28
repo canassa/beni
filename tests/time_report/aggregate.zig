@@ -300,6 +300,9 @@ const TestRow = struct {
     child: u64 = 0,
     beni: u32 = 0,
     node: u32 = 0,
+    /// Instructions spent against the budget (`timing.Test.spent`), when
+    /// the budget counted them.
+    instructions: u64 = 0,
 
     fn cpu(r: TestRow) u64 {
         return r.self + r.child;
@@ -318,6 +321,7 @@ fn renderTests(arena: Allocator, w: *Io.Writer, processes: []const Process, opti
             r.wall = @max(r.wall, t.wall_us);
             r.self += t.user_us + t.sys_us;
             r.child += t.child_user_us + t.child_sys_us;
+            if (std.mem.eql(u8, t.budget_unit, "instructions")) r.instructions += t.spent;
         }
         for (p.children) |c| {
             const r = rows.getPtr(c.@"test") orelse continue;
@@ -337,14 +341,16 @@ fn renderTests(arena: Allocator, w: *Io.Writer, processes: []const Process, opti
         \\### Per test
         \\
         \\The {d} most expensive of {d} tests by CPU. "Harness" is CPU in the test
-        \\process, "children" in what it spawned.
+        \\process, "children" in what it spawned; "M instr" the millions of
+        \\instructions the test is held to its budget by (a corpus walker's tests
+        \\count what their cases did not; "–" where the budget did not count them).
         \\
-        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | beni | node |
-        \\|---:|---|---:|---:|---:|---:|---:|---:|
+        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | M instr | beni | node |
+        \\|---:|---|---:|---:|---:|---:|---:|---:|---:|
         \\
     , .{ @min(options.top, sorted.len), sorted.len });
     for (sorted[0..@min(options.top, sorted.len)], 1..) |r, i| {
-        try w.print("| {d} | {s} | {f} | {f} | {f} | **{f}** | {d} | {d} |\n", .{ i, try testName(arena, r.name), secs(r.wall), secs(r.self), secs(r.child), secs(r.cpu()), r.beni, r.node });
+        try w.print("| {d} | {s} | {f} | {f} | {f} | **{f}** | {s} | {d} | {d} |\n", .{ i, try testName(arena, r.name), secs(r.wall), secs(r.self), secs(r.child), secs(r.cpu()), try millions(arena, r.instructions), r.beni, r.node });
     }
     try w.writeAll("\n**Distribution of tests by CPU:**\n\n");
     const cpus = try arena.alloc(u64, sorted.len);
@@ -372,6 +378,8 @@ const FixtureRow = struct {
     node: u32 = 0,
     node_cpu: u64 = 0,
     other_cpu: u64 = 0,
+    /// Instructions the case spent against the budget, when it counted them.
+    instructions: u64 = 0,
 
     fn cpu(r: FixtureRow) u64 {
         return r.harness + r.beni_cpu + r.node_cpu + r.other_cpu;
@@ -402,6 +410,7 @@ fn renderFixtures(arena: Allocator, w: *Io.Writer, processes: []const Process, o
             if (!gop.found_existing) gop.value_ptr.* = .{ .key = key, .path = f.path, .kind = kind };
             gop.value_ptr.wall += f.wall_us;
             gop.value_ptr.harness += f.thread_cpu_us;
+            gop.value_ptr.instructions += f.spent;
             try mine.put(arena, f.path, gop.index);
         }
         for (p.children) |c| {
@@ -436,13 +445,13 @@ fn renderFixtures(arena: Allocator, w: *Io.Writer, processes: []const Process, o
         \\The {d} most expensive of {d} corpus cases by CPU: the walker thread's own
         \\time plus every process the case spawned.
         \\
-        \\| # | fixture | kind | **CPU ms** | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
-        \\|---:|---|---|---:|---:|---:|---:|---:|
+        \\| # | fixture | kind | **CPU ms** | M instr | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
+        \\|---:|---|---|---:|---:|---:|---:|---:|---:|
         \\
     , .{ @min(options.top, sorted.len), sorted.len });
     for (sorted[0..@min(options.top, sorted.len)], 1..) |r, i| {
-        try w.print("| {d} | {s} | {s} | **{d}** | {d} | {f} | {d} / {d} | {d} / {d} |\n", .{
-            i, r.path, r.kind, ms(r.cpu()), ms(r.wall), msTenths(r.harness), r.beni, ms(r.beni_cpu), r.node, ms(r.node_cpu),
+        try w.print("| {d} | {s} | {s} | **{d}** | {s} | {d} | {f} | {d} / {d} | {d} / {d} |\n", .{
+            i, r.path, r.kind, ms(r.cpu()), try millions(arena, r.instructions), ms(r.wall), msTenths(r.harness), r.beni, ms(r.beni_cpu), r.node, ms(r.node_cpu),
         });
     }
     try w.writeAll("\n**Distribution of cases by CPU:**\n\n");
@@ -1063,4 +1072,10 @@ test "the report of a small run is exactly these tables" {
         \\
         \\
     , out.written());
+}
+
+/// `n` instructions in millions, or "–" when none were counted.
+fn millions(arena: Allocator, n: u64) ![]const u8 {
+    if (n == 0) return "–";
+    return std.fmt.allocPrint(arena, "{d}", .{(n + 500_000) / 1_000_000});
 }

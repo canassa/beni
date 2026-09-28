@@ -489,7 +489,7 @@ const Walker = struct {
                     .path = path,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
-                    .spent = meter.read() -% spent_start,
+                    .spent = if (world.timing.budget_unit == .instructions) meter.read() -% spent_start else 0,
                 } });
             }
             switch (wk.cfg.mode) {
