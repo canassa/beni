@@ -42,6 +42,9 @@ pub const js = struct {
     pub const Sibling = @import("js/Sibling.zig");
     pub const Manifest = @import("js/Manifest.zig");
     pub const OutputRecord = @import("js/OutputRecord.zig");
+    pub const Opt = @import("js/Opt.zig");
+    pub const Reach = @import("js/Reach.zig");
+    pub const Rename = @import("js/Rename.zig");
 };
 pub const build = struct {
     pub const Command = @import("build/Command.zig");
@@ -76,6 +79,8 @@ pub const cache = struct {
     pub const dispatch_bytes = @import("cache/dispatch_bytes.zig");
     pub const Dir = @import("cache/Dir.zig");
     pub const Digest = @import("cache/Digest.zig");
+    pub const Entry = @import("cache/Entry.zig");
+    pub const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
 };
 pub const check = struct {
     pub const Category = @import("check/Category.zig");
@@ -148,6 +153,7 @@ pub const dump = struct {
 pub const render = struct {
     pub const text = @import("render/text.zig");
     pub const json = @import("render/json.zig");
+    pub const wrap = @import("render/wrap.zig");
 };
 
 test {
