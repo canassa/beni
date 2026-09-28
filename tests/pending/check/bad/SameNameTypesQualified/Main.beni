@@ -1,0 +1,38 @@
+-- CK-205: two different types with one name in one message are told apart by
+-- their modules. `Main.T` is passed where `Shapes.T` is wanted, and a
+-- `Main.Name` where a `Shapes.Name` is. The unfixed checker says "This
+-- argument is: T … needs … T", and the same for `Name`.
+import Shapes
+
+
+type T
+    = T Int
+
+
+type alias Name =
+    { n : Bool }
+
+
+f : Shapes.T -> Int
+f _ =
+    1
+
+
+x : Int
+x =
+    f (T 1)
+
+
+g : Shapes.Name -> Int
+g _ =
+    1
+
+
+y : Name
+y =
+    { n = True }
+
+
+z : Int
+z =
+    g y

@@ -5024,6 +5024,137 @@ review; written red on `275b203` before any fix (their own commit).*
   `Messages.derivedBudget` at the use (also for a pass out of steps, whose text said "took more
   than 1048576 steps" of a group).
 
+*CK-202 to CK-209 were added on 2026-09-29 from the final review of the checker, each written
+with a red fixture on `b8b289a` before its fix.*
+
+### CK-202 — Alias names inside a structure keep the first name met
+
+- **Severity** nondeterminism (I9's scope: an accepted program's types; D16 "agree or expand" held
+  only at the top of a type). **Area** `Unify.throughAlias`: two WRITTEN names — an annotation's
+  reading or an instantiation's copy — that meet are both left unexpanded, so a flex bound to the
+  structure around one of them shows whichever copy the structure's merge kept. **Class** K12.
+  **Sources** the final review of the checker (2026-09-29).
+- **Program** `type alias Name = String`, `type alias Label = String`, `x : List Name`, `y : List
+  Label`, a recursive group `f n = if n == 0 then x else g (n - 1)`, `g n = if n == 0 then y else f
+  (n - 1)`; also `if c then x else y` against the branches swapped, `Maybe Name` against `Maybe
+  String`, and `Pair Name` against `Pair Label` for an injective `type alias Pair a = ( a, a )`.
+- **Observed** `dump --stage=types` says `f : number -> List Name` with `f` above `g` and `List
+  Label` with `g` above `f`; the two branch orders print `List Name` and `List Label`; `Maybe
+  Name`; `Pair Name`. The interface prints the same when the declarations are `pub`.
+- **Expected** `List String`, `Maybe String` and `Pair String` in every order: when two different
+  names meet anywhere in a type, written or inferred, the result shows the expansion; the same name
+  with the same arguments keeps it; an annotation still prints as written.
+- **Fixture** `check/good/AliasNamesInsideStructures.beni` (red `exit=0 iface-differs`),
+  `scenario/CK-202` (the recursive group in both orders) and `scenario/CK-202-branches` (both
+  branch orders), red `order-dependent`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-203 — An alias DAG whose uses differ in their arguments is expanded as a tree
+
+- **Severity** performance (and a false message). **Area** `Types.Builder.apply`: an alias is
+  expanded once per `(alias, argument roots)`, but every read of a body builds its applied types
+  afresh, so `A{i-1} (List a)` meets a new `List a` root each time and no pair repeats. **Class**
+  K11 (CK-171's DAG, with arguments). **Sources** the final review of the checker (2026-09-29).
+- **Program** `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1} (List a) )`,
+  `f : A{N} Int -> Int`; or `type Box = Box (A{N} Int)`; or `==` on two `A{N} Int`.
+- **Observed** (ReleaseFast) N = 20: 3.7 s and 2.3 GB for the annotation, 7.8 s and 3.4 GB for
+  `Box`; ×4 every two levels. `==` at N = 18 is NESTING TOO DEEP: "took more than 1048576 steps …
+  The types their method calls are made on nest deeper and deeper as I follow them" — the type is
+  finite and does not grow.
+- **Expected** each distinct type built once (about N²/2 of them), so the read is polynomial and
+  the check near the process floor; and the step-budget message says what is true of a finite
+  type too — that the types were too many or too large to follow — not that they keep growing.
+- **Fixture** `scenario/CK-203` (`test-pending-perf`, depth 16 / 32), red `slow`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-204 — A field of the wrong type is reported as a missing field
+
+- **Severity** diagnostic-quality (a false message). **Area** `Diagnostics.categoryLines`'
+  `field_access` lines, which assume the record lacks the field. **Class** K13. **Sources** the
+  final review of the checker (2026-09-29).
+- **Program** `f : { count : Int } -> String`, `f x = x.count`; the same through another
+  module's `pub type alias Counter = { count : Int, label : String }`.
+- **Observed** "This is not a record with a `count` field: It is: `{ count : Int }` But I need a
+  record like: `{ count : String }`" — the field is there.
+- **Expected** the message says the record has the field, shows the field's type, and the type
+  the code needs it to be.
+- **Fixture** `check/bad/RecordFieldType.beni`, red `why=message`;
+  `check/bad/RecordFieldTypeAcrossModules/`, red `why=message`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-205 — Two different types with one name print alike in one message
+
+- **Severity** diagnostic-quality (low). **Area** `Render.writeNamed` prints a type's bare name.
+  **Class** K13. **Sources** the final review of the checker (2026-09-29).
+- **Program** `Shapes` declares `pub type T` and `pub type alias Name = { n : Int }`; `Main`
+  declares its own `T` and `Name = { n : Bool }`, and passes each where `Shapes`'s is wanted.
+- **Observed** "This argument is: `T` But `f` needs the 1st argument to be: `T`", and the same for
+  `Name`.
+- **Expected** when two distinct types or aliases in one message share a name, both are qualified
+  by module: `Main.T` against `Shapes.T`.
+- **Fixture** `check/bad/SameNameTypesQualified/`, red `why=message`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-206 — A mismatch on a multiline string spans its first line only
+
+- **Severity** diagnostic-quality (low). **Area** `Session.tokenSpan`'s string-literal extent,
+  which CK-200 widened for a quoted literal and left alone for `\\` lines. **Class** K14.
+  **Sources** the final review of the checker (2026-09-29); CK-200's Status named it.
+- **Program** `label : Int`, `label =` a three-line `\\` literal.
+- **Observed** the TYPE MISMATCH spans `\\one`, the first line.
+- **Expected** it spans the whole literal, the first `\\` to the end of the last line.
+- **Fixture** `check/bad/MultilineStringMismatchSpan.beni`, red `why=diag`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-207 — A pinned derived `==` reached through a helper blames the wrong function
+
+- **Severity** diagnostic-quality (low; the program is refused either way). **Area**
+  `Instances.derivedNominal`'s pins: resolution runs eagerly, when the receiver's head is known,
+  and a pin unifies the use's argument even while it is still undetermined — before the argument
+  expression that decides it is read. **Class** K13. **Sources** the final review of the checker
+  (2026-09-29).
+- **Program** `H.eq : Holder Int, Holder Int -> Bool`; `type W a = W (H.Holder a)`; `mk : a -> W
+  a`; unannotated `same l r = l == r`; `same (mk "a") (mk "a")`.
+- **Observed** TYPE MISMATCH "`mk` needs the 1st argument to be: `Int`" — `mk` takes any type.
+  The direct `mk "a" == mk "a"` is NOT EQUATABLE naming the pinned payload.
+- **Expected** the pin is the refusal: NOT EQUATABLE at the use of `same`, "`W` has `==` only as
+  `W Int`", as the direct comparison says.
+- **Fixture** `check/bad/DerivedPinnedThroughHelper/`, red `why=code`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-208 — A refused dot-call `.eq` names `==`, which the program never wrote
+
+- **Severity** diagnostic-quality (low). **Area** the NOT EQUATABLE texts
+  (`DispatchTexts.notEquatable`), which name the operator whatever the use was. **Class** K13.
+  **Sources** the final review of the checker (2026-09-29); D15 made a dot-call derive.
+- **Program** `type F = F (Int -> Int)`; `(F f).eq (F f)`; `(\y -> y + 1).eq (\y -> y)`; `h x =
+  x.eq x` and `h (F f)`.
+- **Observed** "I cannot compare these values with `==`" at each.
+- **Expected** each names the dot-call it refuses, `.eq`.
+- **Fixture** `check/bad/DotCallEqRefusal.beni`, red `why=message`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
+### CK-209 — An unreadable `_manifest.txt` is reported as one beni did not write
+
+- **Severity** diagnostic-quality (low). **Area** `OutputRecord.read`, which answers
+  `unrecognised` for any read error but a missing file. **Class** K14. **Sources** the final
+  review of the checker (2026-09-29).
+- **Program** `build --out=out` with `out/_manifest.txt` at mode 000.
+- **Observed** UNKNOWN FILE IN THE OUTPUT DIRECTORY: "This file does not begin with
+  `beni-manifest 1` …" — which nobody could tell, the file being unreadable.
+- **Expected** the read failure, as for any file beni cannot read: "beni: cannot read
+  'out/_manifest.txt': AccessDenied", exit 2, nothing written.
+- **Fixture** `scenario/CK-209` (`test-pending`), red `exit=1 codes=unknown_output_record×1`.
+- **Slice** the final review's fixes.
+- **Status** open.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -5223,14 +5354,22 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-199 | performance | K11 | `scenario/CK-199` | fixed by resizing to a check and two builds, promoted into `cache_test.zig` |
 | CK-200 | diagnostic-quality | K14 | promoted: `check/bad/StringLiteralMismatchSpan.beni` | R15-fix-J (fixed, promoted) |
 | CK-201 | diagnostic-quality | K9 | `ordering_test.zig` "a derived eq whose pass is refused a nested check …" | R15-fix-J (found and fixed) |
+| CK-202 | nondeterminism | K12 | `check/good/AliasNamesInsideStructures.beni`, `scenario/CK-202`, `scenario/CK-202-branches` | the final review's fixes |
+| CK-203 | performance | K11 | `scenario/CK-203` | the final review's fixes |
+| CK-204 | diagnostic-quality | K13 | `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes |
+| CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
+| CK-206 | diagnostic-quality | K14 | `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes |
+| CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |
+| CK-208 | diagnostic-quality | K13 | `check/bad/DotCallEqRefusal.beni` | the final review's fixes |
+| CK-209 | diagnostic-quality | K14 | `scenario/CK-209` | the final review's fixes |
 
 Totals:
-- 189 entries (CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 197 entries (CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 34 (CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 23 (CK-194 from R15-fix-I; CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
 - valid-program-rejected: 32 (CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
-- nondeterminism: 5 (CK-196 from R15-fix-I; CK-179 from R15-fix-G; CK-132 among them, v1 only).
-- performance: 29 (CK-198 and CK-199 from the test budget; CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
-- diagnostic-quality: 40 (CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
+- nondeterminism: 6 (CK-202 from the final review; CK-196 from R15-fix-I; CK-179 from R15-fix-G; CK-132 among them, v1 only).
+- performance: 30 (CK-203 from the final review; CK-198 and CK-199 from the test budget; CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
+- diagnostic-quality: 46 (CK-204 to CK-209 from the final review; CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
 - latent: 27 (CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
-- Outside the checker (K14): 26 (CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
+- Outside the checker (K14): 28 (CK-206 and CK-209; CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).

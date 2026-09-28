@@ -1,0 +1,8 @@
+-- A module declaring a type and a record alias whose names `Main` declares
+-- too.
+pub type T
+    = T Int
+
+
+pub type alias Name =
+    { n : Int }

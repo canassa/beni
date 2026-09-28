@@ -1,0 +1,4 @@
+# The field exists: the message names it and its type, never "not a record
+# with a `count` field".
+type_mismatch 9:6 contains "`count` field" contains "Int" lacks "not a record with"
+type_mismatch 14:6 contains "`count` field" contains "Int" lacks "not a record with"

@@ -1,0 +1,4 @@
+# The pin is the refusal, at the use of `same` and at the direct `==`; no
+# message blames `mk`.
+not_equatable Main.beni:26:5 contains "`W` has `==` only as" contains "W Int" lacks "`mk`"
+not_equatable Main.beni:31:12 contains "`W` has `==` only as" contains "W Int"

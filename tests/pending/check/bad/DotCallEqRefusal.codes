@@ -1,0 +1,4 @@
+# Each refusal names the `.eq` the program wrote, and no `==`.
+not_equatable 17:18 contains "`.eq`" lacks "`==`"
+not_equatable 22:18 contains "`.eq`" lacks "`==`"
+not_equatable 27:5 contains "`.eq`" lacks "`==`"

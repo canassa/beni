@@ -1,0 +1,98 @@
+-- CK-202: two alias names meeting inside a structure show the expansion,
+-- whichever the program meets first ("agree or expand", checker-v2.md §7.1).
+-- `Name` and `Label` are both `String`. A recursive group's result meets
+-- `List Name` and `List Label`, an `if` meets them in either branch order,
+-- `Maybe Name` meets `Maybe String`, and `Pair Name` meets `Pair Label` (one
+-- injective alias, two argument names): every inferred type below is
+-- `String` inside, and the annotations still print as written. The unfixed
+-- checker keeps the first name it met: `f` and `g` are `List Name`, `pick` is
+-- `List Name` and `pickSwapped` `List Label`, `maybe` is `Maybe Name` and
+-- `pair` is `Pair Name`.
+pub type alias Name =
+    String
+
+
+pub type alias Label =
+    String
+
+
+pub type alias Pair a =
+    ( a, a )
+
+
+pub names : List Name
+names =
+    [ "x" ]
+
+
+pub labels : List Label
+labels =
+    [ "y" ]
+
+
+pub f n =
+    if n == 0 then
+        names
+
+    else
+        g (n - 1)
+
+
+pub g n =
+    if n == 0 then
+        labels
+
+    else
+        f (n - 1)
+
+
+pub pick c =
+    if c then
+        names
+
+    else
+        labels
+
+
+pub pickSwapped c =
+    if c then
+        labels
+
+    else
+        names
+
+
+named : Maybe Name
+named =
+    Just "n"
+
+
+plain : Maybe String
+plain =
+    Nothing
+
+
+pub maybe c =
+    if c then
+        named
+
+    else
+        plain
+
+
+twoNames : Pair Name
+twoNames =
+    ( "a", "b" )
+
+
+twoLabels : Pair Label
+twoLabels =
+    ( "c", "d" )
+
+
+pub pair c =
+    if c then
+        twoNames
+
+    else
+        twoLabels

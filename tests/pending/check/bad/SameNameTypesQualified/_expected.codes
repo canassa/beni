@@ -1,0 +1,3 @@
+# Each message names both types by module.
+type_mismatch Main.beni:23:8 contains "Main.T" contains "Shapes.T"
+type_mismatch Main.beni:38:7 contains "Main.Name" contains "Shapes.Name"

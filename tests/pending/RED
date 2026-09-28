@@ -67,3 +67,17 @@
 # a check, in cache_test.zig.
 # CK-200 (2026-09-28): a string literal's mismatch spanned its opening quote
 # alone; written on d90ab5f, fixed and promoted the same day.
+# CK-202 to CK-209 (2026-09-29), from the final review of the checker: alias
+# names inside structures, an alias DAG whose uses differ in their arguments,
+# and six diagnostic faults. Written and checked on b8b289a.
+tests/pending/check/good/AliasNamesInsideStructures.beni exit=0 iface-differs
+scenario/CK-202 order-dependent
+scenario/CK-202-branches order-dependent
+scenario/CK-203 slow
+tests/pending/check/bad/RecordFieldType.beni exit=1 codes=type_mismatch×2 why=message
+tests/pending/check/bad/RecordFieldTypeAcrossModules exit=1 codes=type_mismatch×1 why=message
+tests/pending/check/bad/SameNameTypesQualified exit=1 codes=type_mismatch×2 why=message
+tests/pending/check/bad/MultilineStringMismatchSpan.beni exit=1 codes=type_mismatch×1 why=diag
+tests/pending/check/bad/DerivedPinnedThroughHelper exit=1 codes=not_equatable×1,type_mismatch×1 why=code
+tests/pending/check/bad/DotCallEqRefusal.beni exit=1 codes=not_equatable×3 why=message
+scenario/CK-209 exit=1 codes=unknown_output_record×1

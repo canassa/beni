@@ -82,6 +82,13 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A scenario over the test budget (`over-budget`) is measured on the
     // ReleaseSafe binary the gates run, in the budget's unit, and goes back
     // into the file it came from once it fits.
+    // Alias names met inside a structure, in two declaration orders and in
+    // two branch orders; an alias DAG whose uses differ in their arguments
+    // (timed); and an unreadable `_manifest.txt` in `--out`.
+    .{ .name = "scenario/CK-202", .step = .fast },
+    .{ .name = "scenario/CK-202-branches", .step = .fast },
+    .{ .name = "scenario/CK-203", .step = .perf },
+    .{ .name = "scenario/CK-209", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -120,6 +127,84 @@ test "pending: RED names fixtures and scenarios that exist" {
         }
     }
     try testing.expectEqual(@as(usize, 0), stale);
+}
+
+// CK-202: `type alias Name = String`, `type alias Label = String`, `names :
+// List Name`, `labels : List Label`, and a recursive group `f` → `names`,
+// `g` → `labels`. The group's result meets `List Name` and `List Label`, so
+// it shows `List String` in every declaration order. Unfixed: `f : number ->
+// List Name` with `f` above `g`, `List Label` with `g` above `f`.
+test "CK-202: alias names inside a structure print the same in every declaration order" {
+    var s = try Scenario.init("CK-202");
+    defer s.deinit();
+    const f = "f n =\n    if n == 0 then\n        names\n\n    else\n        g (n - 1)\n\n\n";
+    const g = "g n =\n    if n == 0 then\n        labels\n\n    else\n        f (n - 1)\n\n\n";
+    try s.w.write("GF.beni", listNames ++ g ++ f);
+    try s.w.write("FG.beni", listNames ++ f ++ g);
+    try s.finish(try s.sameLine(&.{ "GF.beni", "FG.beni" }, "f", "f : number -> List String"));
+}
+
+// CK-202: the same two names met by an `if` in either branch order, `pick c =
+// if c then names else labels` and its twin with the branches swapped: both
+// are `Bool -> List String`. Unfixed: `List Name` and `List Label`.
+test "CK-202-branches: alias names inside a structure print the same in either branch order" {
+    var s = try Scenario.init("CK-202-branches");
+    defer s.deinit();
+    try s.w.write("NamesFirst.beni", listNames ++ "pick c =\n    if c then\n        names\n\n    else\n        labels\n");
+    try s.w.write("LabelsFirst.beni", listNames ++ "pick c =\n    if c then\n        labels\n\n    else\n        names\n");
+    try s.finish(try s.sameLine(&.{ "NamesFirst.beni", "LabelsFirst.beni" }, "pick", "pick : Bool -> List String"));
+}
+
+/// Two aliases of `String` and a list of each.
+const listNames = "type alias Name =\n    String\n\n\ntype alias Label =\n    String\n\n\nnames : List Name\nnames =\n    [ \"x\" ]\n\n\nlabels : List Label\nlabels =\n    [ \"y\" ]\n\n\n";
+
+// CK-203: an alias DAG whose uses differ in their arguments, `A0 a = Maybe
+// a`, `A{i} a = ( A{i-1} a, A{i-1} (List a) )`, read by one annotation `f :
+// A{n} Int -> Int`. Its distinct types are the `A{i} (List^k Int)`, about
+// n²/2 of them, but every body read built a fresh `List a`, so no
+// `(alias, argument roots)` pair repeated and the DAG was expanded as a tree:
+// 2^n. Unfixed (ReleaseSafe, CPU): depth 14 / 16 check in 0.24 / 0.93 s, and
+// depth 20 in 3.7 s ReleaseFast.
+test "CK-203: an alias DAG whose uses differ in their arguments is read in polynomial time" {
+    var s = try Scenario.init("CK-203");
+    defer s.deinit();
+    const n = 16;
+    try s.w.write("D16.beni", try argumentDag(s.arena(), n));
+    try s.w.write("D32.beni", try argumentDag(s.arena(), 2 * n));
+    try s.finish(try s.ratioOf(
+        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "D16.beni" },
+        &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "D32.beni" },
+        n,
+    ));
+}
+
+/// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
+/// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
+fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 a =\n    Maybe a\n\n\n");
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    ( A{d} a, A{d} (List a) )\n\n\n", .{ i, i - 1, i - 1 });
+    try out.print(arena, "f : A{d} Int -> Int\nf _ =\n    1\n", .{depth});
+    return out.items;
+}
+
+// CK-209: a `_manifest.txt` in `--out` that cannot be read (mode 000) is an
+// I/O failure, reported as one — "beni: cannot read 'out/_manifest.txt':
+// AccessDenied", exit 2, as an unreadable source is — and nothing is written.
+// Unfixed: UNKNOWN FILE IN THE OUTPUT DIRECTORY, "This file does not begin
+// with `beni-manifest 1`", which nobody can check, the file being unreadable.
+test "CK-209: an unreadable _manifest.txt in --out is reported as a read failure" {
+    var s = try Scenario.init("CK-209");
+    defer s.deinit();
+    try s.w.write("Main.beni", "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines [ \"x\" ]\n");
+    try s.w.write("out/_manifest.txt", "beni-manifest 1\n");
+    if (!try s.w.makeUnreadable("out/_manifest.txt")) return error.SkipZigTest;
+    const run = try s.w.runWith(&.{ "build", "--platform=node", "--out=out", "--diagnostics=json", "Main.beni" }, .{ .raw_diagnostics = true });
+    const expected = "beni: cannot read 'out/_manifest.txt': AccessDenied\n";
+    if (run.exit_code != 2 or !std.mem.eql(u8, run.stderr, expected)) return s.finish(try s.failed(run));
+    const left = try s.w.listFiles("out");
+    const nothing_written = left.len == 1 and std.mem.eql(u8, left[0], "_manifest.txt");
+    try s.finish(.{ .green = nothing_written, .signature = if (nothing_written) "" else "stale-files", .detail = "the read failure is reported" });
 }
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
@@ -285,6 +370,30 @@ const Scenario = struct {
         const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
         const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
+    }
+
+    /// Each of `files`' `dump --stage=types` prints the declaration `name`
+    /// as `expected`: `order-dependent` when two print it differently,
+    /// `stdout-differs` when they agree on another type.
+    fn sameLine(s: *Scenario, files: []const []const u8, name: []const u8, expected: []const u8) !Verdict {
+        const a = s.arena();
+        const lines = try a.alloc([]const u8, files.len);
+        const needle = try std.fmt.allocPrint(a, "\n  {s} : ", .{name});
+        for (files, lines) |file, *slot| {
+            const run = try s.w.runWith(&.{ "dump", "--stage=types", "--diagnostics=json", file }, .{ .raw_diagnostics = true });
+            if (run.exit_code != 0) return s.failed(run);
+            const at = std.mem.indexOf(u8, run.stdout, needle) orelse
+                return .{ .green = false, .signature = "stdout-differs", .detail = try std.fmt.allocPrint(a, "no `{s}` in the dump of {s}", .{ name, file }) };
+            const end = std.mem.indexOfScalarPos(u8, run.stdout, at + 1, '\n') orelse run.stdout.len;
+            slot.* = run.stdout[at + 3 .. end];
+        }
+        var detail: std.ArrayList(u8) = .empty;
+        for (files, lines, 0..) |file, line, i| try detail.print(a, "{s}{s}: `{s}`", .{ if (i == 0) "" else "; ", file, line });
+        for (lines[1..]) |line| {
+            if (!std.mem.eql(u8, line, lines[0])) return .{ .green = false, .signature = "order-dependent", .detail = detail.items };
+        }
+        const green = std.mem.eql(u8, lines[0], expected);
+        return .{ .green = green, .signature = if (green) "" else "stdout-differs", .detail = detail.items };
     }
 
     /// A run's stderr as the diagnostics array (a run passes

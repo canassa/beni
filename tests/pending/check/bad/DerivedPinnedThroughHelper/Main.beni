@@ -1,0 +1,31 @@
+-- `W a` derives its `==` from `H.Holder a`, whose `H.eq` takes `Holder Int`
+-- only, so `W` compares only as `W Int`. `same l r = l == r` compares two
+-- `W String`: that is NOT EQUATABLE at the use of `same`, naming the pinned
+-- payload, as `mk "a" == mk "a"` below is at its `==`. The unfixed checker
+-- pins `mk`'s argument to `Int` before the argument is read, and then says
+-- "`mk` needs the 1st argument to be `Int`" — blaming a function whose
+-- argument may be any type.
+import H
+
+
+type W a
+    = W (H.Holder a)
+
+
+mk : a -> W a
+mk x =
+    W (H.Holder x)
+
+
+same l r =
+    l == r
+
+
+helper : Bool
+helper =
+    same (mk "a") (mk "a")
+
+
+direct : Bool
+direct =
+    mk "a" == mk "a"

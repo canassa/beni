@@ -1,0 +1,12 @@
+-- CK-207: a derived `==` pinned to one payload type, reached through an
+-- unannotated helper, is refused as the pin, like the direct comparison.
+-- This module's `Holder` has an own `eq` written for one type of payload
+-- only, which pins any type deriving its `==` through it; `Main` compares
+-- two `W String` through a helper and directly.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder Int, Holder Int -> Bool
+eq (Holder a) (Holder b) =
+    a == b

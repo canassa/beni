@@ -1,0 +1,7 @@
+-- `Counter`'s `count` is an `Int`, and `f` returns it as a `String`.
+import Counter exposing (Counter)
+
+
+f : Counter -> String
+f c =
+    c.count
