@@ -46,6 +46,26 @@ the one code in the catalogue a development build cannot produce
 (`backend.md` §9's *`Debug` is refused, not pinned*). Its own
 `README.md` has the four assertions.
 
+`run/` builds every fixture twice, in development and with `--release
+--allow-debug`, and runs each build under Node — unless the fixture's
+`.run-hash` (`_expected.run-hash` in a project) says that exact build was
+already verified. A record holds one line per build, `<dev|release> <node
+version> <sha-256>`; the digest covers every file of the output tree (its
+path and bytes; `_manifest.txt` left out, since it only lists the others'
+hashes), the golden the build is compared with (`.expected`, or
+`.release-expected` for the release build when there is one) and the Node
+version. Any change to one of them makes the build run under Node again,
+exactly as it would with no record, and the gates say in one line how many
+did. `zig build test-run-hashes` (with `-Dcorpus`, `-Dquick`) runs the
+selected programs and rewrites their records with the builds whose output
+matched; a build that fails is reported and left without a line. Regenerate
+after a change to what the compiler emits (the emitter, the runtime,
+`core/`), after adding or re-blessing a `run/` fixture, or after a Node
+upgrade, and commit the records with the change; on a merge conflict in
+them, take either side and regenerate. The code is
+`tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
+show a recorded build skipped, a changed one run, and a mismatch refused.
+
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).
 

@@ -321,6 +321,21 @@ fixture, tool, harness overhead and repeated commands — into
 one full gates run, so it is not a tier; unset, the recording costs nothing.
 Read CPU time, not wall: under load only CPU time is stable.
 
+**`run/` runs Node only on JavaScript it has not verified.** Each
+`tests/corpus/run/` fixture carries a `.run-hash` (`_expected.run-hash` in a
+project): per build, dev and release, a SHA-256 of the whole emitted output
+tree, the golden and the Node version, written only after that JavaScript ran
+and matched (`tests/blackbox/run_hash.zig`). The walker always builds; when
+the digest is listed it skips Node, and otherwise runs it exactly as before,
+so a change to emitted code is never unverified. The gates print one line
+when builds ran for want of a hash — never a failure. After a change to the
+emitter, the runtime, `core/` or a `run/` golden, or a Node upgrade, run
+`zig build test-run-hashes` (takes `-Dcorpus` and `-Dquick`) and commit the
+rewritten `.run-hash` files with the change: it runs every selected program
+and records a hash only for a build whose output matched, so a mismatch is
+reported and gets none. On a merge conflict in `.run-hash` files, take
+either side and regenerate.
+
 The black-box suites run the compiler built ReleaseSafe: every invariant
 check in `src/` is gated on `std.debug.runtime_safety`, never on
 `builtin.mode == .Debug`, so it runs there as it does in Debug. It carries no

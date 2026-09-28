@@ -59,6 +59,16 @@
 //! `BENI_CORPUS_ONLY=<substring>` (`zig build … -Dcorpus=<substring>`) runs
 //! only the fixtures whose repo-relative path contains it, in either mode;
 //! one that matches no fixture at all is a failure.
+//!
+//! A `run/` fixture may carry a `.run-hash` (`run_hash.zig`): a digest of
+//! the emitted output tree, the golden and the Node version, per build,
+//! recorded when that JavaScript ran and matched. A build whose digest is
+//! listed there is not run under Node again; any other build is run exactly
+//! as without the record. `BENI_RUN_HASHES=record` (`zig build
+//! test-run-hashes`) walks `run/` alone, runs every program, and rewrites
+//! each record with the builds that matched. `BENI_RUN_HASH_REPORT=<dir>`
+//! makes each process write its `run/` counts there — how many programs ran
+//! for want of a record — which the build prints as one line.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -67,6 +77,7 @@ const World = world.World;
 const Io = std.Io;
 const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
+const run_hash = @import("run_hash.zig");
 
 /// The root every `Kind` directory is joined onto unless
 /// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
@@ -290,6 +301,13 @@ fn walk(kind: Kind) !void {
     const cfg = try Config.read(arena);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
+    // Recording run hashes is about `run/` alone.
+    if (cfg.run_hashes == .record and kind != .run) return;
+    // Written whatever the cases say, so the build's summary never reads
+    // counts left over from an earlier run.
+    defer if (kind == .run) if (cfg.report_dir) |dir| run_counts.report(arena, dir, cfg.part) catch |err| {
+        std.debug.print("BENI_RUN_HASH_REPORT: cannot write into {s}: {t}\n", .{ dir, err });
+    };
     quiet = cfg.mode != .strict and !cfg.verbose;
     world.announce_timeouts = !quiet;
     defer world.announce_timeouts = true;
@@ -493,6 +511,19 @@ const Config = struct {
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture, pending mode only.
     red: []const world.pending.RedLine,
+    /// `BENI_RUN_HASHES`: what `run/` does with its `.run-hash` records.
+    run_hashes: RunHashes,
+    /// `BENI_RUN_HASH_REPORT`: the directory this process writes its
+    /// `run/` counts into (`RunCounts.report`), or null for none.
+    report_dir: ?[]const u8,
+
+    const RunHashes = enum {
+        /// Unset: a build whose digest is recorded is not run under Node.
+        check,
+        /// `record`: only `run/` is walked, every program runs, and each
+        /// record is rewritten with the builds that matched their golden.
+        record,
+    };
 
     const Mode = enum {
         /// Unset: every fixture must pass (today's behaviour).
@@ -534,7 +565,22 @@ const Config = struct {
             std.debug.print("BENI_CORPUS_PART is refused in pending mode: rule (d) compares whole fixtures\n", .{});
             return error.BadCorpusPart;
         }
+        const run_hashes: RunHashes = if (envOr(arena, "BENI_RUN_HASHES")) |text|
+            std.meta.stringToEnum(RunHashes, text) orelse {
+                std.debug.print("BENI_RUN_HASHES must be `record` (or unset), not `{s}`\n", .{text});
+                return error.BadRunHashes;
+            }
+        else
+            .check;
+        // Pending mode never records: its goldens are the CORRECT output,
+        // written by hand, and the binary under test is known to be wrong.
+        if (run_hashes == .record and mode == .pending) {
+            std.debug.print("BENI_RUN_HASHES=record is refused in pending mode\n", .{});
+            return error.BadRunHashes;
+        }
         var cfg: Config = .{
+            .run_hashes = run_hashes,
+            .report_dir = envOr(arena, "BENI_RUN_HASH_REPORT"),
             .root = std.mem.trimEnd(u8, root, "/"),
             .part = part,
             .only = envOr(arena, "BENI_CORPUS_ONLY"),
@@ -567,6 +613,39 @@ fn envOr(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
     const value = testing.environ.getAlloc(arena, name) catch return null;
     return if (value.len == 0) null else value;
 }
+
+/// What this process's `run/` builds did with their `.run-hash` records,
+/// summed over every worker.
+const RunCounts = struct {
+    /// Not run: the digest was recorded.
+    skipped: std.atomic.Value(u32) = .init(0),
+    /// Run under Node because the digest was not recorded.
+    stale: std.atomic.Value(u32) = .init(0),
+    /// Recording mode: builds whose line was written.
+    recorded: std.atomic.Value(u32) = .init(0),
+    /// Recording mode: builds that failed, so nothing was written for them.
+    refused: std.atomic.Value(u32) = .init(0),
+
+    fn add(counter: *std.atomic.Value(u32)) void {
+        _ = counter.fetchAdd(1, .monotonic);
+    }
+
+    /// Write `<dir>/<part>.txt` (`all.txt` without a part), one
+    /// `<counter> <value>` line each, for `tests/run_hash_summary.zig`.
+    fn report(counts: *const RunCounts, arena: std.mem.Allocator, dir: []const u8, part: ?Part) !void {
+        const io = testing.io;
+        try Io.Dir.cwd().createDirPath(io, dir);
+        const path = try std.fmt.allocPrint(arena, "{s}/{s}.txt", .{ dir, if (part) |p| @tagName(p) else "all" });
+        const text = try std.fmt.allocPrint(arena, "skipped {d}\nstale {d}\nrecorded {d}\nrefused {d}\n", .{
+            counts.skipped.load(.monotonic),
+            counts.stale.load(.monotonic),
+            counts.recorded.load(.monotonic),
+            counts.refused.load(.monotonic),
+        });
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = text });
+    }
+};
+var run_counts: RunCounts = .{};
 
 /// Pending mode prints one line per fixture and keep the detail
 /// of each failure to themselves, so `Case` writes its detail through
@@ -1331,6 +1410,14 @@ const Case = struct {
     /// because a fixture can reach `Debug` through a module it imports and
     /// no grep over its own text would know. That the refusal itself works
     /// is `build/bad-release/`'s, where no flag is passed.
+    ///
+    /// **A build is run under Node only when its run hash is not
+    /// recorded** (`run_hash.zig`). Both builds happen every time and must
+    /// be clean; then the digest of the output tree, the golden and the
+    /// Node version is looked up in the fixture's `.run-hash`, and a listed
+    /// digest means Node already ran exactly this JavaScript and it printed
+    /// exactly this golden. Anything else — a changed emitter, runtime or
+    /// golden, another Node — runs the program as if there were no record.
     fn runProgram(c: Case) !void {
         var sources: std.ArrayList([]const u8) = .empty;
         if (c.fixture.project) {
@@ -1362,30 +1449,64 @@ const Case = struct {
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
         try dev.appendSlice(c.arena, sources.items);
+        // The fixture's run hashes (`run_hash.zig`): read to skip a build
+        // already verified, or — recording — rewritten below with the
+        // builds that verify now.
+        const record_path = try c.goldenPath(run_hash.ext);
+        const recording = c.cfg.run_hashes == .record;
+        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
+        var verified: [2]?[]const u8 = .{ null, null };
+        // Recording runs both builds whatever the first did, so one failing
+        // build does not cost the other its line.
+        var first_error: ?anyerror = null;
+
         // Each pass runs in the process of its part (`corpus_parts.zig`):
         // the two build to different `--out` directories and compare with
         // their own golden, so neither reads anything the other wrote.
-        if (c.cfg.runs(Kind.run.partOf(.dev))) try c.runOnce("out", dev.items, "expected", c.bless);
-        if (!c.cfg.runs(Kind.run.partOf(.release))) return;
-        // The release pass never blesses `expected`: it is the DEV pass's
-        // golden and a release build that disagrees with it is the finding
-        // this pass exists to make. A fixture that is allowed to differ says
-        // so by carrying its own `.release-expected`, which does bless.
-        const separate = c.goldenExists("release-expected");
-        var release: std.ArrayList([]const u8) = .empty;
-        try release.appendSlice(c.arena, &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release" });
-        if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
-        try release.appendSlice(c.arena, sources.items);
-        try c.runOnce(
-            "release",
-            release.items,
-            if (separate) "release-expected" else "expected",
-            c.bless and separate,
-        );
+        if (c.cfg.runs(Kind.run.partOf(.dev))) {
+            verified[0] = c.runOnce("out", .dev, dev.items, "expected", c.bless, record) catch |err| blk: {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                first_error = err;
+                break :blk null;
+            };
+        }
+        if (c.cfg.runs(Kind.run.partOf(.release))) release: {
+            // The release pass never blesses `expected`: it is the DEV pass's
+            // golden and a release build that disagrees with it is the finding
+            // this pass exists to make. A fixture that is allowed to differ says
+            // so by carrying its own `.release-expected`, which does bless.
+            const separate = c.goldenExists("release-expected");
+            var release: std.ArrayList([]const u8) = .empty;
+            try release.appendSlice(c.arena, &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release" });
+            if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
+            try release.appendSlice(c.arena, sources.items);
+            verified[1] = c.runOnce(
+                "release",
+                .release,
+                release.items,
+                if (separate) "release-expected" else "expected",
+                c.bless and separate,
+                record,
+            ) catch |err| {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
+                break :release;
+            };
+        }
+        if (recording) {
+            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
+            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
+        }
+        if (first_error) |err| return err;
     }
 
-    /// One build-and-run of a `run/` fixture, against `golden`.
-    fn runOnce(c: Case, out_dir: []const u8, args: []const []const u8, golden: []const u8, bless: bool) !void {
+    /// One build-and-run of a `run/` fixture, against `golden`. Node is not
+    /// run when `record` (the fixture's `.run-hash`) lists this build's
+    /// line. Recording, it returns the line of a build that Node ran and
+    /// that matched; otherwise null.
+    fn runOnce(c: Case, out_dir: []const u8, pass: RunPass, args: []const []const u8, golden: []const u8, bless: bool, record: []const u8) !?[]const u8 {
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
@@ -1398,6 +1519,22 @@ const Case = struct {
             because("[{s}] diagnostics on a build that must be clean: {s}", .{ out_dir, summarize(c.arena, built.stderr) });
             classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.GoodFixtureHasDiagnostics;
+        }
+
+        // Skip Node when this exact output tree, golden and Node were
+        // verified together before. Pending mode has no records, and a
+        // blessing run exists to look at the output.
+        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless) {
+            if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
+                const line = try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, bytes);
+                if (run_hash.listed(record, line)) {
+                    RunCounts.add(&run_counts.skipped);
+                    return null;
+                }
+                RunCounts.add(&run_counts.stale);
+            } else |_| {
+                // No golden: the comparison below reports it.
+            }
         }
 
         const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out_dir});
@@ -1418,6 +1555,9 @@ const Case = struct {
             classify("{s}: exit=0 stdout-differs", .{passName(out_dir)});
             return err;
         };
+        // Verified: the golden now holds exactly what the program printed.
+        if (c.cfg.run_hashes != .record) return null;
+        return try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout);
     }
 
     /// Compile the fixture for the Node platform and golden the module it

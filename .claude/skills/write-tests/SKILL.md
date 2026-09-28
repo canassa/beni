@@ -164,6 +164,17 @@ Fixtures are one idea each and as small as the idea allows. Put the intent in a
 comment in the fixture itself. A `bad/` fixture without a `.diag` file is a
 failure, not a pass — that is the Elm gap, mechanically closed.
 
+**Run hashes.** A `run/` fixture also carries a `.run-hash`: per build (dev,
+release), a SHA-256 of the whole emitted output tree, the golden and the Node
+version, recorded only after that JavaScript ran and matched. The gates skip
+Node for a build whose digest is listed and run it otherwise, so they verify
+every change whether or not the hashes are current; stale ones only cost
+Node runs, reported as one line. After an emitter, runtime or `core/` change,
+a new or re-blessed `run/` fixture, or a Node upgrade, run `zig build
+test-run-hashes` (with `-Dcorpus=run/MyFixture` for one, `-Dquick` while
+iterating) and commit the rewritten files. It never records a hash for a
+build whose output does not match — that build is reported and gets none.
+
 ## Golden output: narrow, normalized, blessable
 
 Goldens are for codegen *shape* claims that running the program cannot observe:

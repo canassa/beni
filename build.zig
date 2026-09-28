@@ -26,6 +26,11 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
+//! And the corpus's run hashes, not a gate either:
+//!   zig build test-run-hashes     run every tests/corpus/run/ program under
+//!                                 Node and record a hash of each output that
+//!                                 matched (`tests/blackbox/run_hash.zig`);
+//!                                 takes -Dcorpus and -Dquick
 //! And where the test time goes, not a gate either:
 //!   zig build test-time-report    run `gates` (or `-Dtime-step=<step>`) with
 //!                                 every test process timed, and write the
@@ -267,12 +272,50 @@ pub fn build(b: *std.Build) void {
     // cannot turn the gate into something else; only the part differs per
     // process. The one knob the build line sets is `BENI_CORPUS_ONLY`, from
     // `-Dcorpus`, which `gates` refuses.
+    //
+    // `run/` skips Node for a build whose output tree carries a recorded run
+    // hash (`tests/blackbox/run_hash.zig`); each part writes its counts into
+    // a directory of this build's own, and `run-hash-summary` prints them as
+    // one line once every part is done — straight to the terminal, because a
+    // passing test that writes to stderr reads as a failed command.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
+    const summary_exe = b.addExecutable(.{
+        .name = "run-hash-summary",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/run_hash_summary.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const counts_dir = b.getInstallPath(.prefix, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
+    const corpus_summary = runHashSummary(b, summary_exe, counts_dir);
     for (std.enums.values(corpus_parts.Part)) |part| {
-        corpus_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
+        corpus_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = counts_dir }).step);
     }
+    corpus_step.dependOn(&corpus_summary.step);
     blackbox_step.dependOn(corpus_step);
+
+    // Record the run hashes: every `run/` program runs under Node, and each
+    // fixture's `.run-hash` is rewritten with the builds that matched their
+    // golden. One process for both builds of a fixture, so one worker writes
+    // each record. Takes `-Dcorpus` and `-Dquick`; not a gate.
+    const record_summary = runHashSummary(b, summary_exe, b.fmt("{s}-record", .{counts_dir}));
+    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = b.fmt("{s}-record", .{counts_dir}) }).step);
+    b.step("test-run-hashes", "Run every tests/corpus/run/ program under Node and record the hash of each output that matched").dependOn(&record_summary.step);
+
+    // The run hashes' own scenarios drive the corpus walker as a program,
+    // on a corpus of their own, so they need its binary installed.
+    {
+        const install = b.addInstallArtifact(corpus_test, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
+        const file = "tests/blackbox/run_hash_test.zig";
+        const step = bb.fileStep(file);
+        const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
+        run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
+        run.step.dependOn(&install.step);
+        step.dependOn(&run.step);
+        blackbox_step.dependOn(step);
+    }
 
     // ---- Pending fixtures (plans/checker-rewrite.md §2). ----
     // The red fixtures of `plans/checker-findings.md`, run by the corpus
@@ -472,6 +515,15 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(test_step);
     gates_step.dependOn(blackbox_step);
     gates_step.dependOn(fmt_step);
+}
+
+/// `run-hash-summary <dir>`, printing to the terminal.
+fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8) *std.Build.Step.Run {
+    const run = b.addRunArtifact(exe);
+    run.addArg(dir);
+    run.stdio = .inherit;
+    run.has_side_effects = true;
+    return run;
 }
 
 /// The options of this build that a child `zig build` needs to build and run
@@ -896,6 +948,10 @@ const HarnessEnvironment = struct {
     /// The compiler under test: the ReleaseSafe one unless a timing step
     /// names the ReleaseFast one.
     exe: enum { safe, fast } = .safe,
+    /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
+    /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
+    run_hashes: []const u8 = "",
+    report_dir: []const u8 = "",
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -968,6 +1024,8 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
+        r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
+        r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,
             .fast => perf_bin_dir,
