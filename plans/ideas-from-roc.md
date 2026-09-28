@@ -95,6 +95,45 @@ not on its own.
 **Open questions.** Does JSX's attribute vocabulary, declared by the platform package, already
 cover the need? What does a default look like in the type, and in an interface?
 
+## 6. `?` across different error types
+
+**What.** Let `?` chain steps that fail with *different* error types, without mapping each error
+by hand first.
+
+**In Roc.** `?` works on open tag unions: each step contributes its own error tags, and the
+function's error type is inferred as their union.
+
+**Why for beni.** beni has `?`, but every step must share one error type, so composing a parser, a
+file read and a validation means writing `Result.mapError` at each step and declaring a wrapper
+type by hand. This is the everyday pattern in effectful code, and it becomes more common once the
+effects work lands. The owner considers it probably worth adding (2026-09-28).
+
+**Shape.** Open tag unions are the big hammer and are not proposed (see below). Cheaper designs to
+evaluate: a declared error type with conversions from each step's error (the way Rust's `?` calls
+`From`), found by static dispatch on the error type; or inferring an anonymous sum of the steps'
+error types that the user may name later. Whatever is chosen must keep exhaustive matching on the
+combined error and good messages when a step's error cannot be converted.
+
+**Open questions.** Is a conversion method (`e.into ()`-style) enough, or does the combined type
+need to be inferred? How does it interact with the effects proposal's error channel?
+
+## 7. List-rest patterns
+
+**What.** Patterns that match the start of a list and bind the rest in one go, such as
+`[ first, second, ..rest ]` or `[ .., last ]`.
+
+**In Roc.** List patterns with a rest part, and exhaustiveness that understands them.
+
+**Why for beni.** Elm offers only `x :: rest` and `[ a, b ]`, so matching "at least two elements"
+or "the last element" means nested cases or helper functions. Rest patterns read better, and
+arrays in JavaScript make "the last element" cheap if the list representation allows it.
+
+**Shape.** Grammar, typing, exhaustiveness (the matrix gains length-based constructors: "exactly
+n" and "at least n"), and codegen. The cost of `..rest` depends on how lists are represented at
+runtime, so the backend's list representation must be settled first.
+
+**Open questions.** Prefix only, or suffix too? Does `..rest` copy, or share structure?
+
 ## Looked at and not proposed
 
 - **Mutable variables, loops, early return.** beni is a pure Elm-like language; `?` already
