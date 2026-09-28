@@ -75,15 +75,16 @@ fn writeShapes(w: *World) !void {
     }
 }
 
-/// Run `args` plain and with `--roundtrip-interfaces`, at `--jobs=1` and
-/// `--jobs=8`, and require all four runs to agree on exit code, stdout and
+/// Run `args` plain at `--jobs=1` and with `--roundtrip-interfaces` at
+/// `--jobs=8`, and require the two runs to agree on exit code, stdout and
 /// stderr. Returns the plain `--jobs=1` result so the caller can go on to
 /// assert something about its CONTENT.
 fn expectSameThroughTheFormat(w: *World, args: []const []const u8, arena: std.mem.Allocator) !world.Result {
-    const variants = [4][2][]const u8{
+    // One thread without the round trip against eight threads with it: a
+    // difference from either shows, and whether a run is deterministic
+    // across `--jobs` on its own is the determinism test's question.
+    const variants = [2][2][]const u8{
         .{ "--jobs=1", "--jobs=1" },
-        .{ "--jobs=8", "--jobs=8" },
-        .{ "--jobs=1", "--roundtrip-interfaces" },
         .{ "--jobs=8", "--roundtrip-interfaces" },
     };
     var first: ?world.Result = null;
