@@ -1,0 +1,15 @@
+-- CK-178: a payload type with a reported error poisons the derived `==` of
+-- the schema that holds it; it does not refuse it. `Int Int Int` is WRONG
+-- TYPE ARITY, and the payload's type is then `err`. At 8a68e12 the derived
+-- context's pass answered `absent_other` for a payload wanted that was
+-- POISONED, so `c == c` is also NOT EQUATABLE, with "a function anywhere
+-- inside it" — there is none. The same payload in a `type` is one message.
+-- Expected: the arity error alone.
+schema Shape tagged "kind" of
+    Circle as "circle"
+        v : Int Int Int
+
+
+same : Shape.Type -> Bool
+same c =
+    c == c

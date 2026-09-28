@@ -1,0 +1,65 @@
+-- CK-175: two uses of an alias that drops a parameter are one type when
+-- their expansions are, whatever their arguments and whatever order the
+-- declarations are checked in. `Tagged String` and `Tagged Bool` are both
+-- `Int`. At 8a68e12 `Unify.throughAlias` unified two same-named aliases by
+-- their ARGUMENTS, so `String` met `Bool`: `[ a, b ]` and `retag`'s body are
+-- TYPE MISMATCH, and `[ f 1, b ]` is refused with `f` above `g` and accepted
+-- with the two swapped (`f`'s result absorbs `Tagged String` or `Int`,
+-- whichever its group meets first; checker-v2.md I9). Expected: it builds
+-- and prints 3, 2, 1, 2 and 1 in every order (ordering_test.zig's PERM).
+-- Oracle twin: every `Tagged …` written `Int` prints the same.
+import Node exposing (Program)
+import String
+
+
+type alias Tagged t =
+    Int
+
+
+a : Tagged String
+a =
+    1
+
+
+b : Tagged Bool
+b =
+    2
+
+
+c : Int
+c =
+    3
+
+
+f n =
+    if n == 0 then
+        a
+
+    else
+        g (n - 1)
+
+
+g n =
+    if n == 0 then
+        c
+
+    else
+        f (n - 1)
+
+
+retag : Tagged x -> Tagged y
+retag x =
+    x
+
+
+k =
+    [ f 1, b ]
+
+
+both =
+    [ a, b ]
+
+
+main : Program
+main =
+    Node.printLines (List.map (k ++ both ++ [ retag a ]) String.fromInt)

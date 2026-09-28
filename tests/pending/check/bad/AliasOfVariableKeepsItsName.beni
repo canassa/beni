@@ -1,0 +1,24 @@
+-- CK-176: a message prints an alias of a type variable by the name the
+-- annotation wrote. `Id b` is `b`, and `bad`'s annotation says `Id b`; `f5`'s
+-- parameter is `Id a`. Before R15-fix-C both messages said `Id b` and
+-- `Id a`. At 8a68e12 (a regression from R15-fix-C) they say `b` and `a`: a
+-- flex meeting an alias whose expansion is a variable meets the expansion
+-- instead (`Unify.throughAlias`), so the declaration's result and parameter
+-- variables lose the name. Expected: the names, and the rigid hint naming
+-- the annotation's variable (`b`, then `a`) looked for through the alias.
+type alias Id a =
+    a
+
+
+type alias Name =
+    String
+
+
+bad : a -> Id b
+bad x =
+    x
+
+
+f5 : Id a -> Name
+f5 x =
+    x

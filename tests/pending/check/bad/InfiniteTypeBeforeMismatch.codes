@@ -1,0 +1,3 @@
+# CK-177: the cycle wins over the mismatch it causes. The column is open:
+# the fixing slice decides whether the unification or the binder carries it.
+infinite_type 10:* contains "= ( a, a )" lacks "…"

@@ -36,3 +36,11 @@ scenario/CK-144 superlinear
 # R15-fix-F (2026-09-28) fixed and promoted CK-163 (into build_test.zig),
 # CK-164 and CK-165 (into perf_test.zig), CK-166 and CK-167 (into
 # abuse_test.zig).
+# R15-fix-G (2026-09-28): R15-fix-E's review found CK-175 to CK-178 (an
+# alias that drops a parameter unified by its arguments; an alias of a
+# variable lost from a message; a cycle printed as a mismatch; a payload's
+# `err` refusing a derived `==`). Written and checked on 8a68e12.
+tests/pending/run/PhantomAliasUnifiesByExpansion.beni dev: exit=1 codes=type_mismatch×3
+tests/pending/check/bad/AliasOfVariableKeepsItsName.beni exit=1 codes=rigid_mismatch×2 why=message
+tests/pending/check/bad/InfiniteTypeBeforeMismatch.beni exit=1 codes=type_mismatch×1 why=code
+tests/pending/check/bad/SchemaPayloadArityNoCascade.beni exit=1 codes=not_equatable×1,wrong_type_arity×1 why=code
