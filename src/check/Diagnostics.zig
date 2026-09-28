@@ -146,6 +146,30 @@ pub const Reporter = struct {
         defer namer.deinit();
         const w = &out.writer;
 
+        // A field access whose record HAS the field: the field's type is
+        // what failed, so the message shows it against the type the code
+        // needs, rather than saying the record lacks the field.
+        if (category.tag == .field_access and category.index != Category.no_field) {
+            const name: InternPool.Symbol = @enumFromInt(category.index);
+            if (recordField(r.env.store, actual, name)) |found| if (recordField(r.env.store, expected, name)) |wanted| {
+                const text = r.fieldText(category.index);
+                w.print("This record has {s} `{s}` field, but not of the type I need:\n\n", .{ article(text), text }) catch return error.OutOfMemory;
+                w.print("The `{s}` field is:\n\n    ", .{text}) catch return error.OutOfMemory;
+                Render.writeVar(w, r.cx(), &namer, found, .top) catch return error.OutOfMemory;
+                w.writeAll("\n\nBut I need it to be:\n\n    ") catch return error.OutOfMemory;
+                Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
+                w.writeByte('\n') catch return error.OutOfMemory;
+                if (rigid) |rg| {
+                    try r.rigidHint(w, &namer, rg);
+                    try r.emit(.rigid_mismatch, region, &out);
+                    return;
+                }
+                try r.typeHint(w, &namer, .{ .tag = .general }, wanted, found);
+                try r.emit(.type_mismatch, region, &out);
+                return;
+            };
+        }
+
         const lines = r.categoryLines(category, region);
         w.print("{s}\n\n", .{lines.intro}) catch return error.OutOfMemory;
         w.print("{s}\n\n    ", .{lines.found}) catch return error.OutOfMemory;
@@ -1315,6 +1339,27 @@ fn calleeReference(scratch: Allocator, callee: Callee) []const u8 {
 fn plural(scratch: Allocator, n: u32, comptime noun: []const u8) []const u8 {
     if (n == 1) return "1 " ++ noun;
     return std.fmt.allocPrint(scratch, "{d} " ++ noun ++ "s", .{n}) catch "several " ++ noun ++ "s";
+}
+
+/// The type record `v` gives field `name`, looking through aliases and
+/// along its extension chain, or null when `v` is no record or has no such
+/// field. The chain is bounded as the printer's is, and a cycle ends it.
+fn recordField(store: *TypeStore, v: Var, name: InternPool.Symbol) ?Var {
+    var at = v;
+    var links: u32 = 0;
+    while (links < 64) : (links += 1) {
+        switch (store.resolvedContent(at)) {
+            .structure => |s| switch (s) {
+                .record => |rec| {
+                    for (store.fields(rec.fields)) |f| if (f.name == name) return f.value;
+                    at = rec.ext;
+                },
+                else => return null,
+            },
+            else => return null,
+        }
+    }
+    return null;
 }
 
 /// "a" or "an" before a backticked name (checker.md §8.7): "an" when

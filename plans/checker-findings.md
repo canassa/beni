@@ -5104,7 +5104,12 @@ with a red fixture on `b8b289a` before its fix.*
 - **Fixture** `check/bad/RecordFieldType.beni`, red `why=message`;
   `check/bad/RecordFieldTypeAcrossModules/`, red `why=message`.
 - **Slice** the final review's fixes.
-- **Status** open.
+- **Status** fixed (2026-09-29): `Diagnostics.Reporter.mismatch` looks the field up in both
+  records (through aliases and extension chains, `recordField`) and, when the found record has
+  it, says "This record has a `count` field, but not of the type I need", shows the field's type
+  against the needed one, and takes its hint from those two types. A record that lacks the field
+  keeps `missing_field`, and a value that is no record the old lines. No other golden changed.
+  Promoted: `tests/corpus/check/bad/RecordFieldType.beni`, `…/RecordFieldTypeAcrossModules/`.
 
 ### CK-205 — Two different types with one name print alike in one message
 
@@ -5377,7 +5382,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-201 | diagnostic-quality | K9 | `ordering_test.zig` "a derived eq whose pass is refused a nested check …" | R15-fix-J (found and fixed) |
 | CK-202 | nondeterminism | K12 | promoted: `check/good/AliasNamesInsideStructures.beni`; `ordering_test.zig` (two tests) | the final review's fixes (fixed) |
 | CK-203 | performance | K11 | promoted: `perf_test.zig` "an annotation over an alias DAG whose uses differ …" | the final review's fixes (fixed) |
-| CK-204 | diagnostic-quality | K13 | `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes |
+| CK-204 | diagnostic-quality | K13 | promoted: `check/bad/RecordFieldType.beni`, `check/bad/RecordFieldTypeAcrossModules/` | the final review's fixes (fixed) |
 | CK-205 | diagnostic-quality | K13 | `check/bad/SameNameTypesQualified/` | the final review's fixes |
 | CK-206 | diagnostic-quality | K14 | `check/bad/MultilineStringMismatchSpan.beni` | the final review's fixes |
 | CK-207 | diagnostic-quality | K13 | `check/bad/DerivedPinnedThroughHelper/` | the final review's fixes |

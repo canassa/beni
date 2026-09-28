@@ -1,9 +1,8 @@
--- CK-204: a field access whose field EXISTS but has another type than the
+-- check/bad: a field access whose field EXISTS but has another type than the
 -- one the code needs says so: the record has a `count` field, an `Int`, and
 -- `f` returns it as a `String`; `g` reads the same field of an extensible
 -- record. The message names the field and shows its type against the needed
--- one. The unfixed checker says "This is not a record with a `count` field"
--- and shows the two whole records.
+-- one, never "This is not a record with a `count` field".
 f : { count : Int } -> String
 f x =
     x.count

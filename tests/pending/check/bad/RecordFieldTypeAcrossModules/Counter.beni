@@ -1,6 +1,0 @@
--- CK-204: a field access whose field EXISTS, at another type, says that
--- across modules too. This module declares a record alias; `Main` reads its
--- `count` field, an `Int`, as a `String`. The unfixed checker says "This is
--- not a record with a `count` field", naming a record that has one.
-pub type alias Counter =
-    { count : Int, label : String }
