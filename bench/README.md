@@ -25,7 +25,26 @@ was saturating the four cores and read 784 ms where the real number was
 binary built from the commit before (the lexer's three review fixes, already in). The parser,
 formatter and BIR lowering now read markup (`frontend.md` §9.4–§9.7).
 
-**Markup-free parsing does not regress; markup-free lexing moved, and not because of the lexer.**
+**Markup-free parsing and lexing do not regress.** *Corrected the same day, after the change's
+review:* this entry first said lexing lost 4–5 % to code placement. A second measurement does not
+reproduce it. Same binaries' sources (the commit before and the change), ReleaseFast, `perf stat -e
+instructions:u,cycles:u`, each run pinned with `taskset -c 7`, the two binaries interleaved run by
+run, 7 rounds, and per iteration taken as the `--iterations=40` run minus the `--iterations=10`
+run, over 30, so reading and generating the corpus cancel (load average 15–21 on 32 threads, so
+cycles are noisy and instructions are the anchor):
+
+| `--phases=lex` | instructions before | after | cycles before, median (range) | after |
+|---|---:|---:|---:|---:|
+| `--generate=100000` | 73 772 645 | 73 772 990 | 29.63 M (27.8–30.8) | 29.60 M (28.0–31.2) |
+| `bench/corpus` | 2 521 188 | 2 521 244 | 1.064 M (1.054–1.262) | 1.080 M (1.066–1.107) |
+
+The lexer retires the same instructions (+345 and +56 in 74 M and 2.5 M), and the cycles differ
+by −0.1 % and +1.5 % at the median, −3.0 % to +1.9 % run against run, inside the spread; the
+review measured 0.3–1.2 % the same way. Nor does the commit before retire the 73 757 528
+instructions the first table below gives it: built from its own tree it retires 73 772 645, as the
+change does, so that row was not the commit before and the loss it showed was not the change's.
+The original text follows.
+
 Medians (MB/s):
 
 | corpus | lex before | lex after | parse before | parse after |
