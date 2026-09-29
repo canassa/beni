@@ -85,7 +85,5 @@
 # component's markup children typed at the enclosing root's messages and the
 # message that said so, markup nested past the checker's depth, and
 # `unkeyed_for`'s hint. Written and checked on fc4b31e.
-tests/pending/check/good/markup/ComponentChildrenOwnMessages exit=1 codes=type_mismatch×2
-tests/pending/check/bad/markup/ComponentChildrenNotMarkup exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/markup/MarkupTooDeepToCheck.beni exit=1 codes=child_not_renderable×1,nesting_too_deep×1 why=code
 tests/pending/check/good/markup/UnkeyedForHint.beni GoldenMismatch

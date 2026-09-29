@@ -5266,6 +5266,12 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   call). `children` is interned by the graph when the build has a vocabulary, since no source
   need spell it. A leading spread is record update, so the spread value must have every field
   written after it, `children` included.
+  *Amended 2026-09-29:* children written as markup are a markup value of their own, with a
+  message variable of their own that the `children` field's type decides, as in the call
+  `M.c { children = <>…</> }` (`language.md` §11.13). As first built they were nodes of the
+  enclosing root and shared its `m`, so `children : Html Inner` under a root of `Html Outer` was
+  refused while the call checked. A field that does not take markup is a `type_mismatch` naming
+  the `children` field (category `markup_children`). Their rows are still the root's (§25.7).
 - **The markup section** is one row per element, attribute, escape, event, hole, `For` and `Show`,
   keyed by its markup root's instruction and the node's record in the module's `Bir.extra`,
   roots in instruction order and each tree depth first, items before children; a component and a

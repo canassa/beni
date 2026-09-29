@@ -5384,7 +5384,9 @@ written with a red fixture on `fc4b31e` before its fix.*
 - **Fixture** `check/good/markup/ComponentChildrenOwnMessages/`, red `exit=1
   codes=type_mismatch×2`.
 - **Slice** the fixes to markup's type-checking.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §25.9's *As built*, *amended 2026-09-29*: a
+  component's markup children are walked as a root of their own, with a fresh message variable
+  unified through the `children` field. Promoted into `tests/corpus/`.
 
 ### CK-218 — Children that do not fit the `children` prop are said to send other messages
 
@@ -5398,7 +5400,9 @@ written with a red fixture on `fc4b31e` before its fix.*
 - **Fixture** `check/bad/markup/ComponentChildrenNotMarkup/`, red `exit=1
   codes=type_mismatch×1 why=message`.
 - **Slice** the fixes to markup's type-checking.
-- **Status** open.
+- **Status** fixed (2026-09-29) with CK-217: the children meet the field under a category of their
+  own, `markup_children`, whose text names the `children` field and both types. Promoted into
+  `tests/corpus/`.
 
 ### CK-219 — Markup nested past the checker's depth is worded as a type, and cascades
 
@@ -5645,8 +5649,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-214 | diagnostic-quality | K13 | promoted: `check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni` | the last review's fixes (fixed) |
 | CK-215 | unsound-runtime | K2 | promoted: `check/bad/markup/LetMarkupObligationHeld.beni`, `check/good/markup/LetMarkupObligationLater.beni`; `ordering_test.zig` | the fixes to markup's type-checking (fixed) |
 | CK-216 | latent | K5 | promoted: `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking (fixed) |
-| CK-217 | valid-program-rejected | K15 | `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking |
-| CK-218 | diagnostic-quality | K13 | `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking |
+| CK-217 | valid-program-rejected | K15 | promoted: `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking (fixed) |
+| CK-218 | diagnostic-quality | K13 | promoted: `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking (fixed) |
 | CK-219 | diagnostic-quality | K13 | `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking |
 | CK-220 | diagnostic-quality | K13 | `check/good/markup/UnkeyedForHint.beni` | the fixes to markup's type-checking |
 

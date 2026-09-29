@@ -418,7 +418,7 @@ pub const Reporter = struct {
                 .wanted = "But this field needs:",
             },
             // Markup names the attribute, event or form it was looking at.
-            .markup_attribute, .markup_list_attribute, .markup_handler, .markup_form, .markup_row, .markup_child => return MarkupTexts.categoryLines(scratch, r.env.interner, category),
+            .markup_attribute, .markup_list_attribute, .markup_handler, .markup_form, .markup_row, .markup_child, .markup_children => return MarkupTexts.categoryLines(scratch, r.env.interner, category),
             // `.where_clause` (a `where` clause's method type against the
             // method it resolved to) keeps the general lines.
             .try_value, .pattern, .ctor_arg, .destructure, .general, .where_clause => return .{

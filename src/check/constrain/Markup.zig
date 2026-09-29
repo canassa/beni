@@ -299,10 +299,15 @@ const Walker = struct {
                     try w.expr(h.value, v, .{ .tag = .record_field, .index = @intFromEnum(children_symbol.?) });
                 },
                 // Anything else: one markup value, the children as a
-                // fragment of this root.
+                // fragment — a root of its own, whose messages are the
+                // ones the `children` prop takes, exactly as in the call
+                // `M.c { children = <>…</> }` (language.md §11.13).
                 .fragment => {
-                    try w.add(try g.equal(v, try w.html(), c.callee, .{ .tag = .markup_child }));
-                    for (kids) |k| try w.node(k);
+                    var inner: Walker = .{ .g = g, .vocab = w.vocab, .inst = w.inst, .m = try g.freshFlex() };
+                    defer inner.parts.deinit(g.cx.scratch);
+                    try w.add(try g.equal(v, try inner.html(), c.callee, .{ .tag = .markup_children }));
+                    for (kids) |k| try inner.node(k);
+                    try w.add(try g.conj(inner.parts.items));
                 },
             }
         } else if (c.children_form == .fragment) {

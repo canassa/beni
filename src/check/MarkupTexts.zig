@@ -62,6 +62,11 @@ pub fn categoryLines(scratch: std.mem.Allocator, interner: *const InternPool.Glo
             .found = "It is:",
             .wanted = "But I need:",
         },
+        .markup_children => .{
+            .intro = "The markup between this component's tags is its `children` field, which does not take it:",
+            .found = "The markup is:",
+            .wanted = "But the component's `children` field is:",
+        },
         else => .{
             .intro = "This markup does not produce the same messages as the markup around it:",
             .found = "It is:",

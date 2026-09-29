@@ -71,6 +71,9 @@ pub const Category = struct {
         markup_row,
         /// Markup in a hole, whose messages must be the root's.
         markup_child,
+        /// The markup between a component's tags against the type of its
+        /// `children` field (language.md §11.8).
+        markup_children,
     };
 };
 
