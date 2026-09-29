@@ -850,7 +850,9 @@ one hash over the sorted `(module name, key)` list of the core package, is how t
 **The compiler build id** is 16 bytes produced at build time by `build.zig` and passed to the
 compiler as a build option: `SipHash128(1, 3)` over `beni.version` (`src/beni.zig:8`), the Zig
 version string, the optimize mode, the target triple, and every file under `src/` — path then bytes,
-in sorted path order. `beni version` prints it after the version, so a bug report names the compiler
+in sorted path order. *(Amended 2026-09-29, not built: and every platform's Zig compiled into the
+binary — a markup lowering and the helpers it imports, built-in or added with `-Dplatform` —
+because a lowering is part of the compiler; `boundary.md` §9.5–§9.6.)* `beni version` prints it after the version, so a bug report names the compiler
 that wrote a cache. It does **not** cover `core/` or `platforms/`: those are hashed per module by
 `core_epoch` and by the import terms, which is finer. *Rejected: hashing the installed binary at
 runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different one with the hidden
