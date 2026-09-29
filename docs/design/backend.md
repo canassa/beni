@@ -1982,6 +1982,11 @@ approximate rather than acquire. Left on the table, deliberately, with the numbe
 rejected: Elm's template dialect, which buys exactly this and is the reason its kernel files are
 module-granular in the first place (`boundary.md` §7.1).*
 
+*Amended 2026-09-29: taken up for `--release` only, without a parser. A lexical pass cuts a
+hand-written file to the top-level statements its imported exports reach, keeping every statement
+it cannot prove inert and declining any file it cannot delimit exactly (*Hand-written JavaScript
+under `--release`*, the end of this section). A development build still copies the whole file.*
+
 #### When it runs, and what pins the corpus
 
 **Always on, for every `beni build`.** Not release-only: `--release` is about chunking, renaming and
@@ -2112,6 +2117,10 @@ exists to avoid. It costs **1 643 of the floor's 2 147 bytes (76%)**, **13 773 o
 31 495 (44%)** and 14 980 of `bench/corpus`' 126 436 (12%). After the optimiser the generated half of
 `Dictionaries` has fallen 17 722 → 6 198 bytes, −65%, and the siblings are **69% of what ships** —
 the same answer §9's *Purity* paragraph reached about sibling-level elimination, for the same reason.
+
+*Amended 2026-09-29: a release build now compacts and cuts the siblings — not renamed, and not
+parsed, but reprinted from their tokens (*Hand-written JavaScript under `--release`*, the end of
+this section). The floor's release build went 1 882 → 621 bytes.*
 
 #### `Debug` is refused, not pinned
 
@@ -2342,7 +2351,7 @@ keeps the siblings from reaching one and the generated half never had any.
 | the `imported` half of a sibling specifier — `add` in `import { add as Basics$add } from "./Basics.foreign.mjs"` | it is the sibling's own export name, fixed by `language.md` §5.4 and enforced by `boundary.md` §4's second check. The `local` half moves freely, which is the whole point of the `as` |
 | `run` in the entry file | the platform manifest's `runtime` export (`boundary.md` §5.2), read by hand-written JavaScript; `Emit.emitEntry` writes both ends (`src/js/Emit.zig:840-857`) and the `main` side of it is an ordinary global that renames |
 | every property name — the `$` tag, the `a`/`b`/`c`… slots, record fields | item 4's territory, and the second slice's. `runtime.foreign.mjs` reads `program.out` and `program.code`, and `Node.foreign.mjs` walks `.$`/`.a`/`.b`, so a field can cross into hand-written code and the rule that decides which is the artifact item 4 is waiting for |
-| anything inside a `*.foreign.mjs` | copied verbatim, never parsed |
+| anything inside a `*.foreign.mjs` | copied verbatim, never parsed. *Amended 2026-09-29: never renamed still; under `--release` compacted and cut to its imported exports by a lexical pass (*Hand-written JavaScript under `--release`*, below)* |
 
 Cross-module agreement needs no new machinery: both the `import` specifier and the `export` list are
 built from the same `NameIndex`es the declaration uses (`Lower.exports`, `src/js/Lower.zig:637-680`;
@@ -2642,7 +2651,7 @@ both, so `slotName` (`src/js/Lower.zig:430-437`) costs the field alphabet nothin
 | `program.out` / `program.code` | **not a record and never were.** `Program` is a `foreign type` (`platforms/node/Node.beni:24`); the object is built in `Node.js` and read in `runtime.js`, and **no generated `.mjs` in any of the 109 trees mentions either name**. The first slice recorded this as item 4's hard constraint; it is not one |
 | the `$` tag and the `a`/`b`/`c`… slots | not fields, and already one character |
 | a `<T>$$order` key | it is a **constructor tag name**, read dynamically as `M$T$$order[x]` (`Lower.orderTable`, `src/js/Lower.zig:2229-2272`; `orderLookup`, `:2282-2286`). Not item 4's — but it is worth recording that report 12 §5.4's "no `obj[dynamicString]` exists" is **false of today's output**, and the integer-tag item is where that is paid |
-| anything inside a `*.foreign.mjs` | copied verbatim, never parsed |
+| anything inside a `*.foreign.mjs` | copied verbatim, never parsed. *Amended 2026-09-29: never renamed still; under `--release` compacted and cut to its imported exports by a lexical pass (*Hand-written JavaScript under `--release`*, below)* |
 | ~~**every field, if `Debug` survives**~~ | below — **withdrawn 2026-09-19**: a release build cannot reach `Debug`, so there is nothing to pin |
 
 **`Debug` was the whole of the pinned set, and the pin is now unnecessary.** The measurement below
@@ -2720,6 +2729,119 @@ here and never will be — the backend has no types, which is §3 and not a gap.
 rule off and **byte-identical** with it on; every `run/` fixture unchanged under `--release`; emit
 throughput within noise of today's **48.08 ms / 61.2 MB/s for 633 modules** (`bench -- --generate=100000`,
 ReleaseFast, this machine), which a print-time table lookup cannot move.
+
+### Hand-written JavaScript under `--release`
+
+*Added 2026-09-29.* **Under `--release` a hand-written file — a `foreign` sibling, a platform's
+program runtime, its markup runtime — is compacted and cut to the exports the build imports.** A
+development build still copies each one byte for byte (§2), and does not move by a byte. This
+amends three sentences above: the release slice's "a sibling … is never minified — not renamed, not
+reprinted, not parsed", *Sibling-level elimination is out of scope*, and §15.1's "copied whole".
+
+**Why.** The generated half of a browser program had been through items 1–5 and the hand-written
+half had not, so it was most of what shipped. Research 39 §0.4 and §5 measured the benchmark app at
+**11 697** brotli released against **5 739** when every file was run through terser, and the runtime
+file alone at 6 334 of the 11 697, 8 226 of its 22 341 raw bytes comment lines. `bench/size.mjs`'s
+`page` line — the empty mounted page — was 7 013 brotli, nearly all of it the runtime.
+
+**The options, measured** on the app of `bench/ui/apps/beni` (`browser-tea`, `--release`, research
+29 §12.1's method: every file the page loads, concatenated, brotli 11) and on the empty `browser`
+page, both built by `master` at `76a3a0e`. The rows marked ≈ were made by running terser over the
+built tree's hand-written files, to price an option before building it.
+
+| | app raw / brotli | empty page raw / brotli |
+|---|--:|--:|
+| today: copied as written | 39 636 / 12 144 | 24 411 / 7 014 |
+| (a) comments and whitespace only ≈ | 20 718 / 6 572 | 11 288 / 3 497 |
+| (b) a pre-minified runtime, locals renamed too ≈ | 18 007 / 6 087 | 8 703 / 3 074 |
+| (c) unused exports only, comments kept ≈ | 34 249 / 10 576 | 10 451 / 3 411 |
+| **(a) + (c), as built** | **15 806 / 5 315** | **3 969 / 1 405** |
+| terser over every file, and (c) ≈ | 14 511 / 5 133 | 3 002 / 1 225 |
+
+**(a) and (c) together, both in the compiler, and not (b).** (c) is what the empty page is about —
+it imports three of the runtime's twenty-odd exports — and (a) is what the app is about; neither
+reaches the other's number alone. (b) — a minified copy of each runtime made when beni is built and
+checked against its source by a test — buys the renamed locals, 400–500 brotli more, but only for
+the files that ship in the box: a platform package on disk and every `foreign` sibling would still be
+copied whole, and no file can be cut to one program's imports ahead of the program. It also puts a
+generated twin of `platforms/browser/runtime.js` in the tree to go stale on every edit. As built,
+the app is **0.24×** Solid 2's 22 131 brotli (research 39 §0.4) and within 180 bytes of terser, and
+the empty page is **1 393**, which is research 36 §4.7's 1 482 for a whole client runtime of this
+design, met.
+
+**A lexical pass, not a parser** (`src/js/Minify.zig`). It is a tokenizer — strings, template
+literals with their substitutions tokenized, regular expressions, numbers, punctuators by longest
+match — and two passes over its tokens. `boundary.md` §4's wall exists so that the compiler never
+needs to depend on a JavaScript parser, and this is not one: no tree is built and no statement below
+the top level is read.
+
+- **Compaction.** The tokens are printed verbatim, each gap rewritten. A gap that held a line
+  terminator — in whitespace or inside a block comment, which ECMAScript counts as one — keeps one
+  newline, unless the token before it is a punctuator that cannot end an expression (every one but
+  `)`, `]`, `}`, `++`, `--`) or the token after it is one that can neither begin a statement nor a
+  class element nor follow a restricted production (`)`, `]`, `}`, `,`, `;`, `.`, `?.`, `:`, `?`,
+  `=>` and the binary and assignment operators except `+`, `-`, `/` and `*`). Automatic semicolon
+  insertion acts only at a line terminator, so a newline is dropped only where it cannot be acting.
+  Any other gap is nothing, or one space where the two tokens would otherwise lex as something else
+  (two identifier characters, `+ +`, `a / /re/`, a regular expression's flags, `1 .x`).
+- **Elimination.** The file's top-level statements are cut into units: an `import` to its `;`, a
+  `const`/`let`/`var` to its `;`, a function declaration to its closing brace, an `export { … };`
+  list. A unit survives iff it is a root or a surviving unit mentions a name it declares, where a
+  mention is any identifier token that does not follow `.` or `?.` — so a local that shadows a
+  top-level name keeps it, the safe direction, and a name used only inside a template substitution is
+  seen. The roots are every `import` (it evaluates a module), every unit exporting a name the build
+  imports, and every declaration whose initialiser is not known to be inert. Inert is a closed list:
+  a literal, a read of a name the file declares (`undefined`, `NaN`, `Infinity` too), an arrow or a
+  function expression, an object or array literal of inert values with no spread and no computed key
+  (methods and accessors included), `new Set`/`Map`/`WeakMap`/`WeakSet` of nothing or an inert
+  array, and `Math.<name>`. §9's *Purity* paragraph is why dropping a whole sibling was already sound;
+  this is the same argument one statement at a time.
+- **What the build imports**, per file: for a sibling, its module's surviving `foreign`s (the
+  module imports exactly those); for the markup runtime, the union of every written module's markup
+  imports, which `Lower` now reports (`Result.markup_exports`); for the program runtime, `run` and
+  `start`, which the entry file imports, and the markup imports too when it is the same file
+  (`boundary.md` §9.2). A test harness that imports some other export of the runtime directly —
+  `tests/browser/driver.mjs` reads `flush` — gets it only when the program reaches it; the browser
+  runtime's own render loop does, so it survives.
+
+**Refusal, never a guess.** Every question the tokens cannot answer exactly makes the pass decline,
+and a declined file is copied as a development build copies it — bytes lost, nothing else. The
+tokenizer declines a `/` after `}` (a block's or an object literal's?), after `++`/`--`, or after a
+contextual keyword (`of`, `yield`, `await`, `let`, `get`, `set`, `static`, `async`); non-ASCII outside
+a literal or a comment; an escaped identifier; a hashbang; anything unterminated or unbalanced. A `/`
+after a `)` is a regular expression exactly when that `)` closes an `if`, `while`, `for` or `with`
+head, which the tokenizer tracks. Elimination declines a file with any other top-level statement
+(an expression, `export default`, a class, a re-export), a declaration with a line terminator at its
+own level that might be where automatic semicolon insertion ends it, and a file that mentions
+`eval`. **No file in `core/` or `platforms/` is declined**, and a unit test holds that for every one
+that ships in the box.
+
+**Checks, identity and determinism.** `boundary.md` §4's four checks read the file on disk, before
+any of this, as they did; compaction changes what is written and never what is checked. The output
+is a function of the file's bytes and the build's import set, both input-derived, and it is computed
+on the calling thread after every module is lowered, so `--jobs` cannot move it (rule 5). No cache
+holds emitted bytes (`boundary.md` §7.3's key already covers a sibling's).
+
+**Self-check.** In a safety build `Minify.verify` lexes the output again and panics unless it is
+the kept tokens, each spelled as before, with a line terminator in front of every one whose newline
+was not shown inert. A random sweep of JavaScript fragments under `zig build fuzz` has that as its
+oracle.
+
+**Tests.** Unit tests in `src/js/Minify.zig`, one per hazard: a regular expression against a
+division (after an operand, an operator, a keyword, a statement head's `)`, a property named like a
+keyword), nested template literals, the newlines automatic semicolon insertion reads (`return`, a
+comment holding a line break, `++`, a class field before a generator method), tokens that must stay
+apart, every refusal, and elimination's roots. `tests/blackbox/build_test.zig` pins the release bytes
+of a small platform's sibling and runtime and runs the program, and pins the development build as
+byte-identical; and the corpus's release passes — every `run/` program and every `browser/` page,
+each held to its development golden — run every core sibling, the `node` runtime and the `browser`
+runtime compacted and cut.
+
+**Measured after**, `bench/size.mjs`: the floor's release build 1 882 / 789 → **621 / 304**; the
+empty page 24 407 / 7 013 → **3 965 / 1 393** (`browser`) and 24 510 / 7 033 → **4 068 / 1 420**
+(`browser-tea`); `bench/corpus` (`--library`) 96 852 / 24 015 → **83 719 / 19 516**. Renaming a
+hand-written file's locals — the 400 bytes between this and terser — would need scope analysis, which
+is a parser, and is left.
 
 ## 10. Chunking
 
@@ -2984,7 +3106,9 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   use of a markup primitive is an import of the export of its name, as a `foreign`'s is of its
   sibling's. Like a sibling it is copied whole (§9, *Sibling-level elimination is out of scope*), so it
   should be small; research 36 §4.7 measured a whole client runtime of this design at **1 482 bytes
-  brotli**.
+  brotli**. *Amended 2026-09-29: whole in a development build; under `--release`, like a sibling, it
+  is compacted and cut to the exports the build imports (§9, *Hand-written JavaScript under
+  `--release`*), and the empty page is 1 393 bytes brotli.*
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.

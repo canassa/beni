@@ -220,6 +220,14 @@ refuses the forms that reading cannot settle.
 item 2 is discharged.
 → [`static-dispatch-spike.md`](static-dispatch-spike.md) §5.2, A.7, A.84.
 
+*Added 2026-09-29.* **The four checks read the file on disk; what a `--release` build writes is
+compacted and cut** to the exports the build imports (`backend.md` §9, *Hand-written JavaScript
+under `--release`*), by a third lexical reading of the same kind as checks 3 and 4 — still no
+parser. A development build writes the file as it is. What that pass needs of a sibling is what a
+sibling already is: top-level `import`s, declarations, functions and `export` lists, each ended by
+its `;` or its brace. A file it cannot read exactly is written whole, never refused, so no sibling
+that passes these checks fails a release build.
+
 ### 4.1 The recipe for privileged code, written down and tested
 
 The guarantee lives or dies in privileged code, and Elm's own has holes: a core package declares a
