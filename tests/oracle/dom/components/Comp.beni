@@ -1,0 +1,7 @@
+-- A component of the fixture, written `<Comp n={1} />`.
+import Html exposing (Html)
+
+
+pub view : { n : Int } -> Html msg
+view props =
+    <b>{props.n}</b>

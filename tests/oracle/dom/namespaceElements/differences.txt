@@ -1,0 +1,1 @@
+- 0 "<namespace:tag>"  # left out: a component named by a lower-case or dashed path, or a namespaced tag, which beni does not have

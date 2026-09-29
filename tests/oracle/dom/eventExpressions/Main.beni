@@ -1,0 +1,20 @@
+-- dom-expressions' `eventExpressions` client fixture, in beni: every
+-- handler a message, `onchange` and `onclick` spelled as the vocabulary
+-- declares them.
+import Html exposing (Html)
+
+
+pub template : Int -> Html Int
+template rowId =
+    <div id="main">
+        <button onChange={1}>Change Bound</button>
+        <button onChange={rowId}>Change Bound</button>
+        <button onChange={3}>Change Bound</button>
+        <button onChange={4}>Change Bound</button>
+        <button onChange={5}>Change Bound</button>
+        <button onClick={6}>Click Delegated</button>
+        <button onClick={rowId}>Click Delegated</button>
+        <button onClick={8}>Click Delegated</button>
+        <button onClick={9}>Click Delegated</button>
+        <button onClick={10}>Click Delegated</button>
+    </div>

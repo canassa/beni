@@ -1,0 +1,5 @@
+0 "<div><!><span>static" firstChild firstChild.nextSibling
+0 "<div><header><span>static</span><!><!>" firstChild firstChild.firstChild.nextSibling firstChild.firstChild.nextSibling.nextSibling
+0 "<div><span>static"
+0 "<div><span>static</span><!><!>" firstChild.nextSibling firstChild.nextSibling.nextSibling
+0 "<div><span>static</span><!><!>" firstChild.nextSibling firstChild.nextSibling.nextSibling

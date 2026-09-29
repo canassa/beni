@@ -1,0 +1,7 @@
+-- The component the fixture writes as `<Component>…</Component>`.
+import Html exposing (Html)
+
+
+pub view : { children : Html msg } -> Html msg
+view props =
+    props.children

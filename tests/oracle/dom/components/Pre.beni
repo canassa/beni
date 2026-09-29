@@ -1,0 +1,7 @@
+-- A component of the fixture, which places its children.
+import Html exposing (Html)
+
+
+pub view : { children : Html msg } -> Html msg
+view props =
+    props.children

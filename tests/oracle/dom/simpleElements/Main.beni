@@ -1,0 +1,62 @@
+-- dom-expressions' `simpleElements` client fixture, in beni.
+import Html exposing (Html)
+
+
+pub template : Html msg
+template =
+    <div id="main">
+        <style>{"div { color: red; }"}</style>
+        <h1>Welcome</h1>
+        <label for={"entry"}>Edit:</label>
+        <input id="entry" type="text" />
+        {-- Comment Node
+        }
+    </div>
+
+
+pub template2 : Html msg
+template2 =
+    <div>
+        <span>
+            <a></a>
+        </span>
+        <span />
+    </div>
+
+
+pub template3 : Html msg
+template3 =
+    <div>
+        <div>
+            <table>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div></div>
+    </div>
+
+
+pub template4 : Html msg
+template4 =
+    <div>
+        <div>
+            <footer>
+                <div />
+            </footer>
+        </div>
+        <div>
+            <button>
+                <span>{0}</span>
+            </button>
+        </div>
+    </div>
+
+
+pub template5 : Html msg
+template5 =
+    <div>
+        <noscript>
+            No JS!!
+            <style>{"div { color: red; }"}</style>
+        </noscript>
+    </div>

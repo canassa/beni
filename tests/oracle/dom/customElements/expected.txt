@@ -1,0 +1,5 @@
+0 "<slot name=head>"
+1 "<a is=my-element>"
+1 "<my-element>"
+1 "<my-element>"
+1 "<my-element><header slot=head>Title"

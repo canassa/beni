@@ -1,0 +1,22 @@
+0 "<div normal=Search… title=Search&amp;hellip;>"
+0 "<div>"
+0 "<div><div>"
+0 "<div>\nd" firstChild
+0 "<p>${blah}"
+0 "<span> "
+0 "<span> " firstChild
+0 "<span> <!> <!> " firstChild.nextSibling firstChild.nextSibling.nextSibling.nextSibling
+0 "<span> <!>" firstChild firstChild.nextSibling
+0 "<span> <!><!> " firstChild.nextSibling firstChild.nextSibling.nextSibling
+0 "<span> John"
+0 "<span> John" firstChild
+0 "<span>&nbsp;&lt;Hi&gt;&nbsp;"
+0 "<span>4 + 5 = 9"
+0 "<span>Hello "
+0 "<span>Hello "
+0 "<span>Hello John"
+0 "<span>Hello John"
+0 "<span>Hello John"
+0 "<span>Hello World!"
+0 "<span>Hello"
+0 "<span>Hi&lt;script>alert();&lt;/script>"

@@ -1,0 +1,7 @@
+-- The component the fixture writes as `<Comp fallback={…} />`.
+import Html exposing (Html)
+
+
+pub view : { fallback : Html msg } -> Html msg
+view props =
+    props.fallback

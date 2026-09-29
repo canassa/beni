@@ -1,0 +1,11 @@
+- 0 "<div>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<div>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<div>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<div>after"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<div>after"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<label>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<span>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<span>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<span>"  # left out: markup as an attribute value, or a spread, which beni does not have
+- 0 "<span>own"  # left out: `ref`, which beni does not have
+- 0 "<span>static"  # left out: markup as an attribute value, or a spread, which beni does not have

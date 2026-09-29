@@ -1,0 +1,257 @@
+-- dom-expressions' `attributeExpressions` client fixture, in beni: class
+-- and style objects are class and style lists written in place, a bare
+-- attribute the vocabulary does not type is the quoted escape with an empty
+-- value, and an attribute written `false` is not written. Left out: the
+-- roots with a spread, `ref`, a `prop:` or `@static` annotation, a
+-- computed or spread key in a class or style object, `onclick` as a
+-- string, an attribute written twice, `_hk`, and `this`.
+import Html exposing (Html)
+
+
+type alias State =
+    { id : String, color : String, name : String, content : String, visible : Bool }
+
+
+pub template3 : State -> Html msg
+template3 state =
+    <div
+        "foo"=""
+        id={state.id}
+        style={[ ( "background-color", state.color ) ]}
+        name={state.name}
+        textContent={state.content}
+    />
+
+
+pub template5 : Html msg
+template5 =
+    <div class="a" className="b"></div>
+
+
+pub template6 : List ( String, String ) -> Html msg
+template6 someStyle =
+    <div style={someStyle} textContent="Hi" />
+
+
+pub template13 : Html msg
+template13 =
+    <input type="checkbox" checked={True} />
+
+
+pub template14 : State -> Html msg
+template14 state =
+    <input type="checkbox" checked={state.visible} />
+
+
+pub template15 : Html msg
+template15 =
+    <div class="`a">`$`</div>
+
+
+pub template16 : Html msg
+template16 =
+    <button class={[ ( "static", True ), ( "hi", True ) ]} type="button">
+        Write
+    </button>
+
+
+pub template17 : Html ()
+template17 =
+    <button class={[ ( "a", True ), ( "b", True ), ( "c", True ) ]} onClick={()}>
+        Hi
+    </button>
+
+
+pub template20 : { s : String, min : String, max : String, s2 : Bool, value : Bool } -> Html ()
+template20 r =
+    <div>
+        <input value={r.s} min={r.min} max={r.max} onInput={\_ -> ()} readonly />
+        <input checked={r.s2} min={r.min} max={r.max} onInput={\_ -> ()} readonly={r.value} />
+    </div>
+
+
+pub template22 : Html msg
+template22 =
+    <div data="\"hi\"" data2={"\""} />
+
+
+pub template30 : Html msg
+template30 =
+    <div
+        class="class1 class2\n    class3 class4\n    class5 class6"
+        style="color: red;\n    background-color: blue !important;\n    border: 1px solid black;\n    font-size: 12px;"
+        random="random1 random2\n    random3 random4"
+    />
+
+
+pub template31 : String -> Html msg
+template31 color =
+    <div style={[ ( "background-color", color ) ]} />
+
+
+pub template39 : Html msg
+template39 =
+    <input value={"10"} />
+
+
+pub template40 : String -> Html msg
+template40 a =
+    <div style={[ ( "color", a ) ]} />
+
+
+pub template41 : { color : String, red : String, blue : String } -> Html msg
+template41 state =
+    <select value={state.color}>
+        <option value={state.red}>Red</option>
+        <option value={state.blue}>Blue</option>
+    </select>
+
+
+pub template42 : Html msg
+template42 =
+    <img src="" />
+
+
+pub template43 : Html msg
+template43 =
+    <div><img src="" /></div>
+
+
+pub template44 : Html msg
+template44 =
+    <img src="" loading="lazy" />
+
+
+pub template45 : Html msg
+template45 =
+    <div><img src="" loading="lazy" /></div>
+
+
+pub template46 : Html msg
+template46 =
+    <iframe src=""></iframe>
+
+
+pub template47 : Html msg
+template47 =
+    <div><iframe src=""></iframe></div>
+
+
+pub template48 : Html msg
+template48 =
+    <iframe src="" loading="lazy"></iframe>
+
+
+pub template49 : Html msg
+template49 =
+    <div><iframe src="" loading="lazy"></iframe></div>
+
+
+pub template50 : Html msg
+template50 =
+    <div title="<u>data</u>" />
+
+
+pub template56 : Html msg
+template56 =
+    <div "true"="" truestr="true" truestrjs={"true"} />
+
+
+pub template57 : Html msg
+template57 =
+    <div falsestr="false" falsestrjs={"false"} />
+
+
+pub template59 : Html msg
+template59 =
+    <div "true"="" />
+
+
+pub template61 : Html msg
+template61 =
+    <math display="block"><mrow></mrow></math>
+
+
+pub template62 : Html msg
+template62 =
+    <mrow><mi>x</mi><mo>=</mo></mrow>
+
+
+pub template63 : Html msg
+template63 =
+    <div style={[ ( "background", "red" ) ]} />
+
+
+pub template64 : Html msg
+template64 =
+    <div style={[ ( "background", "red" ), ( "color", "green" ), ( "margin", "3" ), ( "padding", "0.4" ) ]} />
+
+
+pub template65 : Html msg
+template65 =
+    <div style={[ ( "background", "red" ), ( "color", "green" ) ]} />
+
+
+pub template66 : String -> Html msg
+template66 signal =
+    <div style={[ ( "background", "red" ), ( "color", "green" ), ( "border", signal ) ]} />
+
+
+pub template70 : Bool -> Html msg
+template70 value =
+    <video playsinline={value} />
+
+
+pub template71 : Html msg
+template71 =
+    <video playsinline={True} />
+
+
+pub template72 : Html msg
+template72 =
+    <video playsinline={False} />
+
+
+pub template73 : Html msg
+template73 =
+    <video poster="1.jpg" />
+
+
+pub template74 : Html msg
+template74 =
+    <div><video poster="1.jpg" /></div>
+
+
+pub template77 : { width : String, height : String } -> Html msg
+template77 props =
+    <div style={[ ( "width", props.width ), ( "height", props.height ) ]} />
+
+
+pub template90 : Html msg
+template90 =
+    <div style={[]} />
+
+
+pub myVideo : Html msg
+myVideo =
+    <video src="test.mp4" muted />
+
+
+pub template94 : Bool -> Html msg
+template94 isActive =
+    <div class={[ ( "todo", True ), ( "active", isActive ) ]} />
+
+
+pub template96 : Bool -> Html msg
+template96 isActive =
+    <div class={[ ( "todo", True ), ( "item", True ), ( "active", isActive ) ]} />
+
+
+pub paddingClamp : Html msg
+paddingClamp =
+    <div style={[ ( "padding-left", "clamp(2px, 2px, 2px)" ) ]} />
+
+
+pub clamp : Html msg
+clamp =
+    <div style={[ ( "a", "clamp(2px, 2px, 2px)" ) ]} />

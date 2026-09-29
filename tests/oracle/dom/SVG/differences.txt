@@ -1,0 +1,6 @@
+- 0 "<svg viewBox=\"0 0 160 40\"><a><text x=10 y=25>MDN Web Docs" firstChild  # dom-expressions drops the `xmlns` the markup writes at an SVG root
+- 0 "<svg viewBox=\"0 0 160 40\"><text x=10 y=25>" firstChild  # dom-expressions drops the `xmlns` the markup writes at an SVG root
+- 0 "<svg width=400 height=180><rect>" firstChild  # left out: a spread on an element, which beni does not have
++ 0 "<svg viewBox=\"0 0 160 40\"xmlns=http://www.w3.org/2000/svg><a><text x=10 y=25>MDN Web Docs" firstChild  # beni writes the `xmlns` the markup writes; dom-expressions drops it at an SVG root
++ 0 "<svg viewBox=\"0 0 160 40\"xmlns=http://www.w3.org/2000/svg><text x=10 y=25>" firstChild  # beni writes the `xmlns` the markup writes; dom-expressions drops it at an SVG root
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions

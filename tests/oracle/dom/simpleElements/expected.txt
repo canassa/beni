@@ -1,0 +1,5 @@
+0 "<div id=main><style>div { color: red; }</style><h1>Welcome</h1><label for=entry>Edit:</label><input id=entry type=text>"
+0 "<div><div><footer><div></div></footer></div><div><button><span>0"
+0 "<div><div><table><tbody></tbody></table></div><div>"
+0 "<div><noscript>"
+0 "<div><span><a></a></span><span>"

@@ -1,0 +1,6 @@
+# beni has no literal in a text hole folded into the template: `{"…"}` and
+# `{0}` are holes like any other, each a text node written in place.
+- 0 "<div id=main><style>div { color: red; }</style><h1>Welcome</h1><label for=entry>Edit:</label><input id=entry type=text>"  # a literal in a hole is folded into the template
++ 0 "<div id=main><style> </style><h1>Welcome</h1><label for=entry>Edit:</label><input id=entry type=text>" firstChild.firstChild  # the same, the hole a text node of the template
+- 0 "<div><div><footer><div></div></footer></div><div><button><span>0"  # a literal in a hole is folded into the template
++ 0 "<div><div><footer><div></div></footer></div><div><button><span> " firstChild.nextSibling.firstChild.firstChild.firstChild  # the same, the hole a text node of the template

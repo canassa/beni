@@ -1,0 +1,53 @@
+-- dom-expressions' `adjacentSlots` client fixture, in beni.
+import Comp
+import Html exposing (Html)
+
+
+type alias Slots =
+    { a : Html (), b : Html () }
+
+
+pub trailingSlotsAfterElement : Slots -> Html ()
+trailingSlotsAfterElement s =
+    <div>
+        <span>static</span>
+        {s.a}
+        {s.b}
+    </div>
+
+
+pub trailingComponentAndSlot : Slots -> Html ()
+trailingComponentAndSlot s =
+    <div>
+        <span>static</span>
+        <Comp />
+        {s.b}
+    </div>
+
+
+pub nestedParent : Slots -> Html ()
+nestedParent s =
+    <div>
+        <header>
+            <span>static</span>
+            {s.a}
+            {s.b}
+        </header>
+    </div>
+
+
+pub slotsBeforeElement : Slots -> Html ()
+slotsBeforeElement s =
+    <div>
+        {s.a}
+        {s.b}
+        <span>static</span>
+    </div>
+
+
+pub singleTrailingSlot : Slots -> Html ()
+singleTrailingSlot s =
+    <div>
+        <span>static</span>
+        {s.a}
+    </div>

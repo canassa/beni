@@ -1,0 +1,27 @@
+-- dom-expressions' `jsxAttributeValues` client fixture, in beni: markup
+-- inside a message and a component's prop. Left out: markup as an
+-- element's attribute value, which beni refuses (an attribute is a
+-- `String`, a number, a `Bool` or a list), `ref` and spread.
+import Comp
+import Html exposing (Html)
+
+
+type Msg
+    = Mount (Html Msg)
+
+
+pub iifeValue : { compute : String } -> Html msg
+iifeValue state =
+    <div data={state.compute} />
+
+
+pub handlerValue : Html Msg
+handlerValue =
+    <button onClick={Mount (<div>content</div>)}>go</button>
+
+
+pub propValue : Html msg
+propValue =
+    <div>
+        <Comp fallback={<h1>fallback</h1>} />
+    </div>

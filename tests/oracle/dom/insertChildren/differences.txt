@@ -1,0 +1,17 @@
+- 0 "<div>"  # left out: the comma expression, which beni does not have
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>Hello"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>Hello"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>Hi "  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>Hi"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>hello"  # left out: a `children` attribute or a spread on an element, or a spread child
+- 0 "<module>hello"  # left out: a `children` attribute or a spread on an element, or a spread child

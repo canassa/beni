@@ -1,0 +1,22 @@
+0 "<div> | <!> |  |  | <!> | " firstChild.nextSibling firstChild.nextSibling.nextSibling.nextSibling
+0 "<div> | <!> | <!> | <!> | <!> | <!>" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling
+0 "<div> | <!><!> | <!><!> | <!>" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling firstChild.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling.nextSibling
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div>"
+0 "<div><!><!><!>" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling
+0 "<div>From Parent"
+0 "<div>Hello "
+0 "<p>(<!>)" firstChild.nextSibling
+0 "<span>1"
+0 "<span>1"
+0 "<span>2"
+0 "<span>2"
+0 "<span>3"
+0 "<span>3"

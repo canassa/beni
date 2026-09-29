@@ -1,0 +1,5 @@
+- 0 "<div class=active>mixed"  # left out: an attribute written twice, which beni refuses (`duplicate_attribute`)
+- 0 "<div class=b>static static"  # left out: an attribute written twice, which beni refuses (`duplicate_attribute`)
+- 0 "<div class=c>three statics"  # left out: an attribute written twice, which beni refuses (`duplicate_attribute`)
+- 0 "<div class=on>two dynamic"  # left out: an attribute written twice, which beni refuses (`duplicate_attribute`)
+- 0 "<div>static + dynamic"  # left out: an attribute written twice, which beni refuses (`duplicate_attribute`)

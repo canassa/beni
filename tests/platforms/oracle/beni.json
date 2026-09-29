@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "oracle",
+  "platforms": ["browser"],
+  "markup": { "vocabulary": "Dom", "type": "Html.Html" }
+}

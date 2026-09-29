@@ -1,0 +1,81 @@
+-- dom-expressions' `SVG` client fixture, in beni: the style object is a
+-- style list written in place. Left out: the spread of `template3`.
+import Component
+import Html exposing (Html)
+
+
+type alias State =
+    { name : String, width : String, x : String, y : String }
+
+
+pub template : Html msg
+template =
+    <svg width="400" height="180">
+        <rect
+            stroke-width="2"
+            x="50"
+            y="20"
+            rx="20"
+            ry="20"
+            width="150"
+            height="150"
+            style="fill:red;stroke:black;stroke-width:5;opacity:0.5"
+        />
+        <linearGradient gradientTransform="rotate(25)">
+            <stop offset="0%"></stop>
+        </linearGradient>
+    </svg>
+
+
+pub template2 : State, { stroke : String } -> Html msg
+template2 state props =
+    <svg width="400" height="180">
+        <rect
+            class={state.name}
+            stroke-width={state.width}
+            x={state.x}
+            y={state.y}
+            rx="20"
+            ry="20"
+            width="150"
+            height="150"
+            style={[ ( "fill", "red" ), ( "stroke", "black" ), ( "stroke-width", props.stroke ), ( "opacity", "0.5" ) ]}
+        />
+    </svg>
+
+
+pub template4 : Html msg
+template4 =
+    <rect x="50" y="20" width="150" height="150" />
+
+
+pub template5 : Html msg
+template5 =
+    <>
+        <rect x="50" y="20" width="150" height="150" />
+    </>
+
+
+pub template6 : Html msg
+template6 =
+    <Component>
+        <rect x="50" y="20" width="150" height="150" />
+    </Component>
+
+
+pub template7 : String -> Html msg
+template7 url =
+    <svg viewBox={"0 0 160 40"} xmlns="http://www.w3.org/2000/svg">
+        <a xlink:href={url}>
+            <text x="10" y="25">
+                MDN Web Docs
+            </text>
+        </a>
+    </svg>
+
+
+pub template8 : String -> Html msg
+template8 text =
+    <svg viewBox={"0 0 160 40"} xmlns="http://www.w3.org/2000/svg">
+        <text x="10" y="25" textContent={text} />
+    </svg>

@@ -1,0 +1,2 @@
+- 0 "<ul><li>" firstChild  # a text hole that is its parent's only child is inserted at mount, into the element
++ 0 "<ul><li> " firstChild firstChild.firstChild  # the same hole is a text node of the template, written in place

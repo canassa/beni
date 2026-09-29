@@ -1,0 +1,39 @@
+-- dom-expressions' `insertChildren` client fixture, in beni. Left out: the
+-- roots that pass children to an element as a `children` attribute or a
+-- spread, a component with a lower-case tag, a spread child and the comma
+-- expression, none of which beni's markup has.
+import Html exposing (Html)
+
+
+type alias State =
+    { children : Html () }
+
+
+pub template20 : Html () -> Html ()
+template20 kids =
+    <module>{kids}</module>
+
+
+pub template22 : State -> Html ()
+template22 state =
+    <module>{state.children}</module>
+
+
+pub tiles : List (Html msg)
+tiles =
+    [ <div>Test 1</div> ]
+
+
+pub template25 : Html msg
+template25 =
+    <div>{tiles}</div>
+
+
+pub double : Html () -> Html ()
+double kids =
+    <div>{kids}</div>
+
+
+pub children : Html msg
+children =
+    <div />

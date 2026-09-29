@@ -1,0 +1,7 @@
+-- The component the fixture writes as `<Comp />`.
+import Html exposing (Html)
+
+
+pub view : {} -> Html msg
+view props =
+    <i>comp</i>

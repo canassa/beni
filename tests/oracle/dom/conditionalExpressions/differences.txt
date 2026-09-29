@@ -1,0 +1,12 @@
+- 0 "<div>"  # template10: a text hole that is its parent's only child is inserted at mount
+- 0 "<div>"  # template24: the same
+- 0 "<div>"  # left out: template19, markup given to `innerHTML`, which takes a `String`
+- 0 "<div>"  # left out: template27, the same
++ 0 "<div> " firstChild  # template10: the text hole is a text node of the template, written in place
++ 0 "<div> " firstChild  # template24: the same
++ 0 "<!>"  # template43: an empty fragment owns a place on the page, a marker; dom-expressions makes an empty array
++ 0 "<!>"  # template43: the same, the other branch
++ 4 "<!>" firstChild  # template20: a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<!>" firstChild  # template20: the same, the other branch
++ 4 "<!>" firstChild  # template28: the same
++ 4 "<!>" firstChild  # template43: a fragment of one hole is a kind of one slot; dom-expressions makes a memo

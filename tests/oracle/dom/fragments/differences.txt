@@ -1,0 +1,28 @@
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>First"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>First"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>First"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>Last"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>Last"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<div>Last"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>1"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>1"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>2"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>2"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>3"  # dom-expressions makes a fragment an array, each element a template of its own
+- 0 "<span>3"  # dom-expressions makes a fragment an array, each element a template of its own
++ 4 "<!>" firstChild  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div>" firstChild  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div>" firstChild  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div></div><!>" firstChild firstChild.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div></div><!>" firstChild firstChild.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div>First</div><div>Last" firstChild firstChild.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div>First</div><div>Last</div>After" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<div>First</div><div>Last</div>After" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<span>1</span> <span>2</span> <span>3" firstChild firstChild.nextSibling.nextSibling.nextSibling.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment
++ 4 "<span>1</span><span>2</span><span>3" firstChild firstChild.nextSibling.nextSibling  # beni makes a fragment one template of several nodes, cloned into a fragment

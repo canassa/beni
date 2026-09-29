@@ -1,0 +1,167 @@
+-- dom-expressions' `conditionalExpressions` client fixture, in beni: a
+-- JavaScript conditional is an `if`, `&&` a `Maybe`, `||` and `??` a
+-- fallback, a call of a function that returns markup the markup itself.
+-- The fixture is about where dom-expressions memoises a condition, which
+-- beni never does; what is compared is the template each root makes. Left
+-- out: the roots whose root is a component (their templates are the
+-- component's) and markup given to `innerHTML`, which is a `String`.
+import Comp
+import Html exposing (Html)
+
+
+type alias State =
+    { dynamic : Bool, count : Int, something : Bool, a : Bool, b : Bool, c : Bool, shown : Html (), maybe : Maybe (Html ()) }
+
+
+type alias Parts =
+    { simple : Bool, good : Html (), bad : Html (), best : Html () }
+
+
+andThen : Bool, Html () -> Maybe (Html ())
+andThen test html =
+    if test then Just html else Nothing
+
+
+pub template1 : Parts -> Html ()
+template1 p =
+    <div>{p.good}</div>
+
+
+pub template2 : State -> Html ()
+template2 state =
+    <div>{state.shown}</div>
+
+
+pub template3 : Parts -> Html ()
+template3 p =
+    <div>{if p.simple then p.good else p.bad}</div>
+
+
+pub template4 : Parts -> Html ()
+template4 p =
+    <div>{if p.simple then p.good else p.bad}</div>
+
+
+pub template4a : Parts -> Html ()
+template4a p =
+    <div>{if p.simple then p.good else p.bad}</div>
+
+
+pub template5 : State, Parts -> Html ()
+template5 state p =
+    <div>{if state.dynamic then p.good else p.bad}</div>
+
+
+pub template5a : State, Parts -> Html ()
+template5a state p =
+    <div>{if state.dynamic then p.good else p.bad}</div>
+
+
+pub template6 : State, Parts -> Html ()
+template6 state p =
+    <div>{andThen state.dynamic p.good}</div>
+
+
+pub template6a : State, Parts -> Html ()
+template6a state p =
+    <div>{andThen state.dynamic p.good}</div>
+
+
+pub template7 : State, Parts -> Html ()
+template7 state p =
+    <div>{if state.count > 5 then (if state.dynamic then p.best else p.good) else p.bad}</div>
+
+
+pub template7a : State, Parts -> Html ()
+template7a state p =
+    <div>{if state.count > 5 then (if state.dynamic then p.best else p.good) else p.bad}</div>
+
+
+pub template8 : State, Parts -> Html ()
+template8 state p =
+    <div>{andThen (state.dynamic && state.something) p.good}</div>
+
+
+pub template8a : State, Parts -> Html ()
+template8a state p =
+    <div>{andThen (state.dynamic && state.something) p.good}</div>
+
+
+pub template9 : State, Parts -> Html ()
+template9 state p =
+    <div>{if state.dynamic then p.good else p.bad}</div>
+
+
+pub template9a : State, Parts -> Html ()
+template9a state p =
+    <div>{if state.dynamic then p.good else p.bad}</div>
+
+
+pub template10 : State -> Html ()
+template10 state =
+    <div>{if state.a then "a" else if state.b then "b" else if state.c then "c" else "fallback"}</div>
+
+
+pub template11 : State, Parts -> Html ()
+template11 state p =
+    <div>{if state.a then p.good else if state.b then p.bad else if state.c then Html.text "c" else Html.text "fallback"}</div>
+
+
+pub template11a : State, Parts -> Html ()
+template11a state p =
+    <div>{if state.a then p.good else if state.b then p.bad else if state.c then Html.text "c" else Html.text "fallback"}</div>
+
+
+pub template20 : State -> Html ()
+template20 state =
+    <div>{if state.dynamic then <Comp /> else <Comp />}</div>
+
+
+pub template23 : State -> Html ()
+template23 state =
+    <div innerHTML={if state.dynamic then "a" else "b"} />
+
+
+pub template24 : State -> Html ()
+template24 state =
+    <div>{if state.dynamic then "a" else "b"}</div>
+
+
+pub template28 : State -> Html ()
+template28 state =
+    <div>{Maybe.withDefault state.maybe (<Comp />)}</div>
+
+
+pub template29 : State, Parts -> Html ()
+template29 state p =
+    <div>{if state.a && state.b then p.good else p.bad}</div>
+
+
+pub template29a : State, Parts -> Html ()
+template29a state p =
+    <div>{if state.a && state.b then p.good else p.bad}</div>
+
+
+pub template30 : State, Parts -> Html ()
+template30 state p =
+    <div>{if state.a then p.good else if state.b then p.bad else p.best}</div>
+
+
+pub template30a : State, Parts -> Html ()
+template30a state p =
+    <div>{if state.a then p.good else if state.b then p.bad else p.best}</div>
+
+
+pub template32 : State -> Html ()
+template32 state =
+    <div>{state.maybe}</div>
+
+
+pub template32a : State -> Html ()
+template32a state =
+    <div>{state.maybe}</div>
+
+
+pub template43 : State -> Html ()
+template43 state =
+    <>{if state.a then (if state.b then <div>Output</div> else <></>) else <></>}</>

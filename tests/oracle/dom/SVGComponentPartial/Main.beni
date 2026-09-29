@@ -1,0 +1,11 @@
+-- dom-expressions' `SVGComponentPartial` client fixture, in beni: an SVG
+-- element at a template's root is parsed inside `<svg>`, and the cloner
+-- takes the wrapper off.
+import Html exposing (Html)
+
+
+pub template : { cx : String, cy : String } -> Html msg
+template props =
+    <g>
+        <circle cx={props.cx} cy={props.cy} r="5" fill="red" />
+    </g>

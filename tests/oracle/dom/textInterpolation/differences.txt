@@ -1,0 +1,13 @@
+- 0 "<div>\nd" firstChild  # the literal "\n" is folded into the text after it, and the hole needs no marker of its own
+- 0 "<p>${blah}"  # a literal in a hole is folded into the template
+- 0 "<span>&nbsp;&lt;Hi&gt;&nbsp;"  # dom-expressions leaves references in text for the page to decode
+- 0 "<span>4 + 5 = 9"  # dom-expressions evaluates `4 + 5` when it compiles
+- 0 "<span>Hello World!"  # dom-expressions evaluates `value + "!"` when it compiles
+- 0 "<span>Hi&lt;script>alert();&lt;/script>"  # a literal in a hole is folded into the template
++ 0 "<div><!>d" firstChild firstChild.nextSibling  # a hole holding a literal is a hole: two holes and a text run, the first with a marker of its own
++ 0 "<p> " firstChild  # a hole holding a literal is a hole, a text node of the template
++ 0 "<span>4 + 5 = "  # beni does not evaluate the hole when it compiles
++ 0 "<span>Hello "  # beni does not evaluate the hole when it compiles
++ 0 "<span>Hi"  # a hole holding a literal is a hole
++ 0 "<span> &lt;Hi> "  # the text is decoded when compiled and escaped back for the parser: the same characters
++ 0 " &lt;Hi> "  # a fragment of text is a template in beni, a string in dom-expressions

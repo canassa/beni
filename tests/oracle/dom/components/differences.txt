@@ -1,0 +1,42 @@
+- 0 "<div> | <!> |  |  | <!> | " firstChild.nextSibling firstChild.nextSibling.nextSibling.nextSibling  # template12: the text between the holes is folded into one run with three spaces kept
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div><!><!><!>" firstChild firstChild.nextSibling firstChild.nextSibling.nextSibling  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>From Parent"  # left out: a root with `ref`, a spread or `this`
+- 0 "<div>Hello "  # left out: a root with `ref`, a spread or `this`
+- 0 "<span>1"  # template17, template18: dom-expressions makes a component's children an array, each element a template
+- 0 "<span>1"  # template17, template18: dom-expressions makes a component's children an array, each element a template
+- 0 "<span>2"  # template17, template18: dom-expressions makes a component's children an array, each element a template
+- 0 "<span>2"  # template17, template18: dom-expressions makes a component's children an array, each element a template
+- 0 "<span>3"  # template17, template18: dom-expressions makes a component's children an array, each element a template
+- 0 "<span>3"  # template17, template18: dom-expressions makes a component's children an array, each element a template
++ 0 "<div> | <!> | | | <!> | " firstChild.nextSibling firstChild.nextSibling.nextSibling.nextSibling  # template12: the same text written bare collapses its whitespace, as JSX text does
++ 0 "ask"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "ask"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "comments"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "comments"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "comments"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "jobs"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "jobs"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "new"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "new"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "show"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "show"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "show"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "submit"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 0 "submit"  # a component's children written as text are a block of their own in beni, a string in dom-expressions
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<!>" firstChild  # a component at a root is a kind of one slot in beni, a call in dom-expressions
++ 4 "<div></div><!>" firstChild firstChild.nextSibling  # a component's children written as markup are one block in beni, an array in dom-expressions
++ 4 "<div></div><div></div><div></div>After" firstChild firstChild.nextSibling.nextSibling.nextSibling  # a component's children written as markup are one block in beni, an array in dom-expressions
++ 4 "<span>1</span> <span>2</span> <span>3" firstChild firstChild.nextSibling.nextSibling.nextSibling.nextSibling  # a component's children written as markup are one block in beni, an array in dom-expressions
++ 4 "<span>1</span><span>2</span><span>3" firstChild firstChild.nextSibling.nextSibling  # a component's children written as markup are one block in beni, an array in dom-expressions

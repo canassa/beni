@@ -1,0 +1,78 @@
+-- dom-expressions' `components` client fixture, in beni: every component
+-- a module whose `view` takes its children. A literal text hole between
+-- components (`{" | "}`) is written as the text it is. Left out: the roots
+-- that use `ref`, a spread, `this` or a component named by a member of
+-- `this`, the builtins' `For` and `Show` over values dom-expressions leaves
+-- untyped, and the component roots that make no template.
+import Comp
+import Component
+import Html exposing (Html)
+import Link
+import Pre
+
+
+pub template3 : Html msg
+template3 =
+    <Component>
+        <div />
+        <div />
+        <div />
+        After
+    </Component>
+
+
+pub template7 : Html msg -> Html msg
+template7 dynamic =
+    <Component>
+        <div />
+        {dynamic}
+    </Component>
+
+
+pub template10 : Html msg
+template10 =
+    <div>
+        <Link>new</Link> | <Link>comments</Link> | <Link>show</Link> | <Link>ask</Link> | <Link>jobs</Link> | <Link>submit</Link>
+    </div>
+
+
+pub template11 : Html msg
+template11 =
+    <div>
+        <Link>new</Link> | <Link>comments</Link>
+        <Link>show</Link> | <Link>ask</Link>
+        <Link>jobs</Link> | <Link>submit</Link>
+    </div>
+
+
+pub template12 : Html msg
+template12 =
+    <div> | <Link>comments</Link> |  |  | <Link>show</Link> | </div>
+
+
+pub template17 : Html msg
+template17 =
+    <Pre><span>1</span> <span>2</span> <span>3</span></Pre>
+
+
+pub template18 : Html msg
+template18 =
+    <Pre>
+        <span>1</span>
+        <span>2</span>
+        <span>3</span>
+    </Pre>
+
+
+pub template25 : Html msg
+template25 =
+    <Component>
+        <div />
+    </Component>
+
+
+pub template38 : Html msg
+template38 =
+    <p>
+        (<Comp n={1} />)
+    </p>

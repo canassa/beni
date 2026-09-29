@@ -1,0 +1,59 @@
+--! The vocabulary the differential oracle's fixtures are written against
+--! (`tests/oracle/`, `docs/design/backend.md` §15.10): dom-expressions'
+--! client fixtures name any element and any attribute, as JSX may, so this
+--! platform, layered on `browser` for its `dom` lowering, declares every
+--! name by pattern and only what needs a fact of its own by name — the
+--! void elements, the SVG elements, the attributes whose value is not a
+--! `String`, and the events. The markup type is `html`'s, so the
+--! primitives of `html`, which the chain carries, still type.
+import Html exposing (Html)
+
+
+--| The event object a handler is handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String -> Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a -> b) -> Html b
+
+
+pub element "*"
+pub element "br" void
+pub element "hr" void
+pub element "img" void
+pub element "input" void
+pub element "svg" svg
+pub element "circle" svg
+pub element "g" svg
+pub element "linearGradient" svg
+pub element "path" svg
+pub element "rect" svg
+pub element "stop" svg
+pub element "mi" mathml
+pub element "mo" mathml
+pub element "mrow" mathml
+
+
+pub attribute "*" : String
+pub attribute "class" classes : String
+pub attribute "style" styles : String
+pub attribute "checked" property stateful : Bool
+pub attribute "disabled" : Bool
+pub attribute "readonly" : Bool
+pub attribute "muted" : Bool
+pub attribute "playsinline" : Bool
+pub attribute "value" property stateful : String
+pub attribute "innerHTML" property raw : String
+pub attribute "textContent" property : String
+pub attribute "xlink:href" : String
+
+
+pub event "onClick" delegated : Event
+pub event "onInput" delegated : Event
+pub event "onChange" : Event
+pub event "onMouseDown" delegated : Event
+pub event "onFocus" : Event

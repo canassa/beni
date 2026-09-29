@@ -1,0 +1,41 @@
+-- dom-expressions' `customElements` client fixture, in beni. Left out:
+-- `prop:someProp`, since beni writes a property only where the vocabulary
+-- declares one.
+import Html exposing (Html)
+
+
+type alias State =
+    { name : String, data : String }
+
+
+pub template : String, String -> Html msg
+template name data =
+    <my-element some-attr={name} notProp={data} my-attr={data} />
+
+
+pub template2 : State -> Html msg
+template2 state =
+    <my-element
+        some-attr={state.name}
+        notProp={state.data}
+        my-attr={state.data}
+    />
+
+
+pub template3 : Html msg
+template3 =
+    <my-element>
+        <header slot="head">Title</header>
+    </my-element>
+
+
+pub template4 : Html msg
+template4 =
+    <>
+        <slot name="head"></slot>
+    </>
+
+
+pub template5 : Html msg
+template5 =
+    <a is="my-element" />

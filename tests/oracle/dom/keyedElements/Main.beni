@@ -1,0 +1,20 @@
+-- dom-expressions' `keyedElements` client fixture, in beni, without its
+-- `$key` attributes: server markup identity, which a client compile drops
+-- and beni's markup does not have. The component root has no template.
+import Html exposing (Html)
+
+
+pub staticKey : Html msg
+staticKey =
+    <ul>
+        <li>Apple</li>
+    </ul>
+
+
+pub dynamicKey : { cls : String, text : String } -> Html msg
+dynamicKey item =
+    <ul>
+        <li class={item.cls}>
+            {item.text}
+        </li>
+    </ul>

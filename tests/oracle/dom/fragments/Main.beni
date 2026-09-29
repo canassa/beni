@@ -1,0 +1,87 @@
+-- dom-expressions' `fragments` client fixture, in beni: `inserted` and
+-- `inserted()` are both a value, the component `Component` a module.
+import Component
+import Html exposing (Html)
+
+
+type alias State =
+    { first : String, last : String, inserted : Html () }
+
+
+pub multiStatic : Html msg
+multiStatic =
+    <>
+        <div>First</div>
+        <div>Last</div>
+    </>
+
+
+pub multiExpression : Html () -> Html ()
+multiExpression inserted =
+    <>
+        <div>First</div>
+        {inserted}
+        <div>Last</div>
+        After
+    </>
+
+
+pub multiDynamic : State -> Html ()
+multiDynamic state =
+    <>
+        <div id={state.first}>First</div>
+        {state.inserted}
+        <div id={state.last}>Last</div>
+        After
+    </>
+
+
+pub singleExpression : Html () -> Html ()
+singleExpression inserted =
+    <>{inserted}</>
+
+
+pub firstStatic : Html () -> Html ()
+firstStatic inserted =
+    <>
+        {inserted}
+        <div />
+    </>
+
+
+pub firstComponent : Html msg
+firstComponent =
+    <>
+        <Component />
+        <div />
+    </>
+
+
+pub lastStatic : Html () -> Html ()
+lastStatic inserted =
+    <>
+        <div />
+        {inserted}
+    </>
+
+
+pub lastComponent : Html msg
+lastComponent =
+    <>
+        <div />
+        <Component />
+    </>
+
+
+pub spaces : Html msg
+spaces =
+    <><span>1</span> <span>2</span> <span>3</span></>
+
+
+pub multiLineTrailing : Html msg
+multiLineTrailing =
+    <>
+        <span>1</span>
+        <span>2</span>
+        <span>3</span>
+    </>
