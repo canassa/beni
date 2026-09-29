@@ -174,6 +174,20 @@ a new or re-blessed `run/` fixture, or a Node upgrade, run `zig build
 test-run-hashes` (with `-Dcorpus=run/MyFixture` for one) and commit the rewritten files. It never records a hash for a
 build whose output does not match — that build is reported and gets none.
 
+**Programs in a page: `browser/`.** Behaviour a browser program shows in
+the DOM — what a click renders, a controlled input reverting an edit,
+focus surviving a render — is a `tests/corpus/browser/` fixture: the
+program (for the `tests/platforms/page` test platform, or a project's own
+`platform/`), a `.steps` script (`click`, `input`, `key`, `focus`, one CSS
+selector each) and a blessed `.expected` transcript of `document.body`
+after the load and each step. The gates run it under happy-dom in Node;
+`zig build test-browser` runs the same fixtures in headless Chrome, and a
+difference between the two is either a `.chrome-expected` with its reason
+in the fixture's comment or a bug. An uncaught exception in the page fails
+the case, never a golden. Run hashes work as in `run/`. Prefer `run/`
+whenever printing can show the behaviour; a page costs about three times a
+Node run (`tests/corpus/README.md`, `browser/`).
+
 A black-box scenario that runs its program does it through
 `w.expectProgram(script, .{ .stdout = …, .exit_code = …, .stderr = … })` or
 `w.buildAndRun(args, expected)`, never `w.node` and assertions after it: the
