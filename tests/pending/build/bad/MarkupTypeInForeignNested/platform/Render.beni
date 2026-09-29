@@ -1,0 +1,89 @@
+import Html exposing (Html)
+
+
+type alias Rec =
+    { h : Html () }
+
+
+type Wrap
+    = W (Html ())
+
+
+type Tree
+    = Leaf
+    | Branch (List Tree) Wrap
+
+
+type Plain
+    = Plain (List Plain) Int
+
+
+pub foreign inRecord : { h : Html () } -> String
+
+pub foreign inAlias : Rec -> String
+
+pub foreign inCustom : Wrap -> String
+
+pub foreign inRecursive : Tree -> String
+
+pub foreign plain : Int -> String
+
+pub foreign recursive : Plain -> String
+
+pub foreign inWide : ( Html (), W13 ) -> String
+
+
+type alias W0 =
+    ( Int, Int )
+
+
+type alias W1 =
+    ( W0, W0 )
+
+
+type alias W2 =
+    ( W1, W1 )
+
+
+type alias W3 =
+    ( W2, W2 )
+
+
+type alias W4 =
+    ( W3, W3 )
+
+
+type alias W5 =
+    ( W4, W4 )
+
+
+type alias W6 =
+    ( W5, W5 )
+
+
+type alias W7 =
+    ( W6, W6 )
+
+
+type alias W8 =
+    ( W7, W7 )
+
+
+type alias W9 =
+    ( W8, W8 )
+
+
+type alias W10 =
+    ( W9, W9 )
+
+
+type alias W11 =
+    ( W10, W10 )
+
+
+type alias W12 =
+    ( W11, W11 )
+
+
+type alias W13 =
+    ( W12, W12 )

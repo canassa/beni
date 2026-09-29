@@ -79,3 +79,16 @@
 # comparison names `==` for a `where` requirement and for `Basics.eq`.
 # All five fixed and promoted the same day (CK-211 into abuse_test.zig,
 # CK-212 and CK-213 into build_test.zig, the rest into tests/corpus/).
+# CK-215 to CK-220 (2026-09-29), from the review of markup's type-checking:
+# a markup obligation deferred past a `let` meets a generalised variable, a
+# `foreign`'s markup type hidden in a record, alias or custom type, a
+# component's markup children typed at the enclosing root's messages and the
+# message that said so, markup nested past the checker's depth, and
+# `unkeyed_for`'s hint. Written and checked on fc4b31e.
+tests/pending/check/bad/markup/LetMarkupObligationHeld.beni exit=0 codes=none
+tests/pending/check/good/markup/LetMarkupObligationLater.beni exit=0 iface-differs
+tests/pending/build/bad/MarkupTypeInForeignNested BuildDidNotFail
+tests/pending/check/good/markup/ComponentChildrenOwnMessages exit=1 codes=type_mismatch×2
+tests/pending/check/bad/markup/ComponentChildrenNotMarkup exit=1 codes=type_mismatch×1 why=message
+tests/pending/check/bad/markup/MarkupTooDeepToCheck.beni exit=1 codes=child_not_renderable×1,nesting_too_deep×1 why=code
+tests/pending/check/good/markup/UnkeyedForHint.beni GoldenMismatch

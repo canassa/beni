@@ -1,0 +1,24 @@
+-- CK-217: a component's children written as markup are typed at the
+-- `children` prop's own message type, exactly as the call they mean is
+-- (language.md §11.13): `<Wrap>…</Wrap>` is `Wrap.view { children = <>…</> }`,
+-- and `Wrap.view` takes `Html Inner` and returns `Html Outer`. So a button
+-- sending `Clicked`, an `Inner`, checks inside `<Wrap>` in a view of
+-- `Html Outer`, as it does in the plain call beside it. On the base the
+-- children were typed at the enclosing root's message type, and the markup
+-- form was refused with two errors while the plain call checked.
+import Html exposing (Html)
+import Ui.Wrap as Wrap
+
+
+pub view : Html Wrap.Outer
+view =
+    <div>
+        <Wrap>
+            <button onClick={Wrap.Clicked}>x</button>
+        </Wrap>
+    </div>
+
+
+pub plain : Html Wrap.Outer
+plain =
+    <div>{Wrap.view { children = <button onClick={Wrap.Clicked}>x</button> }}</div>

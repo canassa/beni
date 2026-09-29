@@ -1,0 +1,16 @@
+-- A component whose children send another message type than the markup it
+-- returns: it nests them under `Outer` with `Html.map`.
+import Html exposing (Html)
+
+
+pub type Inner
+    = Clicked
+
+
+pub type Outer
+    = Wrapped Inner
+
+
+pub view : { children : Html Inner } -> Html Outer
+view props =
+    <section>{Html.map props.children Wrapped}</section>

@@ -1,0 +1,19 @@
+-- CK-215: a `let` whose markup's handler is its enclosing function's
+-- parameter does not generalise the markup's message variable, however the
+-- parameter's type is fixed later in the same `let` (checker-v2.md §4.5,
+-- §25.4). `input`'s markup sends what `g` returns, so its type is
+-- `(String -> a) -> ( Html a, a )`; on the base it was
+-- `(String -> a) -> ( Html b, c )`. `ordering_test.zig` checks the same
+-- `let` with its two bindings the other way round.
+import Html exposing (Html)
+
+
+pub input g =
+    let
+        v =
+            <input onInput={g} />
+
+        z =
+            g "x"
+    in
+    ( v, z )

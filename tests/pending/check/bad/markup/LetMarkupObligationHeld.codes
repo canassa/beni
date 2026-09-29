@@ -1,0 +1,4 @@
+# Each view is refused: its helper holds the message variable of its let-bound markup.
+type_mismatch 49:13
+type_mismatch 56:13
+type_mismatch 63:13

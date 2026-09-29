@@ -1,0 +1,63 @@
+-- CK-215: a markup obligation whose owner is an enclosing function's
+-- parameter holds the markup's message variable at that parameter's rank,
+-- so a `let` does not generalise it before the obligation is decided
+-- (checker-v2.md §4.5, §25.4). Each helper renders its parameter in a
+-- `let`-bound root and then fixes the parameter's type in the body: a
+-- handler (`input`), a hole (`hole`) and a `For` row function (`rows`).
+-- Each view uses the helper at another message type, which is a
+-- type_mismatch at the view's body (23:13, 29:13, 35:13). On the base the
+-- `let` generalised the message variable, so all three checked.
+import Html exposing (Html)
+
+
+type Msg
+    = Go
+
+
+type Other
+    = Oops String
+
+
+input g =
+    let
+        v =
+            <input onInput={g} />
+    in
+    ( v, g "x" )
+
+
+hole h =
+    let
+        v =
+            <div>{h}</div>
+    in
+    ( v, [ h, <button onClick={Oops "x"} /> ] )
+
+
+rows r =
+    let
+        v =
+            <ul><For each={[ 1 ]}>{r}</For></ul>
+    in
+    ( v, r 1 )
+
+
+pub viewInput : Html Msg
+viewInput =
+    case input Oops of
+        ( v, _ ) ->
+            v
+
+
+pub viewHole : Html Msg
+viewHole =
+    case hole (Html.text "x") of
+        ( v, _ ) ->
+            v
+
+
+pub viewRows : Html Msg
+viewRows =
+    case rows (\n -> <button onClick={Oops "x"} />) of
+        ( v, _ ) ->
+            v

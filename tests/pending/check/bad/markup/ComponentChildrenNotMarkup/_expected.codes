@@ -1,0 +1,2 @@
+# The markup between the tags is the children, and the message says so.
+type_mismatch Main.beni:14:10 contains "`children`" lacks "same messages"

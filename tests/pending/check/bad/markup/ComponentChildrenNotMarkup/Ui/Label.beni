@@ -1,0 +1,7 @@
+-- A component whose `children` is text, not markup.
+import Html exposing (Html)
+
+
+pub view : { children : String } -> Html msg
+view props =
+    <span>{props.children}</span>

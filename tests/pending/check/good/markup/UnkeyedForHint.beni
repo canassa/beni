@@ -1,0 +1,18 @@
+-- CK-220: `unkeyed_for`'s hint names a key the item type has (language.md
+-- §11.9): over records with no `id` but a `String` field `slug`, it
+-- suggests `keyed={.slug}` (16:10); over lists of numbers, which have no
+-- field at all, a key function (17:10). On the base both suggested
+-- `keyed={.id}`, which neither item type has.
+import Html exposing (Html)
+
+
+type alias Tag =
+    { uses : List Int, slug : String }
+
+
+pub view : List Tag, List (List Int) -> Html msg
+view tags rows =
+    <div>
+        <For each={tags}>{\t -> <p>{t.slug}</p>}</For>
+        <For each={rows}>{\r -> <p>x</p>}</For>
+    </div>

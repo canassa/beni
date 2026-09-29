@@ -1,0 +1,5 @@
+module Page
+  value plain : Html Outer
+  value view : Html Outer
+module Ui.Wrap
+  value view : { children : Html Inner } -> Html Outer

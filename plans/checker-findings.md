@@ -5319,6 +5319,109 @@ with a red fixture on `8f78224` before its fix.*
   `tests/corpus/check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni`,
   red on the base.
 
+*CK-215 to CK-220 were added on 2026-09-29 from the review of markup's type-checking, each
+written with a red fixture on `fc4b31e` before its fix.*
+
+### CK-215 — A markup obligation deferred past a `let` meets a generalised variable (unsound)
+
+- **Severity** unsound-runtime. **Area** the `handler`, `renderable` and `row` obligations
+  (`checker-v2.md` §25.4): their only owner-ranked slot was the owner itself, so the root's
+  message variable, an event's payload and a row's item were free to be generalised by a `let`
+  whose markup raised the obligation on an enclosing parameter. **Class** K2. **Sources** the
+  review of markup's type-checking (2026-09-29).
+- **Program** `input g = let v = <input onInput={g} /> in ( v, g "x" )`, used as
+  `case input Oops of ( v, _ ) -> v` in a `view : Html Msg` with `Oops : String -> Other`.
+- **Observed** checks: `input : (String -> a) -> ( Html b, a )`, so `Html Other` is accepted as
+  `Html Msg`. With `z = g "x"` as a later `let` binding, `input : (String -> a) -> ( Html b, c )`,
+  and `case input (\s -> s) of ( _, k ) -> k + 1` checks with `k` a `String`. The same for a
+  hole (`{h}`, `h` fixed later) and a `For` row function. Writing `z` before `v` was correct.
+- **Expected** `input : (String -> a) -> ( Html a, a )`: the obligation holds what its decision
+  will unify at its owner's rank, as a `tuple_index` holds its result and a `?` its subject, so
+  the `let` does not generalise it; the view is a `type_mismatch`.
+- **Fixture** `check/bad/markup/LetMarkupObligationHeld.beni`, red `exit=0 codes=none`;
+  `check/good/markup/LetMarkupObligationLater.beni`, red `exit=0 iface-differs`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
+### CK-216 — `markup_type_in_foreign` misses a markup type in a record or custom type
+
+- **Severity** latent (a `foreign` that reads one lowering's markup accepted in a platform that
+  names none). **Area** `Vocab.mentionsType`, which walked applications, tuples and functions
+  only, and answered "no markup" when it had visited 4 096 positions. **Class** K5. **Sources**
+  the review of markup's type-checking (2026-09-29).
+- **Program** a platform layered on `node` declaring `pub foreign f : { h : Html () } -> String`,
+  `Rec -> String` with `type alias Rec = { h : Html () }`, `Wrap -> String` with
+  `type Wrap = W (Html ())`, or `( Html (), W13 ) -> String` with `W13` an alias whose expansion
+  is 2¹⁴ positions.
+- **Observed** the build succeeds.
+- **Expected** `markup_type_in_foreign` at each: §25.2 asks whether the declared type mentions
+  the markup type after aliases, which a record field and a constructor's payload do, and a
+  search that cannot finish must not answer no.
+- **Fixture** `build/bad/MarkupTypeInForeignNested/`, red `BuildDidNotFail`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
+### CK-217 — A component's markup children are typed at the enclosing root's messages
+
+- **Severity** valid-program-rejected. **Area** `constrain/Markup.zig`'s component, which
+  walked children written as markup as nodes of the enclosing root, sharing its message
+  variable. **Class** K15. **Sources** the review of markup's type-checking (2026-09-29).
+- **Program** `Wrap.view : { children : Html Inner } -> Html Outer`, and in a view of `Html
+  Outer`, `<Wrap><button onClick={Clicked}>x</button></Wrap>` with `Clicked : Inner`.
+- **Observed** two `type_mismatch`es, while `Wrap.view { children = <button …>x</button> }`
+  checks.
+- **Expected** checks: `language.md` §11.13 makes the two forms one program, so the children
+  are a markup value of their own, typed at the `children` prop's message type.
+- **Fixture** `check/good/markup/ComponentChildrenOwnMessages/`, red `exit=1
+  codes=type_mismatch×2`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
+### CK-218 — Children that do not fit the `children` prop are said to send other messages
+
+- **Severity** diagnostic-quality. **Area** the category the component's children met their
+  prop under, `markup_child`, whose text is about a hole's messages. **Class** K13. **Sources**
+  the review of markup's type-checking (2026-09-29).
+- **Program** `Label.view : { children : String } -> Html msg`, used as
+  `<Label><b>x</b></Label>`.
+- **Observed** "This markup does not produce the same messages as the markup around it".
+- **Expected** a message naming the `children` prop and its type.
+- **Fixture** `check/bad/markup/ComponentChildrenNotMarkup/`, red `exit=1
+  codes=type_mismatch×1 why=message`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
+### CK-219 — Markup nested past the checker's depth is worded as a type, and cascades
+
+- **Severity** diagnostic-quality. **Area** the generator's depth guard: its note printed the
+  written-type text, and the expression it gave up on was left an unconstrained variable, which
+  a hole's `renderable` then reported as unknown. **Class** K13. **Sources** the review of
+  markup's type-checking (2026-09-29).
+- **Program** 1 400 nested `<div>{…}</div>`, which the parser accepts.
+- **Observed** `nesting_too_deep` saying "This type is nested more than 512 levels deep … Give
+  the inner part a `type alias`", and `child_not_renderable` "I cannot tell what type this
+  hole's value has".
+- **Expected** one `nesting_too_deep` worded for markup; the unread part is poisoned, so nothing
+  cascades from it.
+- **Fixture** `check/bad/markup/MarkupTooDeepToCheck.beni`, red `exit=1
+  codes=child_not_renderable×1,nesting_too_deep×1 why=code`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
+### CK-220 — `unkeyed_for` suggests `keyed={.id}` for items that have no `id`
+
+- **Severity** diagnostic-quality. **Area** `MarkupTexts.unkeyedFor`'s hint, which was one
+  sentence for every item type. **Class** K13. **Sources** the review of markup's type-checking
+  (2026-09-29).
+- **Program** a `For` over `List (List Int)`, or over records with no `id` field, with no
+  `keyed`.
+- **Observed** "Hint: key the rows, `keyed={.id}`, …" for both.
+- **Expected** a field the record has, `id` when it has one; for an item that is not a record,
+  a key function.
+- **Fixture** `check/good/markup/UnkeyedForHint.beni`, red `GoldenMismatch`.
+- **Slice** the fixes to markup's type-checking.
+- **Status** open.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -5531,14 +5634,20 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-212 | latent | K14 | promoted: `build_test.zig` (two symbolic-link tests) | the last review's fixes (fixed) |
 | CK-213 | diagnostic-quality | K14 | promoted: `build_test.zig` "a _manifest.txt that cannot be written …" | the last review's fixes (fixed) |
 | CK-214 | diagnostic-quality | K13 | promoted: `check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni` | the last review's fixes (fixed) |
+| CK-215 | unsound-runtime | K2 | `check/bad/markup/LetMarkupObligationHeld.beni`, `check/good/markup/LetMarkupObligationLater.beni` | the fixes to markup's type-checking |
+| CK-216 | latent | K5 | `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking |
+| CK-217 | valid-program-rejected | K15 | `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking |
+| CK-218 | diagnostic-quality | K13 | `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking |
+| CK-219 | diagnostic-quality | K13 | `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking |
+| CK-220 | diagnostic-quality | K13 | `check/good/markup/UnkeyedForHint.beni` | the fixes to markup's type-checking |
 
 Totals:
-- 202 entries (CK-210 to CK-214 added 2026-09-29 from the last review of the checker; CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 34 (CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
+- 208 entries (CK-215 to CK-220 added 2026-09-29 from the review of markup's type-checking; CK-210 to CK-214 added 2026-09-29 from the last review of the checker; CK-202 to CK-209 added 2026-09-29 from the final review of the checker; CK-201 added 2026-09-28 by R15-fix-J, found closing CK-146; CK-200 added 2026-09-28 from a user's report; CK-194 to CK-197 added 2026-09-28 by R15-fix-I from the manager's residues; CK-190 to CK-193 added 2026-09-28 by R15-fix-H, the first three from the review of R15-fix-F and CK-193 from its own audit, numbered from 190 with 180–189 unused; CK-179 added 2026-09-28 by R15-fix-G; CK-175 to CK-178 added 2026-09-28 by R15-fix-G, from R15-fix-E's review; CK-169 to CK-174 added 2026-09-28 by R15-fix-C, the first three from R15-fix-A's review; CK-135 to CK-168 added 2026-09-27 from R15's four audits; CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a; CK-118 by R8b; CK-119 to CK-124 by R8b's review round, CK-119 to CK-121 fixed in it; CK-125 by its round-2 review, fixed; CK-126 to CK-128 by R8c; CK-129 by R8d; CK-130 and CK-131 by R9, CK-130 fixed in it and CK-131 by R9b; CK-132 by R10; CK-133 and CK-134 by R12). Counted from the summary table (R9b; the severities below had drifted by one each for crashes and rejections; R10 added CK-132 to nondeterminism). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 35 (CK-215 from the review of markup's type-checking; CK-190 and CK-193 from R15-fix-H; CK-170 from R15-fix-C; CK-137 and CK-138 from R15; CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104, CK-108, CK-120, CK-123, CK-126 and CK-128 among them). Five of them (CK-13, CK-24, CK-120, CK-123, CK-126) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 23 (CK-194 from R15-fix-I; CK-169 from R15-fix-C; CK-135, CK-136 and CK-139 to CK-142 from R15; CK-92, CK-101, CK-109, CK-121 and CK-122 among them).
-- valid-program-rejected: 32 (CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
+- valid-program-rejected: 33 (CK-217 from the review of markup's type-checking; CK-175 from R15-fix-G; CK-172 to CK-174 from R15-fix-C; CK-147, CK-159, CK-161 and CK-167 from R15; CK-87, CK-99, CK-114, CK-118, CK-125 and CK-130 among them).
 - nondeterminism: 6 (CK-202 from the final review; CK-196 from R15-fix-I; CK-179 from R15-fix-G; CK-132 among them, v1 only).
 - performance: 31 (CK-211 from the last review; CK-203 from the final review; CK-198 and CK-199 from the test budget; CK-171 from R15-fix-C; CK-143, CK-144, CK-164 and CK-165 from R15; CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107, CK-111 to CK-113, CK-119, CK-124, CK-127, CK-131, CK-133 and CK-134 among them).
-- diagnostic-quality: 49 (CK-210, CK-213 and CK-214 from the last review; CK-204 to CK-209 from the final review; CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
-- latent: 28 (CK-212 from the last review; CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
+- diagnostic-quality: 52 (CK-218 to CK-220 from the review of markup's type-checking; CK-210, CK-213 and CK-214 from the last review; CK-204 to CK-209 from the final review; CK-201 from R15-fix-J; CK-200 from a user's report; CK-195 and CK-197 from R15-fix-I; CK-176 to CK-178 from R15-fix-G; CK-145, CK-148, CK-154, CK-162, CK-166 and CK-168 from R15; CK-86, CK-94, CK-115, CK-116 and CK-129 among them).
+- latent: 29 (CK-216 from the review of markup's type-checking; CK-212 from the last review; CK-191 and CK-192 from R15-fix-H; CK-146, CK-149 to CK-153, CK-155 to CK-158, CK-160 and CK-163 from R15; CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 30 (CK-212 and CK-213; CK-206 and CK-209; CK-200; CK-190 to CK-193 from R15-fix-H; CK-138, CK-148, CK-163 to CK-166 from R15; CK-78, CK-83, CK-86, CK-87, CK-88, CK-95, CK-104, CK-124, CK-127 and CK-128 among them).
