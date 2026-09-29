@@ -600,11 +600,21 @@ syntax, the typing and the guarantees ([`language.md`](language.md) §11,
 plain calls — is platform code. Nothing in this section moves §4's wall or its four checks
 (§9.7).
 
+*Revised 2026-09-29, after the specification review.* The `markup` key is inherited field by field,
+so `html` declares the vocabulary and `browser` and `node` the lowering (§9.1–§9.2); the program
+runtime and the markup runtime may be one file, which is how a browser program's `send` reaches its
+delegated listeners (§9.2); a vocabulary declares **markup primitives**, bound to the markup runtime,
+which is how one vocabulary serves every lowering, and a `foreign` may not carry one lowering's
+markup into another (§9.3); the tree and the context are defined in full, with rows of every shape,
+interleaved items and the `Show` node (§9.4.2–§9.4.3); host access is restated as what emitted code
+really does (§9.4.4); start data has one shape (§9.4.5); and the interface is versioned so that an
+addition breaks no lowering (§9.4.6, the owner's answer).
+
 ### 9.1 Layers, and a platform that depends on a platform
 
 | Layer | Is | Knows |
 |---|---|---|
-| **the language** | the compiler: syntax, types, guarantees, the markup tree | no architecture, no HTML, no host |
+| **the language** | the compiler: syntax, types, guarantees, the markup tree, JSX's character references | no architecture, no HTML vocabulary, no host |
 | **core** | the platform-independent package, embedded | no host beyond §5.1's common set |
 | **platforms** | privileged packages: `foreign`, vocabularies, a markup lowering, `Program` | one host |
 | **frameworks** | ordinary beni, or a platform layered on another | an architecture |
@@ -617,10 +627,18 @@ two:
 
 | Platform | Depends on | Declares |
 |---|---|---|
-| `html` | — | the HTML vocabulary: elements, attributes, events, the markup type `Html msg` (§9.3). No `program`; it is only depended on |
-| `browser` | `html` | DOM capabilities, a low-level `Program` and its `runtime`, the `markup` key selecting `dom` |
+| `html` | — | the HTML vocabulary: elements, attributes, events, the markup primitives `text` and `map`, the markup type `Html msg` (§9.3), and in its Zig the HTML parser's table (§9.5). No `program` and no lowering; it is only depended on |
+| `browser` | `html` | DOM capabilities, a low-level `Program` and its runtime, the `dom` lowering; re-exports `Html` |
 | `browser-tea` | `browser` | The Elm Architecture in beni over `browser`'s `Program`; re-exports `Html` and `browser`'s modules |
-| `node` | `html` | today's Node platform, plus the `markup` key selecting `ssr`, so a `view` renders to a string under Node and `tests/corpus/run/` can test it (research 36 §5.5) |
+| `node` | `html` | today's Node platform, plus the `ssr` lowering, so a `view` renders to a string under Node and `tests/corpus/run/` can test it (research 36 §5.5); re-exports `Html` |
+
+**Why `html` is a platform of its own**, and not part of `browser` and `node` each: a view module
+must check once and build under both (§5.3's full-stack case, research 36 §5.5), and it can only if
+both builds type it against **one** vocabulary module and **one** `Html` type — two copies would be
+two unrelated types, and a view written for one would not check against the other. The layer holds
+exactly what the two lowerings share, which is also where the HTML parser's table lives (§9.5). It
+costs one more manifest and nothing at run time. It is recorded as a decision for the owner in
+`plans/browser-platform.md`.
 
 **The manifest gains two keys.**
 
@@ -643,12 +661,21 @@ two:
   **`"reexports"`**, which may name any module the listing platform can import. Anything else is
   `unknown_module`, whose message names the platform that has it and the key that would expose it.
   That is the whole of "re-export": beni has no re-export declaration, and does not gain one; the
-  module is the same module, reached by its own name.
-- **The output keys** — `program`, `runtime`, `entry` and `markup` (§9.2) — are each taken from the
-  top platform when it declares them, otherwise from its dependencies in the chain's order, first
-  found. `program` may name a type of any module of the chain. So `browser-tea` declares none of them:
-  its `Tea.element : { init, update, view, subscriptions } -> Browser.Program` is beni over
-  `browser`'s capabilities, and the build's `Program` and `runtime` are `browser`'s.
+  module is the same module, reached by its own name. **So `node` and `browser` list `Html`**: a
+  program under either writes `view : Model -> Html Msg` and calls `Html.map`, and the markup it
+  writes needs no import (`frontend.md` §9.8) but its annotations and calls do.
+- **The output keys** — `program`, `runtime`, `entry` and each field of `markup` (§9.2) — are each
+  taken from the top platform when it declares them, otherwise from its dependencies in the chain's
+  order, first found, **field by field**. `program` may name a type of any module of the chain. So
+  `browser-tea` declares none of them: its `Tea.element : { init, update, view, subscriptions } ->
+  Browser.Program` is beni over `browser`'s capabilities, and the build's `Program`, `runtime` and
+  lowering are `browser`'s, its vocabulary `html`'s.
+- **A chain with no `program`** — `html` alone — is a platform to check against and to build a
+  library with, not to build a program with: `check --platform=html` types markup, `build
+  --library --platform=html` builds a library (and refuses one whose markup survives, since `html`
+  names no lowering: `unknown_markup_lowering`, §9.2), and `build --platform=html` without
+  `--library` is an exit-2 manifest failure naming the platform and saying it has no `program` and
+  is only depended on, before anything is read.
 - **Output.** The top platform's modules, siblings and runtime go to `_platform/` as today; a
   dependency platform's go to `_platform/_<name>/`, a path no module can reach (`backend.md` §2,
   rule 1), so the existing output of a one-platform build does not move by a byte.
@@ -659,48 +686,88 @@ two:
 ### 9.2 The `markup` manifest key
 
 ```json
-"markup": { "lowering": "dom", "vocabulary": "Html", "type": "Html.Html", "runtime": "markup.js" }
+"markup": { "vocabulary": "Html", "type": "Html.Html" }          -- html
+"markup": { "lowering": "dom", "runtime": "runtime.js" }          -- browser: the same file as its "runtime"
+"markup": { "lowering": "ssr", "runtime": "markup.js" }           -- node
 ```
 
 | Field | Is | Checked |
 |---|---|---|
-| `lowering` | the name of a markup lowering compiled into this beni binary (§9.5) | when the platform is loaded: an unknown name is **`unknown_markup_lowering`**, reported against `<platform root>/beni.json` at `1:1` with no excerpt, the shape `invalid_entry_file` uses, and the message lists the lowerings this binary has |
-| `vocabulary` | the module of the chain that holds the `pub element`, `pub attribute` and `pub event` declarations | when a module uses markup: a name that is no module of the chain is `no_markup_vocabulary`, whose message names this key |
+| `lowering` | the name of a markup lowering compiled into this beni binary (§9.5) | when the platform is loaded: an unknown name is **`unknown_markup_lowering`**, reported against `<platform root>/beni.json` at `1:1` with no excerpt, the shape `invalid_entry_file` uses, and the message lists the lowerings this binary has. A `build` in which a markup root or a markup primitive survives and whose chain names **no** lowering is the same code, against the top platform's manifest, saying none is named |
+| `vocabulary` | the module of the chain that holds the `pub element`, `pub attribute`, `pub event` and `pub markup` declarations | when a module uses markup: a name that is no module of the chain is `no_markup_vocabulary`, whose message names this key |
 | `type` | the markup type: a `pub foreign type` of one parameter, in any module of the chain | likewise |
-| `runtime` | the **markup runtime**, a JavaScript file of the declaring package whose exports are the lowering's well-known entry points (§9.4.5) | by §4's checks 2, 3 and 4, exactly as a sibling (§9.7) |
+| `runtime` | the **markup runtime**, a JavaScript file of the package that declares this field, whose exports are the lowering's well-known entry points and the vocabulary's primitives (§9.4.5) | by §4's checks 2, 3 and 4, exactly as a sibling (§9.7), whenever `lowering` is checked |
 
-A chain with no `markup` key has no markup: a program that writes some is `no_markup_vocabulary`.
-Two platforms of a chain may both declare the key — `node` and `browser` do, over one `html` — and the
-first found wins (§9.1), which is how one vocabulary is lowered two ways.
+Each field is inherited on its own (§9.1): `browser`'s build has `html`'s `vocabulary` and `type` and
+its own `lowering` and `runtime`. A chain with no `vocabulary` has no markup: a program that writes
+some is `no_markup_vocabulary`. Two platforms of a chain may both declare `lowering` — `node` and
+`browser` do, over one `html` — and the first found wins, which is how one vocabulary is lowered two
+ways. A `lowering` and its `runtime` must come from one package, since the runtime is written for the
+lowering; a chain in which the first `lowering` found and the first `runtime` found are declared by
+different packages is an exit-2 manifest failure naming both.
+
+**The markup runtime may be the program runtime.** When the package's `"runtime"` (§5.2) and
+`"markup".runtime` name the same file, it is one sibling: copied once, checked once, and its exports
+must be exactly the union of `run` and the markup runtime's list (§9.4.5). **`browser` does this, and
+must**: a delegated listener, which the markup runtime installs, has to deliver a message to the
+program's `send`, which the program runtime owns, and a sibling may not import another file
+(`backend.md` §2). So the one file owns the program loop, the render loop and the DOM patching, and
+nothing crosses between two files at run time (`backend.md` §15.11). `node` needs no such sharing — a
+string renderer sends nothing — and keeps `markup.js` beside `runtime.js`.
 
 ### 9.3 The vocabulary, and why it is not `foreign`
 
-A platform package declares its markup vocabulary with `language.md` §11.14's three forms. They
-**carry no JavaScript**: an element, an attribute and an event have no run-time existence of their
-own, so as `foreign` values §4's check 2 would demand an export for each and there is none to write
-(research 36 §5.4). So they are a declaration form of their own, privileged like `foreign` — legal
-only in a platform package (`vocabulary_outside_platform`) — and they leave check 2 exact
+A platform package declares its markup vocabulary with `language.md` §11.14's four forms. The first
+three **carry no JavaScript**: an element, an attribute and an event have no run-time existence of
+their own, so as `foreign` values §4's check 2 would demand an export for each and there is none to
+write (research 36 §5.4). So they are a declaration form of their own, privileged like `foreign` —
+legal only in a platform package (`vocabulary_outside_platform`) — and they leave check 2 exact
 (research 36 question 1, accepted).
 
 **The facts are the lowering's data.** The language fixes the set of fact words and what the
-checker reads (`void`, `on`, the value and payload types, `via`); what `property`, `stateful`,
-`url`, `raw`, `delegated`, `preventDefault`, `stopPropagation`, `name`, `svg` and `mathml` do is each
-lowering's to define, and a lowering that has no use for one (`ssr` and `delegated`) defines it as
-nothing. **Every lowering must write the five value classes** — `String`, `Int`, `Float`, `Bool`,
-`Maybe String` — since those are what the checker admits (`checker-v2.md` §25.2). Growing the fact
-set is a change to this section and to the lowering interface's version (§9.4.6).
+checker reads (`void`, `on`, the value and payload types, `via`, `classes`, `styles` for typing, and
+`raw` for its warning, `checker-v2.md` §25.2); what `property`, `stateful`, `url`, `raw`, `classes`,
+`styles`, `delegated`, `preventDefault`, `stopPropagation`, `name`, `svg` and `mathml` do to a page is
+each lowering's to define, and a lowering that has no use for one (`ssr` and `delegated`) defines it
+as nothing. **Every lowering must write the seven value classes** — `String`, `Int`, `Float`, `Bool`,
+`Maybe String`, and the class and style lists of `language.md` §11.19 — since those are what the
+checker admits, and must give the two lists the meaning §11.19 states, so that a page says the same
+thing whichever lowering built it. Growing the fact set is a change to this section and a minor
+version of the lowering interface (§9.4.6).
 
 **A payload extractor is an ordinary `foreign`.** `pub event "onInput" delegated via targetValue :
 String` names `foreign targetValue : Event -> String` of the same module, which is bound to an
 export of the module's sibling and held to all four of §4's checks like any other. So the one piece
-of a vocabulary that runs JavaScript is exactly as walled as everything else that does.
+of a vocabulary that runs JavaScript at an event is exactly as walled as everything else that does.
+
+**A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
+(a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
+**the build's markup runtime** — whichever lowering's runtime that is. It is held to the four checks
+as a `foreign` is, against that file: check 1 on its type (a function, so shape (a)), check 2 by
+being part of the runtime's export list (§9.4.5), check 3 on the file, and check 4 on the export's
+parameter count. That is how **one vocabulary serves every lowering**: a `foreign` of `html` would
+bind to `html`'s one sibling, which cannot know whether the build wants a `dom` block or an `ssr`
+string, while a primitive is implemented once per lowering, in the runtime written for it. `html`
+declares `text` and `map` (`language.md` §11.13); every lowering that serves `html` implements both
+(`backend.md` §15.3, §15.6). The wall does not move: a primitive is platform code bound to a
+platform file under the same checks, and no program can write one.
+
+**A `foreign` may not carry markup across lowerings.** A `foreign` whose type mentions the markup
+type builds or reads the markup representation of one lowering, so it is legal only in a platform
+package whose own manifest names a `lowering`, and only in a build whose lowering is that one
+(`markup_type_in_foreign`, `checker-v2.md` §25.2). `browser`'s `Program` constructor, which receives
+`view`, and `node`'s `render : Html msg -> String`, which reads an `ssr` string, are legal; the same
+declarations in `html`, or `browser`'s under a platform that layered another lowering on top of it,
+are refused. This is the guarantee that a program checks against `html` and then builds, under any
+lowering, into a page whose every markup value was made by that lowering.
 
 **Where HTML's parser rules live.** Void elements as the parser sees them, implied end tags, table
 foster-parenting, `<a>` inside `<a>` — facts about `innerHTML`, not about a vocabulary — are a fixed
-table in the `dom` lowering — kept in `html`'s Zig so `ssr` uses the same one (§9.5) — and never
-the language's or the vocabulary's (research 36 question 2,
-accepted; `backend.md` §15.3). Typed content categories, which would make misnesting a type error,
-are later (research 27 §6.12).
+table used by the lowerings and kept in `html`'s Zig, so `dom` and `ssr` share one copy (§9.5); never
+the language's or the vocabulary's (research 36 question 2, accepted; `backend.md` §15.3). Typed
+content categories, which would make misnesting a type error, are later (research 27 §6.12). **HTML's
+character references are not here**: they are JSX's text syntax, decoded by the compiler before any
+lowering sees the text (`language.md` §11.4, `frontend.md` §9.7).
 
 ### 9.4 The markup lowering interface
 
@@ -717,68 +784,142 @@ what a template, a hole, a list and an event become.
   lowering is re-entrant by construction (§9.6).
 - **Never in `check`.** Whether a program checks, and every diagnostic `check` prints, is independent
   of the lowering — which is what lets one module check once and compile under two platforms. The
-  one exception is §9.4.7's `markup_restructured`, a `build` diagnostic.
+  exceptions are §9.4.7's `markup_restructured` and §9.4.6's `markup_feature_unsupported`, both
+  `build` diagnostics, and §9.4.5's runtime checks, which `check --platform` runs as it runs §4's.
 
 #### 9.4.2 The typed markup tree
 
 The compiler hands a lowering one `Tree` per module. Its shape, as the interface module declares it
 (`src/markup/Interface.zig`, imported by a lowering as `beni_markup`; the names are the contract of
-interface version 1):
+interface version 1.0, §9.4.6). **Every enumeration is non-exhaustive** (`enum(u8) { …, _ }`), so a
+lowering's `switch` over one needs an `else` prong and compiles unchanged when a later minor version
+adds a member (§9.4.6); nodes, rows and items are read through accessors, never as a Zig
+`union(enum)`, for the same reason.
 
 ```zig
+pub const version: Version = .{ .major = 1, .minor = 0 };
+pub const Version = struct { major: u16, minor: u16 };
+
 pub const Tree = struct {
     roots: []const Root,          // in instruction order: the module's markup sites
+    rows: []const Row,            // For rows and Show bodies
     nodes: []const Node,          // every Node.Index points in here
-    attrs: []const Attr,
-    events: []const Event,
+    items: []const Item,          // attributes, escapes and events, in source order per element
+    entries: []const Entry,       // class and style lists written in place (language.md §11.19)
     props: []const Prop,
     children: []const Node.Index, // ranges of children, in source order
-    strings: Strings,             // markup names, trimmed text, constant attribute text: UTF-8
-    vocabulary: Vocabulary,       // the element, attribute and event rows the nodes name, with their facts
+    strings: Strings,             // markup names, text, constants: UTF-8, text already trimmed and decoded
+    vocabulary: Vocabulary,       // the rows the nodes name, with their facts
+    requires: Version,            // the newest interface feature this tree uses (§9.4.6)
+    // accessors: tree.element(n), tree.fragment(n), tree.text(n), tree.hole(n), tree.component(n),
+    // tree.for_(n), tree.show(n), tree.item(i), tree.entry(i), tree.string(s) []const u8, …
 };
+
+pub const Site = struct { module: u32, inst: u32 }; // module index, instruction index (backend.md §15.2)
 
 pub const Root = struct {
-    site: Site,                   // { module: u32, inst: u32 }: module index and instruction index
-    node: Node.Index,
-    values: Value.Range,          // the root's values, in evaluation order (language.md §11.11)
-    shape: enum { expression, for_row },
-    row: ?Row,                    // for_row: the row function's parameters and captured environment
+    site: Site,
+    kind: enum(u8) { expression, row_markup, row_lambda, _ },
+    node: Node.Index,             // the markup; `.none` for row_lambda, whose last value is its result
+    values: Value.Range,          // the values this root evaluates, in evaluation order (language.md §6)
 };
 
-pub const Node = union(enum) {
-    element: struct { row: ElementRow, attrs: Range, events: Range, children: Range },
-    fragment: struct { children: Range },
-    text: struct { text: Strings.Index },                         // already trimmed, literal
-    hole: struct { value: Value.Index, kind: HoleKind },          // text(string|number|char|bool), html, maybe_html, list_html
-    component: struct { props: Range, spread: ?Value.Index, children: ?Value.Index },
-    for_: struct {
-        each: Value.Index, fallback: ?Value.Index,
-        keyed: union(enum) { key: Value.Index, position, reference },
-        item_is_primitive: bool,
-        row: union(enum) { root: Root.Index, function: Value.Index }, // markup body, or an opaque function
-    },
+pub const Row = struct {          // a For row or a Show body: the function applied per item
+    site: Site,                   // the row function's instruction
+    kind: enum(u8) { markup, lambda, function, _ },   // frontend.md §9.7's shapes
+    body: Root.Index,             // markup: a row_markup root; lambda: a row_lambda root; function: unused
+    function: Value.Index,        // function: the row function, a value of the enclosing root
+    arity: u8,                    // 1 (item) or 2 (item, position; For only)
+    reads_index: bool,            // the body uses the position
+    captures: Value.Range,        // values of the enclosing root: the locals the body uses, whole
+    inputs: Value.Range,          // values of the enclosing root: what a skip compares besides the item
+};                                //   and the position (language.md §11.9); function: [function]
+
+pub const Node = struct {
+    kind: Kind, payload: u32,
+    pub const Kind = enum(u8) { element, fragment, text, hole, component, for_, show, _ };
+};
+pub const Element   = struct { row: ElementRow, items: Range, children: Range };
+pub const Fragment  = struct { children: Range };
+pub const Text      = struct { text: Strings.Index };            // trimmed and decoded: the page's text
+pub const Hole      = struct { value: Value.Index, kind: HoleKind };
+pub const HoleKind  = enum(u8) { text_string, text_number, text_char, text_bool, html, maybe_html, list_html, _ };
+pub const Component = struct { props: Range, spread: ?Value.Index, children: ?Value.Index };
+pub const For = struct {
+    each: Value.Index, fallback: ?Value.Index,
+    mode: enum(u8) { key, position, reference, _ }, key: ?Value.Index,
+    item_is_primitive: bool, row: Row.Index,
+};
+pub const Show = struct {
+    when: Value.Index, fallback: ?Value.Index,
+    mode: enum(u8) { key, identity, _ }, key: ?Value.Index,
+    value_is_primitive: bool, body: Row.Index,
 };
 
-pub const Attr = struct {
+pub const Item = struct {         // one attribute, escape or event, in source order
+    kind: enum(u8) { attribute, escape, event, _ },
     name: Strings.Index,
-    row: ?AttributeRow,                                            // null: the quoted-name escape
-    class: enum { string, int, float, bool, maybe_string },
-    value: union(enum) { constant: Constant, dynamic: Value.Index },
+    attribute: AttributeRow,      // attribute: its row; escape, event: unused
+    event: EventRow,              // event: its row
+    class: Class,                 // attribute, escape: the value class checker-v2.md §25.7 recorded
+    form: enum(u8) { message, payload, _ }, // event
+    value: ItemValue,
 };
+pub const Class = enum(u8) { string, int, float, bool, maybe_string, class_list, style_list, _ };
+pub const ItemValue = struct {
+    kind: enum(u8) { constant, dynamic, entries, _ },
+    constant: Constant,           // constant: known at compile time (language.md §11.5)
+    dynamic: Value.Index,         // dynamic: the value (for an event, the handler)
+    entries: Range,               // entries: into Tree.entries
+};
+pub const Constant = struct {
+    kind: enum(u8) { string, number, bool, _ },
+    text: Strings.Index,          // string: its text; number: its JavaScript spelling
+    bool: bool,
+};
+pub const Entry = struct { name: Strings.Index, value: ItemValue }; // value: constant or dynamic
+pub const Prop  = struct { field: Strings.Index, value: Value.Index };
 
-pub const Event = struct { row: EventRow, form: enum { message, payload }, handler: Value.Index };
-pub const Prop = struct { field: Strings.Index, value: Value.Index };
+pub const Value = struct {        // an opaque handle: the compiler maps it to the instruction computing it
+    pub const Index = enum(u32) { _ };
+    pub const Range = struct { start: u32, len: u32 };
+};
+pub const Range = struct { start: u32, len: u32 };
+pub const Strings = struct {
+    bytes: []const u8, spans: []const Span,
+    pub const Index = enum(u32) { _ };
+    pub fn get(s: *const Strings, i: Index) []const u8;
+};
+pub const Vocabulary = struct {   // only the rows this module's nodes name, re-indexed densely
+    elements: []const ElementFacts, attributes: []const AttributeFacts, events: []const EventFacts,
+};
+pub const ElementRow = enum(u32) { _ };   // into Vocabulary.elements; likewise AttributeRow, EventRow
+pub const ElementFacts = struct {
+    name: Strings.Index, void: bool, namespace: enum(u8) { html, svg, mathml, _ },
+};
+pub const AttributeFacts = struct {
+    name: Strings.Index,
+    property: ?Strings.Index,     // `property`: the JavaScript name (the attribute's own name when unnamed)
+    stateful: bool, url: bool, raw: bool, classes: bool, styles: bool,
+};
+pub const EventFacts = struct {
+    name: Strings.Index, dom_name: Strings.Index,
+    delegated: bool, prevent_default: bool, stop_propagation: bool, has_extractor: bool,
+};
 ```
 
-What the tree **is**: every fact about markup the checker decided (`checker-v2.md` §25.7), in the
-shape a lowering walks, and nothing about beni it does not need. What it **is not**: a place to find
-types, `Bir`, other modules or the program's expressions. **A value is an index, never an
-expression**: the lowering never sees the beni code that computes an attribute or a hole — it asks
-the compiler to evaluate a root's values (§9.4.3) and then reads them by name. That is what makes
-evaluation order and "exactly once" the compiler's obligation rather than every lowering's, and it
-is why a hole's expression can hold anything the language allows, markup included, with the
-lowering none the wiser: markup inside a value is its own root, lowered first, and arrives as a
-value.
+What the tree **is**: every fact about markup the checker decided (`checker-v2.md` §25.7) and every
+fact of the file's markup lowering read (`frontend.md` §9.7), in the shape a lowering walks, and
+nothing about beni it does not need. What it **is not**: a place to find types, `Bir`, other modules
+or the program's expressions. **A value is a handle, never an expression**: the lowering never sees
+the beni code that computes an attribute or a hole — the compiler evaluates a root's values where the
+program evaluates the root, binds each to a name, and the lowering refers to one by
+`cx.value(v)` (§9.4.3). That is what makes evaluation order and "exactly once" the compiler's
+obligation rather than every lowering's, and it is why a hole's expression can hold anything the
+language allows, markup included, with the lowering none the wiser: markup inside a value is its own
+root, lowered first, and arrives as a value. **A `Show` has no special representation of `Maybe`**:
+`when` is a value, and the lowering asks the compiler to test and unwrap it (`cx.maybe`), because
+`Maybe`'s representation is the backend's (`backend.md` §4) and not the lowering's.
 
 #### 9.4.3 The builder surface
 
@@ -786,48 +927,79 @@ A lowering is a value of this type:
 
 ```zig
 pub const Lowering = struct {
-    name: []const u8,                           // what a manifest's "lowering" names
-    interface_version: u32,                     // == beni_markup.interface_version, checked at comptime
-    runtime: []const RuntimeExport,             // §9.4.5
+    name: []const u8,                       // what a manifest's "lowering" names
+    targets: Version,                       // the interface version written against (§9.4.6)
+    runtime: []const RuntimeExport,         // §9.4.5
     module: *const fn (cx: *Context, tree: *const Tree) Error!void,
-    root: *const fn (cx: *Context, tree: *const Tree, root: Root.Index, values: []const Name) Error!Expr,
+    root: *const fn (cx: *Context, tree: *const Tree, root: Root.Index) Error!Expr,
 };
+pub const Error = error{ OutOfMemory, Reported };
 ```
 
 - **`module`** runs once per module before any of its roots, and **hoists** what the module needs —
-  a template constant, a template kind with its mount and patch functions, a row's pair — with
-  `cx.hoist(hint, init) Name`. A hoisted declaration is a module-level `const` with a **pure**
-  initialiser, emitted in the order it was hoisted, because `backend.md` §9 drops and keeps
-  declarations on the premise that loading a module does nothing (§9.7).
-- **`root`** runs where the program evaluates a root of shape `expression`: the compiler has already
-  emitted the statements that evaluate the root's values in order and bound each to a `const`, and
-  passes their names; the lowering returns the expression the root evaluates to — a block, a string,
-  a tree node, whatever its representation of the markup type is.
-- **Rows.** A `for_` node whose row is a `root` is the one place a lowering places beni code itself:
-  inside a function it builds, `cx.rowValues(block, row_root, item, index, env) []Name` emits the
-  row's values into `block`, with the item, the position and each captured value bound to names the
-  lowering chose. It may call it at most once per call of the function it placed it in. The captured
-  environment is listed on the `Row` (the row lambda's free locals), and the enclosing root binds
-  them as values, so a lowering can compare them to decide a skip.
-- **Components.** `cx.componentCall(node, prop_names, spread_name, children_name) Expr` builds the
-  record exactly as `backend.md` §4 builds a record literal (or a record update over the spread) and
-  the call with its evidence (`checker-v2.md` §25.5); the lowering decides when to call it.
-- **Extractors.** `cx.extractor(event) ?Expr` is the payload extractor's reference, imported as any
-  `foreign` is.
-- **Building JavaScript.** `cx.js` is the `JsIr` builder restricted to: literals (string, number,
-  boolean, `null`, template literals), names the lowering was given or made (`cx.fresh(hint)`,
-  `cx.hoist`, `cx.runtime`, the values, a function's own parameters), property reads and writes by a
-  constant name or an index, calls, arrow and function expressions, object and array literals,
-  `const`/`let`, assignment, `if`, conditional expressions, `return`, and the operators `===`,
-  `!==`, `!`, `&&`, `||`, `+` and `typeof`. Every node is built at a markup node's position
-  (`cx.at(node)`), so a source map can point a hole's update at its hole (`backend.md` §11).
+  a template constant, a template kind with its mount and patch functions, a row's pair.
+- **`root`** runs where the program evaluates a root of kind `expression`: the compiler has already
+  emitted the statements that evaluate the root's values in order and bound each to a `const`; the
+  lowering returns the expression the root evaluates to — a block, a string, a tree node, whatever
+  its representation of the markup type is.
+- **Rows** are the one place a lowering places beni code itself, inside a function it builds.
+
+**The context** — everything a lowering may do, and there is nothing else:
+
+| Call | Does |
+|---|---|
+| `cx.build` | the build's options, read-only: `.release` (`--release`) and `.library` (`--library`, which has no program start, §9.4.5) |
+| `cx.js` | the restricted `JsIr` builder, below |
+| `cx.at(node)` | the markup node every following JavaScript node is positioned at, so a source map can point a hole's update at its hole (`backend.md` §11) |
+| `cx.fresh(hint) Name` | a local name, unique in the module |
+| `cx.hoist(hint, init: Expr) Name` | a module-level `const` whose initialiser must be **pure** (literals, object and array literals, arrows, calls of the runtime's `template`, which is pure to create, `backend.md` §15.3), emitted in hoist order after the module's imports — because `backend.md` §9 drops and keeps declarations on the premise that loading a module does nothing (§9.7) |
+| `cx.hoistFunction(hint, params, body: Block) Name` | a module-level function declaration, hoisted likewise |
+| `cx.runtime(name) Name` | the import of one of the lowering's declared runtime exports (§9.4.5); nothing else can be imported |
+| `cx.value(v) Expr` | the name value `v` is bound to — in `root`, a value of that root; inside a function a row was placed in, a value of that row's root, or a capture |
+| `cx.rowValues(block: *Block, row, item: Name, index: ?Name, captures: []const Name) Error!?Expr` | emits the row's root's values into `block`, with the item, the position and each capture bound to the names the lowering chose, so that `cx.value` answers inside `block`; returns the result of a `lambda` row, `null` for a `markup` row. At most once per call of the function it is placed in |
+| `cx.call(callee: Expr, args: []const Expr) Expr` | a call of a beni function value — a `function` row, a key function, an `Html.map` function — with the arity the tree records; beni functions take their arguments directly (`backend.md` §6) |
+| `cx.componentCall(node) Expr` | the component's call: the props record built exactly as `backend.md` §4 builds a record literal (or a record update over the spread), and the call with its evidence (`checker-v2.md` §25.5); the lowering decides when to evaluate it |
+| `cx.extractor(item) ?Expr` | the event's payload extractor, imported as any `foreign` is |
+| `cx.maybe(e: Expr) Expr` | the payload of a `Just`, or `null` for `Nothing`: the one representation fact a lowering needs, kept the backend's |
+| `cx.start(key, value)` | contributes one pair of start data (§9.4.5) |
+| `cx.report(node, message) error{Reported}` | reports `markup_restructured` (§9.4.7); the lowering then returns the error, and the build writes nothing |
+
+`Name` is a `JsIr` name index, `Expr` a `JsIr` expression node, `Block` an appendable list of
+`JsIr` statements (`cx.js.block()`).
+
+**`cx.js` is `JsIr` restricted** to what a template needs. Expressions: a name the lowering was given
+or made (`cx.fresh`, `cx.hoist`, `cx.hoistFunction`, `cx.runtime`, `cx.value`, a function's own
+parameters); number, string and template literals, `true`, `false`, `null`, `undefined`; a call; a
+property read by a constant name (`member`) or by an index expression (`index_get`); object and array
+literals; an arrow; a conditional; the binary operators `===`, `!==`, `&&`, `||` and `+`; the unary `!`
+and `typeof`. Statements: `const`, `let`, **assignment** (to a local, a member or an index), `if`,
+`return`, an expression statement, a block, and function declarations only through
+`cx.hoistFunction`. Not: `import`/`export` (the compiler writes those), loops, `switch`, `break`,
+`throw`, generators, spread. **Assignment is a statement, never an expression**: `JsIr` has
+`assign_stmt` and no assignment expression (`src/js/JsIr.zig`, `Tag`), and the builder adds none,
+because `Opt`'s rewrites and `Print`'s precedence table would both have to learn one. So Solid's
+`v !== h && (n.data = h = v)` is written `if (v !== i.h) { i.h = v; n.data = v; }`, which prints to
+the same work (`backend.md` §15.3). **A loop is the runtime's**: iterating a list — a `For`, a
+`List (Html msg)` hole, a class list that is not a literal — is a runtime export's job, because the
+runtime is where the cons-list representation is read (`backend.md` §15.6), and it keeps a lowering
+from needing the representation.
 
 #### 9.4.4 What a lowering may not do
 
-- **Name a host global.** `document`, `window`, `Node`, `globalThis` — none is reachable through the
-  builder: there is no way to spell an identifier the lowering was not given. **Every host access goes
-  through the markup runtime**, whose imports §4's check 3 reads, so the wall is where it was: the only
-  JavaScript that touches the host is a sibling.
+- **Name a host global, or reach the host any way but through what the runtime hands it.**
+  `document`, `window`, `Node`, `globalThis` — none is reachable through the builder: there is no way
+  to spell an identifier the lowering was not given. **Emitted code touches only objects the runtime
+  returned to it** — the nodes `template`'s cloner and a slot hand back — and on those it walks
+  (`.firstChild`, `.nextSibling`), writes (`.data`, `.$$click`, a declared `property`, `setAttribute`,
+  `classList.toggle`, `style.setProperty`) and nothing else: the operations `backend.md` §15.3's table
+  names. A node is a capability the runtime granted, in §5's sense — the program cannot forge one — so
+  **the rule is that all host *authority* comes from a sibling**: the only JavaScript that names the
+  host, reads a global or imports a host module is a sibling, whose imports §4's check 3 reads. The
+  node-level writes stay in emitted code on purpose, since routing each through a runtime call is the
+  cost Solid's compiler exists to remove (research 36 §4.1). This is a discipline for trusted code,
+  not a sandbox (§9.5): a node leads to its document, and a lowering that walked there would be
+  reaching the host behind the runtime's back; such a walk is a review failure, and the differential
+  oracle's walks (`backend.md` §15.10) are where it would show.
 - **Import anything but its own runtime.** `cx.runtime(name)` imports one of the lowering's declared
   well-known exports from the platform's markup runtime, and nothing else can be imported.
 - **Emit text.** There is no raw-JavaScript node; a string literal is data.
@@ -836,37 +1008,65 @@ pub const Lowering = struct {
 - **Read anything but its arguments**: no file, no environment, no clock, no randomness, no other
   module's tree, no global or `threadlocal` state — the determinism rule (§9.6).
 - **Change what a program means.** A lowering chooses representation and never semantics: it renders
-  every node, every value and every event the tree describes, and skips only what `language.md`
-  §11.11 allows (a component whose props are all identical, a row whose inputs are). It reports no
-  diagnostic but §9.4.7's.
+  every node, every value and every event the tree describes, gives the two lists and the
+  character-decoded text the meaning `language.md` §11 states, and skips only what `language.md`
+  §11.11 allows (a component whose props are all identical, a row or `Show` body whose inputs are). It
+  reports no diagnostic but §9.4.7's.
 
 #### 9.4.5 The runtime's well-known exports
 
 A lowering declares the exports its emitted code imports, each with its parameter count:
-`RuntimeExport{ .name = "template", .arity = 1 }`. The compiler checks the platform's markup
-runtime against that list with §4's check 2 (exactly these exports, no more, no fewer), check 3 (its
-references are covered by its own imports) and check 4 (each export takes the declared count, written
-in one of §4's accepted forms). Those names are the compiler's contract with the platform in the same
-way `eq` and `compare` are with a type (`static-dispatch-spike.md` §3.2), except that here the
-contract belongs to the lowering: `backend.md` §15 lists `dom`'s and `ssr`'s. `check --platform`
+`RuntimeExport{ .name = "template", .arity = 2 }`. **The markup runtime's exports are that list,
+plus one per markup primitive the build's vocabulary declares, plus `run` when the file is also the
+program runtime** (§9.2). The compiler checks the file against that union with §4's check 2 (exactly
+these exports, no more, no fewer), check 3 (its references are covered by its own imports) and check
+4 (each export takes the declared count — a primitive's from its type — written in one of §4's
+accepted forms). A primitive whose name is one of the lowering's own exports is
+`duplicate_declaration` at the primitive. Those names are the compiler's contract with the platform
+in the same way `eq` and `compare` are with a type (`static-dispatch-spike.md` §3.2), except that here
+the contract belongs to the lowering: `backend.md` §15 lists `dom`'s and `ssr`'s. `check --platform`
 runs these checks too, as it runs §4's.
 
-**Program start.** A lowering may contribute **start data** — `cx.start(key, value)`, both strings,
-such as the names of the events it delegates. The compiler unions every surviving module's
-contributions, sorts them, and the entry file calls the runtime's well-known `start` export with them
-before it calls `run` (§5.2). That is how a platform does once, at program start, what Solid does
+**Program start.** A lowering may contribute **start data**, one pair at a time: `cx.start(key,
+value)`, both strings — `cx.start("delegate", "click")`. The compiler unions every surviving module's
+pairs and hands them to the runtime's well-known `start` export, from the entry file, before it calls
+`run` (§5.2), as **one object whose keys are sorted and whose values are sorted, de-duplicated arrays
+of strings**: `start({ delegate: ["click", "input"] })`. The shape is fixed here, so every lowering's
+`start` reads the same thing. That is how a platform does once, at program start, what Solid does
 with a module-level `delegateEvents` call — which beni cannot do, because loading a module must do
 nothing (research 36 §0 item 9c; `backend.md` §9). A `--library` build writes no entry file and calls
-no `start`, so a lowering must stay correct without it (`backend.md` §15.3 says how `dom` does).
+no `start`, so a lowering must stay correct without it; `cx.build.library` tells it which build it is
+(`backend.md` §15.3 says how `dom` does).
 
 #### 9.4.6 Versioning
 
-`beni_markup.interface_version` is one number. A lowering states the version it was written against,
-and a lowering whose version is not the compiler's is a **compile error of beni itself**, at
-`comptime` — an external platform learns it when it rebuilds beni, never from a user's build. The
-version changes with any change to the tree, the builder, the fact set or the rules of this section;
-additions that an old lowering cannot misread still change it, because the check is the only warning
-a platform author gets. Each version's contract is recorded here, dated, as the section is amended.
+**The interface is stable under additive change** (the owner's answer of 2026-09-29): an addition
+keeps every existing lowering compiling and correct, and only a breaking change moves the major
+version. `beni_markup.version` is `{ major, minor }`, and each version's contract is recorded here,
+dated, as the section is amended. Version **1.0** is this section as written on 2026-09-29.
+
+| Change | Is | Version |
+|---|---|---|
+| a new builder or `cx` call; a new field with a default a lowering may ignore; a new fact that changes nothing for a lowering that ignores it; a new runtime export a lowering may declare | additive | minor |
+| a new node kind, item kind, value class, hole kind or mode — anything a lowering must handle to render the tree faithfully | additive, **gated** (below) | minor |
+| removing or renaming anything; changing a field's type or meaning; changing what a fact requires of a lowering; making an ignorable fact mandatory | breaking | major |
+
+**How a lowering declares what it targets**: `Lowering.targets`, the version it was written against.
+**How the compiler checks it**, twice:
+
+1. **At `comptime`, when beni is built**: `targets.major` must equal `version.major` and
+   `targets.minor` must not exceed `version.minor`, or beni itself does not compile, with a
+   `@compileError` naming the lowering and both versions. An external platform learns of a breaking
+   change when it rebuilds beni, never from a user's build; a lowering written against 1.0 compiles
+   against 1.3 unchanged, because every enumeration it switches over is non-exhaustive (§9.4.2).
+2. **At `build`, per module**: the compiler records in `Tree.requires` the newest minor version whose
+   gated feature the tree uses (a `Show` introduced at 1.4 would make a tree using one require 1.4).
+   A tree that requires more than the lowering targets is **`markup_feature_unsupported`**, at the
+   first node using the newest such feature, naming the feature, the lowering, the version it targets
+   and the version the feature needs — so an old lowering never meets a node it cannot render, and
+   the program is refused rather than rendered wrong. Every feature of 1.0 is available to every
+   lowering, so the code cannot arise until 1.1 gates its first feature; it is appended to
+   `language.md` §10's catalogue then, with its first fixture.
 
 #### 9.4.7 Diagnostics
 
@@ -883,47 +1083,56 @@ writes nothing (`backend.md` §2).
 code by design (the owner's decision), so the security argument is §2's — a distribution fact — and
 not a sandbox.
 
-- **Built in.** A platform in `platforms/<name>/` that has a lowering keeps its Zig beside its beni:
-  `platforms/browser/lowering/dom.zig`, `platforms/node/lowering/ssr.zig`. `build.zig` embeds each
-  built-in platform's assets as today and, for each that has one, adds its lowering as a Zig module
-  whose **only** imports are `beni_markup`, `std`, and the Zig of the platforms its platform depends
-  on (§9.1) — so `html` can ship the HTML parser's table once, as a Zig module with no lowering of its
-  own, and `browser`'s `dom` and `node`'s `ssr` both import it (`backend.md` §15.6). It then
-  generates the registry the compiler reads — every lowering, sorted by name, a duplicate name a
-  build error. The compiler's own modules are never importable from a platform's Zig.
+- **A platform's Zig is one Zig module**, whose root file the manifest's optional **`"zig"`** key
+  names — `platforms/browser/zig/root.zig`, say. The module's `pub const lowerings` lists the
+  `Lowering` values it provides — `.{ dom }` in `browser`, `.{ ssr }` in `node` — and may be empty:
+  **`html`'s Zig provides no lowering**, only the HTML parser's table, as `pub const parser_table`,
+  which `browser`'s `dom` and `node`'s `ssr` both import (`backend.md` §15.3, §15.6). A platform's Zig
+  module may import only `beni_markup`, `std`, and the Zig modules of the platforms its platform
+  depends on (§9.1), each under the name `platform_<name>` (`-` becoming `_`), so `dom.zig` writes
+  `@import("platform_html").parser_table`. The compiler's own modules are never importable from a
+  platform's Zig.
+- **Built in.** `build.zig` embeds each built-in platform's assets as today and, for each that has a
+  `"zig"` key, adds its module with those imports. It then generates the registry the compiler reads —
+  every lowering of every platform module, sorted by name, a duplicate name a build error.
 - **External.** Anyone may add a platform to their own beni without editing its source, in two
   equivalent ways: `zig build -Dplatform=<dir>` (repeatable), where `<dir>` holds the platform's
-  `beni.json`, its modules and siblings, and a lowering's Zig root named by the manifest's optional
-  `"lowering_source"` key; or, from a build that depends on beni, `beni.addPlatform(b, .{ .dir =
-  … })`, which does the same. The platform then ships in that binary exactly as a built-in one does:
-  `--platform=<name>` finds it, its assets are embedded, its lowering is in the registry.
+  `beni.json`, its modules, siblings and the Zig its `"zig"` key names; or, from a build that depends
+  on beni, `beni.addPlatform(b, .{ .dir = … })`, which does the same. The platform then ships in that
+  binary exactly as a built-in one does: `--platform=<name>` finds it, its assets are embedded, its
+  lowerings are in the registry, and its dependencies' Zig modules are importable if they ship in the
+  same binary — an external platform over `html` imports `platform_html`.
 - **A platform directory without Zig** — `--platform=<dir>` at run time, §5.3 — may still select any
-  lowering the binary has by name. Only a platform that brings a *new* lowering needs a rebuilt beni.
+  lowering the binary has by name. Only a platform that brings *new* Zig needs a rebuilt beni.
 
 ### 9.6 Determinism, and what the cache must know
 
 - **A lowering is a pure function of the tree, the builder state and the build's options.** It keeps
   no state between calls, iterates no hash map, compares no pointers, reads no clock, and makes every
-  name through `cx.fresh` and `cx.hoist`, which derive names from the site and a counter local to the
-  module's lowering — never from a counter shared across workers, which is the one way a lowering
-  could break rule 5 (research 28 §9.3). The determinism test (`--jobs=1` against `--jobs=8`, twice
-  each, byte-compared) covers it with no new machinery once a platform with markup is in the corpus.
+  name through `cx.fresh`, `cx.hoist` and `cx.hoistFunction`, which derive names from the site and a
+  counter local to the module's lowering — never from a counter shared across workers, which is the
+  one way a lowering could break rule 5 (research 28 §9.3). The determinism test (`--jobs=1` against
+  `--jobs=8`, twice each, byte-compared) covers it with no new machinery once a platform with markup
+  is in the corpus.
 - **Identity is by site.** A template's identity — what decides whether one markup value patches
   another — is `Root.site`, never the markup's text: two branches with equal markup are two kinds
   (research 36 §4.5). A lowering may share one template *string* between sites; it may not share a
   kind.
-- **Cache keys.** The compiler build id (`fast-compiler.md` §8) covers every compiled-in lowering's
-  Zig source, built-in or external, beside `src/`: a lowering is part of the compiler. **No check
-  result depends on a lowering** (§9.4.1), so the persistent cache's entries are unaffected by which
-  one a platform selects. No emitted byte is cached today; when one is, an emit unit's key includes
-  the lowering's name, its interface version and the build id.
+- **Cache keys.** The compiler build id (`fast-compiler.md` §8) covers every compiled-in platform's
+  Zig source, built-in or external, beside `src/` — the entity table among the latter: a lowering is
+  part of the compiler. **No check result depends on a lowering** (§9.4.1), so the persistent cache's
+  entries are unaffected by which one a platform selects. No emitted byte is cached today; when one
+  is, an emit unit's key includes the lowering's name, its targeted version and the build id.
 
 ### 9.7 What does not move
 
 - **The four checks of §4, exactly.** The markup runtime is a sibling and meets checks 2, 3 and 4
-  (§9.4.5); a payload extractor is a `foreign` and meets all four (§9.3). Vocabulary declarations carry
-  no JavaScript and are checked as beni. No new route from user code to JavaScript exists: a program
-  writes markup; a platform lowers it through the runtime it ships.
+  (§9.4.5); a payload extractor is a `foreign` and a markup primitive is held as one, both to all
+  four (§9.3). Vocabulary declarations otherwise carry no JavaScript and are checked as beni. No new
+  route from user code to JavaScript exists: a program writes markup and calls primitives; a platform
+  lowers and implements them through the runtime it ships.
+- **Where host authority comes from.** Only a sibling names the host (§9.4.4); emitted code handles
+  the nodes a sibling gave it.
 - **Purity at load.** A lowering's hoisted declarations are pure, its emitted code runs only when the
   program calls it, and program-start work goes through `start` in the entry file (§9.4.5). So
   `backend.md` §9's rule — an unreachable declaration is dropped whole, and loading a module does
