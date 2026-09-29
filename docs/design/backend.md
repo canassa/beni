@@ -2923,32 +2923,45 @@ and mutual-recursion trampolining (§14 question 5, a stated limitation).
 ## 15. Emitted markup
 
 *Specified 2026-09-29; not built.* What a build emits for markup ([`language.md`](language.md) §11):
-the compiler's part around a platform's markup lowering, and the two lowerings that ship — `dom`,
-in the `browser` platform, and `ssr`, in the `node` platform. It is §15 and not the "new §11" that
-`plans/browser-platform.md` first named, because §11 is *Source maps* (rule 2; research 36 §0 item
-9a). The lowering interface itself is [`boundary.md`](boundary.md) §9.4; this section is what is
-built on it. Every claim about Solid cites [`research/36`](research/36-solid-jsx-compiler-for-beni.md)
-(`c/…` is its citation of `references/dom-expressions/packages/compiler/src/…`, `rt/…` of the
-runtime) or [`research/27`](research/27-solid-2-as-built.md).
+the compiler's part around a platform's markup lowering, the two lowerings that ship — `dom`, in the
+`browser` platform, and `ssr`, in the `node` platform — and the browser runtime's render loop. It is
+§15 and not the "new §11" that `plans/browser-platform.md` first named, because §11 is *Source maps*
+(rule 2; research 36 §0 item 9a). The lowering interface itself is [`boundary.md`](boundary.md) §9.4;
+this section is what is built on it. Every claim about Solid cites
+[`research/36`](research/36-solid-jsx-compiler-for-beni.md) (`c/…` is its citation of
+`references/dom-expressions/packages/compiler/src/…`, `rt/…` of the runtime) or
+[`research/27`](research/27-solid-2-as-built.md).
+
+*Revised 2026-09-29, after the specification review.* The render loop the owner answered in W28 is
+specified (§15.11); `child` is three exports, one per hole kind, so nothing is decided by sniffing a
+value (§15.3–§15.4); every `Html msg` a program can hold is a block, the markup primitives' included,
+and `Html.map` composes handlers through a mount context (§15.3); start data is one object (§15.1);
+patches are written as statements, because `JsIr` has no assignment expression (§15.3); rows of any
+shape and their inputs (§15.5), `Show` (§15.5), the class and style lists (§15.3, §15.6) and decoded
+text (§15.3, §15.6) are compiled; and the differential oracle has a harness (§15.10).
 
 ### 15.1 What the compiler emits around a lowering
 
 - **Where.** In `Emit`, per module, inside `Lower`: a surviving declaration is lowered as today, and
-  at a `markup` instruction of shape `expression` the lowerer emits the root's values — each a
-  `const`, in `language.md` §11.11's order — and splices in the expression the lowering's `root`
-  returns (`boundary.md` §9.4.3). The lowering's `module` runs first, once per module with a
-  surviving root, and its hoisted declarations are emitted after the module's imports and before its
-  first declaration, in the order hoisted. `Opt`, `Rename` and `Print` then run over the whole as
-  they do today (§15.7).
+  at a `markup` instruction of kind `expression` the lowerer emits the root's values — each a
+  `const`, in `language.md` §6's order — and splices in the expression the lowering's `root`
+  returns (`boundary.md` §9.4.3). A row's values are emitted where the lowering places them, through
+  `cx.rowValues`. The lowering's `module` runs first, once per module with a surviving root, and its
+  hoisted declarations are emitted after the module's imports and before its first declaration, in
+  the order hoisted. `Opt`, `Rename` and `Print` then run over the whole as they do today (§15.7).
 - **The runtime.** The platform's markup runtime is copied as `<its platform dir>/<name>.foreign.mjs`
-  (§2, `boundary.md` §9.1) **iff at least one markup root survives** reachability, and imported by
-  each module that uses one of its exports — one binding per export used, exactly as a sibling's.
-  Like a sibling it is copied whole (§9, *Sibling-level elimination is out of scope*), so it should be
-  small; research 36 §4.7 measured a whole client runtime of this design at **1 482 bytes brotli**.
+  (§2, `boundary.md` §9.1) **iff at least one markup root or markup primitive survives**
+  reachability — or always, when it is also the program runtime (`boundary.md` §9.2) — and imported
+  by each module that uses one of its exports, one binding per export used, exactly as a sibling's. A
+  use of a markup primitive is an import of the export of its name, as a `foreign`'s is of its
+  sibling's. Like a sibling it is copied whole (§9, *Sibling-level elimination is out of scope*), so it
+  should be small; research 36 §4.7 measured a whole client runtime of this design at **1 482 bytes
+  brotli**.
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
-  data — every surviving module's contributions, deduplicated and sorted — before it calls `run`:
-  `start(["click", "input"]); run(Main$main);`. A build with no markup, or whose runtime declares no
-  `start`, emits no call, so a program without markup does not move by a byte.
+  data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
+  array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.
+  A build with no markup, or whose runtime declares no `start`, emits no call, so a program without
+  markup does not move by a byte.
 
 ### 15.2 Template identity, and names
 
@@ -2974,35 +2987,47 @@ refs, `refresh/` and `directives/`. beni's version is smaller than the Rust, bec
 answer exactly what `classify.rs` guesses (research 36 §3.7).
 
 **The emitted shape** (research 36 §4.2): each root site `s` becomes a template kind
-`K_s = { m(v) → inst, p(inst, v) }`.
+`K_s = { m(v, cx) → inst, p(inst, v) }`.
 
 - **`m`** clones the template, runs the walks, writes every hole and attaches the events — Solid's
-  output with its effect wrapper off (research 36 §2.2).
+  output with its effect wrapper off (research 36 §2.2). `cx` is the **mount context**, `null`
+  outside any `Html.map` (below), passed to every slot the instance makes.
 - **`p`** is one guarded write per dynamic hole, the commit half of Solid's grouped effect with the
-  last value kept in an instance field instead of `_p$`: `if (v[i] !== inst.h3) write(inst.n3,
-  inst.h3 = v[i])` (`c/dom/dynamics.rs:150-179`). **There is no compute half and no signal**: `view`
+  last value kept in an instance field instead of `_p$` (`c/dom/dynamics.rs:150-179`), written as a
+  statement: `if (v[3] !== i.h3) { i.h3 = v[3]; i.n3.data = v[3]; }`. `JsIr` has no assignment
+  expression and the builder adds none (`boundary.md` §9.4.3), so Solid's `v !== h && (n.data = h =
+  v)` is this `if`, which is the same work. **There is no compute half and no signal**: `view`
   re-runs and the check is by reference (W26).
-- A root of shape `expression` evaluates to a **block** `{ t: K_s, v: [values] }`; §15.4 is where a
-  block goes.
+- A root of kind `expression` evaluates to a **block** `{ t: K_s, v: [values] }`; §15.4 is where a
+  block goes. **Every `Html msg` value under `dom` is a block**: a root's, and a markup primitive's
+  too, whose `t` is a kind the runtime defines (`text`'s, `map`'s). So a slot never asks what a value
+  is — it calls `t.m` or `t.p` — and a primitive's value patches and remounts by the same rule as a
+  template's.
 
 **The template string.** Static elements, constant attributes and text are baked in; a subtree with
-no dynamic part is inlined whole (`c/dom/static_template.rs:11-60`). Text is escaped `&` → `&amp;`
-and `<` → `&lt;`, an attribute value `&` and `"` — both `&`s, because beni text is literal and has no
-character references (`language.md` §11.4). Quotes are dropped where HTML allows
-(`c/shared/utils.rs:271-290`); closing tags the parser would imply are omitted
-(`c/dom/attrs.rs:510-563`). An element whose vocabulary row says `svg` or `mathml` and is not the
-namespace's own root element is wrapped for parsing and unwrapped on clone, flag `2`
-(`c/dom/element.rs:476-495`).
+no dynamic part is inlined whole (`c/dom/static_template.rs:11-60`). Text arrives decoded
+(`frontend.md` §9.7), so the template re-encodes it for the HTML parser to decode back to the same
+characters: `&` → `&amp;` and `<` → `&lt;`, and U+000D as `&#13;`, since the parser's input stream
+would turn a raw one into U+000A; an attribute value `&`, `"` and `<` (`c/shared/utils.rs:258-265`).
+In an element whose content the parser reads as raw text — `script`, `style`, `xmp`, `iframe`,
+`noembed`, `noframes` — nothing is decoded, so text is written as it is, and text that would close
+the element early (`</` then its name, in any case) is `markup_restructured`. Solid leaves `&` in dom
+text for the browser to decode (`c/dom/children.rs:105`) where its other paths decode at compile time;
+decoding once in the compiler is what makes `dom` and `ssr` agree by construction, raw-text elements
+included. Quotes are dropped where HTML allows (`c/shared/utils.rs:271-290`); closing tags the parser
+would imply are omitted (`c/dom/attrs.rs:510-563`). An element whose vocabulary row says `svg` or
+`mathml` and is not the namespace's own root element is wrapped for parsing and unwrapped on clone,
+flag `2` (`c/dom/element.rs:476-495`).
 
 **The HTML parser table.** What the HTML parser does with a string — void elements, implied end tags,
 table foster-parenting, a `<p>` closed by a block element, `<a>` inside `<a>`, `<form>` inside
-`<form>` — is a **fixed table in this lowering** (research 36 question 2, accepted), ported from
-`c/shared/constants.rs:39-91` and `:267-285` and from the rules `c/shared/validate.rs` checks with
-`html5ever`, as a table and not a parser. Markup that the parser would rebuild differently from the
-tree is **`markup_restructured`** (`boundary.md` §9.4.7), naming the element and the rule — Solid
-refuses the same markup (research 36 §3.4). An element the table calls void but the vocabulary does
-not, given children, is the same error, so a vocabulary that disagrees with the parser cannot emit a
-wrong template.
+`<form>`, raw-text elements — is a **fixed table**, `html`'s `parser_table` (`boundary.md` §9.5;
+research 36 question 2, accepted), ported from `c/shared/constants.rs:39-91` and `:267-285` and from
+the rules `c/shared/validate.rs` checks with `html5ever`, as a table and not a parser. Markup that the
+parser would rebuild differently from the tree is **`markup_restructured`** (`boundary.md` §9.4.7),
+naming the element and the rule — Solid refuses the same markup (research 36 §3.4). An element the
+table calls void but the vocabulary does not, given children, is the same error, so a vocabulary that
+disagrees with the parser cannot emit a wrong template.
 
 **Walks and markers**, unchanged from Solid: a hole's node is reached by `.firstChild`/`.nextSibling`
 chains from the most recent walk variable, starting again from `parent.firstChild` under each new
@@ -3011,56 +3036,88 @@ parent (`c/dom/template.rs:413-458`); a walk variable exists only where somethin
 (`c/dom/element.rs:429-431`), which is also what makes §15.7's inlining safe. A slot's marker is the
 next static sibling, a `<!>` comment between two text runs or where a parent has several slots, or
 nothing when the slot is the parent's only child (`c/dom/children.rs:557-634`). There is no encoded
-path, so there is no overflow case (research 36 §3.3).
+path, so there is no overflow case (research 36 §3.3). These walks and writes are the node-level host
+access `boundary.md` §9.4.4 allows emitted code: on nodes the runtime's cloner returned, and no other
+object.
 
 **What each hole compiles to**, decided by the markup section of the checker's record
-(`checker-v2.md` §25.7) and the vocabulary row's facts, never by the value at run time:
+(`checker-v2.md` §25.7) and the vocabulary row's facts, never by the value at run time. Items are
+written in source order, attributes and events interleaved (`language.md` §11.5):
 
 | Hole | `m` | `p` |
 |---|---|---|
-| text, `string` | a text node, `.data = v` | `v !== h && (n.data = h = v)` |
+| text, `string` | a text node, `.data = v` | `if (v !== i.h) { i.h = v; n.data = v; }` |
 | text, `number`/`char`/`bool` | the same over `"" + v`, which is what the template literal of a string interpolation writes (§4), so a hole and `"${v}"` agree; `+` and not `String`, since a lowering can name no global (`boundary.md` §9.4.4) | the same, comparing `v` before converting |
 | attribute, `string`/`int`/`float` | `setAttribute(name, "" + v)` | guarded |
 | attribute, `bool` | present as `""` or absent | guarded |
-| attribute, `maybe_string` | absent on `Nothing` | guarded |
+| attribute, `maybe_string` | absent on `Nothing`, through `cx.maybe` | guarded |
 | attribute, fact `property` | `el[prop] = v` | guarded |
-| attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `el[prop] !== v && (el[prop] = v)`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field |
+| attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `if (el[prop] !== v) el[prop] = v;`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field |
 | attribute, fact `url` | through the runtime's `safeUrl` | guarded |
 | attribute, fact `raw` | through the runtime's `rawHtml` | guarded |
 | attribute, `svg` namespace prefix (`xlink:href`) | `setAttributeNS` through the runtime | guarded |
-| `html`, `maybe_html`, `list_html` | a slot: `child(slot, v)` | `child(slot, v)`, which patches (§15.4) |
-| component | the call, then a slot | skipped when every prop `===` its last value (`language.md` §11.8); otherwise the call, then `child` |
-| `For` | §15.5 | §15.5 |
+| attribute, `class_list`, entries in place | a constant `True` entry baked into the template's `class`, a constant `False` dropped, a dynamic one `el.classList.toggle(name, f)` — Solid's split of a class object literal (`c/shared/attr_plan.rs:824-895`, `c/dom/set_attr.rs:80-101`) — when the literal names are distinct and hold no whitespace; otherwise as the next row | each dynamic entry guarded on its flag |
+| attribute, `class_list`, any other list | the runtime's `classes(el, list, null)` | `classes(el, list, prev)` when `list !== prev`: the port of Solid's `className` diff over a cons list (`rt/client.js:333-360`, `:1616-1640`), adding what the new list holds and removing what only the old one held |
+| attribute, `style_list`, entries in place | a constant entry baked into the template's `style` (`c/shared/attr_plan.rs:587-685`), a dynamic one `el.style.setProperty(name, v)` (`c/dom/set_attr.rs:52-78`) when the literal names are distinct; otherwise as the next row | each dynamic entry guarded |
+| attribute, `style_list`, any other list | the runtime's `styles(el, list, null)` | `styles(el, list, prev)` when `list !== prev`: the port of Solid's `style` diff (`rt/client.js:376-417`) |
+| `html` | a slot: `childHtml(slot, v)` | `childHtml(slot, v)`, which patches (§15.4) |
+| `maybe_html` | a slot: `childMaybe(slot, cx.maybe(v))` — a block or `null` | the same |
+| `list_html` | a slot: `childList(slot, v)` | the same |
+| component | the call, then a slot | skipped when every prop `===` its last value (`language.md` §11.8); otherwise the call, then `childHtml` |
+| `For`, `Show` | §15.5 | §15.5 |
 
 A constant attribute on an element costs nothing at run time; Solid's instrumented mount of 1 000
-rows shows `setAttribute: 0` (research 27 §6.2).
+rows shows `setAttribute: 0` (research 27 §6.2). **One export per hole kind** — `childHtml`,
+`childMaybe`, `childList`, never one `child` that inspects its argument — because the kind is known
+before any code is emitted (`language.md` §11.6) and a value-sniffing `child` would be the generic
+conversion §11.6 refuses, paid on every patch.
 
 **Events** (research 36 §4.6). A **delegated** event is a property write, `el.$$click = h`, and `p`
 rewrites it only when the handler value changed (`c/dom/events.rs:60-66`); a payload-form handler's
 node also gets, at mount, `el.$$clickX = extractor` (or the runtime's identity when the payload is the
 raw event). The runtime's one listener per delegated name walks up from the target to the first node
-with a `$$click`, applies the row's `preventDefault` and `stopPropagation`, and sends
-`X ? h(X(event)) : h` to the program whose mount root it reaches next. A **non-delegated** event
-attaches, at mount, one stable listener through the runtime's `listen` that reads the node's current
-`$$<name>` — the only workable design when handlers are fresh closures that cannot be compared
+with a `$$click`, applies the row's `preventDefault` and `stopPropagation`, computes the message —
+`X ? h(X(event)) : h` — passes it through the node's map chain (below), and sends it to the program
+whose mount root it reaches next (§15.11). A **non-delegated** event attaches, at mount, one stable
+listener through the runtime's `listen` that reads the node's current `$$<name>` and then does the
+same — the only workable design when handlers are fresh closures that cannot be compared
 (`plans/browser-platform.md` §2.3). **Delegated names are registered at program start**, through the
 start data (§15.1), not by a module-level `delegateEvents` call (`c/dom/template.rs:267-269`), which
 would give a module a load-time effect §9 forbids (research 36 §0 item 9c). In a `--library` build,
-which has no program start, each kind's `m` passes its own names to the runtime's `delegate`, which
-registers each name once; the lowering reads which build it is from the context.
+which has no program start (`cx.build.library`), each kind's `m` passes its own names to the
+runtime's `delegate`, which registers each name once.
+
+**`Html.map`, and the mount context.** `map(h, f)` — the markup primitive — returns a block whose
+kind is the runtime's map kind: its `m` makes a context `{ f, up: cx }` and mounts `h` in a slot with
+it, and its `p` sets the context's `f` when the function changed and patches `h`. Every event node
+mounted with a context that is not `null` gets, at mount, `el.$$cx = cx` (one guarded property write,
+`if (cx !== null) el.$$cx = cx;`); the listener, having computed a message on such a node, applies
+`for (let c = el.$$cx; c !== null; c = c.up) msg = c.f(msg)` — innermost map first, which is Elm's
+order. Because `p` changes `f` in place, a map whose function changed rewrites no handler inside it,
+Elm's own trick (its tagger chain, research 24 §1, `VirtualDom.js:772-818`). **Cost**: every kind's `m` takes
+the context argument; inside a mapped subtree, one property write per event node at mount and a walk
+of the chain per event; outside every map, nothing. `text(s)` — the other primitive — returns a
+block of the runtime's text kind, one text node patched as a `string` hole is.
 
 **The `dom` runtime's well-known exports**, declared by the lowering (`boundary.md` §9.4.5) — the
-arity is part of the contract and is checked:
+arity is part of the contract and is checked; the file also exports `run` (it is the program
+runtime, `boundary.md` §9.2, §15.11) and the `html` primitives `text` (1) and `map` (2):
 
 | Export | Arity | Does |
 |---|--:|---|
-| `start` | 1 | registers the delegated names of a whole program |
+| `start` | 1 | registers the delegated names of a whole program, from the start data object |
 | `delegate` | 1 | the same, idempotently, for a `--library` build's kinds |
 | `template` | 2 | `(html, flags)`: a lazy cloner — the first call parses, later calls clone (`rt/client.js:140-158`); pure to create |
-| `child` | 2 | `(slot, value)`: writes or patches a `html`/`maybe_html`/`list_html` slot (§15.4) |
-| `slot` | 2 | `(parent, marker)`: makes a slot |
-| `forKeyed` | 4 | `(slot, items, keyOf, row)`: the keyed list (§15.5) |
-| `forPosition` | 3 | `(slot, items, row)`: the positional list |
+| `slot` | 3 | `(parent, marker, cx)`: makes a slot, remembering the mount context its content mounts with |
+| `childHtml` | 2 | `(slot, block)`: patches when the block's kind is the slot's, remounts otherwise (§15.4) |
+| `childMaybe` | 2 | `(slot, blockOrNull)`: likewise, `null` emptying the slot |
+| `childList` | 2 | `(slot, list)`: a cons list of blocks, matched by position (§15.4) |
+| `forKeyed` | 5 | `(slot, items, keyOf, row, cx)`: the keyed list (§15.5) |
+| `forPosition` | 4 | `(slot, items, row, cx)`: the positional list |
+| `show` | 3 | `(slot, key, block)`: the keyed conditional's `Just` (§15.5) |
+| `hide` | 2 | `(slot, fallbackOrNull)`: its `Nothing` |
+| `classes` | 3 | `(el, list, prev)`: a class list that is not written in place |
+| `styles` | 3 | `(el, list, prev)`: a style list likewise |
 | `attrNS` | 4 | `(el, namespace, name, value)` |
 | `safeUrl` | 1 | a URL, or `""` for a script URL — Elm's rule, which keeps a `view` from injecting script (research 24 §6.3) |
 | `rawHtml` | 2 | `(el, markup)`: the `raw` escape hatch |
@@ -3078,36 +3135,48 @@ no inlining and no virtual DOM, is sound by construction, and costs one small al
 escaping root per render. A branch is two kinds, so an `if` or `case` in a hole is a remount when the
 branch changes and a patch when it does not — non-keyed `Show` with no `memo`.
 
-`child(slot, value)` over the three hole kinds:
+The three slot exports, one per hole kind (§15.3):
 
-| Value | Written |
-|---|---|
-| a block | the same `t` as the slot holds: `t.p(inst, v)`; otherwise the old nodes are removed and `t.m(v)` mounted |
-| `Nothing` | the slot emptied |
-| a list | slot *i* receives block *i*, each by the rule above; extra slots removed, missing ones mounted |
-| a value a platform built at run time (`language.md` §11.13) | the runtime's own node for it, replaced when it changes |
+| Export | Value | Written |
+|---|---|---|
+| `childHtml` | a block | the same `t` as the slot holds: `t.p(inst, v)`; otherwise the old nodes are removed and `t.m(v, slot.cx)` mounted |
+| `childMaybe` | a block, or `null` for `Nothing` | a block as `childHtml`; `null` empties the slot |
+| `childList` | a cons list of blocks | slot *i* receives block *i*, each by `childHtml`'s rule; extra slots removed, missing ones mounted |
+
+A block a markup primitive built is handled by the same rule, since its `t` is a kind like any other
+(§15.3): there is no fourth case, and nothing inspects a value to find out what it is.
 
 **What the lowering compiles away.** Where a consumer is visible the block is never built: a `For`
 row whose body is markup gets a row pair called directly (§15.5), which is the measured P2 shape.
 Every other consumer — `view`'s root included, called by the platform's `Program` — receives blocks.
-Research 36 §4.2 lists a component call and an inline `if` as further direct consumers; the first
-interface version does not, and whether they pay is what the end-to-end measurement's helper-heavy
-page will show (`plans/browser-platform.md`, *Decisions this spec took*). **What it reports**:
-`--self-profile` counts `markup_roots`, `markup_block_roots` and `markup_row_roots`, so the share of a
-program's roots on the general path is a number (W29's rule-7 mitigation).
+Research 36 §4.2 lists a component call and an inline `if` as further direct consumers; interface
+version 1.0 does not, and whether they pay is what the end-to-end measurement's helper-heavy page will
+show (`plans/browser-platform.md`, *Decisions this spec took*). **What it reports**: `--self-profile`
+counts `markup_roots`, `markup_block_roots` and `markup_row_roots`, so the share of a program's roots
+on the general path is a number (W29's rule-7 mitigation), and `markup_row_whole_inputs`, the rows
+whose inputs hold a whole local (`language.md` §11.9), so the rows that re-run on every change to
+that local are a number too.
 
-### 15.5 `For` in the `dom` lowering
+### 15.5 `For` and `Show` in the `dom` lowering
 
 `For` is Solid 2's list (research 27 §7.1), with **dom-expressions' `reconcileArrays` without
 `$$SLOT`** as the one DOM patcher (`rt/reconcile.js`, udomdiff; research 27 §6.11): a whole-program
 compiler gives every node one owning slot, so the ownership tags have no job.
 
-- **Row pair.** A row whose function body is markup compiles to `r$m(item, i, env) → inst` and
-  `r$p(inst, item, i, env)`, the values placed inside them with `rowValues` (`boundary.md` §9.4.3),
-  `env` being the captured values. **A row is skipped** when its item, its position (only if the
-  function reads it) and every `env` value are `===` to last render's (`language.md` §11.9); that is
-  what makes an unchanged row cost one pointer comparison, and it rests on §15.8. A row whose body is
-  not markup calls the function and puts the block in a per-row slot.
+- **Rows by shape** (`boundary.md` §9.4.2, `Row.kind`):
+  - `markup` — a **row pair** `r$m(item, i, env, cx) → inst` and `r$p(inst, item, i, env)`, the
+    row's values placed inside them with `cx.rowValues`, `env` holding the captures and the inputs;
+  - `lambda` — the same pair around a per-row slot: the values placed with `cx.rowValues`, whose
+    result, a block, goes to `childHtml`;
+  - `function` — the function value called with `cx.call` per row, its block into a per-row slot.
+- **A row is skipped** when its item, its position (only if the function reads it) and every input
+  are `===` to last render's (`language.md` §11.9) — for a `function` row, the input is the function
+  value, so a top-level function's rows skip on the item alone. That is what makes an unchanged row
+  cost a few pointer comparisons and no call, and it rests on §15.8. The inputs are the enclosing
+  root's values, so they are compared, not recomputed per row: `select` in research 29's benchmark
+  changes `model.selected`, every row whose class reads it re-runs, and every other edit to the model
+  skips all of them — P3's rung 3 at the row (research 29 §7.2), without P3's selector recognition,
+  which stays later work.
 - **By key** (`forKeyed`): a map from key to instance; per row, `r$p` or a new `r$m`; the array
   reconciler runs only when the key order moved — the `moved` flag (research 36 §4.4) — so a
   selection change or a label edit never enters it. **Duplicate keys**: rows are matched by the key and
@@ -3117,6 +3186,14 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   as primitive-`eq`, that is value keying and correct; otherwise it is Solid's default and `unkeyed_for`
   has already said so.
 - **`fallback`** is a slot shown while the list is empty.
+
+**`Show`** (`language.md` §11.18) is a slot plus the last key. On `Nothing` (tested with `cx.maybe`)
+it calls `hide(slot, fallback)`. On `Just v` it computes the key — `v`, or the key function applied
+with `cx.call` — and, unless the body is skipped (the key, `v` and the body's inputs all `===` last
+render's), builds the body's block as a row's and calls `show(slot, key, block)`: the runtime
+remounts when the key is not `===` the slot's last key or the slot showed the fallback, and otherwise
+patches as `childHtml`. A body is always a block in interface version 1.0 — a `Show` is not a list,
+so the one allocation per render is not worth a pair.
 
 ### 15.6 The `ssr` lowering
 
@@ -3129,17 +3206,30 @@ DOM (research 36 §2.12, §5.5): the same tree, and the same template split, emi
 - **Escaping is by type, at compile time**: a `string` text hole gets `escape(v)`, a number none; an
   `html` hole splices `.t`; an attribute value gets `escapeAttr`, a `url` one `safeUrl` first, a
   `raw` one nothing (and was warned about). A `Bool` attribute is written or omitted, a `Maybe String`
-  omitted on `Nothing`.
-- **The same HTML parser table** as `dom` decides void elements and closing tags, so the string
-  parses into the tree the page would build. It lives in the `html` platform's Zig, which both
-  lowerings import (`boundary.md` §9.5), and `markup_restructured` is raised the same way.
+  omitted on `Nothing`. **Text arrives decoded** (`frontend.md` §9.7) and is escaped into the static
+  strings exactly as `dom` escapes its template (§15.3), raw-text elements included, so both
+  lowerings produce the same characters.
+- **Class and style lists** are written as the attribute's text, in entry order: the runtime's
+  `classes(list)` joins the names whose flag is `True`, each once, in first-occurrence order;
+  `styles(list)` writes `name:value;` for each property's last non-empty value, in first-occurrence
+  order; entries in place with constant values are joined at compile time. Both are then escaped as
+  any attribute. The page `dom` builds has the same classes and properties; only the order within
+  the attribute may differ, which neither means anything nor is observable through the DOM's
+  `classList` membership or computed style.
+- **The same HTML parser table** as `dom` decides void elements, closing tags and raw-text elements,
+  so the string parses into the tree the page would build. It lives in the `html` platform's Zig,
+  which both lowerings import (`boundary.md` §9.5), and `markup_restructured` is raised the same way.
 - **Events are dropped** (`c/ssr/transform.rs:1754-1760`); **components are called**, never skipped —
-  a string is rendered once; **`For`** is a map and a join, `fallback` when empty.
-- **Well-known exports**: `escape` (1), `escapeAttr` (1), `safeUrl` (1), and `list` (2), which
-  renders `(items, row)` — a cons list, as every sibling that takes a `List` reads one — and
-  concatenates the rows. A render is
-  printed by the `node` platform's own `foreign render : Html msg -> String`, which reads `.t`, so a
-  `run/` fixture prints a view with `Node.printLines [ Node.render (view model) ]`.
+  a string is rendered once; **`For`** is a map and a join, `fallback` when empty; **`Show`** renders
+  the body for `Just v` and the fallback, or nothing, for `Nothing`.
+- **The primitives**: `text(s)` is `{ t: escape(s) }`; `map(h, f)` is `h`, since a string carries no
+  handler for `f` to wrap.
+- **Well-known exports**: `escape` (1), `escapeAttr` (1), `safeUrl` (1), `list` (2), which renders
+  `(items, row)` — a cons list, as every sibling that takes a `List` reads one — and concatenates the
+  rows, `classes` (1) and `styles` (1); with the primitives `text` (1) and `map` (2). A render is
+  printed by the `node` platform's own `foreign render : Html msg -> String`, which reads `.t` — legal
+  because `node` names `ssr` (`boundary.md` §9.3) — so a `run/` fixture prints a view with
+  `Node.printLines [ Node.render (view model) ]`.
 
 ### 15.7 The release optimiser
 
@@ -3151,8 +3241,9 @@ Nothing in §9's release slice changes, and three things are stated so that no l
   may move a DOM read past a DOM write, or either across a runtime call** — `Opt` never reorders two
   surviving evaluations anyway (`language.md` §6), and this names the case.
 - **Item 2** renames kinds, templates, row pairs and runtime imports as the top-level names they
-  are, and walk variables as locals. **Property names are never renamed** — `$$click`, `.data`, a
-  block's `t` and `v`, an instance's fields — because `Rename` renames bindings and nothing else.
+  are, and walk variables as locals. **Property names are never renamed** — `$$click`, `$$cx`,
+  `.data`, a block's `t` and `v`, an instance's fields — because `Rename` renames bindings and nothing
+  else.
 - **Item 4**, field ambiguation, is declined (§9); if it is ever taken up, a markup runtime's objects
   and blocks are outside it, because the runtime reads their fields by name.
 
@@ -3162,8 +3253,9 @@ proof required; the `emit/` corpus is what makes it a test.
 ### 15.8 Field identity, pinned
 
 `language.md` §11.12's promise is what makes `p` correct: `inst.row !== row` means "changed" only
-because an untouched value is the same object. Two kinds of fixture pin it, in the development build
-and again under `--release`, where an optimiser would break it (W27):
+because an untouched value is the same object, and a row's inputs are worth comparing only because
+`model.selected` is the same value when `update` did not touch it. Two kinds of fixture pin it, in the
+development build and again under `--release`, where an optimiser would break it (W27):
 
 - **Shape**: `emit/` and `emit/release/` goldens of a record update, showing the spread
   `({ ...r, a: x })` in both builds.
@@ -3174,28 +3266,103 @@ and again under `--release`, where an optimiser would break it (W27):
 
 ### 15.9 Reachability and determinism
 
-- **Vocabulary declarations are not nodes**: they emit nothing. A root's edges are its value
-  instructions' ordinary edges, a component's callee among them; the one edge `Bir` does not have, a
-  payload extractor, is the markup leg of `check/Edges.zig` (`checker-v2.md` §25.7). A hoisted
-  declaration is produced only by a surviving module's lowering, so it lives and dies with the roots
-  that use it.
+- **Vocabulary declarations are not nodes**, apart from primitives: an element, attribute or event
+  emits nothing, and a primitive is a declaration like a `foreign`, reachable by its ordinary `refs`
+  edges and emitted as an import of the runtime. A root's edges are its value instructions' ordinary
+  edges, a component's callee among them; the one edge `Bir` does not have, a payload extractor, is
+  the markup leg of `check/Edges.zig` (`checker-v2.md` §25.7). A hoisted declaration is produced only
+  by a surviving module's lowering, so it lives and dies with the roots that use it.
 - **Determinism**: kind and row names are sites; template-string numbers count in hoist order within
-  one module's lowering; start data is sorted; each module's lowering is one job writing one slot.
-  The `--jobs=1`/`--jobs=8` determinism test covers it once markup is in the corpus (`boundary.md`
-  §9.6).
+  one module's lowering; start data is sorted; row inputs are in first-use order (`frontend.md`
+  §9.7); each module's lowering is one job writing one slot. The `--jobs=1`/`--jobs=8` determinism
+  test covers it once markup is in the corpus (`boundary.md` §9.6).
 
 ### 15.10 Tests
 
 `run/` through `ssr` is the default for behaviour, from the first slice, because it needs no browser:
-text and attribute escaping, `For` in all three modes, components and their children, fragments,
-blocks from helpers and branches, and a view formatted and re-rendered (`frontend.md` §9.6). `emit/`
-goldens pin `dom`'s shapes against research 36 §2's examples. **A differential oracle** translates
-dom-expressions' own client fixtures (`packages/babel-plugin-jsx/test/`, 16 inputs) into beni and
-compares beni's template strings and walks with those the vendored compiler emits (research 36 §7).
+text — whitespace collapsing over the Unicode set, a no-break space typed and written `&nbsp;`,
+named, bare, numeric and windows-1252 references, `&notit;` — and attribute escaping, the class and
+style lists in both forms, `For` in all three modes, `Show` by identity and by key, components and
+their children, fragments, `Html.text` and nested `Html.map`, blocks from helpers and branches, and a
+view formatted and re-rendered (`frontend.md` §9.6). `emit/` goldens pin `dom`'s shapes against
+research 36 §2's examples.
+
+**The differential oracle.** dom-expressions' Babel plugin ships sixteen client fixtures, each an
+input `code.js` and the plugin's expected `output.js`
+(`references/dom-expressions/packages/babel-plugin-jsx/test/__dom_fixtures__/`: `simpleElements`,
+`attributeExpressions`, `textInterpolation`, `fragments`, `SVG` and eleven more), and the Rust
+compiler keeps Babel parity with them (research 36 §1, §3.7). The harness:
+
+- **Inputs**: `tests/oracle/dom/<fixture>/Main.beni`, a hand translation of the fixture's JSX into
+  beni markup against a test vocabulary layered on `browser`, one beni root per JSX root, in the
+  fixture's order. A construct beni does not have (spread, `ref`, directives) is left out and listed.
+- **Expected**: `tests/oracle/dom/<fixture>/expected.txt`, extracted once from `output.js` by
+  `tests/oracle/extract.mjs` and checked in, so the gate reads no submodule: for each root, the
+  template string passed to `_$template` and the walk — the sequence of `firstChild`/`nextSibling`
+  steps to each node a write or a slot uses. Re-extracted, by hand, when the pin of
+  `references/dom-expressions` moves.
+- **Actual**: `zig build test-blackbox` builds each input with `--library --platform=<the test
+  platform>` and extracts the same two things from the emitted module, whose shapes are fixed by
+  §15.3.
+- **Compared**: byte for byte, template strings and walks. A difference that is deliberate — beni
+  never dedupes kinds, a `<!>` marker beni places where Solid's reactive `insert` needs none, a
+  construct left out — is listed in `tests/oracle/dom/<fixture>/differences.txt` with its reason, and
+  the test fails on any difference not listed and on any listed one that no longer occurs, so the
+  list cannot outlive what it excuses.
+
 Behaviour in a page — a keyed reorder keeps focus in its row, a branch swap does not carry an input's
-value across, a controlled input reverts a rejected edit, a delegated handler listens once for a
-thousand rows — needs the `browser/` corpus kind the browser plan adds
-(`plans/browser-platform.md` §3). **The bar is the owner's** (CLAUDE.md rule 8): research 29's
-harness, the benchmark app written in beni markup and compiled by beni, against Solid 2 re-run in
-the same batch, judged on per-operation script medians and never on a geometric mean, plus research
-29's static-heavy page and a helper-heavy one.
+value across, a keyed `Show` remounts on a new value and patches on the same one, a controlled input
+reverts a rejected edit, a delegated handler listens once for a thousand rows, a message from inside
+two `Html.map`s arrives mapped twice, five messages in one task render once — needs the `browser/`
+corpus kind the browser plan adds (`plans/browser-platform.md` §3). **The bar is the owner's**
+(CLAUDE.md rule 8): research 29's harness, the benchmark app written in beni markup and compiled by
+beni, against Solid 2 re-run in the same batch, judged on per-operation script medians and never on
+a geometric mean, plus research 29's static-heavy page and a helper-heavy one.
+
+### 15.11 The `browser` runtime: program, mount and render loop
+
+The owner's W28 answer is Solid 2's loop (`plans/browser-decisions.md`, W28; research 27 §3.1–§3.6).
+This is its contract for `browser`, whose one runtime file is both the program runtime and the
+markup runtime (`boundary.md` §9.2) — which is what lets a listener reach `send` — and for every
+platform layered on it; `browser-tea` adds no JavaScript.
+
+- **The program.** `browser`'s low-level `Program` is data: its constructor, a `foreign` of the
+  `Browser` module legal because `browser` names `dom` (`boundary.md` §9.3), returns the record it
+  was given — `init`, `update`, `view` and where to mount, whose final form waits on W9 (what `main`
+  is in a page; `document.body` until then). `run(program)` is the only code that reads it.
+- **Mount.** `run` renders `view(init)` synchronously, mounts its block in a slot at the mount node
+  with a `null` context, and marks the mount node with the program's `send` (`$$root`). A delegated
+  listener walks up from the event's target past the handler's node to the nearest `$$root` and
+  sends there, so two programs on one page each receive their own messages.
+- **A message does not render at once.** `send(msg)` runs `update`, stages the new model and, if no
+  flush is queued, queues **one microtask flush** — Solid 2's `schedule()`
+  (`references/solid/packages/signals/src/core/scheduler.ts:403-411`), which refuses a second until
+  the first has run. Five messages in one task are five `update`s and one render. A flush is a single
+  bounded microtask, not a microtask loop, which is the distinction research 27 §3.5 draws against
+  research 26's starved page.
+- **The flush**, in order: (1) if the model is not identical to the last rendered one, `view(model)`
+  and `childHtml` on the root slot — the patch pass, every DOM write of the render; (2) the
+  **after-render work** queued during the `update`s, first queued first, each synchronous — Solid 2's
+  split effect, whose effect half runs after the queue flushed (research 27 §3.2–§3.3). A message
+  sent during (2) queues the next flush; it never re-enters this one.
+- **Reads before writes.** The patch pass makes no layout-dependent read: it walks nodes
+  (`firstChild`, `nextSibling`) and reads `stateful` properties (`value`, `checked`), and neither
+  forces layout. Anything that measures or focuses runs in (2), after every write of the flush, so a
+  flush cannot interleave a layout read with a write — the pattern research 26 §5.5 measured at
+  2 846 ms against 2.5 ms over 3 000 nodes. After-render work is `sync` (research 26 §5.4: a callback
+  that suspended resumed a frame late).
+- **An explicit synchronous flush** is the runtime's `flush`, which drains now; it is Solid's
+  `flush()`, and beni reaches it as a capability of the `Browser` module (`Browser.flush`), a value
+  `run` interprets, since only the runtime file can reach the loop. A capability that must see the
+  rendered DOM — focus, measuring, scrolling — is likewise a value `run` queues into (2). Both are
+  effects and arrive with the effects work (W8); what the loop owes them is specified here so they
+  need no new phase, since a library cannot add a phase the kernel lacks (W28).
+- **Controlled inputs need no synchronous render.** Elm renders synchronously when a handler used
+  `stopPropagation` because its render waits for the next frame and a fast typist outruns it (research
+  24 §6.6). A microtask flush runs before the browser dispatches the next input event, so a `stateful`
+  property is reconciled with the model — a rejected edit reverted — before the next keystroke is
+  processed. `Browser.flush` exists for reading the DOM a message just changed, Solid's use of it, not
+  for inputs.
+- **Several renders per frame are possible**, as in Solid 2 and unlike Elm's one per frame; the
+  browser coalesces the DOM mutations into one paint (research 27 §3.6), and `view` is skipped when
+  the model did not change.
