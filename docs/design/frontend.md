@@ -700,7 +700,8 @@ holds their `Symbol`. **Keywords are not recognised inside a tag**: `type`, `as`
 the lexer, knows them (§9.4).
 
 A new tag set is a change to the front-end artifact's bytes, so the artifact's `format_version`
-moves (4 → 5, then 5 → 6 for `markup_stray`, `src/frontend/artifact_bytes.zig`), and every older artifact is a miss; the compiler build
+moves (4 → 5, then 5 → 6 for `markup_stray`, then 6 → 7 for §9.7's `Bir` and its `uses_markup`
+bit, `src/frontend/artifact_bytes.zig`), and every older artifact is a miss; the compiler build
 id already moves with the change.
 
 ### 9.3 When `<` opens markup
@@ -766,7 +767,8 @@ the smallest reading, and these are they:
 - **Until §9.4 is built**, `markup_open` in `parseAtom` reports `not_implemented` at the `<` and
   skips to the end of the outermost element — counting `markup_open` against `/>` and a closing
   tag's `>` — or to a column-1 token, and returns an error placeholder; the lexer's own diagnostics
-  inside the markup are reported as always.
+  inside the markup are reported as always. *Superseded 2026-09-29: §9.4 is built, and the parser
+  reads markup; nothing skips it.*
 - **`dump --stage=tokens`** prints a `markup_text`'s bytes in double quotes with `"`, `\`, `\n`,
   `\r`, `\t` and other control bytes escaped, since a run may span lines (§1.2).
 
@@ -824,6 +826,44 @@ Text is printed as written, before §9.7's trimming and decoding, since the AST 
 | `<-div>` | `unexpected_token` whose message says a tag name cannot begin with `-`, since `<-` lexes as one token (research 28 §3.5) | as today |
 | an unknown fact in a vocabulary declaration | `unexpected_token` | the fact is skipped |
 
+*As built, 2026-09-29* (`src/parse/Parse.zig`, `src/dump/ast.zig`). Where §9.4–§9.5 left a choice,
+the parser takes the smallest reading, and these are they:
+
+- **The AST dump** prints a braced attribute value with the marker `braced` after the name,
+  `(markup_attr id braced (field_access …))`, and a quoted one as its `string` node, so `a="x"` and
+  `a={"x"}` — which §11.5 treats differently — do not print alike. A self-closing tag and one closed
+  at once are the same node. `markup_for` and `markup_show` print as `markup_element` does, under
+  their own tag. A vocabulary declaration prints its name, its facts as words with their string
+  arguments, and its annotation. The accessors are three, one per shape: `fullMarkup` for the four
+  element-like tags, `fullMarkupAttr` for an attribute or an escape, and `fullVocab`.
+- **A component's attribute must be a field name** — a lower-case letter, then letters, digits and
+  `_` — or it is `unexpected_token` naming the component, since `language.md` §11.8 makes each one a
+  field of the record it takes; a quoted name (`"aria-label"=…`) on a component is refused the same
+  way. The parser can tell, because a component is an upper-case name.
+- **A `{` in an opening tag without `...`** is `expected_token` asking for `...`, and the braces are
+  read as a spread's; a `{...e}` on an element is parsed and left to lowering's `spread_on_element`.
+- **`unclosed_element`** spans the `<` and the name. It has three wordings: at the end of the file;
+  at a token on or left of the enclosing block's column, naming that column as
+  `unclosed_delimiter` does; and at an outer element's closing tag, quoting it. In the last case the
+  lexer, which does not match names, still counts the elements closed early as open, and reads what
+  follows the outermost one as their children; the parser skips those tokens without a second
+  diagnostic, so one mistake is one message.
+- **`element_as_argument`** is decided by lookahead, not by a failed parse: after an operand, a `<`
+  followed with no space by a name, then any attribute names, then `/>`, `>` or `=`. The comparison
+  gets the error placeholder as its right operand, and the parser recovers as after any other
+  expression error.
+- **`nesting_too_deep`** the lexer already reported at a `<` is not reported again by the parser at
+  the same `<`, and a `markup_stray` token is skipped like an `invalid` one, its diagnostic the
+  lexer's.
+- **`-<b />`** is `unexpected_token` with its own wording (negation takes a number), and **`<-div>`**
+  is `unexpected_token` whose message says `<-` is the bind's arrow, when `<-` is followed by a name
+  where an expression should start.
+- **A hole's `}` inside a comment** (`{-- note}`) is `unclosed_delimiter` at the `{` with the
+  wording of the table above, when the comment after the `{` holds a `}`.
+- **Vocabulary facts** are kept in the AST as a token range and checked against their form's words
+  there; an unknown word is `unexpected_token` naming the words there are, and is skipped with its
+  arguments. A vocabulary declaration is only recognised after `pub`.
+
 ### 9.6 The formatter
 
 `Format.zig` implements `language.md` §11.15 with the two mechanisms it already has: the width measure
@@ -841,6 +881,27 @@ must not move (children on one line past 100 columns; a space between two elemen
 two spaces between words; a line whose only whitespace is a no-break space), and one `run/` fixture
 that renders a view through the `ssr` lowering before and after `beni fmt` and compares the two
 strings — the black-box form of "the formatter never changes what a page says".
+
+*As built, 2026-09-29* (`src/fmt/Format.zig`). The `run/` fixture waits for the `ssr` lowering;
+until then the `fmt/` harness checks the same promise one stage earlier: it compares the AST with
+every text run cut out, and, for a file with markup, the `dump --stage=bir` page before and after
+formatting, which holds each text run after §11.4's two steps. Where §9.6 and `language.md` §11.15
+left a choice:
+
+- **Only the gaps between two children are fixed.** The edges — between the opening tag and the
+  first child, and between the last child and the closing tag — may gain a line break where they
+  had none when the element is printed vertically, since the page shows neither; a space the page
+  shows before the closing tag stays on the line.
+- **An element written on one line stays on one line when it follows something on its line** — a
+  sibling it may not be parted from, `\x ->`, an attribute's `=` — whatever its width, since
+  breaking it there moves only its own edges. An element the author broke is printed vertically.
+- **A text run's trailing whitespace** is dropped at the end of a line when a later line of the same
+  run shows text, and kept on the run's last line of text, where Solid's `trim_jsx_text` keeps it as
+  a space. At most one blank line is kept inside a run and between children.
+- **A hole that does not fit** continues its expression four columns right of the `{`, and its `}`
+  closes on a line of its own under the `{`, as a hole holding only a comment always does
+  (`{ -- note` then `}`).
+- **A vocabulary declaration** prints on one line, its facts in source order.
 
 ### 9.7 BIR
 
@@ -952,6 +1013,40 @@ or for `markup` a symbol), its facts and, for attributes, events and primitives,
 interface skeleton lists them beside the module's other `pub` names, and `dump --stage=bir` prints
 them and every markup tree, rows' shapes, captures and inputs included. The `Bir`'s format moves with
 the artifact's (§9.2).
+
+*As built, 2026-09-29* (`src/bir/Lower.zig`, `src/bir/Bir.zig`, `src/markup/`). Where §9.7 left a
+choice, lowering takes the smallest reading, and these are they:
+
+- **Storage.** A text node's decoded text is interned, as a `Symbol`; a constant's text and an
+  entry's name live in the `Bir`'s string bytes. The tree's records sit in `extra` and are read
+  positionally, like every other record there. `uses_markup` travels in the artifact as a section of
+  its own, `bir_flags` (bit 0; any other bit set is a malformed artifact), which is the 6 → 7 move of
+  §9.2.
+- **A `\r`** is removed from a text run before §11.4's first step. The lexer admits one only before a
+  `\n` (a bare one is `bare_carriage_return`), so this is the CRLF file reading as its LF twin, which
+  is what Solid's reader does.
+- **A quoted value without interpolation lowers to no instruction**: it is a constant and nothing
+  else; the checker will type it as the string it is.
+- **A `For` or `Show`'s children are one hole, whitespace aside**: text that trims to nothing
+  between them is not a child, so the hole may sit on a line of its own.
+- **A form's `each`, `when` and `fallback`** are ordinary values whatever their spelling: a bare
+  name is the prelude's `True`, a quoted value its decoded string. `keyed` is read by shape as the
+  paragraph above says; bare `keyed` is `True`.
+- **A component's callee**: `<Card>` and `<Ui.Card>` resolve to that module's `view`, `<Card.header>`
+  to the member; a module name that is no import is `unknown_module_alias`, worded for a component.
+- **`dump --stage=bir`** prints text and constants in double quotes with `"`, `\`, `\n`, `\r`, `\t`,
+  other control bytes and `language.md` §11.4's non-ASCII whitespace escaped (`\u{a0}`), so a decoded
+  `&nbsp;` is visible.
+- **Vocabulary declarations** keep their facts as records in the declaration's parameter range. They
+  are **not yet in the interface skeleton**: nothing can read them until the checker resolves
+  markup against a vocabulary (`checker-v2.md` §25.2), and listing names nothing can type would be
+  an interface change with no reader.
+- **The stop before checking.** Until the checker reads markup, a module whose `Bir` says
+  `uses_markup` is reported once, `no_markup_vocabulary` at its first markup instruction in source
+  order, and every `markup` instruction types as the error type, so nothing cascades from it; a
+  vocabulary declaration is `not_implemented` at its name. Both are errors, so no build of either
+  reaches the emitter. `no_markup_vocabulary` is §9.8's diagnostic for a build without a
+  vocabulary, which is every build today: no platform declares one yet.
 
 ### 9.8 The vocabulary edge
 
