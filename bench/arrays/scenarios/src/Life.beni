@@ -1,0 +1,51 @@
+-- Scenario 3, dense: one generation of Conway's game of life on a flat
+-- w×h board, every cell rebuilt by `initialize` from its eight neighbours.
+-- Every generation comes from `initialize` and is never written, so the
+-- proven-plain build may rewrite this module.
+import Array exposing (Array)
+
+
+type alias Grid =
+    w : Int
+    h : Int
+    cells : Array Int
+
+
+cell : Grid, Int, Int -> Int
+cell g x y =
+    case Array.get g.cells (modBy y g.h * g.w + modBy x g.w) of
+        Just v ->
+            v
+
+        Nothing ->
+            0
+
+
+alive : Grid, Int -> Int
+alive g i =
+    let
+        x =
+            modBy i g.w
+
+        y =
+            i // g.w
+
+        n =
+            cell g (x - 1) (y - 1)
+                + cell g x (y - 1)
+                + cell g (x + 1) (y - 1)
+                + cell g (x - 1) y
+                + cell g (x + 1) y
+                + cell g (x - 1) (y + 1)
+                + cell g x (y + 1)
+                + cell g (x + 1) (y + 1)
+    in
+    if n == 3 || (n == 2 && cell g x y == 1) then
+        1
+    else
+        0
+
+
+pub step : Grid -> Grid
+step g =
+    { g | cells = Array.initialize (g.w * g.h) (\i -> alive g i) }

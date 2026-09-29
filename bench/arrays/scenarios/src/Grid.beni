@@ -1,0 +1,73 @@
+-- Scenario 3, sparse: a w×h board stored flat (index y * w + x) whose
+-- ticks each change k cells, reading every changed cell's eight neighbours
+-- first — a painting tool, a falling-sand or cellular-automaton game that
+-- only recomputes what moved.
+import Array exposing (Array)
+
+
+type alias Grid =
+    w : Int
+    h : Int
+    cells : Array Int
+
+
+pub make : Int, Int -> Grid
+make w h =
+    { w = w, h = h, cells = Array.initialize (w * h) (\i -> if modBy (i * 7) 5 == 0 then 1 else 0) }
+
+
+cell : Grid, Int, Int -> Int
+cell g x y =
+    case Array.get g.cells (modBy y g.h * g.w + modBy x g.w) of
+        Just v ->
+            v
+
+        Nothing ->
+            0
+
+
+neighbours : Grid, Int, Int -> Int
+neighbours g x y =
+    cell g (x - 1) (y - 1)
+        + cell g x (y - 1)
+        + cell g (x + 1) (y - 1)
+        + cell g (x - 1) y
+        + cell g (x + 1) y
+        + cell g (x - 1) (y + 1)
+        + cell g x (y + 1)
+        + cell g (x + 1) (y + 1)
+
+
+--| One tick that changes `k` cells, chosen from `seed`.
+pub tick : Grid, Int, Int -> Grid
+tick g k seed =
+    tickHelp g 0 k seed
+
+
+tickHelp : Grid, Int, Int, Int -> Grid
+tickHelp g j k seed =
+    if j >= k then
+        g
+    else
+        let
+            i =
+                modBy (seed + j * 7919) (g.w * g.h)
+
+            x =
+                modBy i g.w
+
+            y =
+                i // g.w
+
+            n =
+                neighbours g x y
+
+            v =
+                cell g x y + 1 + modBy n 2
+        in
+        tickHelp { g | cells = Array.set g.cells i v } (j + 1) k seed
+
+
+pub population : Grid -> Int
+population g =
+    Array.foldl g.cells 0 (\v s -> s + v)

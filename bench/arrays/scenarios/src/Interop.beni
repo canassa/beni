@@ -1,0 +1,36 @@
+-- Scenario 6: arrays handed to JavaScript — an encoder, `Math.max`, a list
+-- builder. The platform side of each is in `scenarios.mjs`.
+import Array exposing (Array)
+import String
+
+
+type alias Item =
+    id : Int
+    name : String
+    price : Float
+    category : Int
+
+
+type alias Line =
+    id : Int
+    text : String
+
+
+pub lines : Array Item -> Array Line
+lines items =
+    Array.map items (\it -> { id = it.id, text = it.name ++ " " ++ String.fromFloat it.price })
+
+
+pub prices : Array Item -> Array Float
+prices items =
+    Array.map items (\it -> it.price)
+
+
+pub reprice : Array Float, Int -> Array Float
+reprice ps i =
+    Array.set ps i 0.5
+
+
+pub rename : Array Line, Int -> Array Line
+rename ls i =
+    Array.update ls i (\l -> { l | text = "renamed" })

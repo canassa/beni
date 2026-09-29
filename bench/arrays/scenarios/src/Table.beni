@@ -1,0 +1,113 @@
+-- Scenario 1: research 29's table (js-framework-benchmark's rows) as a TEA
+-- model whose rows are an `Array`. `update` is what a program would write;
+-- the render pass is the DOM runtime's, in `scenarios.mjs`.
+import Array exposing (Array)
+import String
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : Array Row
+    selected : Int
+    nextId : Int
+
+
+type Msg
+    = UpdateLabel Int
+    | UpdateEvery10th
+    | Swap Int Int
+    | Remove Int
+    | Append Int
+    | AddOne
+    | Select Int
+
+
+row : Int -> Row
+row id =
+    { id = id, label = "row " ++ String.fromInt id }
+
+
+pub create : Int -> Model
+create n =
+    { rows = Array.initialize n (\i -> row (i + 1)), selected = 0, nextId = n + 1 }
+
+
+pub updateLabel : Int -> Msg
+updateLabel i =
+    UpdateLabel i
+
+
+pub updateEvery10th : Msg
+updateEvery10th =
+    UpdateEvery10th
+
+
+pub swap : Int, Int -> Msg
+swap i j =
+    Swap i j
+
+
+pub remove : Int -> Msg
+remove id =
+    Remove id
+
+
+pub append : Int -> Msg
+append n =
+    Append n
+
+
+pub addOne : Msg
+addOne =
+    AddOne
+
+
+pub select : Int -> Msg
+select id =
+    Select id
+
+
+pub update : Msg, Model -> Model
+update msg model =
+    case msg of
+        UpdateLabel i ->
+            { model | rows = Array.update model.rows i (\r -> { r | label = r.label ++ " !!!" }) }
+
+        UpdateEvery10th ->
+            { model
+                | rows =
+                    Array.indexedMap model.rows
+                        (\i r -> if modBy i 10 == 0 then { r | label = r.label ++ " !!!" } else r)
+            }
+
+        Swap i j ->
+            case Array.get model.rows i of
+                Just a ->
+                    case Array.get model.rows j of
+                        Just b ->
+                            { model | rows = Array.set (Array.set model.rows i b) j a }
+
+                        Nothing ->
+                            model
+
+                Nothing ->
+                    model
+
+        Remove id ->
+            { model | rows = Array.filter model.rows (\r -> r.id /= id) }
+
+        Append n ->
+            { model
+                | rows = Array.append model.rows (Array.initialize n (\i -> row (model.nextId + i)))
+                , nextId = model.nextId + n
+            }
+
+        AddOne ->
+            { model | rows = Array.push model.rows (row model.nextId), nextId = model.nextId + 1 }
+
+        Select id ->
+            { model | selected = id }

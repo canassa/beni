@@ -986,3 +986,424 @@ without a proxy: 100 writes after one copy cost 275 ns at n = 1 000. That is §9
 building, and it applies to `Array` exactly as it does to an array-backed `List`. It would soften
 cow's cliff for loops that build or update an array locally. It does nothing for a single `set` on
 a large array that other code shares, and that is the case the hybrid's trie exists for.
+
+---
+
+## 15. An adaptive array, measured on programs (added 2026-09-29, Node only)
+
+§3–§5 measure one operation at a time. This section asks the owner's follow-up question on whole
+programs: **what if an array is a plain JS array until something writes to it, whatever its size?**
+It measures that design, called *adaptive*, on six scenarios. Every scenario is **written in beni and
+compiled by this repository's `beni`**, not written by hand as JavaScript. Node 24.19 only, so the
+figures compare with each other and with §14, not with the Chrome tables of §3.
+
+### 15.1 The adaptive design
+
+`bench/arrays/ports/adaptive.js` has 80 lines over the §1 cow and trie ports.
+
+* **Every array starts as a plain JS array, at any size.** Literals, `fromList`, `initialize`, a
+  decoder's output, `map`, `filter`, `slice`, `sortWith` and `append` onto a plain array all
+  return plain arrays. So does every operation that builds a fresh array anyway, even when its
+  input was a trie.
+* **The first single-element write to a plain array longer than the threshold T converts it.** That
+  means `set`, `push`, `pop` or `swap`. The array becomes a trie in one O(n) build, and the write is
+  applied there. Later writes to the result stay in the trie. A plain array of T elements or fewer
+  is written copy-on-write, as cow is. **T is 32, 256 or 1 024.**
+* **The old version stays valid**, because neither representation is ever mutated. The §7 no-ops
+  keep their identity: a `set` of the identical value returns its input and never converts.
+  Because of that, the differential test's `swap i i` and out-of-range `update` return
+  `model.rows` itself for every candidate.
+* **Reads cost one `Array.isArray` check.** A second build, **adaptive1024P**, is what a compiler
+  that has *proven* an array plain would emit: a bare `a[i]` and `a.length`, with no check. It is
+  applied only where that proof is honest (§15.3).
+
+The representation is **not canonical for a length**: a 5 000-element array can be either plain or
+a trie. `eq` compares across representations, and the renderer walks either one.
+
+### 15.2 Method
+
+**The code is beni's own output.** `bench/arrays/scenarios/Array.beni` is an experimental
+`core/Array` shaped as §12.2 says: a first-order `foreign` sibling (`length`, `unsafeGet`, `set`,
+`push`, `pop`, `slice`, `append`, `fromList`, `toList`, `sortWith`), with `get`, `update`, `foldl`,
+`foldr`, `initialize`, `repeat`, `map`, `indexedMap` and `filter` written in beni over it. `node
+scenarios.mjs build` copies `core/`, adds that module and compiles the seven scenario modules in
+`bench/arrays/scenarios/src/` with `beni build --platform=node --library --core-root=…`. That is the
+development build, whose names are readable; `--release` changes names and layout, not calls.
+
+The compiled JavaScript is **byte-identical for every candidate**. Only `_core/Array.foreign.mjs`
+changes: an esbuild plugin swaps in each candidate's sibling at bundle time, a re-export of the
+port under the declared names. What is not beni is in `scenarios/harness.js`:
+
+* the decoder's hand-over of the fresh JS array it built (`fromJs`, which adopts the array where the
+  representation allows it);
+* the DOM runtime's `For` walk. It has `platforms/browser/runtime.js`'s `forPosition` shape: one
+  record per row, `i.x !== item` per row, and a `selected` check per row. It walks the plain array,
+  or the trie's leaves, with no copy.
+* scenario 6's JavaScript APIs;
+* the timing loop.
+
+Candidates: **cow**, **trie**, **hybrid1024** (§12's recommendation), **adaptive32**,
+**adaptive256**, **adaptive1024** and **adaptive1024P**. The last runs only the two scenarios where
+its proof holds.
+
+**Differential test first.** `node scenarios.mjs test` runs every scenario once per candidate: 298
+checks per candidate, digests of every intermediate array, and inputs checked unchanged afterwards.
+All seven candidates agree. The test also caught a *dishonest* proof: the first version ran the
+proven-plain life step on a board that the sparse ticks had turned into a trie, and it silently
+produced a different board. **A wrong plainness proof is a wrong answer, not a slow one.**
+
+Timing is §14's loop. At least 25 ms of warm-up, then 7 samples of at least 10 ms each (3 samples
+when a call exceeds 400 ms, 1 when it exceeds 1.5 s), and a full GC before each cell. Each
+candidate is its own `node --expose-gc` process over its own esbuild IIFE, pinned with `taskset
+-c 13`. **Three rounds; each cell is the median of the three round medians.** The steady and first
+rows are defined like this:
+
+* **steady:** the state is threaded from call to call, so the array has already had many messages
+  of that kind.
+* **first:** every call starts from the same freshly created value. For adaptive this is the
+  first-write conversion, paid on every call.
+
+**Noise.** The machine was shared. The load average was 1.5–2.3 on 32 threads for two rounds and
+rose to 15 during round 3's cow process. Within a run, the median cell's IQR is 2.3 % of its median.
+Between rounds, the IQR of a cell's three medians is 2 % of the median for the median cell and 8 %
+at the 90th percentile. The worst cells are sub-40 µs table cells at 1 000 rows (60–100 %).
+**Nothing below rests on a difference under 1.3×** unless it says so. The cow cells at 100 000
+elements are GC-bound under Node (§4.4) and would be smaller in Chrome.
+
+### 15.3 What beni emits
+
+Scenario 1's swap, as Elm's js-framework-benchmark implementation writes it, and core's `get` and
+`foldl`, exactly as compiled (`dist/beni/Table.mjs`, `dist/beni/_core/Array.mjs`):
+
+```js
+// Table.beni:  Swap i j -> case Array.get model.rows i of Just a -> case Array.get model.rows j of
+//                  Just b -> { model | rows = Array.set (Array.set model.rows i b) j a } …
+case "Swap":
+  {
+    const i$5 = msg$1.a;
+    const j$6 = msg$1.b;
+    const $t$3 = Array$get(model$2.rows, i$5);
+    if ($t$3.$ === "Just") {
+      const a$7 = $t$3.a;
+      const $t$4 = Array$get(model$2.rows, j$6);
+      if ($t$4.$ === "Just") {
+        const b$8 = $t$4.a;
+        return { ...model$2, rows: Array$set(Array$set(model$2.rows, i$5, b$8), j$6, a$7) };
+      } else {
+        return model$2;
+      }
+    } else {
+      return model$2;
+    }
+  }
+
+// core: get, and foldl as the tail-call loop of backend.md §8
+const Array$get = (arr$1, i$2) => 0 <= i$2 && i$2 < Array$length(arr$1) ? { $: "Just", a: Array$unsafeGet(arr$1, i$2) } : { $: "Nothing", a: null };
+const Array$foldlHelp = (arr$1, $in$1, n$3, $in$3, func$5) => {
+  Array$foldlHelp: while (true) {
+    const i$2 = $in$1;
+    const acc$4 = $in$3;
+    if (i$2 >= n$3) {
+      return acc$4;
+    } else {
+      $in$1 = Basics$add(i$2, 1);
+      $in$3 = func$5(Array$unsafeGet(arr$1, i$2), acc$4);
+      continue Array$foldlHelp;
+    }
+  }
+};
+```
+
+`Array$unsafeGet` and `Array$length` are the sibling's exports, imported as module bindings. For
+adaptive, `unsafeGet` is `(a, i) => (Array.isArray(a) ? a[i] : T.get(a, i))`. **The proven-plain
+build** (`node scenarios.mjs build` writes it to `dist/beniP/` by a mechanical rewrite) gives core
+a `$P` twin of every beni-written reader, with `Array$unsafeGet(a, i)` → `a[i]` and
+`Array$length(a)` → `a.length`:
+
+```js
+const Array$get$P = (arr$1, i$2) => 0 <= i$2 && i$2 < arr$1.length ? { $: "Just", a: arr$1[i$2] } : { $: "Nothing", a: null };
+```
+
+It makes the proven modules call those twins. The proof is honest in exactly two places. In
+`Decoded.beni` every array comes from the decoder, `filter`, `sortWith` or `slice`. In `Life.beni`
+every generation comes from `initialize`. Neither is ever written.
+
+### 15.4 Scenario 1: the TEA table
+
+Research 29's rows (`{id, label}`) are held in the model as an `Array`. **1 000 rows** is R29's
+benchmark and a typical UI list. **10 000** is a large grid or a log view. Every message is `update`
+followed by one render walk, because every message renders. "update every 10th" is written as Elm's
+JFB writes it, with `indexedMap`. "remove one" is `filter` by id, which is also Elm's JFB code. The
+steady-state remove is paired with an `AddOne` (`push`) so that the length stays fixed.
+
+| message (+ render) | n | cow | trie | hybrid1024 | adaptive32 | adaptive256 | adaptive1024 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| update one row, first | 1 000 | 3.12 µs | 3.65 µs | 3.21 µs | 4.60 µs | 4.51 µs | 3.19 µs |
+| update one row, steady | 1 000 | 3.68 µs | 4.07 µs | 3.71 µs | 3.98 µs | 3.97 µs | 3.69 µs |
+| update every 10th, steady | 1 000 | 27.0 µs | 34.1 µs | 27.5 µs | 32.0 µs | 30.7 µs | 25.3 µs |
+| swap, first | 1 000 | 3.40 µs | 3.55 µs | 3.55 µs | 4.46 µs | 4.32 µs | 3.48 µs |
+| swap, steady | 1 000 | 3.54 µs | 3.55 µs | 3.59 µs | 3.63 µs | 3.56 µs | 3.52 µs |
+| remove one, first | 1 000 | 15.5 µs | 22.8 µs | 16.3 µs | 20.1 µs | 19.8 µs | 16.1 µs |
+| remove one + add one, steady | 1 000 | 19.9 µs | 25.6 µs | 19.7 µs | 28.6 µs | 28.4 µs | 19.2 µs |
+| append 1 000 | 1 000 | 36.0 µs | 49.3 µs | 53.8 µs | 38.0 µs | 38.3 µs | 37.4 µs |
+| select (render only) | 1 000 | 2.81 µs | 3.41 µs | 2.97 µs | 2.89 µs | 2.87 µs | 2.86 µs |
+| update one row, first | 10 000 | 32.0 µs | 34.0 µs | 37.6 µs | 45.9 µs | 42.5 µs | 41.5 µs |
+| update one row, steady | 10 000 | 37.2 µs | 49.2 µs | 52.3 µs | 52.1 µs | 49.7 µs | 51.1 µs |
+| update every 10th, steady | 10 000 | 242 µs | 321 µs | 393 µs | 261 µs | 247 µs | 281 µs |
+| swap, first | 10 000 | 37.4 µs | 33.7 µs | 37.1 µs | 42.6 µs | 42.8 µs | 42.0 µs |
+| swap, steady | 10 000 | 36.5 µs | 35.8 µs | 36.0 µs | 34.7 µs | 32.0 µs | 32.8 µs |
+| remove one, first | 10 000 | 154 µs | 239 µs | 301 µs | 193 µs | 192 µs | 160 µs |
+| remove one + add one, steady | 10 000 | 170 µs | 240 µs | 275 µs | 264 µs | 275 µs | 183 µs |
+| append 1 000 | 10 000 | 67.6 µs | 78.3 µs | 79.3 µs | 68.1 µs | 69.2 µs | 67.2 µs |
+| select (render only) | 10 000 | 29.0 µs | 36.7 µs | 36.8 µs | 30.5 µs | 29.9 µs | 29.2 µs |
+
+**The render walk is the message.** `select` is nothing but the walk: 2.9 µs at 1 000 rows and
+29–37 µs at 10 000. Every single-row message costs less than 2× that. Cow's O(n) copy of a
+10 000-row array (≈5 µs under Node) disappears into a walk that visits every row anyway. Table
+sizes therefore **do not separate the designs by more than 1.5×**. The differences that exist follow
+the representation *the walk* sees:
+
+* A trie walk costs 1.2–1.3× a plain walk (`select` at 10 000: 36.7 µs for trie and hybrid against
+  29–30 µs for cow and adaptive).
+* The trie candidates are slower wherever a message rebuilds the array with `filter` or
+  `indexedMap`, which returns a trie for them and a plain array for adaptive. `remove one` at
+  10 000 costs 301 µs for hybrid1024 and 160 µs for adaptive1024.
+
+On this workload adaptive1024 equals cow at 1 000 rows, and at 10 000 rows it is **equal to or
+faster than hybrid1024 on every message except the two first writes**, "update one row" and "swap"
+(+10 % and +13 %, the conversion). The
+low thresholds lose here: at 1 000 rows, adaptive32/256 pay the conversion on every first write
+(+1.3 µs) and on every remove-then-add cycle (+9 µs), because `filter` returns a plain array and
+the `push` after it converts again.
+
+### 15.5 Scenario 2: decoded, read-only data
+
+A JSON array of `{id, name, price, category}` records is decoded and then only read. **10 000** is
+a product catalogue or a search result set; **100 000** is a large export, which is what makes
+anyone reach for `Array`. `decode` is `JSON.parse` plus the record loop a compiled decoder runs
+(report 34), ending in `fromJs`.
+
+Two groupings are reported. **Mixed** columns are the candidate's full process, in which scenario 1
+ran first, so the core read loops have already seen tries. **Alone** columns come from a process
+that ran only this scenario, so the core read loops have only ever seen plain arrays.
+
+| op | n | cow | trie | hybrid1024 | adaptive1024 mixed | adaptive1024 alone | adaptive1024P alone |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| decode (parse + records + hand-over) | 10 000 | 3.14 ms | 3.38 ms | 3.37 ms | 3.04 ms | 3.64 ms | 3.66 ms |
+| count by category (`foldl`) | 10 000 | 14.1 µs | 67.4 µs | 72.9 µs | 36.0 µs | 29.5 µs | **13.6 µs** |
+| total price (`foldl`) | 10 000 | 81.7 µs | 134 µs | 167 µs | 90.9 µs | 84.7 µs | 82.7 µs |
+| `filter` one category | 10 000 | 106 µs | 163 µs | 163 µs | 85.5 µs | 67.7 µs | 68.5 µs |
+| `sortWith` price + `slice` 20 | 10 000 | 2.23 ms | 2.27 ms | 2.29 ms | 2.21 ms | 2.19 ms | 2.19 ms |
+| 1 000 binary searches by `get` | 10 000 | 182 µs | 260 µs | 273 µs | 194 µs | 194 µs | 163 µs |
+| a page of 50 by `get` | 10 000 | 280 ns | 425 ns | 493 ns | 325 ns | 300 ns | 281 ns |
+| decode | 100 000 | 31.4 ms | 32.2 ms | 32.3 ms | 31.0 ms | 31.3 ms | 31.1 ms |
+| count by category (`foldl`) | 100 000 | 676 µs | 1.22 ms | 1.26 ms | 804 µs | 789 µs | 674 µs |
+| total price (`foldl`) | 100 000 | 811 µs | 1.39 ms | 1.38 ms | 852 µs | 1.18 ms | 823 µs |
+| `filter` one category | 100 000 | 1.06 ms | 1.77 ms | 1.32 ms | 812 µs | 684 µs | 682 µs |
+| `sortWith` + `slice` 20 | 100 000 | 29.3 ms | 30.8 ms | 31.1 ms | 30.0 ms | 30.3 ms | 30.0 ms |
+| 1 000 binary searches | 100 000 | 281 µs | 449 µs | 458 µs | 308 µs | 292 µs | 271 µs |
+| a page of 50 | 100 000 | 284 ns | 485 ns | 551 ns | 322 ns | 300 ns | 288 ns |
+
+(The alone runs of cow, trie and hybrid are in the raw data. Isolation moves every candidate's
+`filter` by 20–35 %: cow's to 69 µs and 686 µs, and trie's and hybrid's to 127 µs and 1.36–1.38 ms,
+still 1.9–2× adaptive's alone figure. It moves cow's total at 100 000 to 1.02 ms. Every other row
+moves by under 10 %.)
+
+**This is where adaptive pays for itself.** hybrid1024 decodes 10 000 or more elements into a trie,
+and then every read pays for the descent:
+
+* the `foldl`s cost 1.5–2× adaptive's;
+* `filter` 1.6–1.9×;
+* the binary searches 1.4–1.5×.
+
+Adaptive keeps the decoded array plain and reads within 1.0–1.2× of cow in the mixed process; its
+`filter` is *faster* than cow's there. Decoding itself costs the same for every candidate: the
+trie build is 2–7 % of the parse. The one mixed-process cell where adaptive is 2.6× cow, `count` at
+10 000 (36 µs against 14 µs), comes from the read site being polymorphic, not from the check: the
+same core `foldl` loop saw tries in scenario 1. Alone it is 29.5 µs, and proven plain it is 13.6 µs.
+
+### 15.6 Scenario 3: a grid game
+
+The board is stored flat. **100 × 100** is a typical board game or small simulation; **1 000 ×
+1 000** is a pixel-scale automaton or paint canvas. There are two workloads:
+
+* *Sparse ticks* (`Grid.beni`) change k cells per tick, reading each changed cell's eight
+  neighbours through `get` first. k = 1 is a click; k = 100 is a falling-sand frame.
+* *A life step* (`Life.beni`) rebuilds every cell with `initialize`, reading nine cells each. It is
+  the dense case, and it is proven plain.
+
+| op | cells | cow | trie | hybrid1024 | adaptive32 | adaptive256 | adaptive1024 | adaptive1024P |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| make (`initialize`) | 10 000 | 101 µs | 112 µs | 117 µs | 102 µs | 101 µs | 101 µs | 63.6 µs ¹ |
+| tick k = 1, first | 10 000 | 5.66 µs | 242 ns | 248 ns | 8.97 µs | 8.87 µs | 8.91 µs | — |
+| tick k = 1, steady | 10 000 | 4.99 µs | 259 ns | 270 ns | 312 ns | 316 ns | 293 ns | — |
+| tick k = 100, first | 10 000 | 496 µs | 25.2 µs | 25.6 µs | 38.6 µs | 38.1 µs | 35.5 µs | — |
+| tick k = 100, steady | 10 000 | 499 µs | 25.3 µs | 25.9 µs | 30.1 µs | 29.6 µs | 26.8 µs | — |
+| life step | 10 000 | 1.14 ms | 1.51 ms | 1.52 ms | 1.28 ms | 1.25 ms | 1.27 ms | 1.15 ms |
+| make | 1 000 000 | 35.7 ms | 41.0 ms | 56.5 ms | 36.3 ms | 36.1 ms | 36.0 ms | 32.6 ms ¹ |
+| tick k = 1, first | 1 000 000 | 3.80 ms | 291 ns | 292 ns | 1.88 ms | 1.79 ms | 1.79 ms | — |
+| tick k = 1, steady | 1 000 000 | 3.40 ms | 312 ns | 323 ns | 352 ns | 350 ns | 338 ns | — |
+| tick k = 100, first | 1 000 000 | 384 ms | 33.7 µs | 34.2 µs | 1.99 ms | 1.95 ms | 1.96 ms | — |
+| tick k = 100, steady | 1 000 000 | 378 ms | 36.5 µs | 36.8 µs | 41.1 µs | 41.1 µs | 37.0 µs | — |
+| life step | 1 000 000 | 184 ms | 248 ms | 252 ms | 198 ms | 196 ms | 199 ms | 182 ms |
+
+¹ The proven-plain `make` runs in a process that saw only plain arrays. It is not a proof effect:
+`make` reads nothing.
+
+Cow's cliff is the whole story of the sparse ticks: **378 ms per 100-cell tick** on a million cells
+(Node) against 37 µs. Adaptive's steady ticks are the trie's to within 1.2×. Its **first tick pays
+the conversion once: 8.9 µs at 10 000 cells and 1.8–2.0 ms at 1 000 000.** That is less than one
+cow copy of the same array under Node (3.8 ms), and it is paid once per board, not per tick. The
+life step, whose generations are never written, stays plain under adaptive and costs 1.25–1.3× less
+than the trie or hybrid (199 ms against 248–252 ms). Proven plain, it matches cow (182 ms against
+184 ms).
+
+### 15.7 Scenario 4: building in a fold
+
+Each array is built one element at a time inside a `List.foldl` or a tail loop. The sizes are
+**1 000**, a result list or a lookup table, and **100 000**, a data-processing job.
+
+* *collect*: a `push` per input.
+* *histogram*: 100 000 samples counted into n buckets, each an `Array.update`.
+* *coin change*: a DP table built by `push`, where each new entry reads four earlier ones.
+
+| op | n | cow | trie | hybrid1024 | adaptive32 | adaptive256 | adaptive1024 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| collect by `push` | 1 000 | 320 µs | 43.0 µs | 324 µs | 43.3 µs | 69.3 µs | 319 µs |
+| histogram of 100 000 samples | 1 000 | 45.7 ms | 5.86 ms | 46.0 ms | 6.07 ms | 6.15 ms | 46.5 ms |
+| coin-change table | 1 000 | 332 µs | 70.5 µs | 342 µs | 84.0 µs | 105 µs | 347 µs |
+| collect by `push` | 100 000 | **21.5 s** | 8.28 ms | 10.3 ms | 8.15 ms | 8.14 ms | 10.1 ms |
+| histogram of 100 000 samples | 100 000 | **39.3 s** | 19.1 ms | 19.1 ms | 19.1 ms | 18.7 ms | 18.8 ms |
+| coin-change table | 100 000 | **21.1 s** | 9.08 ms | 10.7 ms | 10.2 ms | 10.2 ms | 10.5 ms |
+
+At 100 000, cow is **2 000× slower**: 21–39 seconds against about 10 ms. Every threshold removes
+that cliff. **Below the threshold, the same cliff reappears at a smaller scale.** A 1 000-bucket
+histogram is written 100 000 times while it stays under 1 024 elements, so hybrid1024 and
+adaptive1024 copy 1 000 elements per write. That costs **46 ms, against 6 ms at T = 32 or 256**
+(7.6×). Collecting 1 000 results costs 320 µs against 43–69 µs. The hybrid needed a high threshold
+because below it reads were fast and above it they were not. Adaptive does not have that reason:
+its reads stay plain until something writes.
+
+### 15.8 Scenario 5: undo history
+
+The history keeps the last 100 versions of a **10 000**-element array, and each edit changes one
+cell (`History.beni`; `List.take 100` on every edit, the same for everyone). Retained bytes are
+measured with `process.memoryUsage().heapUsed` after two full GCs, holding the history after 150
+edits (101 versions). The elements are small integers, so the figure is the containers alone.
+
+| | cow | trie | hybrid1024 | adaptive32 | adaptive256 | adaptive1024 |
+|---|--:|--:|--:|--:|--:|--:|
+| one edit, first (on the fresh plain array) | 4.74 µs | 101 ns | 108 ns | 8.61 µs | 8.66 µs | 8.64 µs |
+| one edit, steady | 6.76 µs | 719 ns | 718 ns | 711 ns | 712 ns | 719 ns |
+| 100 undos + a `foldl` of the result | 11.8 µs | 48.2 µs | 45.8 µs | 57.3 µs | 58.0 µs | 51.9 µs |
+| retained: one version | 79 KB | 97 KB | 97 KB | 79 KB | 79 KB | 79 KB |
+| retained: 101 versions | **7 900 KB** | 178 KB | 178 KB | 178 KB | 178 KB | 178 KB |
+
+**This scenario measures the conversion directly: 8.6 µs for 10 000 elements, about 0.9 ns per
+element.**
+That is 1.8× one cow copy and 85× one trie `set`, paid once. After it, adaptive is the trie: the
+same 0.72 µs per edit and the same 178 KB for 101 versions, against cow's 7.9 MB. The undo row is a
+`foldl` over the current version, which is a trie for everything but cow, so cow reads it 4× faster.
+
+### 15.9 Scenario 6: handing arrays to JavaScript
+
+A decoded array is mapped to view rows (`Interop.lines`) and to prices (`Interop.prices`). That is
+the **mapped** state: a fresh array that nothing has written, plain under cow and adaptive and a
+trie under trie and hybrid above 1 024. The **edited** state is the same array after one `set`, and
+at these sizes it is a trie under everything but cow. Three consumers read it:
+
+* `JSON.stringify(toJs(a))`;
+* `Math.max.apply(null, toJs(prices))`;
+* an HTML list builder that walks the array as the runtime does, with no copy.
+
+| op | n | cow | trie | hybrid1024 | adaptive1024 |
+|---|--:|--:|--:|--:|--:|
+| `toJs`, mapped | 10 000 | 4.9 ns | 13.5 µs | 13.2 µs | 4.8 ns |
+| `toJs`, edited | 10 000 | 5.0 ns | 13.4 µs | 13.5 µs | 13.3 µs |
+| `JSON.stringify`, mapped / edited | 10 000 | 1.12 / 1.11 ms | 1.09 / 1.10 ms | 1.08 / 1.08 ms | 1.06 / 1.06 ms |
+| `Math.max`, mapped / edited | 10 000 | 21.9 / 21.4 µs | 36.6 / 36.1 µs | 37.3 / 37.2 µs | 20.6 / 35.9 µs |
+| `toJs`, mapped | 100 000 | 4.8 ns | 437 µs | 431 µs | 5.1 ns |
+| `toJs`, edited | 100 000 | 4.7 ns | 438 µs | 436 µs | 428 µs |
+| `JSON.stringify`, mapped / edited | 100 000 | 11.3 / 11.3 ms | 11.6 / 11.7 ms | 11.5 / 11.4 ms | 10.9 / 11.5 ms |
+| `Math.max`, mapped / edited | 100 000 | 217 / 215 µs | 662 / 664 µs | 666 / 661 µs | 211 / 660 µs |
+| HTML list, mapped / edited | 100 000 | 12.2 / 12.2 ms | 11.9 / 11.9 ms | 11.9 / 12.1 ms | 11.6 / 11.8 ms |
+
+`toJs` of a trie is 13 µs at 10 000 and 430–440 µs at 100 000. Under adaptive, **a mapped or
+decoded array crosses into JavaScript for free**, as it does under cow, where hybrid pays the full
+copy. An edited one pays the same as under hybrid. The consumer usually dwarfs the conversion,
+though: `JSON.stringify` costs 25× the conversion, and a walker that goes through the leaves needs
+no conversion at all. The conversion is the whole cost only for a consumer as cheap as `Math.max`,
+where a trie is 3× slower at 100 000.
+
+### 15.10 Bundle size
+
+`node scenarios.mjs size` measures the whole sibling as `_core/Array.foreign.mjs` would ship it: the
+ten foreign exports plus `fromJs`, `toJs` and the leaf walk. It uses esbuild `--minify` with
+tree-shaking, then brotli 11.
+
+| sibling | min | gzip | **brotli** |
+|---|--:|--:|--:|
+| cow | 1 147 | 563 | **536** |
+| trie | 3 132 | 1 267 | **1 219** |
+| hybrid1024 | 4 149 | 1 611 | **1 536** |
+| adaptive1024 | 4 092 | 1 577 | **1 499** |
+
+Adaptive and hybrid are the same size to within 40 bytes. Both are the cow and trie ports plus one
+dispatch per export.
+
+### 15.11 Verdict
+
+1. **Adaptive beats the hybrid where the hybrid was weakest, and ties it everywhere else.** On
+   large arrays that are never written, adaptive stays plain and the hybrid is a trie. That covers
+   decoded data, `map`/`filter`/`initialize` results and life generations. In those cases adaptive
+   is **1.3–2× faster on reads and `filter`**, and **handing the array to JavaScript is free
+   instead of 0.4 ms at 100 000**. On write-heavy arrays it *is* the trie after the first write,
+   with the same steady-state times (338 ns against 323 ns per one-cell tick on a million cells,
+   0.72 µs per history edit) and the same 178 KB for 101 versions. It is the same size (1.50 KB
+   against 1.54 KB brotli). In the TEA table, the render walk dominates every message and all
+   designs are within 1.5× of each other. There adaptive1024 is equal to cow at 1 000 rows, and at
+   10 000 rows it is at least as fast as the hybrid on every message except the two first writes
+   (within 13 %).
+2. **The first write's conversion costs 0.9–2 ns per element**: 8.6 µs at 10 000 elements and
+   1.8–2.0 ms at 1 000 000, paid once per array. That is 1.8× one cow copy at 10 000, and cheaper
+   than one cow copy at 1 000 000 under Node. It is invisible in the table, behind the render walk.
+   The pattern that pays it *repeatedly* is an O(n) rebuild (`filter`, `map`) followed by a write.
+   The rebuild returns a plain array and the write converts it again. In the table's
+   remove-then-add cycle that costs adaptive32/256 +9 µs at 1 000 rows.
+3. **The threshold should drop.** The hybrid needed 1 024 because its trie slowed every read.
+   Adaptive's reads stay plain until something writes, so a high threshold only prolongs cow's
+   write cliff: a 1 000-bucket histogram costs 46 ms at T = 1 024 and 6 ms at T = 32 or 256.
+   **T = 256 is the suggested setting.** It is within 1.6× of T = 32 on the 1 000-element builds
+   (69 µs against 43 µs to collect) and equal to it on every other write scenario. Its cost is a few µs of extra conversion on first writes to 256–1 024-row tables and a
+   1.2–1.5× trie walk on the ones that were written. Lists up to 256 rows, which are most UI
+   lists, never convert.
+4. **Proven-plain `a[i]` buys up to 2× on tight loops and little elsewhere.** A `foldl` whose body
+   is one comparison goes from 29.5 µs to 13.6 µs at 10 000 (2.2×), and from 789 µs to 674 µs at
+   100 000. Binary searches improve by 7–16 % and the life step by 8–9 %. `filter`, `sortWith`
+   and anything that allocates do not move. Proven plain matches or beats cow in every cell measured. Most
+   of the gain is removing a *polymorphic* read site: the one core loop is shared by the plain and
+   trie arrays of a whole program, which is also why the mixed process costs 36 µs where the
+   isolated one costs 29.5 µs. **It is an optimisation to add later, and only with a sound proof**:
+   applied to an array that is not plain, it computes a wrong answer silently (§15.2). Nothing in
+   the adaptive design depends on it.
+
+**For §12:** adaptive, not the hybrid, is the better `core/Array`. It uses the same two ports, the
+same sibling size and the same trie behaviour under writes. The recommendation there becomes:
+*plain until the first single-element write to an array longer than 256 elements, the trie after
+it, and every rebuilding operation returns a plain array.* One property of §12.1 changes: the
+representation is no longer canonical for a length. So `eq` must compare across representations
+(the port does), and the renderer must accept either form, as it already had to.
+
+**Reproducing**, from `bench/arrays/` after `zig build` at the root and `npm ci`:
+
+```sh
+node scenarios.mjs build && node scenarios.mjs test && node scenarios.mjs size
+for r in 1 2 3; do node scenarios.mjs bench 13; done         # ~5 min a round; cow is 3 of them
+for r in 1 2 3; do node scenarios.mjs bench 13 cow:decoded trie:decoded hybrid1024:decoded \
+  adaptive1024:decoded adaptive1024P:decoded; done
+node scenarios.mjs tables                                    # from results/scenarios.jsonl
+```
+
+The scenarios are in `scenarios/src/*.beni`, the experimental `Array` in `scenarios/Array.{beni,js}`,
+the driver in `scenarios/harness.js`, the port in `ports/adaptive.js`, and the raw cells of all
+rounds in `results/scenarios.jsonl`.

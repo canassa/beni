@@ -1,0 +1,48 @@
+-- Scenario 5: an undo history keeping the last 100 versions of an array
+-- edited one cell at a time.
+import Array exposing (Array)
+import List
+
+
+type alias History =
+    current : Array Int
+    past : List (Array Int)
+
+
+pub start : Int -> History
+start n =
+    { current = Array.initialize n (\i -> i), past = [] }
+
+
+pub edit : History, Int, Int -> History
+edit h i v =
+    { current = Array.set h.current i v, past = List.take (h.current :: h.past) 100 }
+
+
+pub undo : History -> History
+undo h =
+    case h.past of
+        [] ->
+            h
+
+        prev :: rest ->
+            { current = prev, past = rest }
+
+
+--| `k` edits, one cell each, at indices chosen from `seed`.
+pub edits : History, Int, Int -> History
+edits h k seed =
+    editsHelp h 0 k seed
+
+
+editsHelp : History, Int, Int, Int -> History
+editsHelp h j k seed =
+    if j >= k then
+        h
+    else
+        editsHelp (edit h (modBy (seed + j * 7919) (Array.length h.current)) (-1 - seed - j)) (j + 1) k seed
+
+
+pub sum : History -> Int
+sum h =
+    Array.foldl h.current 0 (\v s -> s + v)
