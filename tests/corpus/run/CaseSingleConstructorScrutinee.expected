@@ -1,0 +1,10 @@
+nullary: "Inc"
+boundField: Box 3 "c"
+letPattern: Box 4 "d"
+tupleElement: 0
+wildFields: Box 0 "b"
+1
+2
+3
+4
+5

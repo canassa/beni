@@ -162,10 +162,21 @@ pub const Tree = struct {
     /// other half of §7's "`bindSubject` binds only when the tree reads the
     /// root more than once" is the leaf bindings, which the emitter counts
     /// from the patterns themselves.
-    pub fn fanReads(t: Tree, r: u32) u32 {
+    ///
+    /// A fan counts once per discriminant the emitter prints for it (§7,
+    /// dated note 2026-09-29). One with a single label — the sole
+    /// constructor of a one-constructor type — prints no test and reads
+    /// nothing; counting it once left `case Debug.log m "m" of Inc ->` with
+    /// its scrutinee unbound and never read, so the call was never made.
+    /// One wider than `max_labels` is split into consecutive `switch`es,
+    /// each reading its discriminant; counting it once let an unbound
+    /// scrutinee be evaluated once per `switch`.
+    pub fn fanReads(t: Tree, r: u32, max_labels: u32) u32 {
         var count: u32 = 0;
         for (t.fans) |f| {
-            if (t.occs[f.occ].root == r) count += 1;
+            if (t.occs[f.occ].root != r) continue;
+            const labels = f.labels();
+            if (labels >= 2) count += std.math.divCeil(u32, labels, max_labels) catch unreachable;
         }
         return count;
     }

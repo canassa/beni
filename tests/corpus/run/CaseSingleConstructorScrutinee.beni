@@ -1,0 +1,64 @@
+-- run: a `case` evaluates its scrutinee, once and in written order, even
+-- when nothing in the match reads it (`backend.md` §7, dated note
+-- 2026-09-29). Elm evaluates it; so does beni, in both builds.
+--
+-- `nullary` and `wildFields` are the development-build defect. The tree
+-- holds a fan-out over a one-constructor type's sole constructor, which
+-- prints no test, but it was counted as the scrutinee's one read, so the
+-- scrutinee was left unbound for a read that never came: neither
+-- `Debug.log` printed. `wildFields` is in tail position and `nullary` is not,
+-- which are the two ways a `case` is lowered.
+--
+-- `tupleElement` is the release-build one: an element of a tuple-literal
+-- scrutinee that no pattern reads was bound to a `const` nobody used, and
+-- §9 item 1 drops such a binding whole. The development build printed it and
+-- the release build did not. An unread scrutinee is now a statement, not a
+-- binding, so there is nothing for the release optimiser to drop.
+--
+-- `boundField` and the `let` pattern are the neighbours that always worked:
+-- a binding reads the scrutinee, so it was evaluated there.
+import Node exposing (Program)
+import String
+
+
+type Msg
+    = Inc
+
+
+type Box
+    = Box Int String
+
+
+nullary : Int
+nullary =
+    case Debug.log Inc "nullary" of
+        Inc ->
+            1
+
+
+wildFields : Box -> Int
+wildFields b =
+    case Debug.log b "wildFields" of
+        Box _ _ ->
+            2
+
+
+boundField : Int
+boundField =
+    case Debug.log (Box 3 "c") "boundField" of
+        Box k _ ->
+            k
+
+
+main : Program
+main =
+    let
+        (Box four _) =
+            Debug.log (Box 4 "d") "letPattern"
+
+        five =
+            case ( Debug.log 0 "tupleElement", 5 ) of
+                ( _, k ) ->
+                    k
+    in
+    Node.printLines (List.map [ nullary, wildFields (Box 0 "b"), boundField, four, five ] String.fromInt)

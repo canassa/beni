@@ -528,15 +528,26 @@ test "a derived row of more than 65 535 context entries checks" {
 // half is in `perf_test.zig`; this is the shape half, at 16 400 branches:
 // just past one `switch`'s worth, so the fan must be split in two. Each
 // build is its own scenario.
+//
+// The development build's scrutinee is a `Debug.log`, so the program shows
+// how many times it was evaluated: once per call, whichever `switch` the
+// value is found in. Each `switch` reads its discriminant, and the tree used
+// to count the fan as one read and leave the scrutinee unbound, so a value
+// the first `switch` did not name logged twice (`backend.md` §7, dated note
+// 2026-09-29). A release build refuses `Debug`, so it keeps the plain name.
 test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs" {
-    try wideLiteralCase("--no-cache");
+    try wideLiteralCase(
+        "--no-cache",
+        "Debug.log k \"s\"",
+        "s: 0\ns: 16383\ns: 16384\ns: 16399\ns: 16400\ns: -5\n1\n16384\n16385\n16400\n-1\n-1\n",
+    );
 }
 
 test "a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release" {
-    try wideLiteralCase("--release");
+    try wideLiteralCase("--release", "k", "1\n16384\n16385\n16400\n-1\n-1\n");
 }
 
-fn wideLiteralCase(flag: []const u8) !void {
+fn wideLiteralCase(flag: []const u8, scrutinee: []const u8, stdout: []const u8) !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -547,7 +558,7 @@ fn wideLiteralCase(flag: []const u8) !void {
     var source: std.Io.Writer.Allocating = .init(testing.allocator);
     defer source.deinit();
     const out = &source.writer;
-    try out.writeAll("import Node exposing (Program)\n\n\ng : Int -> Int\ng k =\n    case k of\n");
+    try out.print("import Node exposing (Program)\n\n\ng : Int -> Int\ng k =\n    case {s} of\n", .{scrutinee});
     for (0..branches) |i| try out.print("        {d} ->\n            {d}\n\n", .{ i, i + 1 });
     try out.writeAll("        _ ->\n            -1\n\n\n");
     // Each chunk's first and last label, the default, and a miss past the end.
@@ -564,7 +575,7 @@ fn wideLiteralCase(flag: []const u8) !void {
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
         // The program's output is asserted as it runs.
-        const r = try w.buildAndRun(&.{ flag, "Main.beni" }, .{ .stdout = "1\n16384\n16385\n16400\n-1\n-1\n" });
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" }, .{ .stdout = stdout });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │

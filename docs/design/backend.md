@@ -1283,6 +1283,22 @@ tuple object built at all. The condition is syntactic — the scrutinee is a `Bi
 name or by `as`, needs the object and turns the rule off. There is no `case a, b of` syntax, so a
 tuple scrutinee *is* how this language writes a multi-column match, and the matrix gets it for free.
 
+*Added 2026-09-29.* **A read is a discriminant the emitter prints or a `const` a leaf binds, and a
+scrutinee — or tuple element — that nothing reads is still evaluated, as a statement.** The count
+above was of fan-outs, and two kinds of fan-out print a different number of discriminants than
+one. A fan with one label, the sole constructor of a one-constructor type (`case e of Inc ->`,
+`case e of Box _ _ ->`), prints none, yet counted as the one read, so `e` was left unbound and
+never evaluated: `case Debug.log m "m" of Inc ->` logged nothing in either build. A fan wider than
+`max_switch_cases` prints one `switch` per chunk, each reading its discriminant, yet counted once,
+so an unbound call ran once per `switch` its value was not found in. Each fan now counts its
+printed discriminants: none for one label, one for two, and one per `switch` above. A root read
+zero times is written as an expression statement where it is evaluated, not as a `const`: no
+binding is written, so §9 item 1 — which drops a dead binding whole, `Debug.log` and all — has
+nothing to drop, and the two builds evaluate the same expressions. A name or a field read of one
+has nothing to evaluate and is left out. The rule is about the `case`; a `let` pattern that binds
+nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md` §6).
+`run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
+
 ### Sharing a leaf reached from two paths
 
 A leaf reached from exactly one path is **inlined** where it is reached. A leaf reached from two or

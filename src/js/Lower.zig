@@ -5341,6 +5341,15 @@ const Lowerer = struct {
         return l.ident(n, p);
     }
 
+    /// An atom, or a field read of one: evaluating it changes nothing and
+    /// cannot throw, since every beni value is initialised before it is
+    /// read and a field of a well-typed value exists.
+    fn isRead(l: *Lowerer, value: Node.Index) bool {
+        var at = value;
+        while (l.b.nodes.items(.tag)[at.int()] == .member) at = @enumFromInt(l.b.nodes.items(.data)[at.int()].lhs);
+        return l.isAtom(at);
+    }
+
     // ---- `case` — the decision tree (backend.md §7) ------------------------
     //
     // One tree over ALL the branches at once, so nothing re-tests what the
@@ -5552,20 +5561,30 @@ const Lowerer = struct {
         // becomes `if (n$1 <= 0)` — and every `if` in the language is a
         // `case` (`language.md` §8).
         const root_nodes = try l.scratch.alloc(Node.Index, roots);
-        if (!spread) {
-            const value = try l.expr(out, scrutinee);
-            var reads = tree.fanReads(0);
+        for (root_nodes, 0..) |*root, r| {
+            // Each tuple element is evaluated in source order, so the
+            // elements keep running left to right whatever the tree tests
+            // first — which is also why an element read once is still bound.
+            const value = try l.expr(out, if (spread) elements[r] else scrutinee);
+            var reads = tree.fanReads(@intCast(r), max_switch_cases);
             for (0..branches.len) |i| {
                 if (tree.uses[i] == 0) continue;
-                reads += l.bindCount(pats[i]);
+                reads += l.bindCount(pats[i * roots + r]);
             }
-            root_nodes[0] = if (reads == 1) value else try l.bindSubject(out, value, p);
-        } else {
-            // Each element is bound in source order, so the elements keep
-            // being evaluated left to right whatever the tree tests first.
-            for (elements, root_nodes) |element, *root| {
-                root.* = try l.bindSubject(out, try l.expr(out, element), p);
-            }
+            root.* = if (reads == 0) blk: {
+                // Nothing reads it — one constructor, or `_` — and it is
+                // still evaluated, once and here (§7, dated note
+                // 2026-09-29). A statement and not a `const`: no binding is
+                // written, so §9 item 1 has none to drop, and a
+                // `case Debug.log m "m" of Inc ->` logs in both builds. A
+                // name or a field read has nothing to evaluate and is left
+                // out whole.
+                if (!l.isRead(value)) try out.append(l.scratch, try l.add(.expr_stmt, p, value.int(), Node.Data.unused));
+                break :blk value;
+            } else if (reads == 1 and !spread)
+                value
+            else
+                try l.bindSubject(out, value, p);
         }
 
         var shared: std.ArrayList(u32) = .empty;

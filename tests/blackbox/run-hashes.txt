@@ -9,7 +9,7 @@ abuse_wide_test.test.== on a record builds and runs at the widest positional evi
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 27898b5a7168951bdfe5454438723084016bf26da99f164914ed3fb3e3285c64
 abuse_wide_test.test.a 2 000-element list builds and runs #0 3d079ac5d44527b60831b3394dce4a9319f909a047fb132c0006743155aad7d4
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 9a2d42648f14f5c7b02356db3f03e0c4df1ea741410ba128ab5fe9fa11fa84bf
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 25906cd9ed53836bbe50c744ff24fee61207577fba37eb1f51cd9aa3d2447b41
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 3fa74dba95c5718c2ad8cdf5e3a321fed71113b82f8f9e4400061a6535b6c9ee
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 5d5de89e2dbd79f8ac29ed2d0da8e523f4387b579d511192fc64fd2c2327d145
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 66cb383056406d923d29895b541a4b3c78812240e63ed8c92256e4041d000326
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 30de71fda4eb8b5a0a94f2cd6ba6a430af57d4061aae0235a7deabfec48ee389
