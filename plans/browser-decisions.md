@@ -155,12 +155,12 @@ against it** — the same position the sheet already takes on component librarie
 
 | Item | Answer |
 |---|---|
-| **W2** | |
+| **W2** | **As recommended** (2026-09-29): a defect is always logged and stops the app; a crash screen in development builds only; an optional `onDefect` hook later |
 | **W3** | |
 | **W6** | |
 | **W7** | |
 | **W8** | |
-| **W9** | |
+| **W9** | **As recommended** (2026-09-29): `main : Program` is unchanged; a page has no exit code, and its only "exit" is an unhandled fiber death, which goes to W2's teardown |
 | **W25** | **The Elm Architecture** (2026-09-29): one immutable model, a pure `update`, `view : Model -> Html Msg`, commands as the sheet describes; no signals as the programming model. Measured as fast as Solid with compiled templates (research 29: P2/P3) |
 | **W26** | **Compiled templates, via Solid 2's JSX compiler** (2026-09-29): `view`'s JSX compiles to cloned static templates with numbered holes, ported from dom-expressions' Rust compiler; a hole is driven by `view` re-running and comparing its new value with the old one by reference, not by a signal. Never a virtual DOM |
 | **W27** | **Yes, promised** (2026-09-29): the language guarantees that an untouched record field keeps its identity (the same object), and no optimiser may break it — the templates' reference checks depend on it. `lazy` is dropped: templates make it unnecessary |
