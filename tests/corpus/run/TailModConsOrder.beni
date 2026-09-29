@@ -1,0 +1,56 @@
+-- run: what the loop of tail recursion modulo cons must NOT change
+-- (`docs/design/backend.md` §8, *Tail calls modulo cons*).
+--
+--   * Evaluation order. The recursive version evaluates a step's heads left
+--     to right, then the self-call's arguments, then the next step; the loop
+--     writes each head's cell before the arguments are evaluated, so the
+--     `Debug.log` lines come out in exactly that order — `head 1`, `arg 1`,
+--     `head 2`, … — and never `arg` before its `head`.
+--   * A head that needs statements of its own (a `case`), evaluated in its
+--     place and not hoisted in front of an earlier head.
+--   * Closures. Each step conses a `\y -> y + x` over THIS step's `x`; the
+--     loop re-binds its parameters with a fresh `const` every iteration, so
+--     applying them afterwards prints 10, 20, 30 and not 30, 30, 30.
+import List
+import Node exposing (Program)
+import String
+
+
+logged : List Int -> List Int
+logged xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            Debug.log x "head"
+                :: (case x of
+                        2 ->
+                            Debug.log 20 "case"
+
+                        _ ->
+                            Debug.log 0 "case"
+                   )
+                :: logged (Debug.log rest "arg")
+
+
+adders : List Int -> List (Int -> Int)
+adders xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            (\y -> y + x) :: adders rest
+
+
+main : Program
+main =
+    let
+        out =
+            logged [ 1, 2 ]
+    in
+    Node.printLines
+        [ String.join (List.map out String.fromInt) ","
+        , String.join (List.map (adders [ 10, 20, 30 ]) (\f -> String.fromInt (f 0))) ","
+        ]

@@ -1,0 +1,82 @@
+-- run: merge sort as a textbook writes it (`docs/design/backend.md` §8,
+-- *Tail calls modulo cons*). `merge` matches both lists at once and re-conses
+-- the head it did not take, so each of its two consing branches is a step
+-- of the loop and the two `[]` rows return the other list as the rest of the
+-- result. `mergeSort`'s own recursion is only as deep as the split, but
+-- `merge`'s was as deep as the output, and overflowed at 100 000.
+import List
+import Node exposing (Program)
+import String
+
+
+mergeSort : List Int -> List Int
+mergeSort xs =
+    case xs of
+        [] ->
+            []
+
+        [ x ] ->
+            [ x ]
+
+        _ ->
+            case split xs [] [] of
+                ( left, right ) ->
+                    merge (mergeSort left) (mergeSort right)
+
+
+split : List a, List a, List a -> ( List a, List a )
+split xs left right =
+    case xs of
+        [] ->
+            ( left, right )
+
+        x :: rest ->
+            split rest right (x :: left)
+
+
+merge : List Int, List Int -> List Int
+merge xs ys =
+    case ( xs, ys ) of
+        ( [], _ ) ->
+            ys
+
+        ( _, [] ) ->
+            xs
+
+        ( x :: xt, y :: yt ) ->
+            if x <= y then
+                x :: merge xt (y :: yt)
+            else
+                y :: merge (x :: xt) yt
+
+
+show : List Int -> String
+show xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    let
+        evens =
+            List.map (List.range 1 50000) (\x -> x * 2)
+
+        odds =
+            List.map (List.range 0 49999) (\x -> x * 2 + 1)
+
+        merged =
+            merge evens odds
+
+        sorted =
+            mergeSort (List.reverse (List.range 1 100000))
+    in
+    Node.printLines
+        [ show (mergeSort [ 5, 3, 9, 1, 4, 1 ])
+        , show (merge [ 1, 4 ] [ 2, 3, 5, 6 ])
+        , String.fromInt (List.length merged)
+        , String.fromInt (List.sum merged)
+        , show (List.take merged 4)
+        , String.fromInt (List.length sorted)
+        , show (List.take sorted 3)
+        , show (List.drop sorted 99997)
+        ]

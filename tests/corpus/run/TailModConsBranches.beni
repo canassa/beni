@@ -1,0 +1,160 @@
+-- run: the forms of a step of tail recursion modulo cons beyond one `::`
+-- (`docs/design/backend.md` §8, *Tail calls modulo cons*), each at a depth
+-- that overflowed Node's default stack before the rewrite:
+--
+--   * `twice`: two cells in one step, `x :: x :: twice rest`;
+--   * `expand`: a different step in every branch of one `case` (one cell,
+--     two cells, none, and a branch that ends the list with another list
+--     rather than `[]`);
+--   * `alternate`: a `::` whose tail is an `if` with a self-call in each
+--     arm — the tail of a `::` in tail position is a tail position again;
+--   * `countdown`: a `let`-bound helper, which loops like a declaration;
+--   * `withLet`: a `let` between the `::` and the self-call;
+--   * `chunks`: a building function whose head is a call of a building
+--     `let` helper — two loops, each with its own `$root` and `$last`, the
+--     inner one shadowing the outer's names and never reading them.
+import List
+import Node exposing (Program)
+import String
+
+
+twice : List a -> List a
+twice xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            x :: x :: twice rest
+
+
+type Op
+    = Keep Int
+    | Dup Int
+    | Skip
+    | Stop
+
+
+expand : List Op, List Int -> List Int
+expand ops ending =
+    case ops of
+        [] ->
+            []
+
+        (Keep n) :: rest ->
+            n :: expand rest ending
+
+        (Dup n) :: rest ->
+            n :: n + 1 :: expand rest ending
+
+        Skip :: rest ->
+            expand rest ending
+
+        Stop :: _ ->
+            ending
+
+
+alternate : List Int, Bool -> List Int
+alternate xs flip =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            x
+                :: (if flip then
+                        alternate rest False
+                    else
+                        alternate (List.drop rest 0) True
+                   )
+
+
+countdown : Int -> List Int
+countdown start =
+    let
+        go n =
+            if n <= 0 then
+                [ 0 ]
+            else
+                n :: go (n - 1)
+    in
+    go start
+
+
+withLet : List Int -> List Int
+withLet xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            x
+                :: (let
+                        y =
+                            x * 3
+                    in
+                    y :: withLet rest
+                   )
+
+
+chunks : List Int, Int -> List (List Int)
+chunks xs n =
+    case xs of
+        [] ->
+            []
+
+        _ ->
+            let
+                first k ys =
+                    if k <= 0 then
+                        []
+                    else
+                        case ys of
+                            [] ->
+                                []
+
+                            y :: rest ->
+                                y :: first (k - 1) rest
+            in
+            first n xs :: chunks (List.drop xs n) n
+
+
+show : List Int -> String
+show xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+opsFor : Int -> List Op
+opsFor n =
+    List.map (List.range 1 n)
+        (\i ->
+            if modBy i 3 == 0 then
+                Skip
+            else if modBy i 3 == 1 then
+                Keep i
+            else
+                Dup i
+        )
+
+
+main : Program
+main =
+    let
+        big =
+            List.range 1 100000
+    in
+    Node.printLines
+        [ show (twice [ 1, 2 ])
+        , show (expand [ Keep 1, Dup 5, Skip, Keep 9, Stop, Keep 7 ] [ 100, 200 ])
+        , show (expand [ Keep 1 ] [ 100 ])
+        , show (alternate [ 1, 2, 3 ] True)
+        , show (countdown 3)
+        , show (withLet [ 1, 2 ])
+        , String.fromInt (List.length (twice big))
+        , String.fromInt (List.sum (expand (opsFor 150000) [ 7 ]))
+        , String.fromInt (List.length (alternate big False))
+        , String.fromInt (List.sum (countdown 100000))
+        , String.fromInt (List.sum (withLet big))
+        , String.join (List.map (chunks [ 1, 2, 3, 4, 5 ] 2) (\c -> String.join (List.map c String.fromInt) "+")) ","
+        , String.fromInt (List.length (chunks big 3))
+        ]

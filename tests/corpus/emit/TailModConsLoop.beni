@@ -1,0 +1,58 @@
+-- emit: the SHAPE of tail recursion modulo cons (`docs/design/backend.md`
+-- §8, *Tail calls modulo cons*), which running cannot observe — a program
+-- is right whether it builds in a loop or overflows at a depth the fixture
+-- never reaches.
+--
+-- The golden pins, in `mapRec`: the root cell before the loop with the cons
+-- shape and key order, `let $last` starting at it, a step that writes one
+-- fresh cell into `$last.b` and moves `$last` BEFORE the self-call's
+-- argument is assigned, and an exit that writes its value into `$last.b`
+-- and returns `$root.b`. `twice` is two cells in one step, in head order.
+-- `filterRec` mixes a cons step with an ordinary tail self-call, which
+-- writes nothing and jumps. `plain` is the control: a `::` whose tail does
+-- not reach a self-call is an ordinary returned value, and the function is
+-- unchanged, byte for byte.
+import Node exposing (Program)
+
+
+pub mapRec : List a, (a -> b) -> List b
+mapRec xs f =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            f x :: mapRec rest f
+
+
+pub twice : List a -> List a
+twice xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            x :: x :: twice rest
+
+
+pub filterRec : List a, (a -> Bool) -> List a
+filterRec xs keep =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            if keep x then
+                x :: filterRec rest keep
+            else
+                filterRec rest keep
+
+
+pub plain : Int, List Int -> List Int
+plain n xs =
+    n :: xs
+
+
+main : Program
+main =
+    Node.printLines []

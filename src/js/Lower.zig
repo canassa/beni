@@ -781,9 +781,7 @@ const Lowerer = struct {
     /// (CLAUDE.md rule 5).
     fn inSlotName(l: *Lowerer, index: u32) !JsIr.NameIndex {
         var buf: [16]u8 = undefined;
-        const spelled = std.fmt.bufPrint(&buf, "$in${d}", .{index}) catch unreachable;
-        const base = try l.interner.getOrPut(l.gpa, spelled);
-        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+        return l.fixedName(std.fmt.bufPrint(&buf, "$in${d}", .{index}) catch unreachable);
     }
 
     /// `<Module>$<base>` for a value this module SYNTHESISES rather than
@@ -1470,6 +1468,16 @@ const Lowerer = struct {
         /// for a declaration's `$m…` (backend.md §4).
         ev_let: Inst.OptionalIndex = .none,
         slots: []Slot,
+        /// Whether the function has a CONS STEP — a `::` in tail position
+        /// whose tail reaches a tail self-call — and so builds its result
+        /// front to back through `root` and `last` (§8, *Tail calls modulo
+        /// cons*). Set by `markTails`.
+        builds: bool = false,
+        /// `$root`, the cell before the result's first, and `$last`, the
+        /// cell whose tail the next step or exit writes. `.none` unless
+        /// `builds`.
+        root: JsIr.NameIndex = .none,
+        last: JsIr.NameIndex = .none,
 
         /// Which reference, syntactically, names this function.
         const Self = union(enum) {
@@ -1571,6 +1579,16 @@ const Lowerer = struct {
                 else => try l.bindings(&loop_body, pattern, try l.ident(slot.body, l.pos(pattern))),
             }
         }
+        // A building loop's destination (§8, *Tail calls modulo cons*): the
+        // root cell before the result's first, which has the cons shape so
+        // every cell stays one hidden class, and the last cell written.
+        var before: [2]Node.Index = undefined;
+        if (loop.builds) {
+            loop.root = try l.fixedName("$root");
+            loop.last = try l.fixedName("$last");
+            before[0] = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.consNode(try l.nullNode(p), try l.nullNode(p), p)).int());
+            before[1] = try l.add(.let_decl, p, @intFromEnum(loop.last), @intFromEnum((try l.ident(loop.root, p)).toOptional()));
+        }
         try l.tailStmts(&loop_body, body, &loop);
 
         const range = try l.b.addRange(loop_body.items);
@@ -1578,7 +1596,16 @@ const Lowerer = struct {
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
         const while_node = try l.add(.while_true, p, @intFromEnum(label), @intFromEnum(record));
+        if (loop.builds) return l.funcRecord(names.items, &.{ before[0], before[1], while_node });
         return l.funcRecord(names.items, &.{while_node});
+    }
+
+    /// A name the loop writes with no counter, like `$in$<i>` (§8): input
+    /// derived, and safe to repeat in a nested function because neither
+    /// reads the other's.
+    fn fixedName(l: *Lowerer, spelled: []const u8) !JsIr.NameIndex {
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
     }
 
     /// Walk the TAIL POSITIONS of `inst` — §8: the body itself, every branch
@@ -1603,12 +1630,90 @@ const Lowerer = struct {
                 return found;
             },
             .call => {
-                if (!l.isSelfCall(inst, loop)) return false;
-                l.markCarried(inst, loop);
+                if (l.isSelfCall(inst, loop)) {
+                    l.markCarried(inst, loop);
+                    return true;
+                }
+                // A cons step: the tail of a `::` in tail position is a tail
+                // position again, and one that reaches a self-call makes the
+                // function build (§8, *Tail calls modulo cons*).
+                const tail = l.consTail(inst) orelse return false;
+                if (!l.markTails(tail, loop)) return false;
+                loop.builds = true;
                 return true;
             },
             else => return false,
         }
+    }
+
+    /// The tail argument of a call of core's `List.cons` — what `::`
+    /// desugars to — or null for any other instruction. Keyed on the core
+    /// package, core's `List` module and the well-known `cons`, never on
+    /// the spelling, exactly as `logicalOp` is.
+    fn consTail(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        if (!l.isListCons(@enumFromInt(d.lhs))) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 2 or l.rootsOf(inst).len != 0) return null;
+        return args[1];
+    }
+
+    fn isListCons(l: *Lowerer, callee: Inst.Index) bool {
+        const d = l.bir.instData(callee);
+        const base: Symbol = switch (l.bir.instTag(callee)) {
+            .top => blk: {
+                if (l.in.graph.module(l.in.module).package != .core) return false;
+                if (l.module_name != InternPool.WellKnown.List.symbol()) return false;
+                if (d.lhs >= l.bir.decls.len) return false;
+                break :blk l.bir.symbol(l.bir.decls[d.lhs].name);
+            },
+            .ext_value => blk: {
+                const module: Graph.Index = @enumFromInt(d.lhs);
+                if (module.int() >= l.in.interfaces.len) return false;
+                if (l.in.graph.module(module).package != .core) return false;
+                if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return false;
+                const iface = &l.in.interfaces[module.int()];
+                if (d.rhs >= iface.values.len) return false;
+                break :blk iface.symbols[@intFromEnum(iface.values[d.rhs].name)];
+            },
+            else => return false,
+        };
+        return base == InternPool.WellKnown.cons.symbol();
+    }
+
+    /// Whether a tail self-call is reachable through `inst`'s tail
+    /// positions, cons steps included: the test that makes a `::` in tail
+    /// position a step rather than an ordinary returned value. Pure, unlike
+    /// `markTails`, which has already marked every slot by the time the
+    /// lowering asks.
+    fn reachesSelf(l: *Lowerer, inst: Inst.Index, loop: *const Loop) bool {
+        var at = inst;
+        while (true) {
+            const d = l.bir.instData(at);
+            switch (l.bir.instTag(at)) {
+                .let => at = @enumFromInt(d.rhs),
+                .case => {
+                    for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                        if (l.bir.instTag(branch) != .branch) continue;
+                        if (l.reachesSelf(@enumFromInt(l.bir.instData(branch).rhs), loop)) return true;
+                    }
+                    return false;
+                },
+                .call => {
+                    if (l.isSelfCall(at, loop)) return true;
+                    at = l.consTail(at) orelse return false;
+                },
+                else => return false,
+            }
+        }
+    }
+
+    /// Whether `inst`, in tail position of a building loop, is a cons step.
+    fn isConsStep(l: *Lowerer, inst: Inst.Index, loop: *const Loop) bool {
+        if (!loop.builds) return false;
+        const tail = l.consTail(inst) orelse return false;
+        return l.reachesSelf(tail, loop);
     }
 
     /// Whether a `call` is a tail self-call: the callee is, syntactically,
@@ -1686,12 +1791,54 @@ const Lowerer = struct {
             .call => {
                 if (loop) |lp| {
                     if (l.isSelfCall(inst, lp)) return l.tailJump(out, inst, lp);
+                    if (l.isConsStep(inst, lp)) return l.consStep(out, inst, lp);
                 }
             },
             else => {},
         }
         const value = try l.expr(out, inst);
-        try out.append(l.scratch, try l.returnStmt(value, l.pos(inst)));
+        try l.tailReturn(out, value, loop, l.pos(inst));
+    }
+
+    /// Leave the function with `value`. A building loop (§8, *Tail calls
+    /// modulo cons*) writes it into the last cell's tail first and returns
+    /// the list the root cell heads; everything else is `return value`.
+    fn tailReturn(l: *Lowerer, out: *StmtList, value: Node.Index, loop: ?*const Loop, p: u32) !void {
+        const lp = loop orelse return out.append(l.scratch, try l.returnStmt(value, p));
+        if (!lp.builds) return out.append(l.scratch, try l.returnStmt(value, p));
+        const b = try l.slotName(1);
+        const hole = try l.member(try l.ident(lp.last, p), b, p);
+        try out.append(l.scratch, try l.add(.assign_stmt, p, hole.int(), value.int()));
+        try out.append(l.scratch, try l.returnStmt(try l.member(try l.ident(lp.root, p), b, p), p));
+    }
+
+    /// A cons step and every cons step directly under it, `a :: b :: go
+    /// rest`: one fresh cell per head, written into the last cell's tail and
+    /// becoming the last cell, then whatever the innermost tail is — a jump,
+    /// a `case`, a `let` — lowered in tail position.
+    ///
+    /// **Each head is evaluated in its own cell's statement, before the next
+    /// head and before the self-call's arguments**, which is the order the
+    /// recursive version evaluates them in. A head that hoists statements
+    /// (a `case`) emits them here, after the cells written before it.
+    fn consStep(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
+        const b = try l.slotName(1);
+        var at = inst;
+        while (true) {
+            const p = l.pos(at);
+            const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(at).rhs)), Inst.Index);
+            const head = try l.expr(out, args[0]);
+            const cell = try l.consNode(head, try l.nullNode(p), p);
+            const hole = try l.member(try l.ident(loop.last, p), b, p);
+            try out.append(l.scratch, try l.add(.assign_stmt, p, hole.int(), cell.int()));
+            const next = try l.member(try l.ident(loop.last, p), b, p);
+            try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(loop.last, p)).int(), next.int()));
+            if (l.isConsStep(args[1], loop)) {
+                at = args[1];
+                continue;
+            }
+            return l.tailStmts(out, args[1], loop);
+        }
     }
 
     /// A tail self-call: the argument expressions, the assignments to the
@@ -5723,7 +5870,7 @@ const Lowerer = struct {
         const p = l.pos(inst);
         var c = try l.planCase(out, inst) orelse {
             const value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            try out.append(l.scratch, try l.returnStmt(value, p));
+            try l.tailReturn(out, value, loop, p);
             return;
         };
         const depth = l.case_depth;
@@ -5739,7 +5886,7 @@ const Lowerer = struct {
             try l.lowerReady(&c);
             if (l.readyIsClean(&c)) {
                 const value = try l.condChain(&c, c.tree.root);
-                try out.append(l.scratch, try l.returnStmt(value, c.p));
+                try l.tailReturn(out, value, loop, c.p);
                 return;
             }
         }
@@ -6028,7 +6175,7 @@ const Lowerer = struct {
 
     fn finishLeaf(l: *Lowerer, c: *Case, out: *StmtList, value: Node.Index, p: u32) !void {
         switch (c.sink) {
-            .tail => try out.append(l.scratch, try l.returnStmt(value, p)),
+            .tail => |loop| try l.tailReturn(out, value, loop, p),
             .value => |v| {
                 const target = try l.ident(v.result, p);
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
@@ -6295,7 +6442,7 @@ const Lowerer = struct {
                 .let, .case => return false,
                 .call => switch (c.sink) {
                     .tail => |loop| if (loop) |lp| {
-                        if (l.isSelfCall(body, lp)) return false;
+                        if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
                     },
                     .value => {},
                 },

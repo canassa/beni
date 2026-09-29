@@ -1,0 +1,40 @@
+-- run: `takeWhile` written by hand, the second of research/38 §16's shapes
+-- that overflowed the stack at 100 000 elements (`docs/design/backend.md`
+-- §8, *Tail calls modulo cons*). The consing branch is the loop's step and
+-- the stopping branch returns `[]`, which closes the list the loop has built
+-- so far rather than replacing it.
+import List
+import Node exposing (Program)
+import String
+
+
+takeWhile : List a, (a -> Bool) -> List a
+takeWhile xs keep =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            if keep x then
+                x :: takeWhile rest keep
+            else
+                []
+
+
+show : List Int -> String
+show xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    let
+        kept =
+            takeWhile (List.range 1 200000) (\x -> x <= 100000)
+    in
+    Node.printLines
+        [ show (takeWhile [ 1, 2, 3, 9, 4 ] (\x -> x < 5))
+        , show (takeWhile [ 9, 1 ] (\x -> x < 5))
+        , String.fromInt (List.length kept)
+        , String.fromInt (List.sum kept)
+        ]
