@@ -1767,6 +1767,8 @@ taking into beni independently of the verdict:
    that the rewritten shape runs in O(n) with no stack. The rule is local and independent of the
    representation, and it removes a runtime failure (a stack overflow is an exception Elm
    programmers are promised not to see).
+   *Taken 2026-09-30:* [`backend.md`](../backend.md) §8, *Tail calls modulo cons*, with a
+   `run/` fixture for each of the five shapes.
 2. **Native loops for `core/List`'s library functions.** B's and C's `List.foldr`, `map`, `map2`,
    `concatMap` and `reverse` run at 0.04–0.7× A up to 10 000 elements. The gain comes mostly from replacing compiled
    `foldl`-then-`reverse` with one loop, not from the array, so a cons-list core could take part of

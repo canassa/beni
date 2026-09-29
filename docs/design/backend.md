@@ -1781,6 +1781,126 @@ the callback order Appendix B of [`checker.md`](checker.md) states, keeps the wa
 shortest list without calling the callback for the unmatched tail, and adds no traversal `map` does
 not already pay. `tests/corpus/run/ListMapNDeep.beni` is the fixture, at a million elements each.
 
+### Tail calls modulo cons
+
+*Added 2026-09-30.* The loop above ends the stack overflow of an accumulator. It did not end the
+overflow of the list code Elm programmers write most, where the self-call is the **tail of a `::`**
+rather than the whole return value:
+
+```elm
+mapRec xs f =
+    case xs of
+        [] -> []
+        x :: rest -> f x :: mapRec rest f
+```
+
+[Report 38 §16.4](research/38-immutable-array-representations.md) compiled eight such shapes
+with this repository's `beni` and found **five of them overflowing Node's stack at 100 000
+elements**: hand-written `map` and `filter`, `takeWhile`, `pairwise` and the `merge` of a merge
+sort. A stack overflow is a runtime exception in a well-typed program, which the language promises
+not to have, so this is §8's *mandatory* again and not an optimisation. The rewrite is the one
+report 38 calls R2: **tail recursion modulo cons**, the list case of what Koka's backend does for
+every constructor (Leijen and Lorenzen, *Tail Recursion Modulo Context*, 2023).
+
+**What a step is.** Inside a function lowered by §8, a **cons step** is a call of core's `List.cons`
+(what `::` desugars to, `language.md` §6) in tail position whose second argument **reaches** a tail
+self-call. "Reaches" is §8's tail-position walk again, one rule longer: the tail positions of an
+expression are itself, every branch body of a `case` among them, the `in` body of a `let` among
+them, **and the second argument of a cons step among them**. So `a :: b :: go rest` is two steps,
+`x :: (if c then go a else go b)` is one step with two jumps under it, and
+`x :: (let y = … in y :: go rest)` is two steps with a `let` between. The callee is recognised
+by the core package, core's `List` module and the well-known symbol `cons`, exactly as
+`Basics.and` is (§4), never by its spelling — a user's own `cons` is an ordinary call. A `::` in
+tail position whose tail does **not** reach a self-call is an ordinary returned value, and a `::`
+anywhere else — an argument, a `let`'s bound value, `pairwise (b :: rest)` — is an ordinary
+expression.
+
+A function with at least one cons step **builds**. One that has only ordinary tail self-calls is
+§8's loop byte for byte, and one that has neither is unchanged byte for byte; the gate is the same
+single walk `markTails` already makes.
+
+**The emitted shape.** A building function allocates one **root cell** before its loop and keeps a
+**last cell** that starts there. A cons step writes one fresh cell per head into the last cell's
+tail and moves the last cell along, then jumps exactly as §8's tail call does; every exit of the
+loop writes its value into the last cell's tail and returns what the root cell's tail now holds:
+
+```js
+const Main$mapRec = ($in$0, f$2) => {
+  const $root = { $: 1, a: null, b: null };
+  let $last = $root;
+  Main$mapRec: while (true) {
+    const xs$1 = $in$0;
+    if (xs$1.$ === 0) {
+      $last.b = { $: 0, a: null, b: null };
+      return $root.b;
+    } else {
+      const x$3 = xs$1.a;
+      const rest$4 = xs$1.b;
+      $last.b = { $: 1, a: f$2(x$3), b: null };
+      $last = $last.b;
+      $in$0 = rest$4;
+      continue Main$mapRec;
+    }
+  }
+};
+```
+
+The list is built **front to back**, so no `reverse` is needed and nothing is allocated that the
+result does not keep, except the one root cell per call. `$root` and `$last` are positional names
+like `$in$<i>`, with no counter (CLAUDE.md rule 5); a building helper nested in a building function
+is its own JavaScript function, and neither reads the other's. The root cell has the cons shape and
+key order, so every cell stays one hidden class (§9.4). An exit that is an ordinary tail self-call
+writes nothing and jumps, so `filter`'s dropping branch costs what it costs today.
+
+**Why the mutation is sound.** A cell written by a step is fresh, and until the `return` it is
+reachable only from `$root` and `$last`, two locals of this call that no beni code can name, no
+closure captures and nothing else reads. So no program can observe a cell whose tail is still
+`null`, or observe it change: by the time the list escapes, every cell in it is final, and the list
+is exactly the immutable value the recursive version builds. The same holds if a head throws (a
+`Debug.todo`): the partial list is garbage, and nothing else ever held it.
+
+**Evaluation order is unchanged, and that is the second invariant.** The recursive version
+evaluates a step's heads left to right, then the self-call's arguments, then the next step. The
+loop does the same: each head is evaluated in its own cell's statement, the cell is linked before
+the next head is evaluated, and the arguments are evaluated after the last head, against the
+ordinary names, by §8's assignments. A head that needs statements of its own (a `case`) emits them
+in its place, after the heads written before it. A `Debug.log` in a head therefore prints in the
+same place in both builds (`run/TailModConsOrder`), and §8's no-temporaries invariant is untouched:
+the heads read this iteration's `const`s, never a slot.
+
+**What else the rewrite meets.**
+
+* **Evidence parameters** are §8's loop parameters, carried or not by the same syntactic test; a cons
+  step's self-call marks them exactly as a plain tail call does, polymorphic recursion included
+  (`run/TailModConsEvidence`).
+* **Closures** in a head capture this iteration's prologue `const`s, as §8's closures do.
+* **The release optimiser** (§9 item 1) never inlines `$root` (its initialiser is an object literal,
+  not an atom) and never touches `$last` (a `let`, assigned); `$last.b = …` roots at `$last`, which
+  the pass already refuses to fold through. Rename (item 2) treats both as locals.
+* **`?`** cannot appear in a building function: its result is a `List`, and `?` needs a function
+  whose result is a `Maybe` or a `Result` (§4). So the `return` a `?` writes never skips the root.
+* **Mutual recursion** stays out of scope, as for §8's loop.
+* **Other constructors.** Only `::` is rewritten. The same destination-passing works for any
+  constructor whose field is the self-call (`Node l v (go r)`), and Koka does it; beni's ADTs are
+  not lists in `core`'s hot paths and no measured shape needs it, so it is not done.
+
+**What it owes the fiber lowering.** [`plans/effects-plan.md`](../../plans/effects-plan.md) §2.2
+finds that a suspendable loop resumes as *an ordinary call of the same function*, because the
+parameter list is the loop's whole state. **A building loop's state is the parameter list plus the
+destination** — `$root`, and the cell `$last` holds at the suspension point — so its continuation
+is not that call: it must close over `$root` and over the *value* of `$last` (bound to a `const`
+at the suspension point, never the assigned `let`, for §8's reason), resume a loop that writes into
+that cell, and return `$root.b`. That is a second entry to the loop with the destination as two
+more parameters. Resumption must be one-shot, as P2 already makes it: a continuation resumed twice
+would write the same private cell twice and the first result would change under its holder. If
+effects ever resume a continuation more than once, a building function whose steps can suspend
+must copy the cells built so far (Koka copies the context in that case) or give up the rewrite.
+
+**`core/` as written today does not have this shape**: `map`, `filter`, `filterMap`, `take`,
+`append` and `map2`–`map5` are accumulator loops followed by one `reverse` (or `foldr`, which is
+`reverse` and `foldl`), and none of them is a cons step. Whether they should be rewritten into it
+is measured below and is not part of this change.
+
 ### Fixtures
 
 Every one of these is `tests/corpus/run/` unless it says otherwise; §12's rule that behaviour is
@@ -1799,6 +1919,12 @@ proved by running still holds, and the shape claim gets exactly one golden.
 | `TailCallLambdaBody` | `f = \n acc -> … f …` counting to 1 000 000 | as `TailCallDeep` |
 | `ListFoldDeep` | `List.foldl` over `List.range 1 1000000` and `List.foldr` over a list of 200 000 | the sums; proves the beni folds and `range` all survive |
 | `emit/TailCallLoop` | the shape: label, `$in$<i>` slots, the prologue `const`, `continue`, and one loop-invariant parameter keeping its own name | the golden of §12 |
+| `TailModConsMap` | *added 2026-09-30, like the rows below it.* **The fail-first one of *Tail calls modulo cons*:** `f x :: mapRec rest f`, and `filterRec` mixing a cons step with a plain tail call, over 100 000 elements | lengths, sums and small results in order; overflowed before |
+| `TailModConsTakeWhile`, `TailModConsPairwise`, `TailModConsMerge` | report 38's other overflowing shapes: an exit that closes the built list with `[]`, a self-call whose argument is itself a `::`, and a `merge` with two consing branches and two exits that return the other list | as above; each overflowed at 100 000 |
+| `TailModConsBranches` | two cells in one step, a different step in each branch, a `::` whose tail is an `if` with a self-call in each arm, a `let` between `::` and the self-call, a building `let` helper, and one nested in a building function | exact small lists and deep sums |
+| `TailModConsEvidence` | a `where`-constrained building function forwarding its evidence, and one whose consing step recurses at a different instantiation | the second prints `0,1,1`; an evidence slot assumed invariant would compare `Box`es as strings |
+| `TailModConsOrder` | `Debug.log` in two heads and in the argument, a head that is a `case`, and closures over each step's head | the log order of the recursive version, byte for byte; `10,20,30` |
+| `emit/TailModConsLoop`, `emit/release/TailModConsLoop` | the shape: `$root` and `$last` before the loop, one cell per head, the exit's write and `return $root.b`, and a `::` that does not reach a self-call left alone | the goldens of §12 |
 
 Shadowing needs no new fixture: `tests/corpus/parse/bad/ShadowingParam.beni` already refuses a
 parameter named like a top-level value, which is the only way a self-call's name could be captured.
@@ -1816,6 +1942,35 @@ loop: `bench/runtime/c0/` and `c1/` split their workloads into blocks of 500 bec
 to a plain range. **What must not regress is §13's emit throughput** — the loop adds one walk of
 each function body's tail positions, O(body), once — and no `run/` or `emit/` fixture that does not
 involve a self tail call may change at all.
+
+*Tail calls modulo cons, measured 2026-09-30* (Node 24.19, `--stack-size=4000`, one pinned core,
+median of three rounds of nine samples; the two builds are this change and its parent, over the same
+beni source). **Size:** no existing `emit/` golden moved. Of the `run/` corpus, only the two programs
+that already had the shape changed (`Int32Hash`'s `xorshiftRun` and
+`ConstrainedFunctionConstantRoutes`' `clampAll`), and a building function costs about 25–30 brotli
+bytes more in `--release` than its recursive version: `Int32Hash` went from 1 088 to 1 117,
+the whole `bench/size.mjs` release total from 233 368 to 233 726, the new fixtures included.
+**Speed**, the recursive version against the loop, per call:
+
+| shape | n = 1 000 | n = 10 000 | n = 100 000 |
+|---|--:|--:|--:|
+| `f x :: mapRec rest f` | 15.6 → 5.7 µs (0.37×) | 172 → 48 µs (0.28×) | overflow → 1.21 ms |
+| `filterRec` | 7.7 → 3.2 µs (0.41×) | 67 → 34 µs (0.50×) | overflow → 0.32 ms |
+| `takeWhile` | 12.2 → 4.5 µs (0.37×) | 123 → 43 µs (0.35×) | overflow → 0.55 ms |
+| `pairwise` | 15.3 → 9.8 µs (0.64×) | 262 → 107 µs (0.41×) | overflow → 2.14 ms |
+| `merge` of two halves | 13.5 → 7.9 µs (0.59×) | 158 → 80 µs (0.50×) | overflow → 1.32 ms |
+
+The loop is faster at every size that the recursion survives, and it survives every size.
+**`core/`, not rewritten:** in the same build, core's accumulator-and-`reverse` functions against
+the same function written as a cons step (hand-written in beni, same callback order), per call:
+`List.map` 25.0 / 213 µs / 3.05 ms against 5.7 / 48 µs / 1.21 ms (0.23×, 0.23×, 0.40×);
+`List.filter` 0.21–0.24×; `List.append` (with `ys` of 10) 0.22–0.23×; `List.take` 0.36–0.41×;
+`List.concatMap` 0.14–0.28×, written as one building loop over the current inner list. So once
+this rewrite exists, **writing `map`, `filter`, `take`, `append` and `concatMap` directly as cons
+steps would make them 2.4–7× faster** and allocate n cells instead of 2n, with no stack cost and no
+`foreign` (the effects plan keeps higher-order functions in beni); `filterMap`, `concat` and
+`map2`–`map5` have the same accumulator shape and were not measured.
+That change is `core/`'s to make and is not part of this one.
 
 ## 9. The optimiser, ranked by compressed bytes
 
