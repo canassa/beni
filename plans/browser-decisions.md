@@ -157,8 +157,8 @@ against it** — the same position the sheet already takes on component librarie
 |---|---|
 | **W2** | **As recommended** (2026-09-29): a defect is always logged and stops the app; a crash screen in development builds only; an optional `onDefect` hook later |
 | **W3** | **As recommended** (2026-09-29): the hybrid rule — 256 operations between clock reads, a 1 ms slice — yielding through `MessageChannel`, one tier (no microtask yield loop); the numbers are platform constants. A one-shot bounded microtask flush (W28) is unaffected. Web Workers are a separate question, to be designed with effects and code splitting |
-| **W6** | |
-| **W7** | |
+| **W6** | **As recommended** (2026-09-29), in the `browser-tea` platform: `subscriptions : Model -> Sub Msg` recomputed after every message and diffed against the live set; each live subscription is a scoped fiber whose finaliser removes its listener; a subscription's identity is a `compare`-able value. The platform also lets a command start a long-lived listener in a scope |
+| **W7** | **As recommended** (2026-09-29), in the `browser-tea` platform: `Cmd.map` pushes a path segment onto a command's key, so two instances of one component never share a key; `Cmd.cancelAll` cancels a prefix; keys are `compare`-able values, idiomatically the program's own `Key` type. `boundary.md` §5.4's "k equatable" becomes `compare`-able |
 | **W8** | **As recommended** (2026-09-29): the platform's callback registration takes `sync` functions only, checked through `boundary.md` §4 (a `foreign` that receives a beni function the sibling may invoke declares that parameter `sync`); a handler that needs slow work spawns a fiber and returns |
 | **W9** | **As recommended** (2026-09-29): `main : Program` is unchanged; a page has no exit code, and its only "exit" is an unhandled fiber death, which goes to W2's teardown |
 | **W25** | **The Elm Architecture** (2026-09-29): one immutable model, a pure `update`, `view : Model -> Html Msg`, commands as the sheet describes; no signals as the programming model. Measured as fast as Solid with compiled templates (research 29: P2/P3) |
