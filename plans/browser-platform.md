@@ -1290,6 +1290,15 @@ Solid 2 by 4.5× per message** (30 µs against 6.8; one `view` is 4.3, one compo
 in a hole whose arguments are identical. Size: 11 697 brotli released (5 739 minified) against
 Solid 2's 22 131.
 
+*Measured again, 2026-09-29, after the three fixes research 39 priced were built* (its §10): a
+helper call in a hole skipped when its arguments are identical, `==` against a constructor as a tag
+test with a row's item-only values left alone on an input-only patch, and the key map kept across
+renders that move rows. Same batch against Solid 2: select 2.96 → **2.18** (0.70× Solid 2, 1.22×
+P2), swap 1.96 → 1.79 (0.96×, still a tie), remove 1.05 → 0.99 (1.04×, **still a loss**); the other
+six unchanged and ahead. **The helper-heavy page went from 29.5 to 5.2 µs a message**, 0.76× Solid
+2's inline page and ahead of beni's component page (6.2). Within 20 % of P2: still only replace and
+clear. What is left on swap and remove is the model half on `List`.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

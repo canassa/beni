@@ -420,3 +420,77 @@ direnv exec . node bench/ui/report.mjs bench/ui/out/cpu.json
 nix develop .#browser -c node bench/ui/micro.mjs --taskset=8-15    # about 2 minutes
 direnv exec . node bench/ui/sizes.mjs
 ```
+
+## 10. Addendum, 2026-09-29: the three fixes built
+
+§7's questions 1–4 were answered by the project's manager on the owner's delegation and built, each
+specified first: **a helper call in a hole skipped when its arguments are identical**
+(`language.md` §6 and §11.6, §11.11; `backend.md` §15.3–§15.4; `boundary.md` §9.4 interface 1.1),
+**`==` against a constructor as a tag and field test** (`backend.md` §4) with **a row's item-only
+values left alone on an input-only patch** (`language.md` §11.11; `backend.md` §15.5; interface
+1.2), and **the key map kept across a render that moves rows**, the duplicate-key rank chain
+carried across (`backend.md` §15.5). Fixtures: `browser/dom/HelperSkip`, `emit/dom/DomHelpers`,
+`run/EqAgainstConstructor`, `emit/EqAgainstConstructor`, `browser/dom/RowItemOnly`,
+`emit/dom/DomRowItemOnly`, `browser/dom/KeyedMoves`.
+
+### 10.1 The table
+
+One batch, the same harness, machine and Chromium 153.0.8010.36 as §1, pinned to CPUs 8–15; 1-minute
+load 0.60–1.77 at each benchmark's start; n = 15. `beni-before` is the build of `76a3a0e` (§0.1's
+subject), re-run in the batch. `results/2026-09-29-table-after-fixes.json`. Script medians, ms:
+
+| operation | **beni** | beni `--release` | beni-before | **Solid 2** | **P2** | beni ÷ Solid 2 | beni ÷ P2 |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| create 1k | **5.04** [4.96–5.08] | 4.97 | 4.97 | 6.10 [6.02–6.21] | 4.08 [4.05–4.13] | **0.83** | 1.23 |
+| replace 1k | **11.2** [11.1–11.3] | 11.2 | 11.2 | 13.3 [13.2–13.4] | 10.0 [10.0–10.1] | **0.84** | 1.12 |
+| update every 10th | **1.77** [1.66–1.89] | 1.71 | 1.66 | 2.69 [2.32–2.75] | 0.89 [0.78–1.07] | **0.66** | 1.98 |
+| select | **2.18** [2.05–2.63] | 2.09 | 2.96 | 3.11 [2.99–3.24] | 1.78 [1.64–1.93] | **0.70** | 1.22 |
+| swap | **1.79** [1.71–1.97] | 1.80 | 1.96 | 1.86 [1.66–1.98] | 0.96 [0.81–1.18] | **0.96** | 1.87 |
+| remove | **0.99** [0.98–1.01] | 0.98 | 1.05 | 0.95 [0.94–0.96] | 0.52 [0.51–0.52] | **1.04** | 1.92 |
+| create 10k | **54.0** [53.3–54.0] | 53.4 | 53.9 | 67.3 [66.7–68.9] | 43.1 [42.9–43.3] | **0.80** | 1.25 |
+| append 1k | **5.52** [5.50–5.63] | 5.54 | 5.57 | 6.53 [6.49–6.60] | 4.33 [4.29–4.35] | **0.85** | 1.27 |
+| clear | **22.0** [19.6–22.2] | 22.0 | 21.9 | 24.1 [23.3–24.4] | 21.8 [21.5–22.0] | **0.92** | 1.01 |
+
+- **Select** moved as priced: 2.96 → 2.18 in the batch (§4.2's experiment gave 2.02), 0.70× Solid 2,
+  1.22× P2. Hot, the row's `p` no longer allocates or calls.
+- **Remove** moved from 1.05 to 0.99 and **still loses to Solid 2**, by 4 %, the ranges not touching
+  (0.98–1.01 against 0.94–0.96); §4.3's experiment priced 0.96. **Swap** is 1.79 against Solid 2's
+  1.86, the ranges overlapping: still a tie. Separate batches at n = 20 (`results/2026-09-29-swap-
+  remove-after.json`) put swap at 1.87–1.94 and the experiment's runtime at 1.73 in the same
+  batch: swap's spread is 0.3–0.4 ms, the size of the effect. Hot, in a loop of 300 swaps at 4×
+  (`profile.mjs`), the kept map is 0.08–0.14 ms a message against 0.47 before and 0.067 for the
+  experiment, which assumed distinct keys and so skips the chain's field writes. What remains of
+  both is §4.4's model half on `List`.
+- **Nothing else moved** beyond its range; `--release` stays inside the development build's.
+- **Beats Solid 2**, outside the ranges: seven of nine, as before (select now by 30 % rather than
+  12 %); swap a tie; remove a loss. **Within 20 % of P2**: replace (1.12) and clear (1.01) only;
+  select is 1.22.
+
+### 10.2 The static-heavy page
+
+`micro.mjs`, 5 pages × 20 samples × 100 messages, load 0.89 (`results/2026-09-29-static-page-after-
+fixes.json`), µs per message, median [IQR]:
+
+| page | 1× | 4× |
+|---|--:|--:|
+| P2 | 3.68 [3.50–4.11] | 13.9 [11.7–15.4] |
+| beni, one `view` | 4.60 [4.19–5.47] | 19.4 [16.2–22.4] |
+| **beni, helper functions** | **5.18** [4.79–6.96] | **20.3** [18.3–24.3] |
+| beni, helpers, before | 29.5 [28.7–32.0] | 113 [110–118] |
+| beni, one component per section | 6.22 [5.15–7.15] | 22.1 [19.8–26.7] |
+| Solid 2, inline | 6.83 [6.35–7.70] | 30.3 [28.1–33.9] |
+| Solid 2, components | 7.70 [7.13–8.50] | 31.2 [28.8–35.6] |
+
+**The helper-heavy page went from 29.5 to 5.2 µs a message, 0.76× Solid 2's inline page and ahead of
+the component page**; a render calls the one section whose value changed, and inside it the heading
+whose argument did, and nothing else. Mount is unchanged (4.49 ms).
+
+### 10.3 What this found
+
+- **A nullary constructor of a type with fields is a fresh object every render**: `Run` in the
+  benchmark's `view` is `{ $: "Run", a: null }`, built again each time, so `button "run" "…" Run`
+  never has identical arguments and all six buttons' helpers are called on every render. Sharing one
+  object per nullary constructor would let those calls be skipped; it is a representation change
+  (`backend.md` §4) and was not made here.
+- The remaining losses are remove (1.04×) and a swap that ties; the key map is no longer where
+  their time goes, `List` is (§4.4).
