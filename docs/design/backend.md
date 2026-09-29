@@ -3354,7 +3354,11 @@ Behaviour in a page — a keyed reorder keeps focus in its row, a branch swap do
 value across, a keyed `Show` remounts on a new value and patches on the same one, a controlled input
 reverts a rejected edit, a delegated handler listens once for a thousand rows, a message from inside
 two `Html.map`s arrives mapped twice, five messages in one task render once — needs the `browser/`
-corpus kind the browser plan adds (`plans/browser-platform.md` §3). **The bar is the owner's**
+corpus kind the browser plan adds (`plans/browser-platform.md` §3). *As built, 2026-09-29:* the kind
+exists (`tests/corpus/README.md`, *`browser/`*): a fixture's page runs under happy-dom in the gates
+and in headless Chrome under `zig build test-browser`, driven by a `.steps` script, its golden a
+transcript of `document.body` after each step. Its fixtures today are built for a test platform of
+plain `foreign` calls; a `dom` fixture is built for `browser` instead, as that section says. **The bar is the owner's**
 (CLAUDE.md rule 8): research 29's harness, the benchmark app written in beni markup and compiled by
 beni, against Solid 2 re-run in the same batch, judged on per-operation script medians and never on
 a geometric mean, plus research 29's static-heavy page and a helper-heavy one.

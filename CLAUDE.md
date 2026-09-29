@@ -235,6 +235,7 @@ zig build fmt-check       # zig fmt --check
 zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
+zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
@@ -285,6 +286,15 @@ when it matches, Node is skipped, otherwise the program runs as before. After
 changing the emitter, the runtime, `core/`, a `run/` golden or an expected
 output, or upgrading Node, run `zig build test-run-hashes` and commit the
 updated hashes; the gates print a line when programs ran for want of one.
+
+**Programs in a page** are `tests/corpus/browser/`: a program built for the
+`tests/platforms/page` test platform (or a platform of its own), loaded into
+a DOM, driven by a `.steps` script of clicks, input and keys, and compared as
+a transcript of the page after each step. The gates run it under happy-dom
+in Node — one vendored, checksummed file, `tests/browser/happy-dom.mjs`, no
+network — with run hashes like `run/`'s; `zig build test-browser` runs the
+same fixtures in headless Chrome. `tests/corpus/README.md` has the script
+language and the known differences between the two DOMs.
 
 **Coverage** (`zig build coverage`, x86-64 Linux, about 4 s plus a two-minute
 instrumented LLVM compile after an edit) reports the lines the black-box tests

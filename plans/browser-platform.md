@@ -942,6 +942,18 @@ question (§5 risk 5).*
   `MessageChannel`** — the exact primitive W3 builds the scheduler on (R26 §9.2).
 - *Also settles.* W15 (virtual time: 50 000 ms of chained timers in 0.9 ms of real time) and W9's exit
   convention.
+- *As built, 2026-09-29* (`tests/blackbox/browser.zig`, `tests/corpus/README.md` *`browser/`*).
+  **The gates run the page under happy-dom in Node; Chrome is `zig build test-browser`**, the reverse
+  of the goal above, decided on new measurements. Research 26 §9.2 timed each emulator in a fresh process
+  from `node_modules`; bundled into one vendored file, happy-dom 20.14 costs 115 ms of CPU per page
+  against bare Node's 30 (linkedom 56, jsdom 705), and one Chrome costs 36 ms of CPU per target
+  after 0.7 s to start — comparable per page, but a shared browser fits neither the per-case
+  instruction budget nor the flake's default shell (Chromium is 454 MiB, Linux only), and a skip
+  whenever Chrome is missing would leave the gate unproven on most machines. happy-dom matched
+  Chrome on seven of eight probes (`<!>`, implied `<tbody>`, `<template>` content, `value` against its
+  attribute, checkbox activation, focus, a listener's exception); linkedom failed seven, including
+  dropping everything after a `<!>`. `MessageChannel` is Node's own. **Not built: virtual time**
+  (no fixture needs a timer yet) — it belongs to `test-browser` first, and to the scheduler slice.
 
 **B1 — the platform package, `main` for a page, a static render.** *No effects work.*
 - *Goal.* `platforms/browser/` with a `beni.json` declaring `program` and `runtime`, a `Program` that
