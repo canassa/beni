@@ -176,7 +176,7 @@ against it** — the same position the sheet already takes on component librarie
 | **Spec review answers** | (2026-09-29) **Text follows Solid 2 exactly**: HTML character references in JSX text are decoded, and whitespace collapses by Solid's `trim_jsx_text` (all Unicode whitespace). **Keyed `Show` is kept** (`<Show when={x} keyed>` remounts when `x`'s identity changes); non-keyed conditionals stay `if`/`case`. **`class` and `style` get typed object/array forms** like Solid's (`classList`, a style record), compiled like Solid's helpers. **The lowering interface is stable under additive change**: adding optional fields or builder calls keeps old lowerings working; only a breaking change bumps its major version. |
 | **W33** | Solid 2's list components (`For`, `Index`) instead of a keyed `Html` type (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
 | **W34** | Solid 2's event spelling and handling (delegated and native forms; the handler gets the event and calls `preventDefault` itself); payload types come from the platform's declarations (2026-09-29: the owner trusts Solid 2's choices for client rendering; take Solid 2's answer, as its JSX compiler and runtime implement it) |
-| **W35** | |
+| **W35** | **Yes, `core/Array`, immutable** (2026-09-29): an indexable sequence ships in `core/`, immutable like every beni value (field identity and purity depend on it). Its representation is chosen by measurement: popular persistent/immutable array implementations are benchmarked (operations, engines, memory, and bundle size, which is a concern) before the module is written. A local mutable builder is considered when effects land |
 
 ---
 
