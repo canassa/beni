@@ -69,7 +69,7 @@ pub const Comment = struct {
 
 /// Every token kind in language.md §2.2, plus `invalid` for bytes the lexer
 /// reports and skips (the parser sees them as an error placeholder), plus
-/// the eight markup kinds of frontend.md §9.2.
+/// the nine markup kinds of frontend.md §9.2.
 pub const Tag = enum(u8) {
     lower_ident,
     upper_ident,
@@ -169,6 +169,11 @@ pub const Tag = enum(u8) {
     markup_text,
     /// `...` as the first token of a hole opened inside a tag (a spread).
     ellipsis,
+    /// A byte an opening or closing tag cannot hold, reported by the lexer.
+    /// It runs as the `invalid` its first byte would start, but stops before
+    /// the first `>`, `/`, `{`, `}`, `"`, `=` or whitespace after that byte,
+    /// so it never swallows the tag's own syntax.
+    markup_stray,
 
     /// True for the identifier-like tags whose `payload` is a `Symbol`
     /// (`dot_index` is not one: its payload is the index itself).
@@ -276,6 +281,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .markup_name,
         .markup_attr,
         .markup_text,
+        .markup_stray,
         => null,
     };
 }

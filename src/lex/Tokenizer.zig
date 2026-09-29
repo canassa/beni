@@ -687,11 +687,12 @@ fn nextMarkup(t: *Tokenizer) Allocator.Error!Tag {
             }
         },
 
-        // A byte a tag cannot hold: one `invalid` token, as long as
-        // `invalidEnd` says a token starting with that byte is, and the tag
-        // goes on (frontend.md §9.1).
+        // A byte a tag cannot hold: one `markup_stray` token, as long as
+        // `invalidEnd` says a token starting with that byte is but never
+        // past the tag's own syntax (`strayEnd`), and the tag goes on
+        // (frontend.md §9.1).
         .stray => {
-            const end = invalidEnd(src, t.index);
+            const end = strayEnd(src, t.index);
             const b = src[t.index];
             const code: diagnostic.Code = switch (b) {
                 '\t' => .tab_in_source,
@@ -702,7 +703,7 @@ fn nextMarkup(t: *Tokenizer) Allocator.Error!Tag {
             };
             try t.report(code, t.index, end);
             t.index = end;
-            break :state .invalid;
+            break :state .markup_stray;
         },
     };
 
@@ -1386,6 +1387,7 @@ pub fn tokenEnd(source: [:0]const u8, tag: Tag, start: u32) u32 {
         .char => scanChar(source, start).end,
         .eof => start,
         .invalid => invalidEnd(source, start),
+        .markup_stray => strayEnd(source, start),
         .markup_name => scanTagName(source, start, {}),
         .markup_attr => scanAttrName(source, start, {}),
         .markup_text => scanText(source, start),
@@ -1397,9 +1399,10 @@ pub fn tokenEnd(source: [:0]const u8, tag: Tag, start: u32) u32 {
 /// Where an `invalid` token ends, decided by its first byte — the same
 /// decision the state that produced it made. Ambiguity between the string
 /// states and the normal state is resolved by the fact that in normal mode
-/// `"`, `\` and a line terminator never produce `invalid`. Markup's stray
-/// bytes — a byte a tag cannot hold, and `<`, `>` or `}` in text — take
-/// their length from this function, so they agree with it by construction.
+/// `"`, `\` and a line terminator never produce `invalid`. The stray `<`,
+/// `>` or `}` in text takes its length from this function, and a byte a tag
+/// cannot hold from `strayEnd`, which caps it, so both agree with the
+/// scanner by construction.
 fn invalidEnd(source: [:0]const u8, start: u32) u32 {
     switch (source[start]) {
         // The zero-length marker of an unterminated string.
@@ -1415,6 +1418,20 @@ fn invalidEnd(source: [:0]const u8, start: u32) u32 {
         // Tab, control byte, stray punctuation, lone `.` or `&`.
         else => return start + 1,
     }
+}
+
+/// Where a `markup_stray` ends: where the `invalid` its first byte starts
+/// would, but before the first byte after it that is a tag's own syntax —
+/// `>`, `/`, `{`, `}`, `"`, `=` or whitespace — so a stray `\` or `'` does
+/// not swallow the `>` that ends its tag (frontend.md §9.1).
+fn strayEnd(source: [:0]const u8, start: u32) u32 {
+    const end = invalidEnd(source, start);
+    var i = start + 1;
+    while (i < end) : (i += 1) switch (source[i]) {
+        '>', '/', '{', '}', '"', '=', ' ', '\n', '\r', '\t' => return i,
+        else => {},
+    };
+    return end;
 }
 
 // ---------------------------------------------------------------------------

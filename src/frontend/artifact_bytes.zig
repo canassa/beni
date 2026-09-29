@@ -75,7 +75,9 @@ pub const magic = "BENIFE\x00\x00";
 /// tag, and a `Bir.Exposed` row grew from 8 to 12 bytes (`all_ctors_token`).
 /// 5 (2026-09-29): `Token.Tag` gained the eight markup kinds
 /// (frontend.md §9.2).
-pub const format_version: u32 = 5;
+/// 6 (2026-09-29): `Token.Tag` gained `markup_stray`, a byte a tag cannot
+/// hold (frontend.md §9.1).
+pub const format_version: u32 = 6;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

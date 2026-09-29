@@ -1,4 +1,4 @@
--- A byte a tag cannot hold is one `invalid` token with unexpected_token,
+-- A byte a tag cannot hold is one `markup_stray` token with unexpected_token,
 -- and the tag goes on (frontend.md §9.1): a stray `<`, a number and a `)`
 -- in an opening tag (6:12, 6:14, 6:17), a `.` in a closing tag (6:28); the
 -- number is one token. The markup is not_implemented at 6:5.

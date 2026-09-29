@@ -636,9 +636,15 @@ comment goes into the `comments` array like any other (`language.md` §2.3), and
 reports the hole's `unclosed_delimiter` it finds there a comment beginning on the `{`'s line and says
 so, showing the two-line spelling (§9.5).
 
-**Any other byte in `tag` or `close` mode** — a `<`, a digit, a stray `)` — is an `invalid` token with
-`unexpected_token`, and lexing continues in the same mode, so the parser's recovery for an opening
-tag whose `>` never comes (§9.5) sees one bad token and not a cascade.
+**Any other byte in `tag` or `close` mode** — a `<`, a digit, a stray `)` — is one `markup_stray`
+token with `unexpected_token`, and lexing continues in the same mode, so the parser's recovery for an
+opening tag whose `>` never comes (§9.5) sees one bad token and not a cascade. The token never runs
+past the tag's own syntax: it stops before the first `>`, `/`, `{`, `}`, `"`, `=` or whitespace after
+its first byte, so `<a \> b</a>` and `<a it's>t</a>` each have one stray and a tag that ends at its `>`.
+*Amended 2026-09-29, after the lexer's review: a stray was an `invalid` token as long as the `invalid`
+its first byte starts, so a `\` took the `>` after it and a `'` the rest of the line. It is a kind of its
+own, and not an `invalid`, because an `invalid` is re-derived from its first byte alone, which cannot
+tell that it stood in a tag.*
 
 **Column 1 ends every markup mode.** In `tag`, `children`, `close`, or a `hole` that has markup
 below it, a newline followed by a non-space byte at column 1 pops the stack back to its bottom
@@ -670,7 +676,8 @@ another control character `invalid_character` and a non-UTF-8 byte `invalid_utf8
 
 ### 9.2 Token kinds
 
-Eight kinds are added to `Token.Tag`. **Every one can be re-derived from its tag and start alone**,
+Nine kinds are added to `Token.Tag` (eight when first specified; `markup_stray` joined them after
+the lexer's review, 2026-09-29, §9.1). **Every one can be re-derived from its tag and start alone**,
 because each has a scanner of its own that stops at a fixed set of bytes — which is what keeps
 §3.2's two-column cached form (`tag`, `start`) sufficient with no mode column: `slice` picks the
 scanner by the tag, as it does today.
@@ -685,6 +692,7 @@ scanner by the tag, as it does today.
 | `markup_attr` | an attribute name: `[A-Za-z][A-Za-z0-9_-]*` with `:` allowed after the first byte | the first byte outside the name |
 | `markup_text` | a text run | `<`, `{`, `>`, `}`, a newline followed by a non-space at column 1, end of file |
 | `ellipsis` | `...` as the first token of a hole opened in `tag` mode (§9.1) | three bytes |
+| `markup_stray` | a byte an opening or closing tag cannot hold (§9.1) | where the `invalid` its first byte starts would end, or before the first `>`, `/`, `{`, `}`, `"`, `=` or whitespace after it, whichever is first |
 
 `markup_name` and `markup_attr` are interned while scanned, like identifiers (§3.3), so `payload`
 holds their `Symbol`. **Keywords are not recognised inside a tag**: `type`, `as` and `for` are
@@ -692,7 +700,7 @@ holds their `Symbol`. **Keywords are not recognised inside a tag**: `type`, `as`
 the lexer, knows them (§9.4).
 
 A new tag set is a change to the front-end artifact's bytes, so the artifact's `format_version`
-moves (4 → 5, `src/frontend/artifact_bytes.zig`), and every older artifact is a miss; the compiler build
+moves (4 → 5, then 5 → 6 for `markup_stray`, `src/frontend/artifact_bytes.zig`), and every older artifact is a miss; the compiler build
 id already moves with the change.
 
 ### 9.3 When `<` opens markup
@@ -732,9 +740,9 @@ the smallest reading, and these are they:
   cannot both hold, and the result — the entry under the element is on top again — is the same.
 - **`close` mode** skips spaces and newlines, and reads any run of name bytes as a `markup_name`
   (the parser, not the lexer, judges a second name); a `--` there is two stray bytes, not a comment.
-- **A stray byte in `tag` or `close` mode** is one `invalid` token as long as the `invalid` that
-  byte always starts (`invalidEnd`): `12` is one token, not two, and a `'` runs as a character
-  literal would. Its code is `unexpected_token` for printable ASCII; a tab, a bare `\r`, a control
+- **A stray byte in `tag` or `close` mode** is one token as long as the `invalid` that byte always
+  starts (`invalidEnd`), capped as §9.1 says: `12` is one token, not two, and a `'` runs as a
+  character literal would until the tag's own syntax stops it. Its code is `unexpected_token` for printable ASCII; a tab, a bare `\r`, a control
   byte and non-ASCII keep the codes they have everywhere (`tab_in_source`, `bare_carriage_return`,
   `invalid_character`, `invalid_utf8`). A `}` in a tag and a `}` in text share one message, which
   says it closes nothing and gives `{"}"}`.
