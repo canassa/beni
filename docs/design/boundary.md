@@ -1190,7 +1190,9 @@ be written against it; they are 1.0's contract:
   `Item.name`.
 - *Found 2026-09-29, not fixed here:* `html`'s custom-element declaration, `pub element "*-*"`,
   holds two `*`, which `language.md` §11.14 does not allow, and `<my-widget>` is
-  `unknown_element` under `html` today.
+  `unknown_element` under `html` today. *Fixed 2026-09-29:* §11.14 now allows any number of `*`,
+  each a non-empty run, ranked by literal length with ties refused, and `<my-widget>` resolves
+  to the `"*-*"` row (`tests/corpus/emit/dom/DomCustomElement`).
 - **`Tree.requires`** is 1.0 for every tree. The comparison with `Lowering.targets` is made, and a
   tree a lowering does not cover is reported as `internal`, since no feature is gated yet.
 - **The runtime's checks** (§9.4.5) run in `build` and in `check --platform` whenever the chain names

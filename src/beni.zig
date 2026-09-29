@@ -147,6 +147,7 @@ pub const check = struct {
     pub const Types = @import("check/Types.zig");
     pub const Unify = @import("check/Unify.zig");
     pub const Unit = @import("check/Unit.zig");
+    pub const Vocab = @import("check/Vocab.zig");
     pub const Walk = @import("check/Walk.zig");
     pub const constrain = struct {
         pub const Tree = @import("check/constrain/Tree.zig");

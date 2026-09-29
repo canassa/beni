@@ -71,7 +71,7 @@ pub const Row = struct {
     }
 
     fn literalLen(row: Row, cx: *const Context) usize {
-        return cx.interner.slice(row.name).len - @intFromBool(row.star != null);
+        return Vocab.literalLen(cx.interner.slice(row.name));
     }
 };
 
@@ -231,14 +231,9 @@ fn pattern(m: *Markup, rows: []Row, name: Symbol, tag: ?Symbol, scope: Scope) ?*
     const text = m.cx.interner.slice(name);
     var best: ?*Row = null;
     for (rows) |*r| {
-        const star = r.star orelse continue;
-        if (!inScope(r.*, tag, scope)) continue;
-        const p = m.cx.interner.slice(r.name);
-        const prefix = p[0..star];
-        const suffix = p[star + 1 ..];
-        // `*` matches a non-empty run of name characters.
-        if (text.len <= prefix.len + suffix.len) continue;
-        if (!std.mem.startsWith(u8, text, prefix) or !std.mem.endsWith(u8, text, suffix)) continue;
+        if (r.star == null or !inScope(r.*, tag, scope)) continue;
+        // Each `*` matches a non-empty run of name characters.
+        if (!Vocab.nameMatches(m.cx.interner.slice(r.name), text)) continue;
         if (best == null or r.literalLen(m.cx) > best.?.literalLen(m.cx)) best = r;
     }
     return best;

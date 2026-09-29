@@ -1,0 +1,11 @@
+-- A custom element under `html`'s vocabulary (language.md §11.14): any
+-- name with a hyphen matches `pub element "*-*"`, whose two `*` each match
+-- a non-empty run, so `<my-widget>` and `<x-a-b>` are elements and the
+-- template writes each as written. An attribute of every element still
+-- resolves on one.
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view s =
+    <my-widget title={s}><x-a-b>hi</x-a-b></my-widget>

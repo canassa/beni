@@ -156,7 +156,8 @@ pub element "ul"
 pub element "var"
 pub element "video"
 pub element "wbr" void
--- A custom element: any name with a hyphen.
+-- A custom element: any name with a hyphen inside it, each `*` a non-empty
+-- run (language.md §11.14).
 pub element "*-*"
 
 

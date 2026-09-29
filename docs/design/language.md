@@ -1586,9 +1586,22 @@ VocabDecl := 'pub' 'element'   string ElementFact*
 and a string — or, for `markup`, between `pub` and a lower name followed by `:` — where nothing else
 can stand: a `Definition`'s head is one name followed by its parameters or `:`, so `pub markup : T`
 still annotates a value named `markup`. They stay ordinary identifiers everywhere else, as
-`equatable` does (§3). A name may contain one `*`, which matches a non-empty run of name characters;
-an exact name beats a pattern, and of two patterns that match the longer literal part wins. Two
-declarations that would tie are `duplicate_declaration`.
+`equatable` does (§3). A name may contain `*`s, each of which matches a non-empty run of name
+characters; an exact name beats a pattern, and of two patterns that match the longer literal part
+(the characters that are not `*`) wins. Two declarations that would tie are `duplicate_declaration`.
+
+*Amended 2026-09-29.* This paragraph said "one `*`", while §11.5 and §11.16 named `"*-*"` as the
+custom-element pattern and `html` declares it: a name with a hyphen that is neither its first nor
+its last character, which one `*` cannot say. The rule is now any number of `*`, and it stays
+exact. **Matching**: a name matches a pattern when the pattern's literal characters appear in it in
+order, each `*` standing for one or more characters in between, so `"*-*"` matches `my-widget` and
+`x-a-b` but not `widget`, `-x` or `x-`; a `*` in a written name is an ordinary character. **Ranking**:
+an exact declaration first; then, of the patterns that match, the one with the most literal
+characters, so `"x-*"` (two) beats `"*-*"` (one) for `x-widget`. **Ties**: two patterns of one
+literal length tie when some name matches both — `"x-*"` and `"*-y"` meet in `x-y`, `"a*-*"` and
+`"*-b*"` in `ax-by`, while `"c*"` and `"d*"` meet nowhere — and a tie whose `on` sets overlap is
+`duplicate_declaration`, so a name never has two answers and the answer never depends on
+declaration order. `**` is legal and means a run of two or more.
 
 | Form | Facts, each a contextual word | Type after `:` |
 |---|---|---|

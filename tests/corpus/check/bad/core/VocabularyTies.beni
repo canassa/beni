@@ -1,9 +1,10 @@
 -- Two declarations of one namespace that could answer the same name on the
 -- same elements are `duplicate_declaration` at the later one
--- (checker-v2.md §25.2): an exact name twice (13:13), two patterns whose
--- literal parts are one length and some name matches both (19:15), and an
--- event named like an attribute (25:11). The same name on disjoint elements
--- (28:15, 31:15) is no tie.
+-- (checker-v2.md §25.2): an exact name twice (14:13), two patterns whose
+-- literal parts are one length and some name matches both (20:15), and an
+-- event named like an attribute (26:11). The same name on disjoint elements
+-- (29:15, 32:15) is no tie. Patterns with two `*` tie the same way when
+-- `ax-by` matches both (38:13); `c*` and `d*` share no name (41, 44).
 pub foreign type Event
 
 
@@ -29,3 +30,15 @@ pub attribute "value" on "input" : String
 
 
 pub attribute "value" on "option" : String
+
+
+pub element "a*-*"
+
+
+pub element "*-b*"
+
+
+pub element "c*"
+
+
+pub element "d*"

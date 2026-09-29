@@ -325,32 +325,125 @@ pub fn mentionsType(cx: *const Context, v: Var, t: MarkupType) Error!bool {
 // Two declarations that answer the same names
 // ---------------------------------------------------------------------------
 
-/// A markup name as §11.14's precedence reads it: exact, or one `*` between
-/// a literal prefix and suffix.
+/// A markup name as §11.14's precedence reads it: exact, or a pattern in
+/// which each `*` matches a non-empty run of characters.
 const Name = struct {
     text: []const u8,
-    star: ?usize,
+    pattern: bool,
 
     fn of(t: []const u8) Name {
-        return .{ .text = t, .star = std.mem.indexOfScalar(u8, t, '*') };
+        return .{ .text = t, .pattern = std.mem.indexOfScalar(u8, t, '*') != null };
     }
 
     /// Whether the two names tie under the precedence rule: two exact names
     /// of one text, or two patterns with literal parts of one length that
     /// some name matches both of.
-    fn ties(a: Name, b: Name) bool {
-        const sa = a.star orelse return b.star == null and std.mem.eql(u8, a.text, b.text);
-        const sb = b.star orelse return false;
-        if (a.text.len != b.text.len) return false;
-        const pa = a.text[0..sa];
-        const pb = b.text[0..sb];
-        const xa = a.text[sa + 1 ..];
-        const xb = b.text[sb + 1 ..];
-        const prefixes = std.mem.startsWith(u8, pa, pb) or std.mem.startsWith(u8, pb, pa);
-        const suffixes = std.mem.endsWith(u8, xa, xb) or std.mem.endsWith(u8, xb, xa);
-        return prefixes and suffixes;
+    fn ties(a: Name, b: Name, scratch: Allocator) Error!bool {
+        if (!a.pattern or !b.pattern) return !a.pattern and !b.pattern and std.mem.eql(u8, a.text, b.text);
+        if (literalLen(a.text) != literalLen(b.text)) return false;
+        return patternsMeet(scratch, a.text, b.text);
     }
 };
+
+/// The length of a pattern's literal part: its characters that are not
+/// `*`. Of two patterns that match a name, the longer literal part wins.
+pub fn literalLen(pattern: []const u8) usize {
+    return pattern.len - std.mem.count(u8, pattern, "*");
+}
+
+/// Whether the pattern matches `name`, each `*` a non-empty run of
+/// characters; a `*` in `name` is an ordinary character. A `*` is one
+/// character followed by a zero-or-more wildcard, and the classic greedy
+/// match needs only the last such wildcard as its backtrack point: no
+/// allocation, and time bounded by the lengths' product.
+pub fn nameMatches(pattern: []const u8, name: []const u8) bool {
+    var i: usize = 0;
+    var j: usize = 0;
+    var back: ?usize = null; // the pattern index after the last `*`
+    var back_j: usize = 0; // where that `*`'s run ends so far
+    while (j < name.len) {
+        if (i < pattern.len and pattern[i] == '*') {
+            i += 1;
+            j += 1;
+            back = i;
+            back_j = j;
+        } else if (i < pattern.len and pattern[i] == name[j]) {
+            i += 1;
+            j += 1;
+        } else if (back) |b| {
+            back_j += 1;
+            j = back_j;
+            i = b;
+        } else return false;
+    }
+    // A `*` left over would need a character, and none is left.
+    return i == pattern.len;
+}
+
+/// Whether some name matches both patterns: a search over pairs of
+/// positions, each `*` read as one character then zero or more.
+fn patternsMeet(scratch: Allocator, a: []const u8, b: []const u8) Error!bool {
+    const xa = try expand(scratch, a);
+    const xb = try expand(scratch, b);
+    const width = xb.len + 1;
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(scratch, (xa.len + 1) * width);
+    var stack: std.ArrayList([2]usize) = .empty;
+    try stack.append(scratch, .{ 0, 0 });
+    while (stack.pop()) |at| {
+        const i = at[0];
+        const j = at[1];
+        if (seen.isSet(i * width + j)) continue;
+        seen.set(i * width + j);
+        if (i == xa.len and j == xb.len) return true;
+        if (i < xa.len and xa[i] == many) try stack.append(scratch, .{ i + 1, j });
+        if (j < xb.len and xb[j] == many) try stack.append(scratch, .{ i, j + 1 });
+        if (i == xa.len or j == xb.len) continue;
+        const ca = xa[i];
+        const cb = xb[j];
+        if (ca == many and cb == many) continue; // a character, and no progress
+        if (ca < one and cb < one and ca != cb) continue;
+        try stack.append(scratch, .{ if (ca == many) i else i + 1, if (cb == many) j else j + 1 });
+    }
+    return false;
+}
+
+const one: u16 = 256;
+const many: u16 = 257;
+
+/// A pattern as positions: a character, or for each `*` a `one` then a
+/// `many`.
+fn expand(scratch: Allocator, t: []const u8) Error![]const u16 {
+    var out: std.ArrayList(u16) = .empty;
+    for (t) |c| {
+        if (c == '*') {
+            try out.appendSlice(scratch, &.{ one, many });
+        } else try out.append(scratch, c);
+    }
+    return out.items;
+}
+
+test nameMatches {
+    try std.testing.expect(nameMatches("*-*", "my-widget"));
+    try std.testing.expect(nameMatches("*-*", "a-b-c"));
+    try std.testing.expect(!nameMatches("*-*", "widget"));
+    try std.testing.expect(!nameMatches("*-*", "-x"));
+    try std.testing.expect(!nameMatches("*-*", "x-"));
+    try std.testing.expect(nameMatches("data-*", "data-row-id"));
+    try std.testing.expect(!nameMatches("data-*", "data-"));
+    try std.testing.expect(nameMatches("a*b*c", "axbbyc"));
+    try std.testing.expect(!nameMatches("a*b*c", "abxc"));
+}
+
+test patternsMeet {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expect(try patternsMeet(a, "x-*", "*-y"));
+    try std.testing.expect(try patternsMeet(a, "*-*", "x*"));
+    try std.testing.expect(!try patternsMeet(a, "x-*", "y-*"));
+    try std.testing.expect(!try patternsMeet(a, "a-*", "b*"));
+    try std.testing.expect(!try patternsMeet(a, "a*", "a"));
+}
 
 /// Two declarations of one namespace — elements; attributes and events
 /// together — whose names tie and whose `on` sets overlap are
@@ -362,7 +455,7 @@ fn duplicates(cx: *const Context, report: *Report) Error!void {
         const name = Name.of(text(cx, bir.symbol(d.name)));
         for (bir.decls[0..i]) |e| {
             if (!inNamespace(e.kind) or namespaceOf(e.kind) != namespaceOf(d.kind)) continue;
-            if (!name.ties(Name.of(text(cx, bir.symbol(e.name))))) continue;
+            if (!try name.ties(Name.of(text(cx, bir.symbol(e.name))), cx.scratch)) continue;
             if (!onOverlap(bir, d, e)) continue;
             report.at(@intCast(i));
             try fail(cx, report, @intCast(i), .duplicate_declaration,
