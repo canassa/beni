@@ -1,0 +1,61 @@
+--! The platform the `browser/` corpus kind builds its programs for until
+--! the real `browser` platform exists: a page program written with plain
+--! `foreign` calls rather than markup, so the harness that loads a program
+--! into a DOM, drives it and serialises what it rendered is proven before
+--! any markup lowering targets a page.
+--!
+--! A view is a tree of `Node`s built by `element` and `text`. The runtime
+--! renders it into `document.body`, patching the nodes it rendered last
+--! time position by position, and a message is handled the way
+--! `docs/design/backend.md` §15.11 specifies for `browser`: `update` runs at
+--! once, and the render waits for one microtask flush.
+
+
+--| What `main` is: a page program.
+pub foreign type Program
+
+
+--| A DOM node whose handlers produce messages of type `msg`.
+pub foreign type Node msg
+
+
+--| An attribute, a property or an event handler of an element.
+pub foreign type Attribute msg
+
+
+--| An element with its attributes and its children.
+pub foreign element : String, List (Attribute msg), List (Node msg) -> Node msg
+
+
+--| A text node.
+pub foreign text : String -> Node msg
+
+
+--| An attribute, written with `setAttribute`.
+pub foreign attribute : String, String -> Attribute msg
+
+
+--| The live `value` of a form control, written as a property: what a
+--| controlled input holds after every render.
+pub foreign value : String -> Attribute msg
+
+
+--| Send `msg` when the element is clicked.
+pub foreign onClick : msg -> Attribute msg
+
+
+--| Send the message made from the control's value on every `input` event.
+pub foreign onInput : (String -> msg) -> Attribute msg
+
+
+--| Send the message made from the key's name on every `keydown` event.
+pub foreign onKeyDown : (String -> msg) -> Attribute msg
+
+
+--| A page that renders `view` once and never changes.
+pub foreign show : Node msg -> Program
+
+
+--| A page with a model: `init` is rendered first, and every message a
+--| handler sends goes through `update` before the next render.
+pub foreign sandbox : { init : model, update : msg, model -> model, view : model -> Node msg } -> Program

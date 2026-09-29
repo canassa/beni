@@ -28,4 +28,6 @@ pub const Part = enum {
     /// `run/`'s `--release --allow-debug` pass, against `.release-expected`
     /// or `.expected` (`backend.md` §9's *Testing*).
     run_release,
+    /// `browser/`: both builds of each fixture, each loaded into a page.
+    browser,
 };

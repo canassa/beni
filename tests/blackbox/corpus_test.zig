@@ -24,6 +24,11 @@
 //!                                   with `--release` — against the same golden,
 //!                                   unless X.release-expected exists (backend.md
 //!                                   §9's *Testing*, §12)
+//!   browser/X.beni    + X.expected  built like `run/` for the `page` test
+//!                                   platform, then loaded into a page and
+//!                                   driven by X.steps (when it exists); the
+//!                                   golden is the page after the load and
+//!                                   after every step (`browser.zig`)
 //!   emit/X.beni       + X.js        `build --platform=node`, then the module's
 //!                                   own `.mjs` is the golden (backend.md §12)
 //!   emit/release/X.beni + X.js      the same, with `--release` added: the golden
@@ -69,10 +74,18 @@
 //! recorded when that JavaScript ran and matched. A build whose digest is
 //! listed there is not run under Node again; any other build is run exactly
 //! as without the record. `BENI_RUN_HASHES=record` (`zig build
-//! test-run-hashes`) walks `run/` alone, runs every program, and rewrites
-//! each record with the builds that matched. `BENI_RUN_HASH_REPORT=<dir>`
+//! test-run-hashes`) walks `run/` and `browser/` alone, runs every program,
+//! and rewrites each record with the builds that matched.
+//! `BENI_RUN_HASH_REPORT=<dir>`
 //! makes each process write its `run/` counts there — how many programs ran
-//! for want of a record — which the build prints as one line.
+//! for want of a record — which the build prints as one line. `browser/`
+//! fixtures carry the same records, over their page as well
+//! (`browser.zig`), and are counted with them.
+//!
+//! `BENI_BROWSER=chrome` (`zig build test-browser`) walks `browser/` alone
+//! and runs every page in one headless Chrome instead of happy-dom, against
+//! the same goldens — or a fixture's `.chrome-expected`, where the two DOMs
+//! are known to differ — never skipping a page and never recording.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -82,6 +95,7 @@ const Io = std.Io;
 const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
+const browser = @import("browser.zig");
 
 /// The root every `Kind` directory is joined onto unless
 /// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
@@ -103,6 +117,7 @@ const Kind = enum {
     build_bad,
     build_bad_release,
     run,
+    browser,
     emit,
     regress,
 
@@ -121,6 +136,7 @@ const Kind = enum {
             .build_bad => "build/bad",
             .build_bad_release => "build/bad-release",
             .run => "run",
+            .browser => "browser",
             .emit => "emit",
             .regress => "regress",
         };
@@ -133,7 +149,7 @@ const Kind = enum {
         return switch (kind) {
             .parse_good => "ast",
             .parse_bad, .check_bad, .check_args, .build_bad, .build_bad_release => "diag",
-            .fmt, .run => "expected",
+            .fmt, .run, .browser => "expected",
             .bir => "bir",
             .dispatch => "dispatch",
             .check_good => "iface",
@@ -152,7 +168,12 @@ const Kind = enum {
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
         return kind == .check_good or kind == .check_bad or kind == .dispatch or
-            kind == .build_bad or kind == .build_bad_release or kind == .run;
+            kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
+    }
+
+    /// Whether the kind runs what it builds, and so has run hashes.
+    fn runs(kind: Kind) bool {
+        return kind == .run or kind == .browser;
     }
 
     /// Whether the build this kind runs carries `--release` (and, for the
@@ -174,6 +195,7 @@ const Kind = enum {
                 .dev => .run_dev,
                 .release => .run_release,
             },
+            .browser => .browser,
         };
     }
 };
@@ -272,6 +294,15 @@ test "corpus: run" {
     try walk(.run);
 }
 
+// The second boundary in a page (`browser.zig`, `backend.md` §15.10): the
+// program is loaded into a DOM, driven by a script of clicks, input and
+// keys, and what the page showed after each step is the golden. What a
+// browser program does is mostly what it does to the DOM, which printing
+// cannot show.
+test "corpus: browser" {
+    try walk(.browser);
+}
+
 // The shape corpus (backend.md §12): what the emitter WROTE, for claims
 // running cannot observe — that a `where`-constrained declaration grew a
 // hidden parameter, that a call passed one, that `<` on `Int` is `<` and on
@@ -305,11 +336,13 @@ fn walk(kind: Kind) !void {
     const cfg = try Config.read(arena);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
-    // Recording run hashes is about `run/` alone.
-    if (cfg.run_hashes == .record and kind != .run) return;
+    // Recording run hashes is about the kinds that run programs alone.
+    if (cfg.run_hashes == .record and !kind.runs()) return;
+    // Chrome runs pages, and only pages.
+    if (cfg.chrome != null and kind != .browser) return;
     // Written whatever the cases say, so the build's summary never reads
     // counts left over from an earlier run.
-    defer if (kind == .run) if (cfg.report_dir) |dir| run_counts.report(arena, dir, cfg.part) catch |err| {
+    defer if (kind.runs()) if (cfg.report_dir) |dir| run_counts.report(arena, dir, cfg.part) catch |err| {
         std.debug.print("BENI_RUN_HASH_REPORT: cannot write into {s}: {t}\n", .{ dir, err });
     };
     quiet = cfg.mode != .strict and !cfg.verbose;
@@ -353,6 +386,11 @@ fn walk(kind: Kind) !void {
     // one counter. Pending mode stays on one thread: its report is one line
     // per fixture, read in order.
     const workers: usize = if (cfg.mode == .pending) 1 else @min(8, @max(1, std.Thread.getCpuCount() catch 1));
+    // One Chrome for every page of the walk, each page a target of its own.
+    var chrome: ?browser.Chrome = if (cfg.chrome) |exe| try browser.Chrome.launch(gpa, io, exe) else null;
+    defer if (chrome) |*c| c.deinit(io);
+    chrome_endpoint = if (chrome) |c| c.endpoint else null;
+    defer chrome_endpoint = null;
     const spent_before_workers = world.timing.testSpent();
     {
         var threads: std.ArrayList(std.Thread) = .empty;
@@ -374,6 +412,10 @@ fn walk(kind: Kind) !void {
         return error.CorpusFailures;
     }
 }
+
+/// The Chrome `BENI_BROWSER=chrome` runs every page in, while a walk of
+/// `browser/` has it open.
+var chrome_endpoint: ?[]const u8 = null;
 
 /// Whether `text` is in the path of any fixture of any kind under the root.
 fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const u8) !bool {
@@ -564,6 +606,9 @@ const Config = struct {
     /// `BENI_RUN_HASH_REPORT`: the directory this process writes its
     /// `run/` counts into (`RunCounts.report`), or null for none.
     report_dir: ?[]const u8,
+    /// `BENI_BROWSER=chrome`: the Chrome every `browser/` page runs in
+    /// (`browser.findChrome`), or null for happy-dom.
+    chrome: ?[]const u8,
 
     const RunHashes = enum {
         /// Unset: a build whose digest is recorded is not run under Node.
@@ -626,7 +671,25 @@ const Config = struct {
             std.debug.print("BENI_RUN_HASHES=record is refused in pending mode\n", .{});
             return error.BadRunHashes;
         }
+        const chrome: ?[]const u8 = if (envOr(arena, "BENI_BROWSER")) |text| chrome: {
+            if (!std.mem.eql(u8, text, "chrome")) {
+                std.debug.print("BENI_BROWSER must be `chrome` (or unset), not `{s}`\n", .{text});
+                return error.BadBrowser;
+            }
+            if (run_hashes == .record or mode == .pending) {
+                std.debug.print("BENI_BROWSER=chrome records nothing and is not a pending run\n", .{});
+                return error.BadBrowser;
+            }
+            break :chrome browser.findChrome(arena, testing.io) orelse {
+                std.debug.print(
+                    "BENI_BROWSER=chrome needs Chrome: `nix develop .#browser` puts Chromium on PATH, or set BENI_CHROME (`-Dchrome=`) to one\n",
+                    .{},
+                );
+                return error.ChromeNotFound;
+            };
+        } else null;
         var cfg: Config = .{
+            .chrome = chrome,
             .run_hashes = run_hashes,
             .report_dir = envOr(arena, "BENI_RUN_HASH_REPORT"),
             .root = std.mem.trimEnd(u8, root, "/"),
@@ -1081,6 +1144,7 @@ const Case = struct {
             .check_depth => try c.depth(),
             .build_bad, .build_bad_release => try c.buildBad(),
             .run => try c.runProgram(),
+            .browser => try c.runPage(),
             .emit => try c.emitted(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
@@ -1518,36 +1582,14 @@ const Case = struct {
             try c.w.copyTree(try c.fixturePath(), "_expected.");
         }
         const platform_arg = if (platform) "--platform=platform" else "--platform=node";
-        var sources: std.ArrayList([]const u8) = .empty;
-        if (c.fixture.project) {
-            const dir_path = try c.fixturePath();
-            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
-            defer dir.close(testing.io);
-            var it = dir.iterate();
-            while (try it.next(testing.io)) |entry| {
-                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
-                const name = try c.arena.dupe(u8, entry.name);
-                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
-                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
-                try sources.append(c.arena, name);
-            }
-            std.mem.sort([]const u8, sources.items, {}, struct {
-                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                    return std.mem.lessThan(u8, a, b);
-                }
-            }.lessThan);
-        } else {
-            const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
-            try c.w.write(c.fixture.name, source);
-            try sources.append(c.arena, c.fixture.name);
-        }
+        const sources = try c.writeSources();
 
         var dev: std.ArrayList([]const u8) = .empty;
         try dev.appendSlice(c.arena, &.{ "build", platform_arg, "--out=out" });
         // Pending mode reads the codes of a refused build, to classify why a
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
-        try dev.appendSlice(c.arena, sources.items);
+        try dev.appendSlice(c.arena, sources);
         // The fixture's run hashes (`run_hash.zig`): read to skip a build
         // already verified, or — recording — rewritten below with the
         // builds that verify now.
@@ -1579,7 +1621,7 @@ const Case = struct {
             var release: std.ArrayList([]const u8) = .empty;
             try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--out=release" });
             if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
-            try release.appendSlice(c.arena, sources.items);
+            try release.appendSlice(c.arena, sources);
             verified[1] = c.runOnce(
                 "release",
                 .release,
@@ -1606,6 +1648,169 @@ const Case = struct {
         defer dir.close(testing.io);
         const stat = dir.statFile(testing.io, "platform", .{}) catch return false;
         return stat.kind == .directory;
+    }
+
+    /// Copy the fixture's modules into the world's project: the file, or
+    /// every `.beni` directly in a project fixture. Returns their names,
+    /// sorted, as a build takes them.
+    fn writeSources(c: Case) ![]const []const u8 {
+        var sources: std.ArrayList([]const u8) = .empty;
+        if (c.fixture.project) {
+            const dir_path = try c.fixturePath();
+            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                const name = try c.arena.dupe(u8, entry.name);
+                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+                try sources.append(c.arena, name);
+            }
+            std.mem.sort([]const u8, sources.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+        } else {
+            const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+            try c.w.write(c.fixture.name, source);
+            try sources.append(c.arena, c.fixture.name);
+        }
+        return sources.items;
+    }
+
+    /// A `browser/` fixture (`browser.zig`): built twice, as a `run/` one
+    /// is — in development and with `--release --allow-debug` — for the
+    /// `page` test platform or the fixture's own `platform/`, and each build
+    /// loaded into a page and driven by the fixture's `.steps`. The page
+    /// is happy-dom under Node, or Chrome under `BENI_BROWSER=chrome`.
+    fn runPage(case: Case) !void {
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        const platform = c.fixture.project and hasPlatformDir(try c.fixturePath());
+        if (platform) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            try c.w.copyTree(try c.fixturePath(), "_expected.");
+        }
+        const h = try browser.harness(testing.io);
+        const platform_arg = if (platform)
+            "--platform=platform"
+        else
+            try std.fmt.allocPrint(c.arena, "--platform={s}", .{h.platform});
+        const sources = try c.writeSources();
+
+        // The steps, copied into the project under the name the driver
+        // reports a step by.
+        const steps_path = try c.goldenPath("steps");
+        const steps: ?[]const u8 = Io.Dir.cwd().readFileAlloc(testing.io, steps_path, c.arena, .limited(world.max_stream_bytes)) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+        const steps_name = std.fs.path.basename(steps_path);
+        if (steps) |bytes| try c.w.write(steps_name, bytes);
+        const script: Script = .{ .name = if (steps != null) steps_name else null, .bytes = steps orelse "" };
+
+        const record_path = try c.goldenPath(run_hash.ext);
+        const recording = c.cfg.run_hashes == .record;
+        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
+        var verified: [2]?[]const u8 = .{ null, null };
+        var first_error: ?anyerror = null;
+        for ([_]RunPass{ .dev, .release }, &verified) |pass, *line| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(c.arena, &.{ "build", platform_arg });
+            if (pass == .release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+            try args.append(c.arena, if (pass == .release) "--out=release" else "--out=out");
+            try args.appendSlice(c.arena, sources);
+            line.* = c.pageOnce(pass, args.items, h, script, record) catch |err| blk: {
+                if (!recording) return err;
+                RunCounts.add(&run_counts.refused);
+                if (first_error == null) first_error = err;
+                break :blk null;
+            };
+        }
+        if (recording) {
+            for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
+            try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
+        }
+        if (first_error) |err| return err;
+    }
+
+    /// A `browser/` fixture's steps: the file's name in the project, null
+    /// when it has none, and its bytes (empty then).
+    const Script = struct { name: ?[]const u8, bytes: []const u8 };
+
+    /// One build of a `browser/` fixture, and its page. The golden is
+    /// `.expected`, or the build's own `.release-expected`, or under Chrome
+    /// the fixture's `.chrome-expected` when it has one. The page is not
+    /// run when `record` lists this build; recording, the line of a page
+    /// that ran and matched is returned.
+    fn pageOnce(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !?[]const u8 {
+        const pass_name = @tagName(pass);
+        const built = try c.inProject(args);
+        if (built.exit_code != 0) {
+            detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stdout, built.stderr });
+            because("[{s}] build exit {d}: {s}: {s}", .{ pass_name, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
+            return error.BuildFailed;
+        }
+        if (built.stderr.len != 0) {
+            detail("{s} [{s}]: a browser fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass_name, built.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const chrome = c.cfg.chrome != null;
+        const golden = if (chrome and c.goldenExists("chrome-expected"))
+            "chrome-expected"
+        else if (pass == .release and c.goldenExists("release-expected"))
+            "release-expected"
+        else
+            "expected";
+        // `expected` is the development build's golden: a release build
+        // that disagrees with it is the finding, so only a build's own
+        // golden is blessed by it.
+        const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
+            (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
+        const out = if (pass == .release) "release" else "out";
+
+        // Skip the page when this output tree, golden, DOM, driver and
+        // script were verified together before. Chrome always runs.
+        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless and !chrome) {
+            if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
+                const line = try run_hash.lineWith(c.arena, c.w, out, pass_name, golden, bytes, try browser.page(c.arena, h, script.bytes));
+                if (run_hash.listed(record, line)) {
+                    RunCounts.add(&run_counts.skipped);
+                    return null;
+                }
+                RunCounts.add(&run_counts.stale);
+            } else |_| {
+                // No golden: the comparison below reports it.
+            }
+        }
+
+        const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out});
+        const shown = browser.drive(c.w, h, chrome_endpoint, entry, script.name, c.cfg.timeout_ms) catch |err| {
+            detail("{s} [{s}]: cannot run the page ({t}); is node on PATH?\n", .{ c.fixture.name, pass_name, err });
+            return err;
+        };
+        // Exit 1 is the page failing (an uncaught exception, a step that
+        // could not run), with the page until then on stdout; anything else
+        // is the driver refusing its arguments or the steps.
+        if (shown.exit_code == 1) {
+            detail(
+                "{s} [{s}]: the page failed in {s}\n{s}\n--- the page until then ---\n{s}",
+                .{ c.fixture.name, pass_name, if (chrome) "Chrome" else browser.dom_id, std.mem.trimEnd(u8, shown.stderr, "\n"), shown.stdout },
+            );
+        } else if (shown.exit_code != 0) {
+            detail("{s} [{s}]: the driver refused to run the page\n{s}", .{ c.fixture.name, pass_name, shown.stderr });
+        }
+        if (shown.exit_code != 0) {
+            because("[{s}] page exit {d}: {s}", .{ pass_name, shown.exit_code, oneLine(c.arena, shown.stderr) });
+            return error.PageFailed;
+        }
+        try c.expectGoldenMaybeBless(golden, shown.stdout, bless);
+        if (c.cfg.run_hashes != .record) return null;
+        return try run_hash.lineWith(c.arena, c.w, out, pass_name, golden, shown.stdout, try browser.page(c.arena, h, script.bytes));
     }
 
     /// One build-and-run of a `run/` fixture, against `golden`. Node is not

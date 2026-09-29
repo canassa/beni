@@ -1,0 +1,5 @@
+# Two increments, one decrement, and a message that changes nothing.
+click #inc
+click #inc
+click #dec
+click #none

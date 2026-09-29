@@ -1,0 +1,8 @@
+focus #draft
+input #draft "Ada"
+# Rejected by `update`: the render puts "Ada" back.
+input #draft "Ada!"
+key #draft Enter
+input #draft "Grace"
+# A key the program ignores changes nothing.
+key #draft Tab

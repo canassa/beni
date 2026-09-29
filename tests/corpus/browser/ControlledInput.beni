@@ -1,0 +1,49 @@
+-- A controlled input: the view writes the model's text into the input's
+-- live `value`, so an edit `update` rejects is reverted by the next render
+-- and the page after that step is the page before it. The input keeps its
+-- focus across renders, because the page platform patches the node rather
+-- than replacing it, and `Enter` moves the text into the list below.
+import Page exposing (Node)
+
+
+type Msg
+    = Typed String
+    | Pressed String
+
+
+type alias Model =
+    { draft : String, saved : List String }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Typed text ->
+            if String.contains text "!" then
+                model
+
+            else
+                { model | draft = text }
+
+        Pressed key ->
+            if key == "Enter" then
+                { draft = "", saved = model.draft :: model.saved }
+
+            else
+                model
+
+
+view : Model -> Node Msg
+view model =
+    Page.element "form"
+        []
+        [ Page.element "input"
+            [ Page.attribute "id" "draft", Page.value model.draft, Page.onInput Typed, Page.onKeyDown Pressed ]
+            []
+        , Page.element "ul" [] (List.map model.saved (\text -> Page.element "li" [] [ Page.text text ]))
+        ]
+
+
+main : Page.Program
+main =
+    Page.sandbox { init = { draft = "", saved = [] }, update = update, view = view }

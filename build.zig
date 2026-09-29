@@ -402,6 +402,7 @@ pub fn build(b: *std.Build) void {
         .perf_install = &perf_install.step,
         .toy_install = &toy_install.step,
         .budget = budget_env,
+        .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
     };
     // A process that runs an emitted program skips Node when the run's
     // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
@@ -473,6 +474,16 @@ pub fn build(b: *std.Build) void {
     if (records_scenarios) bb.runSharded(&record_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .run_hashes = "record", .report_dir = record_dir, .budget = false }, 1);
     b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
 
+    // The `browser/` corpus in a real browser: every fixture's pages run in
+    // one headless Chrome instead of happy-dom, against the same goldens
+    // (`tests/blackbox/browser.zig`), so a difference between the two DOMs
+    // that a fixture reaches fails here. Chrome comes from `-Dchrome` or
+    // `PATH` (`nix develop .#browser`); with none the step fails and says
+    // so. Takes `-Dcorpus`; not a gate, and no budget: the browser is one
+    // process shared by every case.
+    const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");
+    browser_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "chrome", .budget = false }).step);
+
     // The run hashes' own scenarios drive the corpus walker, a test binary
     // that runs one scenario program (`run_hash_probe.zig`, compiled without
     // `-Dtest-filter` so a filter never empties it) and the summary tool as
@@ -502,6 +513,22 @@ pub fn build(b: *std.Build) void {
         run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
         run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
         step.dependOn(&run.step);
+        blackbox_step.dependOn(step);
+    }
+    // The browser kind's scenarios drive the corpus walker too, on corpora
+    // of their own; each loads a page or two, so they run as three
+    // processes.
+    {
+        const file = "tests/blackbox/browser_test.zig";
+        const step = bb.fileStep(file);
+        const t = bb.artifact(file);
+        const shards = 3;
+        for (0..shards) |k| {
+            const run = bb.run(t, .{ .root = "tests/corpus", .shard = b.fmt("{d}/{d}", .{ k, shards }) });
+            run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", b.getInstallPath(.prefix, "tools/corpus_test"));
+            run.step.dependOn(&corpus_tool_install.step);
+            step.dependOn(&run.step);
+        }
         blackbox_step.dependOn(step);
     }
 
@@ -1606,6 +1633,9 @@ const HarnessEnvironment = struct {
     /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
     run_hashes: []const u8 = "",
     report_dir: []const u8 = "",
+    /// The corpus walker's `BENI_BROWSER`: `chrome` runs the `browser/`
+    /// pages in Chrome instead of happy-dom.
+    browser: []const u8 = "",
     /// Whether each test and corpus case is held to the CPU budget
     /// (`tests/test_runner.zig`): every run the gates make is.
     budget: bool = true,
@@ -1635,6 +1665,9 @@ const Blackbox = struct {
     toy_install: *std.Build.Step,
     /// `-Dtest-budget`, for every run held to it.
     budget: TestBudget,
+    /// `-Dchrome`, pinned as `BENI_CHROME` on every run: the Chrome
+    /// `test-browser` runs pages in, or empty to find one on `PATH`.
+    chrome: []const u8,
 
     /// `test-blackbox-<file>`: the step that runs one black-box test file.
     fn fileStep(bb: Blackbox, root: []const u8) *std.Build.Step {
@@ -1692,6 +1725,8 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
         r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
+        r.setEnvironmentVariable("BENI_BROWSER", env.browser);
+        r.setEnvironmentVariable("BENI_CHROME", bb.chrome);
         // The gates' budget in instructions, for the pending scenarios whose
         // finding is that they do not fit it (`pending_test.zig`).
         r.setEnvironmentVariable("BENI_PENDING_BUDGET_INSTRUCTIONS", bb.budget.instructions);

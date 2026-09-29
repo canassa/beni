@@ -1,0 +1,10 @@
+-- A project that brings its own platform in `platform/`, and is built for
+-- it instead of the `page` platform: the way a fixture tests a page
+-- platform other than the harness's own. Its runtime writes one heading
+-- into the page, and that heading is the whole golden.
+import Title
+
+
+main : Title.Program
+main =
+    Title.heading "Hello from a platform of its own"

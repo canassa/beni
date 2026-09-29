@@ -20,6 +20,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
+| `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 The two `check/` kinds also take a **directory** as one fixture: every
@@ -71,6 +72,67 @@ upgrade, and commit the records with the change; on a merge conflict in
 them, take either side and regenerate. The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
 show a recorded build skipped, a changed one run, and a mismatch refused.
+
+### `browser/`: a program in a page
+
+A `browser/` fixture is built like a `run/` one, twice, for the `page`
+test platform (`tests/platforms/page/`: a view written with `foreign`
+calls, a model, messages rendered on one microtask flush) — or, as a
+project, for its own `platform/`. Each build is then loaded into a page by
+`tests/browser/driver.mjs`, which runs `<name>.steps` (`_expected.steps`
+in a project) against it, one step per line, `#` for a comment:
+
+    click <selector>            a bubbling `click`
+    input <selector> "<text>"   set `.value`, then `input`
+    key <selector> <key>        `keydown` and `keyup` with that `key`
+    focus <selector>            `.focus()`
+
+A selector is one CSS selector without spaces and must match an element.
+The golden is the transcript: `-- load`, then `-- <step>` for each step,
+each followed by what the page logged (`console.log: …`) and then
+`document.body`, one node per line, text and attribute values as JSON
+strings, a form control's live `.value` (and `.checked`) after its
+attributes, `:focus` on the focused element — or `(the DOM did not
+change)`. An uncaught exception in the page, and a step that cannot run,
+fail the case with the step, the message and where it was thrown; they
+are never a golden. `<name>.release-expected` works as in `run/`.
+
+**Which DOM.** The gates run the page in Node under happy-dom,
+`tests/browser/happy-dom.mjs`: one vendored, checksummed file that
+`tests/browser/vendor.sh` regenerates from pinned versions, so the gates
+need neither a browser nor the network. `zig build test-browser` runs the
+same fixtures in one headless Chrome (a fresh target per page) against the
+same goldens; Chrome comes from `-Dchrome=` or `PATH` (`nix develop
+.#browser`). `tests/blackbox/browser.zig` has the measurements behind the
+choice. Where the two DOMs are known to differ, a fixture that reaches the
+difference carries a `<name>.chrome-expected`, which `test-browser`
+compares instead of `.expected`. The differences known today:
+
+- the HTML parser: after a misnested `</p>` (`<p><div></div></p>`),
+  Chrome makes an empty `<p></p>` and happy-dom does not;
+- event loop order: the page runs on Node's event loop, so the order of
+  timers, `MessageChannel` messages and I/O against each other is Node's,
+  and there is no `requestAnimationFrame` frame clock; a fixture about
+  scheduling order belongs to `test-browser`;
+- layout: happy-dom lays nothing out, so sizes and positions are zero;
+- steps dispatch untrusted events in both DOMs, and `key` types nothing.
+
+**Run hashes** work as in `run/`, with the DOM on the line
+(`dev v24.19.0 happy-dom-20.14.5 <sha-256>`) and the digest covering the
+DOM's checksum, the driver and the steps as well; `zig build
+test-run-hashes` records them. `test-browser` never skips and never
+records.
+
+**How the `dom` lowering's fixtures plug in** (`backend.md` §15.10). The
+`page` platform is the harness's own, standing in until `platforms/browser`
+exists. When it does, a `dom` fixture is a `browser/` fixture built for
+`browser` instead: give the kind a `browser/dom/` subdirectory whose
+fixtures take `--platform=browser` (one line in `fixturesOf`, as `markup/`
+does for the check kinds), or give a project fixture a `platform/` that
+layers on `browser` by name, as `run/MarkupFieldIdentity` layers on
+`node`. The steps, the transcript, the run hashes and `test-browser` are
+unchanged; the differential oracle against dom-expressions' fixtures is a
+separate, DOM-free comparison of template strings and walks.
 
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).

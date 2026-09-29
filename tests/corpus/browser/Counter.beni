@@ -1,0 +1,41 @@
+-- A click changes the DOM: each `click` step sends a message through
+-- `update`, and the page after the step shows the count the model now
+-- holds. `Debug.log` in `update` lands in the transcript under the step
+-- that caused it, and a click whose message leaves the model as it was
+-- leaves the DOM as it was.
+import Page exposing (Node)
+
+
+type Msg
+    = Increment
+    | Decrement
+    | Stay
+
+
+update : Msg, Int -> Int
+update msg count =
+    case msg of
+        Increment ->
+            Debug.log (count + 1) "count"
+
+        Decrement ->
+            count - 1
+
+        Stay ->
+            count
+
+
+view : Int -> Node Msg
+view count =
+    Page.element "main"
+        []
+        [ Page.element "button" [ Page.attribute "id" "dec", Page.onClick Decrement ] [ Page.text "-" ]
+        , Page.element "output" [] [ Page.text (String.fromInt count) ]
+        , Page.element "button" [ Page.attribute "id" "inc", Page.onClick Increment ] [ Page.text "+" ]
+        , Page.element "button" [ Page.attribute "id" "none", Page.onClick Stay ] [ Page.text "?" ]
+        ]
+
+
+main : Page.Program
+main =
+    Page.sandbox { init = 0, update = update, view = view }

@@ -1,0 +1,43 @@
+-- load
+<body>
+  <form>
+    <input id="draft" .value="">
+    <ul></ul>
+  </form>
+</body>
+-- focus #draft
+<body>
+  <form>
+    <input id="draft" .value="" :focus>
+    <ul></ul>
+  </form>
+</body>
+-- input #draft "Ada"
+<body>
+  <form>
+    <input id="draft" .value="Ada" :focus>
+    <ul></ul>
+  </form>
+</body>
+-- input #draft "Ada!"
+(the DOM did not change)
+-- key #draft Enter
+<body>
+  <form>
+    <input id="draft" .value="" :focus>
+    <ul>
+      <li>"Ada"</li>
+    </ul>
+  </form>
+</body>
+-- input #draft "Grace"
+<body>
+  <form>
+    <input id="draft" .value="Grace" :focus>
+    <ul>
+      <li>"Ada"</li>
+    </ul>
+  </form>
+</body>
+-- key #draft Tab
+(the DOM did not change)

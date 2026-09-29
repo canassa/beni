@@ -17,6 +17,10 @@
 //! the other files' hashes and is never run. Every field is length-prefixed,
 //! so no two different inputs feed the hash the same bytes.
 //!
+//! A `browser/` fixture's record is the same file with one more field, the
+//! DOM its page ran in (`dev v24.19.0 happy-dom-20.14.5 <sha-256 hex>`), and
+//! its digest covers the page's other inputs too (`lineWith`, `browser.zig`).
+//!
 //! A line is written only by the walker's recording mode
 //! (`BENI_RUN_HASHES=record`, `zig build test-run-hashes`), and only after
 //! Node ran the program, it exited 0, and its stdout equalled the golden.
@@ -75,13 +79,49 @@ pub fn line(
     golden_name: []const u8,
     golden: []const u8,
 ) ![]const u8 {
+    return lineWith(arena, w, out_dir, pass, golden_name, golden, null);
+}
+
+/// What a record line covers beyond a `run/` build's: the `browser/`
+/// kind's page (`browser.zig`), whose verdict also depends on the DOM the
+/// program ran in and the script that drove it.
+pub const Page = struct {
+    /// The DOM's name and version, written on the line after the Node
+    /// version: `happy-dom-20.14.5`.
+    dom: []const u8,
+    /// Everything else the run read, each fed to the digest by name: the
+    /// DOM's bytes, the driver's, the steps.
+    inputs: []const Input,
+
+    pub const Input = struct { name: []const u8, bytes: []const u8 };
+};
+
+/// `line` for a build whose run also depends on `page`, when there is one:
+/// `<pass> <node version> <dom> <sha-256 hex>`. A `run/` build (`page`
+/// null) gets exactly `line`'s digest and line.
+pub fn lineWith(
+    arena: Allocator,
+    w: *World,
+    out_dir: []const u8,
+    pass: []const u8,
+    golden_name: []const u8,
+    golden: []const u8,
+    page: ?Page,
+) ![]const u8 {
     const node = try nodeVersion(w);
     var h = Sha256.init(.{});
-    feed(&h, "beni run-hash 1");
+    feed(&h, if (page == null) "beni run-hash 1" else "beni page-hash 1");
     feed(&h, pass);
     feed(&h, node);
     feed(&h, golden_name);
     feed(&h, golden);
+    if (page) |p| {
+        feed(&h, p.dom);
+        for (p.inputs) |input| {
+            feed(&h, input.name);
+            feed(&h, input.bytes);
+        }
+    }
     const files = try w.listFiles(out_dir);
     var fed: usize = 0;
     for (files) |rel| {
@@ -97,7 +137,9 @@ pub fn line(
     // is a harness mistake (the wrong `out_dir`), never a digest to record.
     if (fed == 0) return error.EmptyOutputTree;
     const digest = h.finalResult();
-    return std.fmt.allocPrint(arena, "{s} {s} {s}", .{ pass, node, &std.fmt.bytesToHex(digest, .lower) });
+    const hex = std.fmt.bytesToHex(digest, .lower);
+    if (page) |p| return std.fmt.allocPrint(arena, "{s} {s} {s} {s}", .{ pass, node, p.dom, &hex });
+    return std.fmt.allocPrint(arena, "{s} {s} {s}", .{ pass, node, &hex });
 }
 
 fn feed(h: *Sha256, bytes: []const u8) void {

@@ -1,0 +1,40 @@
+-- load
+<body>
+  <main>
+    <button id="dec">"-"</button>
+    <output>"0"</output>
+    <button id="inc">"+"</button>
+    <button id="none">"?"</button>
+  </main>
+</body>
+-- click #inc
+console.log: count: 1
+<body>
+  <main>
+    <button id="dec">"-"</button>
+    <output>"1"</output>
+    <button id="inc">"+"</button>
+    <button id="none">"?"</button>
+  </main>
+</body>
+-- click #inc
+console.log: count: 2
+<body>
+  <main>
+    <button id="dec">"-"</button>
+    <output>"2"</output>
+    <button id="inc">"+"</button>
+    <button id="none">"?"</button>
+  </main>
+</body>
+-- click #dec
+<body>
+  <main>
+    <button id="dec">"-"</button>
+    <output>"1"</output>
+    <button id="inc">"+"</button>
+    <button id="none">"?"</button>
+  </main>
+</body>
+-- click #none
+(the DOM did not change)

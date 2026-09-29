@@ -88,7 +88,7 @@ pub fn main(init: std.process.Init) !u8 {
     const out = &writer.interface;
     const stale = counts.stale + counts.program_stale;
     if (stale != 0) try out.print(
-        "{d} of {d} program runs had no recorded hash for their output and ran under Node (corpus run/ {d} of {d}, scenarios {d} of {d}); `zig build test-run-hashes` records them\n",
+        "{d} of {d} program runs had no recorded hash for their output and ran under Node (corpus run/ and browser/ {d} of {d}, scenarios {d} of {d}); `zig build test-run-hashes` records them\n",
         .{
             stale,
             stale + counts.skipped + counts.program_skipped,
@@ -101,7 +101,7 @@ pub fn main(init: std.process.Init) !u8 {
     const recorded = counts.recorded + counts.program_recorded;
     const refused = counts.refused + counts.program_refused;
     if (recorded != 0 or refused != 0) try out.print(
-        "recorded {d} run hashes (corpus run/ {d}, scenarios {d}); {d} runs failed and have none\n",
+        "recorded {d} run hashes (corpus run/ and browser/ {d}, scenarios {d}); {d} runs failed and have none\n",
         .{ recorded, counts.recorded, counts.program_recorded, refused },
     );
     try out.flush();

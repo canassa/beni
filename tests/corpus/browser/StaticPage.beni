@@ -1,0 +1,22 @@
+-- A page with no steps: the golden is the DOM after the load alone. Its
+-- elements, attributes and text are the program's, in its order, and the
+-- text keeps its spaces, which the transcript quotes so they show.
+import Page exposing (Node)
+
+
+item : String -> Node msg
+item name =
+    Page.element "li" [ Page.attribute "class" "item" ] [ Page.text name ]
+
+
+main : Page.Program
+main =
+    Page.show
+        (Page.element "article"
+            [ Page.attribute "id" "doc", Page.attribute "data-kind" "list" ]
+            [ Page.element "h1" [] [ Page.text "Groceries" ]
+            , Page.element "ul" [] (List.map [ "eggs", "milk" ] item)
+            , Page.element "p" [] [ Page.text "two ", Page.element "em" [] [ Page.text "items" ], Page.text "  left" ]
+            , Page.element "input" [ Page.attribute "type" "checkbox" ] []
+            ]
+        )

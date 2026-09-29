@@ -1,0 +1,16 @@
+-- load
+<body>
+  <article id="doc" data-kind="list">
+    <h1>"Groceries"</h1>
+    <ul>
+      <li class="item">"eggs"</li>
+      <li class="item">"milk"</li>
+    </ul>
+    <p>
+      "two "
+      <em>"items"</em>
+      "  left"
+    </p>
+    <input type="checkbox" .value="on" .checked=false>
+  </article>
+</body>
