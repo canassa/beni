@@ -6624,17 +6624,20 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module. Its reachability leg (`checker-v2.md` §25.7) lands with the
-    /// first lowering that calls this; until then an extractor no other
-    /// reference kept alive is refused rather than imported unwritten.
+    /// module, imported as any other module's value is. Reachability keeps
+    /// it alive through the markup leg of `check/Edges.zig`
+    /// (`checker-v2.md` §25.7).
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
         const it = st.built.tree.items[item_index];
         if (it.kind != .event or it.event == .none) return null;
         if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
-        try l.report(.not_implemented, l.region, "The markup lowering `{s}` reads an event's payload extractor, which this beni does not keep alive for a lowering yet.", .{st.lowering.name});
-        return error.Reported;
+        const extractor_value = st.built.extractors[item_index];
+        const module = l.in.graph.markup.vocabulary orelse return null;
+        if (extractor_value == Dispatch.Markup.no_row) return null;
+        try l.need(module, extractor_value);
+        return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
     }
 
     /// `Maybe`'s representation is `{ $: "Just" | "Nothing", a }` with the

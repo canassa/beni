@@ -1462,6 +1462,7 @@ const Emitter = struct {
             .types = &e.session.checked.types,
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
+            .vocabulary = e.graph().markup.vocabulary,
         };
         // Every module's edges on the workers, each into its own slot and
         // its worker's `kept` arena, then the walk here.

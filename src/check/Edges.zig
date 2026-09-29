@@ -169,6 +169,30 @@ pub fn declEdges(
     try termsEdges(out, scratch, dispatch, roots.items, true);
 }
 
+/// The markup leg (`checker-v2.md` §25.7): every event payload extractor
+/// the markup of declaration `index` names, as a value of the vocabulary
+/// module. An extractor is a reference no `refs` row and no site records;
+/// only a build that lowers markup reads it, so the caller that has the
+/// vocabulary module asks for it. Appended in markup-row order.
+pub fn markupEdges(
+    out: *std.ArrayList(Edge),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    vocabulary: Graph.Index,
+) Error!void {
+    const d = bir.decls[index];
+    const start = d.inst_start.int();
+    const end = d.inst_end.int();
+    for (dispatch.markup) |row| {
+        if (row.kind != .event or row.extractor == Dispatch.Markup.no_row) continue;
+        const at = row.root.int();
+        if (at < start or at >= end) continue;
+        try out.append(scratch, .{ .ext = .{ .module = vocabulary, .value = row.extractor } });
+    }
+}
+
 /// Every edge out of `Dispatch.Derived` row `index`: the terms of its
 /// `body`, recursively. That is how a derived `eq` for
 /// `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.

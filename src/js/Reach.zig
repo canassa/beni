@@ -201,6 +201,10 @@ pub const Input = struct {
     /// (§2, §9). A library's callers are not in the build, so its public
     /// surface is its root set.
     library: bool = false,
+    /// The vocabulary module of a build that lowers markup: an event's
+    /// payload extractor is one of its values, reached by the markup leg
+    /// (`checker-v2.md` §25.7).
+    vocabulary: ?Graph.Index = null,
 
     fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -412,6 +416,7 @@ pub const Builder = struct {
             }
             b.stream.clearRetainingCapacity();
             try Edges.declEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i));
+            if (b.in.vocabulary) |vocabulary| try Edges.markupEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i), vocabulary);
             // Most edges become exactly one node, so one reservation per
             // declaration is the growth the resolve loop would otherwise do
             // a word at a time.
