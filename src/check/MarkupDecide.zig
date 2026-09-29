@@ -307,6 +307,7 @@ pub fn fault(s: *Solve, region: Bir.Inst.Index, f: Tree.MarkupFault) Error!void 
         .void_children => try MarkupTexts.voidChildren(s.report, region, f.token, f.name),
         .raw_attribute => if (s.informational) try MarkupTexts.rawAttribute(s.report, region, f.token, f.name),
         .event_escape => try MarkupTexts.eventEscape(s.report, region, f.token, f.name, try vocab.eventsLike(s.cx.scratch, s.cx.interner.slice(f.name), f.tag)),
+        .srcdoc_escape => try MarkupTexts.srcdocEscape(s.report, region, f.token, f.name),
         .quoted_value, .bare_value => try MarkupTexts.valueForm(s.report, region, f.token, f.name, f.kind == .quoted_value, @enumFromInt(f.type)),
     }
 }

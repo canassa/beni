@@ -1,0 +1,13 @@
+-- `untyped_srcdoc_attribute` (the owner's decision, language.md §11.5): an
+-- iframe's `srcdoc` is a whole document the page runs, scripts included,
+-- so writing it through the untyped escape is refused, in any case (11:17,
+-- 12:17).
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view page =
+    <div>
+        <iframe "srcdoc"="<script>alert(1)</script>" />
+        <iframe "SrcDoc"={page} />
+    </div>

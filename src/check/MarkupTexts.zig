@@ -176,6 +176,19 @@ pub fn eventEscape(r: *Report, region: Bir.Inst.Index, token: u32, name: Symbol,
     try emit(r, .untyped_event_attribute, .@"error", region, token, &out);
 }
 
+/// A quoted `srcdoc`: the owner's refusal, with the other script sinks.
+pub fn srcdocEscape(r: *Report, region: Bir.Inst.Index, token: u32, name: Symbol) Error!void {
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    out.writer.print(
+        \\`"{s}"` writes a whole document into a frame as an untyped attribute.
+        \\
+        \\A page runs that document, its scripts included, so a value there could inject
+        \\one. Load the frame's document from a URL, `src={{url}}`.
+    , .{text(r, name)}) catch return error.OutOfMemory;
+    try emit(r, .untyped_srcdoc_attribute, .@"error", region, token, &out);
+}
+
 /// A quoted or bare attribute value the declared type does not admit
 /// (§25.3): decided from the syntax, so the message names both.
 pub fn valueForm(r: *Report, region: Bir.Inst.Index, token: u32, name: Symbol, quoted: bool, declared: Var) Error!void {

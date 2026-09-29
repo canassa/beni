@@ -5222,6 +5222,7 @@ region named:
 | `key_not_primitive` | the `keyed` value | the key type and the primitive types |
 | `markup_type_in_foreign` | the `foreign` declaration | the markup type, the lowering the build selects and the one the package names (or that it names none), and the markup primitive as the form that serves every lowering |
 | `untyped_event_attribute` | the quoted name | that a page runs an `on…` attribute as script, and the typed event attributes (the owner's refusal, `language.md` §11.5) |
+| `untyped_srcdoc_attribute` (*added 2026-09-29*) | the quoted name | that a page runs a `srcdoc` document, scripts included, and that a frame's document is loaded from a URL (the owner's decision, `language.md` §11.5) |
 | `unkeyed_for` (warning) | the `For` tag | the item type and the two ways to silence it |
 | `raw_markup_attribute` (warning) | the attribute | that the value is written as markup, unescaped |
 

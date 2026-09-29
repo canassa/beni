@@ -181,6 +181,12 @@ const Walker = struct {
                     try w.fault(.event_escape, it.token, name, tag, null);
                     return w.free(it.value);
                 }
+                // An iframe's `srcdoc` is a document the page runs, its
+                // scripts included (the owner's decision).
+                if (std.ascii.eqlIgnoreCase(text, "srcdoc")) {
+                    try w.fault(.srcdoc_escape, it.token, name, tag, null);
+                    return w.free(it.value);
+                }
                 const v = it.value.unwrap() orelse return;
                 return w.expr(v, try g.primitive(g.cx.types.well_known.string), .{ .tag = .markup_attribute, .index = @intFromEnum(name) });
             },

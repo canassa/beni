@@ -307,6 +307,8 @@ pub const Code = enum {
     /// name holding a character that would end it in a page
     /// (`language.md` §11.5).
     invalid_attribute_name,
+    /// And beside it: a quoted `srcdoc`, a document the page runs.
+    untyped_srcdoc_attribute,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -458,6 +460,7 @@ pub fn title(code: Code) []const u8 {
         .markup_type_in_foreign => "MARKUP TYPE IN FOREIGN",
         .untyped_event_attribute => "UNTYPED EVENT ATTRIBUTE",
         .invalid_attribute_name => "INVALID ATTRIBUTE NAME",
+        .untyped_srcdoc_attribute => "UNTYPED SRCDOC ATTRIBUTE",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

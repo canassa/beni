@@ -148,6 +148,8 @@ pub const MarkupFault = struct {
         raw_attribute,
         /// A quoted attribute name beginning with `on`.
         event_escape,
+        /// A quoted `srcdoc`, in any case: a document the page runs.
+        srcdoc_escape,
         /// A quoted value for a row whose type no quoted value is.
         quoted_value,
         /// A bare attribute for a row that is not `Bool`.
