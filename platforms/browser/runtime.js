@@ -109,7 +109,7 @@ export const template = (html, flags) => {
 
 // `(parent, marker, cx)`: a slot, and the mount context what it holds is
 // mounted with.
-export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null });
+export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null, d: false });
 
 const parentOf = (s) => (s.p !== null ? s.p : s.m.parentNode);
 
@@ -293,17 +293,53 @@ const reconcile = (parent, a, b, after) => {
   }
 };
 
+// The keyed list when every item's key is the key of the row already at
+// its position and last render's keys were distinct: nothing moves and
+// the key map stands, so only the rows whose item or inputs changed run.
+// A selection or a label edit takes this path. False, having patched the
+// rows before it, at the first key that differs, when the list is longer
+// or shorter than the rows; `forKeyed` then goes through the whole list,
+// where a row already patched is by then as last time.
+const inPlace = (s, items, keyOf, row, same) => {
+  const old = s.u;
+  let position = 0;
+  for (let at = items; at.$ === 1; at = at.b, position++) {
+    if (position === old.length) return false;
+    let i = old[position];
+    const item = at.a;
+    const key = keyOf === null ? item : keyOf(item);
+    if (i.k !== key) return false;
+    if (!same || i.x !== item) {
+      const n = patchRow(row, i, item, position, s.cx);
+      if (n !== i) {
+        old[position] = n;
+        s.x.set(key, n);
+        n.y = position;
+        i = n;
+      }
+      i.x = item;
+    }
+  }
+  return position === old.length;
+};
+
 // `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
 // key by the item itself. A row keeps its nodes while its key is in the
 // list; items that share a key are matched by their rank among them, so
 // every item renders once. A row whose item, position (when it reads it)
 // and inputs are all as last time is not run at all, and the rows move
-// only when the order of keys changed.
+// only when the order of keys changed. `s.d` says last render's keys were
+// distinct, which is what lets `inPlace` keep the key map.
 export const forKeyed = (s, items, keyOf, row, inputs) => {
   const same = s.b !== null && sameInputs(s.y, inputs);
   if (!(items === s.b && same)) {
     s.b = items;
     s.y = inputs;
+    if (s.d && inPlace(s, items, keyOf, row, same)) {
+      fallback(s, items.$ !== 1, row.f);
+      return;
+    }
+    let distinct = true;
     const old = s.u ?? [];
     const byKey = s.x;
     const next = [];
@@ -337,6 +373,7 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
       const h = map.get(key);
       if (h === undefined) map.set(key, i);
       else {
+        distinct = false;
         let t = h;
         while (t.n !== null) t = t.n;
         t.n = i;
@@ -350,11 +387,16 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
         const f = globalThis.document.createDocumentFragment();
         for (const i of next) put(f, i, null);
         parent.insertBefore(f, s.i !== null ? first(s.i) : s.m);
+      } else if (next.length === 0 && parent.firstChild === first(old[0]) && parent.lastChild === last(old[old.length - 1])) {
+        // The rows are all the parent holds: empty it at once, as Solid
+        // does, rather than remove a thousand rows one by one.
+        parent.textContent = "";
       } else reconcile(parent, old, next, last(old[old.length - 1]).nextSibling);
       if (parked !== null) parked = null;
     }
     s.u = next;
     s.x = map;
+    s.d = distinct;
   }
   fallback(s, items.$ !== 1, row.f);
 };

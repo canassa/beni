@@ -1,0 +1,531 @@
+-- load
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "three"
+        " "
+        "0"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #alone>li:nth-child(2)>input "two's"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="two's">
+        "two"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "three"
+        " "
+        "0"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #alone>li:nth-child(3)>input "three's"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="two's">
+        "two"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "0"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="two's">
+        "two!"
+        " "
+        "0"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "0"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #mark
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="two's">
+        "two!"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li class="done">"two!"</li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two!"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #duplicate
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two!"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "again"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!"</li>
+      <li>"three"</li>
+      <li>"again"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two!!"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "again!"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!!"</li>
+      <li>"three"</li>
+      <li>"again!"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #dedupe
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two!!"
+        " "
+        "1"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #mark
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "2"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "two!!"
+        " "
+        "2"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"one"</li>
+      <li>"two!!"</li>
+      <li>"three"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #rotate
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone">
+      <li>
+        <input .value="">
+        "two!!"
+        " "
+        "2"
+        <!---->
+      </li>
+      <li>
+        <input .value="three's">
+        "three"
+        " "
+        "2"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "one"
+        " "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"two!!"</li>
+      <li>"three"</li>
+      <li>"one"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="mark">"mark"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="dedupe">"dedupe"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="clear">"clear"</button>
+    <ul id="alone"></ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>

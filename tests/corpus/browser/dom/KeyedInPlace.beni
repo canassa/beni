@@ -1,0 +1,102 @@
+-- A keyed `For` whose keys come back in the same order (backend.md §15.5):
+-- the rows are patched where they stand and nothing moves. The inputs are
+-- not controlled, so typed text shows which node is where. A new label and
+-- a new mark patch rows in place, keeping their nodes; a row whose branch
+-- changes is a new node in the same place; after a duplicate key is added
+-- every item still renders, and when it is gone again the rows go back to
+-- being patched in place; a rotation still moves nodes with their rows.
+-- Emptied, a list that is all its parent holds leaves the parent empty,
+-- and one between two other children leaves them where they were.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Relabel
+    | Mark
+    | Toggle
+    | Duplicate
+    | Dedupe
+    | Rotate
+    | Clear
+
+
+type alias Row =
+    { id : Int, label : String, done : Bool }
+
+
+type alias Model =
+    { rows : List Row, mark : Int }
+
+
+rows : List Row
+rows =
+    [ { id = 1, label = "one", done = False }, { id = 2, label = "two", done = False }, { id = 3, label = "three", done = False } ]
+
+
+edit : List Row, (Row -> Row) -> List Row
+edit list f =
+    List.map list (\row -> if row.id == 2 then f row else row)
+
+
+rotate : List a -> List a
+rotate xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            rest ++ [ x ]
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Relabel ->
+            { model | rows = edit model.rows (\row -> { row | label = "${row.label}!" }) }
+
+        Mark ->
+            { model | mark = model.mark + 1 }
+
+        Toggle ->
+            { model | rows = edit model.rows (\row -> { row | done = not row.done }) }
+
+        Duplicate ->
+            { model | rows = model.rows ++ [ { id = 2, label = "again", done = False } ] }
+
+        Dedupe ->
+            { model | rows = List.take model.rows 3 }
+
+        Rotate ->
+            { model | rows = rotate model.rows }
+
+        Clear ->
+            { model | rows = [] }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="duplicate" onClick={Duplicate}>duplicate</button>
+        <button id="dedupe" onClick={Dedupe}>dedupe</button>
+        <button id="rotate" onClick={Rotate}>rotate</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <ul id="alone">
+            <For each={model.rows} keyed={.id}>
+                {\row -> if row.done then <li class="done">{row.label}</li> else <li><input />{row.label} {model.mark}</li>}
+            </For>
+        </ul>
+        <ol id="framed">
+            <li>first</li>
+            <For each={model.rows} keyed={.id}>{\row -> <li>{row.label}</li>}</For>
+            <li>last</li>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { rows = rows, mark = 0 }, update = update, view = view }
