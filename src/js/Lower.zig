@@ -178,6 +178,7 @@ pub fn lower(
     // `toOwned` hands the columns over and leaves the lists empty, so this
     // frees the name-dedup table and, on the failure path, everything else.
     defer b.deinit();
+    try b.reserve(input.bir.insts.len);
 
     var l: Lowerer = .{
         .gpa = gpa,
