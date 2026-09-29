@@ -1,0 +1,14 @@
+-- Markup text in a file with CRLF line endings formats to LF endings: the
+-- `\r` before each line break of a text run goes with the break, on the
+-- run's last line of text as on every other (language.md §11.15).
+v =
+    <p>
+        a
+    </p>
+
+
+w =
+    <p>
+        one
+        two
+    </p>

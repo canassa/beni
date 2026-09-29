@@ -2254,8 +2254,12 @@ const Printer = struct {
         var blanks: u32 = 0;
         var i: usize = 0;
         it = std.mem.splitScalar(u8, seg, '\n');
-        while (it.next()) |line_raw| : (i += 1) {
+        while (it.next()) |line_crlf| : (i += 1) {
             const last_line = i + 1 == count;
+            // A `\r` stands only before a `\n` (the lexer refuses a bare
+            // one), and it goes with the line break, which is printed as a
+            // `\n`: the run reads as its LF twin, as lowering reads it.
+            const line_raw = if (!last_line and std.mem.endsWith(u8, line_crlf, "\r")) line_crlf[0 .. line_crlf.len - 1] else line_crlf;
             const line = if (i == 0) line_raw else line_raw[markupWhitespaceEnd(line_raw, 0)..];
             if (isBlank(line)) {
                 if (i != 0) blanks += 1;
