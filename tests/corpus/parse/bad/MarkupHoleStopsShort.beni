@@ -1,0 +1,7 @@
+-- A hole whose expression stops before its `}` is one message: a lambda's
+-- parameters are separated by spaces, so `\r, i ->` is expected_token at
+-- the comma (7:30), and the rest of the hole up to its `}` is skipped
+-- rather than read as the markup around it, which ended the `For` and the
+-- `ul` with unclosed_element each and the declaration with unexpected_token.
+view items =
+    <ul><For each={items}>{\r, i -> <li>{r}</li>}</For></ul>

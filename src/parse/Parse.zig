@@ -2738,7 +2738,19 @@ fn skipStrayClosingTag(p: *Parse) Allocator.Error!void {
 /// the element around the hole ending before it: `unclosed_delimiter` at
 /// the `{`, naming the tag, and the parser recovers past it.
 fn closeMarkupHole(p: *Parse, open: TokenIndex) Allocator.Error!void {
-    if (!p.closingTagAhead()) return p.expectCloser(.r_brace, open);
+    if (!p.closingTagAhead()) {
+        p.skipInvalid();
+        if (p.eat(.r_brace) != null) return;
+        try p.expectCloser(.r_brace, open);
+        // The expression stopped short of the `}` — `{\r, i -> …}` — and
+        // what is left up to it is the hole's: skipped, so it is not read
+        // as the markup around the hole, which would end every element
+        // open around it with a message each.
+        if (p.peek() == .eof) return;
+        p.recover();
+        _ = p.eat(.r_brace);
+        return;
+    }
     var item = p.itemAtToken(.unclosed_delimiter, open);
     item.expected = .r_brace;
     item.construct = .closing_tag_in_hole;

@@ -1,31 +1,32 @@
-6:1 lower_ident view
-6:6 lower_ident a
-6:8 equal =
-7:5 markup_open <
-7:6 markup_name Card
-7:11 l_brace {
-7:12 lower_ident a
-7:14 dot_dot ..
-7:16 dot_lower .a
-7:18 r_brace }
-7:19 markup_gt >
-7:20 l_brace {
-7:21 dot_dot ..
-7:23 dot_lower .a
-7:25 r_brace }
-7:26 markup_close_open </
-7:28 markup_name Card
-7:32 markup_gt >
-10:1 lower_ident plain
-10:7 lower_ident a
-10:9 equal =
-11:5 lower_ident a
-11:7 dot_dot ..
-11:9 dot_lower .a
-12:1 eof
+7:1 lower_ident view
+7:6 lower_ident a
+7:8 equal =
+8:5 markup_open <
+8:6 markup_name Card
+8:11 l_brace {
+8:12 lower_ident a
+8:14 dot_dot ..
+8:16 dot_lower .a
+8:18 r_brace }
+8:19 markup_gt >
+8:20 l_brace {
+8:21 dot_dot ..
+8:23 dot_lower .a
+8:25 r_brace }
+8:26 markup_close_open </
+8:28 markup_name Card
+8:32 markup_gt >
+11:1 lower_ident plain
+11:7 lower_ident a
+11:9 equal =
+12:5 lower_ident a
+12:7 dot_dot ..
+12:9 dot_lower .a
+13:1 eof
 -- comments
 1:1 plain -- `...` is an `ellipsis` only as the first token of a hole opened in a tag
 2:1 plain -- (frontend.md §9.1). Later in such a hole, in a children hole, and in
 3:1 plain -- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: in the
-4:1 plain -- tag's hole expected_token for the `...` (7:12) and the `}` (7:14), and in
-5:1 plain -- the code unexpected_token (11:7). `Card` is not imported (7:6).
+4:1 plain -- tag's hole expected_token for the `...` (8:12) and the `}` (8:14), in the
+5:1 plain -- children hole unexpected_token (8:21), and in the code unexpected_token
+6:1 plain -- (12:7). `Card` is not imported (8:6).
