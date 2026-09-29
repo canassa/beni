@@ -1,0 +1,15 @@
+-- A `--` comment at column 1 inside a tag or a hole is a comment and not a
+-- declaration: comments are not tokens, so the column-1 rule that ends
+-- markup does not fire on one (frontend.md §9.1). The tokens show the tag
+-- and the hole going on after the comment; only not_implemented at 7:5
+-- and 13:5.
+tagged =
+    <a
+-- note
+        b="1">t</a>
+
+
+holed x =
+    <p>{
+-- note
+        x}</p>

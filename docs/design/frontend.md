@@ -646,7 +646,12 @@ below it, a newline followed by a non-space byte at column 1 pops the stack back
 ("brackets do not suspend layout") stated in the lexer, and it is what keeps an unclosed element from
 swallowing the rest of the file as text: the parser then sees a declaration where a child was
 expected and reports `unclosed_element` at the opener (§9.5). Nothing valid is lost, because a byte at
-column 1 always begins a declaration.
+column 1 always begins a declaration — **except a `--` comment in `tag` or `hole` mode**, which does not
+end markup: a comment is not a token, so layout does not see it, and there it is a comment. Between tags
+`--` is text and in a closing tag two stray bytes, so in `children` and `close` mode a column-1 `--`
+ends markup like any other byte. *Amended 2026-09-29, after the lexer's review: the sentence before the
+exception was false for comments, and a column-1 comment inside a tag or a hole ended the markup and
+lexed the rest of the tag as code.*
 
 **The stack is bounded**: at 4 096 entries a further push is `nesting_too_deep`, reported by the
 lexer at the offending byte, and the construct is lexed from there as if the push had happened

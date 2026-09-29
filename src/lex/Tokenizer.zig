@@ -896,9 +896,16 @@ fn atColumnOneBreak(t: *const Tokenizer) bool {
 
 /// Called right after a newline was consumed while some markup mode is on
 /// the stack: a non-space byte at column 1 pops back to `normal`, and is
-/// lexed as the start of a declaration (frontend.md §9.1).
+/// lexed as the start of a declaration (frontend.md §9.1) — unless it
+/// begins a `--` comment in `tag` or `hole` mode, where a comment is a
+/// comment: not a token, so layout does not see it. Between tags `--` is
+/// text, and in a closing tag two stray bytes, so there the rule applies
+/// to it as to any byte.
 fn endMarkupAtColumnOne(t: *Tokenizer) void {
-    if (isColumnOneBreak(t.source, t.index)) t.popAll();
+    const src = t.source;
+    if (!isColumnOneBreak(src, t.index)) return;
+    if ((t.mode == .tag or t.mode == .hole) and src[t.index] == '-' and src[t.index + 1] == '-') return;
+    t.popAll();
 }
 
 /// A line terminator in `tag` or `close` mode: consume `\n` or `\r\n` and
