@@ -5176,6 +5176,7 @@ region named:
 | `void_element_with_children` | the first child | the element and its `void` declaration |
 | `key_not_primitive` | the `keyed` value | the key type and the primitive types |
 | `markup_type_in_foreign` | the `foreign` declaration | the markup type, the lowering the build selects and the one the package names (or that it names none), and the markup primitive as the form that serves every lowering |
+| `untyped_event_attribute` | the quoted name | that a page runs an `on…` attribute as script, and the typed event attributes (the owner's refusal, `language.md` §11.5) |
 | `unkeyed_for` (warning) | the `For` tag | the item type and the two ways to silence it |
 | `raw_markup_attribute` (warning) | the attribute | that the value is written as markup, unescaped |
 
@@ -5185,3 +5186,64 @@ value's shape (`frontend.md` §9.7), with a non-function the unification's `type
 
 Warnings are reported only for modules of the root package, as `ambiguous_method_receiver` is, and
 are cached and replayed with the entry like every warning (`fast-compiler.md` §8).
+
+*As built, 2026-09-29, for §25.3–§25.7 and §25.9* (`src/check/Markup.zig`, `constrain/Markup.zig`,
+`MarkupDecide.zig`, `MarkupTexts.zig`). Markup is typed; §25.8's *As built* bullets "Markup under a
+vocabulary is still stopped" and "Quoted `on*` attribute names … are not refused yet" are
+superseded. Where the text left a choice, the smallest reading, and these are they:
+
+- **The vocabulary a module reads** is built once per module that writes markup, after the
+  vocabulary declarations are checked and before any value group: the vocabulary module's
+  published rows, or — in the vocabulary module itself — its interface skeleton's rows less those
+  whose declaration failed, so a row's index is its published index either way. A row's type is
+  read once, at rank `generalized`, and every use copies it.
+- **What the syntax and the rows decide alone** — an unknown element or attribute, a quoted value
+  a row's type does not admit (reported at the value's first token), a bare attribute that is not
+  `Bool`, children of a `void` element, a `raw` attribute, a quoted `on…` name — is found by the
+  generator and reported when the solver reaches it, so it is attributed to the declaration being
+  solved like every other message. An unknown element's items and children are still typed, as
+  values of their own.
+- **The four obligations, and two more.** `renderable`, `handler`, `attr_form` and `row` are
+  §25.4's; `key` is `For`'s and `Show`'s `key(k)`; and **`item`**, decided like `key`, records
+  whether a `For`'s item or a `Show`'s value is primitive-`eq` (§25.7's flag) and, for a `For`
+  with no `keyed` in a module of the root package, is the `unkeyed_for` warning when it is not.
+  A `number`-kinded variable or rigid counts as primitive-`eq`, since `Int` and `Float` both are.
+  Each obligation's boundary rule is taken at §8.1's step 3 with `try`'s defaults, on the list of
+  the frame at its owner's rank, because three of them unify; none reaches step 7.
+- **A `Maybe` or `List` hole whose element is still a variable** is decided at once as markup of
+  the root: no other element type renders, so the element is unified with `H m`. A rigid in a hole
+  is `child_not_renderable` unless it is `number`-kinded.
+- **One mistake, one message.** A hole's "cannot tell" and a key's "must be known" are not said
+  in a declaration that already has an error: there the unknown type is that error's consequence
+  (a row lambda of the wrong arity leaves its parameters unbound).
+- **A handler written bare or quoted** is the `Bool` or `String` it spells and meets the handler
+  rule as any value does. **A literal `keyed` mode** (`keyed`, `keyed={True}`, `keyed={False}`)
+  is typed as the prelude `Bool` it is, and decides nothing.
+- **A component's call** is a `call` node at the callee's instruction, so its messages name the
+  callee and its evidence rides on the callee reference (§13.1's reading for a reference with no
+  call). `children` is interned by the graph when the build has a vocabulary, since no source
+  need spell it. A leading spread is record update, so the spread value must have every field
+  written after it, `children` included.
+- **The markup section** is one row per element, attribute, escape, event, hole, `For` and `Show`,
+  keyed by its markup root's instruction and the node's record in the module's `Bir.extra`,
+  roots in instruction order and each tree depth first, items before children; a component and a
+  fragment have no row, and a component's children written as markup are rows of the root. It is
+  built only for a module that checked clean. An event's extractor is recorded as a value of the
+  vocabulary module's interface, and is absent when the extractor is not `pub`. `dump
+  --stage=dispatch` prints `markup <root> <kind> …`, the root's instruction because a constant
+  attribute has none of its own: `attr Html.class class_list`, `event Html.onInput payload via
+  Html.targetValue`, `hole text number`, `for key arity=1 primitive=false`, `show identity arity=1
+  primitive=true`. `dispatch_bytes` is format 5 (a `markup` column of 20-byte rows) and
+  `entry_bytes` format 5.
+- **The extractor's reachability leg** (§25.7) is not built: no build lowers markup yet — `build`
+  refuses a surviving markup root with `unknown_markup_lowering` (`boundary.md` §9.2) — so the leg
+  lands with the first lowering, which is its first reader.
+- **`markup_type_in_foreign`** is checked with the vocabulary declarations, for every `foreign`
+  value of a platform module when the build has a markup type. The graph carries the build's
+  lowering (the first a package of the chain names) and each package's own, and the cache key of
+  a platform module that declares a `foreign` carries both.
+- **The owner's refusal of quoted `on…` names** is a new code, `untyped_event_attribute`
+  (`language.md` §10), at the quoted name; its hint names the events the element accepts whose
+  name is the quoted one in another case.
+- **Warnings** are emitted under the same switch as `ambiguous_method_receiver`, for modules of
+  the root package only.

@@ -814,6 +814,14 @@ The smallest readings, and what waits for the lowering interface:
 - **The markup runtime's checks** (§9.4.5), and the primitives' binding to it, arrive with the first
   lowering.
 
+*As built, 2026-09-29, once markup is typed* (`checker-v2.md` §25, *As built* for §25.3–§25.9):
+the "cannot occur yet" above no longer holds. **A surviving markup root in a chain that names no
+lowering** is `unknown_markup_lowering` against the selected platform's manifest, like a surviving
+primitive and in the same walk: one diagnostic, naming the first declaration in module order that
+writes surviving markup or is a surviving primitive. **`markup_type_in_foreign`** (§9.3) compares
+the build's lowering — the first `"lowering"` a package of the chain names — with the one the
+`foreign`'s own package names, which the graph carries per package.
+
 ### 9.4 The markup lowering interface
 
 A **markup lowering** is a Zig module, compiled into the beni binary (§9.5), that turns the typed
