@@ -1265,7 +1265,10 @@ characters `&amp;`), and nothing an interpolation yields is decoded. Whitespace 
 an attribute value, as in Solid. `class="btn ${size}"` is the idiom this form buys. A `{"…"}` value
 is an ordinary expression and decodes nothing, which is the way to write a literal reference.
 
-**Each attribute may be written once** (`duplicate_attribute`). **Order is source order**, for
+**Each attribute may be written once** (`duplicate_attribute`). *Amended 2026-09-29:* on an
+element, names are compared as HTML compares them, ASCII case folded, so `title` and `"TITLE"`
+are one attribute written twice; a component's props are record fields and compare exactly.
+**Order is source order**, for
 evaluation (§11.11) and for what a lowering writes, attributes and events interleaved as written —
 `<input type="range" value={v} />` sets `type` before `value`, which a range input needs.
 

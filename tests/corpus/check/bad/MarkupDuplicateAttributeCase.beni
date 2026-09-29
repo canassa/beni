@@ -1,0 +1,8 @@
+-- HTML folds an element's attribute names to lower case, so `title` and
+-- `"TITLE"` are one attribute written twice, and the second would silently
+-- win: duplicate_attribute at the second (7:23), naming the first's line
+-- (language.md §11.5). The same for two quoted names that differ in case
+-- (8:25).
+view model =
+    <div><p title="a" "TITLE"="b" />
+        <p "data-X"="1" "DATA-x"="2" /></div>

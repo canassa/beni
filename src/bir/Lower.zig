@@ -3109,14 +3109,32 @@ const Items = struct { items: SubRange, spread: Inst.OptionalIndex, children_tok
 /// The attribute names of one tag, each with the token that first wrote
 /// it, for `duplicate_attribute`: a scan of the few a person writes, and a
 /// map past `linear_limit`, so a generated tag of thousands costs n and
-/// not n²/2. A symbol is a sparse key here (the top of this file says why).
+/// not n²/2. An element's names are compared as HTML reads them, ASCII
+/// case folded (`fold`): `title` and `"TITLE"` are one attribute. A
+/// component's are record fields, compared exactly.
 const AttrNames = struct {
     const linear_limit = 16;
 
-    few: [linear_limit]struct { Symbol, TokenIndex } = undefined,
+    fold: bool,
+    few: [linear_limit]struct { []const u8, TokenIndex } = undefined,
     len: usize = 0,
     /// Every name, once there are more than `linear_limit`.
-    map: std.AutoHashMapUnmanaged(Symbol, TokenIndex) = .empty,
+    map: std.HashMapUnmanaged([]const u8, TokenIndex, NameContext, std.hash_map.default_max_load_percentage) = .empty,
+
+    const NameContext = struct {
+        fold: bool,
+
+        pub fn hash(c: NameContext, s: []const u8) u64 {
+            if (!c.fold) return std.hash.Wyhash.hash(0, s);
+            var h: std.hash.Wyhash = .init(0);
+            for (s) |ch| h.update(&.{std.ascii.toLower(ch)});
+            return h.final();
+        }
+
+        pub fn eql(c: NameContext, x: []const u8, y: []const u8) bool {
+            return if (c.fold) std.ascii.eqlIgnoreCase(x, y) else std.mem.eql(u8, x, y);
+        }
+    };
 
     fn deinit(a: *AttrNames, gpa: Allocator) void {
         a.map.deinit(gpa);
@@ -3124,17 +3142,18 @@ const AttrNames = struct {
 
     /// Records `name`, written at `token`; the token that wrote it first
     /// when the tag already has it.
-    fn first(a: *AttrNames, gpa: Allocator, name: Symbol, token: TokenIndex) Allocator.Error!?TokenIndex {
+    fn first(a: *AttrNames, gpa: Allocator, name: []const u8, token: TokenIndex) Allocator.Error!?TokenIndex {
+        const context: NameContext = .{ .fold = a.fold };
         if (a.len < linear_limit) {
-            for (a.few[0..a.len]) |e| if (e[0] == name) return e[1];
+            for (a.few[0..a.len]) |e| if (context.eql(e[0], name)) return e[1];
             a.few[a.len] = .{ name, token };
             a.len += 1;
             return null;
         }
         if (a.map.count() == 0) {
-            for (a.few) |e| try a.map.put(gpa, e[0], e[1]);
+            for (a.few) |e| try a.map.putContext(gpa, e[0], e[1], context);
         }
-        const entry = try a.map.getOrPut(gpa, name);
+        const entry = try a.map.getOrPutContext(gpa, name, context);
         if (entry.found_existing) return entry.value_ptr.*;
         entry.value_ptr.* = token;
         return null;
@@ -3148,7 +3167,7 @@ const AttrNames = struct {
 fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, component: bool) Allocator.Error!Items {
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
-    var seen: AttrNames = .{};
+    var seen: AttrNames = .{ .fold = !component };
     defer seen.deinit(l.scratch_allocator);
     var spread: Inst.OptionalIndex = .none;
     var children_token: ?TokenIndex = null;
@@ -3167,7 +3186,7 @@ fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, compon
                 const item = try l.markupItem(attr);
                 const token = l.tree.nodeMainToken(attr);
                 const name = l.symbols.items[@intFromEnum(item.name)];
-                if (try seen.first(l.scratch_allocator, name, token)) |first| {
+                if (try seen.first(l.scratch_allocator, l.interner.slice(name), token)) |first| {
                     // A quoted name is reported whole, quotes included.
                     const last = if (l.tags[token] == .str_start) l.stringEnd(token) else token;
                     const first_last = if (l.tags[first] == .str_start) l.stringEnd(first) else first;

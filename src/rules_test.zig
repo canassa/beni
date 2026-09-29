@@ -64,7 +64,6 @@ const allowlist = [_]Allowed{
     .{ .path = "bir/Lower.zig", .needle = "import_by_module: Symbol.Map(u32)", .why = lowering_names },
     .{ .path = "bir/Lower.zig", .needle = "scope_index: Symbol.Map(u32)", .why = lowering_names },
     .{ .path = "bir/Lower.zig", .needle = "type_param_index: Symbol.Map(u32)", .why = lowering_names },
-    .{ .path = "bir/Lower.zig", .needle = "map: std.AutoHashMapUnmanaged(Symbol, TokenIndex)", .why = "one markup tag's attribute names, only past 16 of them; sparse in the worker's symbols like the name tables" },
     .{ .path = "bir/Lower.zig", .needle = "parents: std.AutoHashMapUnmanaged(u32, []Parent)", .why = "markup rows only: the few declarations a row's analysis reaches" },
     .{ .path = "bir/Lower.zig", .needle = "summaries: std.AutoArrayHashMapUnmanaged(u32, Summary)", .why = "markup rows only: the functions a row's analysis reaches, iterated in the order reached" },
     .{ .path = "bir/Lower.zig", .needle = "set: U32Set", .why = "a record's field names, only past 16 fields" },

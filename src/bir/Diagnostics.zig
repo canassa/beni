@@ -336,12 +336,20 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\silently win. Keep one of the two.
             , .{other});
         } else {
-            try w.print(
-                \\The attribute `{s}` is written twice; the first is on line {d}.
+            try w.print("The attribute `{s}` is written twice; the first is on line {d}.", .{ text, other_line });
+            // Spelled differently: an element's names are one to HTML,
+            // which folds their case.
+            if (!std.mem.eql(u8, std.mem.trim(u8, text, "\""), std.mem.trim(u8, other, "\""))) try w.print(
+                \\ HTML reads an
+                \\element's attribute names without regard to case, so `{s}` and `{s}` are one
+                \\name.
+            , .{ other, text });
+            try w.writeAll(
+                \\
                 \\
                 \\Each attribute is written once, or the second would silently win. Remove one of
                 \\the two.
-            , .{ text, other_line });
+            );
         },
         .spread_on_element => try w.print(
             \\`<{s}>` cannot take a spread: a spread `{{...record}}` is the first attribute of a
