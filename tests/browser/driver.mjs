@@ -25,6 +25,10 @@
 //                               export in the same task, then the line
 //                               `(flushed)`
 //   input <selector> "<text>"   set `.value`, then a bubbling `input` InputEvent
+//   type <selector> "<text>"    per character, a task of its own: append it to
+//                               the live `.value`, then an `input` InputEvent;
+//                               the page settles between two characters, as
+//                               it does between two keystrokes
 //   key <selector> <key>        `keydown` then `keyup` KeyboardEvents with that `key`
 //   focus <selector>            `.focus()`
 //
@@ -32,7 +36,9 @@
 // microtask it queued, so what the page logged before and after them says
 // what ran in that task: a render the program ran at once is logged
 // before the line, one it deferred after. The program runtime is the
-// build's `_platform/runtime.foreign.mjs`.
+// module the entry file imports `run` from: `_platform/runtime.foreign.mjs`,
+// or a base platform's under `_platform/_<name>/` when the program's
+// platform is layered on it.
 //
 // A selector is one CSS selector without spaces (`#id`, `li:nth-child(2)>a`)
 // and must match an element. Events are dispatched with `dispatchEvent`, in
@@ -82,7 +88,7 @@ function prelude() {
 
 // Import the program's entry file; an exception while its modules evaluate
 // is recorded like any other uncaught one.
-async function load(url) {
+async function load({ url, runtime }) {
   const record = globalThis.__beniHarness;
   try {
     await import(url);
@@ -91,9 +97,9 @@ async function load(url) {
     return;
   }
   // The same module instance the program's entry file imported, for the
-  // `flush` step; a platform whose runtime has another name has none.
+  // `flush` step; an entry file that imports no `run` has none.
   try {
-    record.runtime = await import(new URL("./_platform/runtime.foreign.mjs", url).href);
+    record.runtime = runtime === null ? null : await import(new URL(runtime, url).href);
   } catch {
     record.runtime = null;
   }
@@ -120,6 +126,12 @@ function step(s) {
     case "input":
       if (!("value" in target)) return `\`${s.selector}\` has no \`value\``;
       target.value = s.text;
+      target.dispatchEvent(new InputEvent("input", { ...init, cancelable: false, inputType: "insertText", data: s.text }));
+      return null;
+    // One character of a `type` step: what the control shows now, plus it.
+    case "type":
+      if (!("value" in target)) return `\`${s.selector}\` has no \`value\``;
+      target.value += s.text;
       target.dispatchEvent(new InputEvent("input", { ...init, cancelable: false, inputType: "insertText", data: s.text }));
       return null;
     case "key":
@@ -225,13 +237,14 @@ if (stepsPath !== undefined) {
       s.count = Number(argument);
     } else if (command === "click" || command === "focus" || command === "flush") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
-    } else if (command === "input") {
+    } else if (command === "input" || command === "type") {
       try {
         s.text = JSON.parse(argument ?? "");
       } catch {
         s.text = undefined;
       }
-      if (typeof s.text !== "string") usage(`${where}: \`input\` takes a selector and a JSON string`);
+      if (typeof s.text !== "string") usage(`${where}: \`${command}\` takes a selector and a JSON string`);
+      if (command === "type" && s.text === "") usage(`${where}: \`type\` takes at least one character`);
     } else if (command === "key") {
       if (argument === undefined || /\s/.test(argument)) usage(`${where}: \`key\` takes a selector and one key name`);
       s.key = argument;
@@ -386,12 +399,23 @@ const phase = async (title, act) => {
   return true;
 };
 
-if (await phase("load", () => page.run(load, entryUrl))) {
+// The program runtime, as the entry file names it.
+const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?\} ?from ?"([^"]+)";$/m);
+const runtime = runtimeImport === null ? null : runtimeImport[1];
+
+if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {
   let ok = true;
   for (const s of steps) {
     ok = await phase(s.line, async () => {
-      const why = await page.run(step, s);
-      return why === null ? null : `${s.where}: ${s.line}: ${why}`;
+      // A `type` step is one task per character, the page settling after
+      // each but the last, which the phase settles.
+      const tasks = s.command === "type" ? [...s.text].map((ch) => ({ ...s, text: ch })) : [s];
+      for (const [i, t] of tasks.entries()) {
+        if (i !== 0) await page.run(settle);
+        const why = await page.run(step, t);
+        if (why !== null) return `${s.where}: ${s.line}: ${why}`;
+      }
+      return null;
     });
     if (!ok) break;
   }

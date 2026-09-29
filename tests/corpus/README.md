@@ -87,6 +87,8 @@ in a project) against it, one step per line, `#` for a comment:
     flush <selector>            a click, then the program runtime's `flush()`
                                 in the same task, then `(flushed)`
     input <selector> "<text>"   set `.value`, then `input`
+    type <selector> "<text>"    per character, in a task of its own: append
+                                it to the live `.value`, then `input`
     key <selector> <key>        `keydown` and `keyup` with that `key`
     focus <selector>            `.focus()`
 
@@ -94,8 +96,10 @@ A selector is one CSS selector without spaces and must match an element.
 The two lines in parentheses are logged when the step's own task ends,
 before any microtask it queued, so what the page logged before them ran in
 that task and what it logged after ran later: that is how a fixture shows
-five messages rendering once, or `flush` rendering at once. The program
-runtime is `_platform/runtime.foreign.mjs`.
+five messages rendering once, or `flush` rendering at once. The page
+settles between two characters of a `type`, as between two keystrokes, so
+a controlled input shows whether it was reconciled before the next one.
+The program runtime is the module the entry file imports `run` from.
 The golden is the transcript: `-- load`, then `-- <step>` for each step,
 each followed by what the page logged (`console.log: …`) and then
 `document.body`, one node per line, text and attribute values as JSON
@@ -133,7 +137,9 @@ records.
 
 **The `dom` lowering's fixtures** (`backend.md` §15.10) are under
 `browser/dom/`, files and projects alike, and are built with
-`--platform=browser`; `emit/dom/` and `emit/release/dom/` are `emit/`
+`--platform=browser`; those under `browser/tea/` are built with
+`--platform=browser-tea`, The Elm Architecture written in beni over it.
+`emit/dom/` and `emit/release/dom/` are `emit/`
 fixtures built the same way, the shapes of what the lowering emits. The
 steps, the transcript, the run hashes and `test-browser` are the kind's
 own. The differential oracle against dom-expressions' fixtures is a
