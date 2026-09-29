@@ -368,7 +368,7 @@ mapping.
 | record | object literal, keys in a canonical sorted order so one hidden class per record type — the sort moves the **keys** and never an initialiser (below) |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
 | record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; the owner's decision that a record alias constructor builds the record, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (decided 2026-09-24 under rule 7). An **imported** alias's constructor is the same record, built and read by the field names interface v3's `record_alias` constructor row carries (`checker-v2.md` §14.2): until 2026-09-25 it was `not_implemented`, because interface v2 had no names |
-| nullary constructor | the bare tag |
+| nullary constructor | the bare tag — or, for a type that also has a constructor with fields, one module-level constant object per constructor (*A nullary constructor is one object*, below; 2026-09-29) |
 | tuple | fixed-shape object per arity, no runtime tag |
 | list | cons cells (`{$:1, a, b}` / the empty singleton), pending a benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below) |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
@@ -428,6 +428,46 @@ not say.
 native strings, which are Elm's answers and the ones pattern matching and interop respectively push
 toward. The optimiser benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
 open question 2 requires, and records the result here either way.
+
+### A nullary constructor is one object
+
+*Added 2026-09-29* (research 39 §10.3; decided by the project's manager on the owner's delegation).
+Correction 2 above pads every constructor of a type that has any constructor with fields, so
+`Nothing` is `{$: "Nothing", a: null}` — and until this amendment that literal was written at every
+use, so `Run` in a `view` was a new object on every render. A helper call in a hole is skipped only
+when its arguments are identical (`language.md` §11.6), so `button "run" Run` was called on every
+render and never skipped, and `language.md` §11.12's identity promise bought nothing for the
+commonest message there is. **A padded nullary constructor is now one module-level constant per
+constructor, in the development build and under `--release` alike**: every use a module writes —
+in value position, as a top-level value, as an argument, as a `==` operand that is not tested in
+place, as a message in markup — reads the same `const`, so `Run` is `===` `Run` wherever that
+module wrote it. Values are immutable, so sharing one is sound; nothing in beni can tell it from a
+fresh one except a platform's reference check, which is the point.
+
+- **Where it lives: the module that uses it**, in the synthesised run beside §9.1's comparators —
+  `const <Module>$<Ctor> = {$: "<Ctor>", a: null, …};` for a constructor the module declares, and
+  `<Module>$<Declaring$Module>$<Ctor>` for one it imports (`Main$Maybe$Nothing`). The constants are
+  written in front of the markup hoists and the rest of the run, so a top-level `none = Nothing`
+  reads an initialised `const`. The names cannot collide with a declaration (lower-case), a derived
+  function (`$$`) or an import (`<Module>$<value>`), and `--release` renames them with every other
+  top-level name (§9 item 2).
+- **Written only when used.** Like the comparators the constant is *discovered* while a surviving
+  body is lowered (§9), so an eliminated declaration's constructors write nothing, and a module that
+  builds no padded nullary constructor does not move by a byte. A pattern, a tag test, `?`, and `==`
+  tested in place (below) read the tag and never the constant.
+- **Per module, not per program**, and deliberately. One object for the whole program would live in
+  the declaring module, which a build would then have to write and import for one constant — a file
+  for `core/Maybe` in every program that says `Nothing` — and core's siblings build their own
+  `Nothing` anyway (`String.toInt`), so a program-wide identity could not be promised. What the
+  render loop needs is narrower and holds: **the same expression yields the same object every time
+  it runs**, and a value that is not rebuilt keeps its identity (`language.md` §11.12).
+- **Not changed**: an all-nullary type is still its bare tag string, which has identity already;
+  `Bool` is still `true`/`false`; the empty list is still built at each use (§4's list row, a
+  separate representation); a record alias's constructor still builds its record.
+
+Fixtures: `emit/NullaryConstant` (local and imported constants, a top-level use, uses inside
+functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--release`, as §15.8's),
+`browser/dom/NullaryHelperSkip` (`button "run" Run` called once, at mount).
 
 ### A record literal's keys move; its initialisers do not
 

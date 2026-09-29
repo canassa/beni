@@ -1343,8 +1343,8 @@ behind components. The callee and the arguments are evaluated with the markup, i
 call is made with the platform's render, after the markup's other values, as a component's is (§6,
 *Evaluation order*). **A call that passes evidence is never skipped** (`static-dispatch-spike.md`
 §8.2): what it computes depends on more than its written arguments. What defeats the skip is what
-defeats a component's: an argument built during the render — a record literal, a message, a list —
-is a new value each time. §11.11 says what a skip means for evaluation.
+defeats a component's: an argument built during the render — a record literal, a message with
+arguments, a list — is a new value each time; a nullary constructor is not (§11.12). §11.11 says what a skip means for evaluation.
 
 ### 11.7 Events
 
@@ -1559,6 +1559,12 @@ add allocations. `lazy` is not added: the per-hole reference check is the memois
 
 beni has no reference equality a program can call, so the promise is observable only through what a
 platform does with it; it is pinned by fixtures in both builds (`backend.md` §15.8).
+
+**A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
+nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an
+identical argument on every render and §11.6's skip applies to it. A constructor with arguments
+still builds a new value each time it is applied. `backend.md` §4, *A nullary constructor is one
+object*, says how.
 
 ### 11.13 The plain-call form, and markup primitives
 
