@@ -1,8 +1,10 @@
 # Transparent effects — implementation plan
 
-**Status:** plan, 2026-09-18. Nothing is started. Written for the project owner to read *before* any
+**Status:** plan, 2026-09-18. Written for the project owner to read *before* any
 effects code exists, because several of the questions below are decisions and not findings, and they
-are marked as such (§5).
+are marked as such (§5). **All eight §5 decisions were taken by the owner on 2026-09-30**, each
+recorded under its question. The first slice, inference in the checker, is specified in
+[`transparent-effects-proposal.md`](../docs/design/transparent-effects-proposal.md) §14.
 
 **What this is.** [`transparent-effects-proposal.md`](../docs/design/transparent-effects-proposal.md)
 — **P2** throughout — is the design argument. This is the work-up against the repository as it
@@ -412,6 +414,8 @@ Applying the same test:
    inside `core/`, and P2 §3.2's own "what postponing costs" concedes the boundary question is the
    load-bearing one. (b)'s failure mode is a suspending `view` returning a suspension object to a
    VDOM patcher — `boundary.md` §4.1's "well-typed code crashes" reproduced by our own compiler.
+   **Decided 2026-09-30 by the owner: (a).** `sync` ships in the first cut, right after inference;
+   [`browser-decisions.md`](browser-decisions.md) W8 answers the same question the same way.
 
 2. **Does effects wait for M3c/M3d, or interleave?** *Options:* (a) after DCE and chunking;
    (b) E1/E2 interleave now, E3+ after DCE.
@@ -419,6 +423,8 @@ Applying the same test:
    rewriting (§7's decision trees are in flight). E3's lowering collides with `Lower.zig` head-on and
    E5 is *blocked* on DCE — double translation without it roughly doubles the emitted `core/List`
    in every program (§3).
+   **Decided 2026-09-30 by the owner: interleave, starting now.** Reachability elimination has
+   landed (`backend.md` §9), so the slice that waited on it no longer has to.
 
 3. **Fiber runtime scope for a first cut.** *Options:* (a) all fifteen primitives of P2 §6.5;
    (b) the eight `research/16` §5.6 calls free under both lowerings, plus `bracket`;
@@ -427,6 +433,8 @@ Applying the same test:
    lowering was chosen and `bracket`, `race` and `timeout` are one mechanism, so a spike omitting
    `bracket` measures the wrong thing; `race`, `timeout`, `parAll`, `Queue` and `RateLimiter` are
    library code over the same record and prove nothing new about the runtime.
+   **Decided 2026-09-30 by the owner: (c) for the spike, (a) for the adoption.** The spike builds
+   `spawn`/`join`/`scope`/`bracket`; the adoption ships all fifteen primitives.
 
 4. **Two bits or one** (P2 §11 Q6). *Options:* (a) infer both, use both; (b) infer both, use only
    `suspends` in v1; (c) one bit.
@@ -435,6 +443,8 @@ Applying the same test:
    nothing once the join machinery is there and keeps the interface bytes right from the first
    release, which is the expensive thing to add later. `Debug.log` is the only `impure` value in
    the repository today (`core/Debug.beni:19`), so v1's `impure` set has one member.
+   **Decided 2026-09-30 by the owner: (b).** Both bits are inferred and published; v1 uses only
+   `suspends`.
 
 5. **What happens to `Program` and `Node.print`.** Measured: `main` is emitted as a module-level
    constant — `const Main$main = Node$print(…)` — evaluated at import time, outside any fiber, with
@@ -445,6 +455,8 @@ Applying the same test:
    ~70 `run/` fixtures that write `main : Program`, and it keeps `boundary.md` §7.2's "a `foreign`
    of effect type is pure to evaluate by construction" true. (b) is the right answer if a program's
    *top level* should be allowed to perform, and that is a language decision, not a platform one.
+   **Decided 2026-09-30 by the owner: (a).** `main : Program` stays and its body is `sync`;
+   [`browser-decisions.md`](browser-decisions.md) W9 is the same decision for the browser.
 
 6. **May a well-known `eq`/`compare` suspend?** (§2.1) *Options:* (a) no — a `must_not_suspend`
    obligation on well-known evidence; (b) move `List.eq`/`compare` into beni over a new uncons
@@ -453,11 +465,14 @@ Applying the same test:
    keeps `==` and `<` non-suspending everywhere (which every reader will assume anyway), and is one
    rule rather than a new `foreign` capability. (c) widens the privileged surface against CLAUDE.md
    rule 6 for a feature nobody has asked for.
+   **Decided 2026-09-30 by the owner: (a).** A well-known `eq` or `compare` must not suspend: a
+   `must_not_suspend` obligation where one is resolved, built with `sync`.
 
 7. **The chain diagnostic's reach** (§2.5). *Options:* (a) one hop per module, no new artifact;
    (b) a full cross-module chain from a side artifact excluded from the M4 hash.
    **Recommendation: (a) for v1.** (b) is an M4 cache-key design decision wearing a diagnostic's
    clothes, and `checker.md` §7 is explicit that provenance must never be hashed with the record.
+   **Decided 2026-09-30 by the owner: (a).** One hop per module, and no side artifact.
 
 8. **`List.map`'s effect order** (§2.4). *Options:* (a) fix `map`, `filter`, `concat`, `filterMap`,
    `partition` and `unzip` now, while it is unobservable; (b) fix them with E3; (c) weaken P2 §5 to
@@ -466,6 +481,10 @@ Applying the same test:
    goldens today, and a silently-wrong program later. (c) is defensible and should be rejected
    explicitly rather than by omission, because "in the order written" is what a reader of
    `List.map ids (\id -> getUser id)` will assume.
+   **Decided 2026-09-30 by the owner: (a), deferred.** The traversals get source order, but whether
+   `List` stays a cons list or becomes an array-backed sequence is itself pending
+   ([`research/38`](../docs/design/research/38-immutable-array-representations.md)), so `core/List`
+   is not touched now: this item lands with the sequence decision, and `run/MapEffectOrder` with it.
 
 ---
 

@@ -41,6 +41,15 @@ evidence parameters, method constraints on type variables, derived `eq`/`compare
 plan, the new interactions and the decisions still owed are in
 [`plans/effects-plan.md`](../../plans/effects-plan.md).
 
+**The owner's decisions, 2026-09-30.** The eight questions of
+[`plans/effects-plan.md`](../../plans/effects-plan.md) §5 are decided, each recorded there: `sync`
+ships in the first cut (§3.2's postponement is withdrawn); the work interleaves with the backend now;
+the runtime spike builds `spawn`/`join`/`scope`/`bracket` and the adoption all fifteen primitives;
+both bits are inferred and only `suspends` is used in v1 (§11 Q6); `main : Program` stays with a
+`sync` body; a well-known `eq`/`compare` must not suspend; the `sync` chain stops at one hop per
+module; and library traversals get source order (§5), landing with the pending decision on
+whether `List` becomes an array-backed sequence. The first slice, inference, is §14.
+
 **What it assumes, already decided elsewhere.** No automatic currying, `_` placeholder, pipe-first
 `|>`, n-ary types `Int, Int -> Int`, and a rest-of-block bind `let x <- e` (`fast-compiler.md`
 §9.3). JavaScript is the target, and a modern one. Errors are `Result` values and `?` unwraps them
