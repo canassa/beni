@@ -1294,7 +1294,7 @@ So the owner does not spend attention on things with no alternative (R28 §13, p
 | The intrinsic element table cannot live in the compiler | rule 6, `boundary.md` §5.2, and three systems that learned it the hard way |
 | A template id may not come from a shared counter | rule 5 (determinism) |
 | Attribute order is source order, everywhere | rule 5, and `language.md` §6's evaluation-order table |
-| Control flow inside markup is `if` and `case`, not components | they are already expressions (R28 §4.5). Solid needs `<Show>`/`<For>` because a Solid component runs once and JavaScript is eager; after eight years it is adding `.tsrx` syntax to reach where beni starts (R27 §8.5). **This was R27's S4 and it is not a question** |
+| Control flow inside markup is `if` and `case`, not components | they are already expressions (R28 §4.5). Solid needs `<Show>`/`<For>` because a Solid component runs once and JavaScript is eager; after eight years it is adding `.tsrx` syntax to reach where beni starts (R27 §8.5). **This was R27's S4 and it is not a question.** *Amended 2026-09-29: non-keyed conditionals are `if`/`case`, but keyed `<Show when={x} keyed>` is kept for the one capability `if` lacks — forcing a remount (owner, "Spec review answers").* |
 | An ill-formed element must still produce a tree | `frontend.md` §3.5, and what all three mature Rust macro DSLs converged on |
 | A signal library is not blocked by the kernel | R27 §8.6 — provided tracked computations are `sync`, which W8 requires anyway |
 
