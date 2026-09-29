@@ -178,8 +178,10 @@ build whose output does not match — that build is reported and gets none.
 the DOM — what a click renders, a controlled input reverting an edit,
 focus surviving a render — is a `tests/corpus/browser/` fixture: the
 program (for the `tests/platforms/page` test platform, or a project's own
-`platform/`), a `.steps` script (`click`, `input`, `key`, `focus`, one CSS
-selector each) and a blessed `.expected` transcript of `document.body`
+`platform/`; under `browser/dom/`, for the real `browser` platform and its
+`dom` lowering), a `.steps` script (`click` — with a count, several in one
+task — `flush`, `input`, `key`, `focus`, one CSS selector each) and a
+blessed `.expected` transcript of `document.body`
 after the load and each step. The gates run it under happy-dom in Node;
 `zig build test-browser` runs the same fixtures in headless Chrome, and a
 difference between the two is either a `.chrome-expected` with its reason
