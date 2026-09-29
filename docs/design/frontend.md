@@ -895,6 +895,15 @@ left a choice:
 - **An element written on one line stays on one line when it follows something on its line** — a
   sibling it may not be parted from, `\x ->`, an attribute's `=` — whatever its width, since
   breaking it there moves only its own edges. An element the author broke is printed vertically.
+  *Amended 2026-09-29, after the formatter's review:* such an element is printed **whole** on the
+  line, every hole, lambda and child in it included. A break inside it made it an element the
+  author broke on the next run, so formatting was not a fixed point, and a row of them broke at a
+  column that grew with each sibling, so the output grew as the square of the input. A broken
+  element that follows a sibling on its line hangs its children and closing tag off the
+  children's column, not its own, for the second reason.
+- **No break that cannot shorten a line.** An opening tag with no attributes keeps its `>` on
+  its line, and a hole or a braced attribute value holding only a literal, a name, an access
+  chain on one, or markup written on one line keeps its `}` on its line, whatever the column.
 - **A text run's trailing whitespace** is dropped at the end of a line when a later line of the same
   run shows text, and kept on the run's last line of text, where Solid's `trim_jsx_text` keeps it as
   a space. At most one blank line is kept inside a run and between children.
