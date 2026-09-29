@@ -1,0 +1,10 @@
+{
+  "platform": true,
+  "name": "toy",
+  "platforms": ["html"],
+  "reexports": ["Html"],
+  "program": "Toy.Program",
+  "runtime": "runtime.js",
+  "markup": { "lowering": "toy", "runtime": "runtime.js" },
+  "zig": "zig/root.zig"
+}

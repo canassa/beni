@@ -94,6 +94,7 @@ cache_test.test.an imported type of 4 097 parameters compares in the wide form f
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 eb37fe87548da26b0d0ff9b2116634f72f890755e15521b0c3f1dbd83bc24993
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 47a7a24a6de15a047673154e7a9d05f7d8eaba8cb04319896881618d4b85b531
+external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 b7ddf00789fd8b20da06c431a61ab372911c69250228a439cfe0e148a6481b2e

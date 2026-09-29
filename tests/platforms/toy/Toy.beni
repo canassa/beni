@@ -1,0 +1,15 @@
+--! A platform added to beni from outside its source tree
+--! (`docs/design/boundary.md` §9.5): `zig build -Dplatform=tests/platforms/toy`
+--! compiles its `toy` markup lowering into the binary, and a program built
+--! for it prints what that lowering made of its view. It exists to prove the
+--! external path, and `tests/blackbox/external_platform_test.zig` drives it.
+
+import Html exposing (Html)
+
+
+pub foreign type Program
+
+
+--| A program that prints the view: legal, because this platform names the
+--| lowering whose markup it reads (`boundary.md` §9.3).
+pub foreign show : Html msg -> Program

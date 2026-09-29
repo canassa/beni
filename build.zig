@@ -84,6 +84,11 @@ const safe_bin_dir = "safe/bin";
 /// other's binary and each stays cached.
 const safe_llvm_bin_dir = "safe-llvm/bin";
 
+/// The external platform the toy compiler carries, and where that compiler
+/// is installed under the prefix.
+const toy_platform_dir = "tests/platforms/toy";
+const toy_bin_dir = "toy/bin";
+
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
 
@@ -342,6 +347,12 @@ pub fn build(b: *std.Build) void {
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
     const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
+    // The same compiler with `tests/platforms/toy` compiled in, exactly as
+    // `-Dplatform=tests/platforms/toy` would compile it
+    // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the
+    // external path, which one black-box scenario builds a program through.
+    const toy = compiler(b, target, .ReleaseSafe, .self_hosted, .default, platformSources(b, &.{toy_platform_dir}));
+    const toy_install = b.addInstallArtifact(toy.exe, .{ .dest_dir = .{ .override = .{ .custom = toy_bin_dir } } });
 
     // ---- Black-box suite. ----
     // Spawns the ReleaseSafe `zig-out/safe/bin/beni` (the timing steps below
@@ -389,6 +400,7 @@ pub fn build(b: *std.Build) void {
         .safe_dir = safe_dir,
         .safe_install = &safe_install.step,
         .perf_install = &perf_install.step,
+        .toy_install = &toy_install.step,
         .budget = budget_env,
     };
     // A process that runs an emitted program skips Node when the run's
@@ -431,6 +443,11 @@ pub fn build(b: *std.Build) void {
         gate_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = gate_counts_dir }).step);
     }
     corpus_step.dependOn(&corpus_summary.step);
+    // The external platform's scenario, against the toy compiler.
+    const external_file = "tests/blackbox/external_platform_test.zig";
+    const external_test = bb.artifact(external_file);
+    bb.runSharded(bb.fileStep(external_file), external_test, .{ .root = "tests/corpus", .exe = .toy }, 1);
+    bb.runSharded(&gate_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .report_dir = gate_counts_dir }, 1);
 
     // Record the run hashes: every `run/` program and every program a
     // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
@@ -453,6 +470,7 @@ pub fn build(b: *std.Build) void {
     if (records_scenarios) for (suites, suite_tests) |suite, t| {
         bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir, .budget = false }, suite[1]);
     };
+    if (records_scenarios) bb.runSharded(&record_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .run_hashes = "record", .report_dir = record_dir, .budget = false }, 1);
     b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
 
     // The run hashes' own scenarios drive the corpus walker, a test binary
@@ -1581,8 +1599,9 @@ const HarnessEnvironment = struct {
     /// binary's tests this process runs.
     shard: []const u8 = "",
     /// The compiler under test: the ReleaseSafe one unless a timing step
-    /// names the ReleaseFast one.
-    exe: enum { safe, fast } = .safe,
+    /// names the ReleaseFast one, or the external platform's scenario the one
+    /// with the toy platform compiled in.
+    exe: enum { safe, fast, toy } = .safe,
     /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
     /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
     run_hashes: []const u8 = "",
@@ -1612,6 +1631,8 @@ const Blackbox = struct {
     /// Install `<safe_dir>/beni` and `perf_bin_dir/beni`.
     safe_install: *std.Build.Step,
     perf_install: *std.Build.Step,
+    /// Install `toy_bin_dir/beni`, the beni with the toy platform compiled in.
+    toy_install: *std.Build.Step,
     /// `-Dtest-budget`, for every run held to it.
     budget: TestBudget,
 
@@ -1658,6 +1679,7 @@ const Blackbox = struct {
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,
             .fast => bb.perf_install,
+            .toy => bb.toy_install,
         });
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
@@ -1677,6 +1699,7 @@ const Blackbox = struct {
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,
             .fast => perf_bin_dir,
+            .toy => toy_bin_dir,
         };
         r.setEnvironmentVariable("BENI_EXE", bb.b.getInstallPath(.prefix, bb.b.fmt("{s}/beni", .{exe_dir})));
         r.setName(bb.b.fmt("run {s}{s}{s}{s}{s}{s}{s}", .{
