@@ -1,0 +1,1 @@
+[{"code":"unclosed_delimiter","severity":"error","span":{"file":"tests/corpus/parse/bad/MarkupClosingTagInHole.beni","start":{"line":6,"col":10},"end":{"line":6,"col":11}},"title":"UNCLOSED DELIMITER","message":"This `{` is never closed: I ran into the closing tag `</div>` before the `}`\nthat ends it.\n\nA hole closes before the element around it: `<p>{name}</p>`."}]

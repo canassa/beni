@@ -1,0 +1,10 @@
+-- A hole whose element closes before its `}` is one unclosed_delimiter at
+-- the `{` (6:10), quoting the closing tag it ran into. Inside a hole the
+-- lexer reads `</div>` as code, so this is the parser's to see, and it
+-- recovers past the rest of the declaration without a second message.
+view x =
+    <div>{x</div>
+
+
+after =
+    1

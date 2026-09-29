@@ -1,0 +1,5 @@
+-- A closing tag after the markup has ended is one unexpected_token over
+-- the whole tag (5:24), naming it as a closing tag with no element open;
+-- it is skipped, and the element before it stands.
+view =
+    <div><p>x</p></div></div>

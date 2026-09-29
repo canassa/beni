@@ -1,0 +1,6 @@
+-- Braces in an element's opening tag without `...` are one message:
+-- lowering's spread_on_element (6:10), since an element takes no spread
+-- whether or not the dots are written. The parser's request for `...` is
+-- for a component's tag, where a spread is allowed.
+view x =
+    <div {x} />

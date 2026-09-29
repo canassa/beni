@@ -141,6 +141,10 @@ markup_open: std.ArrayList(u32) = .empty,
 /// lexer, which does not match names, still counts each as open, and lexes
 /// what follows the outermost element as its children (`skipDrift`).
 markup_drift: u32 = 0,
+/// How many markup `{…}` are open around the expression being parsed. In
+/// one, a `</` is the enclosing element's closing tag reached before the
+/// `}`; outside every one, it is a closing tag with no element open.
+markup_holes: u32 = 0,
 /// True while the `Type` of a TOP-LEVEL annotation or `foreign` value is
 /// being parsed: the only two positions a `where` clause may follow
 /// (static-dispatch-spike.md §2.1). It is what makes `where` a CONTEXTUAL
@@ -2053,6 +2057,14 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
         const tok = p.peek();
         const info = opInfo(tok) orelse break;
         if (info.lbp() < min_bp) break;
+        if (tok == .op_lt and p.closingTagAhead()) {
+            // `</`, which no expression continues with: a closing tag the
+            // lexer read as code. In a hole it ends the hole's expression,
+            // and the hole reports it; elsewhere it closes nothing.
+            if (p.markup_holes != 0) break;
+            try @call(.never_inline, skipStrayClosingTag, .{p});
+            continue;
+        }
         if (info.prec == banned_prec or tok == banned or tok == conflicting(last_op)) {
             @branchHint(.cold);
             _ = try p.report(p.itemAt(.non_associative_chain));
@@ -2400,7 +2412,7 @@ fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool, siblings: *Si
                 }
                 try p.pushScratch(try p.parseEscapeValue(quoted, name_node));
             },
-            .l_brace => try p.pushScratch(try p.parseSpread()),
+            .l_brace => try p.pushScratch(try p.parseSpread(component)),
             .invalid, .markup_stray => _ = p.next(), // a stray byte the lexer reported
             else => break,
         }
@@ -2472,6 +2484,15 @@ fn parseEscapeValue(p: *Parse, quoted: TokenIndex, name_node: Index) Allocator.E
     return p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
 
+/// The expression of the markup `{…}` opened at `open`, and its `}`.
+fn parseHoleExpr(p: *Parse, open: TokenIndex) Allocator.Error!Index {
+    p.markup_holes += 1;
+    const value = try p.parseExpr();
+    p.markup_holes -= 1;
+    try p.closeMarkupHole(open);
+    return value;
+}
+
 /// AttrValue := string | '{' Expr '}'.
 fn parseMarkupValue(p: *Parse) Allocator.Error!Index {
     switch (p.peek()) {
@@ -2482,8 +2503,7 @@ fn parseMarkupValue(p: *Parse) Allocator.Error!Index {
             defer p.context = saved_context;
             try p.pushBracket(.r_brace);
             defer p.popBracket();
-            const value = try p.parseExpr();
-            try p.expectCloser(.r_brace, open);
+            const value = try p.parseHoleExpr(open);
             return value;
         },
         else => {
@@ -2494,23 +2514,23 @@ fn parseMarkupValue(p: *Parse) Allocator.Error!Index {
     }
 }
 
-/// `{...e}` (language.md §11.3). A `{` in a tag whose first token is not
-/// `...` is `expected_token`, and its expression is kept as the spread's so
-/// the tree stays complete.
-fn parseSpread(p: *Parse) Allocator.Error!Index {
+/// `{...e}` (language.md §11.3). A `{` in a component's tag whose first
+/// token is not `...` is `expected_token`, and its expression is kept as the
+/// spread's so the tree stays complete. On an element, where no spread is
+/// allowed, lowering's `spread_on_element` is the one message.
+fn parseSpread(p: *Parse, component: bool) Allocator.Error!Index {
     const open = p.next();
     const saved_context = p.setContext(.markup_hole);
     defer p.context = saved_context;
     try p.pushBracket(.r_brace);
     defer p.popBracket();
-    if (p.eat(.ellipsis) == null) {
+    if (p.eat(.ellipsis) == null and component) {
         @branchHint(.cold);
         var item = p.itemAt(.expected_token);
         item.expected = .ellipsis;
         _ = try p.report(item);
     }
-    const value = try p.parseExpr();
-    try p.expectCloser(.r_brace, open);
+    const value = try p.parseHoleExpr(open);
     return p.unary(.markup_spread, open, value);
 }
 
@@ -2636,8 +2656,7 @@ fn parseHole(p: *Parse) Allocator.Error!Index {
     }
     try p.pushBracket(.r_brace);
     defer p.popBracket();
-    const value = try p.parseExpr();
-    try p.expectCloser(.r_brace, open);
+    const value = try p.parseHoleExpr(open);
     return p.unary(.markup_hole, open, value);
 }
 
@@ -2678,16 +2697,76 @@ fn commentSwallowsBrace(p: *const Parse, open: TokenIndex) bool {
     return true;
 }
 
+/// `</` read as code: a `<`, then a `/` abutting it, which no expression
+/// continues with — a closing tag outside the markup mode that lexes one.
+fn closingTagAhead(p: *const Parse) bool {
+    return p.tags[p.tok_i] == .op_lt and p.tags[p.tok_i + 1] == .op_slash and p.adjacent(p.tok_i + 1);
+}
+
+/// The last token of the closing tag read as code at the next token:
+/// `<`, `/`, its name if any, and the `>` if it abuts.
+fn closingTagEnd(p: *const Parse) TokenIndex {
+    var t = p.tok_i + 1;
+    switch (p.tags[t + 1]) {
+        .lower_ident, .upper_ident, .qualified_lower, .qualified_upper => if (p.adjacent(t + 1)) {
+            t += 1;
+        },
+        else => {},
+    }
+    if (p.tags[t + 1] == .op_gt and p.adjacent(t + 1)) t += 1;
+    return t;
+}
+
+/// `</div>` after markup that has ended: a closing tag no element is open
+/// for (language.md §11.3). One `unexpected_token` over it, and the tag is
+/// skipped, so the expression before it stands.
+fn skipStrayClosingTag(p: *Parse) Allocator.Error!void {
+    @branchHint(.cold);
+    const end = p.closingTagEnd();
+    var item = p.itemAt(.unexpected_token);
+    item.construct = .stray_closing_tag;
+    item.end = p.tokenEnd(end);
+    _ = try p.report(item);
+    while (p.tok_i <= end) _ = p.next();
+}
+
+/// The `}` of the markup `{…}` opened at `open`. A closing tag first is
+/// the element around the hole ending before it: `unclosed_delimiter` at
+/// the `{`, naming the tag, and the parser recovers past it.
+fn closeMarkupHole(p: *Parse, open: TokenIndex) Allocator.Error!void {
+    if (!p.closingTagAhead()) return p.expectCloser(.r_brace, open);
+    var item = p.itemAtToken(.unclosed_delimiter, open);
+    item.expected = .r_brace;
+    item.construct = .closing_tag_in_hole;
+    item.head_start = p.starts[p.tok_i];
+    item.head_end = p.tokenEnd(p.closingTagEnd());
+    _ = try p.report(item);
+    p.recover();
+}
+
 /// `f <div />`: markup where an operand has already ended (language.md
 /// §11.2). One message, then the comparison's placeholder, returned, and the
 /// rest of the construct skipped; null for a comparison. Kept out of
 /// `parseBinop`'s loop, which it would otherwise slow for every operator.
 fn markupArgument(p: *Parse, op_token: TokenIndex) Allocator.Error!?Index {
     if (!p.looksLikeMarkupArgument(op_token)) return null;
-    var item = p.itemAtToken(.element_as_argument, op_token);
+    // After a closing tag or `/>` the operand is markup too: two elements side
+    // by side, where an expression is one.
+    const after_markup = switch (p.tags[op_token - 1]) {
+        .markup_gt, .markup_self_close => true,
+        else => false,
+    };
+    var item = p.itemAtToken(if (after_markup) .unexpected_token else .element_as_argument, op_token);
     item.end = p.tokenEnd(op_token + 1);
     item.head_start = p.starts[op_token - 1];
     item.head_end = p.tokenEnd(op_token - 1);
+    if (after_markup) {
+        item.construct = .adjacent_markup;
+        // The message quotes the whole closing tag before it, `</p>`.
+        var t = op_token - 1;
+        while (t > 0 and p.tags[t] != .markup_close_open and op_token - t < 3) t -= 1;
+        if (p.tags[t] == .markup_close_open) item.head_start = p.starts[t];
+    }
     const placeholder = try p.errorNode(.error_expr, item);
     p.recover();
     return placeholder;

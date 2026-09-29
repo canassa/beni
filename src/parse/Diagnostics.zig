@@ -131,6 +131,14 @@ pub const Construct = enum {
     /// For `nesting_too_deep`: the level that did not fit is an element or
     /// a hole in markup.
     markup,
+    /// A second element right after markup that has ended, `<p>a</p><p>`:
+    /// two roots where an expression is one.
+    adjacent_markup,
+    /// A closing tag after markup that has ended: no element is open.
+    stray_closing_tag,
+    /// For `unclosed_delimiter`: the hole's element closed before its `}`,
+    /// whose closing tag the head range quotes.
+    closing_tag_in_hole,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -188,7 +196,8 @@ fn constructText(c: Construct) []const u8 {
         .attribute_name, .vocabulary_name => "a name",
         .attribute_value => "a string or `{`",
         .component_prop => "a field name",
-        .outer_closer, .comment_swallowed_brace, .markup => "something else",
+        .outer_closer, .comment_swallowed_brace, .markup, .closing_tag_in_hole => "something else",
+        .adjacent_markup, .stray_closing_tag => "an expression",
         .element_fact => "a fact of `pub element`: `void`, `svg` or `mathml`",
         .attribute_fact => "a fact of `pub attribute`: `on`, `property`, `stateful`, `url`, `raw`, `classes` or `styles`",
         .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
@@ -284,6 +293,22 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\A tag's name starts with a letter: `<div>`, `<my-widget>`, `<Card>`.
                 );
+            } else if (item.construct == .adjacent_markup) {
+                const name = tagName(text);
+                try w.print(
+                    \\`<{s}` starts a second element right after `{s}`, where the markup before it
+                    \\ended, so I read this `<` as a comparison.
+                    \\
+                    \\An expression holds one element. To write elements side by side, put them in
+                    \\a fragment, `<>…</>`, or in an element around them.
+                , .{ name, head });
+            } else if (item.construct == .stray_closing_tag) {
+                try w.print(
+                    \\I found the closing tag `{s}`, but no element is open here: the markup
+                    \\before it has already ended.
+                    \\
+                    \\Remove it, or check that the element it should close starts before it.
+                , .{text});
             } else if (item.construct == .negated_markup) {
                 try w.writeAll(
                     \\I found markup after a `-`. Negation takes a number, and markup is not one.
@@ -390,6 +415,13 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\    {{-- note
                 \\    }}
             , .{std.mem.trimEnd(u8, head, " ")});
+        } else if (item.construct == .closing_tag_in_hole) {
+            try w.print(
+                \\This `{{` is never closed: I ran into the closing tag `{s}` before the `}}`
+                \\that ends it.
+                \\
+                \\A hole closes before the element around it: `<p>{{name}}</p>`.
+            , .{head});
         } else {
             const closer: []const u8 = if (text.len > 0) switch (text[0]) {
                 '(' => ")",

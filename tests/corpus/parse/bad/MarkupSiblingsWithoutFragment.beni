@@ -1,0 +1,12 @@
+-- Two elements side by side where an expression is one are one
+-- unexpected_token at the second one's `<` and name (7:13 and 12:5),
+-- saying that siblings need a fragment. After `</p>` or `/>` the `<` is a
+-- comparison (language.md §11.2), but what the author wrote is a second
+-- root, not markup passed as an argument.
+sameLine =
+    <p>a</p><p>b</p>
+
+
+nextLine =
+    <br />
+    <hr />
