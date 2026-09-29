@@ -327,7 +327,7 @@ pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 /// `lower_phases` per file, then — serially, once — the module graph
 /// and cross-module name resolution (checker.md §4). What `check` and
 /// `dump --stage=interface` run.
-pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveSerial };
+pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveModules };
 
 /// `resolve_phases`, then type-check every module in the graph's
 /// topological order (checker.md §6). What `check` and the two typed dumps
@@ -1332,16 +1332,18 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     session.artifacts.setFormatted(gpa, file, try list.toOwnedSlice(gpa));
 }
 
-/// The serial half of `resolve_phases` (checker.md §4.2–§4.5): build the
-/// module graph from every file's import table, then resolve every
-/// reference against the interfaces in topological order.
+/// The second half of `resolve_phases` (checker.md §4.2–§4.5): build the
+/// module graph from every file's import table, serially, then resolve every
+/// reference against the interfaces, each module once its imports are
+/// resolved, on up to `jobs` threads (`Resolve.Schedule`).
 ///
-/// It runs on the calling thread, after the join, with the interners
+/// It starts on the calling thread, after the join, with the interners
 /// merged — the graph interns module names into the global pool and the
 /// Birs' symbols are already global, so neither step can be done earlier.
-/// Worker 0's arena is the scratch for both, because worker 0 is idle here
-/// and its arena is already warm; it is reset on the way out.
-fn resolveSerial(session: *Session) RunError!void {
+/// Worker 0's arena is the calling thread's scratch for both, because
+/// worker 0 is idle here and its arena is already warm; it is reset on the
+/// way out.
+fn resolveModules(session: *Session) RunError!void {
     const gpa = session.gpa;
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);
@@ -1358,7 +1360,12 @@ fn resolveSerial(session: *Session) RunError!void {
     // One `resolve` event per module (checker.md §9), emitted inside, not
     // one for the whole step: the per-module rows are what the
     // incrementality tests read.
-    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile);
+    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile, .{
+        .io = session.io,
+        .jobs = session.options.jobs,
+        .size_by_work = session.options.size_by_work,
+        .stack_size = check_stack_size,
+    });
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
     try session.reportResolveDiagnostics();
 }
@@ -1458,7 +1465,7 @@ fn markQuiet(quiet: []bool, graph: anytype, pending: []const Worker.Pending) voi
 /// `TypeStore` per module, in topological order, each reading only its own
 /// Bir and the interfaces of its imports.
 fn checkSerial(session: *Session) RunError!void {
-    try resolveSerial(session);
+    try resolveModules(session);
     const gpa = session.gpa;
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);

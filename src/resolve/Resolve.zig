@@ -40,6 +40,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const diagnostic = @import("diagnostic");
 const Artifacts = @import("../Artifacts.zig");
 const Bir = @import("../bir/Bir.zig");
@@ -48,6 +49,7 @@ const SourceStore = @import("../SourceStore.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
 const Graph = @import("Graph.zig");
 const Profile = @import("../Profile.zig");
+const Arena = @import("../Arena.zig");
 const Interface = @import("Interface.zig");
 const prelude = @import("../bir/prelude.zig");
 
@@ -116,6 +118,7 @@ pub fn run(
     artifacts: *Artifacts,
     interner: *const InternPool.Global,
     profile: ?*Profile,
+    parallel: Parallel,
 ) Allocator.Error!Resolve {
     var r: Resolve = .empty;
     errdefer r.deinit(gpa);
@@ -124,33 +127,301 @@ pub fn run(
     r.provenance = try gpa.alloc(Interface.Provenance, graph.count());
     @memset(r.provenance, Interface.Provenance.empty);
 
+    const outputs = try gpa.alloc(Output, graph.count());
+    @memset(outputs, .{});
+    defer {
+        for (outputs) |*o| o.deinit(gpa);
+        gpa.free(outputs);
+    }
+
+    var schedule: Schedule = .{
+        .gpa = gpa,
+        .io = parallel.io,
+        .graph = graph,
+        .template = .{
+            .gpa = gpa,
+            .scratch = scratch,
+            .graph = graph,
+            .store = store,
+            .artifacts = artifacts,
+            .interner = interner,
+            .interfaces = r.interfaces,
+            .provenance = r.provenance,
+            .diagnostics = undefined,
+            .available_names = undefined,
+        },
+        .outputs = outputs,
+        .profile = profile,
+    };
+    try schedule.go(parallel);
+
+    // Every module's items in the graph's order, which is the order one
+    // thread resolving the modules one after another reports them in, and
+    // each item's `available` range moved onto the joined list.
     var diagnostics: std.ArrayList(Item) = .empty;
     errdefer diagnostics.deinit(gpa);
     var available_names: std.ArrayList(Symbol) = .empty;
     errdefer available_names.deinit(gpa);
-
-    var pass: Pass = .{
-        .gpa = gpa,
-        .scratch = scratch,
-        .graph = graph,
-        .store = store,
-        .artifacts = artifacts,
-        .interner = interner,
-        .interfaces = r.interfaces,
-        .provenance = r.provenance,
-        .diagnostics = &diagnostics,
-        .available_names = &available_names,
-    };
-    defer pass.tables.deinit(gpa);
     for (graph.order) |m| {
-        const token = if (profile) |p| p.begin() else null;
-        try pass.module(m);
-        if (profile) |p| p.end(0, token.?, .resolve, graph.moduleFile(m).int(), 0);
+        const o = &outputs[m.int()];
+        const base: u32 = @intCast(available_names.items.len);
+        try available_names.appendSlice(gpa, o.available_names.items);
+        try diagnostics.ensureUnusedCapacity(gpa, o.diagnostics.items.len);
+        for (o.diagnostics.items) |item| {
+            var moved = item;
+            moved.available_start += base;
+            moved.available_end += base;
+            diagnostics.appendAssumeCapacity(moved);
+        }
     }
     r.diagnostics = try diagnostics.toOwnedSlice(gpa);
     r.available_names = try available_names.toOwnedSlice(gpa);
     return r;
 }
+
+/// How `run` may spread the modules over threads.
+pub const Parallel = struct {
+    io: Io,
+    /// At most this many threads, the calling one included. 1 resolves
+    /// every module on the calling thread.
+    jobs: u32 = 1,
+    /// Whether `jobs` is the machine's size rather than the user's request
+    /// (`Session.Options.size_by_work`): then a small project may get one.
+    size_by_work: bool = false,
+    /// The stack every spawned worker gets. Resolution walks nothing by
+    /// recursion that the calling thread could not, so it is the caller's.
+    stack_size: usize,
+};
+
+/// `Bir` instructions one resolving thread is worth spawning for (past the
+/// second, when `--jobs` was given): resolution gets through some forty
+/// thousand a millisecond, so this is about a millisecond of work per thread.
+pub const insts_per_resolver = 32 * 1024;
+
+/// What resolving one module reports, kept apart per module so that the
+/// joined list does not depend on which module finished first.
+const Output = struct {
+    diagnostics: std.ArrayList(Item) = .empty,
+    /// What this module's items' `available_start..available_end` index.
+    available_names: std.ArrayList(Symbol) = .empty,
+
+    fn deinit(o: *Output, gpa: Allocator) void {
+        o.diagnostics.deinit(gpa);
+        o.available_names.deinit(gpa);
+    }
+};
+
+/// Resolution over the module DAG (checker.md §4.4's schedule, applied to
+/// §4.5): a module is resolved once every module it imports has been, which
+/// is all it reads of any other module — the interfaces of its imports,
+/// and their `Bir` declaration tables to tell a private name from an absent
+/// one. It writes only its own `Bir`, its own interface and its own
+/// `Output`. So the answer is the serial walk's at any thread count, and
+/// only the time moves (`fast-compiler.md` §10).
+///
+/// A cyclic project is resolved on one thread in the graph's order, as the
+/// checker's `Driver` does and for its reason: a cycle has no order in which
+/// every member's imports are finished.
+const Schedule = struct {
+    gpa: Allocator,
+    io: Io,
+    graph: *const Graph,
+    /// Every worker's `Pass` starts as a copy of this one.
+    template: Pass,
+    outputs: []Output,
+    profile: ?*Profile,
+
+    mutex: Io.Mutex = .init,
+    wake: Io.Condition = .init,
+    /// Modules whose imports are all resolved, claimed from the front.
+    queue: []Graph.Index = &.{},
+    queue_len: usize = 0,
+    queue_head: usize = 0,
+    /// Per module, its imports not resolved yet; ready at zero.
+    blockers: []u32 = &.{},
+    /// `dependents[dependent_start[m]..dependent_start[m + 1]]` wait on `m`.
+    dependents: []Graph.Index = &.{},
+    dependent_start: []u32 = &.{},
+    finished: usize = 0,
+    failure: ?Allocator.Error = null,
+
+    fn go(s: *Schedule, parallel: Parallel) Allocator.Error!void {
+        const jobs = try s.threadCount(parallel);
+        if (jobs <= 1) {
+            var pass = s.template;
+            defer pass.tables.deinit(s.gpa);
+            for (s.graph.order) |m| try s.resolve(&pass, m, 0);
+            return;
+        }
+        try s.build();
+        defer s.free();
+        const threads = try s.gpa.alloc(std.Thread, jobs - 1);
+        defer s.gpa.free(threads);
+        var spawned: usize = 0;
+        {
+            defer for (threads[0..spawned]) |t| t.join();
+            while (spawned < threads.len) : (spawned += 1) {
+                threads[spawned] = std.Thread.spawn(
+                    .{ .stack_size = parallel.stack_size },
+                    worker,
+                    .{ s, @as(u32, @intCast(spawned + 1)) },
+                ) catch break; // fewer threads is a slower run, not a failed one
+            }
+            s.worker(0);
+        }
+        if (s.failure) |err| return err;
+    }
+
+    /// No more threads than the build asked for, than there are modules
+    /// the walk could ever run at once (`n` modules on a longest chain of
+    /// `l` leave at most `n - l + 1` unordered), or than the instructions to
+    /// resolve keep busy (`insts_per_resolver`). A cyclic graph gets one.
+    fn threadCount(s: *const Schedule, parallel: Parallel) Allocator.Error!usize {
+        const n = s.graph.count();
+        if (parallel.jobs <= 1 or n <= 1) return 1;
+        for (0..n) |i| {
+            if (s.graph.isPoisoned(@enumFromInt(i))) return 1;
+        }
+        var bound: usize = @min(parallel.jobs, try s.width());
+        // One thread per `insts_per_resolver` instructions; an explicit
+        // `--jobs` above 1 still gets two, so that asking for a parallel run
+        // always gets one, whatever the project's size.
+        var insts: usize = 0;
+        for (0..n) |i| insts += s.template.artifacts.bir(s.graph.moduleFile(@enumFromInt(i))).insts.len;
+        const by_work = std.math.divCeil(usize, insts, insts_per_resolver) catch unreachable;
+        bound = @min(bound, @max(@as(usize, if (parallel.size_by_work) 1 else 2), by_work));
+        return @min(bound, n);
+    }
+
+    /// `n - l + 1`: the most modules that can be ready at once when the
+    /// longest chain of imports holds `l` of the `n`.
+    fn width(s: *const Schedule) Allocator.Error!usize {
+        const n = s.graph.count();
+        const depth = try s.gpa.alloc(u32, n);
+        defer s.gpa.free(depth);
+        @memset(depth, 0);
+        var longest: u32 = 0;
+        // `graph.order` is topological on an acyclic graph, so every
+        // dependency's depth is final before its dependents read it.
+        for (s.graph.order) |m| {
+            var deepest: u32 = 0;
+            for (s.graph.dependencies(m)) |dep| {
+                if (dep != m) deepest = @max(deepest, depth[dep.int()]);
+            }
+            depth[m.int()] = deepest + 1;
+            longest = @max(longest, deepest + 1);
+        }
+        return n - longest + 1;
+    }
+
+    /// The ready queue and the reverse edges, before any thread starts. A
+    /// dependency later in the graph's order would be a cycle, which `threadCount`
+    /// has already ruled out; it is skipped exactly as the serial walk
+    /// would have found it unresolved.
+    fn build(s: *Schedule) Allocator.Error!void {
+        const gpa = s.gpa;
+        const n = s.graph.count();
+        const position = try gpa.alloc(u32, n);
+        defer gpa.free(position);
+        for (s.graph.order, 0..) |m, i| position[m.int()] = @intCast(i);
+
+        s.blockers = try gpa.alloc(u32, n);
+        @memset(s.blockers, 0);
+        s.dependent_start = try gpa.alloc(u32, n + 1);
+        @memset(s.dependent_start, 0);
+        var edges: u32 = 0;
+        for (0..n) |i| {
+            for (s.graph.dependencies(@enumFromInt(i))) |dep| {
+                if (dep.int() == i or position[dep.int()] >= position[i]) continue;
+                s.blockers[i] += 1;
+                s.dependent_start[dep.int() + 1] += 1;
+                edges += 1;
+            }
+        }
+        for (1..n + 1) |i| s.dependent_start[i] += s.dependent_start[i - 1];
+        s.dependents = try gpa.alloc(Graph.Index, edges);
+        const cursor = try gpa.alloc(u32, n);
+        defer gpa.free(cursor);
+        @memcpy(cursor, s.dependent_start[0..n]);
+        for (0..n) |i| {
+            for (s.graph.dependencies(@enumFromInt(i))) |dep| {
+                if (dep.int() == i or position[dep.int()] >= position[i]) continue;
+                s.dependents[cursor[dep.int()]] = @enumFromInt(i);
+                cursor[dep.int()] += 1;
+            }
+        }
+        s.queue = try gpa.alloc(Graph.Index, n);
+        for (s.graph.order) |m| {
+            if (s.blockers[m.int()] != 0) continue;
+            s.queue[s.queue_len] = m;
+            s.queue_len += 1;
+        }
+    }
+
+    fn free(s: *Schedule) void {
+        s.gpa.free(s.blockers);
+        s.gpa.free(s.dependents);
+        s.gpa.free(s.dependent_start);
+        s.gpa.free(s.queue);
+    }
+
+    /// Claim ready modules until every module is resolved. Worker zero is
+    /// the calling thread and resolves in the caller's scratch; every other
+    /// one makes its own arena.
+    fn worker(s: *Schedule, tid: u32) void {
+        var arena: Arena = .init(std.heap.page_allocator);
+        defer arena.deinit();
+        var pass = s.template;
+        if (tid != 0) pass.scratch = arena.allocator();
+        defer pass.tables.deinit(s.gpa);
+        while (true) {
+            s.mutex.lockUncancelable(s.io);
+            while (s.queue_head == s.queue_len and s.finished < s.graph.count() and s.failure == null) {
+                s.wake.waitUncancelable(s.io, &s.mutex);
+            }
+            if (s.failure != null or s.queue_head == s.queue_len) {
+                s.mutex.unlock(s.io);
+                s.wake.broadcast(s.io);
+                return;
+            }
+            const m = s.queue[s.queue_head];
+            s.queue_head += 1;
+            s.mutex.unlock(s.io);
+
+            const result = s.resolve(&pass, m, tid);
+
+            s.mutex.lockUncancelable(s.io);
+            defer s.mutex.unlock(s.io);
+            s.finished += 1;
+            if (result) |_| {} else |err| {
+                if (s.failure == null) s.failure = err;
+            }
+            for (s.dependents[s.dependent_start[m.int()]..s.dependent_start[m.int() + 1]]) |dependent| {
+                s.blockers[dependent.int()] -= 1;
+                if (s.blockers[dependent.int()] != 0) continue;
+                s.queue[s.queue_len] = dependent;
+                s.queue_len += 1;
+            }
+            // This thread takes the next ready module itself, so the others
+            // are woken only for more than one — work is queued only here,
+            // so no module is left waiting with every thread asleep — and
+            // all of them at the end, to leave. On a chain of imports that
+            // is no wake-up at all.
+            if (s.finished == s.graph.count() or s.failure != null or s.queue_len - s.queue_head > 1) {
+                s.wake.broadcast(s.io);
+            }
+        }
+    }
+
+    /// One module, into its own `Output`, with one `resolve` event.
+    fn resolve(s: *Schedule, pass: *Pass, m: Graph.Index, tid: u32) Allocator.Error!void {
+        const token = if (s.profile) |p| p.begin() else null;
+        pass.diagnostics = &s.outputs[m.int()].diagnostics;
+        pass.available_names = &s.outputs[m.int()].available_names;
+        try pass.module(m);
+        if (s.profile) |p| p.end(tid, token.?, .resolve, s.graph.moduleFile(m).int(), 0);
+    }
+};
 
 /// Name → first index, for one namespace of one module: sorted by name and
 /// then by index, so the lower bound of a name is its FIRST declaration —
