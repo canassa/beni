@@ -11,8 +11,14 @@
 //      "files":6,"raw_bytes":3520,"gzip_bytes":1584,"brotli_bytes":1318,
 //      "net_raw_bytes":1373,"net_gzip_bytes":294,"net_brotli_bytes":213,
 //      "derived_bytes":0,"derived_functions":0}
+//     {"page":true,"platform":"browser","entry":"Page","files":5,"raw_bytes":21740, …}
 //     {"total":true,"programs":35,"gross_raw_bytes":…,"release_gross_raw_bytes":…,
 //      "floor_once_raw_bytes":…, …}
+//
+// **The `page` lines** are the empty mounted page, once per browser platform
+// (`browser` and `browser-tea`), dev and `--release`: the least a browser
+// program ships, which is the runtime file whole and the mount. They sit
+// after the program lines and outside the totals, which are Node programs.
 //
 // **The floor, and what it means now that §9 exists.** It is still an EMPTY
 // program — a `main` that is `Node.done` — built in the same run and
@@ -354,7 +360,7 @@ function measureTree(outDir) {
 /// their instrument for evaluation order. Without the flag the release
 /// column would simply stop existing for a fifth of the table, which is a
 /// worse answer than measuring the bytes those programs actually emit.
-function buildProject(beni, work, projectDir, sources, library = false, release = false) {
+function buildProject(beni, work, projectDir, sources, library = false, release = false, platform = "node") {
   const projectRel = relative(work, projectDir).split(sep).join("/");
   const out = release ? "out-release" : "out";
   rmSync(join(projectDir, out), { recursive: true, force: true });
@@ -362,7 +368,7 @@ function buildProject(beni, work, projectDir, sources, library = false, release 
     beni,
     [
       "build",
-      "--platform=node",
+      `--platform=${platform}`,
       "--diagnostics=json",
       `--out=${projectRel}/${out}`,
       `--root=${projectRel}`,
@@ -378,9 +384,9 @@ function buildProject(beni, work, projectDir, sources, library = false, release 
 /// `--release`, or null when the column is off. A failure here is loud — a
 /// tree that builds in dev and not in release is the finding, not a hole in
 /// the table.
-function measureRelease(options, beni, work, projectDir, sources, library) {
+function measureRelease(options, beni, work, projectDir, sources, library, platform = "node") {
   if (!options.release) return null;
-  const run = buildProject(beni, work, projectDir, sources, library, true);
+  const run = buildProject(beni, work, projectDir, sources, library, true, platform);
   if (run.status !== 0) {
     process.stderr.write(
       `bench/size.mjs: --release build of ${projectDir} failed\n${run.stdout ?? ""}${run.stderr ?? ""}\n`,
@@ -414,6 +420,44 @@ function measureFloor(options, beni, work) {
   return {
     ...measureTree(join(projectDir, "out")),
     ...(measureRelease(options, beni, work, projectDir, ["Empty.beni"], false) ?? {}),
+  };
+}
+
+/// The empty mounted page, per browser platform: a program whose `view` is
+/// an empty fragment, mounted and never changing, so what it ships is the
+/// least a page can — its runtime, the mount, and nothing of the program.
+/// The floor above is Node's and answers another question; this is the
+/// number a browser program is weighed against (`backend.md` §13,
+/// `plans/browser-platform.md` §7). `browser-tea`'s differs from
+/// `browser`'s by exactly what The Elm Architecture adds in beni.
+const pages = {
+  browser: "Browser.program { init = {}, update = \\_ m -> m, view = view }",
+  "browser-tea": "Tea.sandbox { init = {}, update = \\_ m -> m, view = view }",
+};
+
+function measurePage(options, beni, work, platform) {
+  const projectDir = join(work, `__page_${platform.replace(/[^\w]/g, "_")}`);
+  mkdirSync(projectDir, { recursive: true });
+  const imports = platform === "browser-tea" ? "import Browser\nimport Html exposing (Html)\nimport Tea\n" : "import Browser\nimport Html exposing (Html)\n";
+  writeFileSync(
+    join(projectDir, "Page.beni"),
+    `${imports}\n\nview : {} -> Html {}\nview _ =\n    <></>\n\n\nmain : Browser.Program\nmain =\n    ${pages[platform]}\n`,
+  );
+  const run = buildProject(beni, work, projectDir, ["Page.beni"], false, false, platform);
+  if (run.status !== 0) {
+    process.stderr.write(`bench/size.mjs: the empty ${platform} page did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`);
+    return null;
+  }
+  const measured = measureTree(join(projectDir, "out"));
+  return {
+    page: true,
+    platform,
+    entry: "Page",
+    files: measured.files,
+    raw_bytes: measured.raw_bytes,
+    gzip_bytes: measured.gzip_bytes,
+    brotli_bytes: measured.brotli_bytes,
+    ...(measureRelease(options, beni, work, projectDir, ["Page.beni"], false, platform) ?? {}),
   };
 }
 
@@ -622,6 +666,14 @@ function main() {
         ...(measureRelease(options, beni, work, projectDir, [entry, ...kept], true) ?? {}),
       },
     );
+  }
+
+  // The empty mounted pages, after the programs and outside the totals,
+  // which are Node programs netted against Node's floor.
+  for (const platform of Object.keys(pages)) {
+    const page = measurePage(options, beni, work, platform);
+    if (page === null) failed = true;
+    else lines.push(JSON.stringify(page));
   }
 
   lines.push(

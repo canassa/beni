@@ -158,6 +158,19 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     try testing.expect(floor.raw_bytes < 8 * 1024);
     try testing.expect(floor.files <= 8);
 
+    // The empty mounted page, once per browser platform, dev and release,
+    // after the programs. `browser-tea` is `browser` plus The Elm
+    // Architecture's one module, so it is `browser`'s page and one file more.
+    const page = try parseJson(SizePage, arena, it.next() orelse return error.NoPageLine);
+    try testing.expect(page.page);
+    try testing.expectEqualStrings("browser", page.platform);
+    try testing.expect(page.brotli_bytes > 0 and page.brotli_bytes <= page.raw_bytes);
+    try testing.expect(page.release_raw_bytes > 0 and page.release_raw_bytes <= page.raw_bytes);
+    const tea = try parseJson(SizePage, arena, it.next() orelse return error.NoPageLine);
+    try testing.expectEqualStrings("browser-tea", tea.platform);
+    try testing.expectEqual(page.files + 1, tea.files);
+    try testing.expect(tea.raw_bytes > page.raw_bytes);
+
     const total = try parseJson(SizeTotal, arena, lastLine(r.stdout));
     try testing.expect(total.total);
     try testing.expectEqual(@as(u32, 1), total.programs);
@@ -414,6 +427,15 @@ test "bench/runtime.mjs times a program against a beni floor, checks its answer 
     // faster by getting the wrong result fails instead of scoring.
     try testing.expectEqualStrings("55", line.checksum);
 }
+
+const SizePage = struct {
+    page: bool,
+    platform: []const u8,
+    files: u32,
+    raw_bytes: i64,
+    brotli_bytes: i64,
+    release_raw_bytes: i64,
+};
 
 const SizeFloor = struct {
     floor: bool,
