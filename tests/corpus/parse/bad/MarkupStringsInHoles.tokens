@@ -1,0 +1,44 @@
+6:1 lower_ident view
+6:6 lower_ident name
+6:11 equal =
+7:5 markup_open <
+7:6 markup_name p
+7:8 markup_attr title
+7:13 equal =
+7:14 l_brace {
+7:15 str_start "
+7:16 str_chunk t 
+7:18 interp_start ${
+7:20 lower_ident name
+7:24 interp_end }
+7:25 str_end "
+7:26 r_brace }
+7:27 markup_gt >
+7:28 l_brace {
+7:29 str_start "
+7:30 str_chunk a 
+7:32 interp_start ${
+7:34 lower_ident name
+7:38 interp_end }
+7:39 str_chunk  }
+7:41 str_end "
+7:42 r_brace }
+7:43 markup_close_open </
+7:45 markup_name p
+7:46 markup_gt >
+10:1 lower_ident interpolated
+10:14 lower_ident b
+10:16 equal =
+11:5 str_start "
+11:6 interp_start ${
+11:9 op_lt <
+11:10 lower_ident b
+11:12 interp_end }
+11:13 str_end "
+12:1 eof
+-- comments
+1:1 plain -- A string inside a hole is an ordinary string, interpolation included
+2:1 plain -- (frontend.md §9.1): the `}` of `${…}` ends the interpolation, a `}` in
+3:1 plain -- the chunk is text, and the `}` after the string closes the hole. The
+4:1 plain -- markup is not_implemented at 7:5. Inside `${…}` a `<` is the operator even
+5:1 plain -- where markup could start (language.md §11.2): unexpected_token at 11:9.

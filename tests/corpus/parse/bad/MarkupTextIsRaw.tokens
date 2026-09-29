@@ -1,0 +1,20 @@
+5:1 lower_ident view
+5:6 lower_ident name
+5:11 equal =
+6:5 markup_open <
+6:6 markup_name p
+6:7 markup_gt >
+6:8 markup_text "\n        Don't -- \"quote\" "
+7:26 l_brace {
+7:27 lower_ident name
+7:31 r_brace }
+7:32 markup_text "\n    "
+8:5 markup_close_open </
+8:7 markup_name p
+8:8 markup_gt >
+9:1 eof
+-- comments
+1:1 plain -- Text between tags is raw (language.md §11.4, frontend.md §9.1): `--` is
+2:1 plain -- text and not a comment, `'` and `"` are ordinary characters, and a run
+3:1 plain -- keeps its whitespace and newlines up to the next `<` or `{`. The comments
+4:1 plain -- list holds only this note. Only not_implemented at 6:5.

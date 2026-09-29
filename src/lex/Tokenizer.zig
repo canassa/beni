@@ -17,11 +17,27 @@
 //! until the session applies the worker's remap table — frontend.md §3.3);
 //! `dot_index` carries the index value itself instead.
 //!
-//! Strings (§2.6) are the one construct with state across calls: a mode flag
-//! (`normal`, `string`, `interp`) and a brace depth. Tokens inside `${…}` are
-//! produced by the same `next`, which is what puts interpolation expressions
-//! into the flat token array with real offsets. A `"` or `\\` inside an
-//! interpolation is an error precisely because it would need a mode STACK.
+//! Strings (§2.6) and markup (§11, frontend.md §9.1) are the constructs with
+//! state across calls: a small STACK of modes, each with a brace depth,
+//! whose top is `mode`/`depth` and whose bottom is always `normal`. Outside
+//! markup the stack is that one entry, and every token is lexed exactly as
+//! if markup did not exist. Tokens inside `${…}` and inside a markup hole
+//! `{…}` are produced by the same `next`, which is what puts their
+//! expressions into the flat token array with real offsets. Strings never
+//! nest — a `"` or `\\` inside an interpolation is an error (§2.6), and a
+//! `<` there is never markup — so a string and its `${…}` take the top
+//! without pushing, and the entry below them waits in one slot of its own.
+//!
+//! Markup's modes (frontend.md §9.1): `tag` between `<` and `>`/`/>`,
+//! `children` between an opening tag and its `</`, `close` between `</` and
+//! `>` — the three `nextMarkup` lexes, so that `next`'s state machine is the
+//! one ordinary code always had — and `hole`, a `{…}` opened in either of
+//! the first two, which `next` lexes as ordinary code. A `<` in `normal` or
+//! `hole` mode opens markup only when the byte after it is a letter or `>`
+//! and the previous token cannot end an operand (§9.3), so every comparison
+//! lexes as it always did. A newline followed by a non-space byte at column
+//! 1 pops the whole stack back to `normal` from any markup mode, so an
+//! unclosed element never swallows the file.
 //!
 //! Errors never stop the file (fast-compiler.md §5): every lexical error is
 //! recorded in `Diagnostics` and produces an `invalid` token — the parser's
@@ -30,9 +46,9 @@
 //! string was cut off by the end of its line. A `str_chunk` is guaranteed
 //! well-formed (valid escapes, valid UTF-8, no tab, no bare `\r`): errors
 //! split a chunk rather than hide inside it, so lowering can decode chunks
-//! without a failure path. Errors inside a comment or a multiline line only
-//! add a diagnostic; those tokens stay whole because they are raw by
-//! definition (§2.3, §2.7).
+//! without a failure path. Errors inside a comment, a multiline line or a
+//! markup text run only add a diagnostic; those tokens stay whole because
+//! they are raw by definition (§2.3, §2.7, §11.4).
 //!
 //! Token length is never stored (frontend.md §3.2). `slice` re-derives it:
 //! fixed spellings through `Token.lexeme`, everything else by re-running the
@@ -40,6 +56,7 @@
 //! `next` uses, so the two can never disagree.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const InternPool = @import("../InternPool.zig");
@@ -54,12 +71,33 @@ source: [:0]const u8,
 index: u32 = 0,
 /// 0-based line of `index`.
 line: u32 = 0,
+/// The top of the mode stack.
 mode: Mode = .normal,
-/// Brace depth inside an interpolation; 1 right after `${`.
+/// The top entry's brace depth, for `interp` and `hole`: 1 right after the
+/// `${` or `{` that pushed it, the entry popped by the `}` that brings it
+/// to 0.
 depth: u32 = 0,
+/// The entries below the top, bottom first; `saved[0]`, when `sp > 0`, is
+/// the bottom `normal` entry. Per-file scratch in `tokenize`'s frame, so
+/// neither allocated nor copied; its length is the bound less the top.
+/// Empty in a tokenizer built without one, whose every push is then at the
+/// bound.
+saved: []Saved = &.{},
+/// How many entries sit below the top.
+sp: u32 = 0,
+/// How many entries of the stack, the top and the one under a string
+/// included, are markup modes (`hole`, `tag`, `children`, `close`).
+/// Non-zero exactly when a column-1 byte must end markup.
+markup: u32 = 0,
+/// Set once `nesting_too_deep` has been reported, so a runaway input gets
+/// one diagnostic rather than one per level.
+too_deep: bool = false,
 /// Offset of the `"` that opened the string being scanned, for the span of
 /// an `unterminated_string`.
 string_start: u32 = 0,
+/// The entry a `string` (or the `interp` inside it) sits on, which its
+/// end restores (`openString`).
+under_string: Saved = .{ .mode = .normal, .depth = 0 },
 /// Set once the `eof` token has been emitted so `next` is idempotent past
 /// the end.
 done: bool = false,
@@ -76,7 +114,32 @@ pub const Mode = enum(u8) {
     string,
     /// Inside `${…}`: ordinary tokens, with `{`/`}` counted.
     interp,
+    /// Inside a markup `{…}`: ordinary tokens, with `{`/`}` counted.
+    hole,
+    /// Inside a markup tag: its name, attributes, `=`, strings, holes,
+    /// comments; left by `>` (to `children`) or `/>`.
+    tag,
+    /// Between an opening tag and its closing tag: text, holes, child tags.
+    children,
+    /// Inside a closing tag: its name, then `>`.
+    close,
+
+    /// The four modes that only markup enters.
+    fn isMarkup(mode: Mode) bool {
+        return @intFromEnum(mode) >= @intFromEnum(Mode.hole);
+    }
+
+    /// The three modes `nextMarkup` lexes rather than `next`.
+    fn hasOwnStates(mode: Mode) bool {
+        return @intFromEnum(mode) >= @intFromEnum(Mode.tag);
+    }
 };
+
+/// The mode stack's bound (frontend.md §9.1): a push past it is
+/// `nesting_too_deep`.
+pub const max_stack = 4096;
+
+const Saved = struct { mode: Mode, depth: u32 };
 
 /// Everything `tokenize` produces for one file. Owned by the caller; the
 /// session moves the pieces into the file's artifact columns.
@@ -124,7 +187,8 @@ pub fn tokenize(gpa: Allocator, source: [:0]const u8, interner: *InternPool.Loca
     try out.line_starts.ensureTotalCapacity(gpa, estimatedLineCount(source.len));
     try out.comments.ensureTotalCapacity(gpa, estimatedCommentCount(source.len));
     out.line_starts.appendAssumeCapacity(0);
-    var t: Tokenizer = .{ .source = source, .gpa = gpa, .interner = interner, .out = out };
+    var saved: [max_stack - 1]Saved = undefined;
+    var t: Tokenizer = .{ .source = source, .gpa = gpa, .interner = interner, .out = out, .saved = &saved };
     while (try t.next() != .eof) {}
 }
 
@@ -153,6 +217,7 @@ const State = enum {
 /// Comments, newlines and diagnostics met on the way are recorded as side
 /// effects. Returns `.eof` at the end of the input, forever after.
 pub fn next(t: *Tokenizer) Allocator.Error!Tag {
+    if (t.mode.hasOwnStates()) return t.nextMarkup();
     const src = t.source;
     var start = t.index;
     var payload: u32 = 0;
@@ -183,6 +248,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 if (t.mode == .interp) break :state try t.unterminated();
                 t.index += 1;
                 try t.newline();
+                if (t.markup != 0) t.endMarkupAtColumnOne();
                 start = t.index;
                 continue :state .start;
             },
@@ -194,6 +260,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 if (t.mode == .interp) break :state try t.unterminated();
                 t.index += 2;
                 try t.newline();
+                if (t.markup != 0) t.endMarkupAtColumnOne();
                 start = t.index;
                 continue :state .start;
             },
@@ -215,8 +282,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                     t.index = end;
                     break :state .invalid;
                 }
-                t.mode = .string;
-                t.string_start = t.index;
+                t.openString();
                 break :state t.take(1, .str_start);
             },
             '\'' => continue :state .char,
@@ -243,15 +309,18 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             '[' => break :state t.take(1, .l_bracket),
             ']' => break :state t.take(1, .r_bracket),
             '{' => {
-                if (t.mode == .interp) t.depth += 1;
+                if (t.mode != .normal) t.depth += 1;
                 break :state t.take(1, .l_brace);
             },
             '}' => {
-                if (t.mode == .interp) {
+                if (t.mode != .normal) {
                     t.depth -= 1;
                     if (t.depth == 0) {
-                        t.mode = .string;
-                        break :state t.take(1, .interp_end);
+                        if (t.mode == .interp) {
+                            t.mode = .string;
+                            break :state t.take(1, .interp_end);
+                        }
+                        t.popMode();
                     }
                 }
                 break :state t.take(1, .r_brace);
@@ -295,7 +364,18 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             // `..` is one token, valid nowhere: it exists so the parser can
             // name Elm's `exposing (T(..))` in one diagnostic instead of the
             // lexer reporting each dot.
-            '.' => break :state t.take(2, .dot_dot),
+            '.' => {
+                // A spread (frontend.md §9.1): `...` as the first token of a
+                // hole opened in a tag — depth 1, straight after its `{`,
+                // whatever whitespace or comments came between. Anywhere
+                // else `...` is `..` and a stray `.`, as it always was.
+                if (src[t.index + 2] == '.' and t.mode == .hole and t.depth == 1 and
+                    t.prevTag() == .l_brace and t.sp != 0 and t.saved[t.sp - 1].mode == .tag)
+                {
+                    break :state t.take(3, .ellipsis);
+                }
+                break :state t.take(2, .dot_dot);
+            },
             'a'...'z' => {
                 t.index += 1;
                 // The field name is interned without its dot, so `.name`
@@ -320,7 +400,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
 
         .string => switch (src[t.index]) {
             '"' => {
-                t.mode = .normal;
+                t.closeString();
                 break :state t.take(1, .str_end);
             },
             '$' => {
@@ -385,16 +465,8 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         },
 
         .comment => {
-            const kind: Token.Comment.Kind = switch (src[t.index + 2]) {
-                '|' => .doc,
-                '!' => .module_doc,
-                else => .plain,
-            };
-            const end = lineEnd(src, t.index);
-            try t.validateRaw(t.index + 2, end);
-            try t.out.comments.append(t.gpa, .{ .kind = kind, .start = t.index, .before_token = @intCast(t.out.tokens.len) });
-            t.index = end;
-            start = end;
+            try t.scanComment();
+            start = t.index;
             continue :state .start;
         },
 
@@ -420,6 +492,16 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
             // Longest match (§2.2): `x <-1` is `<-` and `1`, never `<` and
             // `-1`. A comparison with a negative literal needs the space.
             '-' => break :state t.take(2, .arrow_left),
+            // Markup starts at an operand's start (frontend.md §9.3): a
+            // letter or `>` next, and a previous token that cannot end an
+            // operand. Inside `${…}` a `<` is always the operator.
+            'a'...'z', 'A'...'Z', '>' => {
+                if (t.mode != .interp and !endsOperand(t.prevTag())) {
+                    try t.pushMode(.tag, 0);
+                    break :state t.take(1, .markup_open);
+                }
+                break :state t.take(1, .op_lt);
+            },
             else => break :state t.take(1, .op_lt),
         },
         .gt => switch (src[t.index + 1]) {
@@ -447,8 +529,195 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         },
     };
 
-    try t.push(tag, start, payload);
+    try t.emit(tag, start, t.line, payload);
     return tag;
+}
+
+const MarkupState = enum { tag, close, children, stray };
+
+/// `next` for the three modes with states of their own (frontend.md §9.1):
+/// `tag`, `close` and `children`. Kept out of `next` so that the ordinary
+/// lexer's state machine is the one it was before markup existed. When the
+/// column-1 rule pops back to `normal`, the rest of the token is `next`'s.
+fn nextMarkup(t: *Tokenizer) Allocator.Error!Tag {
+    const src = t.source;
+    var start = t.index;
+    var payload: u32 = 0;
+    var hasher: InternPool.Hasher = .init();
+    // The line the token starts on: where the lexer is now, except for a
+    // text run, which may end on a later line.
+    var line = t.line;
+
+    const tag: Tag = state: switch (@as(MarkupState, switch (t.mode) {
+        .tag => .tag,
+        .close => .close,
+        else => .children,
+    })) {
+        // Inside `<…>`: the name right after the `<`, then attributes.
+        .tag => switch (src[t.index]) {
+            ' ' => {
+                t.index += 1;
+                while (src[t.index] == ' ') t.index += 1;
+                start = t.index;
+                continue :state .tag;
+            },
+            '\n', '\r' => {
+                if (!try t.markupNewline()) continue :state .stray;
+                if (t.mode == .normal) return t.next();
+                start = t.index;
+                continue :state .tag;
+            },
+            0 => {
+                if (t.index != src.len) continue :state .stray;
+                if (t.done) return .eof;
+                t.done = true;
+                break :state .eof;
+            },
+            'a'...'z', 'A'...'Z' => {
+                if (t.prevTag() == .markup_open) {
+                    t.index = scanTagName(src, t.index, &hasher);
+                    payload = try t.intern(hasher.final(), start, t.index);
+                    break :state .markup_name;
+                }
+                t.index = scanAttrName(src, t.index, &hasher);
+                payload = try t.intern(hasher.final(), start, t.index);
+                break :state .markup_attr;
+            },
+            '=' => break :state t.take(1, .equal),
+            '"' => {
+                t.openString();
+                break :state t.take(1, .str_start);
+            },
+            '{' => {
+                try t.pushMode(.hole, 1);
+                break :state t.take(1, .l_brace);
+            },
+            '>' => {
+                t.replaceMode(.children);
+                break :state t.take(1, .markup_gt);
+            },
+            '/' => {
+                if (src[t.index + 1] != '>') continue :state .stray;
+                t.popMode();
+                break :state t.take(2, .markup_self_close);
+            },
+            '-' => {
+                if (src[t.index + 1] != '-') continue :state .stray;
+                try t.scanComment();
+                start = t.index;
+                continue :state .tag;
+            },
+            else => continue :state .stray,
+        },
+
+        // Between `</` and `>`: the closing name, if any.
+        .close => switch (src[t.index]) {
+            ' ' => {
+                t.index += 1;
+                while (src[t.index] == ' ') t.index += 1;
+                start = t.index;
+                continue :state .close;
+            },
+            '\n', '\r' => {
+                if (!try t.markupNewline()) continue :state .stray;
+                if (t.mode == .normal) return t.next();
+                start = t.index;
+                continue :state .close;
+            },
+            0 => {
+                if (t.index != src.len) continue :state .stray;
+                if (t.done) return .eof;
+                t.done = true;
+                break :state .eof;
+            },
+            'a'...'z', 'A'...'Z' => {
+                t.index = scanTagName(src, t.index, &hasher);
+                payload = try t.intern(hasher.final(), start, t.index);
+                break :state .markup_name;
+            },
+            '>' => {
+                t.popMode();
+                break :state t.take(1, .markup_gt);
+            },
+            else => continue :state .stray,
+        },
+
+        // Between an opening tag and its closing tag.
+        .children => {
+            if (t.atColumnOneBreak()) {
+                t.popAll();
+                return t.next();
+            }
+            switch (src[t.index]) {
+                '<' => switch (src[t.index + 1]) {
+                    'a'...'z', 'A'...'Z', '>' => {
+                        try t.pushMode(.tag, 0);
+                        break :state t.take(1, .markup_open);
+                    },
+                    '/' => {
+                        t.replaceMode(.close);
+                        break :state t.take(2, .markup_close_open);
+                    },
+                    // `a < b` in text: the `<` alone is the error, and the
+                    // text resumes after it (language.md §11.4).
+                    else => {
+                        try t.report(.unexpected_token, t.index, t.index + 1);
+                        break :state t.take(1, .invalid);
+                    },
+                },
+                '>', '}' => {
+                    try t.report(.unexpected_token, t.index, t.index + 1);
+                    break :state t.take(1, .invalid);
+                },
+                '{' => {
+                    try t.pushMode(.hole, 1);
+                    break :state t.take(1, .l_brace);
+                },
+                else => {
+                    if (src[t.index] == 0 and t.index == src.len) {
+                        if (t.done) return .eof;
+                        t.done = true;
+                        break :state .eof;
+                    }
+                    const end = scanText(src, t.index);
+                    try t.textBytes(t.index, end);
+                    t.index = end;
+                    break :state .markup_text;
+                },
+            }
+        },
+
+        // A byte a tag cannot hold: one `invalid` token, as long as
+        // `invalidEnd` says a token starting with that byte is, and the tag
+        // goes on (frontend.md §9.1).
+        .stray => {
+            const end = invalidEnd(src, t.index);
+            const b = src[t.index];
+            const code: diagnostic.Code = switch (b) {
+                '\t' => .tab_in_source,
+                '\r' => .bare_carriage_return,
+                0...8, 11...12, 14...0x1f, 0x7f => .invalid_character,
+                0x80...0xff => if (utf8Sequence(src, t.index).valid) .invalid_character else .invalid_utf8,
+                else => .unexpected_token,
+            };
+            try t.report(code, t.index, end);
+            t.index = end;
+            break :state .invalid;
+        },
+    };
+
+    if (tag != .markup_text) line = t.line;
+    try t.emit(tag, start, line, payload);
+    return tag;
+}
+
+/// Append the token `next` or `nextMarkup` scanned.
+inline fn emit(t: *Tokenizer, tag: Tag, start: u32, line: u32, payload: u32) Allocator.Error!void {
+    // The cached form is `(tag, start)` alone (frontend.md §3.2, §9.2):
+    // every token's end must be re-derivable from them. The unit tests
+    // (property, fuzz, stress) hold every token to it.
+    if (builtin.is_test) std.debug.assert(tokenEnd(t.source, tag, start) == t.index);
+    try t.push(tag, start, line, payload);
 }
 
 /// The token columns up to the list's capacity, refreshed when it grows.
@@ -462,7 +731,7 @@ const Columns = struct {
 /// Append a token column by column: `MultiArrayList.append` recomputes
 /// every column's address to write one token, which Zig's own backend does
 /// not fold away, and it was nearly half of lexing a wide file.
-fn push(t: *Tokenizer, tag: Tag, start: u32, payload: u32) Allocator.Error!void {
+fn push(t: *Tokenizer, tag: Tag, start: u32, line: u32, payload: u32) Allocator.Error!void {
     const list = &t.out.tokens;
     if (list.len == list.capacity or t.cols.tag.len != list.capacity) {
         try list.ensureUnusedCapacity(t.gpa, 1);
@@ -478,11 +747,42 @@ fn push(t: *Tokenizer, tag: Tag, start: u32, payload: u32) Allocator.Error!void 
     list.len = i + 1;
     t.cols.tag[i] = tag;
     t.cols.start[i] = start;
-    t.cols.line[i] = t.line;
+    t.cols.line[i] = line;
     t.cols.payload[i] = payload;
 }
 
 /// Advance `n` bytes and return `tag`: the tail of every fixed-length arm.
+/// Record the `--` comment at `index` and move to the end of its line
+/// (language.md §2.3). Comments are not tokens; `before_token` is the
+/// token that will come next.
+fn scanComment(t: *Tokenizer) Allocator.Error!void {
+    const src = t.source;
+    const kind: Token.Comment.Kind = switch (src[t.index + 2]) {
+        '|' => .doc,
+        '!' => .module_doc,
+        else => .plain,
+    };
+    const end = lineEnd(src, t.index);
+    try t.validateRaw(t.index + 2, end);
+    try t.out.comments.append(t.gpa, .{ .kind = kind, .start = t.index, .before_token = @intCast(t.out.tokens.len) });
+    t.index = end;
+}
+
+/// Enter the string whose `"` is at `index`. Strings never nest — one
+/// inside `${…}` is an error, and a `<` there is never markup — so the
+/// entry below a string needs no stack: it is kept aside and put back.
+fn openString(t: *Tokenizer) void {
+    t.under_string = .{ .mode = t.mode, .depth = t.depth };
+    t.mode = .string;
+    t.string_start = t.index;
+}
+
+/// Leave the current string (and the interpolation it is in, if any).
+fn closeString(t: *Tokenizer) void {
+    t.mode = t.under_string.mode;
+    t.depth = t.under_string.depth;
+}
+
 fn take(t: *Tokenizer, n: u32, tag: Tag) Tag {
     t.index += n;
     return tag;
@@ -495,6 +795,162 @@ fn newline(t: *Tokenizer) Allocator.Error!void {
     try t.out.line_starts.append(t.gpa, t.index);
 }
 
+// ---------------------------------------------------------------------------
+// The mode stack (frontend.md §9.1)
+// ---------------------------------------------------------------------------
+
+/// The tag of the previous significant token, or `eof` at the start of the
+/// file (comments are not tokens, so they are invisible here).
+fn prevTag(t: *const Tokenizer) Tag {
+    const len = t.out.tokens.len;
+    return if (len == 0) .eof else t.cols.tag[len - 1];
+}
+
+/// The tags that can end an operand (frontend.md §9.3): after one of them a
+/// `<` is the operator. `invalid` is among them, conservatively — it might
+/// have been an operand, and reading the `<` as markup would cascade.
+const operand_enders = blk: {
+    var table: [256]bool = @splat(false);
+    for ([_]Tag{
+        .lower_ident,    .upper_ident,       .qualified_lower, .qualified_upper, .dot_lower,
+        .dot_index,      .int,               .float,           .char,            .str_end,
+        .multiline_line, .r_paren,           .r_bracket,       .r_brace,         .underscore,
+        .question,       .markup_self_close,
+        // In `normal` or `hole` mode a `markup_gt` is always a closing tag's:
+        // an opening tag's `>` leads into `children`.
+        .markup_gt,       .invalid,
+    }) |tag| table[@intFromEnum(tag)] = true;
+    break :blk table;
+};
+
+fn endsOperand(tag: Tag) bool {
+    return operand_enders[@intFromEnum(tag)];
+}
+
+/// Push `mode` with brace depth `depth` over the current top. At the bound
+/// the stack does not grow: `nesting_too_deep` is reported (once per file)
+/// at the byte that asked, and the new mode replaces the top, so the
+/// construct still lexes as that mode and every token stays well-formed.
+fn pushMode(t: *Tokenizer, mode: Mode, depth: u32) Allocator.Error!void {
+    if (t.sp == t.saved.len) {
+        @branchHint(.cold);
+        if (!t.too_deep) {
+            t.too_deep = true;
+            try t.report(.nesting_too_deep, t.index, t.index + 1);
+        }
+        t.replaceMode(mode);
+        t.depth = depth;
+        return;
+    }
+    t.saved[t.sp] = .{ .mode = t.mode, .depth = t.depth };
+    t.sp += 1;
+    t.mode = mode;
+    t.depth = depth;
+    t.markup += @intFromBool(mode.isMarkup());
+}
+
+/// Pop the top entry. Popping the bottom leaves it in place: after the
+/// bound replaced an entry, a construct's end can outnumber its starts.
+fn popMode(t: *Tokenizer) void {
+    t.markup -= @intFromBool(t.mode.isMarkup());
+    if (t.sp == 0) {
+        t.mode = .normal;
+        t.depth = 0;
+        return;
+    }
+    t.sp -= 1;
+    t.mode = t.saved[t.sp].mode;
+    t.depth = t.saved[t.sp].depth;
+}
+
+/// Replace the top entry's mode, as a tag's `>` turns it into children.
+fn replaceMode(t: *Tokenizer, mode: Mode) void {
+    t.markup -= @intFromBool(t.mode.isMarkup());
+    t.markup += @intFromBool(mode.isMarkup());
+    t.mode = mode;
+}
+
+/// Back to the bottom `normal` entry.
+fn popAll(t: *Tokenizer) void {
+    t.sp = 0;
+    t.mode = .normal;
+    t.depth = 0;
+    t.markup = 0;
+}
+
+/// A byte that ends markup when it stands at column 1: anything but a
+/// space, a line terminator or the end of the file.
+fn isColumnOneBreak(src: [:0]const u8, i: u32) bool {
+    return switch (src[i]) {
+        ' ', '\n', '\r' => false,
+        0 => i != src.len,
+        else => true,
+    };
+}
+
+/// True when `index` is at column 1 of a line after the first and its byte
+/// ends markup.
+fn atColumnOneBreak(t: *const Tokenizer) bool {
+    return t.index != 0 and t.source[t.index - 1] == '\n' and isColumnOneBreak(t.source, t.index);
+}
+
+/// Called right after a newline was consumed while some markup mode is on
+/// the stack: a non-space byte at column 1 pops back to `normal`, and is
+/// lexed as the start of a declaration (frontend.md §9.1).
+fn endMarkupAtColumnOne(t: *Tokenizer) void {
+    if (isColumnOneBreak(t.source, t.index)) t.popAll();
+}
+
+/// A line terminator in `tag` or `close` mode: consume `\n` or `\r\n` and
+/// apply the column-1 rule. False for a bare `\r`, which is not one.
+fn markupNewline(t: *Tokenizer) Allocator.Error!bool {
+    const src = t.source;
+    if (src[t.index] == '\r') {
+        if (src[t.index + 1] != '\n') return false;
+        t.index += 1;
+    }
+    t.index += 1;
+    try t.newline();
+    t.endMarkupAtColumnOne();
+    return true;
+}
+
+/// Record the newlines of the text run `[from, to)` and report the bytes
+/// that are errors everywhere (language.md §11.4): a tab, a bare `\r`,
+/// another control character, malformed UTF-8. The run stays one token,
+/// like a comment: it is raw text, and lowering reads it.
+fn textBytes(t: *Tokenizer, from: u32, to: u32) Allocator.Error!void {
+    const src = t.source;
+    var i = from;
+    while (i < to) {
+        switch (src[i]) {
+            '\n' => {
+                i += 1;
+                t.index = i;
+                try t.newline();
+            },
+            '\t' => {
+                try t.report(.tab_in_source, i, i + 1);
+                i += 1;
+            },
+            '\r' => {
+                if (src[i + 1] != '\n') try t.report(.bare_carriage_return, i, i + 1);
+                i += 1;
+            },
+            0...8, 11...12, 14...0x1f, 0x7f => {
+                try t.report(.invalid_character, i, i + 1);
+                i += 1;
+            },
+            0x80...0xff => {
+                const seq = utf8Sequence(src, i);
+                if (!seq.valid) try t.report(.invalid_utf8, i, i + seq.len);
+                i += seq.len;
+            },
+            else => i += 1,
+        }
+    }
+}
+
 fn report(t: *Tokenizer, code: diagnostic.Code, start: u32, end: u32) Allocator.Error!void {
     try t.out.diagnostics.report(t.gpa, code, start, end);
 }
@@ -505,13 +961,13 @@ fn intern(t: *Tokenizer, hash: u64, from: u32, to: u32) Allocator.Error!u32 {
 }
 
 /// The string being scanned hit the end of its line or the file: report it
-/// from its opening quote to here, leave string mode, and hand back the
+/// from its opening quote to here, leave the string (and the interpolation
+/// inside it, if that is where the line ended), and hand back the
 /// zero-length `invalid` that stands in for the missing `str_end`. The line
 /// terminator itself is not consumed, so the ordinary path counts it.
 fn unterminated(t: *Tokenizer) Allocator.Error!Tag {
     try t.report(.unterminated_string, t.string_start, t.index);
-    t.mode = .normal;
-    t.depth = 0;
+    t.closeString();
     return .invalid;
 }
 
@@ -605,6 +1061,55 @@ fn scanName(src: [:0]const u8, start: u32, hasher: anytype) Name {
                 return .{ .end = scanIdentTail(src, i + 1, hasher), .tag = .qualified_lower };
             },
             else => return .{ .end = i, .tag = tag },
+        }
+    }
+}
+
+/// A markup tag name from the letter at `start` (frontend.md §9.2): an
+/// element's `[a-z][A-Za-z0-9-]*`, or a component's `Upper(.Upper)*(.lower)?`,
+/// which is exactly what `scanName` reads from a capital. `hasher` sees
+/// every byte.
+fn scanTagName(src: [:0]const u8, start: u32, hasher: anytype) u32 {
+    if (std.ascii.isUpper(src[start])) return scanName(src, start, hasher).end;
+    var i = start;
+    while (true) : (i += 1) {
+        switch (src[i]) {
+            'a'...'z', 'A'...'Z', '0'...'9', '-' => if (@TypeOf(hasher) != void) hasher.updateByte(src[i]),
+            else => return i,
+        }
+    }
+}
+
+/// A markup attribute name from the letter at `start` (frontend.md §9.2):
+/// `[A-Za-z][A-Za-z0-9_-]*` with `:` allowed after the first byte.
+fn scanAttrName(src: [:0]const u8, start: u32, hasher: anytype) u32 {
+    var i = start;
+    while (true) : (i += 1) {
+        switch (src[i]) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '-', ':' => if (@TypeOf(hasher) != void) hasher.updateByte(src[i]),
+            else => return i,
+        }
+    }
+}
+
+/// A run of markup text from `start` (frontend.md §9.1): up to the next
+/// `<`, `{`, `>` or `}`, the end of the file, or a newline whose next byte
+/// ends markup at column 1 — that newline is the run's last byte. The
+/// caller has seen that `src[start]` is none of those, so the run is never
+/// empty. Every other byte is the run's, errors included (`textBytes`).
+fn scanText(src: [:0]const u8, start: u32) u32 {
+    var i = start;
+    while (true) {
+        switch (src[i]) {
+            '<', '{', '>', '}' => return i,
+            0 => if (i == src.len) return i else {
+                i += 1;
+            },
+            '\n' => {
+                i += 1;
+                if (isColumnOneBreak(src, i)) return i;
+            },
+            else => i += 1,
         }
     }
 }
@@ -874,6 +1379,9 @@ pub fn tokenEnd(source: [:0]const u8, tag: Tag, start: u32) u32 {
         .char => scanChar(source, start).end,
         .eof => start,
         .invalid => invalidEnd(source, start),
+        .markup_name => scanTagName(source, start, {}),
+        .markup_attr => scanAttrName(source, start, {}),
+        .markup_text => scanText(source, start),
         // Keywords, symbols and operators: their spelling is fixed.
         else => if (Token.lexeme(tag)) |text| start + @as(u32, @intCast(text.len)) else start,
     };
@@ -882,7 +1390,9 @@ pub fn tokenEnd(source: [:0]const u8, tag: Tag, start: u32) u32 {
 /// Where an `invalid` token ends, decided by its first byte — the same
 /// decision the state that produced it made. Ambiguity between the string
 /// states and the normal state is resolved by the fact that in normal mode
-/// `"`, `\` and a line terminator never produce `invalid`.
+/// `"`, `\` and a line terminator never produce `invalid`. Markup's stray
+/// bytes — a byte a tag cannot hold, and `<`, `>` or `}` in text — take
+/// their length from this function, so they agree with it by construction.
 fn invalidEnd(source: [:0]const u8, start: u32) u32 {
     switch (source[start]) {
         // The zero-length marker of an unterminated string.
@@ -1781,6 +2291,159 @@ test "next is idempotent past the end and the eof token is appended once" {
     try testing.expectEqual(@as(usize, 2), out.tokens.len);
 }
 
+test "markup: `<` at the start of the file opens markup; `<` then a digit or space never does" {
+    try expectLex("<b/>", .{ .tokens = &.{
+        .{ .tag = .markup_open, .start = 0, .text = "<" },
+        .{ .tag = .markup_name, .start = 1, .text = "b" },
+        .{ .tag = .markup_self_close, .start = 2, .text = "/>" },
+        .{ .tag = .eof, .start = 4, .text = "" },
+    } });
+    try expectLex("= <1 = < b", .{ .tokens = &.{
+        .{ .tag = .equal, .start = 0, .text = "=" },
+        .{ .tag = .op_lt, .start = 2, .text = "<" },
+        .{ .tag = .int, .start = 3, .text = "1" },
+        .{ .tag = .equal, .start = 5, .text = "=" },
+        .{ .tag = .op_lt, .start = 7, .text = "<" },
+        .{ .tag = .lower_ident, .start = 9, .text = "b" },
+        .{ .tag = .eof, .start = 10, .text = "" },
+    } });
+}
+
+test "markup: a comparison after an invalid token stays a comparison" {
+    // Conservatively: the `invalid` might have been an operand (§9.3).
+    try expectLex("@ <b", .{
+        .tokens = &.{
+            .{ .tag = .invalid, .start = 0, .text = "@" },
+            .{ .tag = .op_lt, .start = 2, .text = "<" },
+            .{ .tag = .lower_ident, .start = 3, .text = "b" },
+            .{ .tag = .eof, .start = 4, .text = "" },
+        },
+        .diagnostics = &.{.{ .code = .invalid_character, .start = 0, .end = 1 }},
+    });
+}
+
+test "markup: CRLF inside a tag and inside text, and a text run's line is its first" {
+    try expectLex("=<a\r\n b>x\r\n y</a>", .{
+        .tokens = &.{
+            .{ .tag = .equal, .start = 0, .text = "=" },
+            .{ .tag = .markup_open, .start = 1, .text = "<" },
+            .{ .tag = .markup_name, .start = 2, .text = "a" },
+            .{ .tag = .markup_attr, .start = 6, .line = 1, .text = "b" },
+            .{ .tag = .markup_gt, .start = 7, .line = 1, .text = ">" },
+            .{ .tag = .markup_text, .start = 8, .line = 1, .text = "x\r\n y" },
+            .{ .tag = .markup_close_open, .start = 13, .line = 2, .text = "</" },
+            .{ .tag = .markup_name, .start = 15, .line = 2, .text = "a" },
+            .{ .tag = .markup_gt, .start = 16, .line = 2, .text = ">" },
+            .{ .tag = .eof, .start = 17, .line = 2, .text = "" },
+        },
+        .line_starts = &.{ 0, 5, 11 },
+    });
+}
+
+test "markup: errors inside text are reported and the run stays one token" {
+    // A tab, a control byte, malformed UTF-8 and a bare `\r` (§11.4); a
+    // `<` at the end of the file is the stray `<`.
+    try expectLex("=<p>a\tb\x01c\xffd\re<", .{
+        .tokens = &.{
+            .{ .tag = .equal, .start = 0, .text = "=" },
+            .{ .tag = .markup_open, .start = 1, .text = "<" },
+            .{ .tag = .markup_name, .start = 2, .text = "p" },
+            .{ .tag = .markup_gt, .start = 3, .text = ">" },
+            .{ .tag = .markup_text, .start = 4, .text = "a\tb\x01c\xffd\re" },
+            .{ .tag = .invalid, .start = 13, .text = "<" },
+            .{ .tag = .eof, .start = 14, .text = "" },
+        },
+        .diagnostics = &.{
+            .{ .code = .tab_in_source, .start = 5, .end = 6 },
+            .{ .code = .invalid_character, .start = 7, .end = 8 },
+            .{ .code = .invalid_utf8, .start = 9, .end = 10 },
+            .{ .code = .bare_carriage_return, .start = 11, .end = 12 },
+            .{ .code = .unexpected_token, .start = 13, .end = 14 },
+        },
+    });
+}
+
+test "markup: a blank line and an indented line do not end markup; column 1 does, from a tag" {
+    try expectLex("=<p>\n\n x</p>", .{
+        .tokens = &.{
+            .{ .tag = .equal, .start = 0, .text = "=" },
+            .{ .tag = .markup_open, .start = 1, .text = "<" },
+            .{ .tag = .markup_name, .start = 2, .text = "p" },
+            .{ .tag = .markup_gt, .start = 3, .text = ">" },
+            .{ .tag = .markup_text, .start = 4, .text = "\n\n x" },
+            .{ .tag = .markup_close_open, .start = 8, .line = 2, .text = "</" },
+            .{ .tag = .markup_name, .start = 10, .line = 2, .text = "p" },
+            .{ .tag = .markup_gt, .start = 11, .line = 2, .text = ">" },
+            .{ .tag = .eof, .start = 12, .line = 2, .text = "" },
+        },
+        .line_starts = &.{ 0, 5, 6 },
+    });
+    // An opening tag cut off by a column-1 declaration: `x` is an ordinary
+    // name again, and its `<b` a comparison.
+    try expectLex("=<a\nx <b", .{
+        .tokens = &.{
+            .{ .tag = .equal, .start = 0, .text = "=" },
+            .{ .tag = .markup_open, .start = 1, .text = "<" },
+            .{ .tag = .markup_name, .start = 2, .text = "a" },
+            .{ .tag = .lower_ident, .start = 4, .line = 1, .text = "x" },
+            .{ .tag = .op_lt, .start = 6, .line = 1, .text = "<" },
+            .{ .tag = .lower_ident, .start = 7, .line = 1, .text = "b" },
+            .{ .tag = .eof, .start = 8, .line = 1, .text = "" },
+        },
+        .line_starts = &.{ 0, 4 },
+    });
+}
+
+/// `=` then `n` opening tags, one after another: the stack then holds the
+/// bottom entry and one `children` per tag, and the `n`th tag's `<` asks
+/// for entry `n + 1`.
+fn nestedTags(n: usize) ![:0]u8 {
+    const text = try testing.allocator.allocSentinel(u8, 1 + 3 * n, 0);
+    text[0] = '=';
+    for (0..n) |i| @memcpy(text[1 + 3 * i ..][0..3], "<a>");
+    return text;
+}
+
+test "markup: the mode stack holds 4096 entries, and one more is nesting_too_deep once" {
+    var interner: InternPool.Local = .empty;
+    defer interner.deinit(testing.allocator);
+
+    // 4095 tags: the stack is exactly full, and nothing is reported.
+    const full = try nestedTags(max_stack - 1);
+    defer testing.allocator.free(full);
+    var out: Output = .empty;
+    defer out.deinit(testing.allocator);
+    try tokenize(testing.allocator, full, &interner, &out);
+    try testing.expectEqual(@as(usize, 0), out.diagnostics.items().len);
+
+    // Two past it: one report, at the first `<` that did not fit, and every
+    // tag still lexed as a tag.
+    const over = try nestedTags(max_stack + 1);
+    defer testing.allocator.free(over);
+    var out_over: Output = .empty;
+    defer out_over.deinit(testing.allocator);
+    try tokenize(testing.allocator, over, &interner, &out_over);
+    const at: u32 = 1 + 3 * (max_stack - 1);
+    try testing.expectEqualSlices(Diagnostics.Item, &.{.{ .code = .nesting_too_deep, .start = at, .end = at + 1 }}, out_over.diagnostics.items());
+    try testing.expectEqual(@as(usize, 1 + 3 * (max_stack + 1) + 1), out_over.tokens.len);
+    try testing.expectEqual(Tag.markup_open, out_over.tokens.items(.tag)[out_over.tokens.len - 4]);
+}
+
+test "markup: closing more than was opened past the bound never underflows the stack" {
+    // Past the bound the top was replaced rather than pushed, so the
+    // closers below outnumber what the stack holds; each pops at most to
+    // the bottom `normal` entry, and the rest is ordinary code.
+    const over = try nestedTags(max_stack + 1);
+    defer testing.allocator.free(over);
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(testing.allocator);
+    try source.appendSlice(testing.allocator, over);
+    for (0..max_stack + 2) |_| try source.appendSlice(testing.allocator, "</a>");
+    try source.appendSlice(testing.allocator, " x <b");
+    try source.append(testing.allocator, 0);
+    try checkArbitrary(source.items[0 .. source.items.len - 1 :0]);
+}
+
 test "slice agrees with lexeme for every fixed-spelling tag" {
     inline for (@typeInfo(Tag).@"enum".fields) |field| {
         const tag: Tag = @enumFromInt(field.value);
@@ -1899,11 +2562,17 @@ fn checkArbitrary(source: [:0]const u8) !void {
     const s = out.tokens.slice();
     try testing.expect(s.len > 0);
     try testing.expectEqual(Tag.eof, s.items(.tag)[s.len - 1]);
+    var previous_end: u32 = 0;
     for (s.items(.tag), s.items(.start), s.items(.line)) |tag, start, line| {
         try testing.expect(start <= source.len);
         try testing.expect(line < out.line_starts.items.len);
+        // `line` is the line the token starts on.
+        try testing.expect(start >= out.line_starts.items[line]);
         const end = tokenEnd(source, tag, start);
         try testing.expect(end >= start and end <= source.len);
+        // Re-derived ends never overlap the next token.
+        try testing.expect(start >= previous_end);
+        previous_end = end;
     }
     for (out.diagnostics.items()) |d| {
         try testing.expect(d.start <= d.end and d.end <= source.len);
@@ -1930,6 +2599,10 @@ test "fuzz: arbitrary bytes never panic, always end in eof, and every token slic
         "\"${ \"${ } \" }\"",
         "-- \xff\xfe\n\xc3",
         "a.\x00.b",
+        "=<a b=\"${ x }\" {...c}>t < {<i/>}</a >",
+        "=<a -- c }\n\t<",
+        "=<>{\"\n",
+        "=<a>\n}",
     } });
 }
 
@@ -1950,6 +2623,15 @@ test "every scan that could run past the end of the file stops at it" {
         "\xf0",
     }) |source| try checkArbitrary(source);
 }
+
+/// Pieces that drive the markup modes: openers, closers, names, attributes,
+/// holes, a spread, text, and the column-1 break. Not in `pieces`, whose
+/// mixes must lex clean; text and tags mixed at random need not.
+const markup_pieces = [_][]const u8{
+    "= <",  "(<",  "<a",   "<Ui.Card", "<>",    "</",  "</a>", ">",     "/>", " a-b:c",
+    "=",    "\"",  "{",    "}",        "{...x", "...", "text", "a < b", "\n", "\nx",
+    "-- c", "<-a", "${ <", "'x'",      "12",
+};
 
 /// Bytes that steer the state machine: string and interpolation delimiters,
 /// escapes, dots, dashes, line terminators, a tab, NUL, and UTF-8 lead and
@@ -1978,7 +2660,10 @@ test "stress: random mixes of valid pieces, steering bytes and noise never panic
         while (i < len) {
             switch (random.uintLessThan(u8, 4)) {
                 0 => {
-                    const piece = pieces[random.uintLessThan(usize, pieces.len)];
+                    const piece = if (random.boolean())
+                        pieces[random.uintLessThan(usize, pieces.len)]
+                    else
+                        markup_pieces[random.uintLessThan(usize, markup_pieces.len)];
                     const n = @min(piece.len, len - i);
                     @memcpy(buf[i..][0..n], piece[0..n]);
                     i += n;

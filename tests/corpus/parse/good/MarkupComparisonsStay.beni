@@ -1,0 +1,27 @@
+-- A `<` after a token that can end an operand is the comparison, exactly as
+-- before markup existed (frontend.md §9.3): after a name (`a <b`), after an
+-- argument (`f a <b`), after `)` (`(x) <y`), after a string's closing quote,
+-- and inside `${…}`, where `<` is always the operator. `(<)` is still the
+-- operator function: its `<` is followed by `)`, not a letter.
+lt a b =
+    a <b
+
+
+applied f a b =
+    f a <b
+
+
+parened x y =
+    (x) <y
+
+
+quoted b =
+    "a" <b
+
+
+interpolated a b =
+    "${ a <b }"
+
+
+op =
+    (<)

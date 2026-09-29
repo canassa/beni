@@ -1,0 +1,6 @@
+-- A `<` in text not followed by a letter, `/` or `>` cannot stand there
+-- (language.md §11.4): it is one `invalid` token, unexpected_token at 6:10
+-- with the `{"<"}` spelling, and the text resumes after it. The markup
+-- itself is not_implemented at 6:5.
+view =
+    <p>a < b</p>

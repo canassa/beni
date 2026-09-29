@@ -185,6 +185,48 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                 \\for a multi-byte character that was cut short.
             );
         },
+        // Markup's stray bytes (frontend.md §9.1): the three that cannot
+        // stand in text say which hole writes them; any other is a byte a
+        // tag cannot hold.
+        .unexpected_token => {
+            const which: ?[]const u8 = if (text.len == 1) switch (text[0]) {
+                '<', '>', '}' => text,
+                else => null,
+            } else null;
+            if (which) |c| switch (c[0]) {
+                '<' => try w.writeAll(
+                    \\I found a `<` that does not start a tag. A tag's `<` is followed directly by
+                    \\its name, by `/` in a closing tag, or by `>` in a fragment.
+                    \\
+                    \\In the text between tags, write the character as a hole holding a string:
+                    \\`{"<"}`.
+                ),
+                '>' => try w.writeAll(
+                    \\I found a `>` in the text between tags, where it cannot stand.
+                    \\
+                    \\Write the character as a hole holding a string: `{">"}`.
+                ),
+                else => try w.writeAll(
+                    \\I found a `}` that closes no `{`.
+                    \\
+                    \\In the text between tags, write the character as a hole holding a string:
+                    \\`{"}"}`.
+                ),
+            } else {
+                try w.print(
+                    \\I found `{s}` inside a tag, where it cannot stand.
+                    \\
+                    \\A tag holds its name and its attributes — `name`, `name="…"`, `name={{…}}` —
+                    \\and ends with `>`, or `/>` when it has no children.
+                , .{text});
+            }
+        },
+        .nesting_too_deep => try w.print(
+            \\This markup is nested more than {d} levels deep, counting its elements and
+            \\holes, which is more than I can follow.
+            \\
+            \\Split the markup into smaller pieces, bound by `let` or written as functions.
+        , .{@import("Tokenizer.zig").max_stack}),
         // The tokenizer produces only the codes above; anything else means a
         // caller reused this accumulator for a non-lexical code.
         else => try w.writeAll(diagnostic.title(item.code)),
@@ -297,6 +339,37 @@ test "message: invalid_character distinguishes control bytes, non-ASCII, a stray
         .invalid_character,
         "x = @",
         4,
+        5,
+    );
+}
+
+test "message: markup's stray bytes name the hole that writes them; a byte in a tag names the tag's parts" {
+    try expectMessage(
+        "I found a `<` that does not start a tag. A tag's `<` is followed directly by\nits name, by `/` in a closing tag, or by `>` in a fragment.\n\nIn the text between tags, write the character as a hole holding a string:\n`{\"<\"}`.",
+        .unexpected_token,
+        "<p>a < b</p>",
+        5,
+        6,
+    );
+    try expectMessage(
+        "I found a `>` in the text between tags, where it cannot stand.\n\nWrite the character as a hole holding a string: `{\">\"}`.",
+        .unexpected_token,
+        "<p>a > b</p>",
+        5,
+        6,
+    );
+    try expectMessage(
+        "I found a `}` that closes no `{`.\n\nIn the text between tags, write the character as a hole holding a string:\n`{\"}\"}`.",
+        .unexpected_token,
+        "<p>a } b</p>",
+        5,
+        6,
+    );
+    try expectMessage(
+        "I found `12` inside a tag, where it cannot stand.\n\nA tag holds its name and its attributes — `name`, `name=\"…\"`, `name={…}` —\nand ends with `>`, or `/>` when it has no children.",
+        .unexpected_token,
+        "<p 12>",
+        3,
         5,
     );
 }

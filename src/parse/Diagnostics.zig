@@ -485,6 +485,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\Module documentation must come before the first import or declaration. Move it to
             \\the top, or use `--|` to document a declaration, or `--` for an ordinary comment.
         ),
+        // Markup is lexed (frontend.md §9.1–§9.3) but not yet parsed: the
+        // whole expression is skipped as one error at its `<`.
+        .not_implemented => try w.writeAll(
+            \\I found markup here, which this version of beni can read but not yet compile.
+            \\
+            \\Markup expressions are not supported yet; build this view with function calls
+            \\instead.
+        ),
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),

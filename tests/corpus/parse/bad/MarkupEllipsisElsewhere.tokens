@@ -1,0 +1,30 @@
+5:1 lower_ident view
+5:6 lower_ident a
+5:8 equal =
+6:5 markup_open <
+6:6 markup_name Card
+6:11 l_brace {
+6:12 lower_ident a
+6:14 dot_dot ..
+6:16 dot_lower .a
+6:18 r_brace }
+6:19 markup_gt >
+6:20 l_brace {
+6:21 dot_dot ..
+6:23 dot_lower .a
+6:25 r_brace }
+6:26 markup_close_open </
+6:28 markup_name Card
+6:32 markup_gt >
+9:1 lower_ident plain
+9:7 lower_ident a
+9:9 equal =
+10:5 lower_ident a
+10:7 dot_dot ..
+10:9 dot_lower .a
+11:1 eof
+-- comments
+1:1 plain -- `...` is an `ellipsis` only as the first token of a hole opened in a tag
+2:1 plain -- (frontend.md §9.1). Later in such a hole, in a children hole, and in
+3:1 plain -- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: the
+4:1 plain -- markup is not_implemented at 6:5 and the code unexpected_token at 10:7.

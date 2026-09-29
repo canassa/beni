@@ -1,0 +1,22 @@
+5:1 lower_ident view
+5:6 lower_ident a
+5:8 lower_ident b
+5:10 equal =
+6:5 markup_open <
+6:6 markup_name Card
+6:11 l_brace {
+6:13 ellipsis ...
+6:16 lower_ident a
+6:18 r_brace }
+7:9 l_brace {
+9:13 ellipsis ...
+9:16 lower_ident b
+10:9 r_brace }
+11:5 markup_self_close />
+12:1 eof
+-- comments
+1:1 plain -- A spread is `{` then `...` as the hole's first token, whatever comes
+2:1 plain -- between them (frontend.md §9.1): `{ ...a }`, and a `{` whose `...` is on
+3:1 plain -- the next line after a comment, both lex `l_brace ellipsis`. Only
+4:1 plain -- not_implemented at 6:5.
+8:13 plain -- the rest

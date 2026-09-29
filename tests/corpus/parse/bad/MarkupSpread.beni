@@ -1,0 +1,11 @@
+-- A spread is `{` then `...` as the hole's first token, whatever comes
+-- between them (frontend.md §9.1): `{ ...a }`, and a `{` whose `...` is on
+-- the next line after a comment, both lex `l_brace ellipsis`. Only
+-- not_implemented at 6:5.
+view a b =
+    <Card { ...a }
+        {
+            -- the rest
+            ...b
+        }
+    />

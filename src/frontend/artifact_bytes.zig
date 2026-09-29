@@ -73,7 +73,9 @@ pub const magic = "BENIFE\x00\x00";
 ///
 /// 4 (2026-09-24): `Token.Tag` gained `dot_dot`, which shifted every later
 /// tag, and a `Bir.Exposed` row grew from 8 to 12 bytes (`all_ctors_token`).
-pub const format_version: u32 = 4;
+/// 5 (2026-09-29): `Token.Tag` gained the eight markup kinds
+/// (frontend.md §9.2).
+pub const format_version: u32 = 5;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

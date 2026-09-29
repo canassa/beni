@@ -186,6 +186,27 @@ test "a file with diagnostics, an empty one, a comment-only one and an unparsed 
     }
 }
 
+test "a file of markup replays its diagnostics and dumps the same Bir under the flag" {
+    // The markup token kinds are the newest tags in the token column, so
+    // a reader that bounds the column by the old tag set refuses the
+    // artifact and changes the exit code; a stray `<` in text (the lexer's
+    // diagnostic) and the markup itself (the parser's) are positioned
+    // from the token starts the round trip replaced.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    try w.write("src/View.beni", "view name =\n    <p class=\"a\">Hi {name}, a < b</p>\n\n\nafter a b =\n    a <b\n");
+    const abs = try w.projectSubPath(arena, "src/View.beni");
+    // An oracle over a clean check would pass.
+    const plain = try w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", abs }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), plain.exit_code);
+    try expectSameInProject(&w, arena, &.{ "check", "--no-cache", "--diagnostics=json", abs });
+    try expectSameInProject(&w, arena, &.{ "dump", "--stage=bir", abs });
+}
+
 /// One command with and without the flag, with cwd = the world's project
 /// directory: same exit code, same stdout, same stderr, to the byte. A
 /// `check` passes `--no-cache`: with a cache, the flagged run would load the

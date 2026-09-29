@@ -1,0 +1,51 @@
+6:1 lower_ident view
+6:6 lower_ident label
+6:12 equal =
+7:5 markup_open <
+7:6 markup_name my-widget
+7:16 markup_attr aria-label
+7:26 equal =
+7:27 str_start "
+7:28 str_chunk a 
+7:30 interp_start ${
+7:32 lower_ident label
+7:37 interp_end }
+7:38 str_end "
+7:40 markup_attr xlink:href
+7:50 equal =
+7:51 l_brace {
+7:52 lower_ident label
+7:57 r_brace }
+7:59 markup_attr type
+7:63 equal =
+7:64 str_start "
+7:65 str_chunk x
+7:66 str_end "
+7:68 markup_attr as
+7:71 markup_attr for
+7:75 markup_attr disabled
+7:83 markup_gt >
+7:84 markup_text "\n        "
+8:9 markup_open <
+8:10 markup_name Ui.Card
+8:18 markup_self_close />
+8:20 markup_text "\n        "
+9:9 markup_open <
+9:10 markup_name Card.header
+9:22 markup_self_close />
+9:24 markup_text "\n        "
+10:9 markup_open <
+10:10 markup_gt >
+10:11 markup_close_open </
+10:13 markup_gt >
+10:14 markup_text "\n    "
+11:5 markup_close_open </
+11:7 markup_name my-widget
+11:16 markup_gt >
+12:1 eof
+-- comments
+1:1 plain -- The names a tag holds (frontend.md §9.2): an element name with a hyphen,
+2:1 plain -- a component path and a component value; attribute names with `-` and `:`,
+3:1 plain -- keywords read as attribute names (`type`, `as`, `for`), a bare attribute,
+4:1 plain -- a string value with an interpolation and a hole value; a fragment. Only
+5:1 plain -- not_implemented at 7:5.

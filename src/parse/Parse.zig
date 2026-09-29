@@ -2205,8 +2205,41 @@ fn parseAtom(p: *Parse, operand_start: bool) Allocator.Error!Index {
             return node;
         },
         .invalid => return p.invalidNode(.error_expr),
+        .markup_open => return p.skipMarkup(),
         else => return p.unexpectedExpr(),
     }
+}
+
+/// Markup is lexed but not yet parsed (frontend.md §9.4 is still to be
+/// built): report `not_implemented` once at the opening `<` and skip the
+/// whole expression — to the end of its outermost element, a column-1
+/// token, or the end of the file — so the rest of the file parses as
+/// before. The lexer never produces `markup_open` after an operand
+/// (§9.3), so only an operand start reaches this.
+fn skipMarkup(p: *Parse) Allocator.Error!Index {
+    @branchHint(.cold);
+    const node = try p.errorNode(.error_expr, p.itemAt(.not_implemented));
+    var depth: u32 = 0;
+    var closing = false;
+    while (true) {
+        const tag = p.rawTag();
+        if (tag == .eof) break;
+        if (depth != 0 and p.col(p.tok_i) == 1) break;
+        p.tok_i += 1;
+        switch (tag) {
+            .markup_open => depth += 1,
+            .markup_close_open => closing = true,
+            .markup_self_close => depth -= 1,
+            .markup_gt => if (closing) {
+                closing = false;
+                depth -= 1;
+            },
+            else => {},
+        }
+        if (depth == 0) break;
+    }
+    p.recovering = false;
+    return node;
 }
 
 fn unexpectedExpr(p: *Parse) Allocator.Error!Index {

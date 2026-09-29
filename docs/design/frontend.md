@@ -223,7 +223,8 @@ no positions (so a formatting change to the input leaves an `.ast` golden unchan
   `method_call` **prints the operator it was written as** — `%4 = method_call %2 .eq [%3] (==)` —
   so a golden distinguishes `a == b` from `a.eq b`, which are not the same constraint.
   → [`static-dispatch-spike.md`](static-dispatch-spike.md) §1.3, §1.4.
-- *Markup (2026-09-29, not built)* adds eight token tags to `tokens`, the markup and vocabulary
+- *Markup (2026-09-29; the tokens are built, the rest not)* adds eight token tags to `tokens` — a
+  `markup_text`'s bytes printed quoted and escaped, since a run may span lines — the markup and vocabulary
   node tags to `ast`, and the `markup` instruction with its tree and the vocabulary declarations to
   `bir` (§9.2, §9.4, §9.7).
 
@@ -588,7 +589,9 @@ green; a bench run recorded in the commit message; a code review against the hou
 
 ## 9. Markup in the front end
 
-*Specified 2026-09-29; not built.* [`language.md`](language.md) §11 is what markup means; this
+*Specified 2026-09-29. The lexer's part (§9.1–§9.3) is built; the parser, the formatter and
+lowering are not, so until they are the parser reports each markup expression as one
+`not_implemented` at its `<` and skips it (§9.3's as-built note).* [`language.md`](language.md) §11 is what markup means; this
 section is what the lexer, the parser, the formatter and lowering do with it. It follows research
 36 §6's mapping onto the pipeline. One recommendation of research 28 does not survive: with **bare
 text** (W30) the lexer cannot stay mode-free (research 28 §3.1), so it gains a mode stack — the
@@ -715,6 +718,41 @@ nothing past the checker until a lowering exists. The input moves up the pipelin
 (`--phases=lex,parse` once the parser reads markup, every phase once markup builds under the `node`
 platform), and joins `bench/corpus/` only then; until it does, `bench/corpus/` stays buildable end
 to end, which it must, because `--library` builds of it are the size benchmark (`backend.md` §9).
+
+*As built, 2026-09-29* (`src/lex/Tokenizer.zig`). Where §9.1–§9.2 left a choice, the lexer takes
+the smallest reading, and these are they:
+
+- **`</` replaces `children` with `close`, and the closing `>` pops that one entry.** §9.1's table
+  says both "replaced by `close`" and "`close` and the `children` below it are popped"; the two
+  cannot both hold, and the result — the entry under the element is on top again — is the same.
+- **`close` mode** skips spaces and newlines, and reads any run of name bytes as a `markup_name`
+  (the parser, not the lexer, judges a second name); a `--` there is two stray bytes, not a comment.
+- **A stray byte in `tag` or `close` mode** is one `invalid` token as long as the `invalid` that
+  byte always starts (`invalidEnd`): `12` is one token, not two, and a `'` runs as a character
+  literal would. Its code is `unexpected_token` for printable ASCII; a tab, a bare `\r`, a control
+  byte and non-ASCII keep the codes they have everywhere (`tab_in_source`, `bare_carriage_return`,
+  `invalid_character`, `invalid_utf8`). A `}` in a tag and a `}` in text share one message, which
+  says it closes nothing and gives `{"}"}`.
+- **A text run is raw, like a comment**: a tab, a control byte, a bare `\r` or malformed UTF-8
+  inside it is reported and the run stays one token, so a `markup_text` is never split and its end
+  is §9.2's stop set exactly. The **newline before a column-1 break is the run's last byte**, and a
+  column-1 break is any byte but a space, a line terminator or the end of the file — so a blank line
+  inside an element does not end it.
+- **In `tag` mode `=` is always the one-byte `equal`**; `==` is two of them.
+- **The start of the file** counts as a token that cannot end an operand, so a file may begin with
+  markup (the parser then reports a declaration where one was expected).
+- **The stack** is a fixed array in `tokenize`'s frame, so it is neither allocated nor reset: it is
+  per-file by construction. A string and its `${…}` take no entry — strings never nest (§2.6), so
+  the entry under one waits in a slot of its own — and the bound therefore counts markup entries
+  and the bottom `normal` one. At the bound, `nesting_too_deep` is reported **once per
+  file**, at the first push that does not fit, and the pushed mode replaces the top; a later pop
+  below the bottom stays at the bottom `normal` entry.
+- **Until §9.4 is built**, `markup_open` in `parseAtom` reports `not_implemented` at the `<` and
+  skips to the end of the outermost element — counting `markup_open` against `/>` and a closing
+  tag's `>` — or to a column-1 token, and returns an error placeholder; the lexer's own diagnostics
+  inside the markup are reported as always.
+- **`dump --stage=tokens`** prints a `markup_text`'s bytes in double quotes with `"`, `\`, `\n`,
+  `\r`, `\t` and other control bytes escaped, since a run may span lines (§1.2).
 
 ### 9.4 Parser productions
 

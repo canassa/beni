@@ -1,0 +1,21 @@
+5:1 lower_ident view
+5:6 equal =
+6:5 markup_open <
+6:6 markup_name div
+6:10 markup_attr a
+6:12 invalid <
+6:14 invalid 12
+6:17 invalid )
+6:19 markup_attr b
+6:20 markup_gt >
+6:21 markup_text "x"
+6:22 markup_close_open </
+6:24 markup_name div
+6:28 invalid .
+6:29 markup_gt >
+7:1 eof
+-- comments
+1:1 plain -- A byte a tag cannot hold is one `invalid` token with unexpected_token,
+2:1 plain -- and the tag goes on (frontend.md §9.1): a stray `<`, a number and a `)`
+3:1 plain -- in an opening tag (6:12, 6:14, 6:17), a `.` in a closing tag (6:28); the
+4:1 plain -- number is one token. The markup is not_implemented at 6:5.

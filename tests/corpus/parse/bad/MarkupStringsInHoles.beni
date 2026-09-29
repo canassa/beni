@@ -1,0 +1,11 @@
+-- A string inside a hole is an ordinary string, interpolation included
+-- (frontend.md §9.1): the `}` of `${…}` ends the interpolation, a `}` in
+-- the chunk is text, and the `}` after the string closes the hole. The
+-- markup is not_implemented at 7:5. Inside `${…}` a `<` is the operator even
+-- where markup could start (language.md §11.2): unexpected_token at 11:9.
+view name =
+    <p title={"t ${name}"}>{"a ${name} }"}</p>
+
+
+interpolated b =
+    "${ <b }"

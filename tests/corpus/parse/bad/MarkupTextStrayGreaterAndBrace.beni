@@ -1,0 +1,6 @@
+-- `>` and `}` cannot stand in text (language.md §11.4): each is one
+-- `invalid` token with unexpected_token, whose message gives `{">"}` and
+-- `{"}"}` (6:10, 6:14), and the text resumes after each. The markup itself
+-- is not_implemented at 6:5.
+view =
+    <p>a > b } c</p>

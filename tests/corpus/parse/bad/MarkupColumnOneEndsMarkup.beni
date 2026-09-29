@@ -1,0 +1,9 @@
+-- A newline followed by a non-space byte at column 1 ends every markup mode
+-- (frontend.md §9.1): the unclosed `<div>` does not swallow the rest of the
+-- file as text. Its text run ends with the newline, and `after` is lexed as
+-- the declaration it is: only not_implemented at 6:5, and `after` checks.
+view =
+    <div><span>unclosed
+
+after a b =
+    a <b

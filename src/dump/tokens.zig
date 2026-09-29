@@ -12,7 +12,9 @@
 //!
 //! One token per line as `<line>:<col> <tag> <text>`, 1-based, the column in
 //! bytes; the text is what `Tokenizer.slice` recovers, so a zero-length
-//! token (`eof`, the unterminated-string marker) has no trailing text. Then
+//! token (`eof`, the unterminated-string marker) has no trailing text. A
+//! markup text run is the one exception: it may span lines, so its text is
+//! printed quoted and escaped (`writeQuoted`). Then
 //! the `-- comments` heading and every comment as `<line>:<col> <kind>
 //! <text>`, the text running to the end of its line (`\r` excluded).
 //! Positions are always printed here — unlike the AST and BIR dumps they are
@@ -35,7 +37,10 @@ pub fn write(
         const col = start - line_starts[line] + 1;
         const text = Tokenizer.slice(source, tag, start);
         try w.print("{d}:{d} {t}", .{ line + 1, col, tag });
-        if (text.len != 0) {
+        if (tag == .markup_text) {
+            try w.writeByte(' ');
+            try writeQuoted(w, text);
+        } else if (text.len != 0) {
             try w.writeByte(' ');
             try w.writeAll(text);
         }
@@ -47,6 +52,24 @@ pub fn write(
         const end = Tokenizer.tokenEnd(source, .multiline_line, comment.start); // to end of line, like a raw line
         try w.print("{d}:{d} {t} {s}\n", .{ pos.line, pos.col, comment.kind, source[comment.start..end] });
     }
+}
+
+/// A markup text run, which may hold newlines and leading or trailing
+/// spaces, in double quotes so it stays on its line and its edges show:
+/// `"`, `\`, `\n`, `\r` and `\t` are escaped, any other control byte is
+/// `\xNN`, and every other byte is written as it is.
+fn writeQuoted(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+    try w.writeByte('"');
+    for (text) |b| switch (b) {
+        '"' => try w.writeAll("\\\""),
+        '\\' => try w.writeAll("\\\\"),
+        '\n' => try w.writeAll("\\n"),
+        '\r' => try w.writeAll("\\r"),
+        '\t' => try w.writeAll("\\t"),
+        0...8, 11, 12, 14...0x1f, 0x7f => try w.print("\\x{X:0>2}", .{b}),
+        else => try w.writeByte(b),
+    };
+    try w.writeByte('"');
 }
 
 test "write prints every token with its position and the comments after a heading" {

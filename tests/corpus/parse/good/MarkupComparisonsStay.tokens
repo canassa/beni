@@ -1,0 +1,56 @@
+6:1 lower_ident lt
+6:4 lower_ident a
+6:6 lower_ident b
+6:8 equal =
+7:5 lower_ident a
+7:7 op_lt <
+7:8 lower_ident b
+10:1 lower_ident applied
+10:9 lower_ident f
+10:11 lower_ident a
+10:13 lower_ident b
+10:15 equal =
+11:5 lower_ident f
+11:7 lower_ident a
+11:9 op_lt <
+11:10 lower_ident b
+14:1 lower_ident parened
+14:9 lower_ident x
+14:11 lower_ident y
+14:13 equal =
+15:5 l_paren (
+15:6 lower_ident x
+15:7 r_paren )
+15:9 op_lt <
+15:10 lower_ident y
+18:1 lower_ident quoted
+18:8 lower_ident b
+18:10 equal =
+19:5 str_start "
+19:6 str_chunk a
+19:7 str_end "
+19:9 op_lt <
+19:10 lower_ident b
+22:1 lower_ident interpolated
+22:14 lower_ident a
+22:16 lower_ident b
+22:18 equal =
+23:5 str_start "
+23:6 interp_start ${
+23:9 lower_ident a
+23:11 op_lt <
+23:12 lower_ident b
+23:14 interp_end }
+23:15 str_end "
+26:1 lower_ident op
+26:4 equal =
+27:5 l_paren (
+27:6 op_lt <
+27:7 r_paren )
+28:1 eof
+-- comments
+1:1 plain -- A `<` after a token that can end an operand is the comparison, exactly as
+2:1 plain -- before markup existed (frontend.md §9.3): after a name (`a <b`), after an
+3:1 plain -- argument (`f a <b`), after `)` (`(x) <y`), after a string's closing quote,
+4:1 plain -- and inside `${…}`, where `<` is always the operator. `(<)` is still the
+5:1 plain -- operator function: its `<` is followed by `)`, not a letter.

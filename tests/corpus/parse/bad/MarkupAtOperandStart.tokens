@@ -1,0 +1,50 @@
+6:1 lower_ident bold
+6:6 equal =
+7:5 markup_open <
+7:6 markup_name b
+7:8 markup_self_close />
+10:1 lower_ident paren
+10:7 lower_ident f
+10:9 equal =
+11:5 lower_ident f
+11:7 l_paren (
+11:8 markup_open <
+11:9 markup_name b
+11:11 markup_self_close />
+11:13 r_paren )
+14:1 lower_ident items
+14:7 equal =
+15:5 l_bracket [
+15:7 markup_open <
+15:8 markup_name li
+15:11 markup_self_close />
+15:13 comma ,
+15:15 markup_open <
+15:16 markup_name li
+15:19 markup_self_close />
+15:22 r_bracket ]
+18:1 lower_ident row
+18:5 equal =
+19:5 backslash \
+19:6 lower_ident r
+19:8 arrow ->
+19:11 markup_open <
+19:12 markup_name tr
+19:15 markup_self_close />
+22:1 lower_ident piped
+22:7 lower_ident f
+22:9 equal =
+23:5 lower_ident f
+23:7 op_pipe_left <|
+23:10 markup_open <
+23:11 markup_gt >
+23:12 markup_text "x"
+23:13 markup_close_open </
+23:15 markup_gt >
+24:1 eof
+-- comments
+1:1 plain -- A `<` followed by a letter or `>`, after a token that cannot end an
+2:1 plain -- operand, opens markup (frontend.md §9.3): after `=`, `(`, `[` and `,`,
+3:1 plain -- `->` and `<|`. The tokens show each `markup_open`. Markup is lexed but not
+4:1 plain -- yet parsed, so each expression is one not_implemented at its `<`: 7:5,
+5:1 plain -- 11:8, 15:7 and 15:15, 19:11, 23:10.

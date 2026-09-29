@@ -21,8 +21,8 @@ pub const Token = struct {
     /// 0-based line index; column is `start - line_starts[line] + 1`.
     line: u32,
     /// `@intFromEnum(Symbol)` for the identifier-like tags (`isInterned`:
-    /// lower, upper, qualified, and dot_lower, whose field name is interned
-    /// without the dot); the index value for `dot_index` (saturated at
+    /// lower, upper, qualified, dot_lower, whose field name is interned
+    /// without the dot, and the markup tag and attribute names); the index value for `dot_index` (saturated at
     /// `maxInt(u32)`); 0 otherwise. Kept as `u32` rather than `Symbol` so
     /// the record has no dependency on the interner.
     payload: u32,
@@ -68,7 +68,8 @@ pub const Comment = struct {
 };
 
 /// Every token kind in language.md §2.2, plus `invalid` for bytes the lexer
-/// reports and skips (the parser sees them as an error placeholder).
+/// reports and skips (the parser sees them as an error placeholder), plus
+/// the eight markup kinds of frontend.md §9.2.
 pub const Tag = enum(u8) {
     lower_ident,
     upper_ident,
@@ -147,11 +148,33 @@ pub const Tag = enum(u8) {
     eof,
     invalid,
 
+    // Markup (frontend.md §9.2). Each one is re-derived from its tag and
+    // start alone, so the cached two-column form needs no mode column.
+
+    /// The `<` that opens a tag or a fragment.
+    markup_open,
+    /// `</`, which opens a closing tag.
+    markup_close_open,
+    /// The `>` that ends an opening or a closing tag, or `<>`'s `>`.
+    markup_gt,
+    /// `/>`, which ends a self-closing tag.
+    markup_self_close,
+    /// A tag name: `[a-z][A-Za-z0-9-]*`, or `Upper(.Upper)*(.lower)?`.
+    markup_name,
+    /// An attribute name: `[A-Za-z][A-Za-z0-9_-]*`, with `:` allowed after
+    /// the first byte. Keywords are not recognised inside a tag.
+    markup_attr,
+    /// A run of text between tags, raw: whitespace, newlines and character
+    /// references are kept for lowering to judge.
+    markup_text,
+    /// `...` as the first token of a hole opened inside a tag (a spread).
+    ellipsis,
+
     /// True for the identifier-like tags whose `payload` is a `Symbol`
     /// (`dot_index` is not one: its payload is the index itself).
     pub fn isInterned(tag: Tag) bool {
         return switch (tag) {
-            .lower_ident, .upper_ident, .qualified_lower, .qualified_upper, .dot_lower => true,
+            .lower_ident, .upper_ident, .qualified_lower, .qualified_upper, .dot_lower, .markup_name, .markup_attr => true,
             else => false,
         };
     }
@@ -227,6 +250,12 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .op_pipe_right => "|>",
         .op_pipe_left => "<|",
 
+        .markup_open => "<",
+        .markup_close_open => "</",
+        .markup_gt => ">",
+        .markup_self_close => "/>",
+        .ellipsis => "...",
+
         .lower_ident,
         .upper_ident,
         .qualified_lower,
@@ -244,6 +273,9 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .char,
         .eof,
         .invalid,
+        .markup_name,
+        .markup_attr,
+        .markup_text,
         => null,
     };
 }
@@ -290,7 +322,9 @@ test "every operator and symbol has a lexeme; no variable-text tag does" {
     inline for (@typeInfo(Tag).@"enum".fields) |field| {
         const tag: Tag = @enumFromInt(field.value);
         const fixed = tag.isKeyword() or tag.isOperator() or
-            (@intFromEnum(tag) >= @intFromEnum(Tag.l_paren) and @intFromEnum(tag) <= @intFromEnum(Tag.question));
+            (@intFromEnum(tag) >= @intFromEnum(Tag.l_paren) and @intFromEnum(tag) <= @intFromEnum(Tag.question)) or
+            (@intFromEnum(tag) >= @intFromEnum(Tag.markup_open) and @intFromEnum(tag) <= @intFromEnum(Tag.markup_self_close)) or
+            tag == .ellipsis;
         try std.testing.expectEqual(fixed, lexeme(tag) != null);
     }
 }

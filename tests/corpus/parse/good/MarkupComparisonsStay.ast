@@ -1,0 +1,39 @@
+(module
+  (definition lt
+    (pat_var a)
+    (pat_var b)
+    (lt
+      (ident a)
+      (ident b)))
+  (definition applied
+    (pat_var f)
+    (pat_var a)
+    (pat_var b)
+    (lt
+      (apply
+        (ident f)
+        (ident a))
+      (ident b)))
+  (definition parened
+    (pat_var x)
+    (pat_var y)
+    (lt
+      (paren
+        (ident x))
+      (ident y)))
+  (definition quoted
+    (pat_var b)
+    (lt
+      (string
+        (chunk "a"))
+      (ident b)))
+  (definition interpolated
+    (pat_var a)
+    (pat_var b)
+    (string
+      (interp
+        (lt
+          (ident a)
+          (ident b)))))
+  (definition op
+    (op_fn <)))
