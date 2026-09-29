@@ -1,0 +1,10 @@
+-- The `html` vocabulary declares no `script` element (the owner's decision,
+-- language.md §11.14): a page loads its scripts through its platform, never
+-- through a `view`, so `<script>` is unknown_element (10:11) and nothing a
+-- view holds can become one.
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view code =
+    <div><script>{code}</script></div>

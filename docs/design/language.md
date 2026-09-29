@@ -1603,6 +1603,12 @@ nothing in the language depends on `property`, `stateful`, `url` or `delegated`.
 the one place a `view` can inject script. An unknown fact word is `unexpected_token`, naming the
 facts its form accepts.
 
+*Amended 2026-09-29, the owner's decision closing markup's other script sinks:* **the `html`
+vocabulary declares no `script` element.** A page loads its scripts through its platform — its
+runtime, its entry file — never through a `view`, so `<script>` is `unknown_element`, and no
+value a view holds can become a script. A vocabulary of another platform may declare one; the
+`html` platform, which `node` and `browser` share, does not.
+
 The markup type itself is an ordinary `pub foreign type` of one parameter, named by the platform's
 manifest (`boundary.md` §9.2). **The vocabulary module may write markup itself**, against its own
 declarations: the markup edge of `frontend.md` §9.8 is never added from a module to itself, and a

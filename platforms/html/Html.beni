@@ -9,6 +9,10 @@
 --! `Html` type and builds under both. The facts are data for the lowering
 --! that renders them; the checker reads `void`, `on`, the value and payload
 --! types, `via`, `classes`, `styles` and `raw`.
+--!
+--! There is no `script` element: a page loads its scripts through its
+--! platform, never through a `view`, so nothing a view holds can become
+--! one (`docs/design/language.md` §11.14).
 
 
 --| Markup whose handlers produce messages of type `msg`. Its representation
@@ -123,7 +127,6 @@ pub element "rt"
 pub element "ruby"
 pub element "s"
 pub element "samp"
-pub element "script"
 pub element "search"
 pub element "section"
 pub element "select"
@@ -209,10 +212,10 @@ pub attribute "required" on "input" "select" "textarea" : Bool
 pub attribute "rows" on "textarea" : Int
 pub attribute "rowspan" on "td" "th" : Int
 pub attribute "selected" property stateful on "option" : Bool
-pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "script" "source" "track" "video" : String
+pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "track" "video" : String
 pub attribute "step" on "input" : String
 pub attribute "target" on "a" "area" "base" "form" : String
-pub attribute "type" on "button" "embed" "input" "link" "object" "ol" "script" "source" "style" : String
+pub attribute "type" on "button" "embed" "input" "link" "object" "ol" "source" "style" : String
 pub attribute "value" property stateful on "input" "select" "textarea" : String
 pub attribute "value" on "button" "data" "option" "output" : String
 pub attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
