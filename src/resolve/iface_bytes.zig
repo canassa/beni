@@ -442,6 +442,16 @@ fn writeWords(out: []u8, words: []const u32) void {
     for (words, 0..) |word, i| std.mem.writeInt(u32, out[i * 4 ..][0..4], word, .little);
 }
 
+/// `out.len` little-endian words from the front of `in`: one `memcpy` on a
+/// little-endian host, a word at a time elsewhere.
+fn readWords(out: []u32, in: []const u8) void {
+    if (comptime @import("builtin").cpu.arch.endian() == .little) {
+        @memcpy(std.mem.sliceAsBytes(out), in[0 .. out.len * 4]);
+        return;
+    }
+    for (out, 0..) |*word, i| word.* = std.mem.readInt(u32, in[i * 4 ..][0..4], .little);
+}
+
 /// Bytes of padding that take `n` up to a multiple of four.
 fn pad4(n: usize) usize {
     return (4 - (n % 4)) % 4;
@@ -623,26 +633,27 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
+        // Column by column, each one copy into a list of exactly its length:
+        // the tags are checked in the bytes first, because a `Tag` value
+        // outside the enum must never exist.
+        const tags = bytes[offsets_of[@intFromEnum(Column.term_tags)]..][0..terms_len];
+        var bad: u8 = 0;
+        for (tags) |tag| bad |= @intFromBool(std.enums.fromInt(Interface.Term.Tag, tag) == null);
+        if (bad != 0) return error.BadRecord;
         var terms: std.MultiArrayList(Interface.Term) = .empty;
         errdefer terms.deinit(gpa);
-        try terms.resize(gpa, terms_len);
-        const tags = bytes[offsets_of[@intFromEnum(Column.term_tags)]..];
-        const lhs = bytes[offsets_of[@intFromEnum(Column.term_lhs)]..];
-        const rhs = bytes[offsets_of[@intFromEnum(Column.term_rhs)]..];
-        for (0..terms_len) |i| {
-            terms.set(i, .{
-                .tag = std.enums.fromInt(Interface.Term.Tag, tags[i]) orelse return error.BadRecord,
-                .lhs = std.mem.readInt(u32, lhs[i * 4 ..][0..4], .little),
-                .rhs = std.mem.readInt(u32, rhs[i * 4 ..][0..4], .little),
-            });
-        }
+        try terms.setCapacity(gpa, terms_len);
+        terms.len = terms_len;
+        const s = terms.slice();
+        @memcpy(@as([]u8, @ptrCast(s.items(.tag))), tags);
+        readWords(s.items(.lhs), bytes[offsets_of[@intFromEnum(Column.term_lhs)]..]);
+        readWords(s.items(.rhs), bytes[offsets_of[@intFromEnum(Column.term_rhs)]..]);
         iface.terms = terms.toOwnedSlice();
     }
     {
-        const in = bytes[offsets_of[@intFromEnum(Column.extra)]..];
         const extra = try gpa.alloc(u32, lengths[@intFromEnum(Column.extra)]);
         iface.extra = extra;
-        for (extra, 0..) |*word, i| word.* = std.mem.readInt(u32, in[i * 4 ..][0..4], .little);
+        readWords(extra, bytes[offsets_of[@intFromEnum(Column.extra)]..]);
     }
     {
         const in = bytes[offsets_of[@intFromEnum(Column.type_refs)]..];
