@@ -19,6 +19,35 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-29 — the lexer's markup modes
+
+**Machine 2** (AMD Ryzen 9 5950X, Linux 6.12.110, Zig 0.16.0, ReleaseFast),
+load average about 1 on 32 threads, every run pinned to one core with
+`taskset -c 7`. The lexer gained a mode stack for markup (`frontend.md`
+§9.1–§9.3); this entry is its two measurements (§9.3).
+
+**Markup-free code does not regress.** Eleven interleaved runs of the lex
+line against a binary built from the commit before, medians (MB/s):
+
+| corpus | before | after |
+|---|---:|---:|
+| `bench/corpus` (`--iterations=500`) | 243.2 | 240.7 |
+| `--generate=100000`, 624 files (`--iterations=40`) | 263.0 | 270.3 |
+
+Both differences sit inside the runs' spread (235–258 and 259–280). A first
+cut, before this one, was 2–3 % slower on both; the two changes that removed
+it are worth knowing: the markup states live in a function of their own so
+`next`'s state machine is the one it was, and the 32 KiB stack array is a
+local of `tokenize` that the tokenizer points at, not a field copied into
+every file's tokenizer.
+
+**Markup itself**, `zig build bench -- --corpus=bench/markup --phases=lex`
+(4 files, 553 lines, 19 853 bytes, 4 085 tokens), five runs: **273–280 MB/s,
+7.99–8.19 M LOC/s** — 32× `fast-compiler.md` §2's 250 k LOC/s, which is a
+budget for the whole of checking and not for the lexer alone.
+
+---
+
 ## 2026-09-18 — where the compiler stands, after the day M3 had
 
 **The numbers are not here.** This entry exists so that the trend has a marker

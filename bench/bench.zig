@@ -22,6 +22,14 @@
 //! `==` on records and custom types and comparator-free `Dict`/`Set`; it is
 //! the C1 corpus of that plan's §7).
 //!
+//! `--phases=<phase>,…` runs only the phases named, from `lex`, `parse`,
+//! `lower`, `resolve`, `check`, `emit` and `iface` (`read` always runs: it
+//! is what loads the bytes). It is how an input that a later phase cannot
+//! read yet is measured at all — `bench/markup/`, whose markup the lexer
+//! reads and nothing after it does (`frontend.md` §9.3):
+//! `zig build bench -- --corpus=bench/markup --phases=lex`. The per-file
+//! lines of pathological files are printed only when every phase runs.
+//!
 //! `--pathological=constraint-chain=<n>` is the §7 M2 case: `n` unannotated
 //! `pub` functions, each adding one method constraint to the scheme the one
 //! before it inferred.
@@ -77,7 +85,12 @@ const Options = struct {
     dispatch: bool = false,
     iterations: u32 = 5,
     seed: u64 = gen.default_seed,
+    /// `--phases=`: the phases to run after `read`; every one by default.
+    phases: std.EnumSet(Phase) = .full,
 };
+
+/// The phases `--phases` can name, in pipeline order.
+const Phase = enum { lex, parse, lower, resolve, check, emit, iface };
 
 const generated_dir = ".zig-cache/bench-gen";
 const dispatch_dir = ".zig-cache/bench-gen-dispatch";
@@ -106,7 +119,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     const args = try init.minimal.args.toSlice(arena);
     const options = parseArgs(args[1..]) catch |err| {
-        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--dispatch] [--wide=<declarations>] [--pathological=<name>[=<n>]] [--iterations=<n>] [--seed=<n>]\n", .{err});
+        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--dispatch] [--wide=<declarations>] [--pathological=<name>[=<n>]] [--iterations=<n>] [--seed=<n>] [--phases=<phase>,...]\n", .{err});
         return 2;
     };
 
@@ -154,40 +167,60 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     }
 
+    const phases = options.phases;
     var total: Measurement = .{};
     const read = try measureRead(gpa, io, &store, options.iterations);
     try printLine(stdout, "read", read);
     total.add(read);
-    const lex = try measureLex(gpa, io, &store, options.iterations);
-    try printLine(stdout, "lex", lex);
-    total.add(lex);
-    const parsed = try measureParse(gpa, io, &store, options.iterations);
-    try printLine(stdout, "parse", parsed);
-    total.add(parsed);
-    const lowered = try measureLower(gpa, io, &store, options.iterations);
-    try printLine(stdout, "lower", lowered);
-    total.add(lowered);
-    const resolved = try measureResolve(gpa, io, corpus, options.iterations);
-    try printResolveLine(stdout, resolved);
-    total.ns += resolved.ns;
-    const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines);
-    try printCheckLine(stdout, checked);
-    total.ns += checked.ns;
-    const emitted = try measureEmit(gpa, io, corpus, options.iterations);
-    try printEmitLine(stdout, emitted);
-    total.ns += emitted.ns;
+    if (phases.contains(.lex)) {
+        const lex = try measureLex(gpa, io, &store, options.iterations);
+        try printLine(stdout, "lex", lex);
+        total.add(lex);
+    }
+    if (phases.contains(.parse)) {
+        const parsed = try measureParse(gpa, io, &store, options.iterations);
+        try printLine(stdout, "parse", parsed);
+        total.add(parsed);
+    }
+    if (phases.contains(.lower)) {
+        const lowered = try measureLower(gpa, io, &store, options.iterations);
+        try printLine(stdout, "lower", lowered);
+        total.add(lowered);
+    }
+    // `check`'s rate subtracts the resolve time, so it measures it too.
+    if (phases.contains(.resolve) or phases.contains(.check)) {
+        const resolved = try measureResolve(gpa, io, corpus, options.iterations);
+        if (phases.contains(.resolve)) {
+            try printResolveLine(stdout, resolved);
+            total.ns += resolved.ns;
+        }
+        if (phases.contains(.check)) {
+            const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines);
+            try printCheckLine(stdout, checked);
+            total.ns += checked.ns;
+        }
+    }
+    if (phases.contains(.emit)) {
+        const emitted = try measureEmit(gpa, io, corpus, options.iterations);
+        try printEmitLine(stdout, emitted);
+        total.ns += emitted.ns;
+    }
     try printLine(stdout, "total", total);
 
     // Outside `total`: serializing an interface is not a phase of a cold
     // build and never runs in one. It is the row `plans/m4-slice-zero.md`
     // §8 items 1–3 ask for, so a warm build's cost can be argued about
     // with numbers.
-    const ifaces = try measureIface(gpa, io, corpus, options.iterations);
-    try printIfaceLine(stdout, ifaces);
+    if (phases.contains(.iface)) {
+        const ifaces = try measureIface(gpa, io, corpus, options.iterations);
+        try printIfaceLine(stdout, ifaces);
+    }
 
     // One line per pathological file, so a single slow file cannot hide in
     // a corpus average. `--pathological=<name>` measures one file and gets
     // a per-file line for it too, because the whole corpus IS that file.
+    // Every phase runs on it, so only when every phase was asked for.
+    if (!phases.eql(.full)) return 0;
     for (0..store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
         const p = store.path(file);
@@ -286,6 +319,12 @@ fn parseArgs(args: []const [:0]const u8) !Options {
             if (options.iterations == 0) return error.ZeroIterations;
         } else if (std.mem.startsWith(u8, arg, "--seed=")) {
             options.seed = try std.fmt.parseInt(u64, arg["--seed=".len..], 0);
+        } else if (std.mem.startsWith(u8, arg, "--phases=")) {
+            options.phases = .empty;
+            var names = std.mem.splitScalar(u8, arg["--phases=".len..], ',');
+            while (names.next()) |name| {
+                options.phases.insert(std.meta.stringToEnum(Phase, name) orelse return error.UnknownPhase);
+            }
         } else {
             return error.UnknownArgument;
         }

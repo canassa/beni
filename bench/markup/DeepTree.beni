@@ -1,0 +1,87 @@
+--! A deep tree: layout wrappers nested forty levels, with a hole and a
+--! component at the bottom, then a recursive view of a file tree. Markup-
+--! heavy on purpose, to measure the lexer's mode stack at depth.
+
+type Node
+    = File String Int
+    | Folder String (List Node)
+
+
+type alias Model =
+    root : Node
+    open : List String
+
+
+type Msg
+    = Toggle String
+
+
+viewNode model node =
+    case node of
+        File name size ->
+            <li class="file">
+                <span class="icon"><i class="fa fa-file" /></span>
+                <span class="name">{name}</span>
+                <span class="size">{size} bytes</span>
+            </li>
+
+        Folder name children ->
+            <li class={if List.member name model.open then "folder open" else "folder"}>
+                <button class="toggle" type="button" aria-expanded={List.member name model.open} onClick={Toggle name}>
+                    <span class="icon"><i class="fa fa-folder" /></span>
+                    <span class="name">{name}</span>
+                </button>
+                {if List.member name model.open then
+                    <ul class="children">
+                        <For each={children} keyed={False}>{viewNode model _}</For>
+                    </ul>
+
+                 else
+                    <></>
+                }
+            </li>
+
+
+shell model =
+    <div class="l1"><div class="l2"><div class="l3"><div class="l4"><div class="l5">
+    <div class="l6"><div class="l7"><div class="l8"><div class="l9"><div class="l10">
+    <section class="l11"><section class="l12"><section class="l13"><section class="l14">
+    <section class="l15"><section class="l16"><section class="l17"><section class="l18">
+    <article class="l19"><article class="l20"><article class="l21"><article class="l22">
+    <div class="l23"><div class="l24"><div class="l25"><div class="l26"><div class="l27">
+    <div class="l28"><div class="l29"><div class="l30"><div class="l31"><div class="l32">
+    <span class="l33"><span class="l34"><span class="l35"><span class="l36"><span class="l37">
+    <span class="l38"><span class="l39"><span class="l40">
+        <Tree.panel title="Files" {...Tree.defaults}>
+            <ul class="tree">{viewNode model model.root}</ul>
+        </Tree.panel>
+    </span></span></span>
+    </span></span></span></span></span>
+    </div></div></div></div></div>
+    </div></div></div></div></div>
+    </article></article></article></article>
+    </section></section></section></section>
+    </section></section></section></section>
+    </div></div></div></div></div>
+    </div></div></div></div></div>
+
+
+breadcrumbs path =
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <For each={path} keyed>
+                {\segment, index ->
+                    <li class={if index == List.length path - 1 then "is-active" else ""}>
+                        <a href="#${segment}" aria-current={if index == List.length path - 1 then "page" else "false"}>{segment}</a>
+                    </li>
+                }
+            </For>
+        </ul>
+    </nav>
+
+
+view model =
+    <main>
+        {breadcrumbs [ "home", "projects", "beni", "src", "lex" ]}
+        {shell model}
+    </main>

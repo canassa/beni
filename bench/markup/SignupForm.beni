@@ -1,0 +1,132 @@
+--! A sign-up form: labelled inputs, controlled values, validation messages,
+--! a select built from a list, and attribute strings with interpolation.
+--! Markup-heavy on purpose, to measure the lexer's markup modes.
+
+type alias Model =
+    name : String
+    email : String
+    password : String
+    confirm : String
+    country : String
+    plan : Plan
+    terms : Bool
+    submitted : Bool
+
+
+type Plan
+    = Free
+    | Pro
+    | Team
+
+
+type Msg
+    = Name String
+    | Email String
+    | Password String
+    | Confirm String
+    | Country String
+    | PickPlan Plan
+    | ToggleTerms
+    | Submit
+
+
+countries =
+    [ ( "br", "Brazil" ), ( "de", "Germany" ), ( "jp", "Japan" ), ( "pt", "Portugal" ), ( "us", "United States" ) ]
+
+
+errorFor field message =
+    <p class="help is-danger" id="${field}-error" role="alert">{message}</p>
+
+
+field label key value msg problem =
+    <div class="field">
+        <label class="label" for={key}>{label}</label>
+        <div class="control has-icons-left">
+            <input
+                class={if problem == "" then "input" else "input is-danger"}
+                id={key}
+                name={key}
+                type="text"
+                value={value}
+                aria-invalid={problem /= ""}
+                aria-describedby="${key}-error"
+                onInput={msg}
+            />
+            <span class="icon is-small is-left">
+                <i class="fas fa-${key}" />
+            </span>
+        </div>
+        {if problem == "" then <></> else errorFor key problem}
+    </div>
+
+
+planCard model plan title price features =
+    <label class={if model.plan == plan then "card plan selected" else "card plan"}>
+        <input type="radio" name="plan" checked={model.plan == plan} onChange={PickPlan plan} />
+        <header class="card-header">
+            <p class="card-header-title">{title}</p>
+            <p class="price">${price} / month</p>
+        </header>
+        <div class="card-content">
+            <ul>{List.map (\f -> <li class="feature">{f}</li>) features}</ul>
+        </div>
+    </label>
+
+
+view model =
+    <form class="signup" novalidate onSubmit={Submit}>
+        <h2 class="title">Create your account</h2>
+        <p class="subtitle">
+            It takes a minute &mdash; and you can change every answer later.
+        </p>
+        {field "Name" "name" model.name Name (if model.submitted && model.name == "" then "Please tell us your name." else "")}
+        {field "Email" "email" model.email Email (if model.submitted && not (String.contains "@" model.email) then "That does not look like an email address." else "")}
+        {field "Password" "password" model.password Password (if model.submitted && String.length model.password < 12 then "Use at least twelve characters." else "")}
+        {field "Confirm password" "confirm" model.confirm Confirm (if model.confirm /= model.password then "The two passwords differ." else "")}
+        <div class="field">
+            <label class="label" for="country">Country</label>
+            <div class="control">
+                <div class="select">
+                    <select id="country" name="country" onChange={Country}>
+                        <option value="" disabled selected={model.country == ""}>Pick one</option>
+                        <For each={countries} keyed={\( code, _ ) -> code}>
+                            {\( code, label ) ->
+                                <option value={code} selected={model.country == code}>{label}</option>
+                            }
+                        </For>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <fieldset class="plans">
+            <legend>Plan</legend>
+            {planCard model Free "Free" 0 [ "One project", "Community support" ]}
+            {planCard model Pro "Pro" 12 [ "Unlimited projects", "Email support", "History" ]}
+            {planCard model Team "Team" 49 [ "Everything in Pro", "Shared workspaces", "SSO" ]}
+        </fieldset>
+        <div class="field">
+            <label class="checkbox">
+                <input type="checkbox" checked={model.terms} onChange={\_ -> ToggleTerms} />
+                I agree to the <a href="/terms" target="_blank" rel="noopener">terms of service</a>
+                and the <a href="/privacy" target="_blank" rel="noopener">privacy policy</a>.
+            </label>
+        </div>
+        <div class="field is-grouped">
+            <div class="control">
+                <button class="button is-link" type="submit" disabled={not model.terms}>Sign up</button>
+            </div>
+            <div class="control">
+                <a class="button is-link is-light" href="/">Cancel</a>
+            </div>
+        </div>
+        {-- The summary under the form, shown once the form was sent.
+        }
+        {if model.submitted then
+            <section class="notification is-info">
+                <p>Thanks, {model.name}! We sent a link to <strong>{model.email}</strong>.</p>
+            </section>
+
+         else
+            <></>
+        }
+    </form>

@@ -1,0 +1,154 @@
+--! A page of mostly static markup: long text runs, character references,
+--! nested sections, a few holes. Research 29's static-heavy page is this
+--! shape. Markup-heavy on purpose, to measure the lexer's text runs.
+
+type alias Model =
+    user : String
+    year : Int
+
+
+navigation =
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="/">
+                <img src="/logo.svg" width="112" height="28" alt="Beni" />
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-start">
+                <a class="navbar-item" href="/docs">Documentation</a>
+                <a class="navbar-item" href="/guide">Guide</a>
+                <a class="navbar-item" href="/examples">Examples</a>
+                <a class="navbar-item" href="/blog">Blog</a>
+                <a class="navbar-item" href="/community">Community</a>
+            </div>
+        </div>
+    </nav>
+
+
+hero model =
+    <section class="hero is-primary is-medium">
+        <div class="hero-body">
+            <p class="title">A language for the browser, with Elm's guarantees</p>
+            <p class="subtitle">
+                Welcome back, {model.user}. Beni compiles to small, fast JavaScript, checks
+                every program before it runs, and never throws at run time &mdash; the same
+                promise Elm made, kept by a compiler built for speed.
+            </p>
+        </div>
+    </section>
+
+
+features =
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+                <div class="column">
+                    <h3 class="title is-4">No runtime exceptions</h3>
+                    <p>
+                        Every value has a type the compiler knows, every case is exhaustive, and
+                        every effect is managed. What compiles runs: there is no null, no
+                        undefined, and no &ldquo;cannot read property of&rdquo; waiting in
+                        production. When something can fail, its type says so, and the program
+                        says what to do about it.
+                    </p>
+                </div>
+                <div class="column">
+                    <h3 class="title is-4">Markup that compiles to templates</h3>
+                    <p>
+                        Views are written as markup and compiled to cloned templates with a
+                        reference check per dynamic hole. There is no virtual DOM to diff: an
+                        untouched value is the same object, so an untouched part of the page is
+                        never visited. It is as fast as the fastest frameworks measured, and
+                        often faster.
+                    </p>
+                </div>
+                <div class="column">
+                    <h3 class="title is-4">Errors that teach</h3>
+                    <p>
+                        Every diagnostic says what it found, why it is a problem and what to write
+                        instead, with the code it is about. Beni keeps Elm's register because it
+                        works: a compiler is the first reader of every program, and it should be a
+                        patient one.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+article =
+    <article class="content">
+        <h2>Getting started</h2>
+        <p>
+            Install the compiler, create a project and start the development server. The first
+            build compiles the core library once and caches it; every build after that compiles
+            only what changed, usually in a few milliseconds.
+        </p>
+        <ol>
+            <li>Install beni with your package manager of choice.</li>
+            <li>Run <code>beni init</code> in an empty directory.</li>
+            <li>Open <code>src/Main.beni</code> and change the greeting.</li>
+            <li>Run <code>beni build</code> and open the page it wrote.</li>
+        </ol>
+        <h3>What a program looks like</h3>
+        <p>
+            A program is a model, a way to update it and a way to view it. The model is a value,
+            the update is a function from a message and a model to a new model, and the view is a
+            function from the model to markup. Nothing else changes the page, which is why a
+            page written this way can be understood by reading three functions.
+        </p>
+        <blockquote>
+            <p>
+                &ldquo;The best part is that I stopped being afraid of refactoring. If it compiles,
+                it works, and the compiler tells me exactly what I forgot.&rdquo;
+            </p>
+            <footer>&mdash; someone who shipped a large application</footer>
+        </blockquote>
+        <h3>Where to go next</h3>
+        <ul>
+            <li><a href="/guide/types">Types and type inference</a></li>
+            <li><a href="/guide/records">Records, and updating them</a></li>
+            <li><a href="/guide/markup">Markup, components and lists</a></li>
+            <li><a href="/guide/effects">Effects and the runtime</a></li>
+            <li><a href="/guide/interop">Talking to JavaScript</a></li>
+        </ul>
+        <table class="table is-striped">
+            <thead>
+                <tr><th>Command</th><th>What it does</th><th>Typical time</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>beni check</code></td><td>type-checks the project</td><td>&lt; 100 ms</td></tr>
+                <tr><td><code>beni build</code></td><td>writes JavaScript</td><td>&lt; 200 ms</td></tr>
+                <tr><td><code>beni fmt</code></td><td>formats every file</td><td>&lt; 50 ms</td></tr>
+                <tr><td><code>beni dump</code></td><td>prints a phase&apos;s output</td><td>&lt; 10 ms</td></tr>
+            </tbody>
+        </table>
+    </article>
+
+
+footer model =
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>Beni</strong> &copy; {model.year}. The source code is licensed under the
+                MIT license; the website content is licensed under CC BY-NC-SA 4.0.
+            </p>
+            <p class="links">
+                <a href="/about">About</a> &middot; <a href="/contact">Contact</a> &middot;
+                <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a>
+            </p>
+        </div>
+    </footer>
+
+
+view model =
+    <>
+        {navigation}
+        {hero model}
+        {features}
+        <main class="section">
+            <div class="container">{article}</div>
+        </main>
+        {footer model}
+    </>
