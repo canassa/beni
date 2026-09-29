@@ -19,6 +19,66 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-29 — `bench/corpus` checks clean, and its numbers again
+
+**Every check number taken over `bench/corpus` before this entry measured an error path.**
+`JsonCodecs` imported `Json.Decode` and `Json.Encode`, which core does not have, and `NotesApp`
+imported `Html`, `Html.Attributes` and `Html.Events` functions no platform declares: 208 errors
+on every run, with those two modules' bodies resolved against names that did not exist. The
+front-end lines (lex, parse, lower) never looked past a file and are unaffected, but they were
+over 11 files; the size lines of `bench/size.mjs` excluded both modules. The corpus now carries
+the two libraries those imports stood for, written in beni (`Codec/`, `Ui/Html`), checks with no
+diagnostic and no platform, and builds for `node` as a library; `tests/blackbox/build_test.zig`
+holds both inside the gates. Per-file line and token counts are in `bench/corpus/README.md`: 11
+files, 2 687 lines, 62 636 bytes, 9 568 tokens became 18 files, 3 994 lines, 94 362 bytes,
+14 325 tokens.
+
+**Machine 2** (AMD Ryzen 9 5950X, Linux 6.12.110, Zig 0.16.0, ReleaseFast), load average 2.2–2.5
+on 32 threads, every run pinned with `taskset -c 7`. One binary for both sides: *before* is the
+corpus as it was, *after* the repaired one, interleaved run by run, 7 rounds. Instructions are
+`perf stat -e instructions:u`; a harness line's instructions are per iteration, the
+`--iterations=40` run minus the `--iterations=10` run, over 30, so reading and start-up cancel.
+Rates are the median of the 7 runs' `zig build bench` lines (`--iterations=40`).
+
+| phase | instructions before | after | per byte before | after | MB/s before | after |
+|---|---:|---:|---:|---:|---:|---:|
+| lex | 2 453 117 | 3 728 504 | 39.2 | 39.5 | 239.4 | 243.5 |
+| parse | 2 020 675 | 3 043 491 | 32.3 | 32.3 | 317.8 | 310.2 |
+| lower | 2 547 193 | 3 794 320 | 40.7 | 40.2 | 242.5 | 223.8 |
+
+Per byte the three phases retire what they did before, within 1.5 %; the corpus is simply half
+as big again. The lex and parse rates differ inside the runs' spread (218–246 and 287–326 MB/s
+across both sides). Lowering is 8 % slower per byte at the same instructions per byte, with the
+runs barely overlapping (206–225 after, 219–246 before); the binary is the same on both sides, so
+that is the new files' shape costing cycles rather than instructions, not a regression.
+
+**Checking**, the harness's `check` line (resolve subtracted, corpus lines only, core checked
+too) and a whole cold `beni check --jobs=1 --no-cache bench/corpus` process:
+
+| | before (error path) | after |
+|---|---:|---:|
+| diagnostics | 208 | **0** |
+| modules checked, core included | 22 | 29 |
+| unifications | 13 918 | 19 000 |
+| `check` step, ms (median; range) | 4.66 (4.57–4.98) | 5.87 (5.79–6.44) |
+| `check` step, LOC/s | 577 k | **681 k** |
+| whole cold check in the harness, ms | 7.1 | 8.7 |
+| `beni check` process, instructions (median) | 50 524 137 | 63 263 549 |
+| `beni check` process, task-clock ms (median) | 8.78 | 9.91 |
+
+The corpora differ, so the change in rate is not the error path's price alone: the new
+libraries are small combinator-shaped functions, 4.8 unifications a line where the old corpus's
+error-laden modules were 5.2. What the entry does say is that the old line was not measuring
+the program it claimed to, and that the §2 budget (250 k LOC/s cold per core for checking) holds
+2.7× over on the corpus as written.
+
+Sizes, `node bench/size.mjs --corpus=bench/corpus` (library roots): 9 modules measured and 2
+excluded, 142 085 raw / 23 704 brotli (release 63 114 / 16 442), became 18 measured and none
+excluded, 231 934 raw / 35 489 brotli (release 96 852 / 24 015). Earlier size figures quoted for
+`bench/corpus` are figures for its nine checkable modules.
+
+---
+
 ## 2026-09-29 — the parser, formatter and lowering read markup
 
 **Machine 2**, as the entry below, every run pinned with `taskset -c 7`, interleaved against a
