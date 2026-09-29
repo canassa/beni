@@ -87,6 +87,7 @@ const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
+const Minify = @import("Minify.zig");
 const Manifest = @import("Manifest.zig");
 const OutputRecord = @import("OutputRecord.zig");
 const prelude = @import("../bir/prelude.zig");
@@ -405,6 +406,10 @@ const Emitter = struct {
     /// Whether a module written imports the markup runtime, which the
     /// build then copies (`backend.md` §15.1).
     uses_markup_runtime: bool = false,
+    /// The markup runtime's exports the modules written import, in
+    /// module order and with repeats: what `--release` cuts the runtime file
+    /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
+    markup_exports: std.ArrayList([]const u8) = .empty,
     /// The program start data every module's markup lowering contributed
     /// (`boundary.md` §9.4.5), in module order. Scratch-owned.
     start: std.ArrayList(Lower.StartPair) = .empty,
@@ -1834,6 +1839,7 @@ const Emitter = struct {
             };
             uses_runtime = uses_runtime or slot.uses_runtime;
             e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+            try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
             for (slot.start) |pair| try e.start.append(e.scratch, .{
                 .key = try e.scratch.dupe(u8, pair.key),
                 .value = try e.scratch.dupe(u8, pair.value),
@@ -1865,6 +1871,9 @@ const Emitter = struct {
         /// the markup runtime.
         uses_runtime: bool = false,
         uses_markup_runtime: bool = false,
+        /// The markup runtime's exports it imports, by name, in the
+        /// lowering worker's `kept` arena.
+        markup_exports: []const []const u8 = &.{},
         /// The program start data its markup lowering contributed, in the
         /// lowering worker's `kept` arena.
         start: []const Lower.StartPair = &.{},
@@ -1921,6 +1930,9 @@ const Emitter = struct {
             if (lowered.diagnostics.len != 0) return;
             slot.uses_runtime = lowered.uses_runtime;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
+            const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
+            for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
+            slot.markup_exports = exports;
             // Read in module order once every module is lowered; the
             // lowering's own copy goes with its tree.
             const start = try w.kept.allocator().alloc(Lower.StartPair, lowered.start.len);
@@ -2235,16 +2247,18 @@ const Emitter = struct {
             // whole, so the unit is the file and not the export — §9 leaves
             // per-export elimination on the table deliberately, with the
             // number.
-            var has_foreign = false;
+            // Under `--release` the surviving `foreign`s are also what the
+            // sibling is cut to: the module imports exactly those.
+            var surviving: std.ArrayList([]const u8) = .empty;
             for (b.decls, 0..) |d, index| {
-                if (d.kind == .foreign_value and e.live.decl(m, index)) has_foreign = true;
+                if (d.kind == .foreign_value and e.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
             }
-            if (!has_foreign) continue;
+            if (surviving.items.len == 0) continue;
             const source_path = e.session.store.path(e.graph().moduleFile(m));
             const sibling_source = try e.siblingPath(source_path);
             const bytes = e.readAsset(sibling_source) orelse continue;
             const out = try e.siblingOutputPath(m);
-            try e.produce(out, bytes, sibling_source);
+            try e.produceHandWritten(out, bytes, sibling_source, surviving.items);
         }
         try e.copyMarkupRuntime();
         // The platform's runtime (§5.2). It is not a sibling of any module,
@@ -2270,7 +2284,23 @@ const Emitter = struct {
             );
             return;
         };
-        try e.produce(try e.runtimeOutputPath(), bytes, runtime_source);
+        // What the entry file imports from it (`emitEntry`), and, when it is
+        // the markup runtime too, what the modules do.
+        var keep: std.ArrayList([]const u8) = .empty;
+        try keep.appendSlice(e.scratch, &.{ "run", "start" });
+        if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
+        try e.produceHandWritten(try e.runtimeOutputPath(), bytes, runtime_source, keep.items);
+    }
+
+    /// A hand-written file — a sibling, a runtime: copied as written, or
+    /// under `--release` compacted and cut to the exports `keep` names
+    /// (§9, *Hand-written JavaScript under `--release`*). A file `Minify`
+    /// cannot read exactly is copied as written in either mode.
+    fn produceHandWritten(e: *Emitter, out: []const u8, bytes: []const u8, origin: []const u8, keep: []const []const u8) !void {
+        if (e.options.release) {
+            if (try Minify.minify(e.scratch, bytes, keep)) |compact| return e.produce(out, compact, origin);
+        }
+        try e.produce(out, bytes, origin);
     }
 
     /// The markup runtime, copied iff a module written imports it
@@ -2281,7 +2311,7 @@ const Emitter = struct {
         const source = try e.markupRuntimePath() orelse return;
         // A missing file was reported by `checkMarkupRuntime` already.
         const bytes = e.readAsset(source) orelse return;
-        try e.produce((try e.markupRuntimeOutputPath()).?, bytes, source);
+        try e.produceHandWritten((try e.markupRuntimeOutputPath()).?, bytes, source, e.markup_exports.items);
     }
 
     /// Where the markup runtime is written: its package's output directory,

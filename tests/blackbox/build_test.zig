@@ -2883,6 +2883,133 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     try testing.expect(!w.exists("maps"));
 }
 
+/// A platform whose hand-written JavaScript has what a release build must
+/// keep exactly — a regular expression with spaces in it, a template literal
+/// nesting another, a helper named only inside a substitution — and what
+/// it may drop: comments, an export the program never imports and the
+/// helper only that export uses (backend.md §9, *Hand-written JavaScript
+/// under `--release`*).
+fn writeHandPlatform(w: *World) !void {
+    try w.write("hand/beni.json",
+        \\{ "platform": true, "name": "hand", "program": "Hand.Program", "runtime": "run.js" }
+    );
+    try w.write("hand/Hand.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign shout : String -> Program
+        \\
+    );
+    try w.write("hand/Hand.js", hand_sibling);
+    try w.write("hand/run.js", hand_runtime);
+    try w.write("Main.beni",
+        \\import Hand exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Hand.say "a  b   c"
+        \\
+    );
+}
+
+const hand_sibling =
+    \\// The sibling of `Hand.beni`.
+    \\
+    \\const spaces = / +/g;
+    \\
+    \\/* Named only inside a substitution below. */
+    \\const upper = (s) => s.toUpperCase();
+    \\
+    \\// Used only by `shout`, which the program never calls.
+    \\const exclaim = (s) => `${s}!`;
+    \\
+    \\export const say = (line) => ({
+    \\  text: `[${ upper(line.replace(spaces, " ")) }] ${ `(${ line.length })` }`,
+    \\});
+    \\
+    \\export const shout = (line) => ({ text: exclaim(line) });
+    \\
+;
+
+const hand_runtime =
+    \\import process from "node:process";
+    \\
+    \\// Writes the program's one line.
+    \\export const run = (program) => {
+    \\  process.stdout.write(program.text + "\n");
+    \\};
+    \\
+    \\export const unused = () => process.exit(3);
+    \\
+;
+
+test "a release build compacts hand-written JavaScript and cuts it to what the program imports" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHandPlatform(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=hand", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    // The regular expression and both template literals are as written;
+    // `upper` survives because a substitution names it; `shout`, `exclaim`
+    // and every comment are gone.
+    try testing.expectEqualStrings(
+        \\const spaces=/ +/g;const upper=(s)=>s.toUpperCase();export const say=(line)=>({text:`[${upper(line.replace(spaces," "))}] ${`(${line.length})`}`,});
+        \\
+    , try w.read("out/_platform/Hand.foreign.mjs"));
+    // `run` is what the entry file imports; `unused` is nobody's, and the
+    // `import` stays because it evaluates a module.
+    try testing.expectEqualStrings(
+        \\import process from"node:process";export const run=(program)=>{process.stdout.write(program.text+"\n");};
+        \\
+    , try w.read("out/_platform/run.foreign.mjs"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "[A B C] (8)\n" });
+}
+
+test "a development build copies hand-written JavaScript byte for byte" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeHandPlatform(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=hand", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    try testing.expectEqualStrings(hand_sibling, try w.read("out/_platform/Hand.foreign.mjs"));
+    try testing.expectEqualStrings(hand_runtime, try w.read("out/_platform/run.foreign.mjs"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "[A B C] (8)\n" });
+}
+
 test "--release refuses a build that reaches Debug; the same program builds and logs without the flag" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

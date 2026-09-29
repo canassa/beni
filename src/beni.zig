@@ -52,6 +52,7 @@ pub const js = struct {
     pub const Opt = @import("js/Opt.zig");
     pub const Reach = @import("js/Reach.zig");
     pub const Rename = @import("js/Rename.zig");
+    pub const Minify = @import("js/Minify.zig");
 };
 pub const build = struct {
     pub const Command = @import("build/Command.zig");

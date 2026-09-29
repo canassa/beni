@@ -89,6 +89,9 @@ pub const Result = struct {
     uses_runtime: bool = false,
     /// Whether the module imports the markup runtime (`boundary.md` §9.4.5).
     uses_markup_runtime: bool = false,
+    /// The markup runtime's exports the module imports, by name, in the
+    /// caller's scratch arena.
+    markup_exports: []const []const u8 = &.{},
     /// The program start data the markup lowering contributed, in the
     /// caller's scratch arena.
     start: []const StartPair = &.{},
@@ -271,6 +274,7 @@ pub fn lower(
         .diagnostics = diagnostics,
         .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
         .uses_markup_runtime = l.markup_imports.items.len != 0,
+        .markup_exports = l.markup_exports.items,
         .start = if (l.mk) |st| st.start.items else &.{},
     };
 }
@@ -542,6 +546,9 @@ const Lowerer = struct {
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
+    /// The same exports by name, for `--release`'s cut of the runtime
+    /// file to what the build imports (`backend.md` §9).
+    markup_exports: std.ArrayList([]const u8) = .empty,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -6459,6 +6466,9 @@ const Lowerer = struct {
             if (spec.imported == imported) return spec.local;
         }
         try l.markup_imports.append(l.scratch, .{ .imported = imported, .local = n });
+        // A copy: the pool the name is in may grow and move before the
+        // list is read.
+        try l.markup_exports.append(l.scratch, try l.scratch.dupe(u8, l.interner.slice(export_name)));
         return n;
     }
 
