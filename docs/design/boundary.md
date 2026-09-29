@@ -260,6 +260,14 @@ infers something and the build cannot tell whether it is this platform's `Progra
 checker has already proved the body matches, so comparing the annotation is a complete check that
 costs no inference.
 
+**The annotation may name an alias of the `Program`** (2026-09-29, taken by the project's manager on
+the owner's delegation; reversible, `plans/browser-decisions.md`). An alias is the same type, so
+refusing `main : Tea.Program` where `type alias Program = Browser.Program` protected no guarantee
+(CLAUDE.md rule 7). The comparison looks through every alias at the annotation's root, parameters
+included — `type alias Same a = a` with `main : Same Node.Program` is a program — and compares the
+nominal type it arrives at with the manifest's `program`; `main_not_program` still names the type
+as it was written. Until then the annotation was compared by name, as written.
+
 **An absence has no token, so `missing_main` underlines nothing** (2026-09-19). It
 is reported against a FILE at `1:1` with no excerpt, the form
 `Session.reportInvalidModulePath` already uses for a fault about a file rather than a place in
@@ -728,6 +736,9 @@ readings of the example above:
 - **`Tea` declares no alias of `Browser.Program`.** `main`'s annotation is compared with the
   manifest's `program` as written (§5), not through aliases, so `main : Tea.Program` would be
   `main_not_program`. Whether that comparison should see through an alias is not settled here.
+  *Settled 2026-09-29*: §5 now compares through aliases, and `Tea` declares `type alias Program =
+  Browser.Program`, so a TEA program writes `main : Tea.Program` without importing `Browser`
+  (`tests/corpus/browser/tea/TwoPrograms`, which imports it for `Browser.mountAt`).
 
 ### 9.2 The `markup` manifest key
 

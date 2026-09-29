@@ -1265,6 +1265,8 @@ const Emitter = struct {
     /// `main` bound to something the runtime cannot run. With the annotation
     /// present the checker has already proved the body matches it, so
     /// comparing the annotation is a complete check and costs no inference.
+    /// The annotation is compared through its aliases (`expandedTypeName`):
+    /// an alias of the `Program` is the `Program`.
     fn checkMainType(e: *Emitter, entry: Entry) !void {
         const file = e.graph().moduleFile(entry.module);
         const b = e.bir(entry.module);
@@ -1284,11 +1286,13 @@ const Emitter = struct {
         ,
             .{try e.writtenProgramName(entry.module)},
         );
-        const actual = e.typeName(b, annotation);
-        if (actual) |t| {
+        if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
             if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program orelse "")) and
                 std.mem.eql(u8, t.name, shortName(e.options.platform.program orelse ""))) return;
         }
+        // The message names the type as it was WRITTEN, alias and all: that
+        // is the name the reader can find above the definition.
+        const actual = e.typeName(b, annotation);
         try e.report(
             .main_not_program,
             file,
@@ -1308,6 +1312,81 @@ const Emitter = struct {
 
     /// A resolved type reference, split into the two halves a message needs.
     const TypeRef = struct { module: []const u8, name: []const u8 };
+
+    /// An alias being looked through by `expandedTypeName`: its parameters,
+    /// and the arguments of the use being expanded, which are instructions
+    /// of the USE's module and mean what they mean under the use's own
+    /// frame.
+    const AliasFrame = struct {
+        params: []const InternPool.Symbol,
+        args: []const Bir.Inst.Index,
+        use_module: Graph.Index,
+        use_bir: *const Bir,
+        use_frame: ?*const AliasFrame,
+    };
+
+    /// Deeper than any alias chain the checker lets through: a recursive
+    /// alias is `recursive_alias` before a build gets here.
+    const max_alias_depth = 256;
+
+    /// The nominal type a written type names once every alias at its root
+    /// is looked through (`boundary.md` §5: an alias is the same type, so
+    /// `main : App` with `type alias App = Node.Program` is a program), or
+    /// null for anything that is not a named type — a function, a record,
+    /// an unbound parameter. An applied nominal type is null too: the
+    /// platform's `Program` takes no arguments.
+    fn expandedTypeName(
+        e: *Emitter,
+        module: Graph.Index,
+        b: *const Bir,
+        inst: Bir.Inst.Index,
+        frame: ?*const AliasFrame,
+        depth: u32,
+    ) ?TypeRef {
+        if (depth > max_alias_depth) return null;
+        const d = b.instData(inst);
+        const tag = b.instTag(inst);
+        const head_tag, const head_data, const args = switch (tag) {
+            .type_var => {
+                const f = frame orelse return null;
+                const symbol = b.symbol(@enumFromInt(d.lhs));
+                for (f.params, 0..) |p, i| {
+                    if (p != symbol) continue;
+                    if (i >= f.args.len) return null;
+                    return e.expandedTypeName(f.use_module, f.use_bir, f.args[i], f.use_frame, depth + 1);
+                }
+                return null;
+            },
+            .type_top, .ext_type => .{ tag, d, &[_]Bir.Inst.Index{} },
+            .type_app => blk: {
+                const head: Bir.Inst.Index = @enumFromInt(d.lhs);
+                break :blk .{ b.instTag(head), b.instData(head), b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index) };
+            },
+            else => return null,
+        };
+        const types = &e.session.checked.types;
+        const id = types.headId(module, head_tag, head_data);
+        if (id == .none) return null;
+        const named = types.entry(id);
+        if (named.kind != .alias) {
+            if (args.len != 0) return null;
+            return .{
+                .module = e.session.interner.slice(named.module_name),
+                .name = e.session.interner.slice(named.name),
+            };
+        }
+        const alias_bir = e.bir(named.module);
+        const decl = alias_bir.decl(named.decl);
+        const body = decl.annotation.unwrap() orelse return null;
+        const inner: AliasFrame = .{
+            .params = alias_bir.declTypeParams(decl),
+            .args = args,
+            .use_module = module,
+            .use_bir = b,
+            .use_frame = frame,
+        };
+        return e.expandedTypeName(named.module, alias_bir, body, &inner, depth + 1);
+    }
 
     /// The type a reference names, or null for anything else (a function, a
     /// record, an application).

@@ -16,11 +16,18 @@ import Browser
 import Html exposing (Html)
 
 
+--| What `main` is: `Browser.Program` under this platform's name, so a
+--| program need not import `Browser` to write `main : Tea.Program`.
+--| `Browser.mountAt` and `Browser.programs` place several on one page.
+pub type alias Program =
+    Browser.Program
+
+
 --| A page with a model and no effects: `init` is rendered first, and each
 --| message a handler sends goes through `update`. Several messages in one
 --| task are rendered once, after the task.
 pub sandbox :
     { init : model, update : msg, model -> model, view : model -> Html msg }
-    -> Browser.Program
+    -> Program
 sandbox app =
     Browser.program app

@@ -1,0 +1,19 @@
+-- `main`'s annotation may name an alias of the platform's `Program`
+-- (boundary.md §5): an alias is the same type, so the check looks through
+-- it rather than comparing names. `Entry` reaches `Node.Program` through
+-- a second alias whose body is its parameter, so the type the check finds
+-- arrives as an argument and not as a body.
+import Node
+
+
+type alias Same a =
+    a
+
+
+type alias Entry =
+    Same Node.Program
+
+
+main : Entry
+main =
+    Node.print "main is an Entry"
