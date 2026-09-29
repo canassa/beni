@@ -713,6 +713,22 @@ choice, the smallest reading, and these are they:
   `runtime` (the old "does not declare what `main` is" line), and a chain with no `program` at all
   gets the "only depended on" line of the list above.
 
+*As built, 2026-09-29, for `browser-tea`* (`platforms/browser-tea/`). It ships as the table says —
+depends on `browser`, declares no output key and no `"zig"`, and writes no JavaScript — with three
+readings of the example above:
+
+- **`"reexports"` is `["Html", "Browser"]`.** There is no `Browser.Dom`: `browser` ships one module,
+  and the example named one that had not been written. A program imports `Browser` for its
+  annotation, `main : Browser.Program`.
+- **The program is `Tea.sandbox { init, update, view }`**, not `Tea.element { init, update, view,
+  subscriptions }`: `subscriptions` and the commands of `init` and `update` are effects (W6, W7) and
+  arrive with them, when `Tea.element` is written over the same `Program`. Until then `sandbox` is
+  `Browser.program` under The Elm Architecture's name, one function of beni, and the empty mounted
+  page costs one module more than `browser`'s (`bench/size.mjs`'s `page` lines).
+- **`Tea` declares no alias of `Browser.Program`.** `main`'s annotation is compared with the
+  manifest's `program` as written (§5), not through aliases, so `main : Tea.Program` would be
+  `main_not_program`. Whether that comparison should see through an alias is not settled here.
+
 ### 9.2 The `markup` manifest key
 
 ```json

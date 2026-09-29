@@ -3492,3 +3492,34 @@ each the smallest that let the lowering be written against interface 1.0 unchang
   markup type `html`'s so that the chain's `html` primitives still type. A delegated click listening
   once for many rows is shown by the emitted shape — a property write per row, one listener
   registered per name — not by a page of a thousand rows, whose transcript would be the whole page.
+
+*As built, 2026-09-29, for `browser-tea`* (`platforms/browser-tea/Tea.beni`, `boundary.md` §9.1's
+*As built* note for it). It adds no JavaScript, as this section says: `Tea.sandbox` is beni over
+`Browser.program`, and the loop, the mount and the listeners are this runtime's, reached from
+`_platform/_browser/`. What its tests are, and what is still owed:
+
+- **In a page** (`tests/corpus/browser/tea/`, built with `--platform=browser-tea`): two instances of
+  one component nested with `Html.map`, each message reaching only its own; five messages in one
+  task render once, after the task; the runtime's `flush` renders before it returns; and a
+  controlled input reconciled before the next keystroke — the driver's `type` step types one
+  character per task, into the live `value`, so the second keystroke of `"ab"` arrives as `"Ab"`
+  under an `update` that upper-cases; with the flush moved from a microtask to a 30 ms timer the
+  fixture fails, the input left showing `"abc"`. The driver now finds the program runtime as the module the entry file imports `run`
+  from, since a layered build's is `_platform/_browser/runtime.foreign.mjs`.
+- **Without a DOM** (`tests/corpus/run/TeaLoop/`): the same program shape under `node`, the loop
+  written in the fixture — each task's messages folded through `update`, one `Ssr.render` per task
+  that sent any. The fixture cannot call `Tea.sandbox`: `browser-tea`'s chain names `dom`, and its
+  `Browser.program` under `ssr` would be `markup_type_in_foreign` (`boundary.md` §9.3), which is that
+  rule working. So it proves the program's half of the loop and `Html.map`'s identity under `ssr`,
+  not the runtime's scheduling, which the pages prove.
+- **Not built.** Two programs on one page: W9 settles that `main` is a `Program` and a page has no
+  exit code, but not where a program mounts, and `run` mounts at `document.body`, so a second
+  program's mount replaces the first's `$$root`. Each would receive its own messages by the nearest
+  `$$root` as specified once a `Program` carries its mount node; until then there is one per page.
+  The after-render queue, and the message sent from after-render work that renders in the next
+  flush, wait on effects: nothing can put work in the queue before they land.
+- **Bytes.** `bench/size.mjs` prints the empty mounted page per platform: for `browser`, 21 740 raw,
+  6 251 brotli in development and 21 309 / 6 178 with `--release`; `browser-tea` one module and 163
+  raw bytes more (2026-09-29). The runtime file is almost all of it (20 647 bytes): a sibling is
+  copied whole, neither eliminated nor printed compactly by `--release`, which is where W11's
+  second half will find its bytes.

@@ -1256,6 +1256,17 @@ inputs, four more runtime exports, names all by site, and a render after every m
 point until W9), and the empty page's bytes in `bench/size.mjs`. The differential oracle is
 `tests/oracle/`, its sixteen fixtures' differences listed with their reasons.
 
+*Built, 2026-09-29:* the rest of MJ8 that needs no effects — `browser-tea` (`Tea.sandbox`, beni over
+`Browser.program`, no JavaScript), its pages (nested `Html.map`, five messages rendering once,
+`flush`, a controlled input reconciled before the next keystroke through the driver's new `type`
+step), the DOM-free `run/TeaLoop`, and the empty mounted page in `bench/size.mjs` (`browser` 6 251
+brotli, 6 178 released) — as `boundary.md` §9.1's and `backend.md` §15.11's *As built* notes for
+`browser-tea` record, including where they depart: `sandbox` rather than `element` until commands
+and subscriptions exist, `reexports` without the `Browser.Dom` that does not exist, and a `run/`
+loop written in the fixture because `Tea` cannot build under `ssr`. Still not built: two programs
+on one page (W9 did not settle where a program mounts), and the after-render queue with the
+message sent from it (effects).
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

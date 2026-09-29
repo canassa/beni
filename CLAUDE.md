@@ -158,7 +158,12 @@ render loop, all in one runtime file ([`backend.md`](docs/design/backend.md)
 §15, its *As built* note). `main` is `Browser.program { init, update, view }`,
 mounted at `document.body`. `tests/corpus/browser/dom/` runs pages for it,
 `emit/dom/` pins its shapes, and `tests/oracle/` compares its templates and
-walks with dom-expressions' own output, every difference listed.
+walks with dom-expressions' own output, every difference listed. The Elm
+Architecture is the `browser-tea` platform layered on it, beni with no
+JavaScript of its own: `Tea.sandbox` until effects bring commands and
+subscriptions (`boundary.md` §9.1, pages in `tests/corpus/browser/tea/`).
+The empty mounted page is ~6.2 kB brotli, nearly all of it the runtime file,
+which `--release` copies as written (`bench/size.mjs`'s `page` lines).
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
