@@ -683,6 +683,29 @@ costs one more manifest and nothing at run time. It is recorded as a decision fo
   So a layered platform shares code with its base through beni, never through JavaScript — which is
   why TEA is a beni library over `browser`'s `foreign`s rather than a runtime of its own.
 
+*As built, 2026-09-29* (`src/platform.zig`, `src/resolve/Graph.zig`). Where the list above left a
+choice, the smallest reading, and these are they:
+
+- **The chain is read before any source**, by every command that takes `--platform` (`build`,
+  `check`, the resolving `dump` stages), so every manifest failure — an unknown dependency, a cycle,
+  a lowering and a runtime from two packages (§9.2) — is the exit-2 line before a byte of source is
+  read. A chain holds at most 64 packages.
+- **A dependency's path** is joined to the naming package's root and resolved lexically
+  (`top/../base` is `base`), since the compiler composed it; its identity, for "reached twice is one
+  package" and for the cycle, is its real path. An embedded platform's dependencies are embedded
+  platforms, named by name.
+- **`_<name>`** is the dependency's manifest `"name"`, else the spelling that reached it.
+- **A platform module that imports a module of a platform it does not depend on**, and a program
+  that imports a dependency's module no platform re-exports, get `unknown_module` naming the
+  platform that has it and the key (`"platforms"` or `"reexports"`); the name falls through to core
+  as if the platform had not declared it.
+- **A `"reexports"` entry that names no module the listing platform can import** exposes nothing
+  and is not reported: a program that imports the module meets the message above, which names the
+  key.
+- **`check --platform` needs no `program`** from any chain; a program build needs both `program` and
+  `runtime` (the old "does not declare what `main` is" line), and a chain with no `program` at all
+  gets the "only depended on" line of the list above.
+
 ### 9.2 The `markup` manifest key
 
 ```json
