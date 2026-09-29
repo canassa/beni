@@ -223,6 +223,12 @@ pub const Flags = struct {            // flex and rigid payload
   (which made schema property settling cubic).
 - **Growable DFS stacks only** (I4). `Walk.zig` owns one reusable `std.ArrayList` stack per walk
   kind on the module's scratch arena. There are no fixed arrays.
+  *As built (2026-09-29):* the stacks are reused across modules rather than per module: with the
+  frame stack, the frames' pools and `?` lists, the constraint trees, the generator's lists and the
+  obligation tables (§4.5), they belong to the checker's worker (`Retained.zig`), are lent to one
+  module's solver and come back cleared. They live on the process allocator, not the scratch arena,
+  because a list kept whole never grows twice, where one on the arena would leave a block behind at
+  every growth. §18 has the measurement.
 - **Records are normalised on merge**, so a closed record whose field was read stays closed for `==`. When `unifyRecord` merges two records, the surviving
   root's content is the *flattened* record: the union of the fields, sorted by symbol for the
   merge-join, plus the final extension. So a closed record stays one node with `ext =
@@ -531,6 +537,17 @@ sets, and `Flags.obls` (§4.1) is the link.
   quadratic otherwise: many rows on one variable, merges of variables carrying rows, and the `?`
   default step.
 - No row or set write is journalled (§7.5, I14): see above.
+
+*As built (2026-09-29): a set is two runs of `obl_links`.* The bullet on sets above described one
+growable list per set on the process allocator. A set is now two runs of the one append-only table
+this section names (`Obligations.links`): the rows the variable decides and the rows it owns.
+- A run grows in place, into the room it has or at the table's tail. A run that is full and not at
+  the tail moves there with twice the room, so attaching stays O(1) amortised.
+- Every slot is written once. A walk over a set therefore sees the ids the set held when the walk
+  began, whatever is attached or merged while it runs, which is what the list's slice gave.
+- A merge still moves the smaller set's open rows into the larger, and the smaller becomes empty.
+- The rows, the table and the sets belong to the checker's worker and are cleared between modules
+  (§4.1's *As built 2026-09-29*).
 
 ---
 
@@ -4426,6 +4443,17 @@ membership is a bit per type of the module (`Digest.IdSet`), not a linear `conta
 `dep_digest` over 8 000 / 16 000 independent types 38 / 149 ms → 5.1 / 10.1 ms; `publish` of a
 16 000 / 32 000 chain 53 / 183 ms → 15.0 / 31.4 ms (`test-perf` holds both). The
 duplicate name of a refused redeclaration still finds the first declaration, as the scan did.
+
+*Amended 2026-09-29.* **The working lists are the worker's.** Each group's tree and generator lists,
+each frame's pool and `?` list, the walk stacks and the obligation tables were made per module, per
+group or per frame on the process allocator and grew from empty every time: 88 % of the
+allocations of a cold check (`research/37` §3.2). They are now kept by the worker and lent cleared
+(§4.1 and §4.5's *As built 2026-09-29*), and a `let` group's pool and binders are pushed above the
+enclosing frame's on the generator's lists instead of made fresh. Cold `check --no-cache
+--jobs=1` of `--generate=100000`, ReleaseFast: process-allocator allocations 141 179 → 85 095,
+growth copies 29 413 → 25 611, user instructions 793.6 M → 787.4 M (−0.8 %); peak RSS and page
+faults unchanged. The time saved is inside run-to-run noise, as `research/37` §3.3 predicted: what
+the allocations cost was never much.
 
 ---
 
