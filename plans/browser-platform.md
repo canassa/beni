@@ -1246,6 +1246,16 @@ on and can land any time before. MJ9 is last because it measures what MJ5–MJ8 
 `Ssr.render` in place of `Node.render`, `list`'s third argument, `rawText`, and the extractor's
 reachability leg left to the first lowering that reads an extractor.
 
+*Built, 2026-09-29:* MJ6 and MJ7 whole, and MJ8's `browser` half — the `browser` platform
+(`Browser.program`, `run` at `document.body`, `$$root`), the `dom` lowering and its one runtime file,
+`For` in all three modes with duplicate keys and row inputs, keyed `Show`, the microtask render loop
+and `flush` — with the extractor's reachability leg, as `backend.md` §15's *As built* note records,
+including where it departs: rows made where their list is evaluated, `forKeyed`'s last argument the
+inputs, four more runtime exports, names all by site, and a render after every message. Not built:
+`browser-tea`, the after-render queue (it waits on effects), two programs on one page (one mount
+point until W9), and the empty page's bytes in `bench/size.mjs`. The differential oracle is
+`tests/oracle/`, its sixteen fixtures' differences listed with their reasons.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

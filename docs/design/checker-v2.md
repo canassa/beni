@@ -5293,7 +5293,12 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   lands with the first lowering, which is its first reader. *Amended 2026-09-29:* the first
   lowering, `ssr`, drops events and reads no extractor, so the leg lands with the first that does;
   until then `cx.extractor` refuses rather than import one reachability did not keep
-  (`boundary.md` §9.4, *As built*).
+  (`boundary.md` §9.4, *As built*). *Amended again 2026-09-29, with the `dom` lowering:* the leg
+  is built. `check/Edges.zig`'s `markupEdges` yields each event row's extractor in a
+  declaration's range as an `ext` edge into the vocabulary module, and `js/Reach.zig` follows it in
+  every build that has a vocabulary — an `ssr` build too, which ships an extractor its events drop;
+  `check/Cycles.zig` needs no such edge, since an extractor is another module's. `cx.extractor`
+  imports the value as any other module's.
 - **`markup_type_in_foreign`** is checked with the vocabulary declarations, for every `foreign`
   value of a platform module when the build has a markup type. The graph carries the build's
   lowering (the first a package of the chain names) and each package's own, and the cache key of

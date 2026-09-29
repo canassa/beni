@@ -1182,7 +1182,15 @@ be written against it; they are 1.0's contract:
   capture, the locals read under those names for that function only.
 - **`cx.extractor`** reports `not_implemented` for an event whose row names an extractor: its
   reachability leg (`checker-v2.md` §25.7) lands with the first lowering that calls it. `ssr` drops
-  events and never does.
+  events and never does. *Amended 2026-09-29, with the `dom` lowering:* the leg is built, and
+  `cx.extractor` returns the vocabulary module's value, imported.
+- *Amended 2026-09-29.* **An element a pattern row matched** (`"*"`, `"*-*"`) has facts of its own
+  in `Vocabulary.elements`, named as the markup writes it: `ElementFacts.name` is what a lowering
+  writes, and the pattern's text is no element's name. An attribute's written name was already
+  `Item.name`.
+- *Found 2026-09-29, not fixed here:* `html`'s custom-element declaration, `pub element "*-*"`,
+  holds two `*`, which `language.md` §11.14 does not allow, and `<my-widget>` is
+  `unknown_element` under `html` today.
 - **`Tree.requires`** is 1.0 for every tree. The comparison with `Lowering.targets` is made, and a
   tree a lowering does not cover is reported as `internal`, since no feature is gated yet.
 - **The runtime's checks** (§9.4.5) run in `build` and in `check --platform` whenever the chain names

@@ -83,11 +83,19 @@ project, for its own `platform/`. Each build is then loaded into a page by
 in a project) against it, one step per line, `#` for a comment:
 
     click <selector>            a bubbling `click`
+    click <selector> <n>        `n` clicks in one task, then `(the step's task ended)`
+    flush <selector>            a click, then the program runtime's `flush()`
+                                in the same task, then `(flushed)`
     input <selector> "<text>"   set `.value`, then `input`
     key <selector> <key>        `keydown` and `keyup` with that `key`
     focus <selector>            `.focus()`
 
 A selector is one CSS selector without spaces and must match an element.
+The two lines in parentheses are logged when the step's own task ends,
+before any microtask it queued, so what the page logged before them ran in
+that task and what it logged after ran later: that is how a fixture shows
+five messages rendering once, or `flush` rendering at once. The program
+runtime is `_platform/runtime.foreign.mjs`.
 The golden is the transcript: `-- load`, then `-- <step>` for each step,
 each followed by what the page logged (`console.log: …`) and then
 `document.body`, one node per line, text and attribute values as JSON
@@ -123,16 +131,14 @@ DOM's checksum, the driver and the steps as well; `zig build
 test-run-hashes` records them. `test-browser` never skips and never
 records.
 
-**How the `dom` lowering's fixtures plug in** (`backend.md` §15.10). The
-`page` platform is the harness's own, standing in until `platforms/browser`
-exists. When it does, a `dom` fixture is a `browser/` fixture built for
-`browser` instead: give the kind a `browser/dom/` subdirectory whose
-fixtures take `--platform=browser` (one line in `fixturesOf`, as `markup/`
-does for the check kinds), or give a project fixture a `platform/` that
-layers on `browser` by name, as `run/MarkupFieldIdentity` layers on
-`node`. The steps, the transcript, the run hashes and `test-browser` are
-unchanged; the differential oracle against dom-expressions' fixtures is a
-separate, DOM-free comparison of template strings and walks.
+**The `dom` lowering's fixtures** (`backend.md` §15.10) are under
+`browser/dom/`, files and projects alike, and are built with
+`--platform=browser`; `emit/dom/` and `emit/release/dom/` are `emit/`
+fixtures built the same way, the shapes of what the lowering emits. The
+steps, the transcript, the run hashes and `test-browser` are the kind's
+own. The differential oracle against dom-expressions' fixtures is a
+separate, DOM-free comparison of template strings and walks:
+`tests/oracle/`, run by `tests/blackbox/oracle_test.zig`.
 
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).

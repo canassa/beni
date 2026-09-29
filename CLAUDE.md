@@ -148,6 +148,18 @@ into beni through a registry `build.zig` generates; `-Dplatform=<dir>` adds
 one, and `test-blackbox` proves it with `tests/platforms/toy`. A program
 renders a view with `Node.print (Ssr.render (view model))`.
 
+**Markup runs in a page** (2026-09-29): the `browser` platform
+(`platforms/browser/`) and its `dom` lowering, a port of dom-expressions'
+client compiler to TEA — a kind per markup site that clones a template,
+walks to its holes and patches each only when its value changed; rows
+compiled in place for keyed and positional `For`, keyed `Show`, blocks for
+markup that escapes, delegated events, `Html.map`, and Solid 2's microtask
+render loop, all in one runtime file ([`backend.md`](docs/design/backend.md)
+§15, its *As built* note). `main` is `Browser.program { init, update, view }`,
+mounted at `document.body`. `tests/corpus/browser/dom/` runs pages for it,
+`emit/dom/` pins its shapes, and `tests/oracle/` compares its templates and
+walks with dom-expressions' own output, every difference listed.
+
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
 rewritten around them. It was built as a spike, measured

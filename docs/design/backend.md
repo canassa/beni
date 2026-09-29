@@ -3422,3 +3422,73 @@ platform layered on it; `browser-tea` adds no JavaScript.
 - **Several renders per frame are possible**, as in Solid 2 and unlike Elm's one per frame; the
   browser coalesces the DOM mutations into one paint (research 27 §3.6), and `view` is skipped when
   the model did not change.
+
+*As built, 2026-09-29, for §15.2–§15.5 and §15.11* (`platforms/browser/`: `zig/dom.zig`,
+`runtime.js`, `Browser.beni`; `tests/corpus/emit/dom/`, `emit/release/dom/`, `browser/dom/`,
+`build/bad/DomMarkupRestructured`, `tests/oracle/`). The sections above hold, with these readings,
+each the smallest that let the lowering be written against interface 1.0 unchanged:
+
+- **Everything is hoisted by `root`, and `module` hoists nothing.** A row's values can only be
+  placed while the declaration that encloses it is lowered (`cx.rowValues` rebinds that
+  declaration's locals), so a kind is built the first time its root is lowered and found again with
+  `cx.hoisted` — a root inside a row is lowered once per row function it is placed in, and must not
+  make a second kind for its site.
+- **Names are all by site.** A template is `<Module>$t<inst>`, not numbered in hoist order: a
+  lowering keeps no state, and counting distinct strings needs some. Template strings are not shared
+  between sites. Markup with no values is one block, `<Module>$b<inst>`, hoisted, so a slot that is
+  handed it again does nothing. A component's children written as markup are a kind of their own,
+  `<Module>$k<inst>n<node>`, the node being the component's.
+- **A kind reads its values from `v`; a row reads them where it placed them.** A kind is hoisted,
+  so everything it needs arrives in `v`, and what cannot be a value — a `For`'s row, a `Show`'s
+  body, a component's call — is a function made where the markup is evaluated and passed in `v`
+  too. A component is therefore called through that function, and `p` calls it only when a prop
+  (its spread and its children included) is not the one it had.
+- **A row is made where its list is evaluated**, as `{ m, p, i, f }` for a row compiled in place —
+  `m(item, position, cx)` and `p(inst, item, position)` each placing the row's values with
+  `cx.rowValues` and reading the enclosing root's locals by closure — or `{ b, i, f }`, `b(item,
+  position)` a block, for a `lambda` or `function` row. `i` says whether the row reads its
+  position; `f` is the fallback, so it needs no argument of its own. **`forKeyed`'s fifth argument
+  and `forPosition`'s fourth are the row's inputs**, an array (or `null`) the runtime compares entry
+  by entry once per list, not the mount context, which the slot already holds.
+- **A `Show`'s skip is emitted code**: its key, its value and its body's inputs are kept in the
+  instance and compared before the body's block is built; `Nothing` resets the key to the slot
+  itself, which no key is.
+- **Text holes.** One that is its parent's only child is a text node of the template (`<td> `),
+  P2's shape, written with `.data`; any other is made at mount before its marker by the runtime's
+  `insertText`, dom-expressions' shape with its template unchanged. `.data`, `setAttribute` and a
+  property are handed a number or a `Bool` as it is: each converts it as `"${v}"` does.
+- **Four exports more than §15.3's table**, all declared by the lowering: `attr(el, name, value)`,
+  which writes a `Bool` or `Maybe String` attribute or removes it for `null`; `insertText` above;
+  `identity`, the extractor of a handler that takes the event itself; and `flush`, the render loop's,
+  which no emitted code calls.
+- **Instances.** An instance owns a run of sibling nodes, `s` to `e`, or begins at `q`, a top-level
+  slot, when its markup begins with a hole; at the top level every hole has a marker, and a
+  template with a top-level hole or several top-level nodes is cloned whole into a fragment (flag
+  `4`, beside dom-expressions' `1` and `2`). Flag `1` is set for a custom element, an `is` attribute
+  and a lazy `img` or `iframe`, as dom-expressions sets it.
+- **Events.** A declaration's `preventDefault` and `stopPropagation` are `$$<name>F` on the node,
+  `1` and `2`; a payload handler's extractor `$$<name>X`, imported from the vocabulary module, which
+  reachability now keeps (`checker-v2.md` §25.7). The delegated listener runs every handler from the
+  target up to the program's mount node, as dom-expressions' does, and stops at one whose
+  declaration says `stopPropagation`.
+- **What is refused beyond the parser table**: an element whose content a `raw` attribute writes
+  and that has children; a marker the parser would read as text, in a raw-text or escapable
+  raw-text element. `<noscript>`'s children are not written, as dom-expressions writes none: with
+  scripting on the page never shows them. A constant `stateful` property is written through the
+  property at mount and checked by `p` like a dynamic one.
+- **The program.** `Browser.program { init, update, view }` is the record it is given; `run` mounts
+  `view init` into `document.body` (MD30) and marks it with `$$root`. **A flush renders whenever a
+  message was sent since the last one, even when `update` returned the identical model**, which
+  corrects §15.11's "`view` is skipped when the model did not change": an edit `update` rejects
+  returns the model it was given, and only a render puts the input's value back (§15.10's
+  controlled input). The after-render queue is not built: nothing can put work in it until effects
+  land.
+- **Release.** `Opt` folds a walk into its one use when they are adjacent, which a walk that is the
+  base of the next one is (`emit/release/dom/DomRelease`); a walk used after a write stays
+  declared.
+- **Tests.** `emit/dom/` and `emit/release/dom/` build for `browser`; `browser/dom/` runs pages for
+  it, their driver having gained a counted click and a `flush` step; the differential oracle is
+  `tests/oracle/` against a vocabulary layered on `browser` (`tests/platforms/oracle`), with the
+  markup type `html`'s so that the chain's `html` primitives still type. A delegated click listening
+  once for many rows is shown by the emitted shape — a property write per row, one listener
+  registered per name — not by a page of a thousand rows, whose transcript would be the whole page.
