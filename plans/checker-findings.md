@@ -5364,7 +5364,11 @@ written with a red fixture on `fc4b31e` before its fix.*
   search that cannot finish must not answer no.
 - **Fixture** `build/bad/MarkupTypeInForeignNested/`, red `BuildDidNotFail`.
 - **Slice** the fixes to markup's type-checking.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §25.9's *As built*, *amended 2026-09-29*:
+  `Vocab.mentionsType` walks every successor of the type once, by colour, with no budget, and
+  asks each named type whether its body holds the markup type, which `Types` settles for every
+  type as a fixpoint beside `has_function` (`Entry.holds_markup`). Promoted into
+  `tests/corpus/build/bad/`.
 
 ### CK-217 — A component's markup children are typed at the enclosing root's messages
 
@@ -5640,7 +5644,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-213 | diagnostic-quality | K14 | promoted: `build_test.zig` "a _manifest.txt that cannot be written …" | the last review's fixes (fixed) |
 | CK-214 | diagnostic-quality | K13 | promoted: `check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni` | the last review's fixes (fixed) |
 | CK-215 | unsound-runtime | K2 | promoted: `check/bad/markup/LetMarkupObligationHeld.beni`, `check/good/markup/LetMarkupObligationLater.beni`; `ordering_test.zig` | the fixes to markup's type-checking (fixed) |
-| CK-216 | latent | K5 | `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking |
+| CK-216 | latent | K5 | promoted: `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking (fixed) |
 | CK-217 | valid-program-rejected | K15 | `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking |
 | CK-218 | diagnostic-quality | K13 | `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking |
 | CK-219 | diagnostic-quality | K13 | `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking |

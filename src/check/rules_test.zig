@@ -79,6 +79,7 @@ const files = [_]File{
     .{ .path = "SchemaPlanBuild.zig", .text = @embedFile("SchemaPlanBuild.zig") },
     .{ .path = "Schemes.zig", .text = @embedFile("Schemes.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
+    .{ .path = "TypeFacts.zig", .text = @embedFile("TypeFacts.zig") },
     .{ .path = "TypeStore.zig", .text = @embedFile("TypeStore.zig") },
     .{ .path = "Types.zig", .text = @embedFile("Types.zig") },
     .{ .path = "Unify.zig", .text = @embedFile("Unify.zig") },
@@ -148,7 +149,7 @@ test "only Walk, Unify and Instantiate read a type's children" {
     try testing.expectEqual(@as(usize, 0), bad);
 }
 
-/// The table's three structural bits, and who may read each besides the
+/// The table's structural bits, and who may read each besides the
 /// files that build the table (`table_writers`).
 const Bit = struct { name: []const u8, readers: []const []const u8 };
 
@@ -156,11 +157,12 @@ const bits = [_]Bit{
     .{ .name = "equatable", .readers = &.{ "check/Derivable.zig", "check/Publish.zig", "cache/Digest.zig" } },
     .{ .name = "comparable", .readers = &.{"cache/Digest.zig"} },
     .{ .name = "has_function", .readers = &.{"cache/Digest.zig"} },
+    .{ .name = "holds_markup", .readers = &.{ "check/Vocab.zig", "cache/Digest.zig" } },
 };
 
-/// `Types.zig` builds the bits and `Schemes.zig` writes a blank entry for a
+/// `Types.zig` and `TypeFacts.zig` build the bits and `Schemes.zig` writes a blank entry for a
 /// poisoned id.
-const table_writers = [_][]const u8{ "check/Types.zig", "check/Schemes.zig" };
+const table_writers = [_][]const u8{ "check/Types.zig", "check/TypeFacts.zig", "check/Schemes.zig" };
 
 /// The receivers whose `.equatable` is a type variable's marker or an
 /// interface quantifier's, never the table's: a `TypeStore.Flags`

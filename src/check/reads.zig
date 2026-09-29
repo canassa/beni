@@ -42,7 +42,7 @@
 //! no reader to be handed. One `Recorder` per worker, owned by that worker's
 //! frame; `begin` publishes it for the duration of one module's check and
 //! `end` takes it away, so nothing outside the DAG's per-module phase records
-//! anything. `Types.build` and `settleEquatable` run before any worker and are
+//! anything. `Types.build` and `TypeFacts.settle` run before any worker and are
 //! §3.2's row 1 and row 9: whole-program passes, not dependencies.
 
 const std = @import("std");

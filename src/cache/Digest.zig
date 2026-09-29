@@ -18,7 +18,8 @@
 //!             arity: u16               (a `u8` in version 1)
 //!             kind: u8                 adt | alias | foreign
 //!             flags: u8                bit 0 opaque, bit 1 equatable,
-//!                                      bit 2 comparable, bit 3 has_function
+//!                                      bit 2 comparable, bit 3 has_function,
+//!                                      bit 4 holds_markup
 //!             body_len: u32, body      `type_body.zig`, or length 0 when the
 //!                                      type is not an alias
 //! derived   derived_count: u32, then per NOMINAL row of this module's
@@ -93,8 +94,8 @@ pub const magic = "BENIDEP\x00";
 /// a cache ever needs.
 ///
 /// Version 2 (`checker-v2.md` §14.2): `arity` is a `u16`, with
-/// interface v3's `Type.arity`.
-pub const digest_version: u32 = 2;
+/// interface v3's `Type.arity`. Version 3: flag bit 4, `holds_markup`.
+pub const digest_version: u32 = 3;
 
 pub const Digest = [16]u8;
 
@@ -117,6 +118,9 @@ pub const Type = struct {
     equatable: bool,
     comparable: bool,
     has_function: bool,
+    /// Whether the body holds the build's markup type: what a dependent
+    /// platform module's `markup_type_in_foreign` reads of a type it names.
+    holds_markup: bool,
     /// `type_body.zig`'s encoding of the alias's expansion, or empty.
     body: []const u8,
 };
@@ -191,6 +195,7 @@ fn flags(ty: Type) u8 {
     if (ty.equatable) bits |= 2;
     if (ty.comparable) bits |= 4;
     if (ty.has_function) bits |= 8;
+    if (ty.holds_markup) bits |= 16;
     return bits;
 }
 
@@ -338,6 +343,7 @@ pub fn collect(
             .equatable = e.equatable,
             .comparable = e.comparable,
             .has_function = e.has_function,
+            .holds_markup = e.holds_markup,
             .body = body,
         };
     }
@@ -540,6 +546,7 @@ const sample_type: Type = .{
     .equatable = true,
     .comparable = true,
     .has_function = false,
+    .holds_markup = false,
     .body = &.{},
 };
 
@@ -615,10 +622,10 @@ test "every term of the recipe moves the digest" {
     var base = sampleTerms();
     base.types = &.{sample_type};
     try expectDifferent(sampleTerms(), base);
-    // The four settled bits, one at a time. `equatable` is
+    // The five settled bits, one at a time. `equatable` is
     // `plans/m4-3.md` §6.1's demonstrated miscompile and `comparable` and
     // `has_function` are in the record for NO type at all.
-    inline for (.{ "is_opaque", "equatable", "comparable", "has_function" }) |field| {
+    inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup" }) |field| {
         var moved = sample_type;
         @field(moved, field) = !@field(sample_type, field);
         var t = sampleTerms();
@@ -697,6 +704,7 @@ test "the recipe is length-prefixed, so two different splits cannot agree" {
         .equatable = false,
         .comparable = false,
         .has_function = false,
+        .holds_markup = false,
         .body = &.{},
     }};
     try expectDifferent(a, b);

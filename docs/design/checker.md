@@ -1048,7 +1048,8 @@ types     type_count: u32, then per type NAMED BY THIS MODULE'S RECORD,
             arity: u16               (a `u8` until `digest_version` 2)
             kind: u8                 adt | alias | foreign
             flags: u8                bit 0 opaque, bit 1 equatable,
-                                     bit 2 comparable, bit 3 has_function
+                                     bit 2 comparable, bit 3 has_function,
+                                     bit 4 holds_markup (from `digest_version` 3)
             body_len: u32, body      the alias expansion as interface TERMS
                                      (tag, lhs, rhs triples and the `extra`
                                      words they reach, `var(i)` meaning the
@@ -1091,6 +1092,7 @@ VALUES are not a dependency and only the `Entry` fields they index are.
 | `equatable` | in the record for a `pub` type (`types` flag bit 1) and nowhere for a private one; `x == y` on an imported value reads it | `src/check/Solve.zig:3767`, `:1956-1963` |
 | `comparable` | in the record for NO type. It is the fixpoint's second bit, and it folds `declaresPubCompare`, which reads the declaring module's WRITTEN annotation and so is not derivable from a published scheme | `src/check/Solve.zig:3768`, `:3456`; `src/check/Types.zig:591-602` |
 | `has_function` | in the record for no type; §10.3 of the dispatch spec picks a different sentence by it | `src/check/Solve.zig:1962` |
+| `holds_markup` (*added 2026-09-29*) | in the record for no type; a platform module's `markup_type_in_foreign` (`checker-v2.md` §25.2) reads it of every named type in a `foreign`'s signature, and a private constructor payload that gains the markup type moves no byte of the record | `src/check/Vocab.zig`, `mentionsType` |
 | the alias expansion | in the record only where a term mentions the alias — an `alias` term's range is its arguments followed by its expansion — and absent when no scheme of the declaring module names it | `Types.Builder.aliasBody`, `src/check/Types.zig:969` |
 | the nominal `derived` set | the declaring module emits these bodies and a dependent's cached dispatch table names them through `ext_derived`; it is not in the record because a derived row exists for a private type too, and putting it there would move the public hash for a private change | `src/check/Solve.zig:3375-3384` against `:3766-3773` |
 | the imports' `(hash, digest)` | one level of terms carrying every level of type-reachability (`fast-compiler.md` §8) | the recipe itself |

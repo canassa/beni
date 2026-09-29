@@ -5284,6 +5284,14 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   value of a platform module when the build has a markup type. The graph carries the build's
   lowering (the first a package of the chain names) and each package's own, and the cache key of
   a platform module that declares a `foreign` carries both.
+  *Amended 2026-09-29:* "mentions the markup type" is answered over the whole type, after
+  aliases — arguments, elements, parameters and results, record fields and extensions — and
+  through every named type, whose constructors' payloads and alias bodies are read once per
+  build as a fixpoint beside `has_function` (`Types.Entry.holds_markup`). The walk visits each
+  node of the store once and has no budget. As first built it looked through applications,
+  tuples and functions only and answered "no" after 4 096 positions, so `{ h : Html () } ->
+  String`, `type Wrap = W (Html ())` and a type beside a wide alias DAG were accepted
+  (`build/bad/MarkupTypeInForeignNested/`).
 - **The owner's refusal of quoted `on…` names** is a new code, `untyped_event_attribute`
   (`language.md` §10), at the quoted name; its hint names the events the element accepts whose
   name is the quoted one in another case.

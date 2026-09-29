@@ -288,33 +288,35 @@ fn allSame(cx: *const Context, xs: []const Var, ys: []const Var, depth: u32) boo
     return true;
 }
 
-/// Whether the markup type occurs anywhere in `v`.
+/// Whether the markup type occurs anywhere in `v`, after aliases: in an
+/// argument, an element, a parameter or result, a record field, or inside
+/// a named type — a constructor's payload, another type's body — which
+/// `Types.Entry.holds_markup` answers for every type at once. Each node is
+/// visited once, so a type whose expansion is exponentially wide costs its
+/// size in the store, and the walk always finishes: there is no budget
+/// that could answer "no" for a type it did not see.
 pub fn mentionsType(cx: *const Context, v: Var, t: MarkupType) Error!bool {
+    const store = cx.store;
     var stack: std.ArrayList(Var) = .empty;
     defer stack.deinit(cx.scratch);
     try stack.append(cx.scratch, v);
-    var budget: u32 = 4096;
+    const seen = store.nextMark();
     while (stack.pop()) |at| {
-        if (budget == 0) return false;
-        budget -= 1;
-        switch (cx.store.resolvedContent(at)) {
-            .structure => |s| switch (s) {
-                .app => |a| {
-                    if (cx.types.named(a.type)) |n| {
-                        if (n.module == t.module and n.name == t.name) return true;
-                    }
-                    try stack.appendSlice(cx.scratch, Walk.positions(cx.store, at));
-                },
-                .tuple => try stack.appendSlice(cx.scratch, Walk.positions(cx.store, at)),
-                .func => {
-                    const f = Walk.function(cx.store, at).?;
-                    try stack.appendSlice(cx.scratch, f.params);
-                    try stack.append(cx.scratch, f.result);
-                },
-                else => {},
+        const root = store.find(at);
+        if (store.mark(root) == seen) continue;
+        store.setMark(root, seen);
+        switch (store.content(root)) {
+            .structure => |s| if (s == .app) {
+                if (cx.types.named(s.app.type)) |n| {
+                    if (n.module == t.module and n.name == t.name) return true;
+                }
+                if (cx.types.entry(s.app.type).holds_markup) return true;
             },
             else => {},
         }
+        // An alias's expansion, not the arguments it may drop.
+        var n: u32 = 0;
+        while (Walk.child(store, root, n, .payload)) |c| : (n += 1) try stack.append(cx.scratch, c);
     }
     return false;
 }

@@ -1,0 +1,14 @@
+-- `markup_type_in_foreign` (checker-v2.md §25.2) finds the markup type
+-- wherever a `foreign`'s declared type holds it, after aliases: in a
+-- record's field (`platform/Render.beni` 21:13), through a record alias
+-- (23:13), in a custom type's constructor (25:13), through a recursive
+-- custom type whose constructors reach it only through another (27:13),
+-- and beside a type whose expansion is thousands of positions wide
+-- (33:13), which the search must finish rather than give up on. `plain`
+-- and `recursive`, which hold no markup, are accepted.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"
