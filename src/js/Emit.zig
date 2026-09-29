@@ -526,9 +526,9 @@ const Emitter = struct {
     fn tokenPosition(e: *Emitter, file: SourceStore.Index, token: u32) diagnostic.Position {
         const line_starts = e.session.store.lineStarts(file);
         if (line_starts.len == 0) return .{ .line = 1, .col = 1 };
-        const tokens = e.session.artifacts.tokens(file);
-        if (token >= tokens.len) return .{ .line = 1, .col = 1 };
-        return diagnostic.position(line_starts, tokens.items(.start)[token]);
+        const tokens = e.session.artifacts.spans(file);
+        if (token >= tokens.len()) return .{ .line = 1, .col = 1 };
+        return diagnostic.position(line_starts, tokens.starts[token]);
     }
 
     fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
@@ -1423,11 +1423,11 @@ const Emitter = struct {
 
             const source_path = e.session.store.path(file);
             const sibling = try e.siblingSpecifier(source_path);
-            const tokens = e.session.artifacts.tokens(file);
+            const tokens = e.session.artifacts.spans(file);
 
             var lowered = try Lower.lower(e.gpa, e.scratch, &e.session.interner, .{
                 .bir = e.bir(m),
-                .token_starts = tokens.items(.start),
+                .token_starts = tokens.starts,
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,

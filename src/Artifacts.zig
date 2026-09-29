@@ -34,8 +34,14 @@ files: std.MultiArrayList(File) = .empty,
 
 pub const File = struct {
     /// Owned. `payload` holds the producing worker's LOCAL symbols until
-    /// `applyRemap`, then global ones.
+    /// `applyRemap`, then global ones. Empty when the file's front end was
+    /// a cache hit: the lexer did not run, and `spans` holds the two columns
+    /// that were cached.
     tokens: Token.TokenList,
+    /// Owned. The cached `tag` and `start` columns of a file whose front end
+    /// was a cache hit, and empty otherwise. Read through `Artifacts.spans`,
+    /// which picks whichever of the two lists holds the file's tokens.
+    spans: Token.SpanList = .empty,
     /// Owned.
     comments: []const Token.Comment,
     /// Owned. Offsets only; the session renders messages at report time.
@@ -59,6 +65,7 @@ pub const File = struct {
 
     fn deinit(file: *File, gpa: Allocator) void {
         file.tokens.deinit(gpa);
+        file.spans.deinit(gpa);
         gpa.free(file.comments);
         gpa.free(file.lex_diagnostics);
         file.ast.deinit(gpa);
@@ -98,8 +105,20 @@ pub fn set(a: *Artifacts, gpa: Allocator, index: SourceStore.Index, file: File) 
     a.files.set(index.int(), file);
 }
 
+/// The file's full token list, as the lexer made it. Empty after a cache
+/// hit, so only the front end's own readers — the parser, lowering, the
+/// formatter and the token and AST dumps, none of which runs on a hit — use
+/// it; everything after `lower` reads `spans`.
 pub fn tokens(a: *const Artifacts, index: SourceStore.Index) *const Token.TokenList {
     return &a.files.items(.tokens)[index.int()];
+}
+
+/// The file's token `tag` and `start` columns, from the lexed list or from
+/// the cached one, whichever the file has (frontend.md §3.2).
+pub fn spans(a: *const Artifacts, index: SourceStore.Index) Token.Spans {
+    const lexed = &a.files.items(.tokens)[index.int()];
+    if (lexed.len != 0) return .ofTokens(lexed);
+    return .ofSpans(&a.files.items(.spans)[index.int()]);
 }
 
 pub fn comments(a: *const Artifacts, index: SourceStore.Index) []const Token.Comment {
@@ -144,8 +163,8 @@ pub fn setBir(a: *Artifacts, gpa: Allocator, index: SourceStore.Index, replaceme
 /// `line` and `payload` are NOT cached (`frontend.md` §3.2) and are not
 /// touched here: on a round trip the live ones stay, which is what keeps
 /// `dump --stage=tokens` and `fmt` — the two commands that still read them —
-/// unchanged under the flag; on a cache hit there is no live list and both
-/// are zero, which nothing downstream of `lower` reads.
+/// unchanged under the flag; on a cache hit there is no live list, and
+/// the cached columns are the file's `spans`.
 pub fn tokensMut(a: *Artifacts, index: SourceStore.Index) *Token.TokenList {
     return &a.files.items(.tokens)[index.int()];
 }

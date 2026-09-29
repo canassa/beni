@@ -210,7 +210,9 @@ pub const Input = struct {
     /// The producing worker's own pool — `bir.symbols` is local to it until
     /// the session's merge, and this is where their text comes from.
     interner: *const InternPool.Local,
-    tokens: *const Token.TokenList,
+    /// The file's token `tag` and `start` columns; `line` and `payload` are
+    /// not cached (`frontend.md` §3.2).
+    spans: Token.Spans,
     line_starts: []const u32,
     diagnostics: []const Diagnostic,
 };
@@ -239,7 +241,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
 
     // 2. Section lengths, then the one buffer.
     var lengths: [Section.count]u32 = @splat(0);
-    const tokens = in.tokens.slice();
+    const spans = in.spans;
     const insts = bir.insts;
     lengths[@intFromEnum(Section.bir_insts_tag)] = @intCast(insts.len);
     lengths[@intFromEnum(Section.bir_insts_token)] = @intCast(insts.len * 4);
@@ -256,8 +258,8 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
     lengths[@intFromEnum(Section.bir_exposed)] = @intCast(bir.exposed.len * rowBytes(Bir.Exposed));
     lengths[@intFromEnum(Section.bir_interface)] = @intCast(bir.interface.len * 4);
     lengths[@intFromEnum(Section.bir_diagnostics)] = @intCast(bir.diagnostics.len * rowBytes(BirDiagnostics.Item));
-    lengths[@intFromEnum(Section.token_tags)] = @intCast(tokens.len);
-    lengths[@intFromEnum(Section.token_starts)] = @intCast(tokens.len * 4);
+    lengths[@intFromEnum(Section.token_tags)] = @intCast(spans.len());
+    lengths[@intFromEnum(Section.token_starts)] = @intCast(spans.len() * 4);
     lengths[@intFromEnum(Section.line_starts)] = @intCast(in.line_starts.len * 4);
     lengths[@intFromEnum(Section.diagnostics)] = diagnosticsLen(in.diagnostics);
     lengths[@intFromEnum(Section.strings)] = Strings.header + distinct * Strings.row + blob_len;
@@ -322,8 +324,8 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
         for (bir.interface, 0..) |d, i| std.mem.writeInt(u32, dst[i * 4 ..][0..4], d.int(), .little);
     }
     writeRows(BirDiagnostics.Item, s(out, offsets, lengths, .bir_diagnostics), bir.diagnostics);
-    @memcpy(s(out, offsets, lengths, .token_tags), @as([]const u8, @ptrCast(tokens.items(.tag))));
-    writeU32s(s(out, offsets, lengths, .token_starts), tokens.items(.start));
+    @memcpy(s(out, offsets, lengths, .token_tags), @as([]const u8, @ptrCast(spans.tags)));
+    writeU32s(s(out, offsets, lengths, .token_starts), spans.starts);
     writeU32s(s(out, offsets, lengths, .line_starts), in.line_starts);
     writeDiagnostics(s(out, offsets, lengths, .diagnostics), in.diagnostics);
     {
@@ -521,17 +523,17 @@ fn validEnum(comptime E: type, raw: u32) bool {
 pub const Loaded = struct {
     /// `symbols` holds STRING-TABLE INDICES until `intern` has run.
     bir: Bir,
-    /// `tag` and `start` from the artifact; `line` and `payload` zero,
-    /// because they are not cached and nothing downstream of `lower` reads
-    /// either (`frontend.md` §3.2).
-    tokens: Token.TokenList,
+    /// `tag` and `start` from the artifact, and nothing else: `line` and
+    /// `payload` are not cached, and nothing downstream of `lower` reads
+    /// either (`frontend.md` §3.2), so they are not made up either.
+    spans: Token.SpanList,
     line_starts: []u32,
     diagnostics: []Diagnostic,
     strings: Strings,
 
     pub fn deinit(l: *Loaded, gpa: Allocator) void {
         l.bir.deinit(gpa);
-        l.tokens.deinit(gpa);
+        l.spans.deinit(gpa);
         gpa.free(l.line_starts);
         gpa.free(l.diagnostics);
         l.* = undefined;
@@ -631,9 +633,16 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         if (lengths[@intFromEnum(pair[0])] % rowBytes(pair[1]) != 0) return error.BadArtifact;
     }
 
+    // Every enum column is checked in the BYTES, before a value of the enum
+    // exists (`readRow` says why), and so is every symbol slot.
+    const inst_tags = sec(bytes, offsets, lengths, .bir_insts_tag);
+    if (!validEnums(Bir.Inst.Tag, inst_tags)) return error.BadArtifact;
+    const token_tags = sec(bytes, offsets, lengths, .token_tags);
+    if (!validEnums(Token.Tag, token_tags)) return error.BadArtifact;
+
     var out: Loaded = .{
         .bir = .empty,
-        .tokens = .empty,
+        .spans = .empty,
         .line_starts = &.{},
         .diagnostics = &.{},
         .strings = .empty,
@@ -643,41 +652,32 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     // The string table, first, because `bir_symbols` is checked against it.
     out.strings = try readStrings(sec(bytes, offsets, lengths, .strings));
 
+    // Each numeric column is one allocation of exactly its length and one
+    // copy — a `memcpy` on a little-endian host — never a walk and never
+    // spare capacity: a loaded file does not grow.
     {
         var insts: Bir.InstList = .empty;
         errdefer insts.deinit(gpa);
-        try insts.resize(gpa, inst_count);
+        try insts.setCapacity(gpa, inst_count);
+        insts.len = inst_count;
         const s = insts.slice();
-        @memcpy(@as([]u8, @ptrCast(s.items(.tag))), sec(bytes, offsets, lengths, .bir_insts_tag));
-        for (s.items(.tag)) |tag| {
-            if (!validEnum(Bir.Inst.Tag, @intFromEnum(tag))) return error.BadArtifact;
-        }
+        @memcpy(@as([]u8, @ptrCast(s.items(.tag))), inst_tags);
         readU32s(s.items(.main_token), sec(bytes, offsets, lengths, .bir_insts_token));
-        const lhs = sec(bytes, offsets, lengths, .bir_insts_lhs);
-        const rhs = sec(bytes, offsets, lengths, .bir_insts_rhs);
-        for (s.items(.data), 0..) |*d, i| {
-            d.* = .{
-                .lhs = std.mem.readInt(u32, lhs[i * 4 ..][0..4], .little),
-                .rhs = std.mem.readInt(u32, rhs[i * 4 ..][0..4], .little),
-            };
-        }
+        readPairs(s.items(.data), sec(bytes, offsets, lengths, .bir_insts_lhs), sec(bytes, offsets, lengths, .bir_insts_rhs));
         out.bir.insts = insts.toOwnedSlice();
     }
 
     out.bir.extra = try dupeU32s(gpa, sec(bytes, offsets, lengths, .bir_extra));
     out.bir.string_bytes = try gpa.dupe(u8, sec(bytes, offsets, lengths, .bir_string_bytes));
     {
-        const src = sec(bytes, offsets, lengths, .bir_symbols);
-        const symbols = try gpa.alloc(Bir.Symbol, src.len / 4);
+        const symbols = try gpa.alloc(Bir.Symbol, lengths[@intFromEnum(Section.bir_symbols)] / 4);
         out.bir.symbols = symbols;
-        for (symbols, 0..) |*slot, i| {
-            const index = std.mem.readInt(u32, src[i * 4 ..][0..4], .little);
-            // A slot past the string table is the shape a truncated or
-            // spliced artifact produces, and the one `intern` must never be
-            // handed: `applyRemap` indexes the table by it, unchecked.
-            if (index >= out.strings.count) return error.BadArtifact;
-            slot.* = @enumFromInt(index);
-        }
+        const slots: []u32 = @ptrCast(symbols);
+        readU32s(slots, sec(bytes, offsets, lengths, .bir_symbols));
+        // A slot past the string table is the shape a truncated or spliced
+        // artifact produces, and the one `intern` must never be handed:
+        // `applyRemap` indexes the table by it, unchecked.
+        if (!allBelow(slots, out.strings.count)) return error.BadArtifact;
     }
     out.bir.decls = try readRowsAlloc(Bir.Decl, gpa, sec(bytes, offsets, lengths, .bir_decls));
     out.bir.ctors = try readRowsAlloc(Bir.Ctor, gpa, sec(bytes, offsets, lengths, .bir_ctors));
@@ -689,7 +689,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         const src = sec(bytes, offsets, lengths, .bir_interface);
         const list = try gpa.alloc(Bir.DeclIndex, src.len / 4);
         out.bir.interface = list;
-        for (list, 0..) |*slot, i| slot.* = @enumFromInt(std.mem.readInt(u32, src[i * 4 ..][0..4], .little));
+        readU32s(@ptrCast(list), src);
     }
     out.bir.diagnostics = try readRowsAlloc(BirDiagnostics.Item, gpa, sec(bytes, offsets, lengths, .bir_diagnostics));
     {
@@ -703,16 +703,12 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         out.bir.uses_markup = flags == 1;
     }
 
-    try out.tokens.resize(gpa, token_count);
+    try out.spans.setCapacity(gpa, token_count);
+    out.spans.len = token_count;
     {
-        const s = out.tokens.slice();
-        @memcpy(@as([]u8, @ptrCast(s.items(.tag))), sec(bytes, offsets, lengths, .token_tags));
-        for (s.items(.tag)) |tag| {
-            if (!validEnum(Token.Tag, @intFromEnum(tag))) return error.BadArtifact;
-        }
+        const s = out.spans.slice();
+        @memcpy(@as([]u8, @ptrCast(s.items(.tag))), token_tags);
         readU32s(s.items(.start), sec(bytes, offsets, lengths, .token_starts));
-        @memset(s.items(.line), 0);
-        @memset(s.items(.payload), 0);
     }
 
     out.line_starts = try dupeU32s(gpa, sec(bytes, offsets, lengths, .line_starts));
@@ -788,6 +784,32 @@ fn readU32s(dst: []u32, src: []const u8) void {
         return;
     }
     for (dst, 0..) |*slot, i| slot.* = std.mem.readInt(u32, src[i * 4 ..][0..4], .little);
+}
+
+/// `lhs` and `rhs`, two columns on disk, into the one column of pairs the
+/// instruction list holds in memory: one pass, and no allocation.
+fn readPairs(dst: []Bir.Inst.Data, lhs: []const u8, rhs: []const u8) void {
+    for (dst, 0..) |*d, i| d.* = .{
+        .lhs = std.mem.readInt(u32, lhs[i * 4 ..][0..4], .little),
+        .rhs = std.mem.readInt(u32, rhs[i * 4 ..][0..4], .little),
+    };
+}
+
+/// Whether every byte of `raw` is a value the one-byte enum `E` defines.
+/// Branch-free over the column, so it runs at memory speed rather than
+/// at one compare-and-branch a value.
+fn validEnums(comptime E: type, raw: []const u8) bool {
+    comptime std.debug.assert(@typeInfo(@typeInfo(E).@"enum".tag_type).int.bits == 8);
+    var bad: u8 = 0;
+    for (raw) |value| bad |= @intFromBool(!validEnum(E, value));
+    return bad == 0;
+}
+
+/// Whether every word of `words` is below `bound`.
+fn allBelow(words: []const u32, bound: u32) bool {
+    var max: u32 = 0;
+    for (words) |w| max = @max(max, w);
+    return words.len == 0 or max < bound;
 }
 
 // ---------------------------------------------------------------------------
@@ -932,7 +954,7 @@ const Sample = struct {
             .key = sample_key,
             .bir = &s.bir,
             .interner = &s.local,
-            .tokens = &s.tokens,
+            .spans = .ofTokens(&s.tokens),
             .line_starts = s.line_starts,
             .diagnostics = diagnostics,
         };
@@ -975,11 +997,9 @@ test "an artifact round-trips: every column, the symbols and the diagnostics" {
     try testing.expectEqual(sample.bir.module_doc_end, loaded.bir.module_doc_end);
     try testing.expectEqual(sample.bir.uses_markup, loaded.bir.uses_markup);
 
-    // The two token columns that are cached, and the two that are not.
-    try testing.expectEqualSlices(Token.Tag, sample.tokens.items(.tag), loaded.tokens.items(.tag));
-    try testing.expectEqualSlices(u32, sample.tokens.items(.start), loaded.tokens.items(.start));
-    try testing.expectEqualSlices(u32, &.{ 0, 0, 0 }, loaded.tokens.items(.line));
-    try testing.expectEqualSlices(u32, &.{ 0, 0, 0 }, loaded.tokens.items(.payload));
+    // The two token columns that are cached, and only those.
+    try testing.expectEqualSlices(Token.Tag, sample.tokens.items(.tag), loaded.spans.items(.tag));
+    try testing.expectEqualSlices(u32, sample.tokens.items(.start), loaded.spans.items(.start));
 
     try testing.expectEqualSlices(u32, sample.line_starts, loaded.line_starts);
     try testing.expectEqual(@as(usize, 2), loaded.diagnostics.len);
@@ -1030,12 +1050,11 @@ test "an empty file round-trips: every section is allowed to be zero-length" {
     var empty_local: InternPool.Local = try .init(gpa);
     defer empty_local.deinit(gpa);
     const empty_bir: Bir = .empty;
-    const empty_tokens: Token.TokenList = .empty;
     const bytes = try write(gpa, gpa, .{
         .key = sample_key,
         .bir = &empty_bir,
         .interner = &empty_local,
-        .tokens = &empty_tokens,
+        .spans = .empty,
         .line_starts = &.{},
         .diagnostics = &.{},
     });
@@ -1043,7 +1062,7 @@ test "an empty file round-trips: every section is allowed to be zero-length" {
     var loaded = try read(gpa, bytes, sample_key);
     defer loaded.deinit(gpa);
     try testing.expectEqual(@as(usize, 0), loaded.bir.insts.len);
-    try testing.expectEqual(@as(usize, 0), loaded.tokens.len);
+    try testing.expectEqual(@as(usize, 0), loaded.spans.len);
     try testing.expectEqual(@as(usize, 0), loaded.line_starts.len);
     try testing.expectEqual(@as(usize, 0), loaded.diagnostics.len);
     try loaded.intern(gpa, gpa, &empty_local);
@@ -1167,6 +1186,25 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
         try expectMiss(gpa, copy, "a `bir_symbols` slot past the string table");
         std.mem.writeInt(u32, copy[symbols_at..][0..4], 0, .little);
         reseal(copy);
+    }
+    // An instruction tag and a token tag no version defines, in the LAST
+    // row of each column, so the check is seen to cover the whole column
+    // and not only its first byte.
+    inline for (.{ Section.bir_insts_tag, Section.token_tags }) |which| {
+        const table_row = header_bytes + @intFromEnum(which) * 8;
+        const at = std.mem.readInt(u32, copy[table_row..][0..4], .little);
+        const count = std.mem.readInt(u32, copy[table_row + 4 ..][0..4], .little);
+        const last = at + count - 1;
+        const was = copy[last];
+        copy[last] = 0xFF;
+        reseal(copy);
+        try expectMiss(gpa, copy, "a tag no version defines");
+        copy[last] = was;
+        reseal(copy);
+    }
+    {
+        var ok = try read(gpa, copy, sample_key);
+        ok.deinit(gpa);
     }
     {
         const strings_at = std.mem.readInt(u32, copy[header_bytes + @intFromEnum(Section.strings) * 8 ..][0..4], .little);

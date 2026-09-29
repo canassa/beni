@@ -696,10 +696,10 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
         for (0..count) |i| {
             const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             const file = session.graph.moduleFile(module);
-            const tokens = session.artifacts.tokens(file);
+            const tokens = session.artifacts.spans(file);
             var lowered = try JsLower.lower(gpa, arena.allocator(), &session.interner, .{
                 .bir = birs[i],
-                .token_starts = tokens.items(.start),
+                .token_starts = tokens.starts,
                 .module = module,
                 .graph = &session.graph,
                 .interfaces = session.resolution.interfaces,

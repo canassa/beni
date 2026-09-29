@@ -440,13 +440,13 @@ const Pass = struct {
 
     fn qualifiedRoot(p: *Pass, m: Graph.Index, token: u32) ?Symbol {
         const file = p.graph.moduleFile(m);
-        const tokens = p.artifacts.tokens(file);
-        if (token >= tokens.len) return null;
-        const tag = tokens.items(.tag)[token];
+        const tokens = p.artifacts.spans(file);
+        if (token >= tokens.len()) return null;
+        const tag = tokens.tags[token];
         // Only a qualified name has a root: an unqualified one is not
         // rescanned for a dot it cannot hold.
         if (tag != .qualified_upper and tag != .qualified_lower) return null;
-        const text = Tokenizer.slice(p.store.bytes(file), tag, tokens.items(.start)[token]);
+        const text = Tokenizer.slice(p.store.bytes(file), tag, tokens.starts[token]);
         const dot = std.mem.indexOfScalar(u8, text, '.') orelse return null;
         return p.interner.find(text[0..dot]);
     }

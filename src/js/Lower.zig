@@ -6211,11 +6211,11 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
         specifier.* = try std.fmt.allocPrint(arena, "./{s}.mjs", .{session.store.moduleName(session.graph.moduleFile(index))});
     }
     const file = session.graph.moduleFile(m);
-    const tokens = session.artifacts.tokens(file);
+    const tokens = session.artifacts.spans(file);
 
     var result = try lower(gpa, arena, &session.interner, .{
         .bir = session.artifacts.bir(file),
-        .token_starts = tokens.items(.start),
+        .token_starts = tokens.starts,
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
@@ -6660,7 +6660,7 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     const file = session.graph.moduleFile(m);
     var result = try lower(gpa, arena, &session.interner, .{
         .bir = session.artifacts.bir(file),
-        .token_starts = session.artifacts.tokens(file).items(.start),
+        .token_starts = session.artifacts.spans(file).starts,
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,

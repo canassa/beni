@@ -1034,7 +1034,7 @@ fn loadFrontend(
     session.profile.end(worker.index, decode_token, .frontend_decode, file.int(), @intCast(bytes.len));
 
     const verify_token = session.profile.begin();
-    const structural = loaded.bir.verify(@intCast(loaded.tokens.len));
+    const structural = loaded.bir.verify(@intCast(loaded.spans.len));
     session.profile.end(worker.index, verify_token, .frontend_verify, file.int(), 0);
     if (!structural) {
         loaded.deinit(gpa);
@@ -1116,7 +1116,7 @@ fn storeFrontend(
         .key = session.file_keys[file.int()],
         .bir = session.artifacts.bir(file),
         .interner = &worker.interner,
-        .tokens = session.artifacts.tokens(file),
+        .spans = session.artifacts.spans(file),
         .line_starts = session.store.lineStarts(file),
         .diagnostics = rows.items,
     });
@@ -1190,7 +1190,7 @@ fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index
         .key = key,
         .bir = session.artifacts.bir(file),
         .interner = &worker.interner,
-        .tokens = session.artifacts.tokens(file),
+        .spans = session.artifacts.spans(file),
         .line_starts = session.store.lineStarts(file),
         .diagnostics = rows.items,
     });
@@ -1199,7 +1199,7 @@ fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index
     var loaded = try artifact_bytes.read(gpa, bytes, key);
     errdefer loaded.deinit(gpa);
     try loaded.intern(gpa, scratch, &worker.interner);
-    if (!loaded.bir.verify(@intCast(loaded.tokens.len))) return error.ArtifactVerifyFailed;
+    if (!loaded.bir.verify(@intCast(loaded.spans.len))) return error.ArtifactVerifyFailed;
 
     try installFrontend(session, worker, file, &loaded, diagnostics_mark, .in_place);
 }
@@ -1253,17 +1253,18 @@ fn installFrontend(
     switch (kind) {
         .in_place => {
             const tokens = session.artifacts.tokensMut(file);
-            if (tokens.len != loaded.tokens.len) return error.ArtifactVerifyFailed;
-            @memcpy(tokens.items(.tag), loaded.tokens.items(.tag));
-            @memcpy(tokens.items(.start), loaded.tokens.items(.start));
-            loaded.tokens.deinit(gpa);
-            loaded.tokens = .empty;
+            if (tokens.len != loaded.spans.len) return error.ArtifactVerifyFailed;
+            @memcpy(tokens.items(.tag), loaded.spans.items(.tag));
+            @memcpy(tokens.items(.start), loaded.spans.items(.start));
+            loaded.spans.deinit(gpa);
+            loaded.spans = .empty;
             session.artifacts.setBir(gpa, file, loaded.bir);
             loaded.bir = .empty;
         },
         .fresh => {
             session.artifacts.set(gpa, file, .{
-                .tokens = loaded.tokens,
+                .tokens = .empty,
+                .spans = loaded.spans,
                 .comments = &.{},
                 .lex_diagnostics = &.{},
                 .ast = .empty,
@@ -1271,7 +1272,7 @@ fn installFrontend(
                 .formatted = null,
                 .worker = worker.index,
             });
-            loaded.tokens = .empty;
+            loaded.spans = .empty;
             loaded.bir = .empty;
         },
     }
@@ -1811,10 +1812,10 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
 fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struct { diagnostic.Position, diagnostic.Position } {
     const line_starts = session.store.lineStarts(file);
     if (line_starts.len == 0) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
-    const tokens = session.artifacts.tokens(file);
-    if (token >= tokens.len) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
-    const tags = tokens.items(.tag);
-    const starts = tokens.items(.start);
+    const tokens = session.artifacts.spans(file);
+    if (token >= tokens.len()) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
+    const tags = tokens.tags;
+    const starts = tokens.starts;
     const source = session.store.bytes(file);
     const start = starts[token];
     const end = switch (tags[token]) {
@@ -1922,9 +1923,9 @@ fn hiddenByChain(session: *const Session, file: SourceStore.Index, name: []const
 /// from the source rather than from a symbol so a path the interner never
 /// saw still prints.
 fn moduleNameOfImport(session: *const Session, file: SourceStore.Index, token: u32) []const u8 {
-    const tokens = session.artifacts.tokens(file);
-    if (token >= tokens.len) return "";
-    return Tokenizer.slice(session.store.bytes(file), tokens.items(.tag)[token], tokens.items(.start)[token]);
+    const tokens = session.artifacts.spans(file);
+    if (token >= tokens.len()) return "";
+    return Tokenizer.slice(session.store.bytes(file), tokens.tags[token], tokens.starts[token]);
 }
 
 /// The name of a platform EMBEDDED IN THIS BINARY that has a module called
@@ -2028,13 +2029,13 @@ fn rewriteMessage(session: *Session, file: SourceStore.Index, code: diagnostic.C
 
 fn isMalformedSchemaReference(session: *const Session, file: SourceStore.Index, token: u32) bool {
     const bir = session.artifacts.bir(file);
-    const starts = session.artifacts.tokens(file).items(.start);
+    const starts = session.artifacts.spans(file).starts;
     if (token >= starts.len) return false;
     return session.isMalformedSchemaOffset(file, bir, starts[token]);
 }
 
 fn isMalformedSchemaOffset(session: *const Session, file: SourceStore.Index, bir: *const Bir, offset: u32) bool {
-    const starts = session.artifacts.tokens(file).items(.start);
+    const starts = session.artifacts.spans(file).starts;
 
     for (bir.decls, 0..) |decl, i| {
         if (decl.kind != .schema or decl.name_token >= starts.len) continue;

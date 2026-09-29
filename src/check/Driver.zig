@@ -206,7 +206,7 @@ fn workBound(d: *const Driver) usize {
     if (!d.options.size_by_work) return std.math.maxInt(usize);
     var tokens: usize = 0;
     for (0..d.graph.count()) |i| {
-        tokens += d.artifacts.tokens(d.graph.moduleFile(@enumFromInt(i))).len;
+        tokens += d.artifacts.spans(d.graph.moduleFile(@enumFromInt(i))).len();
     }
     return @max(1, std.math.divCeil(usize, tokens, tokens_per_checker) catch unreachable);
 }
@@ -434,7 +434,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         if (d.options.cached[m.int()]) |*loaded| {
             const file = d.graph.moduleFile(m);
             const bir = d.artifacts.bir(file);
-            const token_count: u32 = @intCast(d.artifacts.tokens(file).len);
+            const token_count: u32 = @intCast(d.artifacts.spans(file).len());
             if (loaded.plan.verifyAgainstBir(bir, token_count) and
                 loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types))
                 return d.install(m, loaded);

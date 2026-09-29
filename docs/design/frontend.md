@@ -322,6 +322,14 @@ and `moduleNameOfImport`, `Emit.tokenPosition`, and `js/Lower`'s `token_starts`.
 is 5 bytes a token in two columns rather than 13 in four, and — the part that matters more than the
 size — **it holds no `Symbol`**, because `payload` is the only place a token ever did.
 
+A cache hit keeps that form in memory too: the file's tokens are a `Token.SpanList` of `tag` and
+`start`, each loaded with one copy, and the lexer's four-column list stays empty. Every reader after
+the front end goes through `Artifacts.spans`, which answers from whichever list the file has; only
+the parser, lowering, the formatter and the token and AST dumps read the full list, and none of them
+runs on a hit. *Rejected: re-inflating the cached columns to four, with `line` and `payload` zeroed —
+measured on the 100k corpus's warm `check`, it cost about 1 650 page faults and 7 MB of peak RSS for
+two columns nothing read.*
+
 ### 3.3 Interning
 
 `Symbol = enum(u32) { _ }`. Every identifier-like token (lower, upper, qualified, dot_lower,

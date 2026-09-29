@@ -31,6 +31,38 @@ pub const Token = struct {
 /// Struct-of-arrays token storage (fast-compiler.md §5).
 pub const TokenList = std.MultiArrayList(Token);
 
+/// The two token columns that outlive `lower` (frontend.md §3.2): every
+/// reader after the front end turns a token index back into bytes through
+/// `tag` and `start` alone, and they are all the front-end cache carries.
+pub const Span = struct {
+    tag: Tag,
+    start: u32,
+};
+
+/// A file's tokens as a cache hit installs them: five bytes a token, with no
+/// `line` or `payload` column to fill.
+pub const SpanList = std.MultiArrayList(Span);
+
+/// A read-only view of `tag` and `start`, over whichever list holds them.
+pub const Spans = struct {
+    tags: []const Tag,
+    starts: []const u32,
+
+    pub const empty: Spans = .{ .tags = &.{}, .starts = &.{} };
+
+    pub fn ofTokens(list: *const TokenList) Spans {
+        return .{ .tags = list.items(.tag), .starts = list.items(.start) };
+    }
+
+    pub fn ofSpans(list: *const SpanList) Spans {
+        return .{ .tags = list.items(.tag), .starts = list.items(.start) };
+    }
+
+    pub fn len(s: Spans) usize {
+        return s.tags.len;
+    }
+};
+
 /// Index into a `TokenList`.
 pub const Index = enum(u32) {
     _,
