@@ -202,6 +202,8 @@ pub const Module = struct {
     ir: *const JsIr,
     globals: *Globals,
     gpa: Allocator,
+    /// What `globals` grows from.
+    table: Allocator,
     /// The ordinal assigned to each local `NameIndex`, valid when `stamp`
     /// agrees with `current`. One array for the module and a stamp per
     /// declaration, so restarting the alphabet costs no `@memset`.
@@ -313,7 +315,7 @@ pub const Module = struct {
         if (i >= m.local.len) return;
         const name = m.ir.name(n);
         if (name.module != .none) {
-            try mentioned.append(m.gpa, try m.globals.intern(m.gpa, name));
+            try mentioned.append(m.gpa, try m.globals.intern(m.table, name));
             return;
         }
         if (m.stamp[i] == m.current) return; // already in this declaration's list
@@ -402,12 +404,14 @@ pub const Module = struct {
     }
 };
 
-/// A renamer for one module, allocating from `gpa` (an arena in practice).
-pub fn begin(gpa: Allocator, ir: *const JsIr, globals: *Globals) Allocator.Error!Module {
+/// A renamer for one module. Its own lists come from `gpa`, an arena reset
+/// after the module; `globals` outlives the module, so what it gains comes
+/// from `table`, which lives as long as `globals` does.
+pub fn begin(gpa: Allocator, table: Allocator, ir: *const JsIr, globals: *Globals) Allocator.Error!Module {
     const local = try gpa.alloc(u32, ir.names.len);
     const stamp = try gpa.alloc(u32, ir.names.len);
     @memset(stamp, 0);
-    return .{ .ir = ir, .globals = globals, .gpa = gpa, .local = local, .stamp = stamp };
+    return .{ .ir = ir, .globals = globals, .gpa = gpa, .table = table, .local = local, .stamp = stamp };
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +538,7 @@ fn nameDeepChain() !void {
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
     var globals: Globals = .{};
-    var m = try begin(gpa, &ir, &globals);
+    var m = try begin(gpa, gpa, &ir, &globals);
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
     try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
@@ -567,7 +571,7 @@ test "a declaration of 16 384 locals is named and self-checked in linear time" {
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
     var globals: Globals = .{};
-    var m = try begin(gpa, &ir, &globals);
+    var m = try begin(gpa, gpa, &ir, &globals);
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
     try testing.expectEqual(@as(?u32, 2), m.ordinal(locals[0]));

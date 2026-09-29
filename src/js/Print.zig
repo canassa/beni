@@ -90,25 +90,24 @@ pub const Options = struct {
     recursion_limit: u32 = 256,
 };
 
-/// Print `ir` as an ES module. The caller owns the returned bytes.
-pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Allocator.Error![]u8 {
-    var spelled: std.heap.ArenaAllocator = .init(gpa);
-    defer spelled.deinit();
-    const spellings = try spelled.allocator().alloc(?Spelling, ir.names.len);
+/// Print `ir` as an ES module. The caller owns the returned bytes, which come
+/// from `gpa`. Everything the printer builds on the way — its pieces, the
+/// spellings and the work stack — comes from `scratch`, an arena the caller
+/// resets; nothing is freed from it here.
+pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, options: Options) Allocator.Error![]u8 {
+    const spellings = try scratch.alloc(?Spelling, ir.names.len);
     @memset(spellings, null);
     var p: Printer = .{
-        .joiner = .init(gpa),
+        .joiner = .init(gpa, scratch),
         .ir = ir,
         .names = names,
         .plan = options.plan,
         .rename = options.rename,
         .compact = options.compact,
         .recursion_limit = options.recursion_limit,
-        .spelled = spelled.allocator(),
+        .spelled = scratch,
         .spellings = spellings,
     };
-    defer p.joiner.deinit();
-    defer p.work.deinit(gpa);
     // The module body is walked here rather than through `statements`,
     // because §9 item 2's local alphabet RESTARTS at every top-level
     // declaration and this is the only place that boundary is visible.
@@ -135,7 +134,11 @@ pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Al
 /// punctuation string — or a range of the joiner's own scratch, held as an
 /// OFFSET because the scratch reallocates as it grows.
 pub const Joiner = struct {
+    /// Where `blit`'s result comes from.
     gpa: Allocator,
+    /// Where the pieces and the scratch live: an arena in the printer, so
+    /// the joiner never frees them one by one.
+    arena: Allocator,
     pieces: std.ArrayList(Piece) = .empty,
     scratch: std.ArrayList(u8) = .empty,
     length: usize = 0,
@@ -147,13 +150,13 @@ pub const Joiner = struct {
         len: u32,
     };
 
-    pub fn init(gpa: Allocator) Joiner {
-        return .{ .gpa = gpa };
+    pub fn init(gpa: Allocator, arena: Allocator) Joiner {
+        return .{ .gpa = gpa, .arena = arena };
     }
 
     pub fn deinit(j: *Joiner) void {
-        j.pieces.deinit(j.gpa);
-        j.scratch.deinit(j.gpa);
+        j.pieces.deinit(j.arena);
+        j.scratch.deinit(j.arena);
     }
 
     /// Append bytes that outlive the joiner. Nothing is copied. Inline, like
@@ -168,7 +171,7 @@ pub const Joiner = struct {
     pub fn pushOwned(j: *Joiner, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
         const offset: u32 = @intCast(j.scratch.items.len);
-        try j.scratch.appendSlice(j.gpa, text);
+        try j.scratch.appendSlice(j.arena, text);
         try j.addPiece(.{ .borrowed = null, .offset = offset, .len = @intCast(text.len) });
         j.length += text.len;
     }
@@ -178,7 +181,7 @@ pub const Joiner = struct {
     /// them, and a printed module is a piece per token.
     inline fn addPiece(j: *Joiner, p: Piece) Allocator.Error!void {
         const at = j.pieces.items.len;
-        if (at == j.pieces.capacity) try j.pieces.ensureUnusedCapacity(j.gpa, 1);
+        if (at == j.pieces.capacity) try j.pieces.ensureUnusedCapacity(j.arena, 1);
         j.pieces.items.len = at + 1;
         j.pieces.items[at] = p;
     }
@@ -940,7 +943,7 @@ const Printer = struct {
     }
 
     fn later(p: *Printer, w: Work) Allocator.Error!void {
-        try p.work.append(p.joiner.gpa, w);
+        try p.work.append(p.spelled, w);
     }
     /// Follow §9 item 1's substitutions to the node that is really printed.
     /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
@@ -1435,6 +1438,14 @@ const reserved_words: std.StaticStringMap(void) = .initComptime(.{
 
 const testing = std.testing;
 const small_stack = @import("../small_stack.zig");
+const Arena = @import("../Arena.zig");
+
+/// `print` with a scratch arena of its own.
+fn printAlone(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) ![]u8 {
+    var scratch: Arena = .init(gpa);
+    defer scratch.deinit();
+    return print(gpa, scratch.allocator(), ir, names, options);
+}
 
 /// A tiny world: an interner, a builder, and `print` over what was built.
 const Fixture = struct {
@@ -1508,7 +1519,7 @@ const Fixture = struct {
         var ir = try f.b.toOwned(body);
         defer ir.deinit(f.gpa);
         try ir.verify();
-        return print(f.gpa, &ir, .fromLocal(&f.interner), options);
+        return printAlone(f.gpa, &ir, .fromLocal(&f.interner), options);
     }
 
     /// `label: while (true) { … }` around `body`.
@@ -1900,7 +1911,7 @@ test "a template literal escapes only what would end it" {
 
 test "the joiner allocates once and blits, borrowed and owned pieces alike" {
     const gpa = testing.allocator;
-    var j: Joiner = .init(gpa);
+    var j: Joiner = .init(gpa, gpa);
     defer j.deinit();
     try j.push("hello");
     try j.push("");
@@ -2161,7 +2172,7 @@ fn printDeepChains() !void {
     _ = try Opt.run(arena_state.allocator(), &ir);
 
     for ([_]bool{ false, true }) |compact| {
-        const text = try print(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+        const text = try printAlone(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact });
         defer testing.allocator.free(text);
         const and_op = if (compact) "&&a" else " && a";
         const open = if (compact) "{b:" else "{ b: ";
@@ -2242,9 +2253,9 @@ test "the recursive and the iterative printer write the same bytes" {
     defer ir.deinit(gpa);
     try ir.verify();
     for ([_]bool{ false, true }) |compact| {
-        const recursive = try print(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+        const recursive = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact });
         defer gpa.free(recursive);
-        const iterative = try print(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 0 });
+        const iterative = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 0 });
         defer gpa.free(iterative);
         try testing.expectEqualStrings(recursive, iterative);
     }
@@ -2368,10 +2379,10 @@ test "generated: the recursive and the iterative printer agree at every switch-o
     defer ir.deinit(gpa);
     try ir.verify();
     for ([_]bool{ false, true }) |compact| {
-        const whole = try print(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 1 << 20 });
+        const whole = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 1 << 20 });
         defer gpa.free(whole);
         for ([_]u32{ 0, 3, 7, 256 }) |limit| {
-            const text = try print(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = limit });
+            const text = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = limit });
             defer gpa.free(text);
             try testing.expectEqualStrings(whole, text);
         }

@@ -717,7 +717,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
                 gpa.free(lowered.diagnostics);
             }
             nodes += lowered.ir.nodes.len;
-            const text = try JsPrint.print(gpa, &lowered.ir, .fromGlobal(&session.interner), .{});
+            const text = try JsPrint.print(gpa, arena.allocator(), &lowered.ir, .fromGlobal(&session.interner), .{});
             defer gpa.free(text);
             bytes += text.len;
             arena.reset(.retain_capacity);

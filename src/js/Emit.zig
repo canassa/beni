@@ -83,6 +83,7 @@ const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const Rename = @import("Rename.zig");
+const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
@@ -252,6 +253,7 @@ pub fn run(
         .io_failure = io_failure,
     };
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
+    defer e.module_arena.deinit();
 
     // §2's rule 1, on the one part of the output shape a platform declares
     // (`boundary.md` §5.2). First, and before the entry-point search: a
@@ -374,6 +376,11 @@ const Emitter = struct {
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
+    /// One module's lowering, planning, renaming and printing allocate
+    /// here, and it is reset before the next module: nothing a module
+    /// builds on the way to its bytes outlives it, so emit's working
+    /// memory is one module's, not the whole build's.
+    module_arena: Arena = .init(std.heap.page_allocator),
     files_written: u32 = 0,
     bytes_written: u64 = 0,
 
@@ -1425,7 +1432,11 @@ const Emitter = struct {
             const sibling = try e.siblingSpecifier(source_path);
             const tokens = e.session.artifacts.spans(file);
 
-            var lowered = try Lower.lower(e.gpa, e.scratch, &e.session.interner, .{
+            // Whatever the previous module built on the way to its bytes is
+            // gone by now: its text was copied by `produce`.
+            e.module_arena.reset(.retain_capacity);
+            const scratch = e.module_arena.allocator();
+            var lowered = try Lower.lower(e.gpa, scratch, &e.session.interner, .{
                 .bir = e.bir(m),
                 .token_starts = tokens.starts,
                 .module = m,
@@ -1437,7 +1448,7 @@ const Emitter = struct {
                 .sibling = sibling,
                 .entry_decl = e.entryDeclOf(m, entry),
                 .live = &e.live,
-                .derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path),
+                .derived_runtime = try relativeSpecifier(scratch, paths[i], derived_runtime_path),
             });
             defer lowered.ir.deinit(e.gpa);
             defer e.gpa.free(lowered.diagnostics);
@@ -1455,12 +1466,12 @@ const Emitter = struct {
             // `Print.print`: item 1 plans, item 2 names, the printer spends
             // both. Everything is `.{}` for a dev build, which is what makes
             // "a golden moved" a finding (§2).
-            const plan: Opt.Plan = if (e.options.release) try Opt.run(e.scratch, &lowered.ir) else .none;
+            const plan: Opt.Plan = if (e.options.release) try Opt.run(scratch, &lowered.ir) else .none;
             var renamer: ?Rename.Module = if (e.options.release)
-                try Rename.begin(e.scratch, &lowered.ir, &e.globals)
+                try Rename.begin(scratch, e.scratch, &lowered.ir, &e.globals)
             else
                 null;
-            const text = try Print.print(e.gpa, &lowered.ir, .fromGlobal(&e.session.interner), .{
+            const text = try Print.print(e.gpa, scratch, &lowered.ir, .fromGlobal(&e.session.interner), .{
                 .plan = &plan,
                 .rename = if (renamer) |*r| r else null,
                 .compact = e.options.release,

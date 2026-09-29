@@ -26,6 +26,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Cli = @import("../Cli.zig");
 const Session = @import("../Session.zig");
+const Arena = @import("../Arena.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Emit = @import("../js/Emit.zig");
 const beni_profile = @import("../Profile.zig");
@@ -61,7 +62,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     defer if (cache) |*c| c.close();
     if (cache) |*c| options.cache = c;
 
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    // What lives for the whole build: the platform chain, the reachability
+    // sets, the pending output. One module's working memory is the
+    // emitter's own arena, reset between modules. Single-threaded, like every
+    // arena here (fast-compiler.md §5 rule 3): one thread uses it at a time.
+    var arena_state: Arena = .init(std.heap.page_allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
