@@ -1,0 +1,76 @@
+-- run: `==` and `/=` with a constructor application on either side answer
+-- what the derived `eq` answers (backend.md §4, *`==` against a
+-- constructor is a tag and field test*): the tag first, then each field,
+-- a nested constructor field by field, `Nothing` by its tag alone, a
+-- field whose own `eq` is not `===` by the derived call. Every operand is
+-- evaluated once, in written order, even when the tags already differ.
+import Node exposing (Program)
+
+
+type Shape
+    = Circle Int
+    | Rect Int Int
+    | Dot
+
+
+type Wrap
+    = Wrap (Maybe Int)
+
+
+type Pair
+    = Pair (List Int) String
+
+
+selected : Maybe Int
+selected =
+    Just 3
+
+
+none : Maybe Int
+none =
+    Nothing
+
+
+shape : Shape
+shape =
+    Rect 1 2
+
+
+parsed : Result String Int
+parsed =
+    Ok 1
+
+
+yes : String, Bool -> String
+yes name b =
+    if b then
+        "${name}: yes"
+
+    else
+        "${name}: no"
+
+
+main : Program
+main =
+    Node.printLines
+        [ yes "just, same" (selected == Just 3)
+        , yes "just, other" (selected == Just 4)
+        , yes "nothing against just" (none == Just 3)
+        , yes "just against nothing" (selected == Nothing)
+        , yes "nothing" (none == Nothing)
+        , yes "not equal" (selected /= Just 3)
+        , yes "constructor on the left" (Just 3 == selected)
+        , yes "both constructors" (Just (Just 2) == Just (Just 2))
+        , yes "nested, inner differs" (Just selected == Just (Just 4))
+        , yes "nested nothing" (Just none == Just Nothing)
+        , yes "rect" (shape == Rect 1 2)
+        , yes "rect, second field differs" (shape == Rect 1 3)
+        , yes "circle" (shape == Circle 1)
+        , yes "dot" (Dot == shape)
+        , yes "wrapped maybe" (Wrap selected == Wrap (Just 3))
+        , yes "ok" (parsed == Ok 1)
+        , yes "err" (parsed == Err "1")
+        , yes "list field" (Pair [ 1 ] "a" == Pair [ 1 ] "a")
+        , yes "order, tags agree" (Debug.log selected "left" == Just (Debug.log 3 "right"))
+        , yes "order, tags differ" (Debug.log none "left" == Just (Debug.log 4 "right"))
+        ]

@@ -141,14 +141,16 @@ const DomLists$table = (model$1) => {
     return { s: r$22, q: null, e: r$22, w0: r$22, w2: w$24, a0: $t$20, a1: $t$21 };
   }, p: (i$25, item$26, position$27) => {
     const $t$28 = item$26.id === model$1.selected;
-    const $t$29 = item$26.label;
     if ($t$28 !== i$25.a0) {
       i$25.a0 = $t$28;
       i$25.w0.classList.toggle("danger", $t$28);
     }
-    if ($t$29 !== i$25.a1) {
-      i$25.a1 = $t$29;
-      i$25.w2.data = $t$29;
+    if (item$26 !== i$25.x) {
+      const $t$29 = item$26.label;
+      if ($t$29 !== i$25.a1) {
+        i$25.a1 = $t$29;
+        i$25.w2.data = $t$29;
+      }
     }
   }, i: false, f: null }, [model$1.selected]] };
 };
@@ -168,9 +170,11 @@ const DomLists$lists = (model$1) => {
       i$57.a0 = position$59;
       i$57.x0.data = position$59;
     }
-    if (item$58 !== i$57.a1) {
-      i$57.a1 = item$58;
-      i$57.x1.data = item$58;
+    if (item$58 !== i$57.x) {
+      if (item$58 !== i$57.a1) {
+        i$57.a1 = item$58;
+        i$57.x1.data = item$58;
+      }
     }
   }, i: true, f: null }, $t$31, { b: (item$60, position$61) => DomLists$viewName(item$60), i: false, f: DomLists$b62 }, [DomLists$viewName], $t$37, { b: (item$62, position$63) => {
     const $t$75 = item$62 === "" ? DomLists$b72 : { t: DomLists$k77, v: [item$62] };

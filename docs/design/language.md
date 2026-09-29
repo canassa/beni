@@ -1527,6 +1527,12 @@ tell, because every beni expression is pure (§6, *What an optimiser may assume*
 component body can, and logs only for the calls that happen. *Amended 2026-09-29:* **a skipped
 helper call in a hole (§11.6) is not made either** — its arguments are evaluated, its body is not —
 so a `Debug.log` in the helper's body logs only for the calls that happen, as in a component's.
+*Amended 2026-09-29, the same day:* **a row that runs because an input changed may leave alone the
+values of its body that read only its item** — no input, no captured local, no position — because
+they are what they were whenever the item is the same one: in `<tr class={rowClass model row}>…
+<a onClick={Select row.id}>{row.label}</a>`, a selection re-runs the class and not the message or
+the label. Such a value is evaluated when the row is first shown and again only when its item is
+not `===` the last one, after the row's other values; a `Debug.log` in it logs only then.
 **A row's inputs are read before the
 row is reached** — `model.selected`, read so the skip can compare it — and that is not an evaluation
 a program can observe either: a field read of a record cannot fail and computes nothing. **When

@@ -1,0 +1,37 @@
+-- emit: `==` against a constructor application whose `eq` is derived is
+-- the tag and field test the derived function would make, in place
+-- (backend.md §4, *`==` against a constructor is a tag and field test*):
+-- no constructor is built and nothing is called. `selected` is a read, so
+-- it is read again for each test; an operand that is not a read is bound
+-- first, so every operand is evaluated once whatever the tag. A field
+-- whose `eq` is not `===` — a `List` — keeps the derived call.
+import Node exposing (Program)
+
+
+pub type Pair
+    = Pair (List Int) String
+
+
+pub isSelected : { selected : Maybe Int }, Int -> Bool
+isSelected model id =
+    model.selected == Just id
+
+
+pub nothing : Maybe Int -> Bool
+nothing m =
+    m /= Nothing
+
+
+pub nested : Maybe (Maybe Int), Int -> Bool
+nested m n =
+    Just (Just (n + 1)) == m
+
+
+pub listField : Pair -> Bool
+listField p =
+    p == Pair [ 1 ] "a"
+
+
+main : Program
+main =
+    Node.printLines []

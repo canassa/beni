@@ -2728,10 +2728,13 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // report. After S6b a type compares through its OWN derived body (§9.4)
     // and `List a` has a `pub foreign eq` of its own (§5.2), so the ONE
     // position still answered by `core/Basics.js`'s walk is the one A.66
-    // names: a slot no use ever pins. `None == None` never inhabits `Opt`'s
-    // parameter, so the part is `err`, and `partEq`'s `err` arm reaches for
-    // `Basics.eq` — which a core root without one cannot supply. Without
-    // this half the `Basics` branch of `missingCoreValue` is unexercised.
+    // names: a slot no use ever pins. `n == n` with `n = None` never
+    // inhabits `Opt`'s parameter, so the part is `err`, and `partEq`'s `err`
+    // arm reaches for `Basics.eq` — which a core root without one cannot
+    // supply. Without this half the `Basics` branch of `missingCoreValue` is
+    // unexercised. (Written `None == None` it no longer reaches it: `==`
+    // against a constructor is a tag test, backend.md §4, and calls
+    // nothing.)
     //
     // (This used to be `xs == ys` on a `List Int` through A.51's bridge.
     // That bridge is gone with S6b: a derived target with no body is now a
@@ -2751,12 +2754,18 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\
         \\pub same : Bool
         \\same =
-        \\    None == None
+        \\    let
+        \\        n = None
+        \\    in
+        \\    n == n
         \\
         \\
         \\pub differ : Bool
         \\differ =
-        \\    None /= None
+        \\    let
+        \\        n = None
+        \\    in
+        \\    n /= n
         \\
         \\
         \\main : Program

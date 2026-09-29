@@ -1,0 +1,27 @@
+-- A row compiled in place, patched (backend.md §15.5; language.md
+-- §11.11): what reads an input — the class, through `model.selected` — is
+-- computed and written first; what reads only the item — the text, the
+-- two handler messages — is computed and written under one test,
+-- `item !== i.x`, so a patch caused by an input builds no message and
+-- rewrites no handler.
+import Html exposing (Html)
+
+
+type Msg
+    = Select Int
+    | Remove Int
+
+
+pub table : { rows : List { id : Int, label : String }, selected : Maybe Int } -> Html Msg
+table model =
+    <table>
+        <For each={model.rows} keyed={.id}>
+            {\row ->
+                <tr class={if model.selected == Just row.id then "danger" else ""}>
+                    <td>{row.id}</td>
+                    <td><a onClick={Select row.id}>{row.label}</a></td>
+                    <td><a onClick={Remove row.id}>x</a></td>
+                </tr>
+            }
+        </For>
+    </table>

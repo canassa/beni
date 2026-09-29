@@ -120,6 +120,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     b.roots = try arena.alloc(m.Root, b.root_insts.items.len);
     for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @enumFromInt(b.root_insts.items[i]));
     try b.lambdaRoots();
+    const item_only = try b.itemOnly();
     return .{
         .tree = .{
             .roots = b.roots,
@@ -143,6 +144,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
                 .events = b.event_facts.items,
             },
             .requires = m.gated,
+            .item_only = item_only,
         },
         .root_insts = b.root_insts.items,
         .node_tokens = b.node_tokens.items,
@@ -436,6 +438,175 @@ const Builder = struct {
                 return b.addNode(.show, b.shows.items.len - 1, f.token);
             },
         }
+    }
+
+    // ---- Values that read only the item (language.md §11.11) -------------
+    //
+    // A value of a `markup` row's root is item-only when every local its
+    // expression reads is bound inside that expression or by the row's
+    // item pattern: no capture, no `let` the row peeled off, no position.
+    // It is then the same whenever the item is, so a lowering may leave it,
+    // and what it writes, alone on a patch whose item did not change.
+    //
+    // The expression's instructions are found twice, and a local must pass
+    // both: by its operands, and as the contiguous run from the lowest of
+    // those to the value itself, which is how lowering lays an expression
+    // out. An operand the walk did not know would still be in the run.
+
+    fn itemOnly(b: *Builder) Allocator.Error![]const bool {
+        const out = try b.arena.alloc(bool, b.values.items.len);
+        @memset(out, false);
+        const bir_ = b.bir();
+        for (b.tree_rows.items, b.row_sources.items) |row, source| {
+            if (row.kind != .markup) continue;
+            const f = source.function.int();
+            const decl = for (bir_.decls) |d| {
+                if (d.inst_start.int() <= f and f < d.inst_end.int()) break d;
+            } else continue;
+            const lambda = bir_.instData(source.function);
+            const params = bir_.extraSlice(bir_.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+            if (params.len == 0) continue;
+            var item: std.ArrayList(u32) = .empty;
+            try b.subtree(params[0], &item);
+            const body = b.roots[@intFromEnum(row.body)];
+            for (0..body.values.len) |k| {
+                const v = body.values.start + k;
+                out[v] = switch (b.values.items[v]) {
+                    .inst => |inst| try b.readsOnly(decl, inst, item.items),
+                    .callee, .string, .true => true,
+                    else => false,
+                };
+            }
+            // A helper's call reads what its arguments read.
+            for (0..body.values.len) |k| {
+                const v = body.values.start + k;
+                switch (b.values.items[v]) {
+                    .call => |c| {
+                        var all = true;
+                        for (0..c.args.len) |j| all = all and out[c.args.start + j];
+                        out[v] = all;
+                    },
+                    else => {},
+                }
+            }
+        }
+        return out;
+    }
+
+    fn readsOnly(b: *Builder, decl: Bir.Decl, inst: Inst.Index, item: []const u32) Allocator.Error!bool {
+        const bir_ = b.bir();
+        var walked: std.ArrayList(u32) = .empty;
+        try b.subtree(inst, &walked);
+        var lo = inst.int();
+        for (walked.items) |i| lo = @min(lo, i);
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        var i = lo;
+        while (i <= inst.int()) : (i += 1) {
+            if (tags[i] != .local) continue;
+            const local = datas[i].lhs;
+            if (decl.locals_start + local >= bir_.locals.len) return false;
+            const binder = bir_.locals[decl.locals_start + local].inst.int();
+            if (binder >= lo and binder <= inst.int()) continue;
+            if (std.mem.indexOfScalar(u32, item, binder) != null) continue;
+            return false;
+        }
+        return true;
+    }
+
+    /// Every instruction of the expression or pattern at `root`.
+    fn subtree(b: *Builder, root: Inst.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+        var stack: std.ArrayList(u32) = .empty;
+        try stack.append(b.arena, root.int());
+        while (stack.pop()) |i| {
+            try out.append(b.arena, i);
+            try b.operands(i, &stack);
+        }
+    }
+
+    /// The instructions `inst` has as operands (`bir/Lower.zig`'s
+    /// `operandsOf`, with a markup item's class and style entries).
+    fn operands(b: *Builder, inst: u32, out: *std.ArrayList(u32)) Allocator.Error!void {
+        const bir_ = b.bir();
+        const d = bir_.insts.items(.data)[inst];
+        const extra = bir_.extra;
+        switch (bir_.insts.items(.tag)[inst]) {
+            .tuple, .list, .interp, .pat_tuple, .pat_list => try out.appendSlice(b.arena, extra[d.lhs..d.rhs]),
+            .record => {
+                var f = d.lhs;
+                while (f < d.rhs) : (f += 2) try out.append(b.arena, extra[f + 1]);
+            },
+            .record_update => {
+                try out.append(b.arena, d.lhs);
+                var f = extra[d.rhs];
+                while (f < extra[d.rhs + 1]) : (f += 2) try out.append(b.arena, extra[f + 1]);
+            },
+            .field_access, .tuple_index, .@"try", .pat_as => try out.append(b.arena, d.lhs),
+            .call, .pat_ctor => {
+                try out.append(b.arena, d.lhs);
+                try out.appendSlice(b.arena, extra[extra[d.rhs]..extra[d.rhs + 1]]);
+            },
+            .method_call => {
+                try out.append(b.arena, d.lhs);
+                const mc = bir_.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+                try out.appendSlice(b.arena, extra[@intFromEnum(mc.args_start)..@intFromEnum(mc.args_end)]);
+            },
+            .type_dispatch => {
+                const t = bir_.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
+                try out.appendSlice(b.arena, extra[@intFromEnum(t.args_start)..@intFromEnum(t.args_end)]);
+            },
+            .lambda, .let => {
+                try out.appendSlice(b.arena, extra[extra[d.lhs]..extra[d.lhs + 1]]);
+                try out.append(b.arena, d.rhs);
+            },
+            .let_def => {
+                const def = bir_.extraData(@enumFromInt(d.lhs), Bir.LetDef);
+                try out.appendSlice(b.arena, extra[@intFromEnum(def.params_start)..@intFromEnum(def.params_end)]);
+                try out.append(b.arena, d.rhs);
+            },
+            .case => {
+                try out.append(b.arena, d.lhs);
+                try out.appendSlice(b.arena, extra[extra[d.rhs]..extra[d.rhs + 1]]);
+            },
+            .let_pattern, .branch, .pat_cons => {
+                try out.append(b.arena, d.lhs);
+                try out.append(b.arena, d.rhs);
+            },
+            .markup => {
+                var values: std.ArrayList(Inst.Index) = .empty;
+                try bir_.markupValues(b.arena, @enumFromInt(d.lhs), &values);
+                for (values.items) |v| try out.append(b.arena, v.int());
+                try b.entryValues(@enumFromInt(d.lhs), out);
+            },
+            else => {},
+        }
+    }
+
+    /// The class and style entries' values of the markup tree at `at`.
+    fn entryValues(b: *Builder, at: Bir.ExtraIndex, out: *std.ArrayList(u32)) Allocator.Error!void {
+        const bir_ = b.bir();
+        const items: Bir.SubRange, const children: Bir.SubRange = switch (bir_.markupKind(at)) {
+            .element => blk: {
+                const e = bir_.extraData(at, Bir.MarkupElement);
+                break :blk .{ .{ .start = e.items_start, .end = e.items_end }, .{ .start = e.children_start, .end = e.children_end } };
+            },
+            .fragment => blk: {
+                const f = bir_.extraData(at, Bir.MarkupFragment);
+                break :blk .{ .{ .start = f.children_start, .end = f.children_start }, .{ .start = f.children_start, .end = f.children_end } };
+            },
+            .component => blk: {
+                const c = bir_.extraData(at, Bir.MarkupComponent);
+                break :blk .{ .{ .start = c.props_start, .end = c.props_end }, .{ .start = c.children_start, .end = c.children_end } };
+            },
+            else => return,
+        };
+        for (bir_.extraSlice(items, Bir.ExtraIndex)) |it| {
+            const item = bir_.extraData(it, Bir.MarkupItem);
+            for (bir_.extraSlice(.{ .start = item.entries_start, .end = item.entries_end }, Bir.ExtraIndex)) |e| {
+                try out.append(b.arena, bir_.extraData(e, Bir.MarkupEntry).value.int());
+            }
+        }
+        for (bir_.extraSlice(children, Bir.ExtraIndex)) |c| try b.entryValues(c, out);
     }
 
     /// The callee of a hole's value when it is a helper call a platform may

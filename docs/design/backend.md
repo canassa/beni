@@ -975,6 +975,32 @@ a `return`, `continue`, `break`, `throw`, assignment or expression statement dro
 `if(c)return a;`; never a declaration (no legal `if` body) and never an `if` (a dangling `else`
 would change owner). The request prints `2**30`.
 
+### `==` against a constructor is a tag and field test
+
+*Added 2026-09-29* (research 39 §4.2, §7 question 2). `model.selected == Just row.id` called the
+derived `Maybe` equality on a `Just` built for the comparison — an allocation and a call per row of
+a table on every selection. When one operand of `==` or `/=` is a constructor application of a
+`tagged` type (`{$: tag, …}`) and the operator's target is a **derived** `eq` (never a hand-written
+one, never a primitive), the emitter writes what the derived function computes, in place: the tag,
+then each field in declaration order, `a.$ === "Just" && a.a === id`, and `/=` its negation. Nothing
+is built and nothing is called. **It is the derived function's answer exactly**, because a field is
+tested in place only where the derived function's own test there is `===`:
+
+- a field whose `eq` resolves to `primitive strict_eq` — through the type's derived row for a type
+  of this module, through the constructor's interface argument terms and the published context for
+  another module's (`Maybe`, `Result`) — is `a.f === e`;
+- a field whose `eq` is itself derived and whose operand is a constructor application is the same
+  test, one level down (`x == Just (Just 3)`);
+- anything else — a `List` field, a field of a type with a hand-written `eq`, a derived field whose
+  operand is not a constructor, a record-alias constructor — keeps the whole comparison as the call.
+
+**Evaluation is unchanged** (`language.md` §6): the operands are evaluated once, in written order,
+before any test, and one that is not a read (a name, or a field chain of one) is bound to a `const`
+first, so a tag that differs skips no evaluation. The other side is read once per test, which is
+why it must be a read. Pinned by `emit/EqAgainstConstructor` (the shape) and
+`run/EqAgainstConstructor` (the answers, nested, `Nothing`, both sides, a `List` field, and
+`Debug.log` order when the tags agree and when they differ).
+
 ### An arrow body or a statement that would begin with `{`
 
 *Added 2026-09-28.* JavaScript reads a `{` in two positions as a block, not as
@@ -3343,6 +3369,17 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   changes `model.selected`, every row whose class reads it re-runs, and every other edit to the model
   skips all of them — P3's rung 3 at the row (research 29 §7.2), without P3's selector recognition,
   which stays later work.
+- **What reads only the item** (*amended 2026-09-29*, research 39 §4.2 edit 2): a `markup` row's
+  `p` runs whenever its item or an input changed, and it recomputed every value and rebuilt every
+  handler message — `{ $: "Select", a: item.id }` is never `===` the last one — so a selection
+  rewrote two `$click` properties per row. Interface 1.2 says which of a row body's values read
+  only the item (`boundary.md` §9.4.2, `Tree.item_only`), and `dom`'s `p` places them with
+  `cx.rowValuesApart`: the values that read an input and their writes first, then the item-only ones
+  and their writes inside one `if (item !== i.x)`, `i.x` being the item the runtime last showed
+  the row with, which it sets after `p` returns. That is P2's split by hand (research 29 §7.1). A
+  write goes under the test only when every value it reads is item-only; a `stateful` property,
+  which is compared with the page on every patch, a component, a `For` and a `Show` never do.
+  Pinned by `emit/dom/DomRowItemOnly` and `browser/dom/RowItemOnly`.
 - **By key** (`forKeyed`): a map from key to instance; per row, `r$p` or a new `r$m`; the array
   reconciler runs only when the key order moved — the `moved` flag (research 36 §4.4) — so a
   selection change or a label edit never enters it. **Duplicate keys**: rows are matched by the key and

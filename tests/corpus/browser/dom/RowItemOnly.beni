@@ -1,0 +1,56 @@
+-- A row patched because an input changed leaves alone what reads only its
+-- item (language.md §11.11, backend.md §15.5): `Debug.log` on each row's
+-- label shows when it is computed. A selection runs every row, for its
+-- class, and computes no label and builds no handler message; each row's
+-- handler still sends its own row's message after it. A relabelled item
+-- computes its label again and writes it; the others do not.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Pick Int
+    | Relabel
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, selected : Maybe Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Pick id ->
+            { model | selected = Just id }
+
+        Relabel ->
+            { model | rows = List.map model.rows (\row -> if row.id == 2 then { row | label = "${row.label}!" } else row) }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {\row ->
+                    <li class={if model.selected == Just row.id then "on" else ""}>
+                        <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>{Debug.log row.label "label"}</a>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" } ], selected = Nothing }
+        , update = update
+        , view = view
+        }

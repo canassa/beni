@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.1: what the compiler hands a platform's markup lowering, and everything
+//! 1.2: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -19,8 +19,9 @@
 const std = @import("std");
 
 /// The version of the interface this module declares (§9.4.6). Version 1.0
-/// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`.
-pub const version: Version = .{ .major = 1, .minor = 1 };
+/// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`,
+/// 1.2 `Tree.item_only` and `Context.rowValuesApart`.
+pub const version: Version = .{ .major = 1, .minor = 2 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -110,6 +111,16 @@ pub const Tree = struct {
     vocabulary: Vocabulary,
     /// The newest interface version whose gated feature the tree uses.
     requires: Version,
+    /// 1.2: per value, whether it is a value of a `markup` row's root that
+    /// reads nothing but the row's item — no input, no capture, no position
+    /// — so it is the same whenever the item is. Empty: none is known to.
+    item_only: []const bool = &.{},
+
+    /// Whether value `v` reads only its row's item (`item_only`).
+    pub fn itemOnly(t: *const Tree, v: Value.Index) bool {
+        const at = @intFromEnum(v);
+        return at < t.item_only.len and t.item_only[at];
+    }
 
     pub fn root(t: *const Tree, i: Root.Index) Root {
         return t.roots[@intFromEnum(i)];
@@ -487,6 +498,15 @@ pub const Context = struct {
         return cx.vtable.row_values(cx.impl, block, row, item, index, captures);
     }
 
+    /// `rowValues`, with the values named in `apart` — each one `Tree.itemOnly`
+    /// — emitted into `apart_block` instead, after the others: a lowering
+    /// that runs `apart_block` only when the item changed recomputes nothing
+    /// that could not have changed (1.2). A value not item-only stays in
+    /// `block`.
+    pub fn rowValuesApart(cx: *Context, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr {
+        return cx.vtable.row_values_apart(cx.impl, block, apart_block, row, item, index, captures, apart);
+    }
+
     /// A call of a beni function value, which takes its arguments directly.
     pub fn call(cx: *Context, callee: Expr, args: []const Expr) Error!Expr {
         return cx.js.call(callee, args);
@@ -666,6 +686,7 @@ pub const VTable = struct {
     runtime: *const fn (impl: *anyopaque, name: []const u8) Error!Name,
     value: *const fn (impl: *anyopaque, v: Value.Index) Error!Expr,
     row_values: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name) Error!?Expr,
+    row_values_apart: *const fn (impl: *anyopaque, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr,
     component_call: *const fn (impl: *anyopaque, node: Node.Index, children: ?Expr) Error!Expr,
     extractor: *const fn (impl: *anyopaque, item: u32) Error!?Expr,
     maybe: *const fn (impl: *anyopaque, e: Expr) Error!Expr,

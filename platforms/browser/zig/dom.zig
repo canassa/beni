@@ -46,7 +46,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 1 },
+    .targets = .{ .major = 1, .minor = 2 },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -435,7 +435,7 @@ const Gen = struct {
         const i = try g.cx.fresh("i");
         const pv = try g.cx.fresh("v");
         var patch: Fn = .{ .block = try js.block(), .v = pv, .i = i };
-        try g.writePatch(b, &patch);
+        try g.writePatch(b, &patch, null, false);
         return g.cx.hoist(n.kind, try js.object(&.{
             .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) },
             .{ .key = "p", .value = try js.arrow(&.{ i, pv }, patch.block) },
@@ -500,8 +500,23 @@ const Gen = struct {
                 const item2 = try g.cx.fresh("item");
                 const position2 = try g.cx.fresh("position");
                 var patch: Fn = .{ .block = try js.block(), .v = null, .i = i };
-                _ = try g.cx.rowValues(patch.block, f.row, item2, if (row.arity == 2) position2 else null, &.{});
-                try g.writePatch(&b, &patch);
+                // What reads only the item is computed and written under
+                // one test of the item, so a row patched because an input
+                // changed leaves it alone (language.md §11.11).
+                // A row with no inputs that does not read its position is
+                // patched only when its item changed: nothing to guard.
+                const apart = try g.itemOnlyOps(&b);
+                if (row.inputs.len == 0 and row.arity == 1) @memset(apart, false);
+                const apart_block = try js.block();
+                _ = try g.cx.rowValuesApart(patch.block, apart_block, f.row, item2, if (row.arity == 2) position2 else null, &.{}, try g.apartValues(&b, apart));
+                try g.writePatch(&b, &patch, apart, false);
+                if (std.mem.indexOfScalar(bool, apart, true) != null) {
+                    const main = patch.block;
+                    patch.block = apart_block;
+                    try g.writePatch(&b, &patch, apart, true);
+                    patch.block = main;
+                    try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.member(try g.ident(i), "x")), apart_block, null);
+                }
                 try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
             },
             .lambda, .function => {
@@ -1230,9 +1245,10 @@ const Gen = struct {
 
     /// The patch function's statements, into `f.block`: a write only where
     /// a value is not the one written last.
-    fn writePatch(g: *Gen, b: *const Body, f: *Fn) m.Error!void {
+    fn writePatch(g: *Gen, b: *const Body, f: *Fn, only: ?[]const bool, which: bool) m.Error!void {
         const js = g.jsb();
         for (b.ops.items, 0..) |op, i| {
+            if (only) |o| if (o[i] != which) continue;
             const k: u32 = @intCast(i);
             if (op.node != .none) g.cx.at(op.node);
             switch (op.what) {
@@ -1318,6 +1334,71 @@ const Gen = struct {
                 },
             }
         }
+    }
+
+    /// The operands an op writes from, for the ops a row may leave alone
+    /// when its item did not change; null for any other op.
+    fn opOperands(g: *Gen, op: Op) m.Error!?[]const u32 {
+        const one = struct {
+            fn of(gen: *Gen, k: u32) m.Error![]const u32 {
+                return gen.a().dupe(u32, &.{k});
+            }
+        }.of;
+        return switch (op.what) {
+            .placeholder => |x| try one(g, x.value),
+            .text => |x| try one(g, x.value),
+            .attribute => |x| if (g.stateful(x.item)) null else try one(g, x.value),
+            .toggle => |x| try one(g, x.value),
+            .style => |x| try one(g, x.value),
+            .event => |x| try one(g, x.handler),
+            .html => |x| try one(g, x.value),
+            .helper => |x| x.args,
+            else => null,
+        };
+    }
+
+    /// Per op of a row's body, whether everything it writes reads only the
+    /// item (`Tree.itemOnly`). A `stateful` property is compared with the
+    /// page on every patch (§15.3), so it is never one.
+    fn itemOnlyOps(g: *Gen, b: *const Body) m.Error![]bool {
+        const out = try g.a().alloc(bool, b.ops.items.len);
+        for (b.ops.items, out) |op, *o| {
+            const operands = (try g.opOperands(op)) orelse {
+                o.* = false;
+                continue;
+            };
+            o.* = for (operands) |k| {
+                switch (b.operands.items[k]) {
+                    .value => |v| if (!g.tree.itemOnly(v)) break false,
+                    .constant => {},
+                    else => break false,
+                }
+            } else true;
+        }
+        return out;
+    }
+
+    /// The values only item-only ops read: those the compiler places apart.
+    fn apartValues(g: *Gen, b: *const Body, apart: []const bool) m.Error![]const m.Value.Index {
+        const shared = try g.a().alloc(bool, b.operands.items.len);
+        @memset(shared, false);
+        for (b.ops.items, apart) |op, x| {
+            if (x) continue;
+            // An op that is not apart may read any operand.
+            for (b.operands.items, 0..) |_, k| if (opReads(op, @intCast(k))) {
+                shared[k] = true;
+            };
+        }
+        var out: std.ArrayList(m.Value.Index) = .empty;
+        for (b.ops.items, apart) |op, x| {
+            if (!x) continue;
+            for ((try g.opOperands(op)).?) |k| {
+                if (shared[k]) continue;
+                const v = b.operands.items[k];
+                if (v == .value and std.mem.indexOfScalar(m.Value.Index, out.items, v.value) == null) try out.append(g.a(), v.value);
+            }
+        }
+        return out.items;
     }
 
     const Write = union(enum) { data, toggle: []const u8, style: []const u8, property: []const u8 };
@@ -1421,6 +1502,23 @@ const Gen = struct {
         return g.ident(it);
     }
 };
+
+/// Whether `op` reads operand `k`, in any of its forms.
+fn opReads(op: Op, k: u32) bool {
+    return switch (op.what) {
+        .placeholder => |x| x.value == k,
+        .text => |x| x.value == k,
+        .attribute => |x| x.value == k,
+        .toggle => |x| x.value == k,
+        .style => |x| x.value == k,
+        .event => |x| x.handler == k,
+        .html => |x| x.value == k,
+        .helper => |x| std.mem.indexOfScalar(u32, x.args, k) != null,
+        .component => |x| x.thunk == k or (x.children != null and x.children.? == k) or std.mem.indexOfScalar(u32, x.props, k) != null,
+        .for_ => |x| x.each == k or x.row == k or (x.key != null and x.key.? == k) or (x.inputs != null and x.inputs.? == k),
+        .show => |x| x.when == k or x.body == k or (x.key != null and x.key.? == k) or (x.fallback != null and x.fallback.? == k) or std.mem.indexOfScalar(u32, x.inputs, k) != null,
+    };
+}
 
 /// The namespace of a prefixed attribute name the page writes with
 /// `setAttributeNS`.

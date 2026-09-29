@@ -69,7 +69,7 @@ cache_test.test.a constrained function constant rewritten as a lambda keeps its 
 cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 8dcd0687e3c2ef12bab5ef5f1e41af7ff1c284063fb4cbd8c762787c1cc255c5
 cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 164f34d8eb90f40f16b0d5b0e8327293a3401d9a82e3e7466b513bf85351b578
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 b8d78d0daad3fdd097edaeb7cd7b569d7794650b0d5abaaa02cb297052f4a3b1
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 24c546ae48dd5f57f0ae81a8f2517f91f44f6e5c22b2bc660af4e427a88fbf21
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 865313fc40aca0fddce9ed0ce20c7360b7fbf88516a3ed2ec1bd892f99ba8fdf
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 a8be5299e75e22c29d9f45fbe56de98e603ecd84bdcd1c3cc15c59e9d0bf218c
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 05f56c9e7a228de674e415e45bd3fc369e6e1e49cc3a4cefe9d4e37a579000d3
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #1 6e62d8814dc0e02e73f7ec7c55ff62a8c803c6ff4e9ac572aa9372154bb09120
@@ -97,7 +97,7 @@ cache_test.test.a warm rebuild is a cold build: the custom eq and compare remove
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #0 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 eb37fe87548da26b0d0ff9b2116634f72f890755e15521b0c3f1dbd83bc24993
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 47a7a24a6de15a047673154e7a9d05f7d8eaba8cb04319896881618d4b85b531
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 003a4e43001fc066875c9ec627ef9f4bb496d91e1ede8994c1f749a5789382be
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516

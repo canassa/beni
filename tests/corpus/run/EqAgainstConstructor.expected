@@ -1,0 +1,24 @@
+left: Just 3
+right: 3
+left: Nothing
+right: 4
+just, same: yes
+just, other: no
+nothing against just: no
+just against nothing: no
+nothing: yes
+not equal: no
+constructor on the left: yes
+both constructors: yes
+nested, inner differs: no
+nested nothing: yes
+rect: yes
+rect, second field differs: no
+circle: no
+dot: no
+wrapped maybe: yes
+ok: yes
+err: no
+list field: yes
+order, tags agree: yes
+order, tags differ: no

@@ -1116,7 +1116,8 @@ from needing the representation.
   every node, every value and every event the tree describes, gives the two lists and the
   character-decoded text the meaning `language.md` §11 states, and skips only what `language.md`
   §11.11 allows (a component whose props are all identical, a helper call in a hole whose arguments
-  are — *amended 2026-09-29*, `language.md` §11.6 — a row or `Show` body whose inputs are). It
+  are — *amended 2026-09-29*, `language.md` §11.6 — a row or `Show` body whose inputs are, and a
+  row's item-only values while its item is, §11.11). It
   reports no diagnostic but §9.4.7's.
 
 #### 9.4.5 The runtime's well-known exports
@@ -1185,6 +1186,16 @@ value, after the root's other values, which is `language.md` §6's row for it �
 ignores `call` still renders the hole faithfully. A lowering that reads `call` may make the call
 only when an argument is not `===` the one it was given last render (§9.4.4). `ssr` ignores it;
 `dom` targets 1.1 (`backend.md` §15.3–§15.4).
+
+**Version 1.2** (*amended 2026-09-29*, additive and gated on nothing): **`Tree.item_only`**, per
+value, whether it is a value of a `markup` row's root that reads nothing but the row's item — every
+local it reads is bound inside it or by the item's pattern, so no capture, no `let` the row peeled
+off and no position — and `tree.itemOnly(v)` to ask; and **`cx.rowValuesApart(block, apart_block,
+row, item, index, captures, apart)`**, `cx.rowValues` with the values named in `apart`, each
+item-only, emitted into `apart_block` after the others instead. A lowering may run `apart_block`
+and what it writes from those values only when the item is not `===` the one the row last showed
+(`language.md` §11.11), and must not read one of them outside it. `dom` targets 1.2 (`backend.md`
+§15.5).
 
 #### 9.4.7 Diagnostics
 

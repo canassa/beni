@@ -4842,6 +4842,12 @@ const Lowerer = struct {
             // §9's derived function, applied to the evidence THIS use
             // passes and then to the two values (§8.3).
             .derived, .ext_derived => {
+                // `x == Just y`: the tag and the fields tested in place,
+                // with no constructor built and no call (§4).
+                if (roots.len == 0 and Bir.SubRange.len(args) == 1) {
+                    const right: Inst.Index = l.bir.extraSlice(args, Inst.Index)[0];
+                    if (try l.ctorEquality(out, callee, @enumFromInt(d.lhs), right, m.origin, p)) |tested| return tested;
+                }
                 const evidence = (try l.derivedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.derivedName(target, p);
@@ -4878,6 +4884,159 @@ const Lowerer = struct {
                 return l.orderTest(value, m.origin, p);
             },
         }
+    }
+
+    // ---- `==` against a constructor (backend.md §4) ---------------------
+    //
+    // `a == C e1 … en` whose `eq` is a derived function is what that
+    // function computes, written in place: the tag, then each field in
+    // declaration order — `a.$ === "C" && a.a === e1 && …` — with no
+    // constructor built and no call. A field is tested with `===` only when
+    // its own `eq` is `primitive strict_eq`, or recursively when it is
+    // derived and the operand in that field is itself a constructor
+    // application; anything else keeps the call, so the test is the
+    // derived function's answer exactly. Every operand is evaluated once, in
+    // written order, before any test: one that is not a read is bound first,
+    // so a test that fails early skips no evaluation.
+
+    /// A constructor application: its constructor and its arguments. A
+    /// nullary constructor is its own reference.
+    fn ctorApplication(l: *Lowerer, inst: Inst.Index) ?struct { ctor: Inst.Index, args: []const Inst.Index } {
+        const ctor: Inst.Index, const args: []const Inst.Index = switch (l.bir.instTag(inst)) {
+            .call => .{ @enumFromInt(l.bir.instData(inst).lhs), l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index) },
+            .ctor, .ext_ctor => .{ inst, &.{} },
+            else => return null,
+        };
+        const rep, _ = l.ctorRepOf(ctor) orelse return null;
+        if (rep != .tagged or l.ctorArity(ctor) != args.len) return null;
+        return .{ .ctor = ctor, .args = args };
+    }
+
+    const FieldEq = union(enum) { strict, nested: Dispatch.TermIndex, none };
+
+    /// How field `j` of constructor `ctor` is compared under the derived
+    /// `eq` term `t_index`: `===`, another derived `eq`, or neither.
+    fn fieldEq(l: *Lowerer, t_index: Dispatch.TermIndex, ctor: Inst.Index, j: usize) FieldEq {
+        const dispatch = l.in.dispatch;
+        const t = dispatch.term(t_index);
+        const args = dispatch.argsAt(t.argsOf());
+        const d = l.bir.instData(ctor);
+        switch (t) {
+            .derived => |use| {
+                if (l.bir.instTag(ctor) != .ctor or use.index >= dispatch.derived.len) return .none;
+                const row = dispatch.derived[use.index];
+                if (row.kind != .eq or row.shape != .nominal) return .none;
+                const c = l.bir.ctors[d.lhs];
+                const owner = l.bir.decls[c.decl.int()];
+                if (d.lhs < owner.ctors_start) return .none;
+                var offset: usize = 0;
+                for (l.bir.ctors[owner.ctors_start..d.lhs]) |sibling| offset += Bir.SubRange.len(.{ .start = sibling.args_start, .end = sibling.args_end });
+                const parts = dispatch.argsAt(row.body);
+                if (offset + j >= parts.len) return .none;
+                const part = parts[offset + j];
+                return switch (dispatch.term(part)) {
+                    .param => |param| if (param.binder == .derived and param.k < args.len) l.siteEq(args[param.k]) else .none,
+                    else => l.siteEq(part),
+                };
+            },
+            .ext_derived => |use| {
+                if (use.kind != .eq or l.bir.instTag(ctor) != .ext_ctor) return .none;
+                if (d.lhs >= l.in.interfaces.len) return .none;
+                const iface = &l.in.interfaces[d.lhs];
+                if (d.rhs >= iface.ctors.len) return .none;
+                const c = iface.ctors[d.rhs];
+                if (c.arg_terms == Interface.no_terms) return .none;
+                const words = iface.range(c.arg_terms);
+                if (j >= words.len) return .none;
+                const field = iface.term(@enumFromInt(words[j]));
+                if (field.tag != .@"var") return .none;
+                const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner.global, use.type, .eq) orelse return .none;
+                const count = published.iface.contextLen(published.row.context);
+                for (0..count) |k| {
+                    const e = published.iface.contextEntry(published.row.context, k) orelse return .none;
+                    if (e.param != field.lhs) continue;
+                    if (published.iface.symbol(e.method) != InternPool.WellKnown.eq.symbol()) return .none;
+                    return if (k < args.len) l.siteEq(args[k]) else .none;
+                }
+                return .none;
+            },
+            else => return .none,
+        }
+    }
+
+    fn siteEq(l: *Lowerer, t_index: Dispatch.TermIndex) FieldEq {
+        return switch (l.in.dispatch.term(t_index)) {
+            .primitive => |prim| if (prim == .strict_eq) .strict else .none,
+            .derived => |use| if (use.index < l.in.dispatch.derived.len and l.in.dispatch.derived[use.index].kind == .eq) .{ .nested = t_index } else .none,
+            .ext_derived => |use| if (use.kind == .eq) .{ .nested = t_index } else .none,
+            else => .none,
+        };
+    }
+
+    /// Whether `inst` is a constructor application every field of which
+    /// the test can compare in place under `t_index`.
+    fn ctorTestable(l: *Lowerer, t_index: Dispatch.TermIndex, inst: Inst.Index) bool {
+        const app = l.ctorApplication(inst) orelse return false;
+        for (app.args, 0..) |arg, j| switch (l.fieldEq(t_index, app.ctor, j)) {
+            .strict => {},
+            .nested => |n| if (!l.ctorTestable(n, arg)) return false,
+            .none => return false,
+        };
+        return true;
+    }
+
+    /// The operands a test compares, in written order: each field's, or a
+    /// nested constructor's own.
+    fn ctorLeaves(l: *Lowerer, out: *std.ArrayList(Inst.Index), t_index: Dispatch.TermIndex, inst: Inst.Index) !void {
+        const app = l.ctorApplication(inst).?;
+        for (app.args, 0..) |arg, j| switch (l.fieldEq(t_index, app.ctor, j)) {
+            .nested => |n| try l.ctorLeaves(out, n, arg),
+            else => try out.append(l.scratch, arg),
+        };
+    }
+
+    fn ctorTest(l: *Lowerer, subject: Node.Index, t_index: Dispatch.TermIndex, inst: Inst.Index, leaves: []const Node.Index, cursor: *usize, p: u32) !Node.Index {
+        const app = l.ctorApplication(inst).?;
+        _, const tag = l.ctorRepOf(app.ctor).?;
+        var acc = try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.stringNode(l.text(tag), p), p);
+        for (app.args, 0..) |arg, j| {
+            const field = try l.member(subject, try l.slotName(@intCast(j)), p);
+            const one = switch (l.fieldEq(t_index, app.ctor, j)) {
+                .nested => |n| try l.ctorTest(field, n, arg, leaves, cursor, p),
+                else => blk: {
+                    const leaf = leaves[cursor.*];
+                    cursor.* += 1;
+                    break :blk try l.binary(.strict_eq, field, leaf, p);
+                },
+            };
+            acc = try l.binary(.logical_and, acc, one, p);
+        }
+        return acc;
+    }
+
+    /// `left == right` (or `/=`) as a tag and field test, when one side is
+    /// a constructor application the test can compare; null otherwise.
+    fn ctorEquality(l: *Lowerer, out: *StmtList, callee: Dispatch.TermIndex, left: Inst.Index, right: Inst.Index, origin: Bir.WellKnown, p: u32) !?Node.Index {
+        if (origin != .eq and origin != .neq) return null;
+        const on_right = l.ctorTestable(callee, right);
+        if (!on_right and !l.ctorTestable(callee, left)) return null;
+        const ctor = if (on_right) right else left;
+        var insts: std.ArrayList(Inst.Index) = .empty;
+        if (on_right) try insts.append(l.scratch, left);
+        try l.ctorLeaves(&insts, callee, ctor);
+        if (!on_right) try insts.append(l.scratch, right);
+        const values = try l.orderedExprs(out, insts.items, false);
+        for (values, insts.items) |*v, inst| {
+            if (l.isRead(v.*)) continue;
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, v.*, l.pos(inst));
+            v.* = try l.ident(n, p);
+        }
+        const subject = if (on_right) values[0] else values[values.len - 1];
+        const leaves = if (on_right) values[1..] else values[0 .. values.len - 1];
+        var cursor: usize = 0;
+        const tested = try l.ctorTest(subject, callee, ctor, leaves, &cursor, p);
+        return if (origin == .neq) try l.negate(tested, p) else tested;
     }
 
     /// `callee(<evidence…>, receiver, args…)` — §8.3's shape, with the
@@ -6271,12 +6430,19 @@ const Lowerer = struct {
     /// bound where the lowering can name it. The other slots evaluate
     /// nothing and are spelled where they are asked for.
     fn markupValues(l: *Lowerer, out: *StmtList, root: beni_markup.Root) Allocator.Error!void {
+        return l.markupValuesSplit(out, out, root, &.{});
+    }
+
+    /// `markupValues`, the values `apart` marks evaluated into `apart_out`,
+    /// in order among themselves.
+    fn markupValuesSplit(l: *Lowerer, main_out: *StmtList, apart_out: *StmtList, root: beni_markup.Root, apart: []const bool) Allocator.Error!void {
         const st = l.mk.?;
-        for (root.values.start..root.values.start + root.values.len) |v| {
+        for (root.values.start..root.values.start + root.values.len, 0..) |v, k| {
             const inst = switch (st.built.values[v]) {
                 .inst => |i| i,
                 else => continue,
             };
+            const out = if (k < apart.len and apart[k]) apart_out else main_out;
             const value = try l.expr(out, inst);
             const tag = l.b.nodes.items(.tag)[value.int()];
             st.bound[v] = switch (tag) {
@@ -6373,10 +6539,12 @@ const Lowerer = struct {
     fn markupRowValues(
         l: *Lowerer,
         block: beni_markup.Block,
+        apart_block: ?beni_markup.Block,
         row_index: beni_markup.Row.Index,
         item: beni_markup.Name,
         position: ?beni_markup.Name,
         captures: []const beni_markup.Name,
+        apart: []const beni_markup.Value.Index,
     ) Allocator.Error!?Node.Index {
         const st = l.mk.?;
         const row = st.built.tree.row(row_index);
@@ -6422,8 +6590,17 @@ const Lowerer = struct {
             try l.letBindings(&stmts, l.bir.subRange(@enumFromInt(l.bir.instData(let).lhs)));
         }
         const body = st.built.tree.root(row.body);
-        try l.markupValues(&stmts, body);
+        var apart_stmts: StmtList = .empty;
+        // A value named apart goes to `apart_block` only when it reads
+        // nothing but the item; any other stays where it was asked for.
+        const moved = try l.scratch.alloc(bool, body.values.len);
+        for (moved, 0..) |*mv, k| {
+            const v = body.values.at(@intCast(k));
+            mv.* = apart_block != null and st.built.tree.itemOnly(v) and std.mem.indexOfScalar(beni_markup.Value.Index, apart, v) != null;
+        }
+        try l.markupValuesSplit(&stmts, &apart_stmts, body, moved);
         try st.blocks.items[@intFromEnum(block)].appendSlice(l.scratch, stmts.items);
+        if (apart_block) |ab| try st.blocks.items[@intFromEnum(ab)].appendSlice(l.scratch, apart_stmts.items);
         if (row.kind != .lambda) return null;
         return try l.markupValue(body.values.at(body.values.len - 1));
     }
@@ -6650,7 +6827,13 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn rowValues(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name) E!?M.Expr {
         const l = lowerer(impl);
-        const result = try l.markupRowValues(into, row, item, position, captures);
+        const result = try l.markupRowValues(into, null, row, item, position, captures, &.{});
+        return if (result) |n| expr(n) else null;
+    }
+
+    fn rowValuesApart(impl: *anyopaque, into: M.Block, apart_into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name, apart: []const M.Value.Index) E!?M.Expr {
+        const l = lowerer(impl);
+        const result = try l.markupRowValues(into, apart_into, row, item, position, captures, apart);
         return if (result) |n| expr(n) else null;
     }
 
@@ -6844,6 +7027,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .runtime = runtime,
         .value = value,
         .row_values = rowValues,
+        .row_values_apart = rowValuesApart,
         .component_call = componentCall,
         .extractor = extractor,
         .maybe = maybe,
