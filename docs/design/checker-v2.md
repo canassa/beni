@@ -4923,10 +4923,16 @@ subject-first. Both behaviours were re-checked on the v1 binary.
 *Specified 2026-09-29; not built.* How the checker types markup ([`language.md`](language.md)
 §11) against the vocabulary a platform declares, and what it hands the backend, which still sees no
 types (`backend.md` §3). The front end's half is [`frontend.md`](frontend.md) §9, the platform's
-half [`boundary.md`](boundary.md) §9. Nothing here changes a rule of §1–§24: markup adds two
-obligation kinds to §4.5's table, a section to §13's record and three tables to §14.2's interface,
-and every other part of the checker meets a markup tree only as the ordinary instructions
+half [`boundary.md`](boundary.md) §9. Nothing here changes a rule of §1–§24: markup adds four
+obligation kinds to §4.5's table, a section to §13's record and tables to §14.2's interface, and
+every other part of the checker meets a markup tree only as the ordinary instructions
 `frontend.md` §9.7 puts in the declaration's range.
+
+*Revised 2026-09-29, after the specification review.* The checker now reads `raw`, `classes` and
+`styles` as well (§25.2), types the `class`/`style` list forms and the row function of any shape by
+two new obligations (§25.4), types `Show` (§25.4), checks markup primitives and refuses a `foreign`
+that would carry another lowering's markup (§25.2), and states the constant forms exactly (§25.3).
+Three codes were renamed and `invalid_keyed` moved to lowering (§25.9).
 
 ### 25.1 What the checker is given
 
@@ -4936,53 +4942,82 @@ symbols, not yet resolved. The module graph has made the platform's **vocabulary
 import of every module whose `Bir` says `uses_markup` (`frontend.md` §9.8), so its interface is
 available exactly as any import's is, cold or from the cache. The platform's manifest names the
 vocabulary module and the **markup type** (`boundary.md` §9.2), and the checker receives both as
-two `(module, name)` pairs beside the prelude's well-known names.
+two `(module, name)` pairs beside the prelude's well-known names, together with **the build's
+lowering name** and, for each platform package of the chain, the lowering its own manifest names, if
+any — the two facts §25.2's `markup_type_in_foreign` compares. `check` without `--platform` receives
+none of these, and a module that writes markup is then `no_markup_vocabulary`.
 
 ### 25.2 Reading the vocabulary
 
 **In the vocabulary module itself**, each declaration of `language.md` §11.14 is checked once, as a
-declaration:
+declaration, and **all of them before any of the module's value groups**, since none depends on a
+value but a `via` extractor, whose annotation is all it needs (a `foreign` has one). That is what lets
+the vocabulary module write markup against its own declarations (`frontend.md` §9.8): its markup
+resolves against rows this module has already checked, read from the module's own record rather than
+an interface.
 
 | Declaration | Checked |
 |---|---|
 | `pub element` | its facts are a set with no repeats, and at most one namespace |
-| `pub attribute` | its annotation reads (the ordinary annotation reader, §6.6), and is one of `String`, `Int`, `Float`, `Bool`, `Maybe String` after aliases; its `on` names are distinct |
+| `pub attribute` | its annotation reads (the ordinary annotation reader, §6.6), and is one of `String`, `Int`, `Float`, `Bool`, `Maybe String` after aliases; its `on` names are distinct; `classes` and `styles` each require the type `String`, and at most one of the two is present |
 | `pub event` | as `attribute` for `on`; with `via f`, `f` is a `foreign` value of this module whose type is `E -> P` with `E` a `foreign type` and `P` the declared payload type (unified, so an alias is fine); without `via`, the payload type is a `foreign type` |
-| all three | two declarations of one form whose names tie under the precedence rule (exact, then the longer literal part of a pattern), and whose `on` sets overlap, are `duplicate_declaration`; an event and an attribute of the same name are too |
+| `pub markup` | its annotation reads and is a function type that mentions the markup type. That its name does not collide with one of a lowering's own runtime exports is the runtime check's, in `build` and `check --platform` (`boundary.md` §9.4.5) |
+| all four | two declarations of one form whose names tie under the precedence rule (exact, then the longer literal part of a pattern), and whose `on` sets overlap, are `duplicate_declaration`; an event and an attribute of the same name are too; a primitive's name is a value name and meets the module's ordinary `duplicate_declaration` |
 
 A failure is reported against the declaration and sets its failure bit (§15.2), and a vocabulary
 declaration with its bit set is published as absent, so an importer's markup meets `unknown_element`
-or `unknown_attribute` rather than a half-read row.
+or `unknown_attribute` rather than a half-read row, and a use of a failed primitive the ordinary
+unbound-name path.
+
+**In every platform package of the chain**, a `foreign` value whose declared type mentions the
+markup type (after aliases) is **`markup_type_in_foreign`** unless the package's own manifest names a
+lowering and that lowering is the build's (`boundary.md` §9.3). It is a guarantee, not a taste: such
+a `foreign`'s sibling builds or reads one lowering's representation of markup, and under another
+lowering it would build a value that lowering's runtime misreads — a wrong page, or a `TypeError`,
+with the build having succeeded. `browser`'s `Program` constructor, which takes a `view`, is legal
+because `browser` names `dom`; the same declaration in `html` is refused, and the message names the
+markup primitive as the form that serves every lowering.
 
 **In a module that uses markup**, names resolve against the published rows (§25.8). A tag resolves to
 an element row by exact name, then by the most specific pattern; an attribute to the element-scoped
 row, then the unscoped one, each by exact name then pattern; an event likewise, in the same name
 space as attributes. The escape `"name"=value` resolves to nothing and is typed `String`. **Every
 resolution is a function of the name's text and the rows**, which are sorted by name text in the
-record, so which row answers can depend on nothing else (I13).
+record, so which row answers can depend on nothing else (I13). The checker reads, from a row, `void`,
+`on`, the value or payload type, `via`, `classes`, `styles` and `raw` — the last only for the
+warning of §25.4 — and nothing else (`language.md` §11.14).
 
 ### 25.3 Typing an element
 
-For each element, fragment, component and `For` node, in the tree's order:
+For each element, fragment, component, `For` and `Show` node, in the tree's order:
 
 - **Its type is `H m`**, `H` the markup type and `m` one fresh variable per markup root, shared by
   every node of the root: every handler's message, every `Html` hole's parameter, every nested
   element. A root is an expression of type `H m` like any other, so `m` meets the program's `Msg`
   where the root is used.
-- **A constant attribute** is checked syntactically against its row's type: a string needs `String`
-  (or `Maybe String`, which a constant makes `Just`), a bare attribute `Bool`, a number `Int` or
-  `Float`. A **dynamic attribute**'s value instruction is unified with the row's type, at the
-  value's own region, so the mismatch is the ordinary `type_mismatch` with the attribute named.
+- **A quoted attribute value** needs the row's type to be `String`, or `Maybe String`, which the
+  quoted form makes `Just` (`language.md` §11.5), or `String` with `classes` or `styles`, which a
+  quoted value takes in its `String` form; any other row type is `type_mismatch` at the value, naming
+  the attribute and the declared type. **A bare attribute** needs `Bool`. Both are decided here, from
+  the syntax, with no inference. **A `{e}` value** — a constant hole included — is its instruction,
+  unified with the row's type at the value's own region, so a mismatch is the ordinary
+  `type_mismatch` with the attribute named; for a row with `classes` or `styles` the unification is
+  §25.4's `attr_form` obligation instead.
 - **An event's handler** raises a `handler` obligation (§25.4).
 - **A hole** raises a `renderable` obligation (§25.4).
 - **A `void` element with children** is `void_element_with_children`, at the first child.
 - **An unknown element or attribute** is `unknown_element` or `unknown_attribute`, with "did you
   mean" over the names the element accepts, sorted by text distance then text (§15.3's rule for
   suggestions); the node is then typed as if absent, so one misspelling is one message.
+- **A `raw` attribute** in a module of the root package is the warning `raw_markup_attribute`, at the
+  attribute.
 
-### 25.4 Two obligations, and the `For` checks
+Items are typed in source order, attributes and events interleaved as written, which is the order
+their instructions lie in (`frontend.md` §9.7); nothing about the result depends on it (I9).
 
-§4.5's table gains two rows. Both **ride on their variables** (I3) and are decided when a deciding
+### 25.4 Four obligations, and the `For` and `Show` checks
+
+§4.5's table gains four rows. All **ride on their variables** (I3) and are decided when a deciding
 variable is bound or at the owner's boundary, exactly as `interpolatable` is, so whether and how a
 root checks is a function of its declaration and never of declaration order (I9).
 
@@ -4990,43 +5025,56 @@ root checks is a function of its declaration and never of declaration order (I9)
 |---|---|---|---|---|
 | `renderable(part, m)` | the part | — | `String`, `Char`, `Bool`, `Int`, `Float` or `number`-kinded: **text**, with that stringification. `H x`: unify `x` with `m`, **html**. `Maybe (H x)`: likewise, **maybe html**. `List (H x)`: likewise, **list html**. Anything else: `child_not_renderable`, naming the type and the five shapes | `child_not_renderable` with the "cannot tell" message: the hole's type must be known because the compiler chooses its update, as `ambiguous_interpolation` requires of `${…}` (`language.md` §2.6) |
 | `handler(h, p, m)` | the handler's type `h` | — | a function type: unify `h` with `p -> m`, **payload form** (an arity other than 1 is that unification's `type_mismatch`). Anything else, a rigid included: unify `h` with `m`, **message form** | unify with `m`: **message form**. This is sound — the form is fixed at the declaration and recorded (§25.7), so an instantiation of `m` at a function type later is still sent as a message |
+| `attr_form(v, row)` | the value's type `v`, for a row with `classes` or `styles` | — | `List x`: unify `v` with `List ( String, Bool )` (`classes`) or `List ( String, String )` (`styles`), **class list** or **style list**. Anything else: unify with `String`, **string** — a mismatch is the ordinary `type_mismatch` naming the attribute and both forms | unify with `String`: **string**, recorded, sound for `handler`'s reason |
+| `row(f, a, m)` | the row function's type `f`, for a `For` row or a `Show` body of shape `function` | — | a function of arity 1: unify with `a -> H m`; of arity 2 and in a `For`: unify with `a, Int -> H m`; any other arity, or 2 in a `Show`: unify with `a -> H m`, whose `type_mismatch` names the forms. **Arity recorded** | unify with `a -> H m`: arity 1, recorded |
 
 A `number`-kinded part is accepted without resolving to `Int` or `Float`, for §2.6's reason: both
-stringify identically on the target. The row's kind is recorded **as decided**, so the backend is told
-which conversion to write and never guesses one from the value (§25.7).
+stringify identically on the target. Every row's kind is recorded **as decided**, so the backend is
+told which conversion, which list form and which arity to write and never guesses one from a value
+(§25.7).
 
-**`For`**, as ordinary unifications plus one obligation and one warning:
+**`For`**, as ordinary unifications plus two obligations and one warning:
 
-- `each : List a`; the row function's instruction unifies with `a -> H m`, or `a, Int -> H m` when
-  its lambda has two parameters; `fallback : H m`.
-- `keyed={f}`: `f : a -> k`, and a **`for_key(k)`** obligation, owner `k`: decided at a type whose
+- `each : List a`; `fallback : H m`.
+- The row function: a row of shape `markup` or `lambda` (`frontend.md` §9.7) unifies its lambda with
+  `a -> H m`, or `a, Int -> H m` when the lambda has two parameters — any other count is the
+  lambda's `type_mismatch` — and records the arity from the count; a row of shape `function` raises
+  `row(f, a, m)`.
+- `keyed={f}`: `f : a -> k`, and a **`key(k)`** obligation, owner `k`: decided at a type whose
   `eq` is `strict_eq` in `static-dispatch-spike.md` §3.2's table (`String`, `Int`, `Float`, `Char`,
-  `Bool`, `Order`) as **accepted**; at any other head as `for_key_not_primitive`; and at the
-  boundary, still a flex or a rigid, as `for_key_not_primitive` with the "the key's type must be known" message —
-  identity on an unknown type could be identity on a record. `keyed` given as anything other than a
-  function or the literal constructors `True`/`False` is `invalid_for_keyed`, from the instruction's
-  shape, before any typing.
+  `Bool`, `Order`) as **accepted**; at any other head as `key_not_primitive`; and at the boundary,
+  still a flex or a rigid, as `key_not_primitive` with the "the key's type must be known" message —
+  identity on an unknown type could be identity on a record. A `keyed` value lowering took for a key
+  function (`frontend.md` §9.7) that is not a function is the unification's `type_mismatch`, naming
+  `keyed` and its three forms. `keyed={True}`, bare `keyed` and `keyed={False}` are modes and are
+  not typed.
 - **`unkeyed_for`**, a `warning`, for a `For` with no `keyed` in a module of the root package: at the
   declaration's boundary, if `a` is not a primitive-`eq` type — a record, a custom type, a variable —
   the warning is reported at the `For`, naming `keyed={…}` and `keyed={True}`.
+
+**`Show`**, likewise: `when : Maybe a`; `fallback : H m`; the body a row as `For`'s, arity 1 only;
+`keyed={f}` as `For`'s, with the same `key(k)` obligation. Bare `keyed` and `keyed={True}` are the
+identity mode. No warning: `keyed` is required, so a `Show` always says how it remounts.
 
 ### 25.5 Components
 
 A component node is typed **exactly as the call it means** (`language.md` §11.8): the callee
 reference is instantiated as any reference is (§6.6), and unified with `{ f₁ : t₁, … } -> H m` — the
 closed record of the written props, with `children` added in the form §11.8 gives it — or, with a
-spread, with the record-update shape of §6.5 over the spread value's type. So a missing prop is
-`missing_field`, a misspelt one `unknown_field` with "did you mean", and a component whose callee
-takes something other than one record is the call's own `type_mismatch` or `too_many_args`. **A
-constrained component is an ordinary constrained call**: its evidence is a site of §13's record,
-keyed by the component node's instruction, and elaborated like any other (§12.2).
+spread, with the record-update shape of §6.5 over the spread value's type. A quoted prop is a
+`String`. So a missing prop is `missing_field`, a misspelt one `unknown_field` with "did you mean",
+and a component whose callee takes something other than one record is the call's own
+`type_mismatch` or `too_many_args`. **A constrained component is an ordinary constrained call**: its
+evidence is a site of §13's record, keyed by the component node's instruction, and elaborated like
+any other (§12.2).
 
 ### 25.6 Once effects land
 
-A handler's function form and a `For`'s row function are called by the platform from an event and
-from a render, so each must be `sync` once `sync` exists (W8). The check is the one `sync` brings for
-every callback that crosses the boundary, applied to these two positions; it is not specified here,
-because `sync` is not. Until then every function is vacuously `sync`.
+A handler's function form, a `For`'s row function, a `Show`'s body and its key function, and an
+`Html.map` function are called by the platform from an event or a render, so each must be `sync`
+once `sync` exists (W8). The check is the one `sync` brings for every callback that crosses the
+boundary, applied to these positions; it is not specified here, because `sync` is not. Until then
+every function is vacuously `sync`.
 
 ### 25.7 The markup section of the record
 
@@ -5037,21 +5085,24 @@ node in instruction order:
 | Node | Recorded |
 |---|---|
 | element | the element row (vocabulary module, row index) |
-| attribute | the attribute row, or `escape`; the value class (`string`, `int`, `float`, `bool`, `maybe_string`) |
+| attribute | the attribute row, or `escape`; the value class (`string`, `int`, `float`, `bool`, `maybe_string`, `class_list`, `style_list`) |
 | event | the event row; the form (`message` or `payload`); the extractor, as an `ext` term when the row has one |
 | hole | the kind (`text`, `html`, `maybe_html`, `list_html`) and, for `text`, the stringification (`string`, `number`, `char`, `bool`) |
 | component | nothing new: its site is an ordinary §13 site |
-| `For` | the mode (`key`, `position`, `reference`), and whether the item type is primitive-`eq` (`true` makes reference keying value keying, which a lowering may exploit) |
+| `For` | the mode (`key`, `position`, `reference`); whether the item type is primitive-`eq` (`true` makes reference keying value keying, which a lowering may exploit); the row's arity |
+| `Show` | the mode (`key`, `identity`); whether the value's type is primitive-`eq` |
 
-The row facts themselves — `void`, the namespace, `property`, `stateful`, `url`, `raw`, `delegated`,
-the DOM event name — are **not copied**: the backend reads them from the vocabulary module's
-interface rows, by the row indices above, which is one source for each fact.
+The row facts themselves — `void`, the namespace, `property`, `stateful`, `url`, `raw`, `classes`,
+`styles`, `delegated`, the DOM event name — are **not copied**: the backend reads them from the
+vocabulary module's interface rows, by the row indices above, which is one source for each fact. A
+**markup primitive** needs no entry: a use of one is an ordinary reference with an ordinary `refs`
+edge, and the interface row says what it binds to (§25.8).
 
 `dispatch_bytes.format_version` 4 → 5 for the section, and `entry_bytes.format_version` 4 → 5,
 because an entry embeds the table; every older entry is a miss. `dump --stage=dispatch` prints the
 section after the sites, one line per node — `markup <inst> hole text number`, `markup <inst> event
-Html.onInput payload via Html.targetValue`, and so on — so `tests/corpus/dispatch/` can pin it, and
-`--roundtrip-dispatch` round-trips it with the rest.
+Html.onInput payload via Html.targetValue`, `markup <inst> attr Html.class class_list`, and so on —
+so `tests/corpus/dispatch/` can pin it, and `--roundtrip-dispatch` round-trips it with the rest.
 
 **One more reachability leg.** An event's extractor is a reference no `refs` row and no site records,
 so `check/Edges.zig` yields it as an `ext` target from the markup section, and `js/Reach.zig` and
@@ -5062,15 +5113,18 @@ so `check/Edges.zig` yields it as an `ext` target from the markup section, and `
 **A vocabulary module's record gains three tables**, `elements`, `attributes` and `events`, each row
 the declaration's name text (a pattern flagged), its facts, its `on` set (sorted by text), and for
 attributes and events the type as a scheme and, for events, the extractor's value index. Rows are
-sorted by name text, then by `on` set. `iface_bytes.format_version` 7 → 8; the dependency digest
-covers the tables, so an edit to a vocabulary declaration moves the vocabulary module's interface
-hash and re-checks every module that uses markup — through the edge of `frontend.md` §9.8, which is
-an import for the firewall as for everything else.
+sorted by name text, then by `on` set. **A markup primitive** is published as an ordinary value with
+its scheme, its row flagged `markup_primitive` beside the existing `foreign` flag, so an importer
+types a use like any value and the backend knows it binds to the markup runtime (`boundary.md` §9.3).
+`iface_bytes.format_version` 7 → 8; the dependency digest covers the tables and the flag, so an edit
+to a vocabulary declaration moves the vocabulary module's interface hash and re-checks every module
+that uses markup — through the edge of `frontend.md` §9.8, which is an import for the firewall as for
+everything else.
 
 **A module that merely uses markup publishes nothing new.** Its interface is its annotations and
 schemes, as before: a component is a function and publishes its scheme like any function, and no
-markup tree, hole kind or template appears in any record. So editing a `view`'s markup without
-changing its type moves no interface hash and re-checks no importer.
+markup tree, hole kind, template or row input appears in any record. So editing a `view`'s markup
+without changing its type moves no interface hash and re-checks no importer.
 
 ### 25.9 Diagnostics
 
@@ -5084,10 +5138,14 @@ region named:
 | `unknown_attribute` | the attribute name | the nearest names this element accepts, and the quoted-name escape |
 | `child_not_renderable` | the hole | the type, and the five accepted shapes |
 | `void_element_with_children` | the first child | the element and its `void` declaration |
-| `invalid_for_keyed` | the `keyed` value | the three forms |
-| `for_key_not_primitive` | the `keyed` value | the key type and the primitive types |
+| `key_not_primitive` | the `keyed` value | the key type and the primitive types |
+| `markup_type_in_foreign` | the `foreign` declaration | the markup type, the lowering the build selects and the one the package names (or that it names none), and the markup primitive as the form that serves every lowering |
 | `unkeyed_for` (warning) | the `For` tag | the item type and the two ways to silence it |
 | `raw_markup_attribute` (warning) | the attribute | that the value is written as markup, unescaped |
+
+*Renamed the same day, before anything was built:* `for_key_not_primitive` is `key_not_primitive`,
+because `Show` shares it; `invalid_for_keyed` is `invalid_keyed` and is lowering's, read from the
+value's shape (`frontend.md` §9.7), with a non-function the unification's `type_mismatch` (§25.4).
 
 Warnings are reported only for modules of the root package, as `ambiguous_method_receiver` is, and
 are cached and replayed with the entry like every warning (`fast-compiler.md` §8).
