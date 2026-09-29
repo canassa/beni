@@ -449,7 +449,7 @@ pub fn title(code: Code) []const u8 {
         .raw_markup_attribute => "RAW MARKUP ATTRIBUTE",
         .markup_restructured => "MARKUP RESTRUCTURED",
         .unknown_markup_lowering => "UNKNOWN MARKUP LOWERING",
-        .unknown_form_attribute => "UNKNOWN ATTRIBUTE",
+        .unknown_form_attribute => "UNKNOWN FORM ATTRIBUTE",
         .missing_form_attribute => "MISSING ATTRIBUTE",
         .markup_type_in_foreign => "MARKUP TYPE IN FOREIGN",
         .untyped_event_attribute => "UNTYPED EVENT ATTRIBUTE",
