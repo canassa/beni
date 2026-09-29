@@ -1,0 +1,15 @@
+-- A broken element that follows a sibling on its line with no space
+-- between them stays there (language.md §11.15), and its children and
+-- closing tag hang off the children's column, not its own: a run of such
+-- siblings does not step right, one indentation per sibling, which made
+-- the output grow as the square of the input.
+stairs =
+    <div>
+        <p>
+            one
+        </p><p>
+            two
+        </p><p>
+            three
+        </p>
+    </div>

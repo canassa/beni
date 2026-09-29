@@ -1,0 +1,59 @@
+-- Past the hundredth column, a line break that cannot shorten the line is
+-- not made (language.md §11.15): a hole holding a lone name keeps its `}`,
+-- and an opening tag with no attributes keeps its `>`.
+name model =
+    <p>
+        A sentence that is long enough that the hole right after it runs past the hundredth column {model.name}
+    </p>
+
+
+deep =
+    <a>
+     <a>
+      <a>
+       <a>
+        <a>
+         <a>
+          <a>
+           <a>
+            <a>
+             <a>
+              <a>
+               <a>
+                <a>
+                 <a>
+                  <a>
+                   <a>
+                    <a>
+                     <a>
+                      <a>
+                       <a>
+                        <a>
+                         <a>
+                          <a>
+                           <a><b>
+                            x
+                           </b></a>
+                          </a>
+                         </a>
+                        </a>
+                       </a>
+                      </a>
+                     </a>
+                    </a>
+                   </a>
+                  </a>
+                 </a>
+                </a>
+               </a>
+              </a>
+             </a>
+            </a>
+           </a>
+          </a>
+         </a>
+        </a>
+       </a>
+      </a>
+     </a>
+    </a>

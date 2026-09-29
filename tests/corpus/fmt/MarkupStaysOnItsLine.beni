@@ -1,0 +1,20 @@
+-- Markup written on one line after something it may not be parted from —
+-- a sibling with no space between (language.md §11.15), a `{` — stays on
+-- the line whatever its width, and so does everything inside it: a hole, a
+-- row lambda, a child element. Breaking inside it would make it markup the
+-- author broke, printed vertically the next time round, so formatting
+-- would not be a fixed point.
+form x =
+    <p><bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb /><For each={x.rows}>{\r -> <li>{r.name}</li>}</For></p>
+
+
+show model =
+    <li class={model.cls}> <b title={model.title} /><Show when={model.user} keyed>{\u -> <p>{u.name}</p>}</Show></li>
+
+
+row r =
+    <tr><td>{r.id}</td><td>{r.name}</td><td>{r.email}</td><td>{r.phone}</td><td>{r.city}</td><td>{r.country}</td></tr>
+
+
+card title =
+    <Card header={<h1 class="card-title and-some-more-classes">{title} and a heading tail that runs long</h1>} />

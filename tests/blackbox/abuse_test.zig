@@ -1195,6 +1195,50 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
 }
 
+test "a row of glued siblings past the line's width formats to output linear in its input" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Siblings with no space between them stay on one line (language.md
+    // §11.15). The formatter once broke inside each one — its hole, its row
+    // lambda, the element in it — at a column that grew with the sibling's
+    // position, so 200 of them came out as 2.7 MB and 800 as 43 MB. Each is
+    // now printed whole on the line, so the output is the input re-indented.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    const item = "<For each={x.rows}>{\\r -> <li>{r}</li>}</For>";
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    var want: std.ArrayList(u8) = .empty;
+    defer want.deinit(gpa);
+    try src.appendSlice(gpa, "view x =\n    <ul>");
+    try want.appendSlice(gpa, "view x =\n    <ul>\n        ");
+    for (0..200) |_| {
+        try src.appendSlice(gpa, item);
+        try want.appendSlice(gpa, item);
+    }
+    try src.appendSlice(gpa, "</ul>\n");
+    try want.appendSlice(gpa, "\n    </ul>\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 0);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(want.items, try w.read("Main.beni"));
+}
+
 // `C{i} x -> x` for every constructor of `type T = C0 Int | … | C1999 Int`
 // must not be CASE TOO BIG TO CHECK: were a constructor with arguments not a
 // key of the lookup table, the general relation would specialise the whole

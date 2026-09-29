@@ -1123,6 +1123,21 @@ const Printer = struct {
         return false;
     }
 
+    /// Whether `n` holds no comment and prints on one line whatever its
+    /// width — a literal, a name, an access chain on one, markup written on
+    /// one line (which after a `{` is on its line, `markupAt`), or a hole
+    /// around one — so a line break around it could not shorten any line.
+    fn unbreakable(p: *const Printer, n: Index) bool {
+        if (p.widths[n.int()] == no_fit) return false;
+        var x = n;
+        while (true) switch (p.tree.nodeTag(x)) {
+            .field_access, .tuple_index, .question, .negate, .markup_hole, .markup_spread => x = p.tree.operand(x),
+            .int, .float, .char, .ident, .ctor, .accessor, .placeholder, .unit, .op_fn, .string, .markup_empty_hole => return true,
+            .markup_element, .markup_fragment, .markup_for, .markup_show => return true,
+            else => return false,
+        };
+    }
+
     /// Whether a comment sits inside `n` (its own leading one excluded).
     fn commentIn(p: *const Printer, n: Index) bool {
         const i = firstCommentFrom(p.comments, p.first(n) + 1);
@@ -2103,18 +2118,35 @@ const Printer = struct {
     // where they had nothing, which the page does not show either.
 
     fn markup(p: *Printer, n: Index) Error!void {
+        return p.markupAt(n, p.curCol());
+    }
+
+    /// An element, fragment or form whose broken parts — attributes one per
+    /// line, children, the closing tag — hang off column `col`: its own
+    /// column, or, for a child that follows a sibling on its line, the
+    /// column of the children's lines, so a run of such siblings does not
+    /// drift right.
+    fn markupAt(p: *Printer, n: Index, col: u32) Error!void {
         const tree = p.tree;
         const mk = tree.fullMarkup(n);
-        const col = p.curCol();
         // An element the author wrote on one line stays there when it
         // follows something on its line — a sibling it may not be parted
         // from, `\x ->`, an attribute's `=` — whatever its width; breaking
-        // it there would only move its own edges.
-        const one_line = p.fits(n) or (p.widths[n.int()] != no_fit and p.pending == 0 and p.col > p.line_indent);
+        // it there would only move its own edges. It is printed flat, every
+        // hole and child in it on the line too: a break anywhere inside
+        // would make it an element the author broke the next time round.
+        const at = p.curCol();
+        const fit = p.fitsAt(n, at);
+        const one_line = fit or (p.widths[n.int()] != no_fit and p.pending == 0 and p.col > p.line_indent);
+        const saved_flat = p.flat;
+        defer p.flat = saved_flat;
+        if (one_line and !fit) p.flat = true;
         try p.tok(mk.open);
         if (mk.name) |t| try p.tok(t);
         const open_end = mk.open_end orelse return error.SyntaxErrors;
-        const attrs_one_line = one_line or p.openTagFits(mk, col);
+        // With no attributes there is nothing to put on lines of its own.
+        const attrs_one_line = one_line or p.openTagFits(mk, at) or
+            (mk.attrs.len == 0 and !p.commentInTag(mk));
         for (mk.attrs) |a| {
             if (attrs_one_line) try p.space() else p.newline(col + indent_step);
             try p.markupAttr(a, if (attrs_one_line) col else col + indent_step);
@@ -2169,10 +2201,15 @@ const Printer = struct {
             prev = p.last(a);
         }
         if (p.tok_lines[open_end] != p.tok_lines[prev]) return false;
-        const i = firstCommentFrom(p.comments, mk.open + 1);
-        if (i < p.comments.len and p.comments[i].before_token <= open_end) return false;
+        if (p.commentInTag(mk)) return false;
         width +|= if (mk.children.len == 0 and mk.name != null) 3 else 1;
         return col +| width <= max_width;
+    }
+
+    /// Whether a comment sits inside the opening tag of `mk`.
+    fn commentInTag(p: *const Printer, mk: Ast.full.Markup) bool {
+        const i = firstCommentFrom(p.comments, mk.open + 1);
+        return i < p.comments.len and p.comments[i].before_token <= mk.open_end.?;
     }
 
     /// A text run that ends in whitespace on its last line — a space the
@@ -2191,7 +2228,7 @@ const Printer = struct {
         switch (p.tree.nodeTag(n)) {
             .markup_text => try p.tok(p.tree.nodeMainToken(n)),
             .markup_hole, .markup_empty_hole => try p.markupHole(n, indent),
-            else => try p.expr(n, indent),
+            else => try p.markupAt(n, indent),
         }
     }
 
@@ -2241,7 +2278,7 @@ const Printer = struct {
     fn markupHole(p: *Printer, n: Index, indent: u32) Error!void {
         const open = p.tree.nodeMainToken(n);
         const col = p.curCol();
-        const one_line = p.fits(n);
+        const one_line = p.fits(n) or p.unbreakable(n);
         try p.tok(open);
         if (p.tree.nodeTag(n) == .markup_empty_hole) {
             if (!one_line) {
@@ -2287,7 +2324,8 @@ const Printer = struct {
     fn attrValue(p: *Printer, value: Index, brace: ?TokenIndex, indent: u32) Error!void {
         const open = brace orelse return p.expr(value, indent);
         const col = p.curCol();
-        const one_line = p.fitsAt(value, col + 1) and commentsBefore(p.comments, p.last(value) + 1).len == 0;
+        const one_line = commentsBefore(p.comments, p.last(value) + 1).len == 0 and
+            (p.fitsAt(value, col + 1) or p.unbreakable(value));
         try p.tok(open);
         try p.expr(value, if (one_line) indent else col);
         if (!one_line) p.newline(col);
