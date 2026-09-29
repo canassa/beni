@@ -2325,7 +2325,11 @@ fn parseMarkup(p: *Parse) Allocator.Error!Index {
         .open_end = .none,
         .close = .none,
     };
-    const attrs = try p.parseMarkupAttrs(name, component);
+    // The attributes and the children are siblings (`Siblings`): none is
+    // below another, so a page of many is as deep as its deepest.
+    var siblings = p.beginSiblings();
+    defer p.endSiblings(siblings);
+    const attrs = try p.parseMarkupAttrs(name, component, &siblings);
     record.attrs_start = attrs.start;
     record.attrs_end = attrs.end;
 
@@ -2337,7 +2341,7 @@ fn parseMarkup(p: *Parse) Allocator.Error!Index {
             try p.markup_open.append(p.scratch_allocator, if (name) |n| p.payloads[n] else fragment_symbol);
             defer _ = p.markup_open.pop();
             p.context = .markup_children;
-            const children = try p.parseMarkupChildren(open, name, &record);
+            const children = try p.parseMarkupChildren(open, name, &record, &siblings);
             record.children_start = children.start;
             record.children_end = children.end;
         },
@@ -2389,7 +2393,7 @@ fn skipDrift(p: *Parse) void {
 const fragment_symbol = std.math.maxInt(u32);
 
 /// Attr* up to the `>` or `/>` that ends the opening tag.
-fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool) Allocator.Error!SubRange {
+fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool, siblings: *Siblings) Allocator.Error!SubRange {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     while (true) {
@@ -2416,6 +2420,7 @@ fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool) Allocator.Err
             .invalid, .markup_stray => _ = p.next(), // a stray byte the lexer reported
             else => break,
         }
+        p.nextSibling(siblings);
         p.assertProgress(before);
     }
     return p.listToRange(p.scratchSince(mark));
@@ -2528,7 +2533,7 @@ fn parseSpread(p: *Parse) Allocator.Error!Index {
 /// Child* then the closing tag. The children end at `</`, at a token
 /// outside the block (a column-1 declaration, the end of the file), or at
 /// the closing tag of an element further out (§9.5).
-fn parseMarkupChildren(p: *Parse, open: TokenIndex, name: ?TokenIndex, record: *Ast.Markup) Allocator.Error!SubRange {
+fn parseMarkupChildren(p: *Parse, open: TokenIndex, name: ?TokenIndex, record: *Ast.Markup, siblings: *Siblings) Allocator.Error!SubRange {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     while (true) {
@@ -2566,6 +2571,7 @@ fn parseMarkupChildren(p: *Parse, open: TokenIndex, name: ?TokenIndex, record: *
                 break;
             },
         }
+        p.nextSibling(siblings);
         p.assertProgress(before);
     }
     return p.listToRange(p.scratchSince(mark));

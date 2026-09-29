@@ -1195,6 +1195,51 @@ test "a flat let past the budget in ONE binding is still one nesting_too_deep" {
     try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
 }
 
+test "the children of an element are siblings: 4 097 holes that read a field parse" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A field access is a chain the parser builds in a loop and charges to
+    // its declaration's depth budget until the declaration ends. An
+    // element's attributes and children are siblings (`Parse.Siblings`) and
+    // charge the deepest of them, as a `let`'s bindings do; they once
+    // summed, so a flat page of 4 097 `{x.r}` holes was "nested more than
+    // 4096 levels deep", once for each hole past the budget. Formatting it is
+    // the parse with nothing after it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    var want: std.ArrayList(u8) = .empty;
+    defer want.deinit(gpa);
+    try src.appendSlice(gpa, "view x =\n    <ul>");
+    try want.appendSlice(gpa, "view x =\n    <ul>\n        ");
+    for (0..4_097) |_| {
+        try src.appendSlice(gpa, "{x.r}");
+        try want.appendSlice(gpa, "{x.r}");
+    }
+    try src.appendSlice(gpa, "</ul>\n");
+    try want.appendSlice(gpa, "\n    </ul>\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 0);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(want.items, try w.read("Main.beni"));
+}
+
 test "a row of glued siblings past the line's width formats to output linear in its input" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
