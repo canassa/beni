@@ -1,0 +1,27 @@
+-- A component: a model, a message type, an `update` and a `view` of its
+-- own, which knows nothing of the page it is placed in.
+import Html exposing (Html)
+
+
+pub type Msg
+    = Increment
+    | Decrement
+
+
+pub update : Msg, Int -> Int
+update msg count =
+    case msg of
+        Increment ->
+            count + 1
+
+        Decrement ->
+            count - 1
+
+
+pub view : String, Int -> Html Msg
+view name count =
+    <div id={name}>
+        <button onClick={Decrement}>-</button>
+        <span>{count}</span>
+        <button onClick={Increment}>+</button>
+    </div>

@@ -483,16 +483,24 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const dom_dir = try std.fs.path.join(arena, &.{ kind_dir, "dom" });
         const start = fixtures.items.len;
         try collect(arena, dom_dir, false, false, &fixtures, true);
-        for (fixtures.items[start..]) |*fixture| fixture.dom = true;
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser";
         if (kind == .emit) {
             const release_dom = try std.fs.path.join(arena, &.{ kind_dir, "release", "dom" });
             const release_start = fixtures.items.len;
             try collect(arena, release_dom, false, false, &fixtures, false);
             for (fixtures.items[release_start..]) |*fixture| {
-                fixture.dom = true;
+                fixture.platform = "browser";
                 fixture.release = true;
             }
         }
+    }
+    // `browser/tea/`: pages built for `browser-tea`, whose programs are
+    // The Elm Architecture written in beni over `browser`'s `Program`.
+    if (kind == .browser) {
+        const tea_dir = try std.fs.path.join(arena, &.{ kind_dir, "tea" });
+        const start = fixtures.items.len;
+        try collect(arena, tea_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
     }
     return fixtures.items;
 }
@@ -972,9 +980,12 @@ const Fixture = struct {
     /// Under `<kind>/markup/`: `--platform=html` is added to the argv, so
     /// the fixture's markup is typed against the HTML vocabulary.
     markup: bool = false,
-    /// Under `emit/dom/`, `emit/release/dom/` or `browser/dom/`: built for
-    /// the `browser` platform, whose `dom` lowering compiles the markup.
-    dom: bool = false,
+    /// The embedded platform the fixture is built for, when its directory
+    /// names one: `browser` under `emit/dom/`, `emit/release/dom/` or
+    /// `browser/dom/`, whose `dom` lowering compiles the markup, and
+    /// `browser-tea` under `browser/tea/`, the same lowering beneath The Elm
+    /// Architecture.
+    platform: ?[]const u8 = null,
 
     /// Whether `text` is in the fixture's repo-relative path, the path
     /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
@@ -998,7 +1009,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1719,8 +1730,8 @@ const Case = struct {
         const h = try browser.harness(testing.io);
         const platform_arg = if (platform)
             "--platform=platform"
-        else if (c.fixture.dom)
-            "--platform=browser"
+        else if (c.fixture.platform) |name|
+            try std.fmt.allocPrint(c.arena, "--platform={s}", .{name})
         else
             try std.fmt.allocPrint(c.arena, "--platform={s}", .{h.platform});
         const sources = try c.writeSources();
@@ -1943,7 +1954,7 @@ const Case = struct {
         }
 
         var args: std.ArrayList([]const u8) = .empty;
-        try args.appendSlice(c.arena, &.{ "build", if (c.fixture.dom) "--platform=browser" else "--platform=node", "--out=out" });
+        try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{c.fixture.platform orelse "node"}), "--out=out" });
         if (!c.fixture.app) try args.append(c.arena, "--library");
         // `--allow-debug` rides with `--release` here for `run/`'s reason:
         // one rule for the whole corpus, so that a shape golden can be about

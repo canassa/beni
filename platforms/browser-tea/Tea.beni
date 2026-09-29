@@ -1,0 +1,26 @@
+--! The Elm Architecture for a page (`docs/design/boundary.md` §9.1;
+--! `backend.md` §15.11), written in beni over the `browser` platform's
+--! `Program`. It adds no JavaScript and no runtime of its own: the render
+--! loop, the mount and the delegated events are `browser`'s, and so are
+--! this platform's program, runtime and markup lowering, which it inherits.
+--!
+--! One immutable model, a pure `update`, and a `view` of the model. A
+--! component is a model, a message type, an `update` and a `view` of its
+--! own, nested with `Html.map`: the parent's view maps the child's
+--! messages into its own, and its `update` hands each back to the child.
+--!
+--! Commands and subscriptions arrive with effects; until then a program is
+--! a `sandbox`.
+
+import Browser
+import Html exposing (Html)
+
+
+--| A page with a model and no effects: `init` is rendered first, and each
+--| message a handler sends goes through `update`. Several messages in one
+--| task are rendered once, after the task.
+pub sandbox :
+    { init : model, update : msg, model -> model, view : model -> Html msg }
+    -> Browser.Program
+sandbox app =
+    Browser.program app

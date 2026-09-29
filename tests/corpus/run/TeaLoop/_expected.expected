@@ -1,0 +1,3 @@
+<main><div id="left"><button>-</button><span>0</span><button>+</button></div><div id="right"><button>-</button><span>0</span><button>+</button></div></main>
+<main><div id="left"><button>-</button><span>5</span><button>+</button></div><div id="right"><button>-</button><span>0</span><button>+</button></div></main>
+<main><div id="left"><button>-</button><span>4</span><button>+</button></div><div id="right"><button>-</button><span>-1</span><button>+</button></div></main>

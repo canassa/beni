@@ -1,0 +1,47 @@
+-- The Elm Architecture in a page (backend.md §15.11; boundary.md §9.1):
+-- a `Tea.sandbox` built for `browser-tea`, which is beni over `browser`'s
+-- `Program` and inherits its runtime, its render loop and its `dom`
+-- lowering. Two instances of one component are nested with `Html.map`:
+-- each sends its own `Counter.Msg`, the map wraps it in the page's `Msg`,
+-- and `update` hands it back to the instance it came from. `Debug.log` in
+-- the view counts renders: five messages in one task are five `update`s
+-- and one render after the task, and the runtime's `flush` renders before
+-- it returns.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Left Counter.Msg
+    | Right Counter.Msg
+
+
+type alias Model =
+    left : Int
+    right : Int
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Left m ->
+            { model | left = Counter.update m model.left }
+
+        Right m ->
+            { model | right = Counter.update m model.right }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <p>total {Debug.log (model.left + model.right) "view"}</p>
+        {Html.map (Counter.view "left" model.left) Left}
+        {Html.map (Counter.view "right" model.right) Right}
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = { left = 0, right = 0 }, update = update, view = view }

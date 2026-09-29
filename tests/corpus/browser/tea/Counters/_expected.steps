@@ -1,0 +1,8 @@
+# Five messages from inside the left instance's map, in one task: five
+# updates, one render after the task, and the right instance untouched.
+click #left-inc 5
+# The runtime's `flush` renders the right instance's message before it
+# returns.
+flush #right-dec
+# One message renders once, on the microtask after its task.
+click #left-dec

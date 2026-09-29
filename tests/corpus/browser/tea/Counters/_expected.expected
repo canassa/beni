@@ -1,0 +1,90 @@
+-- load
+console.log: view: 0
+<body>
+  <main>
+    <p>
+      "total "
+      "0"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"0"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"0"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #left-inc 5
+(the step's task ended)
+console.log: view: 5
+<body>
+  <main>
+    <p>
+      "total "
+      "5"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"5"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"0"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- flush #right-dec
+console.log: view: 4
+(flushed)
+<body>
+  <main>
+    <p>
+      "total "
+      "4"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"5"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"-1"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #left-dec
+console.log: view: 3
+<body>
+  <main>
+    <p>
+      "total "
+      "3"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"4"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"-1"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>

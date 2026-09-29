@@ -1,0 +1,76 @@
+-- The Elm Architecture's loop with no DOM (backend.md §15.11, §15.6): the
+-- program a page would run — two instances of one component nested with
+-- `Html.map`, an `update` that hands each message back to the instance it
+-- came from — driven here by a list of tasks, each a list of messages.
+-- Every message of a task goes through `update`, and the model is
+-- rendered once when the task is done, as the page's flush renders it;
+-- the render is `ssr`'s string, in which `Html.map` changes nothing. An
+-- empty task sends nothing and renders nothing.
+import Counter
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+type Msg
+    = Left Counter.Msg
+    | Right Counter.Msg
+
+
+type alias Model =
+    left : Int
+    right : Int
+
+
+init : Model
+init =
+    { left = 0, right = 0 }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Left m ->
+            { model | left = Counter.update m model.left }
+
+        Right m ->
+            { model | right = Counter.update m model.right }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        {Html.map (Counter.view "left" model.left) Left}
+        {Html.map (Counter.view "right" model.right) Right}
+    </main>
+
+
+tasks : List (List Msg)
+tasks =
+    [ List.repeat (Left Counter.Increment) 5
+    , []
+    , [ Right Counter.Decrement, Left Counter.Decrement ]
+    ]
+
+
+type alias Loop =
+    model : Model
+    renders : List String
+
+
+runTask : List Msg, Loop -> Loop
+runTask msgs loop =
+    if List.isEmpty msgs then
+        loop
+    else
+        let
+            model =
+                List.foldl msgs loop.model update
+        in
+        { model = model, renders = loop.renders ++ [ Ssr.render (view model) ] }
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.foldl tasks { model = init, renders = [ Ssr.render (view init) ] } runTask).renders

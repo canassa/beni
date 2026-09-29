@@ -1,0 +1,40 @@
+-- A controlled input is reconciled before the next keystroke
+-- (backend.md §15.11). `update` keeps the text upper-cased, so each edit
+-- is changed before it is kept, and the view writes the model back into
+-- the input's live `value`. The render runs on the microtask after the
+-- keystroke's task, so the next keystroke is typed into the reconciled
+-- text: the list shows what `update` was sent, and the second keystroke
+-- arrives as "Ab", not "ab", with no synchronous render and no
+-- `Browser.flush`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+
+
+type alias Model =
+    text : String
+    seen : List String
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Typed text ->
+            { text = String.toUpper text, seen = model.seen ++ [ text ] }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <input id="name" value={model.text} onInput={Typed} />
+        <ol><For each={model.seen} keyed={False}>{\s -> <li>{s}</li>}</For></ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = { text = "", seen = [] }, update = update, view = view }
