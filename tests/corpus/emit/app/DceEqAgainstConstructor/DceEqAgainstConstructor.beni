@@ -1,0 +1,41 @@
+-- emit/app: an `==` that is written as a tag and field test in place
+-- calls no derived `eq`, so it keeps none alive (`backend.md` §4, *`==`
+-- against a constructor is a tag and field test*; §9, the dispatch leg).
+--
+-- `picked == Just n` and `shape /= Circle 2` both compare in place, so
+-- neither `Maybe`'s derived `eq` nor `Shape`'s is called by anything the
+-- build writes. The golden has no `Shape$$eq`, and `_expected.absent`
+-- names `_core/_derived.mjs`: `Maybe`'s `eq` was the one thing that
+-- imported the comparison engine, and with the `eq` gone the file is not
+-- written. Before this, reachability followed the site's callee — the
+-- derived `eq` the operator resolves to — although the emitted code never
+-- calls it.
+import Node exposing (Program)
+
+
+type Shape
+    = Circle Int
+    | Square Int
+
+
+isPicked : Maybe Int, Int -> String
+isPicked picked n =
+    if picked == Just n then
+        "picked"
+
+    else
+        "not picked"
+
+
+notTwo : Shape -> String
+notTwo shape =
+    if shape /= Circle 2 then
+        "other"
+
+    else
+        "circle 2"
+
+
+main : Program
+main =
+    Node.printLines [ isPicked (Just 3) 3, notTwo (Square 2) ]

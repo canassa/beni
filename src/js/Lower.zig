@@ -48,6 +48,7 @@ const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
 const Decision = @import("Decision.zig");
+const CtorEq = @import("CtorEq.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
@@ -5117,90 +5118,24 @@ const Lowerer = struct {
     // written order, before any test: one that is not a read is bound first,
     // so a test that fails early skips no evaluation.
 
-    /// A constructor application: its constructor and its arguments. A
-    /// nullary constructor is its own reference.
-    fn ctorApplication(l: *Lowerer, inst: Inst.Index) ?struct { ctor: Inst.Index, args: []const Inst.Index } {
-        const ctor: Inst.Index, const args: []const Inst.Index = switch (l.bir.instTag(inst)) {
-            .call => .{ @enumFromInt(l.bir.instData(inst).lhs), l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index) },
-            .ctor, .ext_ctor => .{ inst, &.{} },
-            else => return null,
-        };
-        const rep, _ = l.ctorRepOf(ctor) orelse return null;
-        if (rep != .tagged or l.ctorArity(ctor) != args.len) return null;
-        return .{ .ctor = ctor, .args = args };
-    }
-
-    const FieldEq = union(enum) { strict, nested: Dispatch.TermIndex, none };
-
-    /// How field `j` of constructor `ctor` is compared under the derived
-    /// `eq` term `t_index`: `===`, another derived `eq`, or neither.
-    fn fieldEq(l: *Lowerer, t_index: Dispatch.TermIndex, ctor: Inst.Index, j: usize) FieldEq {
-        const dispatch = l.in.dispatch;
-        const t = dispatch.term(t_index);
-        const args = dispatch.argsAt(t.argsOf());
-        const d = l.bir.instData(ctor);
-        switch (t) {
-            .derived => |use| {
-                if (l.bir.instTag(ctor) != .ctor or use.index >= dispatch.derived.len) return .none;
-                const row = dispatch.derived[use.index];
-                if (row.kind != .eq or row.shape != .nominal) return .none;
-                const c = l.bir.ctors[d.lhs];
-                const owner = l.bir.decls[c.decl.int()];
-                if (d.lhs < owner.ctors_start) return .none;
-                var offset: usize = 0;
-                for (l.bir.ctors[owner.ctors_start..d.lhs]) |sibling| offset += Bir.SubRange.len(.{ .start = sibling.args_start, .end = sibling.args_end });
-                const parts = dispatch.argsAt(row.body);
-                if (offset + j >= parts.len) return .none;
-                const part = parts[offset + j];
-                return switch (dispatch.term(part)) {
-                    .param => |param| if (param.binder == .derived and param.k < args.len) l.siteEq(args[param.k]) else .none,
-                    else => l.siteEq(part),
-                };
-            },
-            .ext_derived => |use| {
-                if (use.kind != .eq or l.bir.instTag(ctor) != .ext_ctor) return .none;
-                if (d.lhs >= l.in.interfaces.len) return .none;
-                const iface = &l.in.interfaces[d.lhs];
-                if (d.rhs >= iface.ctors.len) return .none;
-                const c = iface.ctors[d.rhs];
-                if (c.arg_terms == Interface.no_terms) return .none;
-                const words = iface.range(c.arg_terms);
-                if (j >= words.len) return .none;
-                const field = iface.term(@enumFromInt(words[j]));
-                if (field.tag != .@"var") return .none;
-                const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner.global, use.type, .eq) orelse return .none;
-                const count = published.iface.contextLen(published.row.context);
-                for (0..count) |k| {
-                    const e = published.iface.contextEntry(published.row.context, k) orelse return .none;
-                    if (e.param != field.lhs) continue;
-                    if (published.iface.symbol(e.method) != InternPool.WellKnown.eq.symbol()) return .none;
-                    return if (k < args.len) l.siteEq(args[k]) else .none;
-                }
-                return .none;
-            },
-            else => return .none,
-        }
-    }
-
-    fn siteEq(l: *Lowerer, t_index: Dispatch.TermIndex) FieldEq {
-        return switch (l.in.dispatch.term(t_index)) {
-            .primitive => |prim| if (prim == .strict_eq) .strict else .none,
-            .derived => |use| if (use.index < l.in.dispatch.derived.len and l.in.dispatch.derived[use.index].kind == .eq) .{ .nested = t_index } else .none,
-            .ext_derived => |use| if (use.kind == .eq) .{ .nested = t_index } else .none,
-            else => .none,
+    /// The one decision this shares with `Reach`, which must not keep a
+    /// derived `eq` alive for a test that never calls it: `CtorEq`.
+    fn ctorEqContext(l: *Lowerer) CtorEq.Context {
+        return .{
+            .bir = l.bir,
+            .dispatch = l.in.dispatch,
+            .interfaces = l.in.interfaces,
+            .types = l.in.types,
+            .interner = l.interner.global,
         };
     }
 
-    /// Whether `inst` is a constructor application every field of which
-    /// the test can compare in place under `t_index`.
-    fn ctorTestable(l: *Lowerer, t_index: Dispatch.TermIndex, inst: Inst.Index) bool {
-        const app = l.ctorApplication(inst) orelse return false;
-        for (app.args, 0..) |arg, j| switch (l.fieldEq(t_index, app.ctor, j)) {
-            .strict => {},
-            .nested => |n| if (!l.ctorTestable(n, arg)) return false,
-            .none => return false,
-        };
-        return true;
+    fn ctorApplication(l: *Lowerer, inst: Inst.Index) ?CtorEq.Application {
+        return CtorEq.application(l.ctorEqContext(), inst);
+    }
+
+    fn fieldEq(l: *Lowerer, t_index: Dispatch.TermIndex, ctor: Inst.Index, j: usize) CtorEq.FieldEq {
+        return CtorEq.fieldEq(l.ctorEqContext(), t_index, ctor, j);
     }
 
     /// The operands a test compares, in written order: each field's, or a
@@ -5235,9 +5170,10 @@ const Lowerer = struct {
     /// `left == right` (or `/=`) as a tag and field test, when one side is
     /// a constructor application the test can compare; null otherwise.
     fn ctorEquality(l: *Lowerer, out: *StmtList, callee: Dispatch.TermIndex, left: Inst.Index, right: Inst.Index, origin: Bir.WellKnown, p: u32) !?Node.Index {
-        if (origin != .eq and origin != .neq) return null;
-        const on_right = l.ctorTestable(callee, right);
-        if (!on_right and !l.ctorTestable(callee, left)) return null;
+        const on_right = switch (CtorEq.side(l.ctorEqContext(), callee, origin, left, right) orelse return null) {
+            .right => true,
+            .left => false,
+        };
         const ctor = if (on_right) right else left;
         var insts: std.ArrayList(Inst.Index) = .empty;
         if (on_right) try insts.append(l.scratch, left);

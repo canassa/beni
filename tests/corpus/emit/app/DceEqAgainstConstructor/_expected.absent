@@ -1,0 +1,5 @@
+# Output paths this build must NOT have written (`backend.md` §4, §9).
+# `Maybe`'s derived `eq` is the only importer of the comparison engine a
+# program that says `picked == Just n` could have, and the operator is a
+# tag and field test that calls no `eq`.
+out/_core/_derived.mjs

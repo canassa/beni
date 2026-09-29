@@ -97,6 +97,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Types = @import("../check/Types.zig");
+const CtorEq = @import("CtorEq.zig");
 
 const Reach = @This();
 
@@ -197,6 +198,10 @@ pub const Input = struct {
     interfaces: []const Interface,
     provenance: []const Interface.Provenance,
     types: *const Types,
+    /// What `CtorEq` reads an imported constructor's published context
+    /// through. Null leaves every `==` site's edge in, which is only ever
+    /// more than the code needs.
+    interner: ?*const InternPool.Global = null,
     /// `main`, when this build has one. The only root of an application
     /// build (§9's "Roots").
     entry: ?Node = null,
@@ -407,6 +412,18 @@ pub const Builder = struct {
         const bir = b.in.birOf(m);
         const dispatch = b.in.dispatchOf(m);
 
+        // An `==` written as a tag and field test calls no derived `eq`
+        // (`backend.md` §4), so its site is not an edge: `CtorEq` is the
+        // decision `Lower` takes, asked here first.
+        const ctor_eq: ?CtorEq.Context = if (b.in.interner) |interner| .{
+            .bir = bir,
+            .dispatch = dispatch,
+            .interfaces = b.in.interfaces,
+            .types = b.in.types,
+            .interner = interner,
+        } else null;
+        const filter: ?Edges.SiteFilter = if (ctor_eq) |*context| .{ .context = context, .skip = skipInPlace } else null;
+
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Node) = .empty;
         for (bir.decls, 0..) |d, i| {
@@ -418,7 +435,7 @@ pub const Builder = struct {
                 .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
             }
             b.stream.clearRetainingCapacity();
-            try Edges.declEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i));
+            try Edges.declEdgesExcept(&b.stream, b.scratch, bir, dispatch, @intCast(i), filter);
             if (b.in.vocabulary) |vocabulary| try Edges.markupEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i), vocabulary);
             // Most edges become exactly one node, so one reservation per
             // declaration is the growth the resolve loop would otherwise do
@@ -444,6 +461,11 @@ pub const Builder = struct {
             .derived_at = derived_at,
             .derived_targets = derived_targets.items,
         };
+    }
+
+    fn skipInPlace(context: *const anyopaque, site: Dispatch.Site) bool {
+        const c: *const CtorEq.Context = @ptrCast(@alignCast(context));
+        return CtorEq.inPlace(c.*, site);
     }
 
     /// One edge of the shared stream, as whole-program nodes. Everything

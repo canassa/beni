@@ -126,6 +126,29 @@ pub fn declEdges(
     dispatch: *const Dispatch,
     index: u32,
 ) Error!void {
+    return declEdgesExcept(out, scratch, bir, dispatch, index, null);
+}
+
+/// A dispatch site whose callee and evidence the caller knows the emitted
+/// code never calls: `Reach` passes `CtorEq.inPlace`, because an `==`
+/// written as a tag and field test (`backend.md` §4) calls no derived
+/// `eq`. `Cycles` passes nothing — an extra edge there only orders a
+/// declaration earlier or reports a cycle a program cannot have, and
+/// neither consumer may ever have one edge FEWER than the code it emits.
+pub const SiteFilter = struct {
+    context: *const anyopaque,
+    skip: *const fn (context: *const anyopaque, site: Dispatch.Site) bool,
+};
+
+/// `declEdges`, leaving out leg 3 for every site `filter` skips.
+pub fn declEdgesExcept(
+    out: *std.ArrayList(Edge),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    filter: ?SiteFilter,
+) Error!void {
     const d = bir.decls[index];
 
     // Leg 1: the reference table, already deduplicated per declaration and in
@@ -158,6 +181,7 @@ pub fn declEdges(
     var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
     defer roots.deinit(scratch);
     for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
+        if (filter) |f| if (f.skip(f.context, site)) continue;
         if (site.callee.unwrap()) |callee| try roots.append(scratch, callee);
         try roots.appendSlice(scratch, dispatch.argsAt(site.evidence));
     }
