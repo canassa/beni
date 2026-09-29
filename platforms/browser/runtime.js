@@ -109,7 +109,7 @@ export const template = (html, flags) => {
 
 // `(parent, marker, cx)`: a slot, and the mount context what it holds is
 // mounted with.
-export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null, d: false });
+export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null, z: null, d: false });
 
 const parentOf = (s) => (s.p !== null ? s.p : s.m.parentNode);
 
@@ -220,6 +220,24 @@ const sameInputs = (a, b) => {
   return true;
 };
 
+// Every input but the `g`th, a keyed list's selector, as last time.
+const sameInputsBut = (a, b, g) => {
+  if (a === b) return true;
+  if (a === null || b === null || a.length !== b.length) return false;
+  for (let k = 0; k < a.length; k++) if (k !== g && a[k] !== b[k]) return false;
+  return true;
+};
+
+// What no key is: both of a render's probes when its selection did not
+// change, so no row is patched for it.
+const none = {};
+
+// The rows whose key is `key` — its first row and the chain of rows that
+// share it — patched with the item and position they show.
+const reselect = (s, row, key) => {
+  for (let i = s.x.get(key); i !== undefined && i !== null; i = i.n) row.p(i, i.x, i.y);
+};
+
 // A `For`'s fallback: shown while the list is empty.
 const fallback = (s, empty, f) => {
   if (empty && f !== null) {
@@ -319,7 +337,7 @@ let stamps = 0;
 // (which do not move) and mounted rows for new keys, when two items share
 // a key; `forKeyed` then goes through the whole list, where a row already
 // patched is by then as last time and a row mounted is its key's first.
-const trimmed = (s, items, keyOf, row, same) => {
+const trimmed = (s, items, keyOf, row, same, was, now) => {
   const old = s.u;
   const m = old.length;
   // A list that was empty or is: the full pass mounts it in one fragment
@@ -333,7 +351,7 @@ const trimmed = (s, items, keyOf, row, same) => {
     const item = at.a;
     if (i.x !== item) {
       if (i.k !== (keyOf === null ? item : keyOf(item))) break;
-    } else if (same) {
+    } else if (same && i.k !== was && i.k !== now) {
       i.kv = stamp;
       continue;
     }
@@ -422,7 +440,7 @@ const trimmed = (s, items, keyOf, row, same) => {
     const item = xs[b - p];
     let i = next[b];
     if (i.kv === -stamp) i.kv = stamp;
-    else if (!same || i.x !== item || (row.i && i.y !== b)) {
+    else if (!same || i.x !== item || (row.i && i.y !== b) || i.k === was || i.k === now) {
       const r = patchRow(row, i, item, b, s.cx);
       if (r !== i) {
         old[i.y] = r;
@@ -463,12 +481,38 @@ const trimmed = (s, items, keyOf, row, same) => {
 // chain is up to, `kt` the new chain's last row, both kept on the first —
 // and a key with more items than rows mounts the rest, with fewer leaves
 // the rest unstamped.
+//
+// **A selector** (backend.md §15.5): a row compiled in place may name one
+// input, `row.g`, that its body reads only to compare with the row's own
+// key, and carry `row.z`, that input's probe — the one key the comparison
+// can hold for, or a value no key is. A row whose item and other inputs
+// are as last time is then patched only when its key is the old probe or
+// the new one; when that is all that changed, those rows are found in the
+// key map, and no other row is visited.
 export const forKeyed = (s, items, keyOf, row, inputs) => {
-  const same = s.b !== null && sameInputs(s.y, inputs);
-  if (!(items === s.b && same)) {
+  const g = row.g;
+  let same;
+  let was = none;
+  let now = none;
+  if (g === undefined) same = s.b !== null && sameInputs(s.y, inputs);
+  else {
+    same = s.b !== null && sameInputsBut(s.y, inputs, g);
+    if (s.b !== null && s.z !== row.z) {
+      was = s.z;
+      now = row.z;
+    }
+    s.z = row.z;
+  }
+  if (items === s.b && same) {
+    if (was !== now) {
+      s.y = inputs;
+      reselect(s, row, was);
+      reselect(s, row, now);
+    }
+  } else {
     s.b = items;
     s.y = inputs;
-    if (s.d && trimmed(s, items, keyOf, row, same)) {
+    if (s.d && trimmed(s, items, keyOf, row, same, was, now)) {
       fallback(s, items.$ !== 1, row.f);
       return;
     }
@@ -496,11 +540,11 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
         if (i !== undefined) h.kc = i.n;
       }
       if (i !== undefined) {
-        if (!same || i.x !== item || (row.i && i.y !== position)) {
-          const was = i.y;
+        if (!same || i.x !== item || (row.i && i.y !== position) || i.k === was || i.k === now) {
+          const y = i.y;
           const n = patchRow(row, i, item, position, s.cx);
           if (n !== i) {
-            old[was] = n;
+            old[y] = n;
             if (first) byKey.set(key, n);
             i = n;
           }

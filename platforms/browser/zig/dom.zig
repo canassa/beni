@@ -46,7 +46,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 2 },
+    .targets = .{ .major = 1, .minor = 3 },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -534,6 +534,13 @@ const Gen = struct {
         }
         try props.append(g.a(), .{ .key = "i", .value = try js.literal(if (row.arity == 2) .true else .false) });
         try props.append(g.a(), .{ .key = "f", .value = if (f.fallback) |fb| try g.cx.value(fb) else try g.nul() });
+        // A selector (backend.md §15.5): which input it is, and this
+        // render's probe, which `forKeyed` looks up in its key map when
+        // the selection is all that changed.
+        if (row.kind == .markup and f.mode != .position) if (row.selector) |sel| {
+            try props.append(g.a(), .{ .key = "g", .value = try g.num(sel.input) });
+            try props.append(g.a(), .{ .key = "z", .value = try g.cx.value(sel.probe) });
+        };
         return js.object(props.items);
     }
 

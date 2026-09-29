@@ -40,6 +40,27 @@ pub const Input = struct {
     /// Every module's interface, indexed by module: whether an imported
     /// value a hole calls is a markup primitive.
     interfaces: []const Interface = &.{},
+    /// What an `==` compares, which only the emitter's view of types can
+    /// say: no selector is recognised without it (language.md §11.9).
+    comparison: ?Comparison = null,
+};
+
+/// How an `==` or `/=` compares (language.md §11.9, *a selector*).
+pub const Comparison = struct {
+    ctx: *anyopaque,
+    /// `cmp` is the method call; `other` is its operand that is not the
+    /// selector.
+    classify: *const fn (ctx: *anyopaque, cmp: Inst.Index, other: Inst.Index) Test,
+
+    pub const Test = union(enum) {
+        /// Neither of the two below.
+        none,
+        /// `===` on the two operands (`strict_eq`).
+        strict,
+        /// `other` applies this constructor, of one field, and the
+        /// comparison is its tag and `===` on that field (backend.md §4).
+        ctor: Inst.Index,
+    };
 };
 
 /// What one value slot stands for.
@@ -62,6 +83,10 @@ pub const Value = union(enum) {
     /// That hole's call, made of its callee's slot and its arguments' —
     /// instruction slots of the root — where it is asked for.
     call: struct { callee: u32, args: m.Value.Range },
+    /// A selector's probe (`Row.selector`): the input the `Bir.MarkupInput`
+    /// record reads, itself, or — when `ctor` is set — its field when it
+    /// is that constructor and itself otherwise.
+    probe: struct { input: Bir.ExtraIndex, ctor: Inst.OptionalIndex },
 };
 
 /// What the compiler needs to place a row: the lambda, what `lowering`
@@ -120,6 +145,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     b.roots = try arena.alloc(m.Root, b.root_insts.items.len);
     for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @enumFromInt(b.root_insts.items[i]));
     try b.lambdaRoots();
+    try b.selectors();
     const item_only = try b.itemOnly();
     return .{
         .tree = .{
@@ -199,6 +225,10 @@ const Builder = struct {
     element_facts: std.ArrayList(m.ElementFacts) = .empty,
     attribute_facts: std.ArrayList(m.AttributeFacts) = .empty,
     event_facts: std.ArrayList(m.EventFacts) = .empty,
+
+    /// Per declaration, once the selector search walked it, each
+    /// instruction's parent (`parentsOf`); empty until the first.
+    parent_maps: []?[]const Parent = &.{},
 
     const none = std.math.maxInt(u32);
 
@@ -438,6 +468,337 @@ const Builder = struct {
                 return b.addNode(.show, b.shows.items.len - 1, f.token);
             },
         }
+    }
+
+    // ---- Selectors (language.md §11.9, backend.md §15.5) -----------------
+    //
+    // A keyed `markup` row's input is a selector when every read of it in
+    // the row — through field accesses, and into the same-module functions
+    // it is passed to, as the row's inputs are followed — is one operand of
+    // an `==` or `/=` whose other operand is the row's list key: the key
+    // function's field path written through the row's item, or a
+    // one-field constructor applied to it, compared as `===` or as a tag
+    // and a `===` field (`Input.comparison`). Anything else — a read inside
+    // the input, a `let`, a `case`, a record, another module's function, a
+    // key that is not the list key — and the row has no selector, which is
+    // always correct: a selector only lets a render skip more rows.
+
+    /// A field (`Bir` symbol) or a tuple slot, one step of a path.
+    const Link = u64;
+    const tuple_bit: Link = 1 << 32;
+    const max_links = 8;
+
+    const Path = struct {
+        len: u8 = 0,
+        links: [max_links]Link = undefined,
+
+        fn append(p: Path, l: Link) ?Path {
+            if (p.len == max_links) return null;
+            var q = p;
+            q.links[q.len] = l;
+            q.len += 1;
+            return q;
+        }
+
+        fn slice(p: *const Path) []const Link {
+            return p.links[0..p.len];
+        }
+
+        fn eql(p: Path, q: Path) bool {
+            return std.mem.eql(Link, p.slice(), q.slice());
+        }
+    };
+
+    /// A local of the frame being searched that reads the selector's
+    /// captured local (`item` false) or the row's item (`item` true)
+    /// through `path`.
+    const Bind = struct { local: u32, item: bool, path: Path };
+
+    const Parent = struct { inst: u32 = none, pos: u32 = 0 };
+
+    const Hunt = struct {
+        /// The input's path through its captured local.
+        target: Path,
+        /// The list key's path through the item.
+        key: Path,
+        /// How the comparisons seen so far compare: null before the first.
+        strict: ?bool = null,
+        /// The constructor they compare against, when not strict.
+        ctor: ?Inst.Index = null,
+        /// Frames searched, bounded so a deep or recursive helper chain
+        /// gives up rather than costs.
+        frames: u32 = 0,
+    };
+
+    const max_frames = 64;
+    const max_depth = 8;
+
+    fn selectors(b: *Builder) Allocator.Error!void {
+        if (b.in.comparison == null) return;
+        const bir_ = b.bir();
+        for (b.fors.items) |f| {
+            const row_index = @intFromEnum(f.row);
+            const row = &b.tree_rows.items[row_index];
+            if (row.kind != .markup or row.inputs.len == 0) continue;
+            const key: Path = switch (f.mode) {
+                .reference => .{},
+                .key => b.keyPath(f.key orelse continue) orelse continue,
+                else => continue,
+            };
+            const source = b.row_sources.items[row_index];
+            const decl = b.declOf(source.function.int()) orelse continue;
+            const lambda = bir_.instData(source.function);
+            const params = bir_.extraSlice(bir_.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+            if (params.len == 0) continue;
+            // The row function's instructions: the run from the lowest its
+            // operands reach to the function itself, as `readsOnly` finds
+            // an expression's, so an operand the walk did not know is
+            // still searched.
+            var walked: std.ArrayList(u32) = .empty;
+            try b.subtree(source.function, &walked);
+            var lo = source.function.int();
+            for (walked.items) |i| lo = @min(lo, i);
+            var frame: std.ArrayList(u32) = .empty;
+            for (lo..source.function.int() + 1) |i| try frame.append(b.arena, @intCast(i));
+            for (0..row.inputs.len) |k| {
+                const record = switch (b.values.items[row.inputs.start + k]) {
+                    .input => |r| r,
+                    else => continue,
+                };
+                const input = bir_.extraData(record, Bir.MarkupInput);
+                var target: Path = .{};
+                for (0..input.len) |j| target = target.append(b.inputLink(input.link(j))) orelse break;
+                if (target.len != input.len) continue;
+                var env: std.ArrayList(Bind) = .empty;
+                try env.append(b.arena, .{ .local = input.local, .item = false, .path = .{} });
+                _ = try b.bindPattern(&env, decl, params[0].int(), true, .{});
+                var search: Hunt = .{ .target = target, .key = key };
+                if (!try b.hunt(&search, decl, frame.items, env.items, 0)) continue;
+                if (search.strict == null) continue;
+                const probe = try b.value(.{ .probe = .{
+                    .input = record,
+                    .ctor = if (search.ctor) |c| c.toOptional() else .none,
+                } });
+                row.selector = .{ .input = @intCast(k), .probe = probe };
+                break;
+            }
+        }
+    }
+
+    fn inputLink(b: *const Builder, link: u32) Link {
+        if (link & Bir.tuple_link != 0) return tuple_bit | (link & ~Bir.tuple_link);
+        return @intFromEnum(b.bir().symbols[link]);
+    }
+
+    /// The declaration an instruction belongs to.
+    fn declOf(b: *const Builder, inst: u32) ?u32 {
+        for (b.bir().decls, 0..) |d, i| {
+            if (d.inst_start.int() <= inst and inst < d.inst_end.int()) return @intCast(i);
+        }
+        return null;
+    }
+
+    /// A key function's path through its item: `\r -> r.a.b`, or `.a`.
+    fn keyPath(b: *Builder, v: m.Value.Index) ?Path {
+        const bir_ = b.bir();
+        const inst = switch (b.values.items[@intFromEnum(v)]) {
+            .inst => |i| i,
+            else => return null,
+        };
+        if (bir_.instTag(inst) != .lambda) return null;
+        const d = bir_.instData(inst);
+        const params = bir_.extraSlice(bir_.subRange(@enumFromInt(d.lhs)), Inst.Index);
+        if (params.len != 1 or bir_.instTag(params[0]) != .pat_var) return null;
+        const env = [_]Bind{.{ .local = bir_.instData(params[0]).lhs, .item = true, .path = .{} }};
+        return b.itemPath(d.rhs, &env);
+    }
+
+    /// The path through the row's item `inst` reads — a local bound to it,
+    /// then field and tuple accesses — or null when it reads anything else.
+    fn itemPath(b: *const Builder, inst: u32, env: []const Bind) ?Path {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        var links: [max_links]Link = undefined;
+        var n: usize = 0;
+        var cur = inst;
+        while (true) : (cur = datas[cur].lhs) {
+            const link: Link = switch (tags[cur]) {
+                .field_access => @intFromEnum(bir_.symbols[datas[cur].rhs]),
+                .tuple_index => tuple_bit | datas[cur].rhs,
+                else => break,
+            };
+            if (n == max_links) return null;
+            links[n] = link;
+            n += 1;
+        }
+        if (tags[cur] != .local) return null;
+        const bind = for (env) |e| {
+            if (e.local == datas[cur].lhs) break e;
+        } else return null;
+        if (!bind.item) return null;
+        var path = bind.path;
+        while (n > 0) {
+            n -= 1;
+            path = path.append(links[n]) orelse return null;
+        }
+        return path;
+    }
+
+    /// Bind the locals `pattern` (of declaration `decl`) binds to `path`
+    /// through the item or the captured local. False for a pattern whose
+    /// locals it cannot follow; an item's are then simply not bound, so
+    /// no comparison against them is its key.
+    fn bindPattern(b: *Builder, env: *std.ArrayList(Bind), decl: u32, pattern: u32, item: bool, path: Path) Allocator.Error!bool {
+        const bir_ = b.bir();
+        const d = bir_.instData(@enumFromInt(pattern));
+        switch (bir_.instTag(@enumFromInt(pattern))) {
+            .pat_var => try env.append(b.arena, .{ .local = d.lhs, .item = item, .path = path }),
+            .pat_wild => {},
+            .pat_record => {
+                const base = bir_.decls[decl].locals_start;
+                for (bir_.extraSlice(Bir.inlineRange(d), u32)) |local| {
+                    if (base + local >= bir_.locals.len) return item;
+                    const name = bir_.locals[base + local].name.unwrap() orelse return item;
+                    const field = path.append(@intFromEnum(bir_.symbols[name])) orelse return item;
+                    try env.append(b.arena, .{ .local = local, .item = item, .path = field });
+                }
+            },
+            else => return item,
+        }
+        return true;
+    }
+
+    /// Every instruction's parent in declaration `decl`, and the operand
+    /// position it has there.
+    fn parentsOf(b: *Builder, decl: u32) Allocator.Error![]const Parent {
+        if (b.parent_maps.len == 0) {
+            b.parent_maps = try b.arena.alloc(?[]const Parent, b.bir().decls.len);
+            @memset(b.parent_maps, null);
+        }
+        if (b.parent_maps[decl]) |p| return p;
+        const d = b.bir().decls[decl];
+        const base = d.inst_start.int();
+        const map = try b.arena.alloc(Parent, d.inst_end.int() - base);
+        @memset(map, .{});
+        var found: std.ArrayList(u32) = .empty;
+        for (base..d.inst_end.int()) |i| {
+            found.clearRetainingCapacity();
+            try b.operands(@intCast(i), &found);
+            for (found.items, 0..) |o, pos| {
+                if (o >= base and o < d.inst_end.int()) map[o - base] = .{ .inst = @intCast(i), .pos = @intCast(pos) };
+            }
+        }
+        b.parent_maps[decl] = map;
+        return map;
+    }
+
+    /// Whether every read of the selector in `insts` (of `decl`, its
+    /// locals bound by `env`) is a comparison with the list key.
+    fn hunt(b: *Builder, h: *Hunt, decl: u32, insts: []const u32, env: []const Bind, depth: u32) Allocator.Error!bool {
+        h.frames += 1;
+        if (depth > max_depth or h.frames > max_frames) return false;
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        const parents = try b.parentsOf(decl);
+        const base = bir_.decls[decl].inst_start.int();
+        for (insts) |i| {
+            if (tags[i] != .local) continue;
+            const bind = for (env) |e| {
+                if (e.local == datas[i].lhs) break e;
+            } else continue;
+            if (bind.item) continue;
+            // Up through the accesses, to where the value read is used.
+            var top = i;
+            var path = bind.path;
+            while (true) {
+                const p = parents[top - base];
+                if (p.inst == none or p.pos != 0) break;
+                path = switch (tags[p.inst]) {
+                    .field_access => path.append(@intFromEnum(bir_.symbols[datas[p.inst].rhs])),
+                    .tuple_index => path.append(tuple_bit | datas[p.inst].rhs),
+                    else => break,
+                } orelse return false;
+                top = p.inst;
+            }
+            const at = parents[top - base];
+            const shorter = @min(path.len, h.target.len);
+            if (!std.mem.eql(Link, path.slice()[0..shorter], h.target.slice()[0..shorter])) continue;
+            if (path.len > h.target.len) return false;
+            if (at.inst == none) return false;
+            if (path.len == h.target.len and tags[at.inst] == .method_call) {
+                if (!b.compared(h, at, env)) return false;
+            } else if (!try b.passed(h, at, path, env, depth)) return false;
+        }
+        return true;
+    }
+
+    /// The selector's read is operand `at.pos` of `at.inst`: an `==` or
+    /// `/=` against the list key.
+    fn compared(b: *Builder, h: *Hunt, at: Parent, env: []const Bind) bool {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        if (tags[at.inst] != .method_call or at.pos > 1) return false;
+        const d = datas[at.inst];
+        const mc = bir_.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        if (mc.origin != .eq and mc.origin != .neq) return false;
+        const args = bir_.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
+        if (args.len != 1) return false;
+        const other: u32 = if (at.pos == 0) args[0].int() else d.lhs;
+        const c = b.in.comparison.?;
+        const operand: u32 = switch (c.classify(c.ctx, @enumFromInt(at.inst), @enumFromInt(other))) {
+            .none => return false,
+            .strict => blk: {
+                if (h.strict == false) return false;
+                h.strict = true;
+                break :blk other;
+            },
+            .ctor => |ctor| blk: {
+                if (h.strict == true or tags[other] != .call or datas[other].lhs != ctor.int()) return false;
+                const fields = bir_.extraSlice(bir_.subRange(@enumFromInt(datas[other].rhs)), Inst.Index);
+                if (fields.len != 1) return false;
+                if (h.ctor) |first| {
+                    if (tags[first.int()] != tags[ctor.int()] or datas[first.int()].lhs != datas[ctor.int()].lhs or
+                        datas[first.int()].rhs != datas[ctor.int()].rhs) return false;
+                } else h.ctor = ctor;
+                h.strict = false;
+                break :blk fields[0].int();
+            },
+        };
+        const key = b.itemPath(operand, env) orelse return false;
+        return key.eql(h.key);
+    }
+
+    /// A read of a record holding the selector is argument `at.pos` of
+    /// `at.inst`: a saturated call of a function of this module, whose
+    /// body is searched with its parameters bound.
+    fn passed(b: *Builder, h: *Hunt, at: Parent, path: Path, env: []const Bind, depth: u32) Allocator.Error!bool {
+        const bir_ = b.bir();
+        const tags = bir_.insts.items(.tag);
+        const datas = bir_.insts.items(.data);
+        if (tags[at.inst] != .call or at.pos == 0) return false;
+        const callee = datas[at.inst].lhs;
+        if (tags[callee] != .top) return false;
+        const f = datas[callee].lhs;
+        if (f >= bir_.decls.len) return false;
+        const fd = bir_.decls[f];
+        if (fd.kind != .value) return false;
+        const args = bir_.extraSlice(bir_.subRange(@enumFromInt(datas[at.inst].rhs)), Inst.Index);
+        const params = bir_.extraSlice(.{ .start = fd.params_start, .end = fd.params_end }, Inst.Index);
+        if (args.len != params.len or at.pos - 1 >= params.len) return false;
+        var inner: std.ArrayList(Bind) = .empty;
+        for (args, params, 0..) |arg, param, k| {
+            if (k == at.pos - 1) {
+                if (!try b.bindPattern(&inner, f, param.int(), false, path)) return false;
+            } else if (b.itemPath(arg.int(), env)) |through| {
+                _ = try b.bindPattern(&inner, f, param.int(), true, through);
+            }
+        }
+        var body: std.ArrayList(u32) = .empty;
+        for (fd.inst_start.int()..fd.inst_end.int()) |i| try body.append(b.arena, @intCast(i));
+        return b.hunt(h, f, body.items, inner.items, depth + 1);
     }
 
     // ---- Values that read only the item (language.md §11.11) -------------

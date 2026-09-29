@@ -152,7 +152,7 @@ const DomLists$table = (model$1) => {
         i$25.w2.data = $t$29;
       }
     }
-  }, i: false, f: null }, [model$1.selected]] };
+  }, i: false, f: null, g: 0, z: model$1.selected }, [model$1.selected]] };
 };
 const DomLists$lists = (model$1) => {
   const $t$30 = model$1.names;

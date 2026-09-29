@@ -1,0 +1,46 @@
+-- Near misses of a selector (language.md §11.9): every row compares
+-- `model.selected` with a value of its item, and no row object carries
+-- `g` or `z`, so a selection runs every row, as any change of an input
+-- does. The first compares with `row.parent`, which is not the list key;
+-- the second also shows the input; the third binds it with `let` first;
+-- the fourth is keyed by position; the fifth compares the input, a
+-- record, with a record holding `Just row.id`; the sixth passes the input
+-- to a helper beside `row.id + 1`, which is not the key.
+import Html exposing (Html)
+
+
+type alias Row =
+    { id : Int, parent : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, selected : Maybe Int, pick : { at : Maybe Int } }
+
+
+isOn : Maybe Int, Int -> String
+isOn selected id =
+    if selected == Just id then "on" else ""
+
+
+pub table : Model -> Html msg
+table model =
+    <div>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <p class={if model.selected == Just row.parent then "on" else ""}>{row.label}</p>}
+        </For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <p class={if model.selected == Just row.id then "on" else ""}>{Maybe.withDefault model.selected 0}</p>}
+        </For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> let sel = model.selected in <p class={if sel == Just row.id then "on" else ""}>{row.label}</p>}
+        </For>
+        <For each={model.rows} keyed={False}>
+            {\row -> <p class={if model.selected == Just row.id then "on" else ""}>{row.label}</p>}
+        </For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <p class={if { at = Just row.id } == model.pick then "on" else ""}>{row.label}</p>}
+        </For>
+        <For each={model.rows} keyed={.id}>
+            {\row -> <p class={isOn model.selected (row.id + 1)}>{row.label}</p>}
+        </For>
+    </div>

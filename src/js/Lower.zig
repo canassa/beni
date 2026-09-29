@@ -6520,6 +6520,7 @@ const Lowerer = struct {
             .interner = l.interner.global,
             .live = live.items,
             .interfaces = l.in.interfaces,
+            .comparison = .{ .ctx = l, .classify = classifyComparison },
         }) orelse return;
         const st = try l.scratch.create(MarkupState);
         st.* = .{
@@ -6632,15 +6633,16 @@ const Lowerer = struct {
                 },
             },
             .capture => |local| return l.ident(try l.localName(local), p),
-            .input => |record| {
-                const input = l.bir.extraData(record, Bir.MarkupInput);
-                var node = try l.ident(try l.localName(input.local), p);
-                for (0..input.len) |k| {
-                    const link = input.link(k);
-                    const field = if (link & Bir.tuple_link != 0) try l.slotName(link & ~Bir.tuple_link) else l.bir.symbols[link];
-                    node = try l.member(node, field, p);
-                }
-                return node;
+            .input => |record| return l.markupInput(record, p),
+            .probe => |probe| {
+                // `s`, or `s.$ === "Just" ? s.a : s`: the key a selector's
+                // comparisons can hold for, else the value itself, which
+                // is an object and so no key (backend.md §15.5).
+                const ctor = probe.ctor.unwrap() orelse return l.markupInput(probe.input, p);
+                _, const tag = l.ctorRepOf(ctor) orelse return l.markupInput(probe.input, p);
+                const tested = try l.binary(.strict_eq, try l.member(try l.markupInput(probe.input, p), l.well.tag, p), try l.stringNode(l.text(tag), p), p);
+                const field = try l.member(try l.markupInput(probe.input, p), try l.slotName(0), p);
+                return l.condOf(tested, field, try l.markupInput(probe.input, p), p);
             },
             .entries => |range| {
                 // The list written in place, rebuilt from its entries'
@@ -6674,6 +6676,42 @@ const Lowerer = struct {
                 for (args, 0..) |*a, k| a.* = try l.markupValue(c.args.at(@intCast(k)));
                 return l.call(try l.markupValue(@enumFromInt(c.callee)), args, p);
             },
+        }
+    }
+
+    /// A row input: its captured local, then its field path.
+    fn markupInput(l: *Lowerer, record: Bir.ExtraIndex, p: u32) Allocator.Error!Node.Index {
+        const input = l.bir.extraData(record, Bir.MarkupInput);
+        var node = try l.ident(try l.localName(input.local), p);
+        for (0..input.len) |k| {
+            const link = input.link(k);
+            const field = if (link & Bir.tuple_link != 0) try l.slotName(link & ~Bir.tuple_link) else l.bir.symbols[link];
+            node = try l.member(node, field, p);
+        }
+        return node;
+    }
+
+    /// `MarkupTree.Comparison`: how the `==` or `/=` at `cmp` compares its
+    /// operand `other` with the other one — `===`, or `other`'s one-field
+    /// constructor's tag and `===` on its field, as `ctorEquality` writes
+    /// it (backend.md §4) — so a row input read only that way against the
+    /// row's key is a selector (language.md §11.9).
+    fn classifyComparison(ctx: *anyopaque, cmp: Inst.Index, other: Inst.Index) MarkupTree.Comparison.Test {
+        const l: *Lowerer = @ptrCast(@alignCast(ctx));
+        const site = l.in.dispatch.siteOf(cmp) orelse return .none;
+        const callee = site.callee.unwrap() orelse return .none;
+        if (l.in.dispatch.argsAt(site.evidence).len != 0) return .none;
+        switch (l.in.dispatch.term(callee)) {
+            .primitive => |prim| return if (prim == .strict_eq) .strict else .none,
+            .derived, .ext_derived => {
+                const app = l.ctorApplication(other) orelse return .none;
+                if (app.args.len != 1) return .none;
+                return switch (l.fieldEq(callee, app.ctor, 0)) {
+                    .strict => .{ .ctor = app.ctor },
+                    else => .none,
+                };
+            },
+            else => return .none,
         }
     }
 

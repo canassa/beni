@@ -90,6 +90,6 @@ const DomRowItemOnly$table = (model$1) => {
         i$26.w7.$$click = $t$33;
       }
     }
-  }, i: false, f: null }, [model$1.selected]] };
+  }, i: false, f: null, g: 0, z: model$1.selected.$ === "Just" ? model$1.selected.a : model$1.selected }, [model$1.selected]] };
 };
 export { DomRowItemOnly$Msg$$compare, DomRowItemOnly$Msg$$eq, DomRowItemOnly$table };

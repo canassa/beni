@@ -3624,8 +3624,8 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   cost a few pointer comparisons and no call, and it rests on §15.8. The inputs are the enclosing
   root's values, so they are compared, not recomputed per row: `select` in research 29's benchmark
   changes `model.selected`, every row whose class reads it re-runs, and every other edit to the model
-  skips all of them — P3's rung 3 at the row (research 29 §7.2), without P3's selector recognition,
-  which stays later work.
+  skips all of them — P3's rung 3 at the row (research 29 §7.2). P3's selector recognition, rung 4,
+  is the *selector* bullet below (*amended 2026-09-30*).
 - **What reads only the item** (*amended 2026-09-29*, research 39 §4.2 edit 2): a `markup` row's
   `p` runs whenever its item or an input changed, and it recomputed every value and rebuilt every
   handler message — `{ $: "Select", a: item.id }` is never `===` the last one — so a selection
@@ -3637,6 +3637,26 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   write goes under the test only when every value it reads is item-only; a `stateful` property,
   which is compared with the page on every patch, a component, a `For` and a `Show` never do.
   Pinned by `emit/dom/DomRowItemOnly` and `browser/dom/RowItemOnly`.
+- **A selector** (*amended 2026-09-30*, research 39 §12; `language.md` §11.9): select lost to Solid 1
+  by 1.23–1.32× because Solid's `createSelector` notifies the two rows whose selection changed and
+  beni ran the `p` of all thousand. The compiler now recognises the row input `language.md` §11.9
+  calls a selector and hands it to the lowering as `Row.selector` (interface 1.3, `boundary.md`
+  §9.4.6): its position among the inputs, and a **probe**, a value of the enclosing root that
+  evaluates nothing — the input itself when its comparisons are `===`, and
+  `s.$ === "Just" ? s.a : s` when they are against `Just` — which is the one key the comparison can
+  hold for, or, for `Nothing`, a value no key is (a key is a string, number or boolean, and the
+  probe is then an object). `dom` puts both on the row object, `g` and `z`. `forKeyed` then compares
+  every input but the `g`th as before and keeps last render's probe in the slot: when the items and
+  every other input are as last time and the probe changed, it looks the old probe and the new one
+  up in the key map it already keeps and patches those rows and their duplicate-key chains, and
+  visits no other row; when something else changed too, a row whose item, position and other
+  inputs are as last time is patched only when its key is `===` one of the two probes. The key map
+  is the list's own — which is why a selector must compare against the list key, and costs nothing
+  to maintain; a `Map` treats `NaN` as one key where `===` does not, which patches a row too many and
+  never one too few. A row that is not recognised is patched whenever an input changed, as before.
+  Pinned by `browser/dom/Selector` (selection moving, an id no row has, duplicate keys, a selection
+  and an edit in one render, a helper, a record pattern, `===` and `/=`), `emit/dom/DomSelector`
+  and the near misses in `emit/dom/DomSelectorNearMiss`.
 - **By key** (`forKeyed`): a map from key to instance; per row, `r$p` or a new `r$m`; the array
   reconciler runs only when the key order moved — the `moved` flag (research 36 §4.4) — so a
   selection change or a label edit never enters it. **Duplicate keys**: rows are matched by the key and

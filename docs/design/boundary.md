@@ -937,7 +937,13 @@ pub const Row = struct {          // a For row or a Show body: the function appl
     reads_index: bool,            // the body uses the position
     captures: Value.Range,        // values of the enclosing root: the locals the body uses, whole
     inputs: Value.Range,          // values of the enclosing root: what a skip compares besides the item
-};                                //   and the position (language.md §11.9); function: [function]
+                                  //   and the position (language.md §11.9); function: [function]
+    selector: ?Selector = null,   // 1.3: the input that is a selector (language.md §11.9), if one is
+};
+pub const Selector = struct {     // 1.3
+    input: u32,                   // its position among `inputs`
+    probe: Value.Index,           // a value of the enclosing root: the one key its comparisons can hold for
+};
 
 pub const Node = struct {
     kind: Kind, payload: u32,
@@ -1117,7 +1123,8 @@ from needing the representation.
   character-decoded text the meaning `language.md` §11 states, and skips only what `language.md`
   §11.11 allows (a component whose props are all identical, a helper call in a hole whose arguments
   are — *amended 2026-09-29*, `language.md` §11.6 — a row or `Show` body whose inputs are, and a
-  row's item-only values while its item is, §11.11). It
+  row's item-only values while its item is, §11.11; *amended 2026-09-30*, a row whose selector
+  changed and whose key neither probe is, §9.4.6's version 1.3). It
   reports no diagnostic but §9.4.7's.
 
 #### 9.4.5 The runtime's well-known exports
@@ -1196,6 +1203,18 @@ item-only, emitted into `apart_block` after the others instead. A lowering may r
 and what it writes from those values only when the item is not `===` the one the row last showed
 (`language.md` §11.11), and must not read one of them outside it. `dom` targets 1.2 (`backend.md`
 §15.5).
+
+**Version 1.3** (*amended 2026-09-30*, additive and gated on nothing; research 39 §12):
+**`Row.selector`**, set only on the `markup` row of a `For` keyed by a key function or by
+reference, when one of its inputs is a *selector* (`language.md` §11.9): an input the row reads only
+in `==`/`/=` comparisons with the row's list key. `input` is its position among `Row.inputs`;
+`probe` is a value of the enclosing root that evaluates nothing and may be asked for wherever the
+inputs may, the one key the comparisons can hold for — or, when no key can, a value `===` to no
+key. A lowering that ignores it stays correct. One that reads it may skip a row whose item, position
+and other inputs are `===` to last render's, and whose selector is not, when the row's list key is
+`===` neither to last render's probe nor to this one's (`language.md` §11.11), and nothing else:
+the rows whose key is one of the two are run as any row whose input changed. `ssr` ignores it;
+`dom` targets 1.3 (`backend.md` §15.5).
 
 #### 9.4.7 Diagnostics
 

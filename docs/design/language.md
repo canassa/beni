@@ -1510,6 +1510,30 @@ to a function of another module, into a record, into a `case` on a custom type. 
 correct, and re-runs whenever that record changes; `--self-profile` counts rows whose inputs hold a
 whole local (`backend.md` §15.4), so the cost is a number.
 
+*Amended 2026-09-30* (research 39 §12): **a selector.** A keyed row's input that the row reads only
+to compare with the row's own key is a *selector*, and when it is all that changed, only the rows
+whose comparison can have changed run — the one that was selected and the one that is — where the
+table above would run every row. It is Solid's `createSelector` (Solid 2's `createProjection`),
+recognised by the compiler instead of written by the programmer; there is no syntax for it, and a
+row that is not recognised is exactly as correct, and runs as the table above says. An input is a
+selector when all of this holds:
+
+- the `For` is keyed by a key function that is a field path — `keyed={.id}`, `keyed={\r -> r.id}`,
+  `keyed={\r -> r.a.b}` — or by reference, whose key is the item;
+- every read of the input in the row — directly, or through a same-module function it is passed
+  to, as the table above follows reads — is one operand of an `==` or a `/=`, in either order;
+- the other operand of every such comparison is the row's key written as the same field path
+  through the row's item (`row.id`, or `id` bound by `\{ id } -> …`), or a constructor of one field
+  applied to it (`Just row.id`);
+- and the comparison's `eq` is `===` on the two operands (`static-dispatch-spike.md` §3.2's
+  primitive `strict_eq`: the key types of this section), or, against the constructor, the derived
+  `eq` whose one field is compared that way — which is `backend.md` §4's tag and field test.
+
+`rowClass model row` with `rowClass model row = if model.selected == Just row.id then "danger" else
+""` is one; `model.selected == Just row.label` under `keyed={.id}`, a `let sel = model.selected` in
+the row, or `model.selected` also shown in the row, is not. A row has at most one selector, its
+first such input; the others are compared as the table above says.
+
 ### 11.10 Fragments
 
 `<>…</>` is markup with no element of its own: its children, in order, where it stands. A fragment
@@ -1533,6 +1557,12 @@ they are what they were whenever the item is the same one: in `<tr class={rowCla
 <a onClick={Select row.id}>{row.label}</a>`, a selection re-runs the class and not the message or
 the label. Such a value is evaluated when the row is first shown and again only when its item is
 not `===` the last one, after the row's other values; a `Debug.log` in it logs only then.
+*Amended 2026-09-30:* **a row whose selector (§11.9) is the only input that changed is skipped
+when its comparison cannot have changed**: every comparison of the selector in the row compares it
+with the row's key, so a row whose key neither the old selector value nor the new one selects
+answers `False` (or `True`, for `/=`) both times and computes what it computed before. Its item,
+its position and every other input must be as last time, as for any skip; a `Debug.log` in such a
+row logs only for the rows that run.
 **A row's inputs are read before the
 row is reached** — `model.selected`, read so the skip can compare it — and that is not an evaluation
 a program can observe either: a field read of a record cannot fail and computes nothing. **When

@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.2: what the compiler hands a platform's markup lowering, and everything
+//! 1.3: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -20,8 +20,8 @@ const std = @import("std");
 
 /// The version of the interface this module declares (§9.4.6). Version 1.0
 /// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`,
-/// 1.2 `Tree.item_only` and `Context.rowValuesApart`.
-pub const version: Version = .{ .major = 1, .minor = 2 };
+/// 1.2 `Tree.item_only` and `Context.rowValuesApart`, 1.3 `Row.selector`.
+pub const version: Version = .{ .major = 1, .minor = 3 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -236,9 +236,26 @@ pub const Row = struct {
     /// Values of the enclosing root: what a skip compares besides the item
     /// and the position (language.md §11.9); for `function`, the function.
     inputs: Value.Range,
+    /// 1.3: the input that is a selector (language.md §11.9), set only on
+    /// the `markup` row of a `For` keyed by a key function or by reference.
+    /// Null: none is.
+    selector: ?Selector = null,
 
     pub const Index = enum(u32) { _ };
     pub const Kind = enum(u8) { markup, lambda, function, _ };
+};
+
+/// 1.3: a row input read only in `==`/`/=` comparisons with the row's list
+/// key (boundary.md §9.4.6). A row whose item, position and other inputs
+/// are as last render's, and whose list key is `===` neither to last
+/// render's probe nor to this one's, may be skipped when only it changed.
+pub const Selector = struct {
+    /// Its position among `Row.inputs`.
+    input: u32,
+    /// A value of the enclosing root that evaluates nothing, asked for
+    /// wherever the inputs may be: the one key the comparisons can hold
+    /// for, or a value `===` to no key.
+    probe: Value.Index,
 };
 
 pub const Node = struct {

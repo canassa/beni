@@ -1,0 +1,276 @@
+-- load
+console.log: row 1: ""
+console.log: row 2: ""
+console.log: row 3: ""
+console.log: row 2: ""
+console.log: id 1: "at"
+console.log: id 2: ""
+console.log: id 3: ""
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #pick1
+console.log: row 1: "on"
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #pick3
+console.log: row 1: ""
+console.log: row 3: "on"
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="on">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #pick3
+(the DOM did not change)
+-- click #pick9
+console.log: row 3: ""
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #unpick
+(the DOM did not change)
+-- click #pick2
+console.log: row 2: "on"
+console.log: row 2: "on"
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one"</a>
+      </li>
+      <li class="on">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="on">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #pickedit
+console.log: row 1: ""
+console.log: row 2: ""
+console.log: row 3: "on"
+console.log: row 2: ""
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one!"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="on">
+        <a id="pick3">"three"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #drop3
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="">
+        <a id="pick1">"one!"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #pick1
+console.log: row 1: "on"
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one!"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="at">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
+-- click #cursor2
+console.log: id 1: ""
+console.log: id 2: "at"
+<body>
+  <main>
+    <button id="pick9">"9"</button>
+    <button id="unpick">"none"</button>
+    <button id="pickedit">"3, and edit 1"</button>
+    <button id="drop3">"drop 3"</button>
+    <button id="cursor2">"cursor 2"</button>
+    <ul>
+      <li class="on">
+        <a id="pick1">"one!"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"two"</a>
+      </li>
+      <li class="">
+        <a id="pick2">"twin"</a>
+      </li>
+    </ul>
+    <ol>
+      <li class="">"1"</li>
+      <li class="at">"2"</li>
+      <li class="">"3"</li>
+    </ol>
+  </main>
+</body>
