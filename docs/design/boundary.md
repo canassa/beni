@@ -695,6 +695,13 @@ choice, the smallest reading, and these are they:
   package" and for the cycle, is its real path. An embedded platform's dependencies are embedded
   platforms, named by name.
 - **`_<name>`** is the dependency's manifest `"name"`, else the spelling that reached it.
+  *Amended 2026-09-29:* else the last segment of the directory that holds it, and in either
+  case one plain directory name — ASCII letters, digits, `-`, `_` and `.`, beginning with a
+  letter or a digit — unique within the chain, ASCII case folded. A name that is not one
+  (`"x/../../../esc"`, which wrote outside `--out`) and two dependencies that would share a
+  directory (two packages both named `lib`, which merged into `_platform/_lib/`) are each an
+  exit-2 manifest failure before a source is read. The spelling was a path, `_../base`, for a
+  dependency named by one and carrying no `"name"`.
 - **A platform module that imports a module of a platform it does not depend on**, and a program
   that imports a dependency's module no platform re-exports, get `unknown_module` naming the
   platform that has it and the key (`"platforms"` or `"reexports"`); the name falls through to core

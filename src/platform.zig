@@ -121,7 +121,25 @@ pub const Failure = union(enum) {
     /// The first `"markup".lowering` and the first `"markup".runtime` of the
     /// chain are declared by two different packages (§9.2).
     markup_split: struct { lowering: []const u8, runtime: []const u8 },
+    /// A dependency whose output directory's name — its `"name"`, or its
+    /// directory's when it has none (`named` false) — is not one plain
+    /// directory name.
+    bad_name: struct { from: []const u8, dep: []const u8, name: []const u8, named: bool },
+    /// Two dependencies whose output directories are one, ASCII case folded.
+    shared_dir: struct { first: []const u8, first_root: []const u8, second: []const u8, second_root: []const u8, dir: []const u8 },
 };
+
+/// Whether `name` is a directory name a dependency's output may take under
+/// `_platform/_<name>/`: ASCII letters, digits, `-`, `_` and `.`, beginning
+/// with a letter or a digit. So no separator, no `.` or `..`, no NUL, no
+/// leading `_` or `.`, and nothing a file system treats specially.
+pub fn validDirName(name: []const u8) bool {
+    if (name.len == 0 or !std.ascii.isAlphanumeric(name[0])) return false;
+    for (name) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '-' and c != '_' and c != '.') return false;
+    }
+    return true;
+}
 
 /// Read the chain `requested` selects. Strings are owned by `arena`.
 pub fn resolveChain(arena: Allocator, io: Io, requested: []const u8, failure: *?Failure) (Allocator.Error || error{Failed})!Chain {
@@ -158,6 +176,8 @@ const Resolver = struct {
     /// Per layer, the identity it was found under: `embedded:<name>` or its
     /// normalised directory.
     keys: std.ArrayList([]const u8) = .empty,
+    /// Per layer, the directory its output goes to under `_platform/_…/`.
+    dirs: std.ArrayList([]const u8) = .empty,
     /// The layers being visited, outermost first: a dependency that is one
     /// of them closes a cycle.
     path: std.ArrayList(u32) = .empty,
@@ -234,6 +254,24 @@ const Resolver = struct {
 
         const index: u32 = @intCast(r.layers.items.len);
         const name = manifest.name orelse spelling;
+        // A dependency's output goes to `_platform/_<dir>/`: its manifest's
+        // name, else the last segment of the directory that holds it. One
+        // directory name, so the output stays under `--out`, and one per
+        // chain, so two packages never write into one directory.
+        const dir = manifest.name orelse std.fs.path.basenamePosix(root);
+        if (index != 0) {
+            if (!validDirName(dir)) return r.fail(.{ .bad_name = .{
+                .from = r.layers.items[from.?].name,
+                .dep = spelling,
+                .name = dir,
+                .named = manifest.name != null,
+            } });
+            for (r.layers.items[1..], r.dirs.items[1..]) |other, other_dir| {
+                if (!std.ascii.eqlIgnoreCase(other_dir, dir)) continue;
+                return r.fail(.{ .shared_dir = .{ .first = other.name, .first_root = other.root, .second = name, .second_root = root, .dir = other_dir } });
+            }
+        }
+        try r.dirs.append(arena, dir);
         try r.layers.append(arena, .{
             .name = name,
             .root = root,
@@ -244,7 +282,7 @@ const Resolver = struct {
             .out_dir = if (index == 0)
                 Emit.platform_dir
             else
-                try std.fmt.allocPrint(arena, "{s}_{s}/", .{ Emit.platform_dir, name }),
+                try std.fmt.allocPrint(arena, "{s}_{s}/", .{ Emit.platform_dir, dir }),
         });
         try r.keys.append(arena, key);
         try r.path.append(arena, index);
@@ -304,6 +342,20 @@ pub fn report(stderr: *Io.Writer, f: Failure) u8 {
             return fail(stderr, "{s}; a platform may depend only on platforms that do not depend on it", .{names[0]});
         },
         .too_many => fail(stderr, "beni: the platform chain holds more than {d} packages", .{max_layers}),
+        .bad_name => |b| if (b.named) fail(
+            stderr,
+            "beni: platform '{s}' depends on '{s}', whose \"name\" '{s}' cannot name its output directory _platform/_<name>/; a platform's name is ASCII letters, digits, '-', '_' and '.', and begins with a letter or a digit",
+            .{ b.from, b.dep, b.name },
+        ) else fail(
+            stderr,
+            "beni: platform '{s}' depends on '{s}', which has no \"name\", and its directory's name '{s}' cannot name its output directory _platform/_<name>/; give it a \"name\" of ASCII letters, digits, '-', '_' and '.', beginning with a letter or a digit",
+            .{ b.from, b.dep, b.name },
+        ),
+        .shared_dir => |s| fail(
+            stderr,
+            "beni: platforms '{s}' ('{s}') and '{s}' ('{s}') of one chain would share the output directory _platform/_{s}/; give each a \"name\" of its own",
+            .{ s.first, s.first_root, s.second, s.second_root, s.dir },
+        ),
         .markup_split => |s| fail(
             stderr,
             "beni: the markup lowering is declared by '{s}' and the markup runtime by '{s}'; a \"markup\" \"lowering\" and its \"runtime\" must come from one package",
@@ -411,4 +463,10 @@ fn collectEmbedded(arena: Allocator, session: *Session, chain: *const Chain) All
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {
     stderr.print(format_string ++ "\n", args) catch {};
     return 2;
+}
+
+test "a dependency's output directory name is one plain directory name" {
+    const testing = std.testing;
+    for ([_][]const u8{ "lib", "lib-one", "a.b_c", "Html2" }) |n| try testing.expect(validDirName(n));
+    for ([_][]const u8{ "", ".", "..", "x/../esc", "a\\b", "_lib", ".hidden", "x y", "a\x00b", "\u{e9}" }) |n| try testing.expect(!validDirName(n));
 }

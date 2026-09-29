@@ -244,6 +244,127 @@ test "a platform that depends on nothing that exists is refused" {
     );
 }
 
+/// A chain of `top` over the dependencies `deps`, each `{ dir, manifest
+/// name, module }`: every dependency declares one module, which `top`
+/// re-exports, and `Main.beni` imports them all, so a library build writes
+/// each dependency's output directory.
+fn writeChain(w: *World, deps: []const [3][]const u8) !void {
+    const a = w.arena.allocator();
+    var dirs: std.ArrayList(u8) = .empty;
+    var modules: std.ArrayList(u8) = .empty;
+    var imports: std.ArrayList(u8) = .empty;
+    for (deps, 0..) |d, i| {
+        const sep = if (i == 0) "" else ", ";
+        try dirs.print(a, "{s}\"../{s}\"", .{ sep, d[0] });
+        try modules.print(a, "{s}\"{s}\"", .{ sep, d[2] });
+        try imports.print(a, "import {s}\n", .{d[2]});
+        const manifest = if (d[1].len == 0)
+            "{ \"platform\": true }"
+        else
+            try std.fmt.allocPrint(a, "{{ \"platform\": true, \"name\": \"{s}\" }}", .{d[1]});
+        try w.write(try std.fmt.allocPrint(a, "{s}/beni.json", .{d[0]}), manifest);
+        try w.write(try std.fmt.allocPrint(a, "{s}/{s}.beni", .{ d[0], d[2] }), try std.fmt.allocPrint(a, "pub name : String\nname =\n    \"{s}\"\n", .{d[2]}));
+    }
+    try w.write("top/beni.json", try std.fmt.allocPrint(a, "{{ \"platform\": true, \"name\": \"top\", \"platforms\": [{s}], \"reexports\": [{s}] }}", .{ dirs.items, modules.items }));
+    try imports.appendSlice(a, "\n\npub names : List String\nnames =\n    [");
+    for (deps, 0..) |d, i| try imports.print(a, "{s} {s}.name", .{ if (i == 0) "" else ",", d[2] });
+    try imports.appendSlice(a, " ]\n");
+    try w.write("app/Main.beni", imports.items);
+}
+
+test "a dependency platform's output directory is named for its manifest's name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `named` has a `"name"`; `plain` has none, and is named by the last
+    // segment of the path that reached it, not by the path.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeChain(&w, &.{ .{ "named", "lib-one", "One" }, .{ "plain", "", "Two" } });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--library", "--platform=top", "--out=out", "app/Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try testing.expectEqualDeep(@as([]const []const u8, &.{
+        "Main.mjs",
+        "_manifest.txt",
+        "_platform/_lib-one/One.mjs",
+        "_platform/_plain/Two.mjs",
+    }), try treeOf(&w, "out"));
+}
+
+test "a dependency platform whose name is not one directory name is refused before a source is read" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `_platform/_<name>/` with this name would be `out/esc/`, outside
+    // `--out=out/app`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeChain(&w, &.{.{ "lib", "x/../../../esc", "Lib" }});
+    // A source that does not lex: a run that read it would say so.
+    try w.write("app/Main.beni", "\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--library", "--platform=top", "--out=out/app", "app/Main.beni" }, .{ .raw_diagnostics = true });
+    const checked = try w.runWith(&.{ "check", "--platform=top", "app/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), built.exit_code);
+    try testing.expectEqualStrings(
+        "beni: platform 'top' depends on '../lib', whose \"name\" 'x/../../../esc' cannot name its output directory _platform/_<name>/; a platform's name is ASCII letters, digits, '-', '_' and '.', and begins with a letter or a digit\n",
+        built.stderr,
+    );
+    try testing.expectEqual(@as(u8, 2), checked.exit_code);
+    try testing.expectEqualStrings(built.stderr, checked.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+}
+
+test "two dependency platforms with one name are refused before a source is read" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Both would write `_platform/_lib/`; names that differ only in case
+    // would be one directory on APFS and NTFS.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeChain(&w, &.{ .{ "a", "lib", "One" }, .{ "b", "Lib", "Two" } });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--library", "--platform=top", "--out=out", "app/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), built.exit_code);
+    try testing.expectEqualStrings(
+        "beni: platforms 'lib' ('a') and 'Lib' ('b') of one chain would share the output directory _platform/_lib/; give each a \"name\" of its own\n",
+        built.stderr,
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+}
+
 test "check --platform=html types a view module against the one Html type" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
