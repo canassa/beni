@@ -166,7 +166,13 @@ pub const Row = struct {
             .tuple_index => &.{1},
             .interpolatable, .equatable => &.{},
             .@"try" => &.{ 0, 2 },
-            .renderable, .handler, .attr_form, .row, .key, .item => &.{},
+            // What a decision unifies with the owner: the root's message
+            // variable, and an event's payload or a row's item. Held at
+            // the owner's rank, so a `let` that does not own the row cannot
+            // generalise a variable its decision will meet later.
+            .renderable => &.{1},
+            .handler, .row => &.{ 1, 2 },
+            .attr_form, .key, .item => &.{},
         };
     }
 };

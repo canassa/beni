@@ -487,6 +487,8 @@ boundary that decides a `?` by default is **the target's own generalisation boun
 | `interpolatable` | the part | — |
 | `equatable` | the variable | — |
 | `try` | the **target's** result | the subject and the value |
+| markup's `renderable`, `handler`, `row` | the part, the handler, the row function | what the decision unifies with it: the root's message variable, and the payload or the item (§25.4, *amended 2026-09-29*) |
+| markup's `attr_form`, `key`, `item` | the value, the key, the item | — |
 
 - Lowering the dependants keeps both earlier cases: in `a = p.0` the `.0` result drops to `p`'s
   rank, and in `g u = k (u?)` (target outer through `k`) the subject `u` drops to the target's
@@ -5051,15 +5053,27 @@ root checks is a function of its declaration and never of declaration order (I9)
 
 | Kind | Owner | Dependants | Decided when the owner's head is | At the owner's boundary, still a flex |
 |---|---|---|---|---|
-| `renderable(part, m)` | the part | — | `String`, `Char`, `Bool`, `Int`, `Float` or `number`-kinded: **text**, with that stringification. `H x`: unify `x` with `m`, **html**. `Maybe (H x)`: likewise, **maybe html**. `List (H x)`: likewise, **list html**. Anything else: `child_not_renderable`, naming the type and the five shapes | `child_not_renderable` with the "cannot tell" message: the hole's type must be known because the compiler chooses its update, as `ambiguous_interpolation` requires of `${…}` (`language.md` §2.6) |
-| `handler(h, p, m)` | the handler's type `h` | — | a function type: unify `h` with `p -> m`, **payload form** (an arity other than 1 is that unification's `type_mismatch`). Anything else, a rigid included: unify `h` with `m`, **message form** | unify with `m`: **message form**. This is sound — the form is fixed at the declaration and recorded (§25.7), so an instantiation of `m` at a function type later is still sent as a message |
+| `renderable(part, m)` | the part | `m` | `String`, `Char`, `Bool`, `Int`, `Float` or `number`-kinded: **text**, with that stringification. `H x`: unify `x` with `m`, **html**. `Maybe (H x)`: likewise, **maybe html**. `List (H x)`: likewise, **list html**. Anything else: `child_not_renderable`, naming the type and the five shapes | `child_not_renderable` with the "cannot tell" message: the hole's type must be known because the compiler chooses its update, as `ambiguous_interpolation` requires of `${…}` (`language.md` §2.6) |
+| `handler(h, p, m)` | the handler's type `h` | `p`, `m` | a function type: unify `h` with `p -> m`, **payload form** (an arity other than 1 is that unification's `type_mismatch`). Anything else, a rigid included: unify `h` with `m`, **message form** | unify with `m`: **message form**. This is sound — the form is fixed at the declaration and recorded (§25.7), so an instantiation of `m` at a function type later is still sent as a message |
 | `attr_form(v, row)` | the value's type `v`, for a row with `classes` or `styles` | — | `List x`: unify `v` with `List ( String, Bool )` (`classes`) or `List ( String, String )` (`styles`), **class list** or **style list**. Anything else: unify with `String`, **string** — a mismatch is the ordinary `type_mismatch` naming the attribute and both forms | unify with `String`: **string**, recorded, sound for `handler`'s reason |
-| `row(f, a, m)` | the row function's type `f`, for a `For` row or a `Show` body of shape `function` | — | a function of arity 1: unify with `a -> H m`; of arity 2 and in a `For`: unify with `a, Int -> H m`; any other arity, or 2 in a `Show`: unify with `a -> H m`, whose `type_mismatch` names the forms. **Arity recorded** | unify with `a -> H m`: arity 1, recorded |
+| `row(f, a, m)` | the row function's type `f`, for a `For` row or a `Show` body of shape `function` | `a`, `m` | a function of arity 1: unify with `a -> H m`; of arity 2 and in a `For`: unify with `a, Int -> H m`; any other arity, or 2 in a `Show`: unify with `a -> H m`, whose `type_mismatch` names the forms. **Arity recorded** | unify with `a -> H m`: arity 1, recorded |
 
 A `number`-kinded part is accepted without resolving to `Int` or `Float`, for §2.6's reason: both
 stringify identically on the target. Every row's kind is recorded **as decided**, so the backend is
 told which conversion, which list form and which arity to write and never guesses one from a value
 (§25.7).
+
+*Amended 2026-09-29: the dependants column.* It said "—" for all four, so what a decision
+unifies with the owner was left at whatever rank it had. In `input g = let v = <input
+onInput={g} /> in ( v, g "x" )` the owner is `g`'s type, outer, and the root's `m` is young: the
+`let` generalised `m`, and `g "x"` then decided the handler against the generalised variable, so
+`input` was inferred `(String -> a) -> ( Html b, a )` and a view of `Html Msg` accepted `Html
+Other`. The variables a decision unifies with its owner are its dependants (§4.5's table), lowered
+to the owner's rank when the row is attached and again when the owner's rank drops, so the `let`
+holds them as it holds a `tuple_index`'s result. `renderable` holds `m`; `handler` its payload and
+`m`; `row` its item and `m`. `attr_form`, `key` and `item` unify nothing but the owner.
+`check/bad/markup/LetMarkupObligationHeld.beni` and `check/good/markup/LetMarkupObligationLater.beni`
+hold the programs, and `ordering_test.zig` the second with its two `let` bindings swapped.
 
 **`For`**, as ordinary unifications plus two obligations and one warning:
 

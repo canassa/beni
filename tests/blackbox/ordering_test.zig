@@ -82,6 +82,47 @@ test "a view and the markup helper its For names check in the reverse order" {
     try expectReversedChecks("tests/corpus/check/good/markup/HelpersInEitherOrder.beni");
 }
 
+// A `let` whose markup's handler is the enclosing parameter `g`, and a
+// binding that fixes `g`'s type. Written with the markup first, the markup's
+// message variable was generalised before the handler's form was decided;
+// with the call first it was not. Both orders must infer the fixture's type,
+// `(String -> a) -> ( Html a, a )`.
+test "a let's markup and the call that decides its handler infer one type in either binding order" {
+    var s = try Scenario.init("a let's markup binding and the call after it, swapped");
+    defer s.deinit();
+    const a = s.arena();
+    const written = try readRepo(a, "tests/corpus/check/good/markup/LetMarkupObligationLater.beni");
+    const markup_first =
+        \\        v =
+        \\            <input onInput={g} />
+        \\
+        \\        z =
+        \\            g "x"
+        \\
+    ;
+    const call_first =
+        \\        z =
+        \\            g "x"
+        \\
+        \\        v =
+        \\            <input onInput={g} />
+        \\
+    ;
+    const swapped = try std.mem.replaceOwned(u8, a, written, markup_first, call_first);
+    if (std.mem.eql(u8, swapped, written)) return s.finish(.{ .green = false, .signature = "fixture-changed", .detail = "the fixture no longer holds the two bindings this scenario swaps" });
+    try s.w.write("Written.beni", written);
+    try s.w.write("Swapped.beni", swapped);
+    var faces: [2][]const u8 = undefined;
+    for ([_][]const u8{ "Written.beni", "Swapped.beni" }, &faces) |file, *slot| {
+        const run = try s.w.runWith(&.{ "dump", "--stage=interface", "--platform=html", file }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        // Everything after the `module` line, which names the file.
+        slot.* = run.stdout[(std.mem.indexOfScalar(u8, run.stdout, '\n') orelse run.stdout.len)..];
+    }
+    const same = std.mem.eql(u8, faces[0], faces[1]);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=0 iface-differs", .detail = if (same) "" else try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "markup first: {s} call first: {s}", .{ faces[0], faces[1] }), "\n", " | ") });
+}
+
 test "a schema via a mutually recursive own type checks reversed" {
     try expectReversedChecks("tests/corpus/check/good/SchemaViaMutualOwnType.beni");
 }

@@ -85,8 +85,6 @@
 # component's markup children typed at the enclosing root's messages and the
 # message that said so, markup nested past the checker's depth, and
 # `unkeyed_for`'s hint. Written and checked on fc4b31e.
-tests/pending/check/bad/markup/LetMarkupObligationHeld.beni exit=0 codes=none
-tests/pending/check/good/markup/LetMarkupObligationLater.beni exit=0 iface-differs
 tests/pending/build/bad/MarkupTypeInForeignNested BuildDidNotFail
 tests/pending/check/good/markup/ComponentChildrenOwnMessages exit=1 codes=type_mismatch×2
 tests/pending/check/bad/markup/ComponentChildrenNotMarkup exit=1 codes=type_mismatch×1 why=message

@@ -5341,7 +5341,12 @@ written with a red fixture on `fc4b31e` before its fix.*
 - **Fixture** `check/bad/markup/LetMarkupObligationHeld.beni`, red `exit=0 codes=none`;
   `check/good/markup/LetMarkupObligationLater.beni`, red `exit=0 iface-differs`.
 - **Slice** the fixes to markup's type-checking.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §4.5's table and §25.4 *amended 2026-09-29*:
+  `renderable`'s message variable, `handler`'s payload and message variable, and `row`'s item
+  and message variable are the rows' dependants, lowered to the owner's rank at attachment and
+  on every drop of it, so a `let` that does not own the row cannot generalise them. Promoted:
+  both fixtures into `tests/corpus/`; `ordering_test.zig` "a let's markup and the call that
+  decides its handler infer one type in either binding order", red on the base.
 
 ### CK-216 — `markup_type_in_foreign` misses a markup type in a record or custom type
 
@@ -5634,7 +5639,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-212 | latent | K14 | promoted: `build_test.zig` (two symbolic-link tests) | the last review's fixes (fixed) |
 | CK-213 | diagnostic-quality | K14 | promoted: `build_test.zig` "a _manifest.txt that cannot be written …" | the last review's fixes (fixed) |
 | CK-214 | diagnostic-quality | K13 | promoted: `check/bad/EqRefusalNamesTheUse.beni`; new `check/bad/BasicsEqCalledByName.beni` | the last review's fixes (fixed) |
-| CK-215 | unsound-runtime | K2 | `check/bad/markup/LetMarkupObligationHeld.beni`, `check/good/markup/LetMarkupObligationLater.beni` | the fixes to markup's type-checking |
+| CK-215 | unsound-runtime | K2 | promoted: `check/bad/markup/LetMarkupObligationHeld.beni`, `check/good/markup/LetMarkupObligationLater.beni`; `ordering_test.zig` | the fixes to markup's type-checking (fixed) |
 | CK-216 | latent | K5 | `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking |
 | CK-217 | valid-program-rejected | K15 | `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking |
 | CK-218 | diagnostic-quality | K13 | `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking |
