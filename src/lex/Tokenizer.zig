@@ -166,12 +166,16 @@ pub const Output = struct {
 };
 
 /// Pre-sizing ratios, so the output lists are allocated once for a typical
-/// file. Tokens: measured on the generated 100k-line corpus and on
-/// bench/corpus (both land near one token per 6 bytes; `std.zig.Ast` uses
-/// 8). Lines: real modules average 30–40 bytes per line, so /24 leaves
-/// slack. Comments: one per 128 bytes is above every corpus file measured.
+/// file. Tokens: the token list is reserved at exactly this count, so it is
+/// the most tokens a byte makes in a real file rather than the mean —
+/// measured over the generated 100k-line corpus, bench/corpus and core, the
+/// median file makes one token per 6 bytes and the densest one per 5.1
+/// (`std.zig.Ast` uses 8); a denser file grows the list, which still costs
+/// only one copy. Lines: real modules average 30–40 bytes per line, so /24
+/// leaves slack. Comments: one per 128 bytes is above every corpus file
+/// measured.
 pub fn estimatedTokenCount(bytes: usize) usize {
-    return bytes / 6 + 16;
+    return bytes / 5 + 16;
 }
 
 pub fn estimatedLineCount(bytes: usize) usize {
@@ -187,7 +191,8 @@ pub fn estimatedCommentCount(bytes: usize) usize {
 /// pool. Always ends with an `eof` token, whatever the input.
 pub fn tokenize(gpa: Allocator, source: [:0]const u8, interner: *InternPool.Local, out: *Output) Allocator.Error!void {
     std.debug.assert(out.tokens.len == 0 and out.line_starts.items.len == 0);
-    try out.tokens.ensureTotalCapacity(gpa, estimatedTokenCount(source.len));
+    const token_estimate = estimatedTokenCount(source.len);
+    if (out.tokens.capacity < token_estimate) try out.tokens.setCapacity(gpa, token_estimate);
     try out.line_starts.ensureTotalCapacity(gpa, estimatedLineCount(source.len));
     try out.comments.ensureTotalCapacity(gpa, estimatedCommentCount(source.len));
     out.line_starts.appendAssumeCapacity(0);

@@ -167,15 +167,19 @@ in_where: bool = false,
 /// `max_depth` nested parentheses clean in Debug, where frames are largest).
 pub const max_depth: u32 = 4096;
 
-/// Nodes per token, measured on the generated 100k-line corpus (0.74) and
-/// bench/corpus (0.80); rounded up to 7/8 so a typical file never regrows.
+/// Nodes per token. Both lists are reserved at exactly these counts, so each
+/// is the most a real file needs rather than the mean: measured over the
+/// generated 100k-line corpus, bench/corpus and core, a file makes 0.73
+/// nodes a token at the median and 0.88 at most.
 pub fn estimatedNodeCount(tokens: usize) usize {
     return tokens * 7 / 8 + 16;
 }
 
-/// Extra words per token, measured the same way (0.76 and 0.77).
+/// Extra words per token, measured the same way: 1.04 at the median and
+/// 1.62 at most, 1.38 at the 99th percentile. A file past the estimate
+/// grows the list once.
 pub fn estimatedExtraCount(tokens: usize) usize {
-    return tokens * 7 / 8 + 16;
+    return tokens * 3 / 2 + 16;
 }
 
 /// Parse one file's token stream. `gpa` owns the returned tree; `scratch`
@@ -213,8 +217,8 @@ pub fn parse(
     defer p.scratch.deinit(scratch);
     defer p.brackets.deinit(scratch);
     defer p.markup_open.deinit(scratch);
-    try p.nodes.ensureTotalCapacity(gpa, estimatedNodeCount(tokens.len));
-    try p.extra.ensureTotalCapacity(gpa, estimatedExtraCount(tokens.len));
+    try p.nodes.setCapacity(gpa, estimatedNodeCount(tokens.len));
+    try p.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(tokens.len));
 
     try p.parseModule();
 

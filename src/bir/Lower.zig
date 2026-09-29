@@ -306,15 +306,23 @@ const DeclSource = struct {
     annotation: Node.OptionalIndex,
 };
 
-/// Instructions per node and extra words per node, measured on the corpus
-/// and the generated project (both lie under 1.0 and 1.1); rounded up so a
-/// typical file never regrows.
+/// Instructions, extra words and symbol slots per node. The three lists are
+/// reserved at exactly these counts, so each is the most a real file needs
+/// rather than the mean: measured over the generated 100k-line corpus,
+/// bench/corpus and core, a file makes 0.91 instructions a node at the
+/// median and 1.09 at most, 1.05 extra words at the median and 1.42 at
+/// most, and 0.70 symbols at the median and 0.78 at the 99th percentile.
+/// A file past an estimate grows that list once.
 fn estimatedInstCount(nodes: usize) usize {
-    return nodes + 16;
+    return nodes * 9 / 8 + 16;
 }
 
 fn estimatedExtraCount(nodes: usize) usize {
-    return nodes * 5 / 4 + 16;
+    return nodes * 3 / 2 + 16;
+}
+
+fn estimatedSymbolCount(nodes: usize) usize {
+    return nodes * 4 / 5 + 16;
 }
 
 /// Lower one file's tree. `gpa` owns the returned Bir; `scratch` (the
@@ -379,9 +387,9 @@ pub fn lower(
     }
 
     const node_count = tree.nodes.len;
-    try l.insts.ensureTotalCapacity(gpa, estimatedInstCount(node_count));
-    try l.extra.ensureTotalCapacity(gpa, estimatedExtraCount(node_count));
-    try l.symbols.ensureTotalCapacity(gpa, node_count / 3 + 16);
+    try l.insts.setCapacity(gpa, estimatedInstCount(node_count));
+    try l.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(node_count));
+    try l.symbols.ensureTotalCapacityPrecise(gpa, estimatedSymbolCount(node_count));
 
     if (node_count > 0) {
         try l.lowerImports();
