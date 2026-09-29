@@ -106,6 +106,7 @@ stated per engine.
 | **funkia** | `list` 2.0.19 | RRB-tree with prefix/suffix buffers | the fast one; the only RRB here that passes the test |
 | **Elm** | `elm/core` 1.0.5, `elm make --optimize` 0.19.2 | Elm's `Array` (32-way with tail) exactly as Elm compiles it, called through its uncurried `.f` | the design beni's `List` came from; `references/elm-core` |
 | **Immer** | `immer` 11.1.18, `NODE_ENV=production` | `produce` over plain arrays, auto-freeze on (the default) | asked for; draft-based, see §8 |
+| **Mutative** | `mutative` 1.3.0 (latest, source at `af06787`) | `create` over plain arrays: a Proxy draft, one flat copy on first write, no freeze by default | asked for (added later, Node only); §14 |
 | ~~@collectable/list~~ | 5.1.0 | RRB | **excluded**: after a `set`, `iterate` still yields the old value, and a later `get` throws `Unterminated tree growth` (the differential test in `test.mjs`) |
 
 Considered and not included: `rrb-vector` ports on npm are unmaintained forks of the same two
@@ -723,3 +724,265 @@ Scratch directory (not in the repo): `scratchpad/arrays/`.
 * `build.mjs` bundles one IIFE per candidate (`dist/`); `run.mjs <node|sm|bun|chrome> <bundle…>`
   runs them (Chrome through `puppeteer-core` against the system Chrome 153) and appends to
   `results/<engine>.jsonl`; `tables.mjs` renders every table in this report and its appendices.
+
+---
+
+## 14. Mutative (added 2026-09-29, Node only)
+
+[Mutative](https://github.com/unadlib/mutative) 1.3.0 (the latest npm release; source read at
+`af06787`, 2026-09-28) was asked for after the rest of this report was written. It is measured on
+**Node 24.19 only**, in a batch that re-runs cow, the trie, hybrid 1024, Immer and the native
+baseline on the same machine, so its figures are comparable with each other and **not** with the
+Chrome tables of §3. Harness: `bench/arrays/mutative.mjs` (§14.6).
+
+### 14.1 How it works on arrays (from the source)
+
+`create(base, recipe, options)` wraps the array in a revocable `Proxy` whose target is a fresh
+`Object.assign([], state)`, plus per-call bookkeeping (two `WeakSet`s, finaliser and revoke lists, a
+spread of the options). **Nothing is copied at creation. On the first write through the draft (the
+`set` or `deleteProperty` trap), `ensureShallowCopy` copies the whole array once with
+`Array.prototype.concat.call(original)`**, and every later write in the same recipe goes into that
+copy. So the result is a flat plain JavaScript array; the only sharing is of the untouched element
+references. There is no trie, no chunking and no lazy copying below the whole array. A write of an
+equal value (`Object.is`) is dropped, and a recipe that wrote nothing returns the base itself. **Reads
+are also lazy, but they are not free**: reading an element that is itself draftable (a plain object,
+array, `Map` or `Set`) through the draft makes the parent's shallow copy and wraps that element in a
+child `Proxy`. So `const t = d[i]` inside a swap costs an O(n) copy and a proxy even before anything is
+written. **Auto-freeze is off by default** (`enableAutoFreeze ?? false`, the reverse of Immer). When
+it is on, `deepFreeze` walks the whole result after every `create`, which is O(n) per write even
+though it skips the elements that are already frozen. **`mark`** is a classifier called on values the
+draft meets. Returning `"immutable"` makes a class instance draftable, returning `"mutable"` means
+"never draft this, hand it out raw", and returning a function gives a custom shallow copy. Batching
+is simply many writes inside one recipe, or `create(base)` without a recipe, which returns
+`[draft, finalize]`. There is no transient or persistent structure behind it. Two packaging facts
+matter for a bundle. **The ESM entry (`exports.import` → `dist/mutative.esm.mjs`) is the development
+build** (`__DEV__` compiled to `true`; `tsdown.config.mjs` builds no production ESM). The production
+build exists only as CommonJS/UMD (`mutative.cjs.production.min.js`), which does not tree-shake.
+
+### 14.2 Differential test
+
+`node mutative.mjs test` runs 600 calls per candidate: 12 starting sizes from 0 to 33 000 and 50
+random operations each, drawn from `set`, `push`, `pop`, `swap`, map (through a draft for
+Immer/Mutative), `filter`, 100 sets in one draft, 100 separate sets, and an identity map through the
+draft. After every call it compares the result element by element with a plain-array reference and
+checks `get`, `foldl` and `eq`. It also checks that **the input is untouched**: the same length, the
+same element objects and the same element contents as before the call. All three Mutative
+configurations, Immer, cow, the trie and hybrid 1024 pass. The test also checks that default
+Mutative does not freeze and that the freeze configuration does. Two harness-only failures came up
+on the way, and neither can reach beni, which has no cyclic values. **A recipe that returns a new
+value runs it through `handleReturnValue`, a recursive walk with no cycle check that overflows the
+stack on cyclic records**, and the development build's `deepFreeze` throws `Forbids circular
+reference` on them. The freeze configuration therefore uses the production build and freezes its
+input through an empty recipe.
+
+### 14.3 Timings
+
+The four Mutative configurations:
+
+* **Mutative default** is `create` with no options, imported as a bundler resolves
+  `import { create } from 'mutative'`. That is the development ESM build, with no freeze.
+* **Mutative prod** keeps the default options but uses the production build (`dist/mutative.cjs.production.min.js`).
+  It is 10–20 % faster than the default on pure writes.
+* **Mutative fast** adds `mark: (v, t) => Array.isArray(v) ? undefined : t.mutable` to the production
+  build, with no freeze. The `mark` tells Mutative that elements are opaque values, which is exactly
+  beni's contract, so reading `d[i]` returns the element instead of drafting it. This is the fastest
+  honest configuration for any recipe that *reads* elements: it cuts `swap` by 1.8× and map-in-a-draft
+  by 3×. On blind writes (`set`, `push`, the batches) it is anywhere from 15 % faster to 45 % slower than
+  Mutative prod, because `mark` is consulted on every value the draft meets. The 45 % is the
+  100-separate-`set`s case. **Mutative prod and Mutative fast are the
+  fastest honest options.** Neither changes semantics for beni's use, and which of the two wins
+  depends on whether the recipe reads.
+* **Mutative freeze** is the production build with `enableAutoFreeze: true`, which is Immer parity.
+
+Immer is run as in §1: production build, auto-freeze on (its default). Reads and bulk operations
+(`get`, `map`, `filter`, `foldl`) of Immer and Mutative are cow's loops over the plain array they
+return. Mutative has no read API, so those rows measure the *array it produces*. The rows differ
+from cow only because a frozen array's reads are 3–6× slower in V8, as §0 item 5 found in Chrome.
+
+Method: as in the rest of the report. Each candidate is its own `node --expose-gc` process over its
+own esbuild IIFE, so its call sites are monomorphic. Every measurement has at least 25 ms of warm-up
+and 7 samples of at least 10 ms each, and a full GC runs before each operation. The processes were
+pinned to one core with `taskset -c 13` and run one after another. The whole batch ran **five
+times**, and each cell is the **median of the five round medians**. Mutative prod was added
+afterwards and run in five rounds of its own. Elements are `{k, o}` records, and the operations have
+§3's shapes. Each cell also gives, in brackets, the multiple
+of the mutable native array for the same operation and size. For the two "100 sets" rows that base is
+100 in-place writes.
+
+
+**n = 8**
+
+| op | native mut | cow (port) | trie (port) | hybrid 1024 | Immer | Mutative default | Mutative prod | Mutative fast | Mutative freeze |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| get | 0.8 ns | 0.8 ns (1.0×) | 2.0 ns (2.5×) | 0.8 ns (1.0×) | 4.8 ns (6.1×) | 0.8 ns (1.0×) | 0.8 ns (1.0×) | 0.8 ns (1.0×) | 4.9 ns (6.2×) |
+| set | 6.2 ns | 24 ns (3.8×) | 27 ns (4.4×) | 24 ns (3.8×) | 3.92 µs (630×) | 2.10 µs (338×) | 1.68 µs (271×) | 1.44 µs (232×) | 3.87 µs (623×) |
+| push | 8.4 ns | 24 ns (2.8×) | 47 ns (5.6×) | 24 ns (2.8×) | 6.17 µs (731×) | 3.33 µs (395×) | 3.37 µs (399×) | 3.44 µs (407×) | 4.38 µs (519×) |
+| pop | 5.8 ns | 27 ns (4.8×) | 33 ns (5.7×) | 28 ns (4.8×) | 5.51 µs (954×) | 2.58 µs (447×) | 2.50 µs (434×) | 2.26 µs (391×) | 3.86 µs (668×) |
+| swap | 5.5 ns | 22 ns (4.1×) | 49 ns (9.0×) | 22 ns (4.1×) | 4.11 µs (747×) | 7.07 µs (1 286×) | 5.88 µs (1 069×) | 3.01 µs (547×) | 7.23 µs (1 314×) |
+| map | 13 ns | 35 ns (2.7×) | 42 ns (3.2×) | 35 ns (2.7×) | 74 ns (5.7×) | 36 ns (2.7×) | 30 ns (2.3×) | 35 ns (2.7×) | 75 ns (5.8×) |
+| map in a draft | — | — | — | — | 28.3 µs (2 175×) | 36.8 µs (2 834×) | 24.3 µs (1 874×) | 10.6 µs (818×) | 28.0 µs (2 152×) |
+| filter | 34 ns | 34 ns (1.0×) | 56 ns (1.7×) | 34 ns (1.0×) | 65 ns (1.9×) | 30 ns (0.9×) | 29 ns (0.8×) | 34 ns (1.0×) | 65 ns (1.9×) |
+| foldl | 10 ns | 10 ns (1.0×) | 10 ns (1.0×) | 10.0 ns (1.0×) | 41 ns (4.1×) | 10 ns (1.0×) | 9.9 ns (1.0×) | 10 ns (1.0×) | 41 ns (4.1×) |
+| 100 sets, one draft ¹ | 127 ns | 101 ns (0.8×) | — | — | 42.3 µs (332×) | 43.3 µs (340×) | 43.0 µs (337×) | 51.9 µs (407×) | 44.5 µs (349×) |
+| 100 sets, one call each | — | 1.84 µs (14×) | 2.20 µs (17×) | 1.83 µs (14×) | 270 µs (2 115×) | 140 µs (1 098×) | 114 µs (892×) | 164 µs (1 287×) | 297 µs (2 331×) |
+
+**n = 1 000**
+
+| op | native mut | cow (port) | trie (port) | hybrid 1024 | Immer | Mutative default | Mutative prod | Mutative fast | Mutative freeze |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| get | 0.8 ns | 0.8 ns (1.0×) | 5.0 ns (6.3×) | 2.5 ns (3.1×) | 5.6 ns (7.0×) | 0.8 ns (1.0×) | 0.8 ns (1.0×) | 0.8 ns (1.0×) | 5.6 ns (7.0×) |
+| set | 7.3 ns | 265 ns (36×) | 63 ns (8.5×) | 267 ns (36×) | 88.4 µs (12 063×) | 2.15 µs (294×) | 1.91 µs (261×) | 1.93 µs (264×) | 28.8 µs (3 930×) |
+| push | 8.2 ns | 386 ns (47×) | 41 ns (5.0×) | 389 ns (48×) | 92.7 µs (11 323×) | 3.31 µs (405×) | 2.68 µs (327×) | 3.16 µs (386×) | 31.6 µs (3 862×) |
+| pop | 6.1 ns | 203 ns (33×) | 31 ns (5.1×) | 203 ns (33×) | 107 µs (17 651×) | 4.08 µs (672×) | 3.27 µs (538×) | 3.34 µs (550×) | 30.1 µs (4 958×) |
+| swap | 6.9 ns | 207 ns (30×) | 84 ns (12×) | 205 ns (30×) | 108 µs (15 527×) | 6.12 µs (880×) | 5.05 µs (726×) | 2.86 µs (412×) | 31.1 µs (4 477×) |
+| map | 1.21 µs | 2.87 µs (2.4×) | 2.73 µs (2.3×) | 2.90 µs (2.4×) | 8.20 µs (6.8×) | 3.11 µs (2.6×) | 3.02 µs (2.5×) | 3.15 µs (2.6×) | 8.21 µs (6.8×) |
+| map in a draft | — | — | — | — | 2.41 ms (1 990×) | 2.93 ms (2 421×) | 2.98 ms (2 463×) | 973 µs (804×) | 3.18 ms (2 631×) |
+| filter | 2.34 µs | 2.15 µs (0.9×) | 4.28 µs (1.8×) | 2.19 µs (0.9×) | 6.99 µs (3.0×) | 2.17 µs (0.9×) | 2.11 µs (0.9×) | 2.19 µs (0.9×) | 6.90 µs (2.9×) |
+| foldl | 960 ns | 964 ns (1.0×) | 1.21 µs (1.3×) | 980 ns (1.0×) | 4.90 µs (5.1×) | 967 ns (1.0×) | 967 ns (1.0×) | 1.00 µs (1.0×) | 4.93 µs (5.1×) |
+| 100 sets, one draft ¹ | 124 ns | 275 ns (2.2×) | — | — | 127 µs (1 027×) | 51.5 µs (415×) | 47.0 µs (379×) | 51.1 µs (411×) | 75.4 µs (607×) |
+| 100 sets, one call each | — | 25.4 µs (205×) | 4.70 µs (38×) | 21.8 µs (175×) | 8.62 ms (69 468×) | 170 µs (1 373×) | 142 µs (1 144×) | 184 µs (1 486×) | 2.80 ms (22 530×) |
+
+**n = 100 000**
+
+| op | native mut | cow (port) | trie (port) | hybrid 1024 | Immer | Mutative default | Mutative prod | Mutative fast | Mutative freeze |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| get | 1.6 ns | 1.6 ns (1.0×) | 13 ns (8.4×) | 12 ns (7.9×) | 7.3 ns (4.7×) | 1.7 ns (1.1×) | 1.6 ns (1.0×) | 1.7 ns (1.1×) | 7.4 ns (4.7×) |
+| set | 7.4 ns | 363 µs (48 817×) | 103 ns (14×) | 106 ns (14×) | 8.72 ms (1 172 539×) | 372 µs (50 081×) | 359 µs (48 306×) | 365 µs (49 086×) | 3.04 ms (408 822×) |
+| push | 6.8 ns | 405 µs (59 195×) | 73 ns (11×) | 70 ns (10×) | 9.43 ms (1 379 956×) | 1.01 ms (147 915×) | 991 µs (144 945×) | 1.05 ms (153 475×) | 3.89 ms (569 568×) |
+| pop | 6.0 ns | 368 µs (60 936×) | 31 ns (5.1×) | 32 ns (5.3×) | 10.5 ms (1 735 606×) | 338 µs (55 989×) | 316 µs (52 316×) | 324 µs (53 673×) | 3.05 ms (504 467×) |
+| swap | 7.0 ns | 367 µs (52 573×) | 106 ns (15×) | 104 ns (15×) | 10.6 ms (1 521 147×) | 339 µs (48 659×) | 317 µs (45 462×) | 320 µs (45 864×) | 3.10 ms (443 728×) |
+| map | 131 µs | 1.26 ms (9.7×) | 275 µs (2.1×) | 286 µs (2.2×) | 1.76 ms (13×) | 1.38 ms (11×) | 1.33 ms (10×) | 1.35 ms (10×) | 1.77 ms (14×) |
+| map in a draft | — | — | — | — | 439 ms (3 366×) | 463 ms (3 551×) | 444 ms (3 401×) | 99.5 ms (763×) | 459 ms (3 520×) |
+| filter | 683 µs | 703 µs (1.0×) | 788 µs (1.2×) | 1.10 ms (1.6×) | 1.07 ms (1.6×) | 594 µs (0.9×) | 573 µs (0.8×) | 595 µs (0.9×) | 1.06 ms (1.5×) |
+| foldl | 122 µs | 122 µs (1.0×) | 141 µs (1.2×) | 144 µs (1.2×) | 509 µs (4.2×) | 123 µs (1.0×) | 121 µs (1.0×) | 119 µs (1.0×) | 513 µs (4.2×) |
+| 100 sets, one draft ¹ | 133 ns | 350 µs (2 640×) | — | — | 9.01 ms (67 934×) | 424 µs (3 198×) | 415 µs (3 131×) | 412 µs (3 106×) | 2.99 ms (22 534×) |
+| 100 sets, one call each | — | 36.8 ms (277 828×) | 8.81 µs (66×) | 8.91 µs (67×) | 888 ms (6 698 341×) | 36.5 ms (275 566×) | 35.7 ms (269 457×) | 37.3 ms (281 523×) | 287 ms (2 166 667×) |
+
+
+¹ This row is 100 `set`s at 100 random indices (cycling over the 8 slots at n = 8) inside **one**
+`create`/`produce`, which is the use Mutative is designed for. For the other columns it means:
+native, 100 in-place writes; **cow, one copy followed by 100 writes into it**, which is the reference
+for what a batch reduces to when the compiler can prove the intermediate arrays local (§9's "local
+in-place building"). The trie and the hybrid have no batch form.
+
+**Noise.** The machine was shared: other sessions' `zig` builds ran during the batch, with a load
+average of 3–4.5 on 32 threads. Pinning kept each process on core 13 but could not keep other
+processes off it. Within one run, the median cell's IQR is 2.3 % of its median, but the
+90th-percentile cell's IQR is 59 %. Nearly all of those wide cells are Immer and Mutative writes,
+whose Proxy, closure and `WeakSet` allocation puts a varying number of scavenges into each 10 ms
+sample: Mutative's `set` at n = 8 ranged from 1.25 µs to 8.2 µs within one run. In one of the five
+rounds, the default-Mutative process was 3–6× slower on *every* cell, including plain `foldl` and
+`get` loops, which is contention, not Mutative. Taking the median of five rounds is what removes it.
+Between rounds, the IQR of a cell's five round medians is 3 % of its median for the median cell and
+18 % at the 90th percentile. The worst cells are the n = 8 Mutative writes and the hybrid's `set` at
+100 000 (49–125 %). **Nothing below rests on a ratio smaller than 2×**, except where a claim is
+explicitly about a small difference, such as prod against fast.
+
+What the tables say:
+
+1. **Mutative is copy-on-write with a proxy in front.** At n = 100 000, one `set` costs **372 µs**
+   against cow's 363 µs, and `pop` and `swap` cost the same as cow's. The cost is the same O(n)
+   `concat` copy, GC-bound under Node as §4.4 explains. The trie does the same `set` in 103 ns,
+   **3 600× less**. `push` is worse than cow (1.0 ms against 405 µs), because a `push` through the
+   draft grows the freshly copied array, which then reallocates.
+2. **At UI sizes, the proxy is the cost.** At n = 1 000, a single write costs 1.9–6.1 µs, which is
+   **7–30× cow** (203–386 ns) and **30–130× the trie**. At n = 8, where cow's write is 22–28 ns, it
+   costs 1.4–7 µs, 60–320× cow. Each `create` pays about 1 µs of fixed cost before it copies
+   anything: a tight loop of `create` with one assignment runs at 1.0 µs per call on a warm,
+   monomorphic site. Recipes that *read* an element pay again for drafting it: default `swap` costs
+   6.1 µs against `set`'s 2.2 µs.
+3. **Batching helps only against Mutative's own single writes.** 100 sets in one draft cost
+   **47–52 µs** at n = 1 000, 3× less than 100 separate `create` calls (142–184 µs). They still cost
+   **2× cow's 100 separate full copies (25 µs)**, **10× the trie's 100 path copies (4.7 µs)**, and
+   **190× a single copy followed by 100 writes (275 ns)**. The per-write trap costs about 0.45 µs
+   whatever n is: 43 µs at n = 8, and about 45 µs of the 47 µs at n = 1 000. So batching wins over
+   cow only once one array copy costs more than the traps, which on Node is from about 2 000
+   elements up (interpolated between the measured sizes). At n = 100 000, the batch costs 415–424 µs, 87× less than cow's 100 copies (36.8 ms) but **47×
+   the trie's 8.8 µs**.
+4. **At n = 1 000 and above it is 20–40× faster than Immer, mostly because it does not freeze.**
+   Default Mutative against Immer, both with their own defaults: `set` at n = 1 000 costs 2.2 µs
+   against 88 µs, and at n = 100 000, 372 µs against 8.7 ms. At n = 8 the two are within 2× of each
+   other, and Immer's `swap` is the faster one. With freezing turned on (Mutative freeze), Mutative is
+   3× faster than Immer at n = 1 000 and 100 000 on single writes, and the same at n = 8. The frozen
+   output also makes every later read slower: `get` 5.6 ns against 0.8 ns, `foldl` 5.1× native.
+   §0 item 5 said the same in Chrome.
+5. **Map through a draft is the worst case.** Assigning each element through the draft costs 2.9 ms at n = 1 000 (2 400× an in-place map, 1 000× cow's `map`) and
+   463 ms at n = 100 000. With `mark`, it is 3× less, but still 340× cow. Reads and bulk operations on
+   the *result* are cow's (`get`, `filter`, `foldl` at 1.0× native), because the result is a plain
+   unfrozen array.
+
+### 14.4 Bundle size
+
+Measured by `node mutative.mjs size`: esbuild 0.28, `--minify`, tree-shaken, `platform: browser`,
+`NODE_ENV=production`, brotli at quality 11. The "typical set" is §6's list without `fromCons` and
+`toCons`, because the Mutative adapter has neither. Immer and cow were re-measured the same way, so
+the three rows are comparable with one another. §6's figures used a larger set, which is why its
+Immer row reads 4 389.
+
+| bundle | min | gzip | **brotli** |
+|---|--:|--:|--:|
+| `create` from `'mutative'` (resolves to the ESM development build; tree-shaken) | 19 173 | 6 382 | **5 782** |
+| `create` from the production build (CommonJS, not tree-shaken) | 20 458 | 6 966 | **6 315** |
+| `create` built from source with `__DEV__ = false` (a lower bound no published file reaches) | 15 653 | 5 390 | **4 929** |
+| `produce` from `'immer'` (production) | 9 284 | 3 809 | **3 511** |
+| typical set: Mutative (ESM) + cow reads | 20 042 | 6 727 | **6 092** |
+| typical set: Mutative (production) + cow reads | 21 368 | 7 291 | **6 613** |
+| typical set: Immer + cow reads | 10 099 | 4 104 | **3 785** |
+| typical set: cow (port) | 966 | 410 | **382** |
+
+Next to §6: **Mutative's `create` alone is 5.8 KB brotli.** That is 15× the cow port's whole typical
+set, 4× the hybrid's measured upper bound (1.47 KB), 1.7× Immer, and more than funkia's 4.4 KB. A
+bundle cannot get the production build and tree-shaking at once, because the published ESM is the
+development build. Even the source built with `__DEV__` off is 4.9 KB, because `create` reaches the
+`Map`/`Set` draft handlers and patch generation whether or not a program uses them.
+
+### 14.5 Field identity
+
+`node mutative.mjs identity`, at 100 elements (§7 showed the answers do not depend on size):
+
+| candidate | `set` of the identical value | `swap i i` | map in a draft, identity function | `create`, empty recipe | `create`, reads only | `create`, `d[i] = d[i]` | `create`, `push` then `pop` | ints, `d[i] =` same int | untouched elements |
+|---|---|---|---|---|---|---|---|---|---|
+| cow / trie / hybrid (ports) | **same** | **same** | n/a | — | — | — | — | — | same |
+| Immer | same | same | same | — | — | — | — | — | same |
+| Mutative (all four configurations) | **same** | **same** | **same** | **same** | **same** | **same** | new | **same** | same |
+
+**Yes on both counts.** A `create` that changes nothing returns the base object itself, and so does
+a `set` of an identical value (`Object.is`, so `NaN` and `-0` are handled). That holds even when the
+recipe read elements and so paid for a copy, because the result is chosen by the `operated` flag,
+not by whether a copy exists. A net no-op that did write, such as a `push` followed by a `pop`,
+returns a new array with equal contents. The ports behave the same way, and Immer matches. Mutative
+therefore meets W27's container identity exactly as well as the ports do, and no better.
+
+### 14.6 Reproducing
+
+`bench/arrays/` is the first part of this report's harness to live in the repository. It holds
+`mutative.mjs` (the one script, with adapters, harness, test, identity, size and tables), `ports/`
+(the cow, trie and hybrid ports of §1, copied unchanged from the scratch directory of §13),
+`package.json` with `package-lock.json` (`mutative` 1.3.0, `immer` 11.1.18, `esbuild` 0.28.2), and
+`results/node.jsonl`, the raw cells of the five rounds plus the five rounds of Mutative prod.
+
+```sh
+cd bench/arrays && npm ci
+node mutative.mjs test && node mutative.mjs identity && node mutative.mjs size
+for r in 1 2 3 4 5; do node mutative.mjs bench 13; done      # core 13, ~45 s per round
+node mutative.mjs tables
+```
+
+### 14.7 Verdict for `core/Array`
+
+**Mutative is not a candidate for `core/Array`, and it changes nothing in §12.** It is not a data
+structure. It is an update API over plain arrays, and on arrays it is exactly the cow design of §1:
+it makes one flat O(n) copy per `create` and shares nothing below the whole array. It adds about
+1 µs of proxy set-up per call and about 0.45 µs per write through the draft. So it keeps cow's
+large-array write cliff (372 µs per `set` at 100 000 on Node, 3 600× the trie). It is 7–30× slower
+than cow at UI sizes. It costs 5–6 KB brotli against the hybrid's ~1.5 KB. Batching, its intended
+use, loses to the plain cow port's 100 separate copies at 1 000 elements and to the trie at every
+size. Its good properties are ones the ports already have: no-op identity, no freezing by default,
+and plain-array reads at native speed.
+
+The one idea in it worth keeping is already in this report. **"Many writes, one copy"** is what
+makes Mutative's batch cheaper than its single writes, and the compiler can get that for free
+without a proxy: 100 writes after one copy cost 275 ns at n = 1 000. That is §9's local in-place
+building, and it applies to `Array` exactly as it does to an array-backed `List`. It would soften
+cow's cliff for loops that build or update an array locally. It does nothing for a single `set` on
+a large array that other code shares, and that is the case the hybrid's trie exists for.
