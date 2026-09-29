@@ -1,0 +1,34 @@
+-- `markup_restructured` (boundary.md §9.4.7, backend.md §15.6): markup the
+-- page's HTML parser would rebuild into another tree than the one written.
+-- The `ssr` lowering refuses it at the node, one diagnostic per root, and
+-- nothing is written: a `<div>` in a `<p>`, which the parser closes first
+-- (15:9); a row straight in a `<table>`, which it moves into a `tbody` of
+-- its own (20:13); and a `<style>` whose text holds its own end tag, which
+-- would close it early — the reference is decoded before the lowering sees
+-- it (25:17).
+import Html exposing (Html)
+import Node
+
+
+para : Html msg
+para =
+    <p><div>x</div></p>
+
+
+table : Html msg
+table =
+    <table><tr><td>x</td></tr></table>
+
+
+style : Html msg
+style =
+    <style>a { } &lt;/STYLE&gt;</style>
+
+
+main : Node.Program
+main =
+    let
+        _ =
+            [ para, table, style ]
+    in
+    Node.print "unreachable"

@@ -1,0 +1,65 @@
+-- Markup text as the page shows it, through the `ssr` lowering
+-- (language.md §11.4, backend.md §15.6). A text run collapses its
+-- whitespace — every Unicode `White_Space` character, a no-break space
+-- typed as one (U+00A0) and an em space (U+2003) included — and only then
+-- decodes character references, so `&nbsp;` survives as a no-break space
+-- while a typed one collapsed; named references with and without `;`, the
+-- longest name winning (`&notit;` is `¬it;`), decimal, hexadecimal, `&#0;`
+-- and the windows-1252 range (`&#x80;` is €); `AT&T` and `&nosuch;` are no
+-- reference and stay as written. The decoded text is re-escaped as the
+-- page's parser reads it back (`&` and `<`), so the rendered HTML says what
+-- was written. Lines that hold only whitespace vanish; a space between two
+-- elements on one line stays. A hole's string is never decoded. A
+-- `<style>`'s content is raw text, which the parser does not decode, so it
+-- is written as it is — but for its own end tag in a hole, written `<\/`
+-- so it cannot close the element; a `<textarea>`'s is decoded, so it is
+-- escaped as text is.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+references : Html msg
+references =
+    <p>&copy; &copy x &notit; &#169; &#xA9; &#x80; &#0; AT&T &nosuch; &lt;b&gt; &amp;amp;</p>
+
+
+spaces : Html msg
+spaces =
+    <p>a  b   c d e&nbsp;f</p>
+
+
+lines : Html msg
+lines =
+    <li>
+        <b>x</b>
+        done
+        now
+    </li>
+
+
+between : Html msg
+between =
+    <p><b>a</b> <i>b</i><i>c</i></p>
+
+
+hole : Html msg
+hole =
+    <p>{"&amp; < >"}</p>
+
+
+rawText : Html msg
+rawText =
+    <div><style>a &gt; b &amp; c{"{ content: \"</style>\" }"}</style><textarea>{"<b>&"} &amp; more</textarea></div>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render references
+        , Ssr.render spaces
+        , Ssr.render lines
+        , Ssr.render between
+        , Ssr.render hole
+        , Ssr.render rawText
+        ]

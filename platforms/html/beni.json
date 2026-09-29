@@ -1,5 +1,6 @@
 {
   "platform": true,
   "name": "html",
-  "markup": { "vocabulary": "Html", "type": "Html.Html" }
+  "markup": { "vocabulary": "Html", "type": "Html.Html" },
+  "zig": "zig/root.zig"
 }

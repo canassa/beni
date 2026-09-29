@@ -1,0 +1,11 @@
+-- `boundary.md` §9.4.5's runtime checks: a markup primitive is implemented
+-- by the build's markup runtime, one export of its name. The platform
+-- `views` names `ssr` with a runtime of its own that implements `html`'s
+-- `text` and not its `map`: `foreign_export_mismatch` at the primitive's
+-- declaration in `html`, naming the runtime, and the build writes nothing.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"

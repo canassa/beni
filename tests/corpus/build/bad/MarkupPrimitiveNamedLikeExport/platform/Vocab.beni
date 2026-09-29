@@ -1,0 +1,4 @@
+pub foreign type Markup msg
+
+
+pub markup escape : String -> Markup msg

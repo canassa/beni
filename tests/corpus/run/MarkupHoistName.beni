@@ -1,0 +1,21 @@
+-- A hoisted kind is named `<Module>$k<instruction>` (backend.md §15.2), which
+-- a declaration of this module called `k<instruction>` is too: the kind
+-- takes a name of its own instead, and both are what they are.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+k5 : String
+k5 =
+    "declared"
+
+
+view : Html msg
+view =
+    <p>hoisted</p>
+
+
+main : Node.Program
+main =
+    Node.printLines [ k5, Ssr.render view ]

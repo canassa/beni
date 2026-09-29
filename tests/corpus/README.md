@@ -40,6 +40,11 @@ need a build, `check --platform` having deliberately no opinion about
 `main`. See `build/bad/README.md`, and `plans/coverage-audit.md` Part A for
 the three that are still blackbox-only.
 
+A `run/` project may carry a `platform/` directory the same way, and is
+then built with `--platform=platform` in a world of its own: a test platform
+layered on `node` is how a program observes what only a platform may write,
+such as `run/MarkupFieldIdentity`'s `refEq` (`backend.md` §15.8).
+
 `build/bad-release/` is that kind again with `--release` added and
 `--allow-debug` left off: a fixture there must build **clean** without the
 flag and fail with it, which is the only way to state `debug_in_release` —

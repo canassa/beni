@@ -40,6 +40,8 @@ build_test.test.a build with cross-module evidence is byte-identical at every --
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 9a4d98de8d639c5c25c9435e4e08d7fc69c1c4820c3e55ffcd78d98132680389
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 5341ed78a3943ed96e9d46c9d4d2161c05dc6ca4b3fef888bab840e6978b43dc
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 3d0b9092b14739ddc6f755f7dddf731b92a008c2cc41110f37eec5740faff2c9
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 23966db78deb36c2b22a6a76b0cac09cf6e738e9d0c50869c4631e7ee04d42e0
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 53aa13ecaed8e12622df0fcae2681c0fc1c765b3817dcf940b8853069fc53039
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 91832db6c1f189d050f0c4e385649249657ac0e2c65e48dde92bab46a100e031
 build_test.test.a non-zero exit code from the platform reaches the process #0 29dd3c43723850ae54ffd37e53541dbc881e75f5ffbbdc1d2d2bcf40e9c7a2a1
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 46e0f277ed77147797a40c745097d0eb30c2eac4f17991748e2dc4555144c844
@@ -50,6 +52,8 @@ build_test.test.a saturated n-ary call emits a direct JavaScript call #0 5ad1854
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 a90d282e6ad76212dc8d05485eb461abfce4a329f3438ba0c3b0a2611febb8b1
 build_test.test.a stale path that is the same file as a written one under case folding is not removed #0 55feb729eeea90f4bd9b12e22d041a43379a72173c33f9b1a4d9ad7875f512e2
 build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 e743b7da76425f9b57850d8f902d1751a95d52f07da638dc476b8e0e2b1af739
+build_test.test.a view formatted renders the page the view rendered #0 64accb0044622dd99e978a581edec7023f65ec5450240e6195e6b5aa06c00d88
+build_test.test.a view formatted renders the page the view rendered #1 a8ab5533a80f63cc625181d488a793979cb32e656680d7444b8f7687f720ee5c
 build_test.test.an unannotated pub function constant with a constraint builds and runs #0 92cfe9941cda65ab6860df69ebc1dec20f7f2ef243a7d1cb52a2e1c5fd17fe4e
 build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 3dbe2325aac68d296309548550f5e5f36b6b26217d391e51db55b5797f2ed3fa
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 586e52a841ee599be7af26dc3fb160800b031b26172141d6d5762b8a0353fdfc
@@ -71,6 +75,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 c53a3792a0e4c1a8ab03bf4308cd598958a507d614583f61076dfe7b89aa7ea1
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 de246fea97125d07b83a8d82d421d1c8b501e97dc07149107254d68ca79b6100
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 752fb6b7381011005def0cd6227935ad1c97318aa5fa914e41219b2509d1dde2
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #0 fac78131e1535214f9a64d28ba2ca7a85b8a036e8229ff0c857e827c982c4d9c
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #1 fce975dc2a6b30f769cf5dfb89b3d47350a4c46471132bd899a3f508aa3b0330
 cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 9d5d6427487a0d759642ae33a074b4c06ac893f391e3dc3bbc3ef784f26afc12
 cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 09ff373dd44a92b2dc46f761b0b963d06fccf9b6d71487610f38ef90cc4b4dbb
 cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 fc9ec0d666cfc6d1a503841d159d967d98c681504d7b70bca018de9e5943cf9e

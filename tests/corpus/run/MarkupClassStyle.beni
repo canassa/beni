@@ -1,0 +1,37 @@
+-- `class` and `style` in both forms (language.md §11.19), through `ssr`
+-- (backend.md §15.6). A list written in place whose entries are all
+-- constants is joined when the view is compiled; one with a dynamic entry,
+-- and a list held in a variable, are joined by the runtime — and every way
+-- gives the same text: the names whose flag is `True`, a name holding
+-- whitespace being several, each once, in first-occurrence order; for a
+-- style, each property once in first-occurrence order with its last value,
+-- an empty last value removing it. Both are escaped as any attribute.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+view : Bool, String -> Html msg
+view selected color =
+    <div>
+        <p class={[ ( "row", True ), ( "gone", False ), ( "a b", True ), ( "row", True ) ]}>constant</p>
+        <p class={[ ( "row", True ), ( "danger", selected ), ( "a  row", selected ) ]}>dynamic</p>
+        <p class={classes selected}>variable</p>
+        <p class="plain &amp; simple">string</p>
+        <p style={[ ( "color", "red" ), ( "margin", "0" ), ( "color", "blue" ), ( "gap", "1px" ), ( "gap", "" ) ]}>constant</p>
+        <p style={[ ( "color", color ), ( "--gap", "2px" ) ]}>dynamic</p>
+        <p style="color: red">string</p>
+    </div>
+
+
+classes : Bool -> List ( String, Bool )
+classes on =
+    [ ( "x", on ), ( "y\"<", True ) ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view True "green")
+        , Ssr.render (view False "")
+        ]

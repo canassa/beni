@@ -1,0 +1,7 @@
+1: "first"
+2: "second"
+3: "third"
+4: "fourth"
+<p title="first">second<b id="third">fourth</b></p>
+<div>Hello, <b>world</b>&lt;escaped &amp; text><button>1</button><ul><li>on</li></ul><ul><li>one</li><li>two</li><li>boxed</li></ul><ul><li>root<ul><li>a</li><li>b<ul><li>c</li></ul></li></ul></li></ul></div>
+<div>Hello, <b>world</b>&lt;escaped &amp; text><button>1</button><ul><li>off</li></ul><ul><li>one</li><li>two</li><li>boxed</li></ul><ul><li>root<ul><li>a</li><li>b<ul><li>c</li></ul></li></ul></li></ul></div>

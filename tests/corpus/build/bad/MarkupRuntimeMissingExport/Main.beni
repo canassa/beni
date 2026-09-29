@@ -1,0 +1,12 @@
+-- `boundary.md` §9.4.5's runtime checks: the platform `views` layers on
+-- `node` and names the `ssr` lowering with a markup runtime of its own,
+-- which must export exactly what `ssr` declares and the vocabulary's markup
+-- primitives. It lacks `escape`: `foreign_export_mismatch` against the
+-- runtime file, whether or not the program writes markup, and the build
+-- writes nothing.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"

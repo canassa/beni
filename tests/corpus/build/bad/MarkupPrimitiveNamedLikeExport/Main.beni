@@ -1,0 +1,12 @@
+-- `boundary.md` §9.4.5: a markup primitive is the markup runtime's export
+-- of its name, beside the lowering's own exports, so a primitive named like
+-- one of them would be two exports of one name. The platform `views`
+-- declares a vocabulary whose primitive is `escape`, which `ssr` imports
+-- from its runtime too: `duplicate_declaration` at the primitive, and the
+-- build writes nothing.
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

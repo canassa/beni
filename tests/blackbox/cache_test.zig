@@ -3620,6 +3620,74 @@ fn runEditStep(case: EditCase, from: usize, to: usize) !void {
     if (case.main != null and warm.result.exit_code == 0) try expectSameTree(&w, arena, "cold", "warm");
 }
 
+test "a warm build of a markup program after a view's markup is edited writes what a cold build writes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The markup a lowering compiles is read from the checked record's
+    // markup section and the vocabulary's interface rows
+    // (`checker-v2.md` §25.7–§25.8), both of which a warm build loads from
+    // the cache: a warm build that lowered markup from anything the cache
+    // does not carry would write another page than a cold one. The edit is
+    // to `View`'s markup alone, so `Main` — which calls the component — is a
+    // hit and only `View` is checked again.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const view =
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub card : { title : String, items : List String } -> Html msg
+        \\card props =
+        \\    <section class={[ ( "card", True ), ( "empty", props.items == [] ) ]}>
+        \\        <h2>{props.title}</h2>
+        \\        <ul><For each={props.items}>{\item -> <li>{item}</li>}</For></ul>
+        \\    </section>
+        \\
+    ;
+    try w.write("View.beni", view);
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import Ssr
+        \\import View
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (Ssr.render (<View.card title="Hi" items={[ "a", "b" ]} />))
+        \\
+    );
+    const first = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=first", "--cache-dir=cache", "--jobs=1", "Main.beni", "View.beni" }, "first.json");
+    try testing.expectEqual(@as(u8, 0), first.result.exit_code);
+    try w.expectProgram("first/_main.mjs", .{ .stdout = "<section class=\"card\"><h2>Hi</h2><ul><li>a</li><li>b</li></ul></section>\n" });
+    try w.write("View.beni", try std.mem.replaceOwned(u8, arena, view, "<li>{item}</li>", "<li class=\"item\">{item}!</li>"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const warm = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=warm", "--cache-dir=cache", "--jobs=1", "Main.beni", "View.beni" }, "warm.json");
+    const cold = try w.runWith(&.{ "build", "--platform=node", "--out=cold", "--no-cache", "--jobs=1", "Main.beni", "View.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    try testing.expectEqualStrings(cold.stderr, warm.result.stderr);
+    // Only `View` is checked again: editing markup moves no interface.
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try testing.expect(warm.counters.hits > 0);
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "<section class=\"card\"><h2>Hi</h2><ul><li class=\"item\">a!</li><li class=\"item\">b!</li></ul></section>\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectSameTree(&w, arena, "cold", "warm");
+}
+
 test "a warm rebuild back to a version the cache has seen checks nothing, derives nothing, and writes what it wrote" {
     // Version 0 of `M` cold, version 1 warm, then version 0 again over the
     // same cache: every entry version 0 wrote is still there, so nothing is

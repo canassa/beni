@@ -90,6 +90,8 @@ const Sibling = @import("Sibling.zig");
 const Manifest = @import("Manifest.zig");
 const OutputRecord = @import("OutputRecord.zig");
 const prelude = @import("../bir/prelude.zig");
+const beni_markup = @import("beni_markup");
+const Interface = @import("../resolve/Interface.zig");
 
 const Emit = @This();
 
@@ -148,11 +150,25 @@ pub const Platform = struct {
     /// the package that names it; null when no package names one.
     lowering: ?[]const u8 = null,
     lowering_root: []const u8 = "",
+    /// The chain's `"markup".runtime`, relative to `lowering_root` — the
+    /// same package's, `platform.resolveChain` sees to that — and the
+    /// output directory of that package (`boundary.md` §9.2).
+    markup_runtime: ?[]const u8 = null,
+    markup_runtime_dir: []const u8 = platform_dir,
 };
 
 /// The markup lowerings compiled into this binary (`boundary.md` §9.5),
-/// sorted by name. None yet: the first arrives with the lowering interface.
-pub const lowerings = [_][]const u8{};
+/// sorted by name: the registry `build.zig` generates from every platform's
+/// Zig module.
+pub const lowerings: []const beni_markup.Lowering = @import("markup_lowerings").all;
+
+/// The lowering this binary has under `name`, or null.
+pub fn findLowering(name: []const u8) ?*const beni_markup.Lowering {
+    for (lowerings) |*l| {
+        if (std.mem.eql(u8, l.name, name)) return l;
+    }
+    return null;
+}
 
 /// The entry file a platform gets when its manifest does not name one
 /// (`backend.md` §2, rule 1; `boundary.md` §5.2).
@@ -264,6 +280,7 @@ pub fn run(
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
+    try e.checkMarkupRuntime();
     // The checker checks a schema's endpoint types and records the resolved
     // plan, but its parse and print runners are not generated yet.
     // Refuse here, before entry discovery and before a pending output tree
@@ -355,6 +372,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
+    try e.checkMarkupRuntime();
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
@@ -381,6 +399,12 @@ const Emitter = struct {
     /// builds on the way to its bytes outlives it, so emit's working
     /// memory is one module's, not the whole build's.
     module_arena: Arena = .init(std.heap.page_allocator),
+    /// Whether a module written imports the markup runtime, which the
+    /// build then copies (`backend.md` §15.1).
+    uses_markup_runtime: bool = false,
+    /// The program start data every module's markup lowering contributed
+    /// (`boundary.md` §9.4.5), in module order. Scratch-owned.
+    start: std.ArrayList(Lower.StartPair) = .empty,
     files_written: u32 = 0,
     bytes_written: u64 = 0,
 
@@ -439,8 +463,11 @@ const Emitter = struct {
     /// --platform` as by `build` — against the manifest that names it.
     fn checkLowering(e: *Emitter) !void {
         const name = e.options.platform.lowering orelse return;
-        for (lowerings) |known| {
-            if (std.mem.eql(u8, known, name)) return;
+        if (findLowering(name) != null) return;
+        var known: std.ArrayList(u8) = .empty;
+        for (lowerings, 0..) |l, i| {
+            if (i != 0) try known.appendSlice(e.scratch, ", ");
+            try known.print(e.scratch, "`{s}`", .{l.name});
         }
         try e.reportInFile(
             .unknown_markup_lowering,
@@ -448,9 +475,9 @@ const Emitter = struct {
             \\This platform names the markup lowering `{s}`, which this beni does not have.
             \\
             \\A markup lowering is Zig compiled into the compiler (`docs/design/boundary.md`
-            \\§9.5), and {s}.
+            \\§9.5), and this build of beni has {s}.
         ,
-            .{ name, if (lowerings.len == 0) "this build of beni has none" else "this build of beni has others" },
+            .{ name, if (lowerings.len == 0) "none" else known.items },
         );
     }
 
@@ -920,6 +947,205 @@ const Emitter = struct {
             \\{d} declared, {d} in all. `core/List.js` writes a 2-ary `eq` with one
             \\constraint as `(m0, xs, ys)` for exactly this reason.
         , .{ entry.name, entry.evidence, entry.params.?, entry.evidence + entry.params.? });
+    }
+
+    // ---- boundary.md §9.4.5: the markup runtime's exports ----------------
+
+    /// The markup runtime's source path, when the chain names a lowering
+    /// this binary has and a runtime for it.
+    fn markupRuntimePath(e: *Emitter) !?[]const u8 {
+        const name = e.options.platform.lowering orelse return null;
+        if (findLowering(name) == null) return null;
+        const rel = e.options.platform.markup_runtime orelse return null;
+        return try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, rel });
+    }
+
+    /// Whether the markup runtime is also the program runtime (§9.2): one
+    /// file, copied once, whose exports include `run`.
+    fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
+        const p = e.options.platform;
+        const markup = p.markup_runtime orelse return false;
+        const program = p.runtime orelse return false;
+        return std.mem.eql(u8, markup, program) and std.mem.eql(u8, p.lowering_root, p.runtime_root);
+    }
+
+    /// One export the markup runtime must have: a lowering's well-known
+    /// one, a markup primitive of the vocabulary (with the declaration it
+    /// answers to), or `run`.
+    const Expected = struct {
+        name: []const u8,
+        arity: u32,
+        primitive: ?struct { file: SourceStore.Index, token: u32, declared: Declared } = null,
+    };
+
+    /// `boundary.md` §9.4.5: the markup runtime is held to §4's checks 2, 3
+    /// and 4 against the union of the lowering's declared exports, one per
+    /// markup primitive of the vocabulary, and `run` when it is also the
+    /// program runtime — as a sibling is against its module's `foreign`s.
+    fn checkMarkupRuntime(e: *Emitter) !void {
+        const path = try e.markupRuntimePath() orelse return;
+        const lowering = findLowering(e.options.platform.lowering.?).?;
+        var expected: std.ArrayList(Expected) = .empty;
+        for (lowering.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
+        if (e.markupRuntimeIsProgramRuntime()) try expected.append(e.scratch, .{ .name = "run", .arity = 1 });
+        if (e.graph().markup.vocabulary) |vocabulary| {
+            const b = e.bir(vocabulary);
+            const file = e.graph().moduleFile(vocabulary);
+            const dispatch = e.dispatchOf(vocabulary);
+            for (b.decls, 0..) |d, index| {
+                if (d.kind != .vocab_markup) continue;
+                const name = e.session.interner.slice(b.symbol(d.name));
+                // A primitive named like one of the lowering's own exports
+                // would be two exports of one name.
+                var clash = false;
+                for (lowering.runtime) |r| clash = clash or std.mem.eql(u8, r.name, name);
+                if (clash) {
+                    try e.report(
+                        .duplicate_declaration,
+                        file,
+                        d.name_token,
+                        \\The markup primitive `{s}` has the name of an export the markup lowering `{s}`
+                        \\imports from its runtime.
+                        \\
+                        \\A markup primitive is the markup runtime's export of its name, beside the
+                        \\lowering's own exports (`docs/design/boundary.md` §9.4.5), so the two would be
+                        \\one export. Rename the primitive.
+                    ,
+                        .{ name, lowering.name },
+                    );
+                    continue;
+                }
+                const use = Convention.ofDecl(dispatch, b, @intCast(index));
+                try expected.append(e.scratch, .{
+                    .name = name,
+                    .arity = use.evidence + use.arity,
+                    .primitive = .{ .file = file, .token = d.name_token, .declared = .{
+                        .name = name,
+                        .token = d.name_token,
+                        .evidence = use.evidence,
+                        .params = if (d.annotation == .none) null else use.arity,
+                        .is_function = use.arity != 0,
+                    } },
+                });
+            }
+        }
+
+        const bytes = e.readAsset(path) orelse {
+            try e.reportInFile(
+                .foreign_sibling_missing,
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                \\I cannot find the markup runtime `{s}`.
+                \\
+                \\A platform that names a markup lowering names the JavaScript file its emitted
+                \\code imports in its manifest's `"markup"` `"runtime"`
+                \\(`docs/design/boundary.md` §9.2).
+            ,
+                .{path},
+            );
+            return;
+        };
+        const found = try Sibling.scan(e.scratch, bytes);
+        for (expected.items) |want| {
+            const got = find(found.exports, want.name) orelse {
+                if (want.primitive) |p| {
+                    try e.report(
+                        .foreign_export_mismatch,
+                        p.file,
+                        p.token,
+                        \\The markup runtime `{s}` does not export `{s}`.
+                        \\
+                        \\A markup primitive is implemented by the build's markup runtime, one export of
+                        \\its name (`docs/design/boundary.md` §9.3, §9.4.5). Add
+                        \\`export const {s} = …;` to it.
+                    ,
+                        .{ path, want.name, want.name },
+                    );
+                } else try e.reportInFile(
+                    .foreign_export_mismatch,
+                    .{ .path = path, .source = bytes },
+                    \\This markup runtime does not export `{s}`, which the markup lowering `{s}` imports.
+                    \\
+                    \\A markup runtime exports exactly what its lowering declares, the vocabulary's
+                    \\markup primitives and, when it is the program runtime too, `run`
+                    \\(`docs/design/boundary.md` §9.4.5). Add `export const {s} = …;` taking {d}
+                    \\parameter{s}.
+                ,
+                    .{ want.name, lowering.name, want.name, want.arity, plural(want.arity) },
+                );
+                continue;
+            };
+            if (want.primitive) |p| {
+                try e.checkArity(p.file, path, bytes, p.declared, got);
+                continue;
+            }
+            const written: ?u32 = switch (got.arity) {
+                .function => |n| n,
+                else => null,
+            };
+            if (written == want.arity) continue;
+            try e.reportInFile(
+                .foreign_arity_mismatch,
+                inSibling(path, bytes, got.offset, @intCast(want.name.len)),
+                \\`{s}` is written {s}, and the markup lowering `{s}` calls it with {d} argument{s}.
+                \\
+                \\Every call emitted code makes is saturated (`docs/design/backend.md` §6), so a
+                \\miscounted export takes an argument that never arrives
+                \\(`docs/design/boundary.md` §4, check 4; §9.4.5). Write its parameter list at the
+                \\export: {d} parameter{s}.
+            ,
+                .{
+                    want.name,
+                    if (written) |n| try std.fmt.allocPrint(e.scratch, "with {d} parameter{s}", .{ n, plural(n) }) else "so that its parameters cannot be counted",
+                    lowering.name,
+                    want.arity,
+                    plural(want.arity),
+                    want.arity,
+                    plural(want.arity),
+                },
+            );
+        }
+        for (found.exports) |got| {
+            var known = false;
+            for (expected.items) |want| known = known or std.mem.eql(u8, want.name, got.name);
+            if (known) continue;
+            try e.reportInFile(
+                .foreign_export_mismatch,
+                inSibling(path, bytes, got.offset, @intCast(got.name.len)),
+                \\This markup runtime exports `{s}`, which neither the markup lowering `{s}` nor the
+                \\vocabulary declares.
+                \\
+                \\A markup runtime exports exactly the lowering's declared exports and one per
+                \\markup primitive (`docs/design/boundary.md` §9.4.5), so that every export is a
+                \\node elimination can see. Stop exporting it, or declare the primitive.
+            ,
+                .{ got.name, lowering.name },
+            );
+        }
+        for (found.unbound) |reference| {
+            try e.reportInFile(
+                .foreign_unbound_reference,
+                inSibling(path, bytes, reference.offset, @intCast(reference.text.len)),
+                \\This file uses `{s}`, which it never imports.
+                \\
+                \\A markup runtime's references are covered by its own `import` statements, as a
+                \\sibling's are (`docs/design/boundary.md` §4, check 3; §9.4.5).
+            ,
+                .{reference.text},
+            );
+        }
+        for (found.relative_imports) |specifier| {
+            try e.reportInFile(
+                .not_implemented,
+                inSibling(path, bytes, specifier.offset, @intCast(specifier.text.len)),
+                \\This file imports {s}, and I cannot relocate that yet.
+                \\
+                \\A markup runtime is renamed as it is copied into the output, as a sibling is
+                \\(`docs/design/backend.md` §2), so a specifier that names a file would name
+                \\nothing. Import a package, or inline the helper.
+            ,
+                .{specifier.text},
+            );
+        }
     }
 
     fn dispatchOf(e: *Emitter, m: Graph.Index) *const Dispatch {
@@ -1418,13 +1644,21 @@ const Emitter = struct {
         var by_depth: std.ArrayList(?[]const []const u8) = .empty;
         // Whether any module written imports the one engine.
         var uses_runtime = false;
+        // The build's markup lowering, with what every module's lowering of
+        // its markup needs (`boundary.md` §9.4).
+        const markup_output = try e.markupRuntimeOutputPath();
+        const lowering: ?*const beni_markup.Lowering = if (e.options.platform.lowering) |name| findLowering(name) else null;
+        const vocabulary: ?*const Interface = if (e.graph().markup.vocabulary) |v|
+            (if (v.int() < e.session.resolution.interfaces.len) &e.session.resolution.interfaces[v.int()] else null)
+        else
+            null;
 
         for (0..count) |i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             // §5: a module with nothing reachable is not written at all,
             // and nothing imports it, because imports are use-driven and a
             // use is an edge.
-            if (!e.live.of(m).any()) continue;
+            if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
             const file = e.graph().moduleFile(m);
             const specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
 
@@ -1449,11 +1683,17 @@ const Emitter = struct {
                 .entry_decl = e.entryDeclOf(m, entry),
                 .live = &e.live,
                 .derived_runtime = try relativeSpecifier(scratch, paths[i], derived_runtime_path),
+                .markup = if (lowering != null and vocabulary != null and markup_output != null) .{
+                    .lowering = lowering.?,
+                    .vocabulary = vocabulary.?,
+                    .runtime = try relativeSpecifier(scratch, paths[i], markup_output.?),
+                    .build = .{ .release = e.options.release, .library = e.options.library },
+                } else null,
             });
             defer lowered.ir.deinit(e.gpa);
             defer e.gpa.free(lowered.diagnostics);
             for (lowered.diagnostics) |d| {
-                const token = if (d.region.int() < e.bir(m).insts.len)
+                const token = d.token orelse if (d.region.int() < e.bir(m).insts.len)
                     e.bir(m).insts.items(.main_token)[d.region.int()]
                 else
                     0;
@@ -1461,6 +1701,11 @@ const Emitter = struct {
             }
             if (lowered.diagnostics.len != 0) continue;
             uses_runtime = uses_runtime or lowered.uses_runtime;
+            e.uses_markup_runtime = e.uses_markup_runtime or lowered.uses_markup_runtime;
+            for (lowered.start) |pair| try e.start.append(e.scratch, .{
+                .key = try e.scratch.dupe(u8, pair.key),
+                .value = try e.scratch.dupe(u8, pair.value),
+            });
 
             // §9's release optimiser, between `Lower.lower` and
             // `Print.print`: item 1 plans, item 2 names, the printer spends
@@ -1481,6 +1726,18 @@ const Emitter = struct {
             try e.produce(paths[i], text, source_path);
         }
         if (uses_runtime) try e.emitDerivedRuntime();
+    }
+
+    /// Whether a module's only survivors are markup primitives: each is the
+    /// markup runtime's export and not the module's (`boundary.md` §9.3),
+    /// so the module has nothing to write and nothing imports it.
+    fn onlyPrimitivesLive(e: *Emitter, m: Graph.Index) bool {
+        const live = e.live.of(m);
+        if (live.derived.count() != 0) return false;
+        for (e.bir(m).decls, 0..) |d, index| {
+            if (live.decl(index) and d.kind != .vocab_markup) return false;
+        }
+        return true;
     }
 
     /// `_core/_derived.mjs`, written iff a module written imports it
@@ -1548,6 +1805,7 @@ const Emitter = struct {
             const out = try e.siblingOutputPath(m);
             try e.produce(out, bytes, sibling_source);
         }
+        try e.copyMarkupRuntime();
         // The platform's runtime (§5.2). It is not a sibling of any module,
         // so nothing above would have copied it. A chain with none is one
         // only a library builds for, and a library has no entry to run it.
@@ -1574,6 +1832,26 @@ const Emitter = struct {
         try e.produce(try e.runtimeOutputPath(), bytes, runtime_source);
     }
 
+    /// The markup runtime, copied iff a module written imports it
+    /// (`backend.md` §15.1) — and not a second time when it is the program
+    /// runtime, which is one file (`boundary.md` §9.2).
+    fn copyMarkupRuntime(e: *Emitter) !void {
+        if (!e.uses_markup_runtime or e.markupRuntimeIsProgramRuntime()) return;
+        const source = try e.markupRuntimePath() orelse return;
+        // A missing file was reported by `checkMarkupRuntime` already.
+        const bytes = e.readAsset(source) orelse return;
+        try e.produce((try e.markupRuntimeOutputPath()).?, bytes, source);
+    }
+
+    /// Where the markup runtime is written: its package's output directory,
+    /// under `.foreign.mjs`, as a sibling is.
+    fn markupRuntimeOutputPath(e: *Emitter) !?[]const u8 {
+        if (try e.markupRuntimePath() == null) return null;
+        if (e.markupRuntimeIsProgramRuntime()) return try e.runtimeOutputPath();
+        const base = std.fs.path.basename(e.options.platform.markup_runtime.?);
+        return try std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.options.platform.markup_runtime_dir, stripExtension(base, ".js"), foreign_extension });
+    }
+
     /// The entry file. A platform declares how `main` is invoked (§5.2) and
     /// this is the smallest honest form of that: import the runtime's `run`,
     /// import `main`, apply one to the other.
@@ -1589,6 +1867,7 @@ const Emitter = struct {
         // move: it is the platform manifest's runtime export, read by
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
+        const start = try e.startData();
 
         // The header comment is a development affordance: it says which
         // document decided the shape of a file the user did not write. Under
@@ -1598,25 +1877,84 @@ const Emitter = struct {
         const text = if (e.options.release)
             try std.fmt.allocPrint(e.scratch,
                 \\import{{run}}from"./{s}";
-                \\import{{{s}}}from"./{s}";
-                \\run({s});
+                \\{s}import{{{s}}}from"./{s}";
+                \\{s}run({s});
                 \\
-            , .{ runtime_path, imported, module_path, imported })
+            , .{
+                runtime_path,
+                if (start) |s| try std.fmt.allocPrint(e.scratch, "import{{start}}from\"./{s}\";\n", .{s.path}) else "",
+                imported,
+                module_path,
+                if (start) |s| try std.fmt.allocPrint(e.scratch, "start({s});\n", .{s.data}) else "",
+                imported,
+            })
         else
             try std.fmt.allocPrint(e.scratch,
                 \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
                 \\// the platform's output shape asks for.
                 \\import {{ run }} from "./{s}";
-                \\import {{ {s} }} from "./{s}";
+                \\{s}import {{ {s} }} from "./{s}";
                 \\
-                \\run({s});
+                \\{s}run({s});
                 \\
-            , .{ runtime_path, imported, module_path, imported });
+            , .{
+                runtime_path,
+                if (start) |s| try std.fmt.allocPrint(e.scratch, "import {{ start }} from \"./{s}\";\n", .{s.path}) else "",
+                imported,
+                module_path,
+                if (start) |s| try std.fmt.allocPrint(e.scratch, "start({s});\n", .{s.data}) else "",
+                imported,
+            });
         // The NAME is the platform's (`boundary.md` §5.2's `"entry"`,
         // defaulted to `default_entry_file` by `platform.finish` and checked
         // by `checkEntryFileName`), so the manifest is what a collision
         // would have to name: no beni source asked for this file.
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// The program start call's import path and its argument, when the
+    /// build's markup lowering declares a `start` export and a module
+    /// written imports the markup runtime (`boundary.md` §9.4.5): one object
+    /// whose keys are sorted, each an array of its sorted, distinct values.
+    /// A build with no markup, or a lowering with no `start`, calls none,
+    /// so its entry file does not move by a byte.
+    fn startData(e: *Emitter) !?struct { path: []const u8, data: []const u8 } {
+        if (!e.uses_markup_runtime) return null;
+        const lowering = findLowering(e.options.platform.lowering orelse return null) orelse return null;
+        var declares = false;
+        for (lowering.runtime) |r| declares = declares or std.mem.eql(u8, r.name, "start");
+        if (!declares) return null;
+        const pairs = e.start.items;
+        std.mem.sort(Lower.StartPair, pairs, {}, struct {
+            fn lessThan(_: void, x: Lower.StartPair, y: Lower.StartPair) bool {
+                return switch (std.mem.order(u8, x.key, y.key)) {
+                    .lt => true,
+                    .gt => false,
+                    .eq => std.mem.order(u8, x.value, y.value) == .lt,
+                };
+            }
+        }.lessThan);
+        var out: std.ArrayList(u8) = .empty;
+        try out.appendSlice(e.scratch, "{");
+        var i: usize = 0;
+        while (i < pairs.len) {
+            const key = pairs[i].key;
+            if (i != 0) try out.appendSlice(e.scratch, if (e.options.release) "," else ", ");
+            try jsString(e.scratch, &out, key);
+            try out.appendSlice(e.scratch, if (e.options.release) ":[" else ": [");
+            var first = true;
+            var previous: ?[]const u8 = null;
+            while (i < pairs.len and std.mem.eql(u8, pairs[i].key, key)) : (i += 1) {
+                if (previous) |p| if (std.mem.eql(u8, p, pairs[i].value)) continue;
+                previous = pairs[i].value;
+                if (!first) try out.appendSlice(e.scratch, if (e.options.release) "," else ", ");
+                first = false;
+                try jsString(e.scratch, &out, pairs[i].value);
+            }
+            try out.append(e.scratch, ']');
+        }
+        try out.appendSlice(e.scratch, "}");
+        return .{ .path = (try e.markupRuntimeOutputPath()).?, .data = out.items };
     }
 
     /// `<platform root>/beni.json` of the package that declared the entry
@@ -1977,6 +2315,18 @@ pub const foreign_extension = ".foreign.mjs";
 /// (`SourceStore.isUpperIdent`) — and a name beginning with `_` is
 /// therefore one no module can ever be written to, on a case-insensitive
 /// file system included.
+/// `text` as a double-quoted JavaScript string literal.
+fn jsString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) Allocator.Error!void {
+    try out.append(scratch, '"');
+    for (text) |c| switch (c) {
+        '"' => try out.appendSlice(scratch, "\\\""),
+        '\\' => try out.appendSlice(scratch, "\\\\"),
+        0...0x1f => try out.print(scratch, "\\x{x:0>2}", .{c}),
+        else => try out.append(scratch, c),
+    };
+    try out.append(scratch, '"');
+}
+
 fn entryNameIsLegal(name: []const u8) bool {
     if (!std.mem.startsWith(u8, name, "_")) return false;
     if (!std.mem.endsWith(u8, name, ".mjs")) return false;

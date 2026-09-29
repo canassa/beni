@@ -1502,7 +1502,22 @@ const Case = struct {
     /// digest means Node already ran exactly this JavaScript and it printed
     /// exactly this golden. Anything else — a changed emitter, runtime or
     /// golden, another Node — runs the program as if there were no record.
-    fn runProgram(c: Case) !void {
+    fn runProgram(case: Case) !void {
+        // A project with a `platform/` directory builds for that platform,
+        // as a `build/bad/` fixture does: a test platform layered on `node`
+        // is how a program observes what only a platform may write
+        // (`backend.md` §15.8's `refEq`). It gets a world of its own, so no
+        // other fixture's platform files are in it.
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        const platform = c.fixture.project and hasPlatformDir(try c.fixturePath());
+        if (platform) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            try c.w.copyTree(try c.fixturePath(), "_expected.");
+        }
+        const platform_arg = if (platform) "--platform=platform" else "--platform=node";
         var sources: std.ArrayList([]const u8) = .empty;
         if (c.fixture.project) {
             const dir_path = try c.fixturePath();
@@ -1528,7 +1543,7 @@ const Case = struct {
         }
 
         var dev: std.ArrayList([]const u8) = .empty;
-        try dev.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
+        try dev.appendSlice(c.arena, &.{ "build", platform_arg, "--out=out" });
         // Pending mode reads the codes of a refused build, to classify why a
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
@@ -1562,7 +1577,7 @@ const Case = struct {
             // so by carrying its own `.release-expected`, which does bless.
             const separate = c.goldenExists("release-expected");
             var release: std.ArrayList([]const u8) = .empty;
-            try release.appendSlice(c.arena, &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release" });
+            try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--out=release" });
             if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
             try release.appendSlice(c.arena, sources.items);
             verified[1] = c.runOnce(
@@ -1584,6 +1599,13 @@ const Case = struct {
             try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
         }
         if (first_error) |err| return err;
+    }
+
+    fn hasPlatformDir(dir_path: []const u8) bool {
+        var dir = Io.Dir.cwd().openDir(testing.io, dir_path, .{}) catch return false;
+        defer dir.close(testing.io);
+        const stat = dir.statFile(testing.io, "platform", .{}) catch return false;
+        return stat.kind == .directory;
     }
 
     /// One build-and-run of a `run/` fixture, against `golden`. Node is not

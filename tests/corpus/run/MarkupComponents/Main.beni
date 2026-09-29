@@ -1,0 +1,31 @@
+-- Components across modules (language.md §11.8) through `ssr`
+-- (backend.md §15.6): `<Card …>` calls `Card.view` and `<Card.header …/>`
+-- the member, each with its props as one record — a quoted prop a
+-- `String`, a bare one `True`. Children in every form: none, one hole
+-- holding a value (here a render function the component calls per row),
+-- and markup between the tags, which is one `Html` value the component
+-- places — text, an element, and a component of its own. A leading spread
+-- is record update over `Card.defaults`, so the props not written keep its
+-- values. Components are called where they stand, never skipped.
+import Card
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+page : String -> Html msg
+page name =
+    <main>
+        <Card.header text="Top" />
+        <Card title="Hello" wide>
+            Welcome, <b>{name}</b>!
+            <Card.badge label="new">hot &amp; fresh</Card.badge>
+        </Card>
+        <Card {...Card.defaults} title="Spread" />
+        <Card.listOf items={[ "a", "b" ]}>{\item -> <li>{item}</li>}</Card.listOf>
+    </main>
+
+
+main : Node.Program
+main =
+    Node.print (Ssr.render (page "<you>"))

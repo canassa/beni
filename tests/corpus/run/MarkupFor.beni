@@ -1,0 +1,60 @@
+-- `For` (language.md §11.9) through `ssr` (backend.md §15.6): a list is a
+-- map and a join, the fallback when it is empty, whatever the keying mode —
+-- by key, by position and by reference render the same string. Every row
+-- shape: a lambda whose body is markup, after a `let` it opens and with its
+-- item destructured; a lambda of two parameters, whose second is the
+-- position; a lambda whose body is not markup; a function; a placeholder
+-- application, which reads a local of the enclosing view; and a function
+-- of two parameters. Rows render once each, in order, duplicates included.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+viewRow : Row -> Html msg
+viewRow row =
+    <li>{row.label}</li>
+
+
+viewCell : String, Row -> Html msg
+viewCell prefix row =
+    <li>{prefix}{row.id}</li>
+
+
+viewAt : String, Int -> Html msg
+viewAt name position =
+    <li>{position}:{name}</li>
+
+
+view : String, List Row, List String -> Html msg
+view prefix rows names =
+    <div>
+        <ul>
+            <For each={rows} keyed={.id} fallback={<li>none</li>}>
+                {\{ id, label } ->
+                    let
+                        text =
+                            String.toUpper label
+                    in
+                    <li id="row-${String.fromInt id}">{text}</li>
+                }
+            </For>
+        </ul>
+        <ol><For each={names} keyed={False}>{\name position -> <li>{position} {name}</li>}</For></ol>
+        <ol><For each={rows} keyed>{\row -> if row.id > 1 then <b>{row.label}</b> else <i>{row.label}</i>}</For></ol>
+        <ul><For each={rows} keyed={.id}>{viewRow}</For></ul>
+        <ul><For each={rows} keyed={.id}>{viewCell prefix _}</For></ul>
+        <ul><For each={names}>{viewAt}</For></ul>
+    </div>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view "#" [ { id = 1, label = "a<" }, { id = 2, label = "b" }, { id = 2, label = "b" } ] [ "x", "y" ])
+        , Ssr.render (view "#" [] [])
+        ]

@@ -1,0 +1,75 @@
+-- Markup is a value like any other (language.md §11.1), rendered by `ssr`
+-- (backend.md §15.6) wherever it goes: a fragment, whose children stand
+-- where it does; `Html.text`, which escapes as a text hole does; `Html.map`,
+-- nested, which under `ssr` is the identity, since a string carries no
+-- handler to wrap; and markup from a helper, bound by a `let`, chosen by a
+-- `case` and an `if` in a hole, kept in a list and a record field, and
+-- built recursively. A root's values are evaluated in the written order,
+-- items before children, depth first, each once: the `Debug.log`s fire
+-- first, second, third, fourth.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+type Msg
+    = Inner Int
+    | Outer Msg
+
+
+type Tree
+    = Leaf String
+    | Branch String (List Tree)
+
+
+item : String -> Html msg
+item label =
+    <li>{label}</li>
+
+
+tree : Tree -> Html msg
+tree t =
+    case t of
+        Leaf label ->
+            <li>{label}</li>
+
+        Branch label children ->
+            <li>{label}<ul>{List.map children tree}</ul></li>
+
+
+counter : Int -> Html Int
+counter n =
+    <button onClick={n + 1}>{n}</button>
+
+
+view : Bool -> Html Msg
+view on =
+    let
+        greeting =
+            <>Hello, <b>world</b></>
+
+        box =
+            { body = item "boxed" }
+    in
+    <div>
+        {greeting}
+        {Html.text "<escaped & text>"}
+        {Html.map (Html.map (counter 1) Inner) Outer}
+        <ul>{if on then item "on" else item "off"}</ul>
+        <ul>{[ item "one", item "two" ]}{box.body}</ul>
+        <ul>{tree (Branch "root" [ Leaf "a", Branch "b" [ Leaf "c" ] ])}</ul>
+    </div>
+
+
+ordered : Html msg
+ordered =
+    <p title={Debug.log "first" "1"}>{Debug.log "second" "2"}<b id={Debug.log "third" "3"}>{Debug.log "fourth" "4"}</b></p>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render ordered
+        , Ssr.render (view True)
+        , Ssr.render (view False)
+        ]

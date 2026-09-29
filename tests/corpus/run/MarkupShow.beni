@@ -1,0 +1,37 @@
+-- The keyed `Show` (language.md §11.18) through `ssr` (backend.md §15.6):
+-- `Just v` renders the body for `v`, `Nothing` the fallback, or nothing
+-- without one — by identity and by key alike, since a string is rendered
+-- once. The body is a lambda whose body is markup, a function, and a lambda
+-- whose body is not markup. `Just ()`, whose payload is JavaScript's
+-- `null`, is still `Just`.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+type alias User =
+    { id : Int, name : String }
+
+
+viewUser : User -> Html msg
+viewUser user =
+    <b>{user.name}</b>
+
+
+view : Maybe String, Maybe User, Maybe () -> Html msg
+view title user unit =
+    <div>
+        <Show when={title} keyed>{\t -> <h1>{t}</h1>}</Show>
+        <Show when={user} keyed={.id} fallback={<p>Nobody</p>}>{viewUser}</Show>
+        <Show when={user} keyed={True}>{\u -> if u.id > 1 then <i>{u.name}</i> else <u>{u.name}</u>}</Show>
+        <Show when={unit} keyed fallback={<p>no unit</p>}>{\_ -> <p>unit</p>}</Show>
+    </div>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view (Just "Hi & bye") (Just { id = 2, name = "Ada" }) (Just ()))
+        , Ssr.render (view Nothing Nothing Nothing)
+        , Ssr.render (view Nothing (Just { id = 1, name = "Bo" }) Nothing)
+        ]

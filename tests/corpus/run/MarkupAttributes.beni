@@ -1,0 +1,37 @@
+-- Every attribute value class the `html` vocabulary has, rendered by the
+-- `ssr` lowering (language.md §11.5, §11.19; backend.md §15.6), in source
+-- order: a quoted constant (its references decoded, then escaped as an
+-- attribute: `&`, `<` and `"`), a quoted value with interpolation, a
+-- dynamic `String` whose `&<"` are escaped at run time, an `Int` constant
+-- and a dynamic one, a `Bool` bare, constant and dynamic both ways, the
+-- untyped escape, a URL attribute whose `javascript:` value — constant,
+-- dynamic, or through the escape as `"href"` — is written as nothing, and
+-- an event, which a string cannot carry and is dropped.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+type Msg
+    = Clicked
+
+
+view : String, Int, Bool -> Html Msg
+view name size on =
+    <div>
+        <p title="Fish &amp; &quot;chips&quot; <b>" class="size-${String.fromInt size}" id={name}>x</p>
+        <input type="checkbox" tabindex={3} maxlength={size} disabled checked={on} required={False} readonly={not on} />
+        <a href="javascript:alert(1)">a</a>
+        <a href={"  JavaScript:alert(2)"}>b</a>
+        <a href={"/next?a=1&b=2"}>c</a>
+        <a "href"="java&#9;script:x" "hx-get"="/items" "data-x"={name}>d</a>
+        <button onClick={Clicked} type="button">e</button>
+    </div>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view "<\"me\" & you>" 12 True)
+        , Ssr.render (view "plain" 0 False)
+        ]

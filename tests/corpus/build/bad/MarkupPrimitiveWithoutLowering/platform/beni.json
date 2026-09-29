@@ -1,0 +1,1 @@
+{ "platform": true, "name": "bare", "platforms": ["html"], "reexports": ["Html"], "program": "Prog.Program", "runtime": "run.js" }

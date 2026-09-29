@@ -1,0 +1,16 @@
+--! Server rendering (`docs/design/backend.md` §15.6): a view, compiled by
+--! the `ssr` markup lowering this platform names, read back as the HTML it
+--! renders to.
+--!
+--! It is a module of its own, and not part of `Node`, so that a program that
+--! writes no markup does not check the `html` vocabulary to print a line.
+
+import Html exposing (Html)
+
+
+--| The HTML a view renders to.
+--|
+--|     main : Node.Program
+--|     main =
+--|         Node.print (Ssr.render (view model))
+pub foreign render : Html msg -> String

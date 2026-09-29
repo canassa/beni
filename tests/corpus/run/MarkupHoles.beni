@@ -1,0 +1,29 @@
+-- Every hole kind (language.md §11.6) through `ssr` (backend.md §15.6): a
+-- `String`, escaped; an `Int`, a `Float`, a `Char` and a `Bool`, each
+-- written as `"${e}"` writes it; an `Html` value spliced as it is, never
+-- escaped twice; a `Maybe (Html msg)` both ways; a `List (Html msg)`, empty
+-- and not; and an empty hole and a hole holding only a comment, which write
+-- nothing. A number first in a root is text, not added to what follows.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+view : String, Int, Float, Char, Bool, Maybe (Html msg), List (Html msg) -> Html msg
+view s i f c b maybe items =
+    <p>{s}|{i}|{f}|{c}|{b}|{Html.text "<t>"}|{maybe}|{items}|{}|{-- nothing
+    }</p>
+
+
+numberFirst : Int -> Html msg
+numberFirst n =
+    <>{n}{n}</>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (view "a<b>&" 42 1.5 '<' True (Just (<b>yes</b>)) [ <i>1</i>, <i>2</i> ])
+        , Ssr.render (view "" (-1) 0.25 'x' False Nothing [])
+        , Ssr.render (numberFirst 1)
+        ]

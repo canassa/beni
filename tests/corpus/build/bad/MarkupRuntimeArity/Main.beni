@@ -1,0 +1,13 @@
+-- `boundary.md` §9.4.5's runtime checks, check 4: each export of a markup
+-- runtime takes the parameters its caller passes. The platform `views`
+-- names `ssr` with a runtime of its own whose `list` takes two where the
+-- lowering declares three — reported in the runtime, at the export — and
+-- whose `map` takes one where `html`'s primitive takes two — reported at
+-- the primitive's declaration, naming the runtime's line. Nothing is
+-- written.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"

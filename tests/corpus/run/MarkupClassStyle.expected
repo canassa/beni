@@ -1,0 +1,2 @@
+<div><p class="row a b">constant</p><p class="row danger a">dynamic</p><p class="x y&quot;&lt;">variable</p><p class="plain &amp; simple">string</p><p style="color:blue;margin:0;">constant</p><p style="color:green;--gap:2px;">dynamic</p><p style="color: red">string</p></div>
+<div><p class="row a b">constant</p><p class="row">dynamic</p><p class="y&quot;&lt;">variable</p><p class="plain &amp; simple">string</p><p style="color:blue;margin:0;">constant</p><p style="--gap:2px;">dynamic</p><p style="color: red">string</p></div>

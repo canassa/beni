@@ -1,0 +1,13 @@
+-- An untouched field keeps its identity (language.md §11.12, backend.md
+-- §15.8): a record update is a spread of the record it updates, then the
+-- fields written, so every other field of the result is the very value the
+-- original held — which a markup lowering's reference check per hole
+-- depends on. The golden pins the spread; `emit/release/` pins it again
+-- where an optimiser would break it.
+type alias Model =
+    { rows : List Int, selected : Int, title : String }
+
+
+pub select : Model, Int -> Model
+select model id =
+    { model | selected = id }

@@ -1,0 +1,1 @@
+{ "platform": true, "name": "views", "program": "Prog.Program", "runtime": "run.js", "markup": { "vocabulary": "Vocab", "type": "Vocab.Markup", "lowering": "ssr", "runtime": "markup.js" } }

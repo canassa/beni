@@ -4,5 +4,7 @@
   "program": "Node.Program",
   "runtime": "runtime.js",
   "platforms": ["html"],
-  "reexports": ["Html"]
+  "reexports": ["Html"],
+  "markup": { "lowering": "ssr", "runtime": "markup.js" },
+  "zig": "zig/root.zig"
 }

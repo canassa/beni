@@ -176,15 +176,22 @@ pub fn build(b: *std.Build) void {
     // module is dropping in a file. It is part of the compiler, not of a
     // test, so it hangs off the library module every root imports.
     beni_mod.addImport("core_package", embedCore(b, core_dir));
-    // The platform packages (boundary.md §8, B2), embedded the same way.
-    beni_mod.addImport("platform_packages", embedPlatforms(b, platforms_dir));
+    // The platform packages (boundary.md §8, B2), embedded the same way:
+    // the ones under `platforms/`, and any `-Dplatform=<dir>` adds
+    // (`docs/design/boundary.md` §9.5), with their markup lowerings.
+    const platform_dirs = b.option([]const []const u8, "platform", "Compile the platform package in this directory into beni, its Zig markup lowerings included, as if it shipped with it (repeatable; docs/design/boundary.md §9.5)") orelse &.{};
+    const platform_sources = platformSources(b, platform_dirs);
+    beni_mod.addImport("platform_packages", embedPlatforms(b, platform_sources));
+    const markup = markupModules(b, platform_sources, null);
+    beni_mod.addImport("beni_markup", markup.interface);
+    beni_mod.addImport("markup_lowerings", markup.registry);
     // HTML's character references, which markup text decodes (frontend.md §9.7).
     beni_mod.addImport("markup_entity_table", entityTable(b));
     // The compiler build id (`fast-compiler.md` §8): the cache key's term for
     // "which compiler produced this entry". Computed here rather than by
     // hashing the installed binary at run time, which is correct and costs
     // ~2 ms of a 15 ms warm budget.
-    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null));
+    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize, null, platform_sources));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -261,6 +268,18 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&run.step);
     }
     test_step.dependOn(&runTests(b, time_report_tests).step);
+    // The markup interface's own tests and the platforms' Zig — the `ssr`
+    // lowering, `html`'s parser table — each module its own binary, since a
+    // platform's Zig is a module of its own and not the compiler's.
+    {
+        const tested = markupModules(b, platform_sources, .{ .target = target, .optimize = optimize });
+        for (tested.all) |module| {
+            const t = b.addTest(.{ .name = "markup_unit_test", .root_module = module, .test_runner = testRunner(b), .filters = test_filters });
+            const run = runTests(b, t);
+            setBudget(run, budget_env);
+            test_step.dependOn(&run.step);
+        }
+    }
     // The coverage report's own logic (`tests/coverage.zig`): its decoder,
     // control-flow rules and output, on hand-built inputs.
     const coverage_tests = b.addTest(.{
@@ -308,7 +327,7 @@ pub fn build(b: *std.Build) void {
     // not a number. The bench harness links its library, and the timing
     // scenarios of `test-perf` and `test-pending-perf` time its binary,
     // `zig-out/perf/bin/beni`.
-    const fast = compiler(b, target, .ReleaseFast, .llvm, .default);
+    const fast = compiler(b, target, .ReleaseFast, .llvm, .default, platform_sources);
     const bench_beni = fast.beni;
     const perf_install = b.addInstallArtifact(fast.exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
     // ReleaseSafe for every black-box suite that is not a timing claim,
@@ -321,7 +340,7 @@ pub fn build(b: *std.Build) void {
     // `zig-out/safe-llvm/bin/beni`: the same safety checks in the shipped
     // code generator's output.
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
-    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default);
+    const safe = compiler(b, target, .ReleaseSafe, if (llvm) .llvm else .self_hosted, .default, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
 
     // ---- Black-box suite. ----
@@ -666,7 +685,7 @@ pub fn build(b: *std.Build) void {
         // LLVM chose to guard record anything; the report infers the rest
         // from the control-flow graph, and maps blocks to lines through the
         // line table, which leaves out lines the optimiser folded away.
-        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full);
+        const measured = compiler(b, target, .ReleaseSafe, .llvm, .full, platform_sources);
         const runtime_options = b.addOptions();
         runtime_options.addOption([:0]const u8, "hits_path", b.allocator.dupeZ(u8, hits_path) catch @panic("OOM"));
         const instrumented = b.addExecutable(.{
@@ -745,7 +764,7 @@ pub fn build(b: *std.Build) void {
     // ---- Formatting. ----
     const fmt_step = b.step("fmt-check", "Check formatting with `zig fmt --check`");
     fmt_step.dependOn(&b.addFmt(.{
-        .paths = &.{ "src", "build.zig", "tests", "bench" },
+        .paths = &.{ "src", "build.zig", "tests", "bench", "platforms" },
         // The compare benchmark's generated projects and fetched
         // dependencies (Roc's sources among them) are not ours to format.
         .exclude_paths = &.{"bench/compare/work"},
@@ -892,6 +911,7 @@ fn compiler(
     mode: std.builtin.OptimizeMode,
     backend: Backend,
     debug_info: DebugInfo,
+    sources: []const PlatformSource,
 ) Compiler {
     // The LLVM ReleaseSafe compiler (`-Dllvm`) is built without debug info:
     // it is the longest compile after a change under `src/`, and debug info
@@ -918,9 +938,12 @@ fn compiler(
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
     });
     beni.addImport("core_package", embedCore(b, core_dir));
-    beni.addImport("platform_packages", embedPlatforms(b, platforms_dir));
+    beni.addImport("platform_packages", embedPlatforms(b, sources));
+    const markup = markupModules(b, sources, null);
+    beni.addImport("beni_markup", markup.interface);
+    beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
-    beni.addImport("build_options", buildIdOptions(b, target, mode, backend));
+    beni.addImport("build_options", buildIdOptions(b, target, mode, backend, sources));
     const exe = b.addExecutable(.{
         .name = "beni",
         .use_llvm = backend == .llvm,
@@ -964,9 +987,10 @@ fn buildIdOptions(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     backend: ?Backend,
+    sources: []const PlatformSource,
 ) *std.Build.Module {
     const options = b.addOptions();
-    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend));
+    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize, backend, sources));
     return options.createModule();
 }
 
@@ -992,6 +1016,7 @@ fn compilerBuildId(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     backend: ?Backend,
+    sources: []const PlatformSource,
 ) [16]u8 {
     var hasher = std.hash.SipHash128(1, 3).init(&@as([16]u8, @splat(0)));
     feed(&hasher, build_id_recipe);
@@ -1016,6 +1041,25 @@ fn compilerBuildId(
         };
         feed(&hasher, bytes);
         b.allocator.free(bytes);
+    }
+
+    // A markup lowering is part of the compiler (`boundary.md` §9.6), so
+    // every platform's Zig is a term too, built in or added by `-Dplatform`.
+    for (sources) |source| {
+        if (source.zig == null) continue;
+        var zig_paths: std.ArrayList([]const u8) = .empty;
+        collectAll(b, source.dir, "", &zig_paths);
+        sortPaths(&zig_paths);
+        for (zig_paths.items) |rel| {
+            if (!std.mem.endsWith(u8, rel, ".zig")) continue;
+            feed(&hasher, b.fmt("platform:{s}/{s}", .{ source.name, rel }));
+            const full = b.pathJoin(&.{ source.dir, rel });
+            const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
+                std.debug.panic("cannot read platform source {s}: {t}", .{ full, err });
+            };
+            feed(&hasher, bytes);
+            b.allocator.free(bytes);
+        }
     }
 
     var out: [16]u8 = undefined;
@@ -1198,25 +1242,225 @@ fn entityTable(b: *std.Build) *std.Build.Module {
 
 var entity_table_module: ?*std.Build.Module = null;
 
-/// Every platform package under `dir`, embedded: its manifest bytes, its
-/// `.beni` modules and its JavaScript. `--platform=<name>` matches the
-/// subdirectory name, so adding a platform to the box is dropping in a
-/// directory (boundary.md §5.1: supporting a runtime is a package, not a
-/// compiler change).
-fn embedPlatforms(b: *std.Build, dir: []const u8) *std.Build.Module {
+/// One platform package compiled into beni (`docs/design/boundary.md`
+/// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.
+const PlatformSource = struct {
+    /// What `--platform=<name>` matches: the directory's name for a
+    /// platform that ships, the manifest's `"name"` (else the directory's)
+    /// for one added.
+    name: []const u8,
+    /// Where it is on disk: relative to the build root for a platform that
+    /// ships, absolute for one added.
+    dir: []const u8,
+    /// The manifest's `"zig"`: the root of the platform's Zig module,
+    /// relative to `dir`.
+    zig: ?[]const u8,
+    /// The manifest's `"platforms"`: the platforms it depends on, by name.
+    deps: []const []const u8,
+};
+
+/// The platforms this beni carries: every directory under `platforms/`,
+/// sorted by name, then each `-Dplatform` directory in the order given.
+/// Two with one name are a configure-time failure.
+fn platformSources(b: *std.Build, added: []const []const u8) []const PlatformSource {
     const io = b.graph.io;
+    var out: std.ArrayList(PlatformSource) = .empty;
     var names: std.ArrayList([]const u8) = .empty;
-    var handle = b.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch |err| {
-        std.debug.panic("cannot open platforms directory {s}: {t}", .{ dir, err });
+    var handle = b.build_root.handle.openDir(io, platforms_dir, .{ .iterate = true }) catch |err| {
+        std.debug.panic("cannot open platforms directory {s}: {t}", .{ platforms_dir, err });
     };
     defer handle.close(io);
     var it = handle.iterate();
-    while (it.next(io) catch |err| std.debug.panic("cannot read {s}: {t}", .{ dir, err })) |entry| {
+    while (it.next(io) catch |err| std.debug.panic("cannot read {s}: {t}", .{ platforms_dir, err })) |entry| {
         if (entry.kind != .directory or entry.name[0] == '.') continue;
         names.append(b.allocator, b.dupe(entry.name)) catch @panic("OOM");
     }
     sortPaths(&names);
+    for (names.items) |name| {
+        const dir = b.fmt("{s}/{s}", .{ platforms_dir, name });
+        const m = readPlatformManifest(b, dir);
+        out.append(b.allocator, .{ .name = name, .dir = dir, .zig = m.zig, .deps = m.platforms }) catch @panic("OOM");
+    }
+    for (added) |spelled| {
+        const dir = if (std.fs.path.isAbsolute(spelled)) b.dupe(spelled) else b.pathFromRoot(spelled);
+        const m = readPlatformManifest(b, dir);
+        const name = m.name orelse std.fs.path.basename(dir);
+        out.append(b.allocator, .{ .name = name, .dir = dir, .zig = m.zig, .deps = m.platforms }) catch @panic("OOM");
+    }
+    for (out.items, 0..) |x, i| for (out.items[0..i]) |y| {
+        if (std.mem.eql(u8, x.name, y.name)) std.debug.panic("two platforms are named '{s}': {s} and {s}", .{ x.name, y.dir, x.dir });
+    };
+    return out.items;
+}
 
+const PlatformManifest = struct {
+    name: ?[]const u8 = null,
+    zig: ?[]const u8 = null,
+    platforms: []const []const u8 = &.{},
+};
+
+/// The keys of `<dir>/beni.json` the build reads: the platform's name, its
+/// Zig module's root and the platforms it depends on.
+fn readPlatformManifest(b: *std.Build, dir: []const u8) PlatformManifest {
+    const io = b.graph.io;
+    const path = b.pathJoin(&.{ dir, "beni.json" });
+    const bytes = b.build_root.handle.readFileAlloc(io, path, b.allocator, .limited(64 * 1024)) catch |err| {
+        std.debug.panic("cannot read the platform manifest {s}: {t}", .{ path, err });
+    };
+    return std.json.parseFromSliceLeaky(PlatformManifest, b.allocator, bytes, .{ .ignore_unknown_fields = true, .allocate = .alloc_always }) catch |err| {
+        std.debug.panic("the platform manifest {s} is not a JSON object of the expected shape: {t}", .{ path, err });
+    };
+}
+
+/// The disk path of a platform's file, as a build input.
+fn platformFile(b: *std.Build, source: PlatformSource, rel: []const u8) std.Build.LazyPath {
+    const full = b.pathJoin(&.{ source.dir, rel });
+    if (std.fs.path.isAbsolute(full)) return .{ .cwd_relative = full };
+    return b.path(full);
+}
+
+/// The markup lowering interface (`src/markup/Interface.zig`, imported as
+/// `beni_markup`), each platform's Zig module (`platform_<name>`, `-`
+/// spelled `_`), and the registry the compiler reads: every lowering of
+/// every platform module, sorted by name, checked against the interface's
+/// version at compile time (`docs/design/boundary.md` §9.4.6, §9.5).
+///
+/// A platform's module may import `beni_markup`, `std`, and the modules of
+/// the platforms it depends on, transitively, and nothing of the compiler.
+/// `test_build` gives every module a target and a mode, for the unit tests
+/// that run each as a root of its own; otherwise they inherit the
+/// compiler's.
+fn markupModules(
+    b: *std.Build,
+    sources: []const PlatformSource,
+    test_build: ?struct { target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode },
+) MarkupModules {
+    const target = if (test_build) |t| t.target else null;
+    const optimize = if (test_build) |t| t.optimize else null;
+    const interface = b.createModule(.{ .root_source_file = b.path("src/markup/Interface.zig"), .target = target, .optimize = optimize });
+    const modules = b.allocator.alloc(?*std.Build.Module, sources.len) catch @panic("OOM");
+    var all: std.ArrayList(*std.Build.Module) = .empty;
+    all.append(b.allocator, interface) catch @panic("OOM");
+    for (sources, modules) |source, *slot| {
+        const zig = source.zig orelse {
+            slot.* = null;
+            continue;
+        };
+        const m = b.createModule(.{ .root_source_file = platformFile(b, source, zig), .target = target, .optimize = optimize });
+        m.addImport("beni_markup", interface);
+        slot.* = m;
+        all.append(b.allocator, m) catch @panic("OOM");
+    }
+    // The dependencies' modules, transitively, by the names the manifests
+    // give them.
+    for (sources, modules) |source, maybe_module| {
+        const m = maybe_module orelse continue;
+        var pending: std.ArrayList([]const u8) = .empty;
+        pending.appendSlice(b.allocator, source.deps) catch @panic("OOM");
+        var seen: std.ArrayList([]const u8) = .empty;
+        while (pending.pop()) |dep| {
+            var repeated = false;
+            for (seen.items) |s| repeated = repeated or std.mem.eql(u8, s, dep);
+            if (repeated) continue;
+            seen.append(b.allocator, dep) catch @panic("OOM");
+            for (sources, modules) |other, other_module| {
+                if (!std.mem.eql(u8, other.name, dep)) continue;
+                pending.appendSlice(b.allocator, other.deps) catch @panic("OOM");
+                if (other_module) |om| m.addImport(zigModuleName(b, other.name), om);
+            }
+        }
+    }
+
+    var text: std.ArrayList(u8) = .empty;
+    text.appendSlice(b.allocator,
+        \\//! Generated by build.zig: every markup lowering compiled into this beni
+        \\//! (docs/design/boundary.md §9.5), sorted by name, each checked against
+        \\//! the interface's version at compile time (§9.4.6).
+        \\
+        \\const beni_markup = @import("beni_markup");
+        \\
+        \\const groups = .{
+        \\
+    ) catch @panic("OOM");
+    const registry_wf = b.addWriteFiles();
+    for (sources, modules) |source, maybe_module| {
+        if (maybe_module == null) continue;
+        text.appendSlice(b.allocator, b.fmt("    @import(\"{s}\").lowerings,\n", .{zigModuleName(b, source.name)})) catch @panic("OOM");
+    }
+    text.appendSlice(b.allocator,
+        \\};
+        \\
+        \\pub const all: []const beni_markup.Lowering = blk: {
+        \\    var n: usize = 0;
+        \\    for (groups) |group| n += group.len;
+        \\    var list: [n]beni_markup.Lowering = undefined;
+        \\    var at: usize = 0;
+        \\    for (groups) |group| for (group) |l| {
+        \\        beni_markup.checkTargets(l);
+        \\        // Insertion by name, so the table is sorted whatever the
+        \\        // order the platforms were given in.
+        \\        var i = at;
+        \\        while (i > 0 and lessThan(l.name, list[i - 1].name)) : (i -= 1) list[i] = list[i - 1];
+        \\        if (i > 0 and eql(l.name, list[i - 1].name)) @compileError("two markup lowerings are named '" ++ l.name ++ "'");
+        \\        list[i] = l;
+        \\        at += 1;
+        \\    };
+        \\    const final = list;
+        \\    break :blk &final;
+        \\};
+        \\
+        \\fn lessThan(a: []const u8, b: []const u8) bool {
+        \\    var i: usize = 0;
+        \\    while (i < a.len and i < b.len) : (i += 1) {
+        \\        if (a[i] != b[i]) return a[i] < b[i];
+        \\    }
+        \\    return a.len < b.len;
+        \\}
+        \\
+        \\fn eql(a: []const u8, b: []const u8) bool {
+        \\    return !lessThan(a, b) and !lessThan(b, a);
+        \\}
+        \\
+    ) catch @panic("OOM");
+    const registry = b.createModule(.{ .root_source_file = registry_wf.add("markup_lowerings.zig", text.items), .target = target, .optimize = optimize });
+    registry.addImport("beni_markup", interface);
+    for (sources, modules) |source, maybe_module| {
+        const m = maybe_module orelse continue;
+        registry.addImport(zigModuleName(b, source.name), m);
+    }
+    return .{ .interface = interface, .registry = registry, .all = all.items };
+}
+
+const MarkupModules = struct {
+    interface: *std.Build.Module,
+    registry: *std.Build.Module,
+    /// The interface and every platform module, for their unit tests.
+    all: []const *std.Build.Module,
+};
+
+/// `platform_<name>`, with `-` spelled `_`.
+fn zigModuleName(b: *std.Build, name: []const u8) []const u8 {
+    const out = b.fmt("platform_{s}", .{name});
+    std.mem.replaceScalar(u8, out, '-', '_');
+    return out;
+}
+
+/// For a build that depends on beni: the beni dependency with the platform
+/// in `dir`, relative to the depending build's root, compiled in exactly as
+/// `-Dplatform=<dir>` compiles one (`docs/design/boundary.md` §9.5).
+pub fn addPlatform(b: *std.Build, options: struct { dir: []const u8, dependency: []const u8 = "beni" }) *std.Build.Dependency {
+    const dirs: []const []const u8 = &.{b.pathFromRoot(options.dir)};
+    return b.dependency(options.dependency, .{ .platform = dirs });
+}
+
+/// Every platform package this beni carries, embedded: its manifest bytes,
+/// its `.beni` modules and its JavaScript, and not its Zig, which is
+/// compiled in rather than shipped. `--platform=<name>` matches the
+/// platform's name, so adding a platform to the box is dropping in a
+/// directory (boundary.md §5.1: supporting a runtime is a package, not a
+/// compiler change). A platform added with `-Dplatform` is spelled
+/// `platforms/<name>` in paths, as one that ships is.
+fn embedPlatforms(b: *std.Build, sources: []const PlatformSource) *std.Build.Module {
     const wf = b.addWriteFiles();
     var manifest: std.ArrayList(u8) = .empty;
     manifest.appendSlice(b.allocator,
@@ -1240,34 +1484,36 @@ fn embedPlatforms(b: *std.Build, dir: []const u8) *std.Build.Module {
     var bodies: std.ArrayList(u8) = .empty;
     var table: std.ArrayList(u8) = .empty;
     table.appendSlice(b.allocator, "pub const platforms = [_]Platform{\n") catch @panic("OOM");
-    for (names.items) |name| {
-        const root = b.fmt("{s}/{s}", .{ dir, name });
+    for (sources, 0..) |source, index| {
+        const name = source.name;
+        const root = b.fmt("{s}/{s}", .{ platforms_dir, name });
         var files: std.ArrayList([]const u8) = .empty;
         var assets: std.ArrayList([]const u8) = .empty;
-        collectFiles(b, root, "", &files, &assets);
+        collectFiles(b, source.dir, "", &files, &assets);
         sortPaths(&files);
         sortPaths(&assets);
-        if (files.items.len == 0) std.debug.panic("the platform package at {s} has no modules", .{root});
+        if (files.items.len == 0) std.debug.panic("the platform package at {s} has no modules", .{source.dir});
 
         const manifest_rel = b.fmt("{s}/beni.json", .{name});
-        _ = wf.addCopyFile(b.path(b.pathJoin(&.{ root, "beni.json" })), manifest_rel);
-        bodies.appendSlice(b.allocator, b.fmt("const files_{s} = [_]File{{\n", .{name})) catch @panic("OOM");
+        _ = wf.addCopyFile(platformFile(b, source, "beni.json"), manifest_rel);
+        bodies.appendSlice(b.allocator, b.fmt("const files_{d} = [_]File{{\n", .{index})) catch @panic("OOM");
         for (files.items) |rel| {
             const key = b.fmt("{s}/{s}", .{ name, rel });
-            _ = wf.addCopyFile(b.path(b.pathJoin(&.{ root, rel })), key);
+            _ = wf.addCopyFile(platformFile(b, source, rel), key);
             bodies.appendSlice(b.allocator, b.fmt("    .{{ .rel = \"{s}\", .source = @embedFile(\"{s}\") }},\n", .{ rel, key })) catch @panic("OOM");
         }
-        bodies.appendSlice(b.allocator, b.fmt("}};\nconst assets_{s} = [_]Asset{{\n", .{name})) catch @panic("OOM");
+        bodies.appendSlice(b.allocator, b.fmt("}};\nconst assets_{d} = [_]Asset{{\n", .{index})) catch @panic("OOM");
         for (assets.items) |rel| {
             if (std.mem.eql(u8, rel, "beni.json")) continue;
+            if (std.mem.endsWith(u8, rel, ".zig")) continue;
             const key = b.fmt("{s}/{s}", .{ name, rel });
-            _ = wf.addCopyFile(b.path(b.pathJoin(&.{ root, rel })), key);
+            _ = wf.addCopyFile(platformFile(b, source, rel), key);
             bodies.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ root, rel, key })) catch @panic("OOM");
         }
         bodies.appendSlice(b.allocator, "};\n") catch @panic("OOM");
         table.appendSlice(b.allocator, b.fmt(
-            "    .{{ .name = \"{s}\", .root = \"{s}\", .manifest = @embedFile(\"{s}\"), .files = &files_{s}, .assets = &assets_{s} }},\n",
-            .{ name, root, manifest_rel, name, name },
+            "    .{{ .name = \"{s}\", .root = \"{s}\", .manifest = @embedFile(\"{s}\"), .files = &files_{d}, .assets = &assets_{d} }},\n",
+            .{ name, root, manifest_rel, index, index },
         )) catch @panic("OOM");
     }
     table.appendSlice(b.allocator, "};\n") catch @panic("OOM");

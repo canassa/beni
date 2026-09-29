@@ -1,11 +1,11 @@
 -- `unknown_markup_lowering` (boundary.md §9.2) for markup itself: the
--- program's markup checks against `node`'s vocabulary, which it inherits
--- from `html`, and it survives elimination because `main` reaches it; but
--- markup compiles through the build's markup lowering and `node` names
--- none yet, so the build is refused against `node`'s manifest before a
--- byte is written.
+-- program's markup checks against the vocabulary its platform `bare`
+-- inherits from `html`, and it survives elimination because `main` reaches
+-- it; but markup compiles through the build's markup lowering and `bare`
+-- names none, nor does `html`, so the build is refused against `bare`'s
+-- manifest before a byte is written.
 import Html exposing (Html)
-import Node exposing (Program)
+import Prog exposing (Program)
 
 
 greeting : String -> Html msg
@@ -19,4 +19,4 @@ main =
         _ =
             greeting "world"
     in
-    Node.print "hello"
+    Prog.say "hello"

@@ -1,0 +1,25 @@
+-- The shape of the `ssr` lowering's output (backend.md §15.1, §15.2,
+-- §15.6). Each root's static text is its kind, hoisted after the imports
+-- and named by its site, `<Module>$k<instruction>`: a root with no dynamic
+-- part is its whole block, `{ t: … }`, built once; any other root is an
+-- array of static strings its block concatenates with its values. Each
+-- value is bound to a `const` where the root is evaluated, in source order,
+-- unless it is already a name. A `For` row compiled in place is a function
+-- the runtime's `list` calls per item, and its body is a root of its own.
+-- The runtime's exports are imported once each, beside `html`'s primitive.
+import Html exposing (Html)
+
+
+pub static : Html msg
+static =
+    <p class="lead">Hello &amp; welcome</p>
+
+
+pub greet : { name : String, count : Int } -> Html msg
+greet user =
+    <p title={user.name}>Hi {user.name}, {user.count} new<br />{Html.text "!"}</p>
+
+
+pub list : List String -> Html msg
+list items =
+    <ul><For each={items}>{\item -> <li>{item}</li>}</For></ul>

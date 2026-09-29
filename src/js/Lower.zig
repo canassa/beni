@@ -57,6 +57,8 @@ const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
 const stamped = @import("../stamped.zig");
 const Types = @import("../check/Types.zig");
+const MarkupTree = @import("MarkupTree.zig");
+const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
 const Node = JsIr.Node;
@@ -71,6 +73,9 @@ pub const Item = struct {
     code: diagnostic.Code,
     module: Graph.Index,
     region: Inst.Index,
+    /// Where to report instead of `region`'s token: a markup node's own
+    /// token, for what a markup lowering reports (`boundary.md` §9.4.7).
+    token: ?u32 = null,
     /// Owned by the caller's allocator.
     message: []const u8,
 };
@@ -82,6 +87,11 @@ pub const Result = struct {
     /// Whether the module imports the engine from `Input.derived_runtime`,
     /// which the build then has to write (`derivedRuntime`).
     uses_runtime: bool = false,
+    /// Whether the module imports the markup runtime (`boundary.md` §9.4.5).
+    uses_markup_runtime: bool = false,
+    /// The program start data the markup lowering contributed, in the
+    /// caller's scratch arena.
+    start: []const StartPair = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -163,6 +173,19 @@ pub const Input = struct {
     /// *Derived comparisons do not grow the native stack*), relative
     /// to THIS module's output file.
     derived_runtime: []const u8 = "./_core/_derived.mjs",
+    /// The build's markup lowering (`boundary.md` §9.4), when it has one.
+    markup: ?Markup = null,
+};
+
+pub const Markup = struct {
+    lowering: *const beni_markup.Lowering,
+    /// The vocabulary module's interface, whose rows the dispatch table's
+    /// markup section indexes.
+    vocabulary: *const Interface,
+    /// The markup runtime's specifier, relative to this module's output
+    /// file.
+    runtime: []const u8,
+    build: beni_markup.Build,
 };
 
 /// Lower one checked module. `scratch` is the caller's arena — every
@@ -213,6 +236,9 @@ pub fn lower(
     // the statements that name those imports can only be built once every
     // body has been walked. They are then spliced in front, because an ES
     // module reads top to bottom and a reader wants the imports first.
+    // The markup lowering's `module` runs before any root (`boundary.md`
+    // §9.4.3), so what it hoists is known before the first declaration.
+    try l.beginMarkup();
     var declarations: std.ArrayList(Node.Index) = .empty;
     try l.declarations(&declarations);
     try l.exports(&declarations);
@@ -229,13 +255,22 @@ pub fn lower(
 
     var body: std.ArrayList(Node.Index) = .empty;
     try body.appendSlice(scratch, import_statements);
+    // What the markup lowering hoisted: after the imports, before the first
+    // declaration, in hoist order (`backend.md` §15.1).
+    if (l.mk) |st| try body.appendSlice(scratch, st.hoisted.items);
     try body.appendSlice(scratch, synthesised);
     try body.appendSlice(scratch, declarations.items);
 
     const range = try b.addRange(body.items);
     const ir = try b.toOwned(range);
     const diagnostics = try l.diagnostics.toOwnedSlice(gpa);
-    return .{ .ir = ir, .diagnostics = diagnostics, .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare };
+    return .{
+        .ir = ir,
+        .diagnostics = diagnostics,
+        .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
+        .uses_markup_runtime = l.markup_imports.items.len != 0,
+        .start = if (l.mk) |st| st.start.items else &.{},
+    };
 }
 
 /// The compiler's own identifiers, interned once per module. They all start
@@ -485,6 +520,11 @@ const Lowerer = struct {
     prim_names: [3]JsIr.NameIndex = @splat(.none),
     /// `apply`, interned the first time a steps form spreads a call.
     apply_symbol: Symbol.Optional = .none,
+    /// This module's markup, while a lowering compiles it.
+    mk: ?*MarkupState = null,
+    /// The markup runtime's exports this module imports, in first-use
+    /// order: the lowering's and the markup primitives'.
+    markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -1168,6 +1208,11 @@ const Lowerer = struct {
         }
         // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
+        // The markup runtime: the lowering's exports and the markup
+        // primitives this module uses, one binding each (`backend.md` §15.1).
+        if (l.markup_imports.items.len != 0) if (l.in.markup) |mk| {
+            try out.append(l.scratch, try l.importStatement(mk.runtime, l.markup_imports.items));
+        };
         // Then one statement per other module, in first-reference order.
         // References to one module are not contiguous in `needed` — a
         // declaration mentions whatever it mentions — so the modules are
@@ -2198,11 +2243,11 @@ const Lowerer = struct {
             // from a successful build; emitting `undefined` rather than
             // asserting keeps a bug in that gate from becoming a crash.
             .@"error" => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
-            // Markup compiles through a platform's markup lowering, which
-            // does not exist yet; `Emit` refuses a build in which markup
-            // survives (`unknown_markup_lowering`), so no build reaches this,
-            // and like `error` it is `undefined` rather than a crash.
-            .markup => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // Markup compiles through the build's markup lowering. `Emit`
+            // refuses a build in which markup survives and no lowering is
+            // named (`unknown_markup_lowering`), so with none this is
+            // unreachable and, like `error`, `undefined` rather than a crash.
+            .markup => return l.markupExpression(out, inst),
             // Every remaining tag is a TYPE or a PATTERN, which no
             // expression position holds: patterns are lowered by
             // `bindings`, types never reach the backend at all
@@ -2470,9 +2515,21 @@ const Lowerer = struct {
         const p = l.pos(inst);
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
-            .top => try l.ident(try l.topName(d.lhs), p),
+            // A markup primitive is the markup runtime's export of its name
+            // (`boundary.md` §9.3), in its own module as in any other.
+            .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].kind == .vocab_markup)
+                try l.ident(try l.primitiveName(l.module_name, l.bir.symbol(l.bir.decls[d.lhs].name)), p)
+            else
+                try l.ident(try l.topName(d.lhs), p),
             .ext_value => blk: {
                 const module: Graph.Index = @enumFromInt(d.lhs);
+                if (module.int() < l.in.interfaces.len) {
+                    const iface = &l.in.interfaces[module.int()];
+                    if (d.rhs < iface.values.len and iface.values[d.rhs].is_markup_primitive) {
+                        const base = iface.symbols[@intFromEnum(iface.values[d.rhs].name)];
+                        break :blk try l.ident(try l.primitiveName(l.in.graph.moduleName(module), base), p);
+                    }
+                }
                 try l.need(module, d.rhs);
                 break :blk try l.ident(try l.externalName(module, d.rhs), p);
             },
@@ -6080,7 +6137,679 @@ const Lowerer = struct {
             else => {},
         }
     }
+
+    // ---- Markup (backend.md §15.1; boundary.md §9.4) ----------------------
+    //
+    // The compiler's part around the build's markup lowering: the tree is
+    // built once per module, the lowering's `module` runs before the first
+    // declaration, and at each `markup` instruction the root's values are
+    // evaluated here — each a `const`, in `language.md` §6's order — before
+    // the lowering's `root` is asked for the expression the root evaluates
+    // to. Everything the lowering writes goes through `markup_vtable`, whose
+    // functions are the `Context` of `boundary.md` §9.4.3 and nothing more.
+
+    /// Build this module's tree and run the lowering's `module`, when the
+    /// build has a lowering and a surviving declaration writes markup.
+    fn beginMarkup(l: *Lowerer) Allocator.Error!void {
+        const mk = l.in.markup orelse return;
+        var live: std.ArrayList(u32) = .empty;
+        for (0..l.bir.decls.len) |i| {
+            if (l.liveDecl(@intCast(i))) try live.append(l.scratch, @intCast(i));
+        }
+        const built = try MarkupTree.build(l.scratch, .{
+            .bir = l.bir,
+            .module = l.in.module.int(),
+            .dispatch = l.in.dispatch,
+            .vocabulary = mk.vocabulary,
+            .interner = l.interner,
+            .live = live.items,
+        }) orelse return;
+        const st = try l.scratch.create(MarkupState);
+        st.* = .{
+            .built = built,
+            .lowering = mk.lowering,
+            .bound = try l.scratch.alloc(Bound, built.values.len),
+            .cx = .{
+                .build = mk.build,
+                .js = .{ .impl = l, .vtable = &markup_vtable },
+                .arena = l.scratch,
+                .impl = l,
+                .vtable = &markup_vtable,
+            },
+        };
+        @memset(st.bound, .none);
+        l.mk = st;
+        // A hoisted name is `<Module>$<hint>`, which a declaration of the
+        // same name is too.
+        const names = try l.scratch.alloc(u32, l.bir.decls.len);
+        for (l.bir.decls, names) |d, *n| n.* = @intFromEnum(l.bir.symbol(d.name));
+        std.mem.sort(u32, names, {}, std.sort.asc(u32));
+        st.decl_names = names;
+        // A tree that uses a feature newer than the lowering was written
+        // against would meet a node the lowering cannot render (§9.4.6).
+        // Every feature of version 1.0 is available to every lowering, so
+        // this cannot happen until a later minor version gates one.
+        if (!mk.lowering.targets.covers(built.tree.requires)) {
+            try l.report(.internal, @enumFromInt(built.root_insts[0]), "The markup lowering `{s}` targets interface {d}.{d}, and this module's markup needs {d}.{d}.", .{
+                mk.lowering.name,
+                mk.lowering.targets.major,
+                mk.lowering.targets.minor,
+                built.tree.requires.major,
+                built.tree.requires.minor,
+            });
+            return;
+        }
+        mk.lowering.module(&st.cx, &st.built.tree) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Reported => {},
+        };
+    }
+
+    /// A `markup` instruction of kind `expression`: its values, then the
+    /// lowering's expression for it.
+    fn markupExpression(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const p = l.pos(inst);
+        const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const index = st.built.rootAt(inst.int()) orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const root = st.built.tree.root(index);
+        try l.markupValues(out, root);
+        const saved = st.pos;
+        st.pos = p;
+        defer st.pos = saved;
+        const result = st.lowering.root(&st.cx, &st.built.tree, index) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        };
+        return @enumFromInt(@intFromEnum(result));
+    }
+
+    /// Evaluate a root's instruction values into `out`, in order, each
+    /// bound where the lowering can name it. The other slots evaluate
+    /// nothing and are spelled where they are asked for.
+    fn markupValues(l: *Lowerer, out: *StmtList, root: beni_markup.Root) Allocator.Error!void {
+        const st = l.mk.?;
+        for (root.values.start..root.values.start + root.values.len) |v| {
+            const inst = switch (st.built.values[v]) {
+                .inst => |i| i,
+                else => continue,
+            };
+            const value = try l.expr(out, inst);
+            const tag = l.b.nodes.items(.tag)[value.int()];
+            st.bound[v] = switch (tag) {
+                .ident => .{ .name = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs) },
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
+                else => blk: {
+                    const n = try l.fresh(l.well.temp);
+                    try l.constDecl(out, n, value, l.pos(inst));
+                    break :blk .{ .name = n };
+                },
+            };
+        }
+    }
+
+    /// A value's expression, fresh at every use.
+    fn markupValue(l: *Lowerer, v: beni_markup.Value.Index) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const p = st.pos;
+        const at = @intFromEnum(v);
+        switch (st.built.values[at]) {
+            .inst => switch (st.bound[at]) {
+                .name => |n| return l.ident(n, p),
+                .node => |node| {
+                    const d = l.b.nodes.items(.data)[node.int()];
+                    return l.add(l.b.nodes.items(.tag)[node.int()], p, d.lhs, d.rhs);
+                },
+                // Asked for outside the root or row that evaluates it: a
+                // defect of the lowering, which gets a value that says so
+                // rather than one of another render.
+                .none => {
+                    try l.report(.internal, l.region, "The markup lowering asked for a value its root has not evaluated.", .{});
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                },
+            },
+            .capture => |local| return l.ident(try l.localName(local), p),
+            .input => |record| {
+                const input = l.bir.extraData(record, Bir.MarkupInput);
+                var node = try l.ident(try l.localName(input.local), p);
+                for (0..input.len) |k| {
+                    const link = input.link(k);
+                    const field = if (link & Bir.tuple_link != 0) try l.slotName(link & ~Bir.tuple_link) else l.bir.symbols[link];
+                    node = try l.member(node, field, p);
+                }
+                return node;
+            },
+            .entries => |range| {
+                // The list written in place, rebuilt from its entries'
+                // values: each already evaluated, so this is data only.
+                const tree = &st.built.tree;
+                var cells: std.ArrayList(Node.Index) = .empty;
+                for (tree.entriesOf(range)) |entry| {
+                    const name_node = try l.stringNode(tree.string(entry.name), p);
+                    const value_node = switch (entry.value.kind) {
+                        .constant => try l.markupConstant(entry.value.constant, p),
+                        else => try l.markupValue(entry.value.dynamic.?),
+                    };
+                    try cells.append(l.scratch, try l.object(&.{
+                        try l.property(try l.slotName(0), name_node, p),
+                        try l.property(try l.slotName(1), value_node, p),
+                    }, p));
+                }
+                var list = try l.nilNode(p);
+                var i = cells.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    list = try l.consNode(cells.items[i], list, p);
+                }
+                return list;
+            },
+            .string => |bytes| return l.stringNode(bytes, p),
+            .true => return l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
+        }
+    }
+
+    fn markupConstant(l: *Lowerer, c: beni_markup.Constant, p: u32) Allocator.Error!Node.Index {
+        const tree = &l.mk.?.built.tree;
+        return switch (c.kind) {
+            .string => l.stringNode(tree.string(c.text), p),
+            .number => l.numberNode(tree.string(c.text), p),
+            .bool => l.add(if (c.bool) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
+            else => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        };
+    }
+
+    /// `cx.rowValues`: the row's root's values, placed in `block` inside a
+    /// function the lowering builds, with the lambda's parameters bound to
+    /// the names it chose.
+    fn markupRowValues(
+        l: *Lowerer,
+        block: beni_markup.Block,
+        row_index: beni_markup.Row.Index,
+        item: beni_markup.Name,
+        position: ?beni_markup.Name,
+        captures: []const beni_markup.Name,
+    ) Allocator.Error!?Node.Index {
+        const st = l.mk.?;
+        const row = st.built.tree.row(row_index);
+        const source = st.built.rows[@intFromEnum(row_index)];
+        var stmts: StmtList = .empty;
+        // A new function is a new label scope (§7).
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const p = st.pos;
+
+        const lambda = l.bir.instData(source.function);
+        const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(lambda.lhs)), Inst.Index);
+        for (params, 0..) |param, k| {
+            const bound: JsIr.NameIndex = if (k == 0)
+                @enumFromInt(@intFromEnum(item))
+            else if (position) |n| @enumFromInt(@intFromEnum(n)) else try l.fresh(l.well.param);
+            switch (l.bir.instTag(param)) {
+                .pat_var => {
+                    const local = l.bir.instData(param).lhs;
+                    if (local < l.local_names.len) l.local_names[local] = bound;
+                },
+                .pat_wild => {},
+                else => try l.bindings(&stmts, param, try l.ident(bound, p)),
+            }
+        }
+        // The captured locals read under the names the lowering gave them,
+        // for this function only.
+        const saved = try l.scratch.alloc(JsIr.NameIndex, captures.len);
+        if (captures.len == row.captures.len) {
+            for (captures, saved, 0..) |n, *s, k| {
+                const local = st.built.values[row.captures.start + k].capture;
+                if (local >= l.local_names.len) continue;
+                s.* = l.local_names[local];
+                l.local_names[local] = @enumFromInt(@intFromEnum(n));
+            }
+        }
+        defer if (captures.len == row.captures.len) for (saved, 0..) |s, k| {
+            const local = st.built.values[row.captures.start + k].capture;
+            if (local < l.local_names.len) l.local_names[local] = s;
+        };
+        for (l.bir.extraSlice(source.lets, Inst.Index)) |let| {
+            try l.letBindings(&stmts, l.bir.subRange(@enumFromInt(l.bir.instData(let).lhs)));
+        }
+        const body = st.built.tree.root(row.body);
+        try l.markupValues(&stmts, body);
+        try st.blocks.items[@intFromEnum(block)].appendSlice(l.scratch, stmts.items);
+        if (row.kind != .lambda) return null;
+        return try l.markupValue(body.values.at(body.values.len - 1));
+    }
+
+    /// `cx.componentCall`: the props record, built as a record literal is —
+    /// keys sorted by name text — or as a record update over the spread,
+    /// then the call, with its evidence.
+    fn markupComponentCall(l: *Lowerer, node: beni_markup.Node.Index, children: ?Node.Index) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const tree = &st.built.tree;
+        const p = st.pos;
+        const at = tree.nodes[@intFromEnum(node)].payload;
+        const c = tree.components[at];
+        const source = st.built.components[at];
+        const props = tree.propsOf(c.props);
+        var names: std.ArrayList(Symbol) = .empty;
+        var values: std.ArrayList(Node.Index) = .empty;
+        for (props) |prop| {
+            try names.append(l.scratch, try l.interner.getOrPut(l.gpa, tree.string(prop.field)));
+            try values.append(l.scratch, try l.markupValue(prop.value));
+        }
+        const children_value: ?Node.Index = if (c.children) |v| try l.markupValue(v) else children;
+        if (children_value) |v| {
+            try names.append(l.scratch, try l.interner.getOrPut(l.gpa, "children"));
+            try values.append(l.scratch, v);
+        }
+        var properties: std.ArrayList(Node.Index) = .empty;
+        if (c.spread) |spread| {
+            try properties.append(l.scratch, try l.add(.spread_property, p, (try l.markupValue(spread)).int(), Node.Data.unused));
+            for (names.items, values.items) |n, v| try properties.append(l.scratch, try l.property(n, v, p));
+        } else {
+            for (try l.fieldOrder(names.items)) |i| try properties.append(l.scratch, try l.property(names.items[i], values.items[i], p));
+        }
+        const args = [_]Node.Index{try l.object(properties.items, p)};
+        if (try l.referenceApplied(source.callee, &args)) |called| return called;
+        return l.call(try l.reference(source.callee), &args, p);
+    }
+
+    /// A markup runtime export the lowering declared, imported under
+    /// `$markup$<name>`, or a markup primitive, imported under the name its
+    /// module gives it: `boundary.md` §9.4.5's union, one import per export
+    /// used.
+    fn markupImport(l: *Lowerer, export_name: Symbol, local: JsIr.Name) Allocator.Error!JsIr.NameIndex {
+        const imported = try l.name(.{ .module = .none, .base = export_name, .tag = JsIr.Name.no_tag });
+        const n = try l.name(local);
+        for (l.markup_imports.items) |spec| {
+            if (spec.imported == imported) return spec.local;
+        }
+        try l.markup_imports.append(l.scratch, .{ .imported = imported, .local = n });
+        return n;
+    }
+
+    fn markupRuntime(l: *Lowerer, export_name: []const u8) (Allocator.Error || error{Reported})!JsIr.NameIndex {
+        const st = l.mk.?;
+        for (st.lowering.runtime) |declared| {
+            if (!std.mem.eql(u8, declared.name, export_name)) continue;
+            const base = try l.interner.getOrPut(l.gpa, export_name);
+            const module = try l.interner.getOrPut(l.gpa, "$markup");
+            return l.markupImport(base, JsIr.Name.qualified(module, base));
+        }
+        try l.report(.internal, l.region, "The markup lowering `{s}` imports `{s}`, which it does not declare among its runtime's exports.", .{ st.lowering.name, export_name });
+        return error.Reported;
+    }
+
+    /// The name a use of a markup primitive reads: the markup runtime's
+    /// export of that name (`boundary.md` §9.3), never the vocabulary
+    /// module's.
+    fn primitiveName(l: *Lowerer, module: Symbol, base: Symbol) Allocator.Error!JsIr.NameIndex {
+        return l.markupImport(base, JsIr.Name.qualified(module, base));
+    }
+
+    fn reportRestructured(l: *Lowerer, node: beni_markup.Node.Index, message: []const u8) Allocator.Error!void {
+        const st = l.mk.?;
+        const owned = try l.gpa.dupe(u8, message);
+        errdefer l.gpa.free(owned);
+        try l.diagnostics.append(l.gpa, .{
+            .code = .markup_restructured,
+            .module = l.in.module,
+            .region = l.region,
+            .token = st.built.node_tokens[@intFromEnum(node)],
+            .message = owned,
+        });
+    }
 };
+
+/// What the compiler keeps while it lowers one module's markup.
+const MarkupState = struct {
+    built: MarkupTree.Built,
+    lowering: *const beni_markup.Lowering,
+    cx: beni_markup.Context,
+    /// Per value slot, what an evaluated instruction is bound to.
+    bound: []Bound,
+    /// The lowering's statement lists, by `Block` handle.
+    blocks: std.ArrayList(StmtList) = .empty,
+    /// The module-level declarations the lowering hoisted, in hoist order.
+    hoisted: std.ArrayList(Node.Index) = .empty,
+    /// The start data the lowering contributed.
+    start: std.ArrayList(StartPair) = .empty,
+    /// The names earlier hoists took, by name index.
+    taken: std.DynamicBitSetUnmanaged = .{},
+    /// The module's declarations' names, as sorted symbols: a hoist's
+    /// untagged name may not be one of theirs.
+    decl_names: []const u32 = &.{},
+    /// Where the JavaScript being built is positioned (`cx.at`).
+    pos: u32 = Node.no_pos,
+};
+
+/// One pair of program start data (`boundary.md` §9.4.5).
+pub const StartPair = struct { key: []const u8, value: []const u8 };
+
+const Bound = union(enum) {
+    none,
+    /// A name the value is read by.
+    name: JsIr.NameIndex,
+    /// A literal, copied at every use.
+    node: Node.Index,
+};
+
+/// The `Context` and `Js` of `boundary.md` §9.4.3, over one `Lowerer`.
+const markup_vtable: beni_markup.VTable = struct {
+    const M = beni_markup;
+    const E = M.Error;
+
+    fn lowerer(impl: *anyopaque) *Lowerer {
+        return @ptrCast(@alignCast(impl));
+    }
+
+    fn expr(n: Node.Index) M.Expr {
+        return @enumFromInt(n.int());
+    }
+
+    fn node(e: M.Expr) Node.Index {
+        return @enumFromInt(@intFromEnum(e));
+    }
+
+    fn nameOf(n: M.Name) JsIr.NameIndex {
+        return @enumFromInt(@intFromEnum(n));
+    }
+
+    fn pos(l: *Lowerer) u32 {
+        return l.mk.?.pos;
+    }
+
+    fn symbolOf(l: *Lowerer, text: []const u8) E!Symbol {
+        return l.interner.getOrPut(l.gpa, text);
+    }
+
+    fn at(impl: *anyopaque, n: M.Node.Index) void {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        const token = st.built.node_tokens[@intFromEnum(n)];
+        st.pos = if (token < l.in.token_starts.len) l.in.token_starts[token] else Node.no_pos;
+    }
+
+    fn fresh(impl: *anyopaque, hint: []const u8) E!M.Name {
+        const l = lowerer(impl);
+        return @enumFromInt(@intFromEnum(try l.fresh(try symbolOf(l, hint))));
+    }
+
+    /// A module-level name `<Module>$<hint>`, told apart by a tag when the
+    /// module already declares or hoisted that name — a declaration called
+    /// `k7` is `<Module>$k7` too.
+    fn hoistName(l: *Lowerer, hint: []const u8) E!JsIr.NameIndex {
+        const st = l.mk.?;
+        const base = try symbolOf(l, hint);
+        const declared = std.sort.binarySearch(u32, st.decl_names, @intFromEnum(base), struct {
+            fn order(key: u32, item: u32) std.math.Order {
+                return std.math.order(key, item);
+            }
+        }.order) != null;
+        var tag: u32 = if (declared) 1 else JsIr.Name.no_tag;
+        while (true) : (tag += 1) {
+            const n = try l.name(.{ .module = l.module_name.toOptional(), .base = base, .tag = tag });
+            if (n.int() < st.taken.bit_length and st.taken.isSet(n.int())) continue;
+            try takeName(l, n);
+            return n;
+        }
+    }
+
+    fn takeName(l: *Lowerer, n: JsIr.NameIndex) E!void {
+        const st = l.mk.?;
+        if (n.int() >= st.taken.bit_length) try st.taken.resize(l.scratch, @max(n.int() + 1, st.taken.bit_length * 2), false);
+        st.taken.set(n.int());
+    }
+
+    fn hoist(impl: *anyopaque, hint: []const u8, init: M.Expr) E!M.Name {
+        const l = lowerer(impl);
+        const n = try hoistName(l, hint);
+        try l.mk.?.hoisted.append(l.scratch, try l.add(.const_decl, pos(l), @intFromEnum(n), node(init).int()));
+        return @enumFromInt(@intFromEnum(n));
+    }
+
+    fn hoistFunction(impl: *anyopaque, hint: []const u8, params: []const M.Name, body: M.Block) E!M.Name {
+        const l = lowerer(impl);
+        const n = try hoistName(l, hint);
+        const record = try l.funcRecord(@ptrCast(params), l.mk.?.blocks.items[@intFromEnum(body)].items);
+        try l.mk.?.hoisted.append(l.scratch, try l.add(.func_decl, pos(l), @intFromEnum(n), @intFromEnum(record)));
+        return @enumFromInt(@intFromEnum(n));
+    }
+
+    fn hoisted(impl: *anyopaque, hint: []const u8) ?M.Name {
+        const l = lowerer(impl);
+        const base = l.interner.find(hint) orelse return null;
+        for (l.mk.?.hoisted.items) |stmt| {
+            const n: JsIr.NameIndex = @enumFromInt(l.b.nodes.items(.data)[stmt.int()].lhs);
+            const hoist_name = l.b.names.items[n.int()];
+            if (hoist_name.module == l.module_name.toOptional() and hoist_name.base == base) return @enumFromInt(@intFromEnum(n));
+        }
+        return null;
+    }
+
+    fn runtime(impl: *anyopaque, export_name: []const u8) E!M.Name {
+        const l = lowerer(impl);
+        return @enumFromInt(@intFromEnum(try l.markupRuntime(export_name)));
+    }
+
+    fn value(impl: *anyopaque, v: M.Value.Index) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.markupValue(v));
+    }
+
+    fn rowValues(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name) E!?M.Expr {
+        const l = lowerer(impl);
+        const result = try l.markupRowValues(into, row, item, position, captures);
+        return if (result) |n| expr(n) else null;
+    }
+
+    fn componentCall(impl: *anyopaque, n: M.Node.Index, children: ?M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.markupComponentCall(n, if (children) |c| node(c) else null));
+    }
+
+    /// An event's payload extractor, as a `foreign` of the vocabulary
+    /// module. Its reachability leg (`checker-v2.md` §25.7) lands with the
+    /// first lowering that calls this; until then an extractor no other
+    /// reference kept alive is refused rather than imported unwritten.
+    fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        const it = st.built.tree.items[item_index];
+        if (it.kind != .event or it.event == .none) return null;
+        if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
+        try l.report(.not_implemented, l.region, "The markup lowering `{s}` reads an event's payload extractor, which this beni does not keep alive for a lowering yet.", .{st.lowering.name});
+        return error.Reported;
+    }
+
+    /// `Maybe`'s representation is `{ $: "Just" | "Nothing", a }` with the
+    /// payload slot padded to `null` in `Nothing` (`CtorRep.tagged`), so the
+    /// payload is `.a`, and `Just ()` — whose payload is `null` too — is
+    /// told from `Nothing` only by the tag.
+    fn maybe(impl: *anyopaque, e: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.member(node(e), try l.slotName(0), pos(l)));
+    }
+
+    fn isJust(impl: *anyopaque, e: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const p = pos(l);
+        const tag = try l.member(node(e), l.well.tag, p);
+        return expr(try l.binary(.strict_eq, tag, try l.stringNode("Just", p), p));
+    }
+
+    fn start(impl: *anyopaque, key: []const u8, val: []const u8) E!void {
+        const l = lowerer(impl);
+        try l.mk.?.start.append(l.scratch, .{ .key = try l.scratch.dupe(u8, key), .value = try l.scratch.dupe(u8, val) });
+    }
+
+    fn report(impl: *anyopaque, n: M.Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        const l = lowerer(impl);
+        try l.reportRestructured(n, message);
+        return error.Reported;
+    }
+
+    fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
+        const l = lowerer(impl);
+        const p = pos(l);
+        return expr(switch (which) {
+            .string => try l.stringNode(bytes, p),
+            .number => try l.numberNode(bytes, p),
+            .true => try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
+            .false => try l.add(.false_lit, p, Node.Data.unused, Node.Data.unused),
+            .null => try l.nullNode(p),
+            else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        });
+    }
+
+    fn template(impl: *anyopaque, parts: []const M.TemplatePart) E!M.Expr {
+        const l = lowerer(impl);
+        const p = pos(l);
+        var nodes: std.ArrayList(Node.Index) = .empty;
+        for (parts) |part| switch (part) {
+            .text => |bytes| {
+                const offset, const len = try l.b.addString(bytes);
+                try nodes.append(l.scratch, try l.add(.template_chunk, p, offset, len));
+            },
+            .expr => |e| try nodes.append(l.scratch, node(e)),
+        };
+        const range = try l.b.addRange(nodes.items);
+        return expr(try l.add(.template, p, @intFromEnum(range.start), @intFromEnum(range.end)));
+    }
+
+    fn name(impl: *anyopaque, n: M.Name) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.ident(nameOf(n), pos(l)));
+    }
+
+    fn call(impl: *anyopaque, callee: M.Expr, args: []const M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.call(node(callee), @ptrCast(args), pos(l)));
+    }
+
+    fn member(impl: *anyopaque, target: M.Expr, field: []const u8) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.member(node(target), try symbolOf(l, field), pos(l)));
+    }
+
+    fn index(impl: *anyopaque, target: M.Expr, at_: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.add(.index_get, pos(l), node(target).int(), node(at_).int()));
+    }
+
+    fn object(impl: *anyopaque, properties: []const M.Property) E!M.Expr {
+        const l = lowerer(impl);
+        const p = pos(l);
+        var nodes: std.ArrayList(Node.Index) = .empty;
+        for (properties) |prop| try nodes.append(l.scratch, try l.property(try symbolOf(l, prop.key), node(prop.value), p));
+        return expr(try l.object(nodes.items, p));
+    }
+
+    fn array(impl: *anyopaque, elements: []const M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const range = try l.b.addRange(@ptrCast(elements));
+        return expr(try l.add(.array, pos(l), @intFromEnum(range.start), @intFromEnum(range.end)));
+    }
+
+    fn arrow(impl: *anyopaque, params: []const M.Name, body: M.Block) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.arrowOf(@ptrCast(params), l.mk.?.blocks.items[@intFromEnum(body)].items, pos(l)));
+    }
+
+    fn cond(impl: *anyopaque, test_: M.Expr, consequent: M.Expr, alternate: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.condOf(node(test_), node(consequent), node(alternate), pos(l)));
+    }
+
+    fn binary(impl: *anyopaque, op: M.BinaryOp, left: M.Expr, right: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const js_op: JsIr.BinaryOp = switch (op) {
+            .strict_eq => .strict_eq,
+            .strict_ne => .strict_ne,
+            .logical_and => .logical_and,
+            .logical_or => .logical_or,
+            .add => .add,
+            _ => .strict_eq,
+        };
+        return expr(try l.binary(js_op, node(left), node(right), pos(l)));
+    }
+
+    fn unary(impl: *anyopaque, op: M.UnaryOp, operand: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const js_op: JsIr.UnaryOp = switch (op) {
+            .not => .not,
+            .type_of => .type_of,
+            _ => .not,
+        };
+        return expr(try l.unary(js_op, node(operand), pos(l)));
+    }
+
+    fn block(impl: *anyopaque) E!M.Block {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        try st.blocks.append(l.scratch, .empty);
+        return @enumFromInt(st.blocks.items.len - 1);
+    }
+
+    fn statement(impl: *anyopaque, into: M.Block, s: M.Statement) E!void {
+        const l = lowerer(impl);
+        const st = l.mk.?;
+        const p = pos(l);
+        const stmt: Node.Index = switch (s) {
+            .constant => |c| try l.add(.const_decl, p, @intFromEnum(nameOf(c.name)), node(c.value).int()),
+            .let => |c| try l.add(.let_decl, p, @intFromEnum(nameOf(c.name)), if (c.value) |v| node(v).int() else @intFromEnum(Node.OptionalIndex.none)),
+            .assign => |a| try l.add(.assign_stmt, p, node(a.target).int(), node(a.value).int()),
+            .@"if" => |i| blk: {
+                const then_range = try l.b.addRange(st.blocks.items[@intFromEnum(i.then)].items);
+                const else_range = if (i.otherwise) |o| try l.b.addRange(st.blocks.items[@intFromEnum(o)].items) else JsIr.SubRange.empty;
+                const record = try l.b.addRecord(JsIr.If{
+                    .then_start = then_range.start,
+                    .then_end = then_range.end,
+                    .else_start = else_range.start,
+                    .else_end = else_range.end,
+                });
+                break :blk try l.add(.if_stmt, p, node(i.condition).int(), @intFromEnum(record));
+            },
+            .@"return" => |r| try l.add(.return_stmt, p, if (r) |v| @intFromEnum(node(v).toOptional()) else @intFromEnum(Node.OptionalIndex.none), Node.Data.unused),
+            .expression => |e| try l.add(.expr_stmt, p, node(e).int(), Node.Data.unused),
+            .block => |inner| blk: {
+                const range = try l.b.addRange(st.blocks.items[@intFromEnum(inner)].items);
+                const record = try l.b.addRecord(range);
+                break :blk try l.add(.block_stmt, p, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(record));
+            },
+        };
+        try st.blocks.items[@intFromEnum(into)].append(l.scratch, stmt);
+    }
+
+    const vtable: beni_markup.VTable = .{
+        .at = at,
+        .fresh = fresh,
+        .hoist = hoist,
+        .hoist_function = hoistFunction,
+        .hoisted = hoisted,
+        .runtime = runtime,
+        .value = value,
+        .row_values = rowValues,
+        .component_call = componentCall,
+        .extractor = extractor,
+        .maybe = maybe,
+        .is_just = isJust,
+        .start = start,
+        .report = report,
+        .literal = literal,
+        .template = template,
+        .name = name,
+        .call = call,
+        .member = member,
+        .index = index,
+        .object = object,
+        .array = array,
+        .arrow = arrow,
+        .cond = cond,
+        .binary = binary,
+        .unary = unary,
+        .block = block,
+        .statement = statement,
+    };
+}.vtable;
 
 // ---------------------------------------------------------------------------
 // Tests

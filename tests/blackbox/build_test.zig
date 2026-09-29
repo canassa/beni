@@ -307,6 +307,142 @@ test "a build is byte-identical at every --jobs" {
     }
 }
 
+/// A view module and the program that renders it through the `ssr`
+/// lowering: a component in the other module, a `For` compiled in place,
+/// a `Show`, and holes and attributes of several kinds — enough roots,
+/// hoisted kinds and fresh names across two modules that anything the
+/// markup lowering named from completion order would show.
+fn writeMarkupProject(w: *World) !void {
+    try w.write("View.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub type alias Row =
+        \\    { id : Int, label : String }
+        \\
+        \\
+        \\pub row : { item : Row, selected : Int } -> Html msg
+        \\row props =
+        \\    <tr class={[ ( "row", True ), ( "danger", props.item.id == props.selected ) ]}><td>{props.item.id}</td><td>{props.item.label}</td></tr>
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Node exposing (Program)
+        \\import Ssr
+        \\import View
+        \\
+        \\
+        \\page : List View.Row, Maybe String -> Html msg
+        \\page rows title =
+        \\    <main>
+        \\        <Show when={title} keyed fallback={<h1>Untitled</h1>}>{\t -> <h1 title={t}>{t} &amp; co</h1>}</Show>
+        \\        <table>
+        \\            <tbody>
+        \\                <For each={rows} keyed={.id}>{\r -> <View.row item={r} selected={2} />}</For>
+        \\            </tbody>
+        \\        </table>
+        \\    </main>
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (Ssr.render (page [ { id = 1, label = "a" }, { id = 2, label = "<b>" } ] (Just "T")))
+        \\
+    );
+}
+
+const markup_page = "<main><h1 title=\"T\">T &amp; co</h1><table><tbody><tr class=\"row\"><td>1</td><td>a</td></tr><tr class=\"row danger\"><td>2</td><td>&lt;b></td></tr></tbody></table></main>\n";
+
+test "a markup program builds byte-identical at every --jobs, and runs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `boundary.md` §9.6: a lowering names what it hoists and what it binds
+    // from the module's site and a counter of the module's own lowering,
+    // never one shared between workers, and start data is sorted — so the
+    // markup rule-5 test is the ordinary one with markup in it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMarkupProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.runWith(&.{ "build", "--platform=node", "--out=one", "--jobs=1", "Main.beni", "View.beni" }, .{ .raw_diagnostics = true });
+    const many = try w.runWith(&.{ "build", "--platform=node", "--out=many", "--jobs=8", "Main.beni", "View.beni" }, .{ .raw_diagnostics = true });
+    const one_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=one-rel", "--jobs=1", "Main.beni", "View.beni" }, .{ .raw_diagnostics = true });
+    const many_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=many-rel", "--jobs=8", "Main.beni", "View.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(one);
+    try expectBuilt(many);
+    try expectBuilt(one_r);
+    try expectBuilt(many_r);
+    try w.expectProgram("one/_main.mjs", .{ .stdout = markup_page });
+    try w.expectProgram("one-rel/_main.mjs", .{ .stdout = markup_page });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectSameTree(&w, "one", "many");
+    try expectSameTree(&w, "one-rel", "many-rel");
+    // The markup runtime is copied because a module imports it.
+    try testing.expect(w.exists("one/_platform/markup.foreign.mjs"));
+}
+
+test "a view formatted renders the page the view rendered" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The formatter never changes what a page says (language.md §11.15):
+    // whitespace between children keeps its newlines, and text keeps its
+    // characters. The view is written unformatted — attributes past the
+    // line, spaces the page shows between children on one line, and a run
+    // holding a newline, which shows nothing — and must render the same
+    // string before and after `fmt`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Node exposing (Program)
+        \\import Ssr
+        \\
+        \\
+        \\view : String -> Html msg
+        \\view name =
+        \\    <div class="card" id="main-card" title="A title long enough to push these attributes past the line"><p>Hello,   <b>{name}</b> <i>and</i>
+        \\          welcome&nbsp;back</p><ul>
+        \\    <li>one</li>  <li>two</li></ul></div>
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (Ssr.render (view "you"))
+        \\
+    );
+    const page = "<div class=\"card\" id=\"main-card\" title=\"A title long enough to push these attributes past the line\"><p>Hello, <b>you</b> <i>and</i>welcome\u{a0}back</p><ul><li>one</li> <li>two</li></ul></div>\n";
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const before = try w.runWith(&.{ "build", "--platform=node", "--out=before", "Main.beni" }, .{ .raw_diagnostics = true });
+    const formatted = try w.runWith(&.{ "fmt", "--stdout", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), formatted.exit_code);
+    try w.write("Main.beni", formatted.stdout);
+    const after = try w.runWith(&.{ "build", "--platform=node", "--out=after", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(before);
+    try expectBuilt(after);
+    try w.expectProgram("before/_main.mjs", .{ .stdout = page });
+    try w.expectProgram("after/_main.mjs", .{ .stdout = page });
+}
+
 /// Two output trees must hold the same paths and the same bytes. The WHOLE
 /// tree, not a chosen list: the set of paths is itself part of what must not
 /// move (CLAUDE.md rule 5).
