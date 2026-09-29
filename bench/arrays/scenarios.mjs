@@ -7,7 +7,7 @@
 //   node scenarios.mjs test             every candidate runs every scenario once; all must agree
 //   node scenarios.mjs bench [core] [candidate…]
 //                                       one `node --expose-gc` process per candidate, pinned with
-//                                       `taskset -c <core>`; appends to results/scenarios.jsonl
+//                                       `taskset -c <core>`; appends to results/scenarios.jsonl (or $RESULTS)
 //   node scenarios.mjs size             esbuild --minify, tree-shaken, brotli 11, of each sibling
 //   node scenarios.mjs tables [file]    the report's tables from the JSONL
 //
@@ -33,17 +33,19 @@ const mode = process.argv[2];
 // decoder's hand-over of a fresh JS array it owns (adopted, not copied, wherever the representation
 // allows), and `toJs`, what the DOM runtime and a JS API read.
 
-const common = (port) => `
+const TRIE_CHUNKS = `
+// the runtime's way through an array without copying it: the plain array itself, or the trie's
+// leaves in order and then its tail (report 38 §12.2: "walks the trie's leaves otherwise")
+function leaves(x, s, out) { if (s === 5) { for (let i = 0; i < x.length; i++) out.push(x[i]); } else for (let i = 0; i < x.length; i++) leaves(x[i], s - 5, out); return out; }
+export const chunks = (a) => { if (Array.isArray(a)) return [a]; const out = leaves(a.r, a.s, []); out.push(a.t); return out; };`;
+const common = (port, chunks = TRIE_CHUNKS) => `
 export { length, get as unsafeGet, set, push, pop, slice, concat as append, fromCons as fromList } from '../ports/${port}.js';
 import { toCons, sort, toArray } from '../ports/${port}.js';
 const NIL = { $: 0, a: null, b: null };
 export const toList = (a) => toCons(a, NIL);
 export const sortWith = (a, f) => sort(a, (x, y) => { const o = f(x, y); return o === 'LT' ? -1 : o === 'GT' ? 1 : 0; });
 export const toJs = (a) => toArray(a);
-// the runtime's way through an array without copying it: the plain array itself, or the trie's
-// leaves in order and then its tail (report 38 §12.2: "walks the trie's leaves otherwise")
-function leaves(x, s, out) { if (s === 5) { for (let i = 0; i < x.length; i++) out.push(x[i]); } else for (let i = 0; i < x.length; i++) leaves(x[i], s - 5, out); return out; }
-export const chunks = (a) => { if (Array.isArray(a)) return [a]; const out = leaves(a.r, a.s, []); out.push(a.t); return out; };`;
+${chunks}`;
 
 const SIB = {
   cow: { port: 'cow', fromJs: `export const fromJs = (arr) => arr;` },
@@ -54,6 +56,12 @@ const SIB = {
   adaptive1024: { port: 'adaptive', T: 1024, fromJs: `export const fromJs = (arr) => arr;` },
   // adaptive 1024 again, with the modules whose arrays are provably plain compiled to bare `a[i]`
   adaptive1024P: { port: 'adaptive', T: 1024, fromJs: `export const fromJs = (arr) => arr;`, P: true },
+  // research/38 §16's single sequence types. single256 is candidate B (the adaptive array plus the
+  // views `x :: rest` makes; none arise in these scenarios, so it measures their dispatch), funkia
+  // is candidate D (an RRB tree), whose walk goes through its own toArray, which is cheaper than
+  // its iterator (§3.1)
+  single256: { port: 'single', T: 256, fromJs: `export const fromJs = (arr) => arr;` },
+  funkia: { port: 'funkia', fromJs: `import { fromArray } from '../ports/funkia.js';\nexport const fromJs = (arr) => fromArray(arr);`, chunks: `export const chunks = (a) => [toArray(a)];` },
 };
 const CANDIDATES = Object.keys(SIB);
 // the proven-plain build only differs in scenarios 2 and 3's life step; the rest would repeat adaptive1024
@@ -63,7 +71,7 @@ const ALL_SC = ['table', 'decoded', 'grid', 'build', 'history', 'interop'];
 function writeSibling(name) {
   const s = SIB[name];
   const file = path.join(here, 'dist', `sib-${name}.js`);
-  fs.writeFileSync(file, common(s.port) + '\n' + s.fromJs + '\n');
+  fs.writeFileSync(file, common(s.port, s.chunks) + '\n' + s.fromJs + '\n');
   return file;
 }
 
@@ -81,7 +89,7 @@ async function bundle(name, contents, extra) {
   const s = SIB[name];
   return esbuild.build({
     stdin: { contents, resolveDir: here, loader: 'js' }, bundle: true, platform: 'neutral', target: 'es2023',
-    define: { ADA_T: String(s.T ?? 1024), HYB_T: String(s.T ?? 1024) }, logLevel: 'error', plugins: [plugin(name)], ...extra,
+    define: { ADA_T: String(s.T ?? 1024), HYB_T: String(s.T ?? 1024) }, mainFields: ['module', 'main'], logLevel: 'error', plugins: [plugin(name)], ...extra,
   });
 }
 
@@ -170,7 +178,7 @@ if (mode === 'build') {
     const r = spawnSync('taskset', ['-c', core, process.execPath, '--expose-gc', '--stack-size=4000', file], { encoding: 'utf8', maxBuffer: 1 << 26 });
     const lines = r.stdout.split('\n').filter((l) => l.startsWith('{'));
     if (r.status !== 0) console.error(name, 'FAILED', r.stderr.slice(-800));
-    fs.appendFileSync('results/scenarios.jsonl', lines.join('\n') + '\n');
+    fs.appendFileSync(process.env.RESULTS ?? 'results/scenarios.jsonl', lines.join('\n') + '\n');
     const load2 = fs.readFileSync('/proc/loadavg', 'utf8').split(' ').slice(0, 3).join(' ');
     console.log(name, lines.length, 'cells', ((Date.now() - t0) / 1000).toFixed(1) + ' s', `load ${load} -> ${load2}`);
   }

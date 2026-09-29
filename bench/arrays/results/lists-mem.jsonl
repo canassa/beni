@@ -1,0 +1,88 @@
+{"engine":"node","impl":"A","sc":"1 by hand","op":"map, recursive","n":10000,"peakKB":1212,"retained":471992,"err":null}
+{"engine":"node","impl":"A","sc":"1 by hand","op":"map, accumulator + reverse","n":10000,"peakKB":40,"retained":473168,"err":null}
+{"engine":"node","impl":"A","sc":"2 x :: rest","op":"merge sort","n":10000,"peakKB":11704,"retained":486328,"err":null}
+{"engine":"node","impl":"A","sc":"2 x :: rest","op":"pairwise","n":10000,"peakKB":1296,"retained":873200,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":10000,"peakKB":16,"retained":477816,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":10000,"peakKB":24,"retained":953920,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"into a record field","n":10000,"peakKB":4,"retained":474824,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":10000,"peakKB":12,"retained":474824,"err":null}
+{"engine":"node","impl":"A","sc":"3 library","op":"foldr building a list","n":10000,"peakKB":20,"retained":471976,"err":null}
+{"engine":"node","impl":"A","sc":"3 library","op":"List.map","n":10000,"peakKB":20,"retained":472232,"err":null}
+{"engine":"node","impl":"A","sc":"5 TEA list","op":"add + remove oldest, steady","n":10000,"peakKB":12,"retained":468384,"err":null}
+{"engine":"node","impl":"A","sc":"1 by hand","op":"map, recursive","n":100000,"peakKB":3948,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"A","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"peakKB":5772,"retained":4793128,"err":null}
+{"engine":"node","impl":"A","sc":"2 x :: rest","op":"merge sort","n":100000,"peakKB":116004,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"A","sc":"2 x :: rest","op":"pairwise","n":100000,"peakKB":4024,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"peakKB":5488,"retained":4791440,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":100000,"peakKB":7144,"retained":9590856,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"into a record field","n":100000,"peakKB":2472,"retained":4793336,"err":null}
+{"engine":"node","impl":"A","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"peakKB":9164,"retained":4793288,"err":null}
+{"engine":"node","impl":"A","sc":"3 library","op":"foldr building a list","n":100000,"peakKB":8992,"retained":4791648,"err":null}
+{"engine":"node","impl":"A","sc":"3 library","op":"List.map","n":100000,"peakKB":2028,"retained":4792464,"err":null}
+{"engine":"node","impl":"A","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"peakKB":5476,"retained":4792672,"err":null}
+{"engine":"node","impl":"B","sc":"1 by hand","op":"map, recursive","n":10000,"peakKB":14516,"retained":85952,"err":null}
+{"engine":"node","impl":"B","sc":"1 by hand","op":"map, accumulator + reverse","n":10000,"peakKB":14340,"retained":170384,"err":null}
+{"engine":"node","impl":"B","sc":"2 x :: rest","op":"merge sort","n":10000,"peakKB":395524,"retained":79432,"err":null}
+{"engine":"node","impl":"B","sc":"2 x :: rest","op":"pairwise","n":10000,"peakKB":490128,"retained":475216,"err":null}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":10000,"peakKB":12220,"retained":157040,"err":null}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":10000,"peakKB":509992,"retained":400684768,"err":null}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"into a record field","n":10000,"peakKB":12892,"retained":166384,"err":null}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":10000,"peakKB":5860,"retained":80304,"err":null}
+{"engine":"node","impl":"B","sc":"3 library","op":"foldr building a list","n":10000,"peakKB":12736,"retained":76336,"err":null}
+{"engine":"node","impl":"B","sc":"3 library","op":"List.map","n":10000,"peakKB":36,"retained":78848,"err":null}
+{"engine":"node","impl":"B","sc":"5 TEA list","op":"add + remove oldest, steady","n":10000,"peakKB":136,"retained":73224,"err":null}
+{"engine":"node","impl":"B","sc":"1 by hand","op":"map, recursive","n":100000,"peakKB":4204,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"B","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"peakKB":233928,"retained":1722992,"err":null}
+{"engine":"node","impl":"B","op":"merge sort","n":100000,"err":"killed SIGABRT"}
+{"engine":"node","impl":"B","op":"pairwise","n":100000,"err":"killed SIGABRT"}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"peakKB":216096,"retained":1719480,"err":null}
+{"engine":"node","impl":"B","op":"paths sharing tails, all kept","n":100000,"err":"killed SIGABRT"}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"into a record field","n":100000,"peakKB":237248,"retained":1722048,"err":null}
+{"engine":"node","impl":"B","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"peakKB":225888,"retained":806080,"err":null}
+{"engine":"node","impl":"B","sc":"3 library","op":"foldr building a list","n":100000,"peakKB":187536,"retained":803256,"err":null}
+{"engine":"node","impl":"B","sc":"3 library","op":"List.map","n":100000,"peakKB":2356,"retained":908208,"err":null}
+{"engine":"node","impl":"B","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"peakKB":3156,"retained":911304,"err":null}
+{"engine":"node","impl":"C","sc":"1 by hand","op":"map, recursive","n":10000,"peakKB":4,"retained":70664,"err":null}
+{"engine":"node","impl":"C","sc":"1 by hand","op":"map, accumulator + reverse","n":10000,"peakKB":12,"retained":71760,"err":null}
+{"engine":"node","impl":"C","sc":"2 x :: rest","op":"merge sort","n":10000,"peakKB":6864,"retained":178000,"err":null}
+{"engine":"node","impl":"C","sc":"2 x :: rest","op":"pairwise","n":10000,"peakKB":372,"retained":470936,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":10000,"peakKB":84,"retained":71536,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":10000,"peakKB":510256,"retained":400684744,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"into a record field","n":10000,"peakKB":12512,"retained":163072,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":10000,"peakKB":5324,"retained":86904,"err":null}
+{"engine":"node","impl":"C","sc":"3 library","op":"foldr building a list","n":10000,"peakKB":16,"retained":74888,"err":null}
+{"engine":"node","impl":"C","sc":"3 library","op":"List.map","n":10000,"peakKB":276,"retained":70712,"err":null}
+{"engine":"node","impl":"C","sc":"5 TEA list","op":"add + remove oldest, steady","n":10000,"peakKB":304,"retained":76568,"err":null}
+{"engine":"node","impl":"C","sc":"1 by hand","op":"map, recursive","n":100000,"peakKB":2344,"retained":908016,"err":null}
+{"engine":"node","impl":"C","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"peakKB":2356,"retained":910216,"err":null}
+{"engine":"node","impl":"C","sc":"2 x :: rest","op":"merge sort","n":100000,"peakKB":62216,"retained":1350592,"err":null}
+{"engine":"node","impl":"C","sc":"2 x :: rest","op":"pairwise","n":100000,"peakKB":4884,"retained":4909248,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"peakKB":2352,"retained":907128,"err":null}
+{"engine":"node","impl":"C","op":"paths sharing tails, all kept","n":100000,"err":"killed SIGABRT"}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"into a record field","n":100000,"peakKB":187780,"retained":1722144,"err":null}
+{"engine":"node","impl":"C","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"peakKB":219800,"retained":806080,"err":null}
+{"engine":"node","impl":"C","sc":"3 library","op":"foldr building a list","n":100000,"peakKB":2352,"retained":907208,"err":null}
+{"engine":"node","impl":"C","sc":"3 library","op":"List.map","n":100000,"peakKB":2496,"retained":908208,"err":null}
+{"engine":"node","impl":"C","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"peakKB":3156,"retained":911352,"err":null}
+{"engine":"node","impl":"D","sc":"1 by hand","op":"map, recursive","n":10000,"peakKB":3932,"retained":171784,"err":null}
+{"engine":"node","impl":"D","sc":"1 by hand","op":"map, accumulator + reverse","n":10000,"peakKB":3724,"retained":181040,"err":null}
+{"engine":"node","impl":"D","sc":"2 x :: rest","op":"merge sort","n":10000,"peakKB":17252,"retained":227864,"err":null}
+{"engine":"node","impl":"D","sc":"2 x :: rest","op":"pairwise","n":10000,"peakKB":14216,"retained":585280,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":10000,"peakKB":1268,"retained":148200,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":10000,"peakKB":1564,"retained":1221512,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"into a record field","n":10000,"peakKB":1652,"retained":148544,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":10000,"peakKB":600,"retained":142520,"err":null}
+{"engine":"node","impl":"D","sc":"3 library","op":"foldr building a list","n":10000,"peakKB":152,"retained":144048,"err":null}
+{"engine":"node","impl":"D","sc":"3 library","op":"List.map","n":10000,"peakKB":8,"retained":86928,"err":null}
+{"engine":"node","impl":"D","sc":"5 TEA list","op":"add + remove oldest, steady","n":10000,"peakKB":216,"retained":138552,"err":null}
+{"engine":"node","impl":"D","sc":"1 by hand","op":"map, recursive","n":100000,"peakKB":8884,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"D","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"peakKB":20464,"retained":1196088,"err":null}
+{"engine":"node","impl":"D","sc":"2 x :: rest","op":"merge sort","n":100000,"peakKB":60572,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"D","sc":"2 x :: rest","op":"pairwise","n":100000,"peakKB":52220,"retained":null,"err":"overflow"}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"peakKB":19868,"retained":1161152,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":100000,"peakKB":23112,"retained":12885456,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"into a record field","n":100000,"peakKB":16428,"retained":1163696,"err":null}
+{"engine":"node","impl":"D","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"peakKB":12188,"retained":1153384,"err":null}
+{"engine":"node","impl":"D","sc":"3 library","op":"foldr building a list","n":100000,"peakKB":8748,"retained":1155824,"err":null}
+{"engine":"node","impl":"D","sc":"3 library","op":"List.map","n":100000,"peakKB":20,"retained":1100392,"err":null}
+{"engine":"node","impl":"D","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"peakKB":544,"retained":1475840,"err":null}

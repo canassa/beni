@@ -1,0 +1,67 @@
+-- Scenario 5 of research/38 §16: a TEA model that holds its rows in a
+-- `List`, updated the way Elm's todo examples do. The render walk is the DOM
+-- runtime's, in `lists/harness.js`.
+import List
+
+
+type alias Item =
+    id : Int
+    label : String
+    done : Bool
+
+
+type alias Model =
+    items : List Item
+    nextId : Int
+
+
+type Msg
+    = Add
+    | Remove Int
+    | Toggle Int
+
+
+pub create : Int -> Model
+create n =
+    { items = List.map (List.range 1 n) (\i -> { id = i, label = "todo", done = False }), nextId = n + 1 }
+
+
+pub add : Msg
+add =
+    Add
+
+
+pub remove : Int -> Msg
+remove id =
+    Remove id
+
+
+pub toggle : Int -> Msg
+toggle id =
+    Toggle id
+
+
+pub update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Add ->
+            { model
+                | items = { id = model.nextId, label = "todo", done = False } :: model.items
+                , nextId = model.nextId + 1
+            }
+
+        Remove id ->
+            { model | items = List.filter model.items (\i -> i.id /= id) }
+
+        Toggle id ->
+            { model
+                | items =
+                    List.map model.items
+                        (\i ->
+                            if i.id == id then
+                                { i | done = not i.done }
+
+                            else
+                                i
+                        )
+            }

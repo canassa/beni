@@ -1,0 +1,27 @@
+-- A shape research/38 §16 found while reading its results: many retained lists
+-- that share their tails. A search that remembers the path to every node it
+-- reached writes `node :: parentPath` and keeps all of them; a cons list stores
+-- each path in one cell, an array copies the parent's path every time.
+import List
+
+
+--| The path to each of `n` nodes along a chain, every path kept.
+pub chainPaths : Int -> List (List Int)
+chainPaths n =
+    List.foldl (List.range 1 n)
+        []
+        (\i paths ->
+            case paths of
+                [] ->
+                    [ [ i ] ]
+
+                parent :: _ ->
+                    (i :: parent) :: paths
+        )
+
+
+--| Every path's elements summed, for the differential test (quadratic, and
+--| not timed).
+pub checksum : List (List Int) -> Int
+checksum paths =
+    List.foldl paths 0 (\p acc -> List.foldl p acc (\x s -> modBy (s * 31 + x) 1000003))

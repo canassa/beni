@@ -1,0 +1,657 @@
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":1000,"med":4393,"q1":4382,"q3":4409,"lo":4234,"hi":5227,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":1000,"med":3859,"q1":3826,"q3":4684,"lo":3716,"hi":5488,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":1000,"med":24510,"q1":24420,"q3":28710,"lo":23550,"hi":41750,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":32780,"q1":30230,"q3":51640,"lo":28150,"hi":52330,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":1000,"med":4299,"q1":4292,"q3":5818,"lo":4280,"hi":6138,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":1000,"med":3315,"q1":3312,"q3":3735,"lo":3258,"hi":4852,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":1000,"med":20490,"q1":20350,"q3":20750,"lo":19820,"hi":21310,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":29350,"q1":29260,"q3":29800,"lo":27960,"hi":30110,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":1000,"med":39900,"q1":38220,"q3":62640,"lo":37610,"hi":73680,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":1000,"med":2896,"q1":2848,"q3":3525,"lo":2777,"hi":5826,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":10000,"med":41040,"q1":40380,"q3":41280,"lo":38520,"hi":42650,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":10000,"med":52680,"q1":49760,"q3":57840,"lo":45160,"hi":61260,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":10000,"med":193400,"q1":192400,"q3":194600,"lo":186100,"hi":195400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":265000,"q1":220800,"q3":367900,"lo":215500,"hi":563500,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":10000,"med":40910,"q1":40870,"q3":81840,"lo":40820,"hi":88070,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":10000,"med":32930,"q1":32340,"q3":33410,"lo":32030,"hi":33630,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":10000,"med":189300,"q1":187100,"q3":200100,"lo":185000,"hi":202900,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":269100,"q1":266600,"q3":282300,"lo":264700,"hi":293600,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":10000,"med":64050,"q1":64010,"q3":68010,"lo":62490,"hi":70060,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":10000,"med":28080,"q1":27890,"q3":28730,"lo":27870,"hi":29040,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":10000,"med":3107000,"q1":3091000,"q3":3406000,"lo":3067000,"hi":3453000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":36610,"q1":36480,"q3":36940,"lo":36230,"hi":41070,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":86250,"q1":85300,"q3":105500,"lo":84760,"hi":135100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":10000,"med":135300,"q1":135000,"q3":138000,"lo":96360,"hi":138000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2237000,"q1":2233000,"q3":2297000,"lo":2204000,"hi":2326000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":206000,"q1":203900,"q3":207500,"lo":194000,"hi":217000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":360.2,"q1":353,"q3":369.3,"lo":338.3,"hi":370.6,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":100000,"med":32810000,"q1":32520000,"q3":33230000,"lo":32290000,"hi":45700000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":804500,"q1":804300,"q3":812200,"lo":801000,"hi":813100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":868900,"q1":868800,"q3":880000,"lo":866300,"hi":882500,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":100000,"med":1379000,"q1":1379000,"q3":1386000,"lo":1375000,"hi":1401000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":30440000,"q1":30390000,"q3":30540000,"lo":30020000,"hi":30800000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":322700,"q1":321800,"q3":334100,"lo":319400,"hi":338900,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":332.1,"q1":322.9,"q3":341,"lo":320.3,"hi":354.2,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":10000,"med":104500,"q1":101800,"q3":108100,"lo":99910,"hi":109100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":9377,"q1":9119,"q3":9673,"lo":8896,"hi":11920,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":322.6,"q1":313.8,"q3":380.5,"lo":292.3,"hi":1465,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":37520,"q1":37460,"q3":37820,"lo":36670,"hi":40040,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":28680,"q1":28680,"q3":29080,"lo":28250,"hi":29210,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":10000,"med":1295000,"q1":1292000,"q3":1349000,"lo":1267000,"hi":1413000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":1000000,"med":37080000,"q1":36280000,"q3":44860000,"lo":35860000,"hi":70750000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2186000,"q1":2163000,"q3":2366000,"lo":1924000,"hi":3169000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":354.6,"q1":334.9,"q3":364.8,"lo":329.1,"hi":478.9,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2152000,"q1":2110000,"q3":2202000,"lo":1952000,"hi":2504000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":41400,"q1":40010,"q3":43540,"lo":38010,"hi":53760,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":1000000,"med":201700000,"q1":189400000,"q3":207700000,"lo":183800000,"hi":304400000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":1000,"med":72780,"q1":71110,"q3":82930,"lo":69000,"hi":91850,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":5917000,"q1":5897000,"q3":5981000,"lo":5727000,"hi":6080000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":1000,"med":103600,"q1":101900,"q3":117500,"lo":99690,"hi":122300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":100000,"med":8805000,"q1":8780000,"q3":8945000,"lo":8542000,"hi":10210000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":20040000,"q1":19860000,"q3":20130000,"lo":18760000,"hi":20150000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":100000,"med":10280000,"q1":10270000,"q3":10520000,"lo":10170000,"hi":11330000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/first","n":10000,"med":9043,"q1":9012,"q3":9155,"lo":8840,"hi":9943,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/steady","n":10000,"med":786.5,"q1":772.1,"q3":821.2,"lo":742.3,"hi":837.5,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/undo 100","n":10000,"med":57950,"q1":57620,"q3":147300,"lo":56390,"hi":150000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":4.676,"q1":4.674,"q3":4.689,"lo":4.629,"hi":4.711,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1080000,"q1":1079000,"q3":1093000,"lo":1036000,"hi":1108000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":20840,"q1":20820,"q3":21100,"lo":20710,"hi":21230,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":816000,"q1":810800,"q3":1024000,"lo":802200,"hi":1049000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":14330,"q1":14270,"q3":14890,"lo":13300,"hi":14900,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1086000,"q1":1081000,"q3":1095000,"lo":1038000,"hi":1097000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":37920,"q1":37620,"q3":38240,"lo":36880,"hi":38570,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":10000,"med":828100,"q1":822200,"q3":1063000,"lo":794300,"hi":1073000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":4.891,"q1":4.862,"q3":4.922,"lo":4.785,"hi":4.952,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":10920000,"q1":10900000,"q3":11050000,"lo":10800000,"hi":11110000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":210500,"q1":209100,"q3":213600,"lo":206700,"hi":215000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12600000,"q1":12300000,"q3":16530000,"lo":12160000,"hi":21230000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":473500,"q1":468700,"q3":727300,"lo":442600,"hi":733500,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":11500000,"q1":11500000,"q3":11560000,"lo":11260000,"hi":11780000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":684000,"q1":678700,"q3":689500,"lo":664900,"hi":975400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":100000,"med":12540000,"q1":12490000,"q3":17040000,"lo":12340000,"hi":20450000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":1000,"med":4403,"q1":4383,"q3":4495,"lo":4343,"hi":5137,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":1000,"med":3849,"q1":3811,"q3":4939,"lo":3474,"hi":7564,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":1000,"med":26300,"q1":24710,"q3":30960,"lo":24440,"hi":43530,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":32280,"q1":32060,"q3":44480,"lo":28960,"hi":47850,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":1000,"med":4355,"q1":4341,"q3":5469,"lo":4272,"hi":9236,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":1000,"med":3534,"q1":3410,"q3":3713,"lo":3262,"hi":4391,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":1000,"med":19720,"q1":19510,"q3":20050,"lo":19190,"hi":20170,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":27130,"q1":27040,"q3":27360,"lo":26390,"hi":28670,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":1000,"med":37570,"q1":37240,"q3":73380,"lo":36170,"hi":82570,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":1000,"med":2838,"q1":2818,"q3":3071,"lo":2765,"hi":6555,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":10000,"med":41090,"q1":40720,"q3":41480,"lo":40600,"hi":42490,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":10000,"med":54770,"q1":51740,"q3":60020,"lo":43210,"hi":62540,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":10000,"med":190300,"q1":189600,"q3":190500,"lo":189200,"hi":191200,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":260900,"q1":256200,"q3":481400,"lo":212400,"hi":489000,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":10000,"med":41670,"q1":41200,"q3":42490,"lo":40620,"hi":45680,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":10000,"med":31140,"q1":31020,"q3":32950,"lo":30890,"hi":49960,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":10000,"med":181400,"q1":179500,"q3":189600,"lo":177500,"hi":190000,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":255100,"q1":250000,"q3":259500,"lo":247100,"hi":263000,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":10000,"med":69010,"q1":68790,"q3":71400,"lo":64770,"hi":87730,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":10000,"med":28460,"q1":28430,"q3":28680,"lo":28330,"hi":28740,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":10000,"med":3087000,"q1":3076000,"q3":3301000,"lo":3045000,"hi":3350000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":36630,"q1":36630,"q3":37060,"lo":36460,"hi":54700,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":102600,"q1":88060,"q3":113000,"lo":87790,"hi":120800,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":10000,"med":138600,"q1":137800,"q3":140500,"lo":91440,"hi":152900,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2234000,"q1":2232000,"q3":2247000,"lo":2207000,"hi":2260000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":210400,"q1":210400,"q3":214800,"lo":208500,"hi":220400,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":356.9,"q1":354.1,"q3":359,"lo":346.7,"hi":361.1,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":100000,"med":32550000,"q1":32360000,"q3":32630000,"lo":32100000,"hi":45320000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":787300,"q1":786900,"q3":794400,"lo":773000,"hi":802000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":825400,"q1":824300,"q3":849800,"lo":823200,"hi":855200,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":100000,"med":1353000,"q1":1347000,"q3":1358000,"lo":1346000,"hi":1365000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":30310000,"q1":29960000,"q3":30900000,"lo":29450000,"hi":33790000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":339900,"q1":339400,"q3":343600,"lo":321000,"hi":349600,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":396.7,"q1":395.5,"q3":404.7,"lo":384.2,"hi":412.5,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":10000,"med":101400,"q1":100500,"q3":107300,"lo":99460,"hi":107600,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":9538,"q1":9250,"q3":9646,"lo":9156,"hi":12580,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":315.6,"q1":314.2,"q3":663.8,"lo":311.1,"hi":1163,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":38130,"q1":38100,"q3":38280,"lo":37230,"hi":40280,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":29250,"q1":29250,"q3":29470,"lo":29100,"hi":30020,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":10000,"med":1280000,"q1":1267000,"q3":1379000,"lo":1250000,"hi":1472000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":1000000,"med":37660000,"q1":37510000,"q3":43720000,"lo":36790000,"hi":69260000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1980000,"q1":1969000,"q3":2058000,"lo":1764000,"hi":2646000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":351.9,"q1":351.2,"q3":370.2,"lo":347,"hi":510.8,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2046000,"q1":2029000,"q3":2117000,"lo":1743000,"hi":2431000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":40230,"q1":39760,"q3":42360,"lo":38450,"hi":54830,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":1000000,"med":206900000,"q1":194100000,"q3":210000000,"lo":186500000,"hi":308500000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":1000,"med":75980,"q1":75140,"q3":77660,"lo":72890,"hi":108400,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":6475000,"q1":6464000,"q3":6636000,"lo":6324000,"hi":6772000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":1000,"med":122100,"q1":119900,"q3":124400,"lo":109000,"hi":127600,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":100000,"med":9274000,"q1":9107000,"q3":9417000,"lo":9022000,"hi":10660000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":20450000,"q1":20310000,"q3":21110000,"lo":19670000,"hi":21240000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":100000,"med":11940000,"q1":11930000,"q3":12120000,"lo":11690000,"hi":12500000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/first","n":10000,"med":9115,"q1":9059,"q3":10070,"lo":8447,"hi":11770,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/steady","n":10000,"med":770.8,"q1":766.9,"q3":784.5,"lo":757.7,"hi":814.5,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/undo 100","n":10000,"med":67810,"q1":67280,"q3":162500,"lo":67100,"hi":210200,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":6.861,"q1":6.841,"q3":6.905,"lo":6.83,"hi":6.91,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1071000,"q1":1064000,"q3":1079000,"lo":1063000,"hi":1091000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":20950,"q1":20910,"q3":21370,"lo":20620,"hi":21490,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":833400,"q1":822100,"q3":840100,"lo":811800,"hi":1116000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":14350,"q1":14100,"q3":14680,"lo":13510,"hi":15490,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1091000,"q1":1091000,"q3":1100000,"lo":1087000,"hi":1105000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":38630,"q1":38460,"q3":39140,"lo":38160,"hi":46740,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":10000,"med":840400,"q1":830700,"q3":1072000,"lo":823800,"hi":1127000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":6.932,"q1":6.919,"q3":6.964,"lo":6.894,"hi":6.969,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":11400000,"q1":11330000,"q3":11500000,"lo":11300000,"hi":11710000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":215100,"q1":214900,"q3":216800,"lo":211600,"hi":217400,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":13050000,"q1":13040000,"q3":17840000,"lo":12750000,"hi":21870000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":498300,"q1":496200,"q3":741500,"lo":481300,"hi":746800,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":11800000,"q1":11750000,"q3":11970000,"lo":11630000,"hi":12010000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":747400,"q1":741700,"q3":747500,"lo":718200,"hi":1120000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":100000,"med":13120000,"q1":13030000,"q3":18030000,"lo":12780000,"hi":21220000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":1000,"med":6890,"q1":6875,"q3":8883,"lo":6755,"hi":8987,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":1000,"med":8588,"q1":7318,"q3":10200,"lo":6887,"hi":10510,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":1000,"med":38320,"q1":38150,"q3":42920,"lo":34350,"hi":257400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":1000,"med":51930,"q1":51370,"q3":88870,"lo":46710,"hi":124200,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":1000,"med":7149,"q1":7124,"q3":7272,"lo":7078,"hi":13190,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":1000,"med":7312,"q1":7305,"q3":7469,"lo":7009,"hi":15240,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":1000,"med":37500,"q1":37460,"q3":38630,"lo":36640,"hi":39160,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":38180,"q1":38140,"q3":38470,"lo":37730,"hi":39280,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":1000,"med":160900,"q1":91200,"q3":200300,"lo":84490,"hi":243100,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":1000,"med":7001,"q1":6942,"q3":7128,"lo":6841,"hi":12610,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":10000,"med":61040,"q1":61010,"q3":62110,"lo":60890,"hi":62210,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":10000,"med":70470,"q1":70240,"q3":72670,"lo":69380,"hi":73170,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":10000,"med":451700,"q1":450700,"q3":455300,"lo":445600,"hi":472400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":10000,"med":489700,"q1":486600,"q3":506100,"lo":485200,"hi":564800,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":10000,"med":64810,"q1":63850,"q3":72640,"lo":61250,"hi":168400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":10000,"med":66140,"q1":64330,"q3":78500,"lo":62560,"hi":91680,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":10000,"med":385000,"q1":380700,"q3":409900,"lo":374800,"hi":418000,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":388600,"q1":384600,"q3":414900,"lo":383700,"hi":416300,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":10000,"med":155300,"q1":153700,"q3":284800,"lo":140000,"hi":316400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":10000,"med":61630,"q1":61410,"q3":62730,"lo":60620,"hi":71090,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":10000,"med":3109000,"q1":3105000,"q3":3138000,"lo":3070000,"hi":3140000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":90700,"q1":85440,"q3":90800,"lo":85060,"hi":126400,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":150700,"q1":149700,"q3":151500,"lo":141400,"hi":189400,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":10000,"med":150600,"q1":150500,"q3":184200,"lo":148400,"hi":184400,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2842000,"q1":2834000,"q3":2903000,"lo":2811000,"hi":2939000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":318000,"q1":313100,"q3":320700,"lo":307100,"hi":324500,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":522.5,"q1":514.5,"q3":528.9,"lo":504.9,"hi":582.9,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":100000,"med":33350000,"q1":32810000,"q3":45080000,"lo":28670000,"hi":101300000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1418000,"q1":1410000,"q3":1423000,"lo":1392000,"hi":1443000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1696000,"q1":1665000,"q3":1699000,"lo":1613000,"hi":1751000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":100000,"med":1998000,"q1":1978000,"q3":2015000,"lo":1966000,"hi":2037000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":40280000,"q1":40270000,"q3":40780000,"lo":40000000,"hi":47300000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":623800,"q1":620900,"q3":627300,"lo":599600,"hi":642400,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":607.5,"q1":605.4,"q3":607.9,"lo":603.4,"hi":610.2,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":10000,"med":224900,"q1":217300,"q3":227400,"lo":214600,"hi":228600,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":466.5,"q1":465.7,"q3":669.2,"lo":438.6,"hi":998.6,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":461.9,"q1":454.1,"q3":484.7,"lo":450.7,"hi":485.1,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":47440,"q1":47050,"q3":47690,"lo":46320,"hi":47930,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":48370,"q1":47980,"q3":48770,"lo":47810,"hi":48800,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":10000,"med":1821000,"q1":1816000,"q3":1959000,"lo":1814000,"hi":1970000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":1000000,"med":69320000,"q1":69310000,"q3":83330000,"lo":46130000,"hi":99080000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":619.5,"q1":616.5,"q3":646.1,"lo":609,"hi":652.2,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":641.6,"q1":636.7,"q3":688.1,"lo":631.1,"hi":689.4,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":80190,"q1":79380,"q3":81000,"lo":76900,"hi":82690,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":83400,"q1":83090,"q3":88740,"lo":79380,"hi":92350,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":1000000,"med":305000000,"q1":302500000,"q3":332000000,"lo":291700000,"hi":342400000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":1000,"med":18370,"q1":18210,"q3":18750,"lo":17950,"hi":19430,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":1000,"med":20890000,"q1":20720000,"q3":21110000,"lo":20440000,"hi":21150000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":1000,"med":56450,"q1":56370,"q3":59490,"lo":54000,"hi":59580,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":100000,"med":5791000,"q1":5416000,"q3":6306000,"lo":5065000,"hi":6454000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":100000,"med":50290000,"q1":50220000,"q3":50640000,"lo":49060000,"hi":51150000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":100000,"med":7081000,"q1":7042000,"q3":8286000,"lo":6813000,"hi":8535000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/first","n":10000,"med":255.2,"q1":252.5,"q3":261,"lo":249.6,"hi":269.5,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/steady","n":10000,"med":940.3,"q1":915.8,"q3":956.9,"lo":909.7,"hi":966.6,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/undo 100","n":10000,"med":138200,"q1":58570,"q3":142400,"lo":56780,"hi":152900,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":82790,"q1":82710,"q3":85160,"lo":81160,"hi":86630,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1164000,"q1":1164000,"q3":1178000,"lo":1146000,"hi":1192000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":105900,"q1":103700,"q3":110000,"lo":101700,"hi":111300,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":10000,"med":918200,"q1":901300,"q3":1104000,"lo":874500,"hi":1153000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":10000,"med":81510,"q1":80990,"q3":81670,"lo":79330,"hi":82080,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1170000,"q1":1160000,"q3":1186000,"lo":1129000,"hi":1204000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":105900,"q1":105100,"q3":107500,"lo":102200,"hi":108800,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":10000,"med":951600,"q1":931400,"q3":1140000,"lo":920300,"hi":1214000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":1949000,"q1":1889000,"q3":1956000,"lo":1822000,"hi":2913000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":13360000,"q1":13270000,"q3":13380000,"lo":13160000,"hi":13420000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":2118000,"q1":2107000,"q3":2195000,"lo":2056000,"hi":3208000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":100000,"med":15390000,"q1":15190000,"q3":19780000,"lo":15090000,"hi":20310000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":100000,"med":1930000,"q1":1905000,"q3":2014000,"lo":1840000,"hi":2783000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":13590000,"q1":13520000,"q3":13840000,"lo":13260000,"hi":14020000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":2162000,"q1":2143000,"q3":2184000,"lo":2002000,"hi":3064000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":100000,"med":15250000,"q1":15190000,"q3":19950000,"lo":15050000,"hi":20040000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/one version","n":10000,"bytes":147656}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/101 versions","n":10000,"bytes":267744}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":1000,"med":4359,"q1":4349,"q3":4900,"lo":4262,"hi":5365,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":1000,"med":3993,"q1":3956,"q3":5274,"lo":3711,"hi":7021,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":1000,"med":24690,"q1":24460,"q3":28090,"lo":23470,"hi":28090,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":32550,"q1":31490,"q3":44340,"lo":29380,"hi":63320,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":1000,"med":4385,"q1":4368,"q3":4429,"lo":4299,"hi":6849,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":1000,"med":3394,"q1":3388,"q3":3598,"lo":3246,"hi":4594,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":1000,"med":20510,"q1":20270,"q3":21030,"lo":20010,"hi":21340,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":29370,"q1":28610,"q3":30880,"lo":28420,"hi":30910,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":1000,"med":40000,"q1":38940,"q3":58800,"lo":37410,"hi":74730,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":1000,"med":2800,"q1":2789,"q3":3404,"lo":2745,"hi":5915,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":10000,"med":40900,"q1":40550,"q3":42000,"lo":39840,"hi":42680,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":10000,"med":52550,"q1":51130,"q3":59520,"lo":45130,"hi":63210,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":10000,"med":188300,"q1":187700,"q3":188600,"lo":185600,"hi":191100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":260100,"q1":254800,"q3":367400,"lo":211300,"hi":532100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":10000,"med":43500,"q1":41900,"q3":78820,"lo":40860,"hi":93650,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":10000,"med":33030,"q1":32850,"q3":33170,"lo":32710,"hi":33220,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":10000,"med":193200,"q1":190200,"q3":202800,"lo":188900,"hi":203800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":276800,"q1":271900,"q3":287100,"lo":270600,"hi":289100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":10000,"med":67830,"q1":67620,"q3":69960,"lo":61200,"hi":70000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":10000,"med":29370,"q1":29250,"q3":29470,"lo":29060,"hi":29510,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":10000,"med":3144000,"q1":3138000,"q3":3440000,"lo":3056000,"hi":3502000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":36360,"q1":36200,"q3":36610,"lo":35420,"hi":36640,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":88680,"q1":88380,"q3":104900,"lo":87600,"hi":134300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":10000,"med":138300,"q1":136800,"q3":139100,"lo":99250,"hi":140300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2242000,"q1":2239000,"q3":2270000,"lo":2199000,"hi":2276000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":205400,"q1":205200,"q3":208300,"lo":205100,"hi":210300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":329.2,"q1":327.4,"q3":334.8,"lo":317.9,"hi":361.7,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":100000,"med":32570000,"q1":32240000,"q3":32960000,"lo":32080000,"hi":45660000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":809300,"q1":797300,"q3":813400,"lo":794800,"hi":817100,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":875500,"q1":872700,"q3":895400,"lo":858300,"hi":908300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":100000,"med":1390000,"q1":1388000,"q3":1396000,"lo":1377000,"hi":1396000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":29930000,"q1":29770000,"q3":30120000,"lo":29230000,"hi":30250000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":315000,"q1":311500,"q3":324900,"lo":300100,"hi":346700,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":334.1,"q1":331.7,"q3":347.9,"lo":325.1,"hi":350.9,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":10000,"med":107400,"q1":106500,"q3":109700,"lo":102700,"hi":113300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":9625,"q1":9455,"q3":10000,"lo":9015,"hi":11370,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":320.2,"q1":319.7,"q3":325.6,"lo":317.6,"hi":1110,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":40210,"q1":38900,"q3":40660,"lo":36490,"hi":40770,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":29650,"q1":29400,"q3":29980,"lo":28370,"hi":30460,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":10000,"med":1244000,"q1":1241000,"q3":1365000,"lo":1230000,"hi":1390000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":1000000,"med":37990000,"q1":37930000,"q3":44530000,"lo":37240000,"hi":69730000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2019000,"q1":1931000,"q3":2937000,"lo":1720000,"hi":2958000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":363.7,"q1":361.2,"q3":386.8,"lo":354.9,"hi":523.2,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2113000,"q1":1800000,"q3":2162000,"lo":1780000,"hi":2810000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":41500,"q1":39160,"q3":41820,"lo":38720,"hi":55440,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":1000000,"med":204900000,"q1":192900000,"q3":212600000,"lo":186000000,"hi":314900000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":1000,"med":78240,"q1":76600,"q3":85970,"lo":74550,"hi":90990,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":6311000,"q1":6298000,"q3":6397000,"lo":6265000,"hi":6416000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":1000,"med":109200,"q1":105600,"q3":113700,"lo":103800,"hi":119400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":100000,"med":8857000,"q1":8824000,"q3":8948000,"lo":8638000,"hi":10210000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":20700000,"q1":20590000,"q3":20890000,"lo":19850000,"hi":21220000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":100000,"med":11240000,"q1":11150000,"q3":11400000,"lo":11010000,"hi":12430000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/first","n":10000,"med":9039,"q1":9009,"q3":9220,"lo":8981,"hi":10170,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/steady","n":10000,"med":768.4,"q1":761.4,"q3":814.7,"lo":744.3,"hi":869.1,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/undo 100","n":10000,"med":57850,"q1":57850,"q3":143100,"lo":57210,"hi":152400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":4.968,"q1":4.964,"q3":4.998,"lo":4.925,"hi":4.999,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1077000,"q1":1075000,"q3":1101000,"lo":1042000,"hi":1112000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":18960,"q1":18830,"q3":19010,"lo":18140,"hi":19080,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":866000,"q1":865900,"q3":1116000,"lo":863700,"hi":1142000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":14950,"q1":14480,"q3":15120,"lo":14190,"hi":15280,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1096000,"q1":1088000,"q3":1119000,"lo":1050000,"hi":1121000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":34150,"q1":33600,"q3":34410,"lo":32880,"hi":41610,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":10000,"med":851500,"q1":838000,"q3":1111000,"lo":804000,"hi":1126000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.176,"q1":5.174,"q3":5.192,"lo":5.154,"hi":5.282,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":11160000,"q1":11110000,"q3":11360000,"lo":10880000,"hi":11470000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":215100,"q1":214400,"q3":216400,"lo":212000,"hi":217200,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12840000,"q1":12800000,"q3":17800000,"lo":12630000,"hi":22170000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":505500,"q1":503400,"q3":753400,"lo":483300,"hi":760800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":11990000,"q1":11980000,"q3":12030000,"lo":11880000,"hi":12140000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":736300,"q1":733600,"q3":741000,"lo":692600,"hi":1128000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":100000,"med":13300000,"q1":13220000,"q3":18640000,"lo":13090000,"hi":22980000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":1000,"med":4457,"q1":4421,"q3":4487,"lo":4314,"hi":5059,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":1000,"med":3818,"q1":3767,"q3":4779,"lo":3656,"hi":7434,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":1000,"med":23270,"q1":23060,"q3":26160,"lo":22690,"hi":28490,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":28400,"q1":28370,"q3":31120,"lo":27720,"hi":69170,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":1000,"med":4221,"q1":4213,"q3":4262,"lo":4198,"hi":9478,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":1000,"med":3256,"q1":3253,"q3":3606,"lo":3218,"hi":4928,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":1000,"med":19290,"q1":19020,"q3":19490,"lo":18980,"hi":19520,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":32610,"q1":32450,"q3":33070,"lo":32110,"hi":33080,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":1000,"med":37480,"q1":37470,"q3":38450,"lo":37390,"hi":38530,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":1000,"med":2758,"q1":2741,"q3":4153,"lo":2693,"hi":5351,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":10000,"med":44280,"q1":42810,"q3":56080,"lo":41440,"hi":83300,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":10000,"med":50110,"q1":48030,"q3":56660,"lo":42070,"hi":60600,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":10000,"med":254100,"q1":253100,"q3":254900,"lo":244100,"hi":258600,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":294700,"q1":294400,"q3":298300,"lo":292900,"hi":359900,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":10000,"med":41430,"q1":41420,"q3":42440,"lo":41230,"hi":43190,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":10000,"med":31930,"q1":31250,"q3":32200,"lo":31120,"hi":49930,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":10000,"med":190400,"q1":189400,"q3":194700,"lo":187500,"hi":195200,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":405100,"q1":279900,"q3":600500,"lo":261400,"hi":656700,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":10000,"med":68840,"q1":67310,"q3":70200,"lo":65150,"hi":71030,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":10000,"med":28920,"q1":28870,"q3":28930,"lo":28430,"hi":28970,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":10000,"med":3432000,"q1":3055000,"q3":3528000,"lo":3028000,"hi":3534000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":37280,"q1":37220,"q3":37850,"lo":35740,"hi":41530,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":92060,"q1":90860,"q3":105900,"lo":89560,"hi":128300,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":10000,"med":137600,"q1":137200,"q3":138200,"lo":92950,"hi":139500,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2403000,"q1":2376000,"q3":2522000,"lo":2351000,"hi":2708000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":214600,"q1":213300,"q3":223100,"lo":205900,"hi":223200,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":361.3,"q1":356.1,"q3":381.6,"lo":345.4,"hi":394,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":100000,"med":33060000,"q1":33050000,"q3":33890000,"lo":32580000,"hi":45300000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":804500,"q1":801100,"q3":808900,"lo":799500,"hi":809300,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":889300,"q1":889100,"q3":897800,"lo":885900,"hi":920900,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":100000,"med":1392000,"q1":1386000,"q3":1399000,"lo":1368000,"hi":1402000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":31090000,"q1":30920000,"q3":32170000,"lo":30180000,"hi":40330000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":331000,"q1":328800,"q3":337300,"lo":323600,"hi":338900,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":367.4,"q1":360.1,"q3":375.7,"lo":352.2,"hi":379.8,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":10000,"med":101300,"q1":100500,"q3":108900,"lo":98850,"hi":109100,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":10040,"q1":9857,"q3":10080,"lo":9653,"hi":13830,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":314.7,"q1":313.5,"q3":562.6,"lo":313.2,"hi":683.5,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":42410,"q1":42300,"q3":43160,"lo":41600,"hi":44280,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":31700,"q1":31300,"q3":31850,"lo":30810,"hi":32000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":10000,"med":1323000,"q1":1321000,"q3":1413000,"lo":1277000,"hi":1427000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":1000000,"med":37720000,"q1":37560000,"q3":44150000,"lo":36890000,"hi":69950000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2051000,"q1":1989000,"q3":2086000,"lo":1710000,"hi":2676000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":363,"q1":357.9,"q3":381.1,"lo":349.5,"hi":513,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2250000,"q1":1958000,"q3":2298000,"lo":1942000,"hi":2379000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":41640,"q1":39970,"q3":45090,"lo":38270,"hi":56690,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":1000000,"med":208300000,"q1":200000000,"q3":211600000,"lo":184600000,"hi":305300000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":1000,"med":74380,"q1":73550,"q3":80310,"lo":71080,"hi":113600,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":6614000,"q1":6602000,"q3":6758000,"lo":6425000,"hi":6986000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":1000,"med":136100,"q1":124300,"q3":144600,"lo":122000,"hi":249600,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":100000,"med":8926000,"q1":8894000,"q3":9142000,"lo":8767000,"hi":10100000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":21630000,"q1":21570000,"q3":22140000,"lo":20870000,"hi":22910000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":100000,"med":13450000,"q1":13370000,"q3":13650000,"lo":13210000,"hi":14480000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/first","n":10000,"med":9662,"q1":9660,"q3":9887,"lo":9465,"hi":10550,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/steady","n":10000,"med":829.9,"q1":826.7,"q3":869.8,"lo":800.7,"hi":875.1,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/undo 100","n":10000,"med":73200,"q1":72530,"q3":177000,"lo":72190,"hi":193500,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":6.367,"q1":6.364,"q3":6.404,"lo":6.346,"hi":6.42,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1055000,"q1":1053000,"q3":1061000,"lo":1038000,"hi":1068000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":20660,"q1":20600,"q3":20900,"lo":20420,"hi":21010,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":840200,"q1":836200,"q3":1074000,"lo":814400,"hi":1102000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":17400,"q1":16940,"q3":17610,"lo":16730,"hi":17900,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1178000,"q1":1169000,"q3":1186000,"lo":1145000,"hi":1189000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":42860,"q1":42710,"q3":43220,"lo":41980,"hi":43580,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":10000,"med":893500,"q1":887700,"q3":1165000,"lo":863800,"hi":1178000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":7.036,"q1":7.023,"q3":7.083,"lo":6.989,"hi":7.105,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":10600000,"q1":10570000,"q3":10730000,"lo":10520000,"hi":10790000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":207400,"q1":203400,"q3":209700,"lo":201500,"hi":210000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":13010000,"q1":12960000,"q3":18540000,"lo":11960000,"hi":20320000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":487000,"q1":486300,"q3":765400,"lo":469800,"hi":785800,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":11550000,"q1":11540000,"q3":11680000,"lo":11420000,"hi":11820000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":752900,"q1":745800,"q3":769600,"lo":711200,"hi":1221000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":100000,"med":13630000,"q1":13580000,"q3":18300000,"lo":13310000,"hi":22440000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":1000,"med":6996,"q1":6983,"q3":7256,"lo":6906,"hi":7910,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":1000,"med":7402,"q1":7396,"q3":8841,"lo":7238,"hi":11320,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":1000,"med":37420,"q1":36220,"q3":77490,"lo":34320,"hi":139500,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":1000,"med":54540,"q1":51260,"q3":88380,"lo":47420,"hi":89050,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":1000,"med":7466,"q1":7449,"q3":10620,"lo":7290,"hi":11700,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":1000,"med":7433,"q1":7375,"q3":10190,"lo":7311,"hi":10940,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":1000,"med":37760,"q1":37560,"q3":38500,"lo":36570,"hi":38920,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":40880,"q1":40760,"q3":41260,"lo":40390,"hi":42460,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":1000,"med":64330,"q1":60500,"q3":77030,"lo":55400,"hi":87480,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":1000,"med":7078,"q1":7027,"q3":7104,"lo":6990,"hi":7122,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":10000,"med":63650,"q1":63600,"q3":63960,"lo":62670,"hi":64050,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":10000,"med":69110,"q1":68980,"q3":70130,"lo":68310,"hi":71670,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":10000,"med":465300,"q1":464700,"q3":898300,"lo":437000,"hi":914800,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":10000,"med":518000,"q1":516500,"q3":529700,"lo":514500,"hi":628900,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":10000,"med":62890,"q1":62490,"q3":63580,"lo":62180,"hi":64430,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":10000,"med":64110,"q1":64040,"q3":64160,"lo":63880,"hi":64230,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":10000,"med":393900,"q1":393400,"q3":397200,"lo":387800,"hi":397400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":408600,"q1":407700,"q3":418600,"lo":399100,"hi":418700,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":10000,"med":124600,"q1":124500,"q3":143400,"lo":120800,"hi":164600,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":10000,"med":64610,"q1":64570,"q3":66290,"lo":63630,"hi":113700,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":10000,"med":3570000,"q1":3382000,"q3":3665000,"lo":3225000,"hi":4012000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":94340,"q1":89930,"q3":97050,"lo":88640,"hi":139500,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":233600,"q1":168600,"q3":247100,"lo":157800,"hi":263500,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":10000,"med":160800,"q1":159700,"q3":197100,"lo":158800,"hi":206900,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":3037000,"q1":2999000,"q3":3181000,"lo":2964000,"hi":3259000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":338600,"q1":337700,"q3":354900,"lo":331100,"hi":391000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":558.5,"q1":555.9,"q3":563.1,"lo":531.1,"hi":2402,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":100000,"med":36730000,"q1":36530000,"q3":49470000,"lo":36270000,"hi":111300000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1573000,"q1":1571000,"q3":1579000,"lo":1560000,"hi":1586000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1741000,"q1":1734000,"q3":1776000,"lo":1700000,"hi":1823000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":100000,"med":2131000,"q1":2124000,"q3":2157000,"lo":2105000,"hi":2157000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":43480000,"q1":43330000,"q3":50130000,"lo":40630000,"hi":54200000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":642500,"q1":640400,"q3":651000,"lo":633500,"hi":665400,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":613.7,"q1":609.5,"q3":617.2,"lo":602.9,"hi":617.9,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":10000,"med":229600,"q1":227400,"q3":245500,"lo":226100,"hi":248000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":464.8,"q1":460.4,"q3":467.2,"lo":454.5,"hi":501.9,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":475,"q1":472.5,"q3":479.6,"lo":464.1,"hi":489,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":49230,"q1":49000,"q3":49480,"lo":48490,"hi":49900,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":50010,"q1":49830,"q3":51030,"lo":49080,"hi":51070,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":10000,"med":1923000,"q1":1923000,"q3":2048000,"lo":1913000,"hi":2076000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":1000000,"med":76100000,"q1":75570000,"q3":81350000,"lo":47720000,"hi":100400000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":640.3,"q1":637,"q3":656,"lo":631.4,"hi":665.5,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":680.2,"q1":669.4,"q3":700.9,"lo":644.1,"hi":713.9,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":81110,"q1":81070,"q3":82330,"lo":79270,"hi":82450,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":89810,"q1":88290,"q3":95270,"lo":86540,"hi":95310,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":1000000,"med":323900000,"q1":313900000,"q3":335100000,"lo":295000000,"hi":341400000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":1000,"med":18210,"q1":18170,"q3":19140,"lo":17940,"hi":19300,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":1000,"med":20440000,"q1":20160000,"q3":20640000,"lo":19520000,"hi":20820000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":1000,"med":62410,"q1":61220,"q3":109300,"lo":59560,"hi":114800,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":100000,"med":6282000,"q1":5616000,"q3":6828000,"lo":5489000,"hi":9575000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":100000,"med":52670000,"q1":51930000,"q3":53700000,"lo":50880000,"hi":54920000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":100000,"med":7277000,"q1":7240000,"q3":8555000,"lo":7086000,"hi":8566000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/first","n":10000,"med":273.9,"q1":271.7,"q3":280,"lo":269.5,"hi":283.8,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/steady","n":10000,"med":935,"q1":926.2,"q3":957,"lo":901.4,"hi":971.4,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/undo 100","n":10000,"med":62370,"q1":62040,"q3":140700,"lo":61790,"hi":143200,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":83830,"q1":83810,"q3":89640,"lo":82120,"hi":89870,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1211000,"q1":1209000,"q3":1223000,"lo":1165000,"hi":1226000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":109700,"q1":108500,"q3":110100,"lo":106000,"hi":113100,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":10000,"med":945100,"q1":943600,"q3":1165000,"lo":942300,"hi":1212000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":10000,"med":83860,"q1":82930,"q3":85930,"lo":81560,"hi":86880,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1233000,"q1":1225000,"q3":1237000,"lo":1192000,"hi":1239000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":108200,"q1":106000,"q3":111300,"lo":99030,"hi":113500,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":10000,"med":948500,"q1":936400,"q3":965100,"lo":927300,"hi":1218000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":2043000,"q1":2010000,"q3":2094000,"lo":1980000,"hi":3172000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":14130000,"q1":13980000,"q3":14190000,"lo":13720000,"hi":14270000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":2218000,"q1":2209000,"q3":2268000,"lo":2196000,"hi":3306000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":100000,"med":15800000,"q1":15690000,"q3":20520000,"lo":15510000,"hi":20610000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":100000,"med":1992000,"q1":1985000,"q3":2039000,"lo":1967000,"hi":2853000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":14110000,"q1":14030000,"q3":14140000,"lo":13990000,"hi":14150000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":2214000,"q1":2198000,"q3":2251000,"lo":2170000,"hi":3278000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":100000,"med":15980000,"q1":15980000,"q3":20090000,"lo":15370000,"hi":20490000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/one version","n":10000,"bytes":148296}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/101 versions","n":10000,"bytes":267104}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":1000,"med":4792,"q1":4741,"q3":4847,"lo":4638,"hi":5287,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":1000,"med":4252,"q1":4090,"q3":7244,"lo":4063,"hi":7277,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":1000,"med":26210,"q1":25800,"q3":28180,"lo":25420,"hi":41190,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":33690,"q1":33270,"q3":38450,"lo":30030,"hi":71190,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":1000,"med":4468,"q1":4438,"q3":4583,"lo":4417,"hi":6959,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":1000,"med":3576,"q1":3574,"q3":3717,"lo":3416,"hi":4430,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":1000,"med":20520,"q1":20460,"q3":20790,"lo":20100,"hi":21350,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":29580,"q1":29270,"q3":29970,"lo":28990,"hi":29970,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":1000,"med":39790,"q1":39460,"q3":40290,"lo":38830,"hi":43590,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":1000,"med":2917,"q1":2912,"q3":4419,"lo":2887,"hi":5911,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/first","n":10000,"med":42890,"q1":42740,"q3":42980,"lo":42190,"hi":51710,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update one/steady","n":10000,"med":50780,"q1":49560,"q3":55900,"lo":45850,"hi":59400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/first","n":10000,"med":284800,"q1":280700,"q3":296700,"lo":261500,"hi":508800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":332400,"q1":328100,"q3":335800,"lo":318100,"hi":406300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/first","n":10000,"med":45680,"q1":45610,"q3":46700,"lo":44420,"hi":48190,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/swap/steady","n":10000,"med":35190,"q1":35170,"q3":35270,"lo":34790,"hi":35580,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one/first","n":10000,"med":126000,"q1":125600,"q3":127400,"lo":124100,"hi":130000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":188000,"q1":187900,"q3":192900,"lo":186500,"hi":265700,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/append 1000/first","n":10000,"med":74320,"q1":70710,"q3":132800,"lo":66460,"hi":179800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"table","op":"table/select/steady","n":10000,"med":30660,"q1":30640,"q3":30710,"lo":30230,"hi":30780,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":10000,"med":3652000,"q1":3299000,"q3":3692000,"lo":3234000,"hi":3696000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":38360,"q1":38250,"q3":38610,"lo":37580,"hi":38910,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":98680,"q1":96160,"q3":119100,"lo":91540,"hi":131400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":10000,"med":147100,"q1":147000,"q3":148000,"lo":103800,"hi":160700,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2346000,"q1":2340000,"q3":2356000,"lo":2318000,"hi":2384000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":216500,"q1":214800,"q3":217700,"lo":213200,"hi":227300,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":342.8,"q1":341.6,"q3":347.3,"lo":338.7,"hi":359.1,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/decode","n":100000,"med":33700000,"q1":33610000,"q3":34210000,"lo":33540000,"hi":47430000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":824900,"q1":819100,"q3":831600,"lo":818200,"hi":838800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":853700,"q1":852600,"q3":867700,"lo":834400,"hi":884800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/filter","n":100000,"med":1446000,"q1":1412000,"q3":1456000,"lo":1396000,"hi":1457000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":30680000,"q1":30670000,"q3":30910000,"lo":30620000,"hi":30940000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":332800,"q1":332500,"q3":339200,"lo":324200,"hi":359000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":359.2,"q1":355.1,"q3":363.5,"lo":352.8,"hi":366.2,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":10000,"med":110000,"q1":107300,"q3":116000,"lo":105600,"hi":120800,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":10440,"q1":10110,"q3":10800,"lo":9773,"hi":11600,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":331.6,"q1":329.3,"q3":797.9,"lo":322.4,"hi":1083,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":41540,"q1":41480,"q3":42010,"lo":40520,"hi":45610,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":31770,"q1":31760,"q3":31840,"lo":30980,"hi":32400,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":10000,"med":1341000,"q1":1340000,"q3":1416000,"lo":1336000,"hi":1428000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/make","n":1000000,"med":38260000,"q1":38190000,"q3":43750000,"lo":37340000,"hi":70070000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2060000,"q1":2013000,"q3":2103000,"lo":1762000,"hi":2731000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":356.3,"q1":354.5,"q3":381.9,"lo":350.9,"hi":508.1,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2266000,"q1":1972000,"q3":2272000,"lo":1914000,"hi":2354000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":43220,"q1":41500,"q3":44250,"lo":39690,"hi":57090,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"grid","op":"grid/life step","n":1000000,"med":211200000,"q1":200400000,"q3":215200000,"lo":191000000,"hi":309300000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":1000,"med":77930,"q1":75920,"q3":87900,"lo":74900,"hi":91060,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":6696000,"q1":6510000,"q3":6888000,"lo":6366000,"hi":6958000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":1000,"med":111600,"q1":109200,"q3":112900,"lo":108400,"hi":118700,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/collect by push","n":100000,"med":9162000,"q1":9084000,"q3":9291000,"lo":8989000,"hi":10770000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":21180000,"q1":21130000,"q3":22030000,"lo":20490000,"hi":22410000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"build","op":"build/coin-change table","n":100000,"med":11310000,"q1":11280000,"q3":11640000,"lo":11120000,"hi":12240000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/first","n":10000,"med":9414,"q1":9299,"q3":9711,"lo":9201,"hi":10840,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/edit/steady","n":10000,"med":767.9,"q1":764,"q3":877.9,"lo":750.7,"hi":883.1,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"history/undo 100","n":10000,"med":60080,"q1":59950,"q3":157800,"lo":59610,"hi":180700,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":5.104,"q1":5.099,"q3":5.135,"lo":5.041,"hi":5.145,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1132000,"q1":1122000,"q3":1145000,"lo":1080000,"hi":1150000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":21530,"q1":21400,"q3":21690,"lo":20910,"hi":22360,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":869000,"q1":867200,"q3":1181000,"lo":865600,"hi":1338000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":16620,"q1":16060,"q3":17240,"lo":15900,"hi":17320,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1143000,"q1":1140000,"q3":1153000,"lo":1133000,"hi":1158000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":41240,"q1":39970,"q3":41710,"lo":38280,"hi":42290,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":10000,"med":860300,"q1":854000,"q3":1079000,"lo":850900,"hi":1098000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.386,"q1":5.375,"q3":5.41,"lo":5.369,"hi":5.52,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":11450000,"q1":11410000,"q3":11530000,"lo":11220000,"hi":11560000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":219400,"q1":217800,"q3":220100,"lo":217100,"hi":220600,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":13330000,"q1":13300000,"q3":19000000,"lo":13170000,"hi":22730000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":530300,"q1":525100,"q3":548000,"lo":517600,"hi":880500,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":12190000,"q1":12160000,"q3":12380000,"lo":12100000,"hi":12430000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":779600,"q1":765900,"q3":786000,"lo":728700,"hi":1113000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"interop","op":"interop/html list/edited","n":100000,"med":13370000,"q1":13190000,"q3":18000000,"lo":13020000,"hi":21710000,"S":7}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"adaptive256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":1000,"med":4449,"q1":4448,"q3":4625,"lo":4329,"hi":5192,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":1000,"med":4014,"q1":3972,"q3":6098,"lo":3854,"hi":7757,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":1000,"med":26070,"q1":25400,"q3":30290,"lo":24530,"hi":38460,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":1000,"med":30080,"q1":29390,"q3":48090,"lo":29320,"hi":64910,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":1000,"med":4405,"q1":4395,"q3":4459,"lo":4344,"hi":9783,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":1000,"med":3373,"q1":3372,"q3":3815,"lo":3369,"hi":4773,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":1000,"med":19980,"q1":19800,"q3":20160,"lo":19470,"hi":20960,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":27550,"q1":27530,"q3":27820,"lo":27280,"hi":28530,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":1000,"med":38920,"q1":38660,"q3":39040,"lo":37740,"hi":40920,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":1000,"med":2861,"q1":2855,"q3":4043,"lo":2821,"hi":5312,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/first","n":10000,"med":43460,"q1":43440,"q3":43580,"lo":41880,"hi":44190,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update one/steady","n":10000,"med":53910,"q1":53200,"q3":57400,"lo":46830,"hi":60080,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/first","n":10000,"med":271700,"q1":271500,"q3":296400,"lo":248300,"hi":505200,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/update every 10th/steady","n":10000,"med":299900,"q1":299000,"q3":354500,"lo":292900,"hi":360800,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/first","n":10000,"med":42740,"q1":42620,"q3":43480,"lo":41940,"hi":45310,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/swap/steady","n":10000,"med":31670,"q1":31650,"q3":32200,"lo":31340,"hi":49030,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one/first","n":10000,"med":195700,"q1":195500,"q3":198300,"lo":190000,"hi":204000,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":372600,"q1":307600,"q3":591800,"lo":261300,"hi":662600,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/append 1000/first","n":10000,"med":72530,"q1":71310,"q3":75160,"lo":69590,"hi":75370,"S":7}
+{"engine":"node","impl":"single256","sc":"table","op":"table/select/steady","n":10000,"med":29900,"q1":29790,"q3":30140,"lo":29660,"hi":30390,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":10000,"med":3587000,"q1":3207000,"q3":3622000,"lo":3201000,"hi":3648000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":37950,"q1":37410,"q3":38220,"lo":37120,"hi":38780,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":93070,"q1":91520,"q3":109200,"lo":91010,"hi":132700,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":10000,"med":140000,"q1":134700,"q3":145000,"lo":91510,"hi":146100,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2332000,"q1":2315000,"q3":2334000,"lo":2282000,"hi":2335000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":221500,"q1":217300,"q3":222800,"lo":215500,"hi":233600,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":385.8,"q1":383.8,"q3":389.9,"lo":363.7,"hi":395.9,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/decode","n":100000,"med":34910000,"q1":34870000,"q3":34980000,"lo":34340000,"hi":48020000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":844900,"q1":844500,"q3":845700,"lo":838000,"hi":854900,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":943800,"q1":939900,"q3":948100,"lo":909700,"hi":960700,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/filter","n":100000,"med":1484000,"q1":1478000,"q3":1506000,"lo":1478000,"hi":1511000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":31990000,"q1":31860000,"q3":32370000,"lo":31830000,"hi":32810000,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":338200,"q1":337200,"q3":347200,"lo":335100,"hi":350600,"S":7}
+{"engine":"node","impl":"single256","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":367.2,"q1":366.6,"q3":372.1,"lo":359.1,"hi":385.6,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":10000,"med":109200,"q1":106800,"q3":111800,"lo":102100,"hi":113500,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":9732,"q1":9724,"q3":9837,"lo":9453,"hi":12890,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":352.4,"q1":347.6,"q3":1074,"lo":340.8,"hi":1077,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":40460,"q1":40330,"q3":40700,"lo":38630,"hi":42040,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":31010,"q1":30740,"q3":31360,"lo":30520,"hi":31420,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":10000,"med":1404000,"q1":1391000,"q3":1491000,"lo":1358000,"hi":1504000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/make","n":1000000,"med":40270000,"q1":39160000,"q3":45520000,"lo":38530000,"hi":72430000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2181000,"q1":2132000,"q3":2306000,"lo":1820000,"hi":2927000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":361.8,"q1":358,"q3":380.1,"lo":347.1,"hi":537.4,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2096000,"q1":1838000,"q3":2157000,"lo":1802000,"hi":2764000,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":43080,"q1":42020,"q3":45500,"lo":41240,"hi":58540,"S":7}
+{"engine":"node","impl":"single256","sc":"grid","op":"grid/life step","n":1000000,"med":212500000,"q1":199300000,"q3":217700000,"lo":194000000,"hi":308600000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":1000,"med":80210,"q1":76310,"q3":84820,"lo":71870,"hi":124200,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":1000,"med":6840000,"q1":6668000,"q3":6892000,"lo":6545000,"hi":6950000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":1000,"med":138000,"q1":113300,"q3":275000,"lo":112300,"hi":297800,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/collect by push","n":100000,"med":9535000,"q1":9232000,"q3":10090000,"lo":8959000,"hi":11160000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/histogram of 100 000","n":100000,"med":21690000,"q1":20790000,"q3":22140000,"lo":19740000,"hi":23780000,"S":7}
+{"engine":"node","impl":"single256","sc":"build","op":"build/coin-change table","n":100000,"med":12040000,"q1":12000000,"q3":12220000,"lo":11040000,"hi":12510000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/first","n":10000,"med":9506,"q1":9402,"q3":9611,"lo":9306,"hi":11450,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/edit/steady","n":10000,"med":783.2,"q1":778.2,"q3":805.9,"lo":770.2,"hi":817.1,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"history/undo 100","n":10000,"med":75070,"q1":71670,"q3":171100,"lo":71070,"hi":174200,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":6.864,"q1":6.862,"q3":6.875,"lo":6.844,"hi":6.886,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1157000,"q1":1146000,"q3":1165000,"lo":1142000,"hi":1169000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":22390,"q1":22200,"q3":22540,"lo":21420,"hi":22720,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":10000,"med":876000,"q1":866500,"q3":1098000,"lo":852700,"hi":1430000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":10000,"med":14970,"q1":14890,"q3":15050,"lo":14760,"hi":15700,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1135000,"q1":1124000,"q3":1143000,"lo":1113000,"hi":1156000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":39540,"q1":39490,"q3":40270,"lo":39180,"hi":40430,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":10000,"med":864900,"q1":858900,"q3":1064000,"lo":837000,"hi":1083000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":6.953,"q1":6.931,"q3":6.993,"lo":6.912,"hi":7.968,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":11340000,"q1":11340000,"q3":11370000,"lo":11310000,"hi":11370000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":217300,"q1":217100,"q3":218200,"lo":210200,"hi":218500,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12840000,"q1":12800000,"q3":17840000,"lo":12670000,"hi":21010000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/toJs/edited","n":100000,"med":487000,"q1":483500,"q3":741500,"lo":477000,"hi":766100,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":11890000,"q1":11880000,"q3":12120000,"lo":11760000,"hi":12130000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":732600,"q1":727500,"q3":734600,"lo":683600,"hi":1060000,"S":7}
+{"engine":"node","impl":"single256","sc":"interop","op":"interop/html list/edited","n":100000,"med":13080000,"q1":13060000,"q3":17580000,"lo":12880000,"hi":21220000,"S":7}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"single256","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":1000,"med":7452,"q1":7444,"q3":7910,"lo":7122,"hi":8577,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":1000,"med":7580,"q1":7554,"q3":8130,"lo":7024,"hi":12740,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":1000,"med":43360,"q1":42470,"q3":113100,"lo":36490,"hi":244800,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":1000,"med":52160,"q1":52090,"q3":97100,"lo":49760,"hi":139100,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":1000,"med":7296,"q1":7158,"q3":7589,"lo":7075,"hi":13220,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":1000,"med":7545,"q1":7308,"q3":12030,"lo":7091,"hi":12070,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":1000,"med":39430,"q1":39040,"q3":39800,"lo":38180,"hi":46320,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":39430,"q1":39430,"q3":40370,"lo":39150,"hi":40550,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":1000,"med":173300,"q1":130900,"q3":200000,"lo":86500,"hi":244900,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":1000,"med":7152,"q1":6988,"q3":7242,"lo":6571,"hi":14300,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/first","n":10000,"med":64710,"q1":64610,"q3":65080,"lo":63020,"hi":66180,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update one/steady","n":10000,"med":70680,"q1":70420,"q3":72630,"lo":69260,"hi":72810,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/first","n":10000,"med":467300,"q1":464100,"q3":471400,"lo":447500,"hi":472700,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/update every 10th/steady","n":10000,"med":489700,"q1":488400,"q3":495100,"lo":482500,"hi":545300,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/first","n":10000,"med":63540,"q1":63490,"q3":86530,"lo":60970,"hi":165400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/swap/steady","n":10000,"med":66480,"q1":66470,"q3":66880,"lo":63430,"hi":87080,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one/first","n":10000,"med":394400,"q1":389800,"q3":403000,"lo":367400,"hi":420400,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":424100,"q1":407500,"q3":433000,"lo":403000,"hi":435300,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/append 1000/first","n":10000,"med":182200,"q1":154100,"q3":303300,"lo":144800,"hi":309900,"S":7}
+{"engine":"node","impl":"funkia","sc":"table","op":"table/select/steady","n":10000,"med":64920,"q1":63890,"q3":78360,"lo":61010,"hi":84860,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":10000,"med":3248000,"q1":3195000,"q3":3316000,"lo":3132000,"hi":3337000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":92270,"q1":91520,"q3":97220,"lo":87650,"hi":119200,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":164700,"q1":164600,"q3":169900,"lo":156800,"hi":207500,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":10000,"med":161900,"q1":161800,"q3":192000,"lo":158000,"hi":215900,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":3039000,"q1":3015000,"q3":3060000,"lo":2997000,"hi":3531000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":335600,"q1":332900,"q3":336700,"lo":325500,"hi":339100,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":533.2,"q1":530.2,"q3":543.6,"lo":513.5,"hi":547.3,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/decode","n":100000,"med":35210000,"q1":34790000,"q3":46940000,"lo":31380000,"hi":106900000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1534000,"q1":1529000,"q3":1547000,"lo":1491000,"hi":1552000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1767000,"q1":1733000,"q3":1805000,"lo":1648000,"hi":1810000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/filter","n":100000,"med":2094000,"q1":2092000,"q3":2147000,"lo":2076000,"hi":2157000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":42790000,"q1":42160000,"q3":43630000,"lo":41730000,"hi":49320000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":641700,"q1":633700,"q3":654300,"lo":622600,"hi":672000,"S":7}
+{"engine":"node","impl":"funkia","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":614.4,"q1":609.1,"q3":627.1,"lo":584.7,"hi":645.4,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":10000,"med":221800,"q1":220900,"q3":225500,"lo":214900,"hi":233500,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":466.8,"q1":463.2,"q3":598.9,"lo":458.5,"hi":940.3,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":473.7,"q1":473.6,"q3":488.8,"lo":449.4,"hi":508.8,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":48690,"q1":48110,"q3":49500,"lo":46690,"hi":49860,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":48400,"q1":47550,"q3":49350,"lo":47320,"hi":50570,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":10000,"med":1887000,"q1":1869000,"q3":1976000,"lo":1846000,"hi":2055000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/make","n":1000000,"med":75790000,"q1":70360000,"q3":80770000,"lo":47910000,"hi":100100000,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":628.1,"q1":613.4,"q3":654.7,"lo":594.5,"hi":658.1,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":632.6,"q1":622.1,"q3":659.6,"lo":613.3,"hi":673.6,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":78170,"q1":76810,"q3":79700,"lo":74720,"hi":80870,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":82780,"q1":82390,"q3":89380,"lo":72700,"hi":91590,"S":7}
+{"engine":"node","impl":"funkia","sc":"grid","op":"grid/life step","n":1000000,"med":309600000,"q1":307200000,"q3":333400000,"lo":294800000,"hi":345800000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":1000,"med":18860,"q1":18690,"q3":20000,"lo":18660,"hi":23670,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":1000,"med":20200000,"q1":20180000,"q3":20360000,"lo":19740000,"hi":20660000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":1000,"med":58250,"q1":57900,"q3":74270,"lo":55360,"hi":153700,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/collect by push","n":100000,"med":6073000,"q1":5472000,"q3":6584000,"lo":5357000,"hi":9686000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/histogram of 100 000","n":100000,"med":51460000,"q1":51320000,"q3":53300000,"lo":49400000,"hi":56520000,"S":7}
+{"engine":"node","impl":"funkia","sc":"build","op":"build/coin-change table","n":100000,"med":8491000,"q1":8395000,"q3":10100000,"lo":7640000,"hi":10200000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/first","n":10000,"med":271.3,"q1":267.9,"q3":277.9,"lo":266.6,"hi":278.6,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/edit/steady","n":10000,"med":969.2,"q1":949.9,"q3":1006,"lo":918,"hi":1102,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"history/undo 100","n":10000,"med":61100,"q1":61060,"q3":144700,"lo":60580,"hi":145400,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":83450,"q1":83320,"q3":83930,"lo":81700,"hi":88960,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1206000,"q1":1204000,"q3":1211000,"lo":1199000,"hi":1212000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":107400,"q1":107200,"q3":110900,"lo":106400,"hi":113900,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":10000,"med":946600,"q1":946500,"q3":956300,"lo":930600,"hi":1318000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":10000,"med":82130,"q1":81750,"q3":83410,"lo":79440,"hi":85120,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1201000,"q1":1192000,"q3":1210000,"lo":1187000,"hi":1218000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":106500,"q1":106000,"q3":107200,"lo":105400,"hi":108700,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":10000,"med":927600,"q1":922800,"q3":1101000,"lo":904200,"hi":1114000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":2089000,"q1":2050000,"q3":2154000,"lo":1918000,"hi":3477000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":13870000,"q1":13690000,"q3":14420000,"lo":13530000,"hi":14570000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":2276000,"q1":2238000,"q3":2293000,"lo":2219000,"hi":3511000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/mapped","n":100000,"med":17070000,"q1":16730000,"q3":21720000,"lo":16460000,"hi":22310000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/toJs/edited","n":100000,"med":2014000,"q1":1990000,"q3":2045000,"lo":1949000,"hi":3131000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":13660000,"q1":13630000,"q3":13750000,"lo":13440000,"hi":13800000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":2200000,"q1":2193000,"q3":2238000,"lo":2156000,"hi":3332000,"S":7}
+{"engine":"node","impl":"funkia","sc":"interop","op":"interop/html list/edited","n":100000,"med":16120000,"q1":15860000,"q3":20390000,"lo":15780000,"hi":21190000,"S":7}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/one version","n":10000,"bytes":148296}
+{"engine":"node","impl":"funkia","sc":"history","op":"retained/101 versions","n":10000,"bytes":267104}

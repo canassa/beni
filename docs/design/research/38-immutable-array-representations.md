@@ -9,7 +9,8 @@ It extends [research 29](29-rendering-strategies-measured.md) §10, whose array 
 copy-on-write JavaScript array and which said in so many words that nobody had measured which shape
 beni should ship. Two further questions the owner added on 2026-09-29 are answered in §9 (could
 `List` itself be array-backed, as Roc's is?) and §10 (typed arrays, as a reference for a future
-numeric or `Bytes` type).
+numeric or `Bytes` type). A later one, whether one sequence type could replace both `List` and
+`Array`, is §16.
 
 **Method in one paragraph.** Every candidate is a real published build or a real compiler's output,
 driven through one uniform adapter, one process (or one fresh headless-Chrome instance) per
@@ -1407,3 +1408,386 @@ node scenarios.mjs tables                                    # from results/scen
 The scenarios are in `scenarios/src/*.beni`, the experimental `Array` in `scenarios/Array.{beni,js}`,
 the driver in `scenarios/harness.js`, the port in `ports/adaptive.js`, and the raw cells of all
 rounds in `results/scenarios.jsonl`.
+
+---
+
+## 16. One sequence type, or `List` and `Array`? (added 2026-09-30, Node only)
+
+The owner's question: **does beni need both `List` (cons cells) and `Array`, or can one sequence
+type serve?** PureScript, which also targets JavaScript, makes the JS array its primary sequence and
+keeps a cons `List` in a library; Elm keeps both. §9 answered this from hand-emitted JavaScript. This
+section answers it from **list code written the way Elm programmers write it, compiled by this
+repository's `beni`**, beside §15's array scenarios, so both halves sit on one table. Node 24.19
+only, like §14 and §15.
+
+### 16.1 The candidates, and how the list syntax lowers for each
+
+Each candidate runs the same beni source through the same beni-facing API (`core/List`'s names and
+signatures). Only the representation behind it changes, and so does what `[]`, `x :: xs` and a
+`x :: rest` pattern turn into.
+
+| | representation | `[]` | `x :: xs` (construction) | `case s of [] ->` / `x :: rest ->` (matching) |
+|---|---|---|---|---|
+| **A** (two types, today) | `List`: a cons cell `{$: 1, a, b}` (beni's output, unchanged). `Array`: §15's adaptive array with T = 256 | `{$: 0, a: null, b: null}` | `List$cons(x, xs)`: one cell, O(1), shares `xs` | `s.$ === 0`; `s.a`, `s.b`: O(1) |
+| **B** (one type) | §15's adaptive array (plain JS array, or the trie after the first write above 256 elements) **plus a view** `V {b, o, length}`: elements `o…` of a plain backing array | `$nil`, one shared `[]` | `$cons(x, xs)`: **a copy**, a fresh plain array of length(xs) + 1, O(n) | `$isNil(s)` is `s.length === 0`; `$hd(s)` is `b[o]`; `$tl(s)` is a new view `o + 1`, O(1) (the tail of a trie converts it to a plain array once) |
+| **C** (one type) | B, plus the compiler rewrites of §16.3, applied by hand where a local rule licenses them | as B | as B, or a `push` into a builder the loop owns | as B, or `(array, offset)` locals with no view |
+| **D** (one type) | funkia `list` 2.0.19, an RRB tree with prefix and suffix buffers, for `List` and `Array` alike | `L.empty()` | `L.prepend(x, xs)`: O(1) amortised, shares `xs` | `length === 0`; `L.first(s)`; `L.tail(s)` = `L.slice(1, n, s)` |
+
+`core/List` is beni's compiled `core/List.beni` for A. For B and C it is `lists/core-single.js`, and
+for D it is `lists/core-funkia.js`. Both are plain JavaScript loops, or funkia's own functions, with
+the same names. A single-type core has to be written that way, because beni's `foldl`-then-`reverse`
+over a copying `::` would be quadratic inside core itself. This favours B, C and D on the scenario 3
+rows (§16.4): part of their lead on `List.map`, `foldr` and `reverse` is JavaScript against compiled
+beni, not arrays against cells. §12.2's point stands: a real `core` must keep higher-order functions
+in beni for effects, and §12.2 measured that at about 1.0× on plain arrays.
+
+### 16.2 Method
+
+* **Compiled by beni.** The four modules in `bench/arrays/lists/src/` (`Recur`, `Lib`, `Todo`,
+  `Paths`), and §15's seven for the array half, are built with `beni build --platform=node --library`,
+  the development build as in §15. beni already emits `::` as a call of `List$cons`. What it writes
+  inline is the empty list, a literal's cells, the tag test `s.$ === 0|1` and the reads `s.a`/`s.b`
+  of a subject it has just tested. `lists.mjs build` rewrites exactly those into `$nil`,
+  `$cons(h, t)`, `$isNil`/`$isCons`, `$hd` and `$tl`, which is what a patched `js/Lower.zig`
+  (`nilNode`, `consNode`, the `.list` arms of `fanDiscriminant`/`edgeKey`, `bindings` for
+  `.pat_cons`/`.pat_list`) would emit. It recognises a list subject by its test, so a tuple's or a
+  constructor's `.a` is left alone. It also fails the build if any list syntax survives.
+* **The rewrite changes nothing but the representation.** Candidate **Ac** runs the rewritten code
+  over `$` primitives that are cons cells again. It agrees with A on every check, and its time is
+  **0.9–1.1× A in 90 % of its 130 cells** (median 1.01×). The worst cells are 1.8× (`pairwise`
+  at 10 000), 2.3× (`sum` at 1 000) and 4.6× (`filter` with an accumulator at 100 000). So B, C and D carry at most that much of the lowering's own cost,
+  and it counts against them.
+* **Differential test first.** `node lists.mjs test` runs all 27 cells at sizes 0, 1, 2, 3, 10, 257
+  and 1 000, twice each, threads a TEA model through 400 messages, and checks that inputs are
+  unchanged. That is 197 checks per candidate, and **all five candidates agree**. `node
+  scenarios.mjs test` (§15's 298 checks) passes with the two new array siblings, `single256` (B) and
+  `funkia` (D).
+* **Timing.** §15's loop: at least 25 ms of warm-up, then 7 samples of at least 10 ms each (3
+  samples above 400 ms, 1 above 1.5 s). There is one `node --expose-gc --stack-size=4000
+  --max-old-space-size=4096` process per (candidate, size), pinned with `taskset -c 13`, over 3
+  rounds, and each cell is the median of the three round medians. An op that took more than 3 s per
+  call at one size is not run at the next. A process that dies is restarted without the op that
+  killed it, which is recorded as **OOM** (heap exhausted). A `RangeError` is recorded as **SO**
+  (stack overflow).
+* **Memory.** One process per (candidate, op, size). *Peak* is the resident high-water mark
+  across one call, reset through `/proc/self/clear_refs` just before it, minus the resident size at
+  that moment. *Retained* is the heap still used while the result is held, after two full GCs.
+* **Noise.** The within-run IQR is 2.9 % of the median for the median cell. Between rounds, the
+  range of a cell's three medians is 11 % of the median for the median cell and 42 % at the 90th
+  percentile for n ≥ 1 000. One round of A at n = 10–100 ran under another session's load (load
+  average 13) and was 5–10× slow; the median of three removes it. **Nothing below rests on a ratio
+  under 1.5×.**
+
+The list scenarios, in `lists/src/`:
+
+1. *By hand* (`Recur.beni`): `map` and `filter` written as `f x :: mapRec rest f` (not a tail
+   call), and again with an accumulator and a final `List.reverse`.
+2. *`x :: rest` recursion*: `sum` (a tail loop), `takeWhile` (non-tail), `pairwise`
+   (`(a, b) :: pairwise (b :: rest)`, which puts the matched `b` back on its tail), and merge sort:
+   `split` deals alternately into two accumulators, and `merge` matches `( x :: xt, y :: yt )` and
+   re-conses the head it did not take, as Elm code writes it.
+3. *The library* (`Lib.beni`): `List.foldr` building a list, `foldr` summing, `range` + `sum`,
+   `map2` as zip, `concatMap`, `acc ++ [ x ]` in a fold, `xs ++ ys`, `reverse`, `List.map`,
+   `List.filter`.
+4. *Prepending in a fold*: `List.foldl xs [] (\x acc -> x * 2 :: acc) |> List.reverse`; the same
+   accumulator as a **field of the fold's state record**; two accumulators in a **tuple**, the way
+   `List.partition` is written; and (`Paths.beni`) **retained lists that share tails**: the path to
+   every node of a chain, `(i :: parent) :: paths`, all kept, as a search that remembers its paths
+   does.
+5. *A TEA model holding a `List`* (`Todo.beni`): `Add` prepends a record to `model.items`,
+   `Remove id` is `List.filter`, and `Toggle id` is `List.map` updating one item. Every message is
+   followed by the DOM runtime's positional render walk, as in §15.4.
+6. *§15's array scenarios*, run again for A's `Array` (`adaptive256`), B's single type (`single256`,
+   which is the same adaptive array plus the view dispatch) and D's (`funkia`). C is B there: none of
+   its rewrites apply to array code.
+
+### 16.3 Candidate C's rewrites, and the rules that license them
+
+`lists/rewrites-c.js` replaces 12 compiled declarations by hand. Each one names its rule, and each
+rule needs only the declaration, its module, or one fixed `core/List` function. None needs the
+whole program:
+
+* **R1, local builder.** A self-tail-recursive helper has a `List` parameter `acc`. If the helper
+  is module-private, every call site outside the loop passes `[]`, and the loop uses `acc` only as
+  the tail of one `e :: acc` feeding its own slot, or at an exit as `acc` / `List.reverse acc`, then
+  `acc` is unique. It becomes a JS array the loop owns, stored back to front: `e :: acc` is
+  `acc.push(e)`, and `List.reverse acc` is the array itself. `acc ++ [ e ]` is the same rule, stored
+  front to back.
+* **R2, tail recursion modulo cons.** In `e :: f rest` in return position, the self-call becomes a
+  push into a fresh builder and a jump back to the loop head. No uniqueness proof is needed, because
+  the builder is new. R2 is independent of the representation: it would also end the cons list's
+  stack overflows in the table below.
+* **R3, scalar view.** A loop's `List` parameter that is only matched, and whose tail flows only
+  back into itself, is carried as (array, offset) locals.
+* **R4, one core function inlined.** `List.foldl`/`List.foldr` with a literal lambda becomes core's
+  loop at the call site, after which R1 may apply to the lambda's accumulator.
+* **R5, re-cons of a match.** If the case just matched a value as `h :: t`, a later `h :: t` is
+  that value.
+
+The rules cover mapRec, filterRec, mapAcc, filterAcc, sum, takeWhile, pairwise, split, merge,
+`foldr` building a list, `acc ++ [x]` and `x :: acc`. They leave three shapes alone:
+
+* **The TEA model's list.** It lives in the model across messages and is shared with the previous
+  model.
+* **`recordFold` and `partitionFold`.** Proving their accumulators unique means tracking uniqueness
+  through a record field or a tuple component. That is a uniqueness analysis over data, not a local
+  rule.
+* **`chainPaths`.** Its tails *are* shared, by every path that is kept, so no analysis could prove
+  them unique.
+
+### 16.4 The list scenarios
+
+Node, median per call. The A column is absolute at n = 100 / 1 000 / 10 000 / 100 000. The other
+columns are each candidate's time divided by A's at the same size. **Bold** marks ≥ 10×. **SO**
+means stack overflow, and **OOM** means the process exhausted a 4 GB heap. Where A overflows and a
+candidate does not, the candidate's absolute time is shown instead of a ratio. The n = 10 row is in
+`results/lists.jsonl`. There, B is 0.3–9.4× A, C is 0.1–2.3× and D is 0.2–25×.
+
+*1. By hand*
+
+| code | A: 100 / 1 000 / 10 000 / 100 000 | B ÷ A | C ÷ A | D ÷ A |
+|---|--:|--:|--:|--:|
+| `f x :: mapRec rest f` | 758 ns / 8.06 µs / 150 µs / SO | **15** / **45** / **207** / SO | 0.6 / 0.5 / 0.2 / 1.66 ms | 8.8 / **11** / **11** / SO |
+| `filterRec`, not a tail call | 258 ns / 3.95 µs / 53.5 µs / SO | 4.4 / **20** / **104** / SO | 0.6 / 0.4 / 0.4 / 782 µs | **18** / **11** / **12** / SO |
+| map, accumulator + `reverse` | 561 ns / 6.96 µs / 100 µs / 5.31 ms | **17** / **34** / **259** / **4 355** | 0.5 / 0.4 / 0.3 / 0.3 | **12** / 9.0 / 6.7 / 1.9 |
+| filter, accumulator + `reverse` | 224 ns / 4.86 µs / 39.9 µs / 510 µs | 5.0 / **15** / **131** / **7 470** | 0.6 / 0.3 / 0.6 / 1.3 | **20** / **10** / **13** / **12** |
+
+*2. `x :: rest` recursion*
+
+| code | A: 100 / 1 000 / 10 000 / 100 000 | B ÷ A | C ÷ A | D ÷ A |
+|---|--:|--:|--:|--:|
+| `sum` (tail loop) | 132 ns / 1.41 µs / 14.3 µs / 141 µs | 5.0 / 8.0 / 7.6 / 5.8 | 0.5 / 0.4 / 0.6 / 0.6 | **28** / **26** / **25** / **26** |
+| `takeWhile` (keeps 90 %) | 579 ns / 7.96 µs / 93.4 µs / SO | **13** / **29** / **290** / SO | 0.5 / 0.3 / 0.3 / 1.59 ms | 8.3 / 6.3 / 6.6 / SO |
+| `pairwise`, `(a, b) :: pairwise (b :: rest)` | 1.08 µs / 11.6 µs / 138 µs / SO | **15** / **105** / **2 301** / **OOM** | 0.5 / 0.5 / 0.5 / 3.55 ms | **19** / **19** / **19** / SO |
+| merge sort (re-consing `merge`) | 8.17 µs / 165 µs / 2.39 ms / SO | 8.0 / **14** / **104** / **OOM** | 1.6 / 1.0 / 1.0 / 33.1 ms | **11** / 9.1 / 9.3 / SO |
+
+*3. The library*
+
+| code | A: 100 / 1 000 / 10 000 / 100 000 | B ÷ A | C ÷ A | D ÷ A |
+|---|--:|--:|--:|--:|
+| `List.foldr xs [] (\x acc -> x * 2 :: acc)` | 471 ns / 13.9 µs / 140 µs / 1.53 ms | **19** / **23** / **227** / **16 068** | 0.7 / 0.3 / 0.3 / 1.0 | 2.3 / 0.9 / 0.9 / 1.0 |
+| `List.foldr` summing | 364 ns / 12.1 µs / 133 µs / 2.01 ms | 0.2 / 0.04 / 0.06 / 0.3 | 0.2 / 0.05 / 0.06 / 0.04 | 1.5 / 0.4 / 0.5 / 0.3 |
+| `List.range` + `List.sum` | 373 ns / 8.04 µs / 85.8 µs / 921 µs | 0.8 / 0.5 / 0.4 / 1.6 | 0.8 / 0.5 / 0.4 / 1.6 | 2.9 / 1.3 / 1.3 / 1.3 |
+| `List.map2` as zip | 761 ns / 12.2 µs / 136 µs / 1.68 ms | 0.6 / 0.5 / 0.4 / 1.0 | 0.7 / 0.5 / 0.4 / 1.0 | 1.7 / 1.0 / 0.9 / 0.7 |
+| `List.concatMap` (`[x, x + 1]`) | 4.23 µs / 41.9 µs / 501 µs / 26.7 ms | 0.7 / 0.7 / 0.7 / 0.2 | 0.6 / 0.6 / 0.7 / 0.2 | 3.1 / 3.4 / 3.7 / 1.3 |
+| `acc ++ [ x ]` in a fold | 23.8 µs / 3.02 ms / 302 ms / 107 s | 0.6 / 0.1 / 0.1 / 0.2 | 0.01 / 0.00 / 0.00 / 0.00 | 0.5 / 0.04 / 0.00 / 0.00 |
+| `xs ++ ys` | 511 ns / 6.10 µs / 53.6 µs / 1.61 ms | 0.3 / 0.2 / 1.9 / 0.5 | 0.4 / 0.1 / 2.0 / 0.6 | 0.5 / 0.2 / 0.03 / 0.00 |
+| `List.reverse` | 273 ns / 6.22 µs / 67.3 µs / 437 µs | 0.9 / 0.6 / 0.4 / 2.8 | 0.9 / 0.5 / 0.4 / 3.3 | 5.8 / 2.6 / 2.5 / 4.3 |
+| `List.map` | 957 ns / 17.6 µs / 158 µs / 1.68 ms | 0.3 / 0.2 / 0.3 / 0.9 | 0.3 / 0.2 / 0.3 / 1.0 | 0.7 / 0.4 / 0.5 / 0.4 |
+| `List.filter` | 468 ns / 12.1 µs / 145 µs / 1.45 ms | 0.5 / 0.6 / 0.7 / 0.7 | 0.6 / 0.6 / 0.8 / 0.8 | 2.4 / 0.9 / 1.0 / 1.0 |
+
+*4. Building by prepending, and sharing tails*
+
+| code | A: 100 / 1 000 / 10 000 / 100 000 | B ÷ A | C ÷ A | D ÷ A |
+|---|--:|--:|--:|--:|
+| `List.foldl xs [] (\x acc -> x * 2 :: acc)`, then `reverse` | 536 ns / 10.5 µs / 106 µs / 1.20 ms | **17** / **31** / **330** / **19 908** | 0.5 / 0.3 / 0.3 / 1.2 | 6.8 / 3.5 / 3.8 / 3.7 |
+| the same accumulator as a record field, `{ st \| seen = x :: st.seen }` | 1.36 µs / 20.5 µs / 191 µs / 2.03 ms | 7.4 / **17** / **172** / **11 519** | 7.1 / **14** / **169** / **10 992** | 3.3 / 2.2 / 2.6 / 2.7 |
+| two accumulators in a tuple (`partition`) | 786 ns / 16.5 µs / 156 µs / 1.49 ms | 8.5 / **13** / **104** / **8 189** | 7.2 / **12** / **105** / **7 744** | 2.1 / 1.1 / 1.3 / 1.8 |
+| every path kept, `(i :: parent) :: paths` | 1.22 µs / 10.8 µs / 333 µs / 7.81 ms | **16** / **251** / **1 055** / **OOM** | **17** / **310** / **1 065** / **OOM** | 4.8 / 6.0 / 6.9 / 2.0 |
+
+*5. A TEA model's list (each message + one render walk)*
+
+| message | A: 100 / 1 000 / 10 000 / 100 000 | B ÷ A | C ÷ A | D ÷ A |
+|---|--:|--:|--:|--:|
+| `Add`, to the front, first | 518 ns / 8.18 µs / 79.1 µs / 1.43 ms | 1.2 / 1.0 / 1.0 / 1.4 | 1.3 / 1.0 / 1.1 / 1.2 | 2.4 / 1.6 / 1.5 / 1.5 |
+| `Add` + `Remove` oldest, steady | 2.05 µs / 23.1 µs / 171 µs / 2.30 ms | 1.0 / 1.0 / 0.9 / 1.3 | 1.0 / 0.9 / 1.0 / 1.2 | 2.1 / 1.8 / 1.9 / 1.2 |
+| `Toggle` one (`List.map`), steady | 1.43 µs / 18.8 µs / 173 µs / 2.25 ms | 0.9 / 0.9 / 0.8 / 1.1 | 0.7 / 0.9 / 0.8 / 1.1 | 1.3 / 1.0 / 1.0 / 0.8 |
+| `Remove` one (`List.filter`), first | 1.47 µs / 19.3 µs / 171 µs / 2.73 ms | 0.8 / 0.9 / 0.8 / 1.1 | 0.5 / 0.8 / 0.8 / 1.0 | 2.3 / 1.7 / 2.0 / 1.2 |
+| render only | 308 ns / 6.87 µs / 69.3 µs / 472 µs | 1.0 / 0.9 / 0.9 / 1.1 | 1.0 / 0.9 / 1.0 / 1.1 | 3.4 / 1.5 / 1.6 / 2.5 |
+
+What the tables say:
+
+1. **B alone is not viable.** Every `x :: xs` whose tail the loop does not own is an O(n) copy, so
+   each of the ordinary shapes is O(n²): hand-written `map`/`filter`, accumulator-then-`reverse`,
+   `takeWhile`, `foldr` building a list, prepending in a `foldl`. They cost 15–45× A at 1 000
+   elements, 100–330× at 10 000 and 4 000–20 000× at 100 000, which is 4–24 s for one call. Two
+   shapes also run out of memory. `pairwise` and merge sort re-cons the head they matched
+   (`b :: rest`, `y :: yt`), so every stack frame holds its own fresh copy of the rest of the list,
+   and live memory is O(n²). At 10 000 elements their peak is 390–480 MB (§16.6), and at 100 000
+   they exhaust a 4 GB heap. Even the plain walk `sum`, which never builds, costs **5.8–8×** A,
+   because every step allocates a view. In a GC'd target a view object costs about what a cons cell
+   costs, but the cons list allocated its cells once, when the list was built.
+2. **C is the fastest candidate wherever its rules reach.** It runs at 0.2–0.6× A on every
+   by-hand and `x :: rest` shape, with no stack overflow at 100 000, where A overflows on five of
+   them. At n = 10 merge sort is 1.6–2.3× A. The library rows are 0.04–1.0× A, except `reverse` and
+   `range` at 100 000 (1.6–3.3×, Node's large-array copies, §4.4) and `xs ++ ys` at 10 000 (2×).
+3. **C still has three O(n²) shapes, and the rules cannot reach them.** An accumulator kept in a
+   **record field** or a **tuple** costs 12–14× A at 1 000, 105–169× at 10 000 and 7 700–11 000×
+   at 100 000 (11–22 s). **Retained lists that share their tails** cost 310× A at 1 000 and
+   1 065× at 10 000; they retain 382 MB where A retains 0.9 MB, and exhaust the heap at 100 000.
+   All three are code Elm programmers write:
+   * `List.partition` and `List.unzip` in `elm/core` are written with a tuple accumulator;
+   * a fold whose state is a record is the usual way to carry more than one value;
+   * `node :: pathSoFar` in a search, an undo stack of states, and a persistent stack all share
+     tails by design.
+4. **D has no cliff anywhere, but pays a constant factor everywhere.** Prepending is O(1), so
+   nothing is quadratic and nothing runs out of memory. `acc ++ [x]` and `xs ++ ys` are O(log n)
+   and beat A by up to four orders of magnitude, because A's `++` copies its left side. But funkia's
+   `tail` is a `slice`, so a walk costs **25–28× A** (`sum`). The by-hand and `x :: rest` shapes cost
+   6–20×, and the render walk 1.5–2.5×. It overflows the stack where A does, because R2 was not
+   applied to it.
+5. **The TEA list does not separate the candidates.** `Add` on a copying representation is an
+   O(n) copy, but every message is followed by an O(n) render walk anyway. So B and C are within
+   0.5–1.4× A on every message, and D within 0.8–3.4×. This is §15.4's result again: the walk is the
+   message.
+
+### 16.5 The array half: §15's scenarios under the single types
+
+§15's harness, same method, 3 rounds, `RESULTS=results/single-scenarios.jsonl`. The baseline is A's
+`Array` (adaptive, T = 256). Ratios are per cell.
+
+| scenario (§15) | B (single256) ÷ A | D (funkia) ÷ A |
+|---|--:|--:|
+| TEA table, every message, 1 000 and 10 000 rows | 0.92–1.06×; 1.31× on `update every 10th`, first, and 1.38× on `remove one + add one`, steady, at 10 000 | 1.3–2.4×; 4.0× on `append 1000` at 1 000 |
+| decoded data: decode, `foldl`, `filter`, sort, binary search, `get`, at 10 000 and 100 000 | 0.99–1.10× | 1.0–2.5× |
+| grid: steady ticks, life step | 0.98–1.05× | 1.5–2.0× |
+| grid: first tick (A converts to a trie once) | 0.97–1.01× | **0.00–0.05×** (no conversion) |
+| build in a fold: `push` collect, coin table | 0.97–1.25× | 0.24–0.69× |
+| build in a fold: histogram (`update`) | 1.04–1.05× | 2.5–3.2× |
+| undo history: edit, first / steady / 100 undos | 1.05 / 1.02 / 1.26× | 0.03 / 1.22 / 1.08× |
+| undo history: retained, 101 versions of 10 000 | 178 KB (1.0×) | 262 KB (1.5×) |
+| interop: `toJs` of a mapped array, 10 000 / 100 000 | 5 → 7 ns (1.4×) | **84 µs / 2.0 ms** (O(n), against 5 ns) |
+| interop: `Math.max.apply`, `JSON.stringify`, HTML list | 0.97–1.04× | 1.1–1.2× (JSON, HTML); 2.8–10× (`Math.max`) |
+
+**B costs nothing on the array half.** The view check is one `instanceof` that never succeeds
+here. All but four cells are within 1.11× of A; the four (the two table cells noted, the 100 undos,
+and a 5 → 7 ns `toJs`) are within 1.38×. That is
+expected: B's array *is* §15's adaptive array. **D is 1.2–2.5× slower on reads and walks**, and O(n)
+at every interop boundary, where A hands over a plain array for free. It wins wherever A pays its
+one-time trie conversion, and on building by `push`.
+
+### 16.6 Memory
+
+Peak is the resident growth during one call. Retained is the heap held by the result.
+
+| code | n | A (cons) | B | C | D |
+|---|--:|--:|--:|--:|--:|
+| map, accumulator + `reverse` | 100 000 | 5.6 MB / 4.6 MB | **228 MB** / 1.6 MB | 2.3 MB / 0.9 MB | 20 MB / 1.1 MB |
+| `x :: acc` in a fold | 100 000 | 5.4 MB / 4.6 MB | **211 MB** / 1.6 MB | 2.3 MB / 0.9 MB | 19 MB / 1.1 MB |
+| into a record field | 100 000 | 2.4 MB / 4.6 MB | **232 MB** / 1.6 MB | **183 MB** / 1.6 MB | 16 MB / 1.1 MB |
+| merge sort | 10 000 | 11 MB / 0.5 MB | **386 MB** / 0.1 MB | 6.7 MB / 0.2 MB | 17 MB / 0.2 MB |
+| `pairwise` | 10 000 | 1.3 MB / 0.9 MB | **479 MB** / 0.5 MB | 0.4 MB / 0.5 MB | 14 MB / 0.6 MB |
+| merge sort, `pairwise` | 100 000 | stack overflow | **heap exhausted (4 GB)** | 61 MB, 4.8 MB / 1.3, 4.7 MB | stack overflow |
+| every path kept | 10 000 | 0.02 MB / **0.9 MB** | 498 MB / **382 MB** | 498 MB / **382 MB** | 1.5 MB / 1.2 MB |
+| every path kept | 100 000 | 7.0 MB / 9.1 MB | heap exhausted | heap exhausted | 23 MB / 12 MB |
+| TEA list, `Add` + `Remove`, steady | 100 000 | 5.3 MB / 4.6 MB | 3.1 MB / 0.9 MB | 3.1 MB / 0.9 MB | 0.5 MB / 1.4 MB |
+| `List.map` | 100 000 | 2.0 MB / 4.6 MB | 2.3 MB / 0.9 MB | 2.4 MB / 0.9 MB | 0.02 MB / 1.0 MB |
+
+Entries are peak / retained. A retained array is **5–6× smaller** than a cons list: 8–9 bytes an
+element in Node against 46–48 (§8). Only the path case turns that around, because there each array
+holds its own copy of what the cons lists share. It is the one scenario where a representation
+choice changes *retained* memory by orders of magnitude (382 MB against 0.9 MB), not just the peak.
+
+### 16.7 Bundle size
+
+`node lists.mjs size`: esbuild `--minify`, tree-shaken, brotli 11. The surface is the twelve list
+functions the scenarios reach plus the `$` primitives, and §15's Array sibling surface.
+
+| runtime | min | gzip | **brotli** |
+|---|--:|--:|--:|
+| A: cons `List` (compiled `core/List` + `List.js`) | 1 213 | 541 | **515** |
+| A: `Array` sibling (adaptive) | 3 723 | 1 448 | **1 377** |
+| A: both | 4 959 | 1 913 | **1 801** |
+| B: one runtime (`single.js` + list core) | 6 601 | 2 409 | **2 260** |
+| C: B + builder helpers | 6 698 | 2 453 | **2 299** |
+| D: one runtime (funkia + adapters) | 16 297 | 5 613 | **5 197** |
+
+One type does not mean fewer bytes. B needs the adaptive array *and* the views, and hand-written
+natives for every list function. D is 2.9× the two types together.
+
+### 16.8 Verdict
+
+Ratios to the two-type baseline A at n = 1 000 / 10 000. "×n²" means the ratio grows with n, i.e.
+the op is quadratic.
+
+| scenario | code shape | B ÷ A | C ÷ A | D ÷ A | catastrophic, and for whom |
+|---|---|--:|--:|--:|---|
+| 1 | `f x :: go rest` (map/filter by hand) | 20–45 / 104–207, ×n² | 0.4–0.5 / 0.2–0.4 | 11 / 11–12 | **B**: O(n²). A and D overflow the stack at 100 000 |
+| 1 | accumulator + `List.reverse` | 15–34 / 131–259, ×n² | 0.3–0.4 / 0.3–0.6 | 9–10 / 7–13 | **B**: 4–23 s at 100 000 |
+| 2 | `sum` walk | 8.0 / 7.6 | 0.4 / 0.6 | 26 / 25 | D is 25× on the most basic loop, but it is constant |
+| 2 | `takeWhile` (non-tail) | 29 / 290, ×n² | 0.3 / 0.3 | 6.3 / 6.6 | **B** |
+| 2 | `pairwise`: `(a, b) :: go (b :: rest)` | 105 / 2 301 | 0.5 / 0.5 | 19 / 19 | **B**: O(n²) time *and* live memory; 479 MB at 10 000, heap exhausted at 100 000 |
+| 2 | merge sort, `merge` re-consing its heads | 14 / 104 | 1.0 / 1.0 | 9.1 / 9.3 | **B**: 386 MB at 10 000, heap exhausted at 100 000 |
+| 3 | `foldr` building a list | 23 / 227, ×n² | 0.3 / 0.3 | 0.9 / 0.9 | **B** |
+| 3 | `foldr` sum, `range`, `map2`, `concatMap`, `map`, `filter` | 0.04–0.7 / 0.06–0.7 | same | 0.4–3.4 / 0.5–3.7 | none |
+| 3 | `acc ++ [x]` | 0.1 / 0.1 | 0.00 / 0.00 | 0.04 / 0.00 | none. **A** is the quadratic one here (107 s at 100 000) |
+| 3 | `xs ++ ys`, `reverse` | 0.2–0.6 / 0.4–1.9 | 0.1–0.5 / 0.4–2.0 | 0.2–2.6 / 0.03–2.5 | none |
+| 4 | `x :: acc` in a `foldl`, then `reverse` | 31 / 330, ×n² | 0.3 / 0.3 | 3.5 / 3.8 | **B** |
+| 4 | accumulator in a **record field** | 17 / 172, ×n² | 14 / 169, ×n² | 2.2 / 2.6 | **B and C**: 22 s at 100 000 |
+| 4 | accumulators in a **tuple** (`partition`) | 13 / 104, ×n² | 12 / 105, ×n² | 1.1 / 1.3 | **B and C**: 11 s at 100 000 |
+| 4 | retained lists **sharing tails** (`node :: path`) | 251 / 1 055 | 310 / 1 065 | 6.0 / 6.9 | **B and C**: 382 MB retained at 10 000 (A: 0.9 MB), heap exhausted at 100 000 |
+| 5 | TEA list: add to front, remove, toggle, render | 0.9–1.0 / 0.8–1.0 | 0.8–1.0 / 0.8–1.1 | 1.0–1.8 / 1.0–2.0 | none (the render walk dominates) |
+| 6 | §15 arrays: reads, walks, writes, interop | 0.92–1.38 | = B | 1.2–4.0; `toJs` O(n) | none; D pays everywhere, most at interop |
+
+**Would a programmer plausibly write the shapes that break?** For B, yes: every row marked B is
+the textbook way to write Elm. For C, the three remaining shapes are less common than a plain fold,
+but they are not exotic. `elm/core`'s own `partition` and `unzip` use tuple accumulators. A record
+as fold state is how an Elm programmer carries two values. `node :: path` is how a search remembers
+its route. An undo stack of states is W25's model history. A program that has one of these runs
+correctly on small data and becomes 10 000× slower, or dies, on the data it meets in production.
+Nothing in its source looks different from the code C handles well.
+
+**Is a single type viable?**
+
+* **B, never.** Copying `::` makes O(n²) the default for the most common list code.
+* **C, only with a guarantee C cannot give.** Its local rules turn most list code into loops that
+  beat cons cells by 2–5×. But a missed rule costs 10³–10⁴×, silently, and the rule set cannot be
+  closed. Uniqueness through records and tuples would need a whole-function data-flow analysis.
+  Retained shared tails are shared on purpose, so no static analysis makes them unique. Roc covers
+  both cases with reference counts at run time (§9), and a garbage-collected JavaScript target has
+  none. The honest guarantee would be "`x :: xs` is O(1) when the compiler can see that you own
+  `xs`", and that is a performance contract depending on an optimiser, the thing §9 warned about.
+  **A diagnostic could flag the misses**, and beni's rule says it must be a warning, not a refusal
+  (CLAUDE.md rule 7). The flag would be *"`x :: acc` inside a loop or fold, where `acc` is not
+  provably unique, copies the list"*, on every `::` that R1–R5 did not rewrite and that sits in a
+  loop, a fold's lambda or a recursive function. It would fire on the TEA `Add` too, which is
+  harmless (one copy per message, hidden by the render). It could not tell a program whose tails
+  are shared on purpose how to fix it, except by switching to a type with O(1) prepend. That
+  switch would be a second type again.
+* **D is viable in the narrow sense.** It has no cliff, no O(n²) and no memory blow-up in any
+  scenario, and it needs no compiler analysis. But its constant factor is paid everywhere: 25× on
+  the simplest walk, 6–20× on `x :: rest` recursion, 1.2–2.5× on array reads, O(n) at every JS
+  boundary where A is free, and 2.9× the bytes. A walk at 25× is not a frame-budget problem at UI
+  sizes (36 µs for 1 000 elements), but it contradicts rule 8's premise that the runtime is not the
+  limit.
+
+**Recommendation: keep two types, as §9 concluded, now measured on beni's own output.** `List`
+stays cons cells, because O(1) `::` for *any* tail is a guarantee the language can state without an
+optimiser behind it. `Array` stays §15's adaptive array, and B's own measurements show it can carry
+views at no cost to array code (0.92–1.10×) if slicing ever wants them. Two findings are worth
+taking into beni independently of the verdict:
+
+1. **R2 (tail recursion modulo cons) for the cons list.** A overflows the stack at 100 000 on five
+   of the eight by-hand shapes (`map`, `filter`, `takeWhile`, `pairwise`, merge sort). C's loops show
+   that the rewritten shape runs in O(n) with no stack. The rule is local and independent of the
+   representation, and it removes a runtime failure (a stack overflow is an exception Elm
+   programmers are promised not to see).
+2. **Native loops for `core/List`'s library functions.** B's and C's `List.foldr`, `map`, `map2`,
+   `concatMap` and `reverse` run at 0.04–0.7× A up to 10 000 elements. The gain comes mostly from replacing compiled
+   `foldl`-then-`reverse` with one loop, not from the array, so a cons-list core could take part of
+   it. That was not measured here, and it has to respect §12.2's effects rule for higher-order
+   functions.
+
+### 16.9 Reproducing
+
+From `bench/arrays/`, after `zig build` at the root and `npm ci` (which now installs funkia `list`
+2.0.19 as well):
+
+```sh
+node lists.mjs build && node lists.mjs test && node scenarios.mjs test
+for r in 1 2 3; do node lists.mjs bench 13; done            # ~16 min a round; A's `acc ++ [x]` at 100 000 is 3.5 of them
+for r in 1 2 3; do RESULTS=results/single-scenarios.jsonl node scenarios.mjs bench 13 adaptive256 single256 funkia; done
+node lists.mjs mem 13 && node lists.mjs size
+node lists.mjs tables && node lists.mjs tables-arrays
+```
+
+The files:
+
+* the scenarios, `lists/src/{Recur,Lib,Todo,Paths}.beni`;
+* the list cores, `lists/core-{cons,single,funkia}.js`;
+* B's single type, `ports/single.js`;
+* D's Array port, `ports/funkia.js`;
+* C's hand rewrites, `lists/rewrites-c.js`;
+* the driver and the syntax rewrite, `lists.mjs`, with the harness in `lists/harness.js`;
+* the raw cells, `results/lists.jsonl`, `results/lists-mem.jsonl` and
+  `results/single-scenarios.jsonl`.
