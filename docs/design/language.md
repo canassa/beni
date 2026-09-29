@@ -36,10 +36,10 @@ declaration record bodies. Inline types, extensible and empty records, ordinary
 [`schema.md`](schema.md) §2/A.5).
 
 **Markup (JSX).** Specified 2026-09-29, not built: `<div class="a">{name}</div>` is an expression of
-the platform's markup type, with bare text, typed holes, capitalised components and a `For` list
-form, typed against an element vocabulary a platform package declares — the language knows no HTML
-(§11). With it comes the promise that a record update keeps the identity of every field it does not
-name (§11.12).
+the platform's markup type, with bare text, typed holes, capitalised components, a `For` list form
+and a keyed `Show`, typed against an element vocabulary a platform package declares — the language
+knows no HTML vocabulary, only the character references JSX text decodes (§11). With it comes the
+promise that a record update keeps the identity of every field it does not name (§11.12).
 
 | Elm | Beni | Where |
 |---|---|---|
@@ -340,8 +340,8 @@ parses `x.m a b`, and what is new is that BIR lowering reads it as a method call
 
 **Markup extends this grammar in two places** (2026-09-29, §11): `Atom` gains `Markup`, admitted
 only where an operand starts, never as a bare argument (§11.2–§11.3); and `Decl` gains the
-vocabulary declarations a platform package writes, `pub element`, `pub attribute` and `pub event`
-(§11.14), whose leading words are contextual.
+vocabulary declarations a platform package writes, `pub element`, `pub attribute`, `pub event` and
+`pub markup` (§11.14), whose leading words are contextual.
 
 **Declarations**
 
@@ -748,6 +748,12 @@ observable today; effects will make them observable in what a program *does*.
 | a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8) |
 | top-level constants | each before its own first use, at module load |
 | a top-level value with a `where` clause and no parameters | **its initialiser runs once per evidence, at the first use that needs it** (2026-09-26). It takes its evidence as hidden arguments (`static-dispatch-spike.md` §8.1), so it cannot run at load; the emitter keeps the value the last evidence gave, and a read or call with the same evidence reuses it (`static-dispatch-spike.md` A.85 *as amended 2026-09-26*). The memo is ONE slot keyed on the IDENTITY of every evidence argument, so what "the same evidence" means is what the emitter builds: a primitive's evidence, a context-free nominal type's derived function and a `where`-free method are module-level names, and a use whose evidence arguments are all such names runs it once, like the same value without the `where`, only at its first use rather than at load. Evidence built AT the use — a structural type (`List Int`, a record, a tuple) or a nominal type whose derived context is not empty — is a fresh closure at each read, so such a use computes again at each read, as before; so does one instantiation read from two modules, each with its own evidence names. A use with other evidence computes again, and evicts the slot. Hoisting closed evidence to module level, which would make it once per instantiation, is recorded, not done (narrowed 2026-09-26). A body that is itself a reference to a constrained function (`h = maxOf`) computes nothing and is called straight through. `run/EvidenceFunctionBodyPerCall.beni`, `run/EvidenceThunkOncePerEvidence.beni`. *Until 2026-09-26 it ran at EACH read or call.* |
+| *markup (the next five rows were added on 2026-09-29 with §11; §11.11 says what a render may skip)* | |
+| an element or fragment | **its attributes and events, then its children, in source order**, attributes and events interleaved as written, each once; a hole inside a child element is reached when that element is. A constant attribute or a text run evaluates nothing (§11.5) |
+| a component | its props in source order, the spread first where there is one, `children` where the children are written; then the call, **unless it is skipped** (§11.8) |
+| `For` | its attributes in source order; then the row function once per row, first row first, **except for rows that are skipped** (§11.9) |
+| `Show` | its attributes in source order; then, on `Just v`, the key function once and the body once, **unless the body is skipped** (§11.18) |
+| an event handler | the handler *value* is evaluated with the markup; calling a function handler, or an `Html.map` function, happens when the event fires, never during a render |
 
 **Two rows the emitter did not honour, found on 2026-09-18 by writing the fixtures for this
 table.** The document is what is right and the code is the bug, per the two rows themselves.
@@ -976,11 +982,12 @@ method_needs_annotation
 too_many_type_parameters
 unknown_output_record
 unclosed_element  mismatched_closing_tag  element_as_argument  duplicate_attribute
-spread_on_element  spread_not_first  invalid_for_children  vocabulary_outside_platform
+spread_on_element  spread_not_first  invalid_form_children  vocabulary_outside_platform
 no_markup_vocabulary  unknown_element  unknown_attribute  child_not_renderable
-void_element_with_children  invalid_for_keyed  for_key_not_primitive
-unkeyed_for  html_entity_in_text  raw_markup_attribute
+void_element_with_children  invalid_keyed  key_not_primitive
+unkeyed_for  raw_markup_attribute
 markup_restructured  unknown_markup_lowering
+unknown_form_attribute  missing_form_attribute  markup_type_in_foreign
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1007,7 +1014,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `method_needs_annotation` | static dispatch again | `method_needs_annotation`, appended on 2026-09-23 after the schema codes, again never inserted. Under checker v1 (the default until the cut-over, 2026-09-27): a comparison — or any method use — on a module's own type needs that module's method, the method has no annotation, and its binding group is checked after the use, so it has no type there yet. It was a silent wrong answer: the site compiled to `undefined`, or a derived comparison's part to a structural walk that ignored the method. The message says which method to annotate → `static-dispatch-spike.md` §10.12. **Amended 2026-09-26: checker v2 never emits it for that ordering case** — the use checks the method's group nested at the use ([`checker-v2.md`](checker-v2.md) §10.2) — **and emits it only for [`checker-v2.md`](checker-v2.md) §11.2's case**, a derived context entry indexed by a type parameter that depends on an in-flight inferred method (`checker-v2.md` §21.1). The code stays in this catalogue |
 | `too_many_type_parameters` | the checker rewrite | `too_many_type_parameters`, appended on 2026-09-25, again never inserted. It is lowering's, at the 65 536th parameter of a `type`, `type alias`, `foreign type` or `schema` (whose parameters go through the same lowering): an arity is a 16-bit count in the interface record ([`checker-v2.md`](checker-v2.md) §14.2), and a count that saturated there imported the type at the wrong width — an 8-bit count was exactly that at 255, and it built a program that threw a `TypeError` once run. A refusal and not a clamp, because the clamp is the defect. The declaration keeps its first 65 535 parameters, so a body naming a later one is also an `unbound_type_variable` |
 | `unknown_output_record` | the backend again | `unknown_output_record`, appended on 2026-09-28, again never inserted. `--out` holds a `_manifest.txt` that is not beni's record — its first line is not `beni-manifest 1`, or a line is not `<16 hex digits> <path>` — and the build would otherwise overwrite it ([`backend.md`](backend.md) §2, *The output directory holds what the last build wrote*). Reported against that file, before the first byte is written, and nothing is written. *Amended 2026-09-29:* the same code refuses a symbolic link on the way to any path the build writes in `--out` — the manifest, an output, or a directory it writes into — which beni never makes and would otherwise write through, named the same way |
-| the last five | markup | twenty codes appended on 2026-09-29 with the markup specification, again never inserted; §11.17 says which phase reports each. Three are `warning`s, on by default for the root package only — `unkeyed_for`, `html_entity_in_text` and `raw_markup_attribute` — and each names the escape that silences it. `markup_restructured` is the one code a platform's markup lowering reports rather than the compiler (`boundary.md` §9.4.7), and `unknown_markup_lowering` is a manifest's (`boundary.md` §9.2) |
+| the last seven | markup | twenty codes appended on 2026-09-29 with the markup specification, again never inserted, on the first six of these lines; §11.17 says which phase reports each. *Revised the same day by the specification review, before anything was built:* three were renamed because `Show` shares them with `For` (`invalid_for_children` → `invalid_form_children`, `invalid_for_keyed` → `invalid_keyed`, `for_key_not_primitive` → `key_not_primitive`); the warning `html_entity_in_text` was withdrawn with the rule it enforced, because text now decodes character references (§11.4); and the seventh line was appended — `unknown_form_attribute` and `missing_form_attribute` for a built-in form's own attributes (§11.9, §11.18), and `markup_type_in_foreign` for a `foreign` that would build or read one lowering's representation of markup under another (`boundary.md` §9.3). Two are `warning`s, on by default for the root package only — `unkeyed_for` and `raw_markup_attribute` — and each names the escape that silences it. `markup_restructured` is the one code a platform's markup lowering reports rather than the compiler (`boundary.md` §9.4.7), and `unknown_markup_lowering` is a manifest's (`boundary.md` §9.2) |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -1045,10 +1052,18 @@ write, what it means, and what is refused. It takes as given the owner's answers
 [`plans/browser-decisions.md`](../../plans/browser-decisions.md) — W25 (The Elm Architecture), W26
 (compiled templates, never a virtual DOM), W27 (the identity promise, §11.12), W28 (Solid 2's
 render loop), W29–W34 (Solid 2's answers for JSX), the *JSX compiler*, *JSX targets* and *Layers*
-rows, and research 36's seven questions — and it copies Solid 2's JSX wherever those answers point
-to it ([`research/36`](research/36-solid-jsx-compiler-for-beni.md),
+rows, research 36's seven questions, and the *Spec review answers* row — and it copies Solid 2's
+JSX wherever those answers point to it ([`research/36`](research/36-solid-jsx-compiler-for-beni.md),
 [`research/27`](research/27-solid-2-as-built.md)). Where beni departs from Solid 2, the rule says so
 and says why.
+
+*Revised 2026-09-29, after the specification review.* The owner's answers to it changed four things:
+text decodes HTML character references and collapses whitespace exactly as Solid 2 does (§11.4);
+the keyed `Show` is kept (§11.18); `class` and `style` take typed lists, Solid 2's object and array
+forms (§11.19); and the lowering interface is stable under additive change (`boundary.md` §9.4.6).
+The review's findings are fixed in place: the row function may be any function (§11.9), a vocabulary
+may declare markup primitives, which is how `Html.map` and `Html.text` serve every lowering
+(§11.13–§11.14), and the evaluation rows are now in §6's table (§11.11).
 
 Four other documents carry the rest, and each owns its part once:
 
@@ -1057,24 +1072,27 @@ Four other documents carry the rest, and each owns its part once:
 | lexer modes, tokens, parser, recovery, formatter mechanics, BIR | [`frontend.md`](frontend.md) §9 |
 | typing against the platform's vocabulary, hole kinds, what the interface publishes | [`checker-v2.md`](checker-v2.md) §25 |
 | platform layering, the vocabulary declarations' contract, the markup lowering interface | [`boundary.md`](boundary.md) §9 |
-| what the `dom` and `ssr` lowerings emit, and the runtime each needs | [`backend.md`](backend.md) §15 |
+| what the `dom` and `ssr` lowerings emit, the runtime each needs, and the browser's render loop | [`backend.md`](backend.md) §15 |
 
 ### 11.1 What markup is
 
 A markup expression — an **element** `<div class="a">…</div>`, a **fragment** `<>…</>`, a
-**component** `<TodoItem todo={t} />` or a **list** `<For each={rows}>…</For>` — is an ordinary
-expression of the platform's markup type, `Html msg` in the browser platform. It may appear wherever
-an operand may start (§11.2), be bound by `let`, returned from a `case` branch, stored in a list or a
-record, passed to a function and returned from one. It is a value like any other; what is special is
-only what the compiler can do with it, because the markup is syntax the compiler reads rather than
-calls it must guess about.
+**component** `<TodoItem todo={t} />`, a **list** `<For each={rows}>…</For>` or a **keyed
+conditional** `<Show when={x} keyed>…</Show>` — is an ordinary expression of the platform's markup
+type, `Html msg` in the browser platform. It may appear wherever an operand may start (§11.2), be
+bound by `let`, returned from a `case` branch, stored in a list or a record, passed to a function and
+returned from one. It is a value like any other; what is special is only what the compiler can do
+with it, because the markup is syntax the compiler reads rather than calls it must guess about.
 
-**The language knows no HTML.** Which elements exist, which attributes each takes and at what type,
-which events exist and what they carry — all of it is declared in beni source by a platform package
-(§11.14), never known to the compiler. What the language owns is the shape — tags, attributes,
-children, holes — the typing rules against whatever vocabulary is declared, and the guarantees.
-What markup compiles to is the platform's markup lowering (`boundary.md` §9): templates in the
-browser, strings under Node, anything a platform author writes.
+**The language knows no HTML vocabulary.** Which elements exist, which attributes each takes and at
+what type, which events exist and what they carry — all of it is declared in beni source by a
+platform package (§11.14), never known to the compiler. What the language owns is the shape — tags,
+attributes, children, holes — the typing rules against whatever vocabulary is declared, and the
+guarantees. **One HTML table is the language's**: the character references that text and quoted
+attribute values decode (§11.4). That is JSX's text syntax, the way `\u{…}` is a string's, and not a
+fact about any page — it is why the table lives in the compiler and not in a platform. What markup
+compiles to is the platform's markup lowering (`boundary.md` §9): templates in the browser, strings
+under Node, anything a platform author writes.
 
 ### 11.2 Where markup may start: the operand-start rule
 
@@ -1089,8 +1107,8 @@ it is an ASCII letter or `>`.** Otherwise it is the operator `<`, or the longest
 | a token that can end an operand: a name, a literal, `_`, `)`, `]`, `}`, a string's closing `"`, a multiline string's line, `?`, a `dot_lower`/`dot_index`, and the end of a markup expression (`/>`, or the `>` of a closing tag) | the operator | `a <b`, `f a <b`, `(x) <y` — comparisons, exactly as today |
 | anything else: `=`, `(`, `[`, `{`, `,`, `->`, `<-`, `if`, `then`, `else`, `in`, `of`, `case`, any binary operator, `<|`, `|>`, the start of a markup hole or attribute | markup | `x = <b />`, `f (<b />)`, `[ <li />, <li /> ]`, `\r -> <tr />`, `f <| <b />` |
 
-Between the tags of an element, `<` always begins a child or the closing tag; inside an opening
-tag it is an error.
+Between the tags of an element, `<` always begins a child or the closing tag, and must be followed by
+a letter, `/` or `>` (§11.4); inside an opening tag it is an error.
 
 The consequence is one restriction, and it is the one `language.md` §3 already has for `let`, `if`,
 `case` and lambdas: **markup is an operand, never a bare application argument.** `f <div />` is `f`
@@ -1110,12 +1128,12 @@ Markup      := Element | Fragment
 Element     := '<' TagName Attr* '/>'
              | '<' TagName Attr* '>' Child* '</' TagName '>'      -- names equal, §11.5
 Fragment    := '<' '>' Child* '</' '>'
-TagName     := markup_name                                       -- div, my-widget, TodoItem, Ui.Card, Card.header, For
+TagName     := markup_name                                       -- div, my-widget, TodoItem, Ui.Card, Card.header, For, Show
 Attr        := AttrName ('=' AttrValue)?                         -- a bare name means `={True}`
              | string '=' AttrValue                              -- the untyped escape, §11.5
              | '{' '...' Expr '}'                                -- spread; components only, §11.8
 AttrName    := markup_attr                                       -- class, aria-label, xlink:href, onClick, type
-AttrValue   := string                                            -- an ordinary string literal, §2.6
+AttrValue   := string                                            -- a string literal, §2.6, whose literal text decodes references (§11.4)
              | '{' Expr '}'
 Child       := markup_text                                       -- bare text, §11.4
              | '{' Expr? '}'                                     -- a hole, §11.6; empty is a comment holder
@@ -1130,49 +1148,62 @@ characters beni has:
 | lower-case first letter: `div`, `input`, `my-widget` | an **element** | the platform's vocabulary (§11.5) |
 | capital first letter, no lower-case segment: `TodoItem`, `Ui.Card` | a **component**, the module's `view` | the module aliases of this file (§11.8) |
 | a module path then a lower-case name: `Card.header` | a **component**, that value | the module aliases of this file (§11.8) |
-| exactly `For` | the **list form** | the language (§11.9); a module named `For` is a component only by a call |
+| exactly `For` or exactly `Show` | a **built-in form**: the list (§11.9) or the keyed conditional (§11.18) | the language; a module named `For` or `Show` is a component only by a call |
 
 The closing tag must repeat the opening tag's name byte for byte (`mismatched_closing_tag`
 otherwise, recovered by accepting it, so one mistake is one message). A self-closing tag and an
 opening tag followed at once by its closing tag are the same tree; the formatter writes the first
 (§11.15). A fragment has no attributes.
 
+**A comment inside markup** is an ordinary `--` comment in a hole or between attributes. It runs to
+the end of the line (§2.3), so a hole that holds only a comment closes on a later line —
+`{-- note` then `}` — and `{-- note}` is an unclosed hole, whose message says why (`frontend.md`
+§9.5). Between tags, `--` is text.
+
 ### 11.4 Text children
 
 Text between tags is written **bare**, as in Solid 2 (W30): `<p>Hello, {name}!</p>` is a text run,
 a hole and a text run. A text run is every byte from the `>` or `}` before it to the next `<` or
-`{`; a `>` or `}` inside it is an error (`unexpected_token`, whose message suggests `{">"}`), which is
-the JSX specification's own rule. `--` in text is text, not a comment, and `'` and `"` are ordinary
-characters. A tab is `tab_in_source` there as everywhere (§2.1).
+`{`. Three characters may not stand in text, each `unexpected_token` with the spelling that writes
+it: `>` (`{">"}`) and `}` (`{"}"}`), which is the JSX specification's own rule, and a `<` that is not
+followed by a letter, `/` or `>` (`{"<"}`), because `a < b` in text would otherwise read as the start
+of a tag. `--` in text is text, not a comment, and `'` and `"` are ordinary characters. A tab is
+`tab_in_source` there as everywhere, and another control character `invalid_character` (§2.1).
 
-**Whitespace follows Solid 2's compiler exactly** — its `trim_jsx_text`, a port of Babel's rule
-(research 36 §2.3) — applied to each run after `\r\n` became `\n`:
+**A text run is read in two steps, exactly as Solid 2's compiler reads it**
+(`references/dom-expressions/packages/compiler/src/shared/utils.rs:210-242` and `:267-269`, called in
+that order at `shared/fragment.rs:24`, `shared/component_children.rs:66` and
+`ssr/transform.rs:1085`):
 
-1. If the run contains a newline, split it at every newline. Remove the leading whitespace of every
-   line but the first. Drop every line that is now empty or all whitespace, the first included. Join
-   what is left with one space.
-2. Replace every run of whitespace with one space.
-3. A run that is now empty contributes no child.
+1. **Whitespace is collapsed** by `trim_jsx_text`, a port of Babel's rule, where *whitespace* is
+   every character with the Unicode `White_Space` property — Rust's `char::is_whitespace`, the 25
+   characters U+0009–U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F,
+   U+205F and U+3000 — and only `\n` splits lines:
+   1. if the run contains a `\n`, split it at every `\n`; remove the leading whitespace of every line
+      but the first; drop every line that is now empty or all whitespace, the first included; join
+      what is left with one space;
+   2. replace every run of whitespace with one space;
+   3. a run that is now empty contributes no child.
+2. **Character references are decoded**, by the WHATWG HTML rules for text outside an attribute
+   (HTML's *character reference state*), which is what `htmlize::unescape` implements for Solid:
+   every named reference of HTML's table of 2 231 names, with or without its `;` where HTML accepts
+   it (`&copy;` and `&copy` are both ©, and of two names that match, the longer wins: `&notit;` is
+   `¬it;`); decimal and hexadecimal references (`&#169;`, `&#xA9;`), `&#0;`, a surrogate or a value
+   past U+10FFFF becoming U+FFFD and U+0080–U+009F mapping through HTML's windows-1252 table
+   (`&#x80;` is €); anything that is no reference (`AT&T`, `&nosuch;`) left as written.
 
-So `<li>\n    <b>x</b>\n    done\n</li>` has two children, `<b>x</b>` and `done`, while
-`<b>a</b> <i>b</i>` keeps the space between its two elements, because that whitespace has no
-newline in it. **Whitespace here means the space and the newline, and nothing else** — one
-deliberate departure: Solid's rule tests Rust's `char::is_whitespace`, which is every Unicode
-`White_Space` character, U+00A0 NO-BREAK SPACE among them — the one character an author types
-precisely so that it is *not* collapsed. beni source has no tabs and folds `\r\n`, so the space and
-the newline are the whole of the whitespace a run can contain otherwise. *(This fact and the next
-paragraph's are read from dom-expressions' `packages/compiler/src/shared/utils.rs:210-242` and
-`:267-269`, at research 36's pinned tree; research 36 does not record them.)*
+So `<li>\n    <b>x</b>\n    done\n</li>` has two children, `<b>x</b>` and `done`; `<b>a</b> <i>b</i>`
+keeps the space between its two elements, because that whitespace has no newline in it; and
+`Fish &amp; chips` is `Fish & chips`. **The order is the point**: a no-break space typed as a
+character is whitespace and collapses like any other, while `&nbsp;` is decoded *after* collapsing
+and survives — which is how HTML authors already write a space that must not move. A literal
+reference is written as a hole holding a string, `{"&amp;"}`, since a hole's value is never decoded.
 
-**Text is literal.** Every character stands for itself: there are no escapes and no HTML character
-references, so `&amp;` renders as the five characters `&amp;`. This departs from Solid 2, whose
-compiler decodes every HTML named reference in text and attribute strings (`decode_html_entities`,
-through the `htmlize` crate) — a table of 2 231 names that would make the language know HTML and
-make a view's text depend on which lowering compiles it.
-A literal character, or a hole holding a string (`{"\u{A0}"}`), writes anything a reference could.
-Because a pasted `&copy;` would otherwise render as written with nobody told, **text that has the
-shape of a reference** (`&name;`, `&#123;`, `&#x1F;`) is the warning `html_entity_in_text`, naming
-the character it would have been and the two ways to write it.
+**The decoded text is what every lowering receives** (`frontend.md` §9.7), so what a page says does
+not depend on which lowering compiles it: the `dom` lowering re-escapes it into its template and the
+`ssr` lowering into its string (`backend.md` §15.3, §15.6), and both yield the same characters. The
+table is the compiler's, generated from WHATWG's `entities.json` (`frontend.md` §9.7), and it is the
+one piece of HTML the language knows (§11.1).
 
 The formatter may re-indent a text run's continuation lines and nothing more (§11.15); rules 1–3
 are what make that safe, and they are why it cannot re-flow text.
@@ -1198,20 +1229,43 @@ write by declaring the attribute so (§11.14).
 | Written | Means |
 |---|---|
 | `class="row"` | the declared attribute `class` with the constant `"row"` |
-| `class="row ${size}"` | an ordinary string literal with interpolation (§2.6): a dynamic `String` |
+| `title="Fish &amp; chips"` | the constant `"Fish & chips"`: the literal text of a quoted value decodes references (below) |
+| `class="row ${size}"` | a string literal with interpolation (§2.6): a dynamic `String` |
+| `tabindex={0}` | a constant too: a hole holding only a literal (below) |
 | `tabindex={n}` | the value of `n`, checked against the declared type |
 | `disabled` | `disabled={True}` |
+| `class={[ ( "row", True ), ( "danger", sel ) ]}` | a class list (§11.19) |
 | `"hx-get"="/items"`, `"hx-get"={url}` | **the untyped escape**: a quoted name is written as a plain attribute with a `String` value and is never checked against the vocabulary |
 
-**The value's type is the declared type.** A string literal needs `String`, a bare name needs `Bool`,
-and `{e}` needs whatever the declaration says — `String`, `Int`, `Float`, `Bool` or
-`Maybe String`, which are the value types a lowering is required to write (`boundary.md` §9.3); a
-`Maybe` attribute is removed on `Nothing`. **An attribute string is a beni string, not a JSX one**:
-escapes and `${…}` work in it, and HTML character references do not. That is one string syntax for
-the whole language, and `class="btn ${size}"` is the idiom it buys.
+**The value's type is the declared type**, and the declared types a lowering is required to write
+are `String`, `Int`, `Float`, `Bool` and `Maybe String`, plus the two list forms `class` and `style`
+admit (§11.19; `boundary.md` §9.3). A `Maybe` attribute is removed on `Nothing`. The two syntactic
+forms are sugar with a fixed reading, and `{e}` is an expression like any other:
+
+| Form | Type |
+|---|---|
+| a quoted value, `a="…"` | `String`; for a `Maybe String` attribute, `Just` of it — the one place a string is read as a `Maybe`, because `a="x"` can only mean "present, with this text" |
+| a bare name, `a` | `Bool`, `True` |
+| `a={e}` | whatever `e` has, unified with the declared type: `{"x"}` for a `Maybe String` attribute is a `type_mismatch`, as it would be anywhere |
+
+**A constant attribute** is one the compiler can write into a template, so it costs nothing at run
+time: a quoted value without interpolation, a bare name, or a hole holding only a number literal
+(negated or not), a string literal without interpolation, or `True` or `False` (the prelude's).
+Everything else is dynamic. Which it is changes nothing about typing; it is what `frontend.md` §9.7
+records and a lowering uses.
+
+**A quoted attribute value is a beni string whose literal text also decodes character references**,
+by §11.4's step 2 — Solid 2's rule, which decodes every JSX attribute string
+(`shared/attr_plan.rs:374`) and every string prop (`shared/component.rs:87`) with the same function
+as text. Escapes and `${…}` work as in any string; a reference is recognised only in the characters
+the source spells, so a character an escape produces never begins one (`"\u{26}amp;"` is the five
+characters `&amp;`), and nothing an interpolation yields is decoded. Whitespace is **not** collapsed in
+an attribute value, as in Solid. `class="btn ${size}"` is the idiom this form buys. A `{"…"}` value
+is an ordinary expression and decodes nothing, which is the way to write a literal reference.
 
 **Each attribute may be written once** (`duplicate_attribute`). **Order is source order**, for
-evaluation (§11.11) and for what a lowering writes.
+evaluation (§11.11) and for what a lowering writes, attributes and events interleaved as written —
+`<input type="range" value={v} />` sets `type` before `value`, which a range input needs.
 
 **An element with no children, whose declaration says `void`, is written self-closing**; giving one
 children is `void_element_with_children`. Which elements the HTML parser itself treats as void is a
@@ -1219,10 +1273,11 @@ different fact and belongs to the `dom` lowering (research 36 question 2, accept
 §15.3).
 
 **Spread on an element** (`<div {...attrs}>`) is **not in this specification** and is
-`spread_on_element`. It is a capability that is deferred, not refused: Solid 2 moves every attribute
-of a spread element to run time (research 36 §2.6; about 4 900 brotli bytes of runtime, research 27
-§6.11 D), and the form that keeps templates — a record of known attributes spread in — needs a
-design of its own.
+`spread_on_element`. It is a capability that is **deferred, not refused**: Solid 2 moves every
+attribute of a spread element to run time (research 36 §2.6; about 4 900 brotli bytes of runtime,
+research 27 §6.11 D), and the form that keeps templates — a record of known attributes spread in —
+needs a design of its own. An element whose tag is chosen at run time (`Html.node`, Solid's
+`<Dynamic>`) waits on the same design, because its attributes cannot be typed against a row either.
 
 ### 11.6 Holes: what a `{…}` child may hold
 
@@ -1241,13 +1296,18 @@ purpose: every hole then has a known update, so nothing renders through a generi
 optimiser is free to change (the `debug_in_release` argument, `backend.md` §9). **A `List` hole is
 positional and is never warned about**: it is the explicit spelling of "these are positions", and a
 list whose rows move is written with `For`, which has keys (§11.9). An empty hole `{}` — or one
-holding only comments — contributes nothing and exists to carry a comment.
+holding only comments — contributes nothing and exists to carry a comment. A hole's string is never
+decoded (§11.4).
 
 `if` and `case` are expressions, so they work in a hole with no rule of their own: `{if done then
 "✓" else ""}` is a `String` hole and `{case status of …}` an `Html msg` hole whose branches are
-separate markups. **There is no `Show`, `Switch` or `Match`**: Solid needs them because a Solid
-component runs once and JavaScript is eager (research 27 §8.2); a beni `view` re-runs, and the
-language already has the expressions (`plans/browser-decisions.md`, *What is forced*).
+separate markups — two branches are two templates, so a changed branch remounts and an unchanged one
+patches, which is Solid's non-keyed `Show` with no `memo` (research 36 §4.5). **So there is no
+non-keyed `Show`, and no `Switch` or `Match`**: Solid needs them because a Solid component runs once
+and JavaScript is eager (research 27 §8.2), and a beni `view` re-runs with the expressions already in
+the language (`plans/browser-decisions.md`, *What is forced*). **The keyed `Show` is kept** (the
+owner's answer), because it says something `if` and `case` cannot: remount when a value's identity
+changes (§11.18).
 
 ### 11.7 Events
 
@@ -1272,7 +1332,8 @@ and may call the event's `preventDefault` itself, which is Solid 2's spelling (W
 event's `preventDefault` and `stopPropagation` are facts of its declaration (§11.14), so a platform
 can offer the forms a program needs. Delegation is also the declaration's fact, never the
 program's: one listener on the document for the events a platform delegates, a listener on the
-element for the rest, exactly as Solid 2 does (research 36 §2.7).
+element for the rest, exactly as Solid 2 does (research 36 §2.7). A message produced inside markup
+that `Html.map` wraps is passed through the map's function on its way out (§11.13).
 
 ### 11.8 Components
 
@@ -1298,8 +1359,9 @@ Why this and not the alternatives:
 
 **The callee must take exactly one parameter, a record, and return the platform's markup type.**
 Each attribute is one field, named as written — so a component's attribute names are lower
-identifiers, and a hyphenated one is `unexpected_token` — and a bare attribute is `True`. **The
-record is closed**, exactly the fields written, unless the first attribute is a spread:
+identifiers, and a hyphenated one is `unexpected_token` — and a bare attribute is `True`. A quoted
+value is a `String` with its references decoded, as on an element. **The record is closed**, exactly
+the fields written, unless the first attribute is a spread:
 `<Card {...Card.defaults} title="x" />` means `Card.view { Card.defaults | title = "x" }`, record
 update over the spread value — which, unlike a written `{ r | … }` (§6.3), may be any expression —
 and that is how a component has optional props without a new language
@@ -1320,13 +1382,21 @@ So `<List>{\item -> <li>{item}</li>}</List>` passes a function, and `<Card><h1>H
 passes one markup value. Writing `children` as an attribute as well as between the tags is
 `duplicate_attribute`.
 
+**Children are evaluated before the call, like every argument** — forced, not chosen: beni is strict
+(§6, *Evaluation order*), and Solid's lazy `get children()` getter is laziness a strict language has
+no counterpart for. Nothing a program computes can tell the difference, because evaluation is pure;
+what it costs is work a component that does not show its children still pays. A component that wants
+its children evaluated only when it shows them takes a function and is written with one hole:
+`<Lazy>{\() -> <Expensive />}</Lazy>`.
+
 **A component call may be skipped.** When every prop is identical (`===`, not `==`) to the previous
 render's, the platform may reuse the previous result instead of calling the component again, because
 a beni function given the same arguments returns the same value (research 36 §4.3). That is the
 `lazy` W27 retired, applied at the boundary the program already drew; §11.11 says what it means for
 evaluation. A message built during the render (`onPick={Picked item.id}`) is a new value each time
-and defeats the skip; comparing such props structurally is not done (research 36 question 7,
-accepted: identity first, measured before anything more).
+and defeats the skip, and so does a whole record passed where the component reads one field of it
+(`model={model}` where `selected={model.selected}` would do); comparing such props structurally is
+not done (research 36 question 7, accepted: identity first, measured before anything more).
 
 ### 11.9 Lists: `For`
 
@@ -1338,11 +1408,22 @@ accepted: identity first, measured before anything more).
 </table>
 ```
 
-`For` is Solid 2's list form (W33; research 27 §7.1, research 36 §4.4). Its attributes are `each`,
-the list — `List a`, and `Array a` once `core/` has one (W35); `keyed`, the keying mode; and
-`fallback`, an optional `Html msg` shown when the list is empty. Its only child is one hole holding
-the **row function**, `a -> Html msg` or `a, Int -> Html msg`, whose second parameter is the row's
-current position. Anything else between the tags is `invalid_for_children`.
+`For` is Solid 2's list form (W33; research 27 §7.1, research 36 §4.4). **Its attributes** are
+`each`, the list — `List a`, and `Array a` once `core/` has one (W35) — which is required; `keyed`,
+the keying mode; and `fallback`, an optional `Html msg` shown when the list is empty. An attribute
+`For` does not take is `unknown_form_attribute`, with "did you mean" over the three (`key=` is
+answered with `keyed=`), and a missing `each` is `missing_form_attribute`. Its only child is one hole
+holding the **row function**, of type `a -> Html msg` or `a, Int -> Html msg`, whose second parameter
+is the row's current position. Anything else between the tags is `invalid_form_children`.
+
+**The row function is any expression of a function type**, as any argument is: a lambda
+(`{\row -> <tr>…</tr>}`), a function (`{viewRow}`), a placeholder application (`{viewRow model _}`,
+which is a lambda, §6.7) or any other expression. Which of the two types it has is decided by its
+type — by the lambda's parameter count when it is one — and a function of another arity is the
+ordinary `type_mismatch`. What the shape changes is only what a lowering can compile away
+(`backend.md` §15.5): a lambda whose body is markup — after any `let` bindings it opens, so
+`\r -> let label = … in <tr>…</tr>` counts — becomes a row compiled in place, and anything else is
+called per row and its result placed like any markup value (§11.6).
 
 **The keying mode says which DOM rows survive a change**, and it is Solid 2's three modes on one
 `keyed` attribute (research 27 §7.1):
@@ -1351,16 +1432,16 @@ current position. Anything else between the tags is `invalid_for_children`.
 |---|---|---|
 | `keyed={f}`, `f : a -> k` | by key | its key is in both lists, wherever it moved |
 | `keyed={False}` | by position | it is at the same position; the item there may be different |
-| `keyed={True}` | by reference | the very same item value is in both lists |
+| `keyed={True}`, or bare `keyed` | by reference | the very same item value is in both lists |
 | *(absent)* | by reference | as the row above |
 
 **A key must be a type whose `==` is identity on the JavaScript value**: `String`, `Int`, `Float`,
 `Char`, `Bool`, `Order` — the types whose `eq` is `strict_eq` in `static-dispatch-spike.md` §3.2's
 table (an `Int32` key is written `Int32.toInt k`).
-Anything else is `for_key_not_primitive`, because a record key compared by identity would treat two
+Anything else is `key_not_primitive`, because a record key compared by identity would treat two
 equal keys as two rows, which is a silent wrong answer; `keyed={\r -> r.id}` or a `String` built from
 the record is the way through. `keyed` given as anything other than a key function or a literal
-`True` or `False` is `invalid_for_keyed`. **Two items with the same key are both rendered**: rows are
+`True` or `False` is `invalid_keyed`. **Two items with the same key are both rendered**: rows are
 matched by the key and the item's rank among the items sharing it, so a duplicate is never dropped
 and never shares a row.
 
@@ -1371,10 +1452,26 @@ stores keep a proxy's identity across edits (research 36 §0 item 5, §4.4). So 
 type is not a primitive-`eq` type and that does not say how it is keyed is the warning
 `unkeyed_for`** (research 36 question 4, accepted), which names `keyed={…}` and `keyed={True}` as
 the two ways to silence it. An explicit `keyed={True}` is a statement and is never warned about.
+**Over a primitive-`eq` item type the absent mode is not a silent default**: identity on a `String`
+or an `Int` *is* equality, so by reference is by value there — the same rows survive as under
+`keyed={\x -> x}` — and there is no second mode for the silence to hide.
 
-**A row may be skipped**: when its item and every value its function reads from outside are
-identical to the previous render's, the platform keeps the row as it is without calling the function
-(§11.11).
+**A row may be skipped**: when its item, its position (if the function reads it) and its **inputs**
+are all identical (`===`) to the previous render's, the platform keeps the row as it is without
+calling the function (§11.11). A row's inputs are what its function reads from outside the item:
+
+| Row function | Its inputs |
+|---|---|
+| a lambda | for each local it uses from the enclosing scope, the **fields it reads** from that local — `model.selected`, not `model` — when every use of the local is a field access, or an argument to a function of the same module that itself only reads fields of that parameter (`rowClass model row` reads what `rowClass` reads); the local itself otherwise. A top-level value is not an input: it is the same on every render |
+| anything else | the function value itself |
+
+That is research 29's *field dependencies* (P3's rung 3, §7.2), applied at the row: an edit to the
+model that does not touch what a row reads skips every row, so **an unchanged row costs a few pointer
+comparisons and no call** — for the idiomatic `rowClass model row` as for `rowClass model.selected
+row`. What defeats it is passing a whole record where the analysis cannot see which fields are read:
+to a function of another module, into a record, into a `case` on a custom type. Such a row is still
+correct, and re-runs whenever that record changes; `--self-profile` counts rows whose inputs hold a
+whole local (`backend.md` §15.4), so the cost is a number.
 
 ### 11.10 Fragments
 
@@ -1383,22 +1480,19 @@ of one child is that child.
 
 ### 11.11 Evaluation, and what a render may skip
 
-§6's *Evaluation order* gains four rows, and they follow from its existing ones:
+§6's *Evaluation order* table has five rows for markup (an element or fragment, a component, `For`,
+`Show`, an event handler), written there with the rest; they follow from its existing ones.
 
-| Construct | What is evaluated, and in what order |
-|---|---|
-| an element or fragment | **its attribute values, then its children, in source order**, each once; a hole inside a child element is reached when that element is. A constant attribute or a text run evaluates nothing |
-| a component | its props in source order, the spread first where there is one; then the call, **unless it is skipped** (§11.8) |
-| `For` | its attributes in source order; then the row function once per row, first row first, **except for rows that are skipped** (§11.9) |
-| an event handler | the handler *value* is evaluated with the markup; calling a function handler happens when the event fires, never during a render |
-
-**A skipped component or row is not evaluated.** That is the one place markup relaxes §6's "an
-expression is evaluated exactly once, when control reaches it": a render may evaluate a component
-body or a row function zero times or once. Nothing a program computes can tell, because every beni
-expression is pure (§6, *What an optimiser may assume*); `Debug.log` in a component body can, and
-logs only for the calls that happen. **When effects land, a hole, prop or row whose expression is
-`impure` is never skipped** (`transparent-effects-proposal.md` §5's rule, applied here), so the skip
-stays unobservable in what a program does.
+**A skipped component, row or `Show` body is not evaluated.** That is the one place markup relaxes
+§6's "an expression is evaluated exactly once, when control reaches it": a render may evaluate a
+component body, a row function or a `Show` body zero times or once. Nothing a program computes can
+tell, because every beni expression is pure (§6, *What an optimiser may assume*); `Debug.log` in a
+component body can, and logs only for the calls that happen. **A row's inputs are read before the
+row is reached** — `model.selected`, read so the skip can compare it — and that is not an evaluation
+a program can observe either: a field read of a record cannot fail and computes nothing. **When
+effects land, a hole, prop, row or `Show` body whose expression is `impure` is never skipped**
+(`transparent-effects-proposal.md` §5's rule, applied here), so the skip stays unobservable in what a
+program does.
 
 ### 11.12 Identity: an untouched field keeps its identity
 
@@ -1410,7 +1504,7 @@ field read, a list tail. (W27, decided 2026-09-29.)
 It is true today by construction — a record update is emitted as a spread, `({ ...r, a: x })`
 (`backend.md` §4) — and it was promised nowhere. It is promised now because the rendering strategy
 rests on it: a template compares a hole's new value with its old one by reference, and an unchanged
-row costs one pointer comparison **only** because an unchanged row is the same object
+row costs a pointer comparison per input **only** because an unchanged input is the same object
 (`plans/browser-decisions.md` W27). A pass that rebuilt an untouched field would make that
 comparison fail silently, and only on some builds. So the promise constrains every optimiser
 forever, `--release` included — and the passes it forbids are ones nobody wants, since they would
@@ -1420,70 +1514,99 @@ add allocations. `lazy` is not added: the per-hole reference check is the memois
 beni has no reference equality a program can call, so the promise is observable only through what a
 platform does with it; it is pinned by fixtures in both builds (`backend.md` §15.8).
 
-### 11.13 The plain-call form
+### 11.13 The plain-call form, and markup primitives
 
 JSX is the template compiler (W32): markup is not sugar for calls, and nothing in the compiler
 recognises calls as markup. What stays true is that **markup is a value of an ordinary type**, so a
-platform may also ship ordinary functions returning it — `Html.text : String -> Html msg`,
-`Html.node : String, … -> Html msg` for a tag chosen at run time
-(research 28 §6.4) — and a program may build markup with them and mix the result into holes freely.
-Such calls are the platform's run-time construction path: correct everywhere, not templated. The
-exact equivalence the language keeps is the component one: **`<M.c a={x}>k</M.c>` and
-`M.c { a = x, children = <>k</> }` are the same program** (with a single hole child `{e}`,
-`children = e`), up to the skip of §11.8, which no program can observe.
+platform may also ship functions returning it, and a program may build markup with them and mix the
+result into holes freely. The exact equivalence the language keeps is the component one:
+**`<M.c a={x}>k</M.c>` and `M.c { a = x, children = <>k</> }` are the same program** (with a single
+hole child `{e}`, `children = e`), up to the skip of §11.8, which no program can observe.
+
+**A function that builds markup at run time is a markup primitive** (§11.14): declared by the
+vocabulary, implemented by each lowering's runtime, so one vocabulary serves every lowering that
+compiles it — a `dom` block in the browser, a string under Node — and a view module that calls one
+builds under both (`boundary.md` §9.3). It cannot be an ordinary `foreign`, whose one sibling would
+have to build one lowering's representation and hand it to the other (`markup_type_in_foreign`,
+`boundary.md` §9.3). The `html` platform declares two:
+
+| Primitive | Type | Is |
+|---|---|---|
+| `Html.text` | `String -> Html msg` | the text, as a text hole shows it; `Html.text s` and `<>{s}</>` render alike |
+| `Html.map` | `Html a, (a -> b) -> Html b` | Elm's `Html.map`: the same markup, with every message its handlers produce passed through the function before it is sent |
+
+**`Html.map` composes.** A message produced inside nested maps passes through the innermost function
+first and the outermost last, and a map whose function changed between renders sends through the new
+one from then on without rebuilding anything inside it. That is Elm's semantics exactly, and what The
+Elm Architecture needs to nest a child's `view` under a parent's `Msg`: `Html.map (Counter.view
+model.counter) CounterMsg`. What it costs, in the `dom` lowering, is one property write per event
+node inside a mapped subtree at mount and a short walk when an event fires there; markup outside any
+map pays nothing (`backend.md` §15.3).
 
 *This withdraws research 28's rule 19* — that JSX desugars to `Html.div [ … ] [ … ]` and an `emit/`
 golden proves the two emit the same bytes. It was written for sugar-first, and W32 answered
-templates-first.
+templates-first. **A tag chosen at run time** (`Html.node`) is deferred with element spread (§11.5):
+its attributes cannot be typed against a vocabulary row.
 
 ### 11.14 Vocabulary declarations (platform packages only)
 
 A platform package declares its markup vocabulary in beni, with three declaration forms that carry
-no JavaScript (research 36 question 1, accepted). They are legal only in a platform package, like
-`foreign` (`vocabulary_outside_platform` elsewhere), always `pub`, and **the name is a string**,
-because a markup name is not a beni identifier (`aria-label`) and may be a pattern (`data-*`):
+no JavaScript and a fourth that binds to the markup runtime (research 36 question 1, accepted). They
+are legal only in a platform package, like `foreign` (`vocabulary_outside_platform` elsewhere), and
+always `pub`. **An element's, attribute's or event's name is a string**, because a markup name is not
+a beni identifier (`aria-label`) and may be a pattern (`data-*`); a primitive's is a lower name,
+because it is a value a program calls:
 
 ```
 VocabDecl := 'pub' 'element'   string ElementFact*
            | 'pub' 'attribute' string AttrFact*  ':' Type
            | 'pub' 'event'     string EventFact* ':' Type
+           | 'pub' 'markup'    lower_ident       ':' Type          -- a markup primitive, §11.13
 ```
 
-`element`, `attribute` and `event` are **contextual words**, recognised only between `pub` and a
-string, where nothing else can stand — a `Definition`'s head is a name — so they stay ordinary
-identifiers everywhere else, as `equatable` does (§3). A name may contain one `*`, which matches a
-non-empty run of name characters; an exact name beats a pattern, and of two patterns that match the
-longer literal part wins. Two declarations that would tie are `duplicate_declaration`.
+`element`, `attribute`, `event` and `markup` are **contextual words**, recognised only between `pub`
+and a string — or, for `markup`, between `pub` and a lower name followed by `:` — where nothing else
+can stand: a `Definition`'s head is one name followed by its parameters or `:`, so `pub markup : T`
+still annotates a value named `markup`. They stay ordinary identifiers everywhere else, as
+`equatable` does (§3). A name may contain one `*`, which matches a non-empty run of name characters;
+an exact name beats a pattern, and of two patterns that match the longer literal part wins. Two
+declarations that would tie are `duplicate_declaration`.
 
 | Form | Facts, each a contextual word | Type after `:` |
 |---|---|---|
 | `pub element "input" void` | `void` (no children), `svg`, `mathml` (namespace; HTML otherwise) | — |
-| `pub attribute "value" property stateful on "input" "select" "textarea" : String` | `on` then element names (only those elements; every element otherwise), `property` with an optional JavaScript name (a property write; an attribute write otherwise), `stateful` (a property the user edits: compared with the live DOM value), `url` (the value is a URL: a lowering must refuse a script URL), `raw` (the value is markup text written unescaped) | the value type: `String`, `Int`, `Float`, `Bool` or `Maybe String` |
+| `pub attribute "value" property stateful on "input" "select" "textarea" : String` | `on` then element names (only those elements; every element otherwise), `property` with an optional JavaScript name (a property write; an attribute write otherwise), `stateful` (a property the user edits: compared with the live DOM value), `url` (the value is a URL: a lowering must refuse a script URL), `raw` (the value is markup text written unescaped), `classes` (the attribute also takes a class list, §11.19), `styles` (it also takes a style list, §11.19) | the value type: `String`, `Int`, `Float`, `Bool` or `Maybe String`; `String` for `classes` and `styles` |
 | `pub event "onInput" delegated via targetValue : String` | `on` as above, `name` then the DOM event name (the lower-cased name after `on` otherwise), `delegated`, `preventDefault`, `stopPropagation`, `via` then a `foreign` value of this module (the payload extractor) | the payload type: the extractor's result, or, with no `via`, a `foreign type` the event object is handed as |
+| `pub markup map : Html a, (a -> b) -> Html b` | — | a function type mentioning the markup type; the value is the build's markup runtime's export of that name (`boundary.md` §9.3) |
 
-The facts are data for the platform's markup lowering, which is the only thing that interprets them
-(`boundary.md` §9.3, `backend.md` §15). The checker reads `void`, `on`, the value and payload types
-and `via`; nothing in the language depends on `property`, `stateful`, `url`, `raw` or `delegated`.
+The facts are data for the platform's markup lowering, which is the only thing that interprets their
+effect on the page (`boundary.md` §9.3, `backend.md` §15). **The checker reads `void`, `on`, the value
+and payload types, `via`, `classes` and `styles`** for typing, and **`raw`** for the warning below;
+nothing in the language depends on `property`, `stateful`, `url` or `delegated`.
 **A `raw` attribute is the escape hatch for inserting markup text**, Solid's `innerHTML` (research 36
 §4.8), and every use of one in the root package is the warning `raw_markup_attribute`, because it is
 the one place a `view` can inject script. An unknown fact word is `unexpected_token`, naming the
 facts its form accepts.
 
 The markup type itself is an ordinary `pub foreign type` of one parameter, named by the platform's
-manifest (`boundary.md` §9.2).
+manifest (`boundary.md` §9.2). **The vocabulary module may write markup itself**, against its own
+declarations: the markup edge of `frontend.md` §9.8 is never added from a module to itself, and a
+module that the vocabulary module imports and that writes markup is an ordinary `import_cycle`,
+whose message names the markup edge.
 
 ### 11.15 Formatting
 
 §9's rules apply, plus these, and the governing one is new: **the formatter never changes what a
 page says.** Formatting then rendering gives the same page as rendering, which is what makes bare
-text safe to format (research 36 §6).
+text safe to format (research 36 §6). *Whitespace* below is §11.4's.
 
 | Construct | Rule |
 |---|---|
 | an opening tag's attributes | one line when it fits in 100 columns and the author wrote no break between attributes; otherwise one attribute per line, indented 4 from the `<`, with the `>` or `/>` alone on the line after the last, aligned with the `<` |
 | children | on the element's line when the source has them there and they fit; otherwise each child line indented 4 from the `<` and the closing tag on its own line aligned with the `<`. An element whose opening tag broke is always vertical |
 | **whitespace between children** | **the formatter never adds or removes a newline inside a run of whitespace between two children, and never makes a whitespace run empty or non-empty.** A run with no newline in it is a space the page shows (§11.4), so children the author wrote on one line with spaces between them stay on one line, past 100 columns if need be; a run with a newline shows nothing, so the formatter may change the indentation after the newline and the number of blank lines (at most one kept) |
-| text | a run's continuation lines are re-indented to the children's column and their trailing spaces dropped, both invisible under §11.4; the characters of a line are never touched, spaces between words included |
+| text | a run's continuation lines are re-indented to the children's column and their trailing whitespace dropped, both invisible under §11.4; the characters of a line are never touched, spaces between words and character references included |
+| a hole holding only a comment | the `}` on its own line, aligned with the `{` |
 | `<div></div>` | written `<div />`: one space before `/>`, which is the spelling JSX's formatters write |
 | attribute values | a string is printed as written, as every literal is (§9); a `{e}` value follows the rules for `e`; a multi-line expression in a hole or attribute is indented 4 from the `{` |
 
@@ -1493,37 +1616,120 @@ text safe to format (research 36 §6).
 |---|---|---|
 | markup as a bare argument, `f <b />` | forced: `f a <b` is a comparison today (§11.2) | `f (<b />)`, `<|`, a pipe |
 | markup inside `${…}` | markup is not interpolatable, and allowing it would need the string mode to nest (§2.6) | bind it, then use a hole |
-| `>` and `}` in text | a spelling, the JSX specification's; a stray `}` is almost always a hole's other half | `{">"}`, `{"}"}` |
+| `>`, `}` and a `<` not starting a tag, in text | a spelling, the JSX specification's; a stray `}` is almost always a hole's other half | `{">"}`, `{"}"}`, `{"<"}` |
 | an unknown element or attribute | no silent wrong answer: a typo'd attribute is never written as nothing | the quoted-name escape for attributes; a platform's pattern declaration (`"*-*"`) for custom elements |
+| an unknown or missing attribute of `For` or `Show` | the same: a misspelt `keyed` would silently key by reference | — |
 | a hole of any other type | every hole has a known update and nothing renders through a conversion the optimiser may change (§11.6) | convert explicitly: `{String.fromX x}` |
 | children of a `void` element | the platform declared the element takes none, so they would be dropped | — |
-| a spread on an element | **not a guarantee: a deferred capability** (§11.5) | write the attributes |
+| a spread on an element, a tag chosen at run time | **not a guarantee: deferred capabilities** (§11.5, §11.13) | write the attributes |
 | a component spread anywhere but first, or twice | a spread later than a prop would override it under JSX, and a closed record type makes that prop pointless; the rule is record update's, and nothing expressible is lost | move it first |
-| a non-primitive `For` key | two equal keys must be one row, and identity cannot say so (§11.9) | key by a field |
+| a non-primitive key, for `For` or `Show` | two equal keys must be one row, and identity cannot say so (§11.9) | key by a field |
+| a `Show` without `keyed`, or with `keyed={False}` | not a guarantee: non-keyed `Show` is `if`/`case`, which the language already has (§11.6) | write the `case` the message shows |
 | duplicate attributes | the second would silently win | — |
 | markup with no vocabulary | there is nothing to type it against | name a platform |
+| a `foreign` building or reading markup in a platform that does not select the build's lowering | the value would be another lowering's representation (§11.13) | a markup primitive |
 
-Two things are **warned about, not refused**: `unkeyed_for` (§11.9) and `html_entity_in_text`
-(§11.4); and `raw_markup_attribute` warns at every use of the escape hatch that bypasses escaping
-(§11.14). All three are `warning` severity, on by default, for the root package only, in the shape
-`ambiguous_method_receiver` has. **Not refused, and never to be**: markup in a `let`, a `case`
-branch, a list or a record field; a helper returning markup; recursion (a tree view) — each of those
-takes the platform's general path (`backend.md` §15.4), and the fast path is a property of the
-lowering, never a rule of the language.
+**Forced, not chosen**: children are evaluated eagerly (§11.8), because beni is strict. **Warned
+about, not refused**: `unkeyed_for` (§11.9), and `raw_markup_attribute` at every use of the escape
+hatch that bypasses escaping (§11.14). Both are `warning` severity, on by default, for the root
+package only, in the shape `ambiguous_method_receiver` has. **Not refused, and never to be**: markup
+in a `let`, a `case` branch, a list or a record field; a helper returning markup; recursion (a tree
+view) — each of those takes the platform's general path (`backend.md` §15.4), and the fast path is a
+property of the lowering, never a rule of the language. **Not in this specification**: portals
+(rendering into a node outside the component's own place, Solid's `<Portal>`), which wait on the
+browser platform's mount and after-render design; `ref` (research 36 question 6, W44).
 
 ### 11.17 Diagnostics
 
 Appended to §10's catalogue, never inserted (§10). Syntax: `unclosed_element`,
 `mismatched_closing_tag`, `element_as_argument` (the parser's, `frontend.md` §9.5). Lowering:
-`duplicate_attribute`, `spread_on_element`, `spread_not_first`, `invalid_for_children`,
-`vocabulary_outside_platform`, and the warning `html_entity_in_text`. The checker's
-([`checker-v2.md`](checker-v2.md) §25.9): `no_markup_vocabulary`, `unknown_element`,
-`unknown_attribute`, `child_not_renderable`, `void_element_with_children`, `invalid_for_keyed`,
-`for_key_not_primitive`, and the warnings `unkeyed_for` and `raw_markup_attribute`. A lowering's
-own, reported during `build` against a markup node (`boundary.md` §9.4.7): `markup_restructured`. The
-manifest's (`boundary.md` §9.2): `unknown_markup_lowering`. Reused, not duplicated:
-`unexpected_token`, `expected_token`, `missing_field`, `unknown_field`, `type_mismatch`,
-`duplicate_declaration`, `nesting_too_deep`, and §4's `foreign_*` codes for the markup runtime.
+`duplicate_attribute`, `spread_on_element`, `spread_not_first`, `invalid_form_children`,
+`unknown_form_attribute`, `missing_form_attribute`, `invalid_keyed` and `vocabulary_outside_platform`.
+The checker's ([`checker-v2.md`](checker-v2.md) §25.9): `no_markup_vocabulary`, `unknown_element`,
+`unknown_attribute`, `child_not_renderable`, `void_element_with_children`, `key_not_primitive`,
+`markup_type_in_foreign`, and the warnings `unkeyed_for` and `raw_markup_attribute`. A lowering's
+own, reported during `build` against a markup node (`boundary.md` §9.4.7): `markup_restructured`.
+The manifest's (`boundary.md` §9.2): `unknown_markup_lowering`. Reused, not duplicated:
+`unexpected_token`, `expected_token`, `unclosed_delimiter`, `missing_field`, `unknown_field`,
+`type_mismatch`, `duplicate_declaration`, `import_cycle`, `nesting_too_deep`, and §4's `foreign_*`
+codes for the markup runtime.
+
+### 11.18 Keyed `Show`
+
+```elm
+<Show when={model.editing} keyed fallback={<p>Pick a user</p>}>
+    {\user -> <UserEditor user={user} />}
+</Show>
+```
+
+`Show` is Solid 2's keyed conditional (`<Show when={x} keyed>`, the owner's answer;
+`references/solid/packages/solid/src/client/flow.ts:164-240`,
+`references/solid/documentation/solid-2.0/03-control-flow.md:84-92`; research 36 §4.5). **It
+remounts when its value's identity changes**: the DOM inside it — inputs' text, focus, scroll — is
+thrown away and built afresh, which is how a view says "a different user is a different form".
+
+**Attributes**, validated as `For`'s are (`unknown_form_attribute`, `missing_form_attribute`):
+
+| Attribute | Type | Means |
+|---|---|---|
+| `when`, required | `Maybe a` | `Nothing` shows the fallback; `Just v` shows the body for `v`. `Maybe` rather than Solid's truthiness, which beni does not have |
+| `keyed`, required | bare or `{True}`: by identity; `{f}`, `f : a -> k`: by key | when to remount (below) |
+| `fallback`, optional | `Html msg` | shown on `Nothing`; nothing is shown without it |
+
+Its only child is one hole holding the **body**, a function `a -> Html msg`, by the same rule as a
+row function (§11.9): any expression of that type, `invalid_form_children` otherwise. It receives
+`v`, which is Solid's keyed callback receiving the narrowed value.
+
+**When it remounts.** Each render in which `when` is `Just v` computes the **key** — `v` itself, or
+`f v` — and remounts when the previous render showed the fallback or its key is not identical
+(`===`) to this one; otherwise the body's new markup patches the old like any markup value (§11.6).
+By identity is Solid's semantics, and in an immutable language it inherits `For`'s hazard: an edit
+to the very record the `Show` shows is a new object, so it remounts — which is why beni adds **by
+key**, `keyed={.id}`, the spelling `For` already has. A key must be primitive-`eq`
+(`key_not_primitive`), for §11.9's reason. By identity over a primitive-`eq` type is by value, as for
+`For`.
+
+**Non-keyed `Show` is not provided** (the owner's answer): `<Show when={x}>` without `keyed` is
+`missing_form_attribute`, and `keyed={False}` is `invalid_keyed`; each message shows the `case` that
+says the same thing, since a non-keyed conditional is exactly `case x of Just v -> … ; Nothing ->
+…` (§11.6).
+
+**Evaluation and skipping**: the attributes in source order; then, on `Just v`, the key function
+once, then the body — which **may be skipped**, like a row, when `v` and the body's inputs (§11.9's
+table) are identical to the previous render's and the key did not change.
+
+### 11.19 `class` and `style` lists
+
+Solid 2 merged `classList` into `class`, which takes a string, an object or an array, and gives
+`style` an object form beside the string (`references/solid/documentation/solid-2.0/07-dom.md:7-28`;
+`references/dom-expressions/packages/runtime/src/client.js:333-417`). beni takes the same two forms,
+typed, and on the same two attribute names — Solid 2 rejected keeping a second name as "two ways to
+do the same thing" (`07-dom.md:158`):
+
+| Attribute | Admits | Means |
+|---|---|---|
+| `class` | `String` | the attribute, as written |
+| `class` | `List ( String, Bool )` | **a class list**: the element has exactly the classes whose entry is `True`. A name holding whitespace is several names; a name listed twice is present when any of its entries is `True`; order carries no meaning |
+| `style` | `String` | the attribute, as written |
+| `style` | `List ( String, String )` | **a style list**: each entry sets one CSS property — `background-color`, a custom property `--gap` — to its value, as `style.setProperty` does. An empty value removes the property; of two entries for one property the later wins |
+
+Both are what a platform declares with the facts `classes` and `styles` (§11.14), so the language
+knows neither name: which form a value is, is decided by its type — a `List` is the list form,
+anything else the declared `String`, and a value whose type is still a variable at the declaration's
+boundary is the `String` form (`checker-v2.md` §25.4). **A class or style that a list held on the
+previous render and does not hold now is removed**, so the element shows exactly what this render's
+list says, whatever the previous one said.
+
+**Why lists, not records.** A class name is not a beni field name (`is-active`,
+`hover:bg-blue`), a style property often is not either (`--gap`), and "a record whose every field is a
+`Bool`" is not a type beni can write. `List ( String, Bool )` is Elm's own `classList`, needs nothing
+new, and keeps every entry typed. **A list written in place is compiled away**: when the value is a
+list literal of pair literals whose names are literal strings,
+`class={[ ( "row", True ), ( "danger", row.id == sel ) ]}`, each entry is its own value, a constant
+entry costs nothing at run time and a dynamic one is one guarded toggle — Solid's compile-time split
+of an object literal (`shared/attr_plan.rs:686-900`, `dom/set_attr.rs:80-115`). Any other list goes
+through the runtime's diff, a port of Solid's `className` and `style` helpers
+(`backend.md` §15.3). Both agree on what the element ends up with.
 
 ## Appendix A. The prelude
 
