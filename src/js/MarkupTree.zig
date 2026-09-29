@@ -329,7 +329,7 @@ const Builder = struct {
             .element => {
                 const e = bir_.extraData(at, Bir.MarkupElement);
                 const row = b.rowOf(@intFromEnum(at));
-                const element_row = if (row) |r| try b.elementRow(r.row) else .none;
+                const element_row = if (row) |r| try b.elementRow(r.row, b.symbolText(e.name)) else .none;
                 const items = try b.itemList(e.items_start, e.items_end);
                 const children = try b.childList(e.children_start, e.children_end);
                 try b.elements.append(b.arena, .{ .row = element_row, .items = items, .children = children });
@@ -567,18 +567,34 @@ const Builder = struct {
 
     // ---- The vocabulary rows, re-indexed densely --------------------------
 
-    fn elementRow(b: *Builder, iface_row: u32) !m.ElementRow {
+    /// The facts of the row an element resolved to, named as the element
+    /// is written: a pattern row (`"*-*"`) is one row of facts per name
+    /// that matched it, since a lowering writes the name.
+    fn elementRow(b: *Builder, iface_row: u32, written: []const u8) !m.ElementRow {
         if (iface_row >= b.element_rows.len) return .none;
-        if (b.element_rows[iface_row] == none) {
-            const row = b.in.vocabulary.elements[iface_row];
-            b.element_rows[iface_row] = @intCast(b.element_facts.items.len);
+        const row = b.in.vocabulary.elements[iface_row];
+        const pattern = row.facts & Interface.VocabRow.pattern_bit != 0;
+        if (pattern) {
+            for (b.element_facts.items, 0..) |f, i| {
+                if (std.mem.eql(u8, b.stringText(f.name), written)) return @enumFromInt(i);
+            }
+        }
+        if (pattern or b.element_rows[iface_row] == none) {
+            const at: u32 = @intCast(b.element_facts.items.len);
             try b.element_facts.append(b.arena, .{
-                .name = try b.string(b.ifaceText(row.name)),
+                .name = try b.string(if (pattern) written else b.ifaceText(row.name)),
                 .void = row.has(.void),
                 .namespace = if (row.has(.svg)) .svg else if (row.has(.mathml)) .mathml else .html,
             });
+            if (pattern) return @enumFromInt(at);
+            b.element_rows[iface_row] = at;
         }
         return @enumFromInt(b.element_rows[iface_row]);
+    }
+
+    fn stringText(b: *const Builder, i: m.Strings.Index) []const u8 {
+        const span = b.spans.items[@intFromEnum(i)];
+        return b.string_bytes.items[span.start..][0..span.len];
     }
 
     fn attributeRow(b: *Builder, iface_row: u32) !m.AttributeRow {

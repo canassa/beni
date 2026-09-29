@@ -783,7 +783,16 @@ const Gen = struct {
         if (parser.misnested(scope, name)) |why| return g.restructured(n, scope.parent orelse "", why);
         const t = try b.tnode(g.a(), parent, index, .element);
         if (parent == null) b.root_element = if (b.top == 1) .{ .name = name, .namespace = facts.namespace } else null;
+        // A custom element, a customised built-in and a lazy image or
+        // frame are imported rather than cloned, so the page upgrades or
+        // loads them (`dom/element.rs:501-521`).
         if (std.mem.indexOfScalar(u8, name, '-') != null) b.flags |= 1;
+        for (g.tree.itemsOf(e.items)) |it| {
+            const written = g.tree.string(it.name);
+            if (it.kind == .event) continue;
+            if (std.mem.eql(u8, written, "is")) b.flags |= 1;
+            if (std.mem.eql(u8, written, "loading") and (std.mem.eql(u8, name, "img") or std.mem.eql(u8, name, "iframe"))) b.flags |= 1;
+        }
         try b.write(g.a(), "<");
         try b.write(g.a(), name);
         const kids = g.tree.childrenOf(e.children);
