@@ -74,3 +74,53 @@ test "an external platform's markup lowering compiles a view the program then pr
         \\
     , entry);
 }
+
+test "a release entry file imports run and start in one statement when they share a file" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The toy runtime is the program runtime and the markup runtime both,
+    // so `run` and `start` are exports of one file, and under `--release`
+    // the entry file names them in one `import` rather than two (research
+    // 40). The development build keeps its two lines, pinned above.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Toy
+        \\
+        \\
+        \\view : String -> Html msg
+        \\view name =
+        \\    <p>Hi {name}</p>
+        \\
+        \\
+        \\main : Toy.Program
+        \\main =
+        \\    Toy.show (view "you")
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=toy", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualStrings("", built.stderr);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "p[\"Hi \" \"you\"]\ntags: p\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\import{run,start}from"./_platform/runtime.foreign.mjs";
+        \\import{e}from"./Main.mjs";
+        \\start({"tag":["p"]});
+        \\run(e);
+        \\
+    , try w.read("out/_main.mjs"));
+}

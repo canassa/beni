@@ -95,11 +95,23 @@ pub const Options = struct {
     rename: ?*Rename.Module = null,
     /// §9 items 3 and 5: compact printing and `const` joining.
     compact: bool = false,
+    /// `--release` of an application: the whole-program ordinals some file
+    /// of the build imports (`Emit.markImported`). An `export` list keeps
+    /// only those, and an empty one is not written; every other export is a
+    /// name nothing can ask for. Null keeps every export — a development
+    /// build, and `--library`, whose exports ARE its surface (§9's
+    /// *Roots*). Read only through `rename`, which is what gives a name
+    /// its ordinal.
+    imported: ?*const Imported = null,
     /// How many expression levels the printer takes by recursion before it
     /// switches to its work stack. Only a test sets it, to 0, to
     /// print everything through the stack and compare.
     recursion_limit: u32 = 256,
 };
+
+/// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
+/// the table's `next`, so a bitset.
+pub const Imported = std.DynamicBitSetUnmanaged;
 
 /// Print `ir` as an ES module. The caller owns the returned bytes, which come
 /// from `gpa`. Everything the printer builds on the way — its pieces, the
@@ -115,6 +127,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .plan = options.plan,
         .rename = options.rename,
         .compact = options.compact,
+        .imported = options.imported,
         .recursion_limit = options.recursion_limit,
         .spelled = scratch,
         .spellings = spellings,
@@ -282,6 +295,8 @@ const Printer = struct {
     /// §9 item 3: no indentation, no space that syntax does not need, and a
     /// newline after each TOP-LEVEL statement only.
     compact: bool = false,
+    /// `Options.imported`.
+    imported: ?*const Imported = null,
     /// The last byte pushed, for the token-adjacency guard. Only read in
     /// compact mode, where it is the whole of the tokenisation risk.
     last: u8 = 0,
@@ -525,6 +540,15 @@ const Printer = struct {
         return last;
     }
 
+    /// Whether an `export` list names `n`: always, unless `imported`
+    /// says no file of the build asks for it.
+    fn exports(p: *const Printer, n: JsIr.NameIndex) bool {
+        const imported = p.imported orelse return true;
+        const rename = p.rename orelse return true;
+        const ordinal = rename.ordinal(n) orelse return true;
+        return ordinal < imported.bit_length and imported.isSet(ordinal);
+    }
+
     fn statement(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
         try p.indent(level);
@@ -556,9 +580,18 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .export_stmt => {
+                const names = p.ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex);
+                var written: usize = 0;
+                for (names) |n| written += @intFromBool(p.exports(n));
+                // Only reached under `imported`: every other build writes
+                // every name, and an empty list was never lowered.
+                if (written == 0) return;
                 try p.tok("export { ", "export{");
-                for (p.ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex), 0..) |n, i| {
+                var i: usize = 0;
+                for (names) |n| {
+                    if (!p.exports(n)) continue;
                     if (i != 0) try p.tok(", ", ",");
+                    i += 1;
                     try p.name(n, .binding);
                 }
                 try p.tok(" };", "};");

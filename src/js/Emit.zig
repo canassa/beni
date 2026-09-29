@@ -400,6 +400,11 @@ const Emitter = struct {
     /// an `import` specifier in one file and the `export` in another are
     /// given the same short name. Empty and unused in a dev build.
     globals: Rename.Globals = .{},
+    /// `--release` of an application: the ordinals of `globals` that some
+    /// file of the build imports — another module's `import`, or the entry
+    /// file's of `main` (`markImported`). A module's `export` list is cut
+    /// to them. Scratch-owned; empty and unused otherwise.
+    imported: Print.Imported = .{},
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
@@ -1544,6 +1549,7 @@ const Emitter = struct {
             .interfaces = e.session.resolution.interfaces,
             .provenance = e.session.resolution.provenance,
             .types = &e.session.checked.types,
+            .interner = &e.session.interner,
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
             .vocabulary = e.graph().markup.vocabulary,
@@ -1814,6 +1820,7 @@ const Emitter = struct {
         try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
         if (e.options.release) {
             try e.numberGlobals(slots, todo.items);
+            if (!e.options.library) try e.markImported(slots, todo.items, entry);
             try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
         }
 
@@ -1978,6 +1985,7 @@ const Emitter = struct {
                 .plan = &slot.plan,
                 .rename = &renamer,
                 .compact = true,
+                .imported = if (e.options.library) null else &e.imported,
             });
             slot.rename_failure = renamer.failure;
         }
@@ -2008,6 +2016,43 @@ const Emitter = struct {
                 }
                 if (moved) lowered.ir.setName(n, name);
                 _ = try e.globals.intern(e.scratch, name);
+            }
+        }
+    }
+
+    /// Every whole-program name some file of the build imports, into
+    /// `imported`: each `import` of another EMITTED module (a specifier
+    /// whose two halves are one name; a sibling's are not, and its exports
+    /// are hand-written), and `main`, which the entry file imports by hand
+    /// (`emitEntry`). In an application build nothing else can import a
+    /// module — the output tree is the program — so an export outside this
+    /// set is bytes no one can ask for. After `numberGlobals`, so every
+    /// name has its ordinal and its session symbol.
+    fn markImported(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: ?Entry) Allocator.Error!void {
+        e.imported = try .initEmpty(e.scratch, e.globals.next);
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (ir.tag(stmt) != .import_stmt) continue;
+                const imp = ir.extraData(@enumFromInt(ir.data(stmt).lhs), JsIr.Import);
+                for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                    if (spec.imported != spec.local) continue;
+                    const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
+                    e.imported.set(ordinal);
+                }
+            }
+        }
+        if (entry) |at| {
+            const b = e.bir(at.module);
+            if (at.decl.int() < b.decls.len) {
+                if (e.globals.lookup(.{
+                    .module = e.graph().moduleName(at.module).toOptional(),
+                    .base = b.symbol(b.decls[at.decl.int()].name),
+                    .tag = JsIr.Name.no_tag,
+                })) |ordinal| e.imported.set(ordinal);
             }
         }
     }
@@ -2345,7 +2390,17 @@ const Emitter = struct {
         // `--release` it is 135 bytes of the floor's 2 009 — **7%** — and a
         // release build is not where anyone reads it (§9 item 3: whitespace
         // and anything that is only there to be read goes).
-        const text = if (e.options.release)
+        // And when `start` is the program runtime's own export, as the
+        // browser platforms' is, one `import` names both (research 40).
+        const text = if (e.options.release and start != null and std.mem.eql(u8, start.?.path, runtime_path))
+            try std.fmt.allocPrint(e.scratch,
+                \\import{{run,start}}from"./{s}";
+                \\import{{{s}}}from"./{s}";
+                \\start({s});
+                \\run({s});
+                \\
+            , .{ runtime_path, imported, module_path, start.?.data, imported })
+        else if (e.options.release)
             try std.fmt.allocPrint(e.scratch,
                 \\import{{run}}from"./{s}";
                 \\{s}import{{{s}}}from"./{s}";

@@ -399,8 +399,10 @@ const phase = async (title, act) => {
   return true;
 };
 
-// The program runtime, as the entry file names it.
-const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?\} ?from ?"([^"]+)";$/m);
+// The program runtime, as the entry file names it: `import { run } from …`,
+// or under `--release`, when `start` comes from the same file,
+// `import{run,start}from…`.
+const runtimeImport = readFileSync(resolve(entry), "utf8").match(/^import ?\{ ?run ?(?:, ?start ?)?\} ?from ?"([^"]+)";$/m);
 const runtime = runtimeImport === null ? null : runtimeImport[1];
 
 if (await phase("load", () => page.run(load, { url: entryUrl, runtime }))) {

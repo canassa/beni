@@ -2883,6 +2883,63 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     try testing.expect(!w.exists("maps"));
 }
 
+test "a release application exports only what another file imports; --library keeps every export" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Twice.twice` is `pub` and reachable, and so is `Twice.inc`, which
+    // only `twice` calls. In a development build both are exported. Under
+    // `--release` an application's output tree is the whole program, so an
+    // export nothing imports is bytes no file can ask for: `Twice.mjs`
+    // exports `twice` alone, and `Main.mjs` exports `main`, which the entry
+    // file imports (research 40). A `--library` build's exports are its
+    // public surface (`backend.md` §9's *Roots*) and are all kept.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Twice.beni",
+        \\pub inc : Int -> Int
+        \\inc n =
+        \\    n + 1
+        \\
+        \\
+        \\pub twice : Int -> Int
+        \\twice n =
+        \\    inc (inc n)
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\import Twice
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (Twice.twice 40))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=out", "Main.beni", "Twice.beni" }, .{ .raw_diagnostics = true });
+    const lib = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--out=lib", "Main.beni", "Twice.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    try expectBuilt(lib);
+    const twice = try w.read("out/Twice.mjs");
+    try testing.expect(std.mem.endsWith(u8, twice, "\nexport{c};\n"));
+    try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), "\nexport{f,c};\n"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram(world.entry_file, .{ .stdout = "42\n" });
+}
+
 /// A platform whose hand-written JavaScript has what a release build must
 /// keep exactly — a regular expression with spaces in it, a template literal
 /// nesting another, a helper named only inside a substitution — and what
