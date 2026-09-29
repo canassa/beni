@@ -1,0 +1,5 @@
+{
+  "platform": true,
+  "name": "html",
+  "markup": { "vocabulary": "Html", "type": "Html.Html" }
+}

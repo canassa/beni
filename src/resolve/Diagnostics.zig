@@ -26,6 +26,9 @@ pub const Context = struct {
     found: u32 = 0,
     /// `import_cycle`: the modules of the cycle in order.
     cycle: []const []const u8 = &.{},
+    /// `import_cycle`: a module of the cycle whose step to the next is its
+    /// markup's dependency on the vocabulary module `name`, not an import.
+    markup_edge: []const u8 = "",
     /// `duplicate_module`: the path of the file that claimed the name.
     other_path: []const u8 = "",
     /// `unknown_module`, `unknown_module_alias`: the name of a platform that
@@ -116,6 +119,12 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
                 try w.writeAll(m);
             }
             if (cx.cycle.len > 0) try w.print(" → {s}", .{cx.cycle[0]});
+            if (cx.markup_edge.len != 0) try w.print(
+                \\
+                \\
+                \\`{s}` uses markup, so depends on the vocabulary module `{s}` without importing
+                \\it (`docs/design/frontend.md` §9.8).
+            , .{ cx.markup_edge, cx.name });
             try w.print(
                 \\
                 \\

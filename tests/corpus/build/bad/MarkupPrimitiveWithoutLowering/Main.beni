@@ -1,0 +1,22 @@
+-- `unknown_markup_lowering` (boundary.md §9.2), the second way: a markup
+-- primitive that survives elimination is implemented by the markup runtime
+-- of the build's lowering, and `node` names no lowering yet. `node`
+-- re-exports `html`'s `Html`, so the import resolves and the program checks;
+-- the build is refused against `node`'s manifest, since `node` is the
+-- platform that would have to name one.
+import Html
+import Node exposing (Program)
+
+
+greeting : Html.Html msg
+greeting =
+    Html.text "hello"
+
+
+main : Program
+main =
+    let
+        _ =
+            greeting
+    in
+    Node.print "hello"

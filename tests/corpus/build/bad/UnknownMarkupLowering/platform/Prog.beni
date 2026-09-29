@@ -1,0 +1,4 @@
+pub foreign type Program
+
+
+pub foreign say : String -> Program

@@ -141,7 +141,17 @@ pub const Platform = struct {
     /// Per file, the chain index of a platform file's package
     /// (`Session.file_layers`); empty when every platform file is the top's.
     file_layers: []const u8 = &.{},
+    /// The selected platform's name, for messages.
+    name: []const u8 = "",
+    /// The chain's `"markup".lowering` (`boundary.md` §9.2) and the root of
+    /// the package that names it; null when no package names one.
+    lowering: ?[]const u8 = null,
+    lowering_root: []const u8 = "",
 };
+
+/// The markup lowerings compiled into this binary (`boundary.md` §9.5),
+/// sorted by name. None yet: the first arrives with the lowering interface.
+pub const lowerings = [_][]const u8{};
 
 /// The entry file a platform gets when its manifest does not name one
 /// (`backend.md` §2, rule 1; `boundary.md` §5.2).
@@ -249,6 +259,7 @@ pub fn run(
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
     try e.checkEntryFileName();
+    try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     // The checker checks a schema's endpoint types and records the resolved
@@ -270,6 +281,12 @@ pub fn run(
     // all, so the pass pays for itself in emit time rather than costing
     // anything.
     try e.eliminate(entry);
+
+    // `boundary.md` §9.2: a markup primitive that survives needs the markup
+    // runtime of a lowering, and a chain that names none has nothing to
+    // bind it to.
+    try e.refuseMarkupWithoutLowering();
+    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
     // §9's *The release optimiser*: a `--release` build that still reaches
     // `Debug` is refused (the owner's decision, 2026-09-19). Here and not
@@ -333,6 +350,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
     try e.checkEntryFileName();
+    try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     return e.diagnostics.toOwnedSlice(gpa);
@@ -407,6 +425,53 @@ const Emitter = struct {
 
     fn bir(e: *Emitter, m: Graph.Index) *const Bir {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
+    }
+
+    /// `boundary.md` §9.2: a `"markup".lowering` names a lowering compiled
+    /// into this binary, checked when the platform is loaded — by `check
+    /// --platform` as by `build` — against the manifest that names it.
+    fn checkLowering(e: *Emitter) !void {
+        const name = e.options.platform.lowering orelse return;
+        for (lowerings) |known| {
+            if (std.mem.eql(u8, known, name)) return;
+        }
+        try e.reportInFile(
+            .unknown_markup_lowering,
+            .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+            \\This platform names the markup lowering `{s}`, which this beni does not have.
+            \\
+            \\A markup lowering is Zig compiled into the compiler (`docs/design/boundary.md`
+            \\§9.5), and {s}.
+        ,
+            .{ name, if (lowerings.len == 0) "this build of beni has none" else "this build of beni has others" },
+        );
+    }
+
+    /// A markup primitive that survives elimination, in a build whose chain
+    /// names no lowering, is `unknown_markup_lowering` against the selected
+    /// platform's manifest (`boundary.md` §9.2): the primitive's
+    /// implementation is the lowering's runtime, and there is none.
+    fn refuseMarkupWithoutLowering(e: *Emitter) !void {
+        if (e.options.platform.lowering != null) return;
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, index| {
+                if (d.kind != .vocab_markup or !e.live.decl(m, index)) continue;
+                return e.reportInFile(
+                    .unknown_markup_lowering,
+                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name }) },
+                    \\This build uses the markup primitive `{s}.{s}`, but the platform `{s}` names no
+                    \\markup lowering to implement it.
+                    \\
+                    \\A markup primitive is implemented by the runtime of the build's markup lowering
+                    \\(`docs/design/boundary.md` §9.3), which a platform names in its manifest's
+                    \\`"markup"` `"lowering"`, or inherits from a platform it depends on.
+                ,
+                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.options.platform.name },
+                );
+            }
+        }
     }
 
     fn refuseSchemas(e: *Emitter) !bool {

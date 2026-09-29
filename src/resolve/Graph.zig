@@ -112,6 +112,33 @@ cycle_members: []const Index,
 /// Owned. Per chain index, the layers whose modules that layer's modules may
 /// import, as a bit set (`Platforms.sees`). Empty with no platform chain.
 sees: []const u64 = &.{},
+/// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
+markup: Markup = .{},
+
+/// The vocabulary module and the markup type of the build, or why there are
+/// none (`frontend.md` §9.8, `checker-v2.md` §25.1).
+pub const Markup = struct {
+    status: Status = .no_platform,
+    /// The vocabulary module: every module that writes markup depends on it.
+    vocabulary: ?Index = null,
+    /// The markup type: a `pub foreign type` of one parameter.
+    type_module: Symbol.Optional = .none,
+    type_name: Symbol.Optional = .none,
+
+    pub const Status = enum(u8) {
+        /// The run names no platform.
+        no_platform,
+        /// No package of the chain declares `"markup".vocabulary`.
+        undeclared,
+        /// `"vocabulary"` names no module of the chain.
+        no_vocabulary_module,
+        /// `"type"` names no `pub foreign type` of one parameter in a module
+        /// of the chain, or the chain declares none.
+        bad_type,
+        /// Both resolved.
+        ok,
+    };
+};
 
 /// What the platform chain says about which module may import which
 /// (`boundary.md` §9.1). Every platform package of the chain shares
@@ -126,6 +153,12 @@ pub const Platforms = struct {
     sees: []const u64 = &.{},
     /// The `"reexports"` of every package of the chain.
     reexports: []const Reexport = &.{},
+    /// Whether the run has a platform at all.
+    chain: bool = false,
+    /// The chain's `"markup".vocabulary` and `"markup".type` (§9.2), as the
+    /// manifests spell them; null where no package declares one.
+    vocabulary: ?[]const u8 = null,
+    markup_type: ?[]const u8 = null,
 
     pub const Reexport = struct {
         /// The module name as the manifest spells it.
@@ -145,6 +178,10 @@ pub const Module = struct {
     /// module but a dependency platform's that no platform re-exports
     /// (`boundary.md` §9.1).
     app_visible: bool = true,
+    /// The module writes markup and its dependency on the vocabulary module
+    /// is that and not an import (`frontend.md` §9.8), for `import_cycle`'s
+    /// message.
+    markup_edge: bool = false,
     /// The module's name, interned: `Json.Decode` for
     /// `src/Json/Decode.beni`.
     name: Symbol,
@@ -410,6 +447,7 @@ pub fn build(
     }
     g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
+    g.markup = try resolveMarkup(&g, gpa, artifacts, interner, platforms);
 
     // 2. Edges: one per import the module uses, then one per module that
     //    declares a type it can see but never names (§6.8). A module's
@@ -456,6 +494,17 @@ pub fn build(
             dep_stamp[target.int()] = stamp;
             try deps.append(gpa, target);
         }
+        // Markup needs no import (`frontend.md` §9.8): a module that writes
+        // some depends on the vocabulary module as surely as on anything
+        // it imports — for ordering, the cache key and the firewall alike.
+        // The vocabulary module's own markup resolves against itself.
+        if (bir.uses_markup) if (g.markup.vocabulary) |vocabulary| {
+            if (vocabulary != index and dep_stamp[vocabulary.int()] != stamp) {
+                dep_stamp[vocabulary.int()] = stamp;
+                try deps.append(gpa, vocabulary);
+                g.modules.items(.markup_edge)[i] = true;
+            }
+        };
         // The types the checker MINTS for this module
         // (`static-dispatch-spike.md` §6.8). Resolved against `core` and
         // not against the module's own package, because that is where
@@ -483,6 +532,32 @@ pub fn build(
     g.diagnostics = try diagnostics.toOwnedSlice(gpa);
     g.cycle_members = try cycle_members.toOwnedSlice(gpa);
     return g;
+}
+
+/// The chain's vocabulary module and markup type (`boundary.md` §9.2), each
+/// looked up among the platform modules, the type checked for what §9.2
+/// says it is: a `pub foreign type` of one parameter.
+fn resolveMarkup(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, interner: *InternPool.Global, platforms: Platforms) Allocator.Error!Markup {
+    if (!platforms.chain) return .{ .status = .no_platform };
+    const vocabulary_text = platforms.vocabulary orelse return .{ .status = .undeclared };
+    const vocabulary = g.find(.platform, try interner.getOrPut(gpa, vocabulary_text)) orelse
+        return .{ .status = .no_vocabulary_module };
+    const qualified = platforms.markup_type orelse return .{ .status = .bad_type };
+    const dot = std.mem.lastIndexOfScalar(u8, qualified, '.') orelse return .{ .status = .bad_type };
+    const module_name = try interner.getOrPut(gpa, qualified[0..dot]);
+    const type_name = try interner.getOrPut(gpa, qualified[dot + 1 ..]);
+    const owner = g.find(.platform, module_name) orelse return .{ .status = .bad_type };
+    const bir = artifacts.bir(g.moduleFile(owner));
+    const declared = for (bir.decls) |d| {
+        if (d.kind == .foreign_type and d.is_pub and d.params == 1 and bir.symbol(d.name) == type_name) break true;
+    } else false;
+    if (!declared) return .{ .status = .bad_type };
+    return .{
+        .status = .ok,
+        .vocabulary = vocabulary,
+        .type_module = module_name.toOptional(),
+        .type_name = type_name.toOptional(),
+    };
 }
 
 /// Whether some package of the chain lists the module `name` of chain index
@@ -867,7 +942,25 @@ fn cycleImportToken(g: *const Graph, artifacts: *const Artifacts, from: Index, t
     for (bir.imports) |imp| {
         if (!imp.prelude and bir.symbol(imp.module) == wanted) return imp.name_token;
     }
+    // The edge is markup's (`frontend.md` §9.8): its first markup root.
+    if (g.isMarkupEdge(from, to)) return firstMarkupToken(bir) orelse 0;
     return 0;
+}
+
+/// Whether `from`'s dependency on `to` is the vocabulary edge of markup
+/// rather than an import.
+pub fn isMarkupEdge(g: *const Graph, from: Index, to: Index) bool {
+    return g.modules.items(.markup_edge)[from.int()] and g.markup.vocabulary == to;
+}
+
+/// The main token of `bir`'s first markup root in source order.
+pub fn firstMarkupToken(bir: *const Bir) ?u32 {
+    var first: ?u32 = null;
+    for (bir.insts.items(.tag), bir.insts.items(.main_token)) |tag, token| {
+        if (tag != .markup) continue;
+        if (first == null or token < first.?) first = token;
+    }
+    return first;
 }
 
 /// Tarjan's strongly connected components, iterative. Components come out

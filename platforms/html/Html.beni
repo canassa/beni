@@ -1,0 +1,237 @@
+--! The HTML vocabulary (`docs/design/boundary.md` §9.1, §9.3;
+--! `docs/design/language.md` §11.14): which elements, attributes and events
+--! markup may write, the markup type `Html msg`, and the markup primitives
+--! `text` and `map`.
+--!
+--! `html` is a platform that is only depended on: it declares no `program`
+--! and no markup lowering. `node` and `browser` depend on it and re-export
+--! this module, so a view module is checked against ONE vocabulary and ONE
+--! `Html` type and builds under both. The facts are data for the lowering
+--! that renders them; the checker reads `void`, `on`, the value and payload
+--! types, `via`, `classes`, `styles` and `raw`.
+
+
+--| Markup whose handlers produce messages of type `msg`. Its representation
+--| is the build's markup lowering's, which is why no `foreign` of this
+--| platform may build or read one.
+pub foreign type Html msg
+
+
+--| The event object a handler is handed when its event names no `via`.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it: `Html.text s` and `<>{s}</>` render
+--| alike.
+pub markup text : String -> Html msg
+
+
+--| The same markup, with every message its handlers produce passed through
+--| the function before it is sent. Nested maps apply innermost first.
+pub markup map : Html a, (a -> b) -> Html b
+
+
+--| The value of the form control an event came from.
+pub foreign targetValue : Event -> String
+
+
+--| Whether the checkbox an event came from is checked.
+pub foreign targetChecked : Event -> Bool
+
+
+-- Elements. A `void` element takes no children.
+
+pub element "a"
+pub element "abbr"
+pub element "address"
+pub element "area" void
+pub element "article"
+pub element "aside"
+pub element "audio"
+pub element "b"
+pub element "base" void
+pub element "bdi"
+pub element "bdo"
+pub element "blockquote"
+pub element "body"
+pub element "br" void
+pub element "button"
+pub element "canvas"
+pub element "caption"
+pub element "cite"
+pub element "code"
+pub element "col" void
+pub element "colgroup"
+pub element "data"
+pub element "datalist"
+pub element "dd"
+pub element "del"
+pub element "details"
+pub element "dfn"
+pub element "dialog"
+pub element "div"
+pub element "dl"
+pub element "dt"
+pub element "em"
+pub element "embed" void
+pub element "fieldset"
+pub element "figcaption"
+pub element "figure"
+pub element "footer"
+pub element "form"
+pub element "h1"
+pub element "h2"
+pub element "h3"
+pub element "h4"
+pub element "h5"
+pub element "h6"
+pub element "head"
+pub element "header"
+pub element "hgroup"
+pub element "hr" void
+pub element "html"
+pub element "i"
+pub element "iframe"
+pub element "img" void
+pub element "input" void
+pub element "ins"
+pub element "kbd"
+pub element "label"
+pub element "legend"
+pub element "li"
+pub element "link" void
+pub element "main"
+pub element "map"
+pub element "mark"
+pub element "menu"
+pub element "meta" void
+pub element "meter"
+pub element "nav"
+pub element "noscript"
+pub element "object"
+pub element "ol"
+pub element "optgroup"
+pub element "option"
+pub element "output"
+pub element "p"
+pub element "picture"
+pub element "pre"
+pub element "progress"
+pub element "q"
+pub element "rp"
+pub element "rt"
+pub element "ruby"
+pub element "s"
+pub element "samp"
+pub element "script"
+pub element "search"
+pub element "section"
+pub element "select"
+pub element "slot"
+pub element "small"
+pub element "source" void
+pub element "span"
+pub element "strong"
+pub element "style"
+pub element "sub"
+pub element "summary"
+pub element "sup"
+pub element "table"
+pub element "tbody"
+pub element "td"
+pub element "template"
+pub element "textarea"
+pub element "tfoot"
+pub element "th"
+pub element "thead"
+pub element "time"
+pub element "title"
+pub element "tr"
+pub element "track" void
+pub element "u"
+pub element "ul"
+pub element "var"
+pub element "video"
+pub element "wbr" void
+-- A custom element: any name with a hyphen.
+pub element "*-*"
+
+
+-- Attributes of every element.
+
+pub attribute "accesskey" : String
+pub attribute "aria-*" : String
+pub attribute "autofocus" : Bool
+pub attribute "class" classes : String
+pub attribute "contenteditable" : String
+pub attribute "data-*" : String
+pub attribute "dir" : String
+pub attribute "draggable" : String
+pub attribute "hidden" : Bool
+pub attribute "id" : String
+pub attribute "lang" : String
+pub attribute "role" : String
+pub attribute "spellcheck" : String
+pub attribute "style" styles : String
+pub attribute "tabindex" : Int
+pub attribute "title" : String
+-- The escape hatch for inserting markup text: written unescaped, and every
+-- use of it in a program is warned about.
+pub attribute "innerHTML" property raw : String
+
+
+-- Attributes of some elements.
+
+pub attribute "action" url on "form" : String
+pub attribute "alt" on "area" "img" "input" : String
+pub attribute "autocomplete" on "form" "input" "select" "textarea" : String
+pub attribute "checked" property stateful on "input" : Bool
+pub attribute "cols" on "textarea" : Int
+pub attribute "colspan" on "td" "th" : Int
+pub attribute "disabled" on "button" "fieldset" "input" "optgroup" "option" "select" "textarea" : Bool
+pub attribute "download" on "a" "area" : String
+pub attribute "for" on "label" "output" : String
+pub attribute "height" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
+pub attribute "href" url on "a" "area" "base" "link" : String
+pub attribute "max" on "input" "meter" "progress" : String
+pub attribute "maxlength" on "input" "textarea" : Int
+pub attribute "method" on "form" : String
+pub attribute "min" on "input" "meter" : String
+pub attribute "minlength" on "input" "textarea" : Int
+pub attribute "multiple" on "input" "select" : Bool
+pub attribute "name" on "button" "fieldset" "form" "iframe" "input" "meta" "object" "output" "select" "textarea" : String
+pub attribute "open" on "details" "dialog" : Bool
+pub attribute "pattern" on "input" : String
+pub attribute "placeholder" on "input" "textarea" : String
+pub attribute "readonly" on "input" "textarea" : Bool
+pub attribute "rel" on "a" "area" "form" "link" : String
+pub attribute "required" on "input" "select" "textarea" : Bool
+pub attribute "rows" on "textarea" : Int
+pub attribute "rowspan" on "td" "th" : Int
+pub attribute "selected" property stateful on "option" : Bool
+pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "script" "source" "track" "video" : String
+pub attribute "step" on "input" : String
+pub attribute "target" on "a" "area" "base" "form" : String
+pub attribute "type" on "button" "embed" "input" "link" "object" "ol" "script" "source" "style" : String
+pub attribute "value" property stateful on "input" "select" "textarea" : String
+pub attribute "value" on "button" "data" "option" "output" : String
+pub attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
+
+
+-- Events. A `delegated` event bubbles, so a lowering may listen for it once.
+
+pub event "onBlur" : Event
+pub event "onChange" delegated via targetValue : String
+pub event "onCheck" name "change" delegated via targetChecked on "input" : Bool
+pub event "onClick" delegated : Event
+pub event "onDblClick" delegated : Event
+pub event "onFocus" : Event
+pub event "onInput" delegated via targetValue : String
+pub event "onKeyDown" delegated : Event
+pub event "onKeyUp" delegated : Event
+pub event "onMouseDown" delegated : Event
+pub event "onMouseEnter" : Event
+pub event "onMouseLeave" : Event
+pub event "onMouseUp" delegated : Event
+pub event "onScroll" : Event
+pub event "onSubmit" delegated preventDefault on "form" : Event

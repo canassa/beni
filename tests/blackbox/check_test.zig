@@ -191,7 +191,7 @@ test "without --platform, the unknown module names the flag that would supply it
     // └─────────────────────────────────────────┘
     // A module that is not a platform's gets today's message and no guess.
     try w.write("Other.beni",
-        \\import Html
+        \\import Graphics
         \\
         \\
         \\pub value : Int
@@ -203,10 +203,10 @@ test "without --platform, the unknown module names the flag that would supply it
     try testing.expectEqual(@as(u8, 1), other.exit_code);
     try testing.expectEqual(@as(usize, 1), other.diagnostics.len);
     try testing.expectEqualStrings(
-        \\I cannot find a module named `Html`.
+        \\I cannot find a module named `Graphics`.
         \\
         \\I looked in this project and in the core package. Check the spelling, or check
-        \\that a file named `Html.beni` exists under the source root.
+        \\that a file named `Graphics.beni` exists under the source root.
     , other.diagnostics[0].message);
 
     // And with the platform named, the hint has nothing to say: the module

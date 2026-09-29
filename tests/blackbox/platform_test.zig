@@ -239,7 +239,323 @@ test "a platform that depends on nothing that exists is refused" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), checked.exit_code);
     try testing.expectEqualStrings(
-        "beni: platform 'a' depends on '../nowhere' (\"platforms\"), which is neither a platform that ships with the compiler (node) nor a directory holding one\n",
+        "beni: platform 'a' depends on '../nowhere' (\"platforms\"), which is neither a platform that ships with the compiler (html, node) nor a directory holding one\n",
         checked.stderr,
     );
+}
+
+test "check --platform=html types a view module against the one Html type" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `html` declares no `program`; it is a platform to check against
+    // (`boundary.md` §9.1). A view module annotates with its markup type and
+    // calls its primitives, which are ordinary values with schemes.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("View.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : String -> Html msg
+        \\view s =
+        \\    Html.map (Html.text s) identity
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=html", "View.beni" });
+    const dumped = try w.runWith(&.{ "dump", "--stage=interface", "--platform=html", "View.beni" }, .{ .raw_diagnostics = true });
+    // The same module under `node`, which re-exports `Html`: one vocabulary
+    // module and one `Html` type under both.
+    const under_node = try w.run(&.{ "check", "--platform=node", "View.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+    try testing.expectEqual(@as(u8, 0), dumped.exit_code);
+    try testing.expectEqualStrings("module View\n  value view : String -> Html msg\n", dumped.stdout);
+    try testing.expectEqual(@as(u8, 0), under_node.exit_code);
+    try testing.expectEqual(@as(usize, 0), under_node.diagnostics.len);
+}
+
+test "a program build for a platform with no program is refused before a source is read" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // A source that does not lex: a run that read it would say so.
+    try w.write("Main.beni", "\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=html", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), built.exit_code);
+    try testing.expectEqualStrings(
+        "beni: 'html' declares no \"program\" and is only depended on: build a library for it with --library, or build the program for a platform that depends on it\n",
+        built.stderr,
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+}
+
+test "a library for a platform with no program builds, and one that keeps a markup primitive is refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Label.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub label : String -> String
+        \\label s =
+        \\    "[${s}]"
+        \\
+        \\
+        \\pub placeholder : Html msg -> Html msg
+        \\placeholder h =
+        \\    h
+        \\
+    );
+    try w.write("View.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : String -> Html msg
+        \\view s =
+        \\    Html.text s
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const library = try w.run(&.{ "build", "--library", "--platform=html", "--out=lib", "Label.beni" });
+    const refused = try w.run(&.{ "build", "--library", "--platform=html", "--out=view", "View.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // `html`'s module is not written: nothing the library keeps reaches it.
+    try testing.expectEqual(@as(u8, 0), library.exit_code);
+    try testing.expectEqual(@as(usize, 0), library.diagnostics.len);
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "Label.mjs", "_manifest.txt" }), try treeOf(&w, "lib"));
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .unknown_markup_lowering,
+        .severity = .@"error",
+        .span = .{ .file = "platforms/html/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNKNOWN MARKUP LOWERING",
+        .message = "This build uses the markup primitive `Html.text`, but the platform `html` names\n" ++
+            "no markup lowering to implement it.\n" ++
+            "\n" ++
+            "A markup primitive is implemented by the runtime of the build's markup lowering\n" ++
+            "(`docs/design/boundary.md` §9.3), which a platform names in its manifest's\n" ++
+            "`\"markup\"` `\"lowering\"`, or inherits from a platform it depends on.",
+    }, refused.diagnostics[0]);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("view"));
+}
+
+test "a markup lowering and a markup runtime from two packages are refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The runtime is written for the lowering (`boundary.md` §9.2), so the
+    // first of each the chain finds must come from one package.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("top/beni.json",
+        \\{ "platform": true, "name": "top", "platforms": ["../base"], "markup": { "lowering": "strings" } }
+    );
+    try w.write("base/beni.json",
+        \\{ "platform": true, "name": "base", "markup": { "runtime": "markup.js" } }
+    );
+    try w.write("Main.beni", "x : Int\nx =\n    1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.runWith(&.{ "check", "--platform=top", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), checked.exit_code);
+    try testing.expectEqualStrings(
+        "beni: the markup lowering is declared by 'top' and the markup runtime by 'base'; a \"markup\" \"lowering\" and its \"runtime\" must come from one package\n",
+        checked.stderr,
+    );
+}
+
+/// A platform whose one module is its own vocabulary, `Voc`, with the markup
+/// type `Voc.Node`.
+fn writeVocabularyPlatform(w: *World, voc: []const u8) !void {
+    try w.write("vocab/beni.json",
+        \\{ "platform": true, "name": "vocab", "markup": { "vocabulary": "Voc", "type": "Voc.Node" } }
+    );
+    try w.write("vocab/Voc.beni", voc);
+    try w.write("Main.beni", "x : Int\nx =\n    1\n");
+}
+
+test "the vocabulary module may write markup against its own declarations" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `frontend.md` §9.8: the markup edge is never added from a module to
+    // itself, so a vocabulary module that writes markup is no cycle. Its
+    // markup is the one thing this version cannot type yet.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeVocabularyPlatform(&w,
+        \\pub foreign type Node msg
+        \\
+        \\
+        \\pub element "p"
+        \\
+        \\
+        \\pub view : Node msg
+        \\view =
+        \\    <p />
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=vocab", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "vocab/Voc.beni", .start = .{ .line = 9, .col = 5 }, .end = .{ .line = 9, .col = 6 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "This module writes markup, and its platform declares the vocabulary to check it\n" ++
+            "against, but this version of beni does not type markup yet, so a module that\n" ++
+            "writes markup cannot be checked or built.",
+    }, checked.diagnostics[0]);
+}
+
+test "a module the vocabulary module imports that writes markup closes a cycle through the markup edge" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Voc` imports `Card`, and `Card` writes markup, so `Card` depends on
+    // `Voc` without importing it (`frontend.md` §9.8): an `import_cycle`,
+    // whose message names the markup edge so the circle is legible.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeVocabularyPlatform(&w,
+        \\import Card
+        \\
+        \\
+        \\pub foreign type Node msg
+        \\
+        \\
+        \\pub element "p"
+        \\
+        \\
+        \\pub width : Int
+        \\width =
+        \\    Card.width
+        \\
+    );
+    try w.write("vocab/Card.beni",
+        \\pub width : Int
+        \\width =
+        \\    1
+        \\
+        \\
+        \\view =
+        \\    <p />
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=vocab", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .import_cycle,
+        .severity = .@"error",
+        .span = .{ .file = "vocab/Card.beni", .start = .{ .line = 7, .col = 5 }, .end = .{ .line = 7, .col = 6 } },
+        .title = "IMPORT CYCLE",
+        .message = "These modules import each other in a circle:\n" ++
+            "\n" ++
+            "    Card → Voc → Card\n" ++
+            "\n" ++
+            "`Card` uses markup, so depends on the vocabulary module `Voc` without importing\n" ++
+            "it (`docs/design/frontend.md` §9.8).\n" ++
+            "\n" ++
+            "Beni compiles modules in dependency order, so a circle has no place to start.\n" ++
+            "Move what they share into a module of its own and have both import that.",
+    }, checked.diagnostics[0]);
+}
+
+test "a vocabulary that names no module of the chain leaves markup with no vocabulary" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("vocab/beni.json",
+        \\{ "platform": true, "name": "vocab", "markup": { "vocabulary": "Missing", "type": "Missing.Node" } }
+    );
+    try w.write("vocab/Voc.beni", "pub x : Int\nx =\n    1\n");
+    try w.write("Main.beni", "view =\n    <p />\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=vocab", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .no_markup_vocabulary,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 6 } },
+        .title = "NO MARKUP VOCABULARY",
+        .message = "This module writes markup, but there is no markup vocabulary to check it\n" ++
+            "against.\n" ++
+            "\n" ++
+            "Which elements, attributes and events exist is declared by a platform package\n" ++
+            "(`pub element`, `pub attribute`, `pub event`), and a module's markup is typed\n" ++
+            "against the vocabulary of the platform its build names with `--platform=<name>`.\n" ++
+            "The `\"markup\"` `\"vocabulary\"` of this build's platform names no module of the\n" ++
+            "platform or the platforms it depends on (`docs/design/boundary.md` §9.2).",
+    }, checked.diagnostics[0]);
 }

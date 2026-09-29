@@ -524,6 +524,21 @@ fn ownTermsOf(
         .informational = options.informational,
         .pattern_budget = options.pattern_budget,
     });
+    // The markup term (`frontend.md` §9.8): a module that writes markup, and
+    // the vocabulary module, are checked against the chain's markup
+    // settings, which reach them through no import — why a module has no
+    // vocabulary, and which type is the markup type. Every other module's
+    // option string is unchanged, so its key is too.
+    const markup = graph.markup;
+    const option_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
+        try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s}", .{
+            option_string,
+            markup.status,
+            if (markup.type_module.unwrap()) |s| interner.slice(s) else "",
+            if (markup.type_name.unwrap()) |s| interner.slice(s) else "",
+        })
+    else
+        option_string;
 
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(gpa);
@@ -531,7 +546,7 @@ fn ownTermsOf(
         .build_id = options.build_id,
         .package = module.package,
         .name = interner.slice(module.name),
-        .options = option_string,
+        .options = option_text,
         .source_hash = iface_bytes.hash(store.bytes(file)),
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
     });

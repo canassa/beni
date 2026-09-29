@@ -1,0 +1,11 @@
+-- `unknown_markup_lowering` (boundary.md §9.2): a platform's `"markup"`
+-- `"lowering"` names a lowering compiled into this beni, and this one names
+-- `nope`, which no beni has. It is refused when the platform is loaded,
+-- against the manifest that names it at 1:1 with no excerpt, whether or not
+-- the program writes markup.
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

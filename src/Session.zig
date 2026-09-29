@@ -1372,7 +1372,14 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         s.* = layer.sees;
         for (layer.manifest.reexports) |name| try reexports.append(scratch, .{ .module = name, .layer = @intCast(i) });
     }
-    return .{ .file_layers = session.file_layers, .sees = sees, .reexports = reexports.items };
+    return .{
+        .file_layers = session.file_layers,
+        .sees = sees,
+        .reexports = reexports.items,
+        .chain = true,
+        .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
+        .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,
+    };
 }
 
 /// One remap table per worker, `local symbol → global symbol`, with every
@@ -1858,10 +1865,19 @@ fn reportGraphDiagnostics(session: *Session) RunError!void {
         var cx: ResolveDiagnostics.Context = .{};
         switch (item.code) {
             .import_cycle => {
-                for (session.graph.cycle_members[item.cycle_start..item.cycle_end]) |m| {
+                const members = session.graph.cycle_members[item.cycle_start..item.cycle_end];
+                for (members) |m| {
                     try cycle_names.append(gpa, session.interner.slice(session.graph.moduleName(m)));
                 }
                 cx.cycle = cycle_names.items;
+                // A step of the circle that is markup's dependency on the
+                // vocabulary module, not an import (`frontend.md` §9.8).
+                for (members, 0..) |m, i| {
+                    if (!session.graph.isMarkupEdge(m, members[(i + 1) % members.len])) continue;
+                    cx.markup_edge = session.interner.slice(session.graph.moduleName(m));
+                    cx.name = session.interner.slice(session.graph.moduleName(members[(i + 1) % members.len]));
+                    break;
+                }
             },
             .duplicate_module => {
                 cx.name = session.store.moduleName(item.file);

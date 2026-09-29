@@ -2,5 +2,7 @@
   "platform": true,
   "name": "node",
   "program": "Node.Program",
-  "runtime": "runtime.js"
+  "runtime": "runtime.js",
+  "platforms": ["html"],
+  "reexports": ["Html"]
 }

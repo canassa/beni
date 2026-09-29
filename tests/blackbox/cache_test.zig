@@ -4427,3 +4427,58 @@ const evidence_cases = [_]EditCase{
         },
     },
 };
+
+test "a view module re-checked against the cached vocabulary module reads it as a cold check does" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `html`'s `Html` is a vocabulary module: its record carries the element,
+    // attribute and event tables and flags its markup primitives
+    // (checker-v2.md §25.8). After an edit to `View` alone, the warm check
+    // installs `Html` from the cache and checks `View` against that record,
+    // and must print what a check without a cache prints — the interface
+    // hash of every module included, `Html`'s computed over the record read
+    // back from bytes.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("View.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : String -> Html msg
+        \\view s =
+        \\    Html.text s
+        \\
+    );
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=html", "--iface-hash", "--cache-dir=cache", "View.beni" };
+    _ = try runCounted(&w, arena, &args, "cold.json");
+    try w.write("View.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : String -> Html msg
+        \\view s =
+        \\    Html.map (Html.text s) identity
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const warm = try runCounted(&w, arena, &args, "warm.json");
+    const oracle = try w.runWith(&.{ "check", "--jobs=1", "--platform=html", "--iface-hash", "--no-cache", "View.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(oracle.stderr, warm.result.stderr);
+    try testing.expectEqualStrings(oracle.stdout, warm.result.stdout);
+    try testing.expect(std.mem.indexOf(u8, warm.result.stdout, "platform:Html ") != null);
+    // `View` alone was checked; `Html` and core came from the cache.
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try testing.expectEqual(@as(u64, 1), warm.counters.misses);
+}

@@ -153,7 +153,7 @@ pub fn check(in: Input) Error!Check.Counters {
         try report.emitText(.recursive_alias, region, null, "This schema endpoint is a structural alias that refers to itself.\n\nUse a tagged schema for recursive data so the endpoint has a nominal constructor.\n");
     }
     for (schemas.errors.items) |e| try report.emitText(e.code, e.region, null, e.message);
-    try reportMarkup(&report, bir);
+    try reportMarkup(&report, bir, in.graph);
 
     // P2: every annotated value's scheme, before any body is checked.
     for (bir.decls, 0..) |d, i| {
@@ -178,7 +178,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // The vocabulary declarations (§25.2), before any value group: they
     // depend on no value but a `via` extractor, whose P2 scheme is all they
     // read, and the module's own markup resolves against them.
-    try Vocab.check(&cx, &report, decl_scheme, null);
+    try Vocab.check(&cx, &report, decl_scheme, markupType(in.graph));
 
     // P3: the own-name index (§5): every value by name, once.
     const own_values = try ownIndex(scratch, bir);
@@ -319,26 +319,60 @@ pub fn check(in: Input) Error!Check.Counters {
     };
 }
 
+/// The build's markup type (`boundary.md` §9.2), when the chain names one.
+fn markupType(graph: *const Graph) ?Vocab.MarkupType {
+    const module = graph.markup.type_module.unwrap() orelse return null;
+    const name = graph.markup.type_name.unwrap() orelse return null;
+    return .{ .module = module, .name = name };
+}
+
 /// Markup, until the checker types it (checker-v2.md §25): a module that
-/// writes markup has no vocabulary to type it against — `no_markup_vocabulary`,
-/// once, at its first markup root in source order.
-fn reportMarkup(report: *Report, bir: *const Bir) Error!void {
-    if (bir.uses_markup) {
-        var first: ?Bir.Inst.Index = null;
-        const tags = bir.insts.items(.tag);
-        const tokens = bir.insts.items(.main_token);
-        for (tags, 0..) |tag, i| {
-            if (tag != .markup) continue;
-            if (first == null or tokens[i] < tokens[first.?.int()]) first = @enumFromInt(i);
-        }
-        if (first) |root| try report.emitText(.no_markup_vocabulary, root, null,
-            \\This module writes markup, but there is no markup vocabulary to check it against.
-            \\
-            \\Which elements, attributes and events exist is declared by a platform package
-            \\(`pub element`, `pub attribute`, `pub event`), and a module's markup is typed
-            \\against the vocabulary of the platform its build names with `--platform=<name>`.
-            \\No platform of this version of beni declares one yet.
-        );
+/// writes markup is reported once, at its first markup root in source
+/// order — `no_markup_vocabulary` when the build has no vocabulary to type
+/// it against, and `not_implemented` when it has one, since typing markup
+/// against a vocabulary is not built yet. Every `markup` instruction types
+/// as the error type, so nothing cascades from either.
+fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!void {
+    if (!bir.uses_markup) return;
+    var first: ?Bir.Inst.Index = null;
+    const tags = bir.insts.items(.tag);
+    const tokens = bir.insts.items(.main_token);
+    for (tags, 0..) |tag, i| {
+        if (tag != .markup) continue;
+        if (first == null or tokens[i] < tokens[first.?.int()]) first = @enumFromInt(i);
+    }
+    const root = first orelse return;
+    const lead =
+        \\This module writes markup, but there is no markup vocabulary to check it against.
+        \\
+        \\Which elements, attributes and events exist is declared by a platform package
+        \\(`pub element`, `pub attribute`, `pub event`), and a module's markup is typed
+        \\against the vocabulary of the platform its build names with `--platform=<name>`.
+        \\
+    ;
+    switch (graph.markup.status) {
+        .ok => try report.emitText(.not_implemented, root, null,
+            \\This module writes markup, and its platform declares the vocabulary to check it
+            \\against, but this version of beni does not type markup yet, so a module that
+            \\writes markup cannot be checked or built.
+        ),
+        .no_platform => try report.emitText(.no_markup_vocabulary, root, null, lead ++
+            \\This run names no platform: pass `--platform=<name>`, where `html` holds the
+            \\HTML vocabulary and every platform built on it has it too.
+        ),
+        .undeclared => try report.emitText(.no_markup_vocabulary, root, null, lead ++
+            \\No package of this build's platform names one: none of their manifests has a
+            \\`"markup"` `"vocabulary"`.
+        ),
+        .no_vocabulary_module => try report.emitText(.no_markup_vocabulary, root, null, lead ++
+            \\The `"markup"` `"vocabulary"` of this build's platform names no module of the
+            \\platform or the platforms it depends on (`docs/design/boundary.md` §9.2).
+        ),
+        .bad_type => try report.emitText(.no_markup_vocabulary, root, null, lead ++
+            \\The `"markup"` `"type"` of this build's platform must name a `pub foreign type`
+            \\of one parameter in a module of the platform or the platforms it depends on,
+            \\and it names none (`docs/design/boundary.md` §9.2).
+        ),
     }
 }
 
