@@ -1,0 +1,1 @@
+{ "platform": true, "name": "identity", "platforms": ["node"], "reexports": ["Node", "Html", "Ssr"] }

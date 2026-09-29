@@ -1,0 +1,59 @@
+-- A nullary constructor of a type that also has constructors with fields is
+-- one value wherever a module writes it (language.md §11.12, backend.md §4,
+-- *A nullary constructor is one object*), observed through a test
+-- platform's `refEq`: `Run` from two calls of one function, `Run` from two
+-- different functions, a top-level `Run`, `Stop` from two calls of another
+-- module's function, core's
+-- `Nothing` written here twice, and `List.head []` called twice are each
+-- the very same value — while `Add 1` built twice is two values. It is what
+-- lets a helper given `Run` in a hole be skipped (language.md §11.6).
+import Identity
+import Msgs exposing (Add, Msg, Run)
+import Node
+
+
+idle : Msg
+idle =
+    Run
+
+
+run : Int -> Msg
+run _ =
+    Run
+
+
+alsoRun : Bool -> Msg
+alsoRun _ =
+    Run
+
+
+add : Int -> Msg
+add n =
+    Add n
+
+
+none : Int -> Maybe Int
+none _ =
+    Nothing
+
+
+show : Bool -> String
+show b =
+    if b then
+        "same"
+
+    else
+        "different"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ show (Identity.refEq (run 1) (run 2))
+        , show (Identity.refEq (run 1) (alsoRun True))
+        , show (Identity.refEq idle (run 3))
+        , show (Identity.refEq (Msgs.stop 1) (Msgs.stop 2))
+        , show (Identity.refEq (none 1) Nothing)
+        , show (Identity.refEq (List.head [ 1 ] |> Maybe.andThen (\_ -> List.head [])) (List.head []))
+        , show (Identity.refEq (add 1) (add 1))
+        ]

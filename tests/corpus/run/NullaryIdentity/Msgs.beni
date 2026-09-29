@@ -1,0 +1,11 @@
+-- See Main.beni. `Run`, `Stop` and `Add` are declared here and written in
+-- both modules.
+pub type Msg
+    = Run
+    | Stop
+    | Add Int
+
+
+pub stop : Int -> Msg
+stop _ =
+    Stop

@@ -1,0 +1,38 @@
+-- load
+console.log: button: "run"
+console.log: button: "add"
+console.log: maybeText: "none"
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <!---->
+    <button id="add">"add"</button>
+    <!---->
+    <i>"none"</i>
+    <b>"0"</b>
+  </main>
+</body>
+-- click #run
+console.log: button: "add"
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <!---->
+    <button id="add">"add"</button>
+    <!---->
+    <i>"none"</i>
+    <b>"1"</b>
+  </main>
+</body>
+-- click #add
+console.log: button: "add"
+<body>
+  <main>
+    <button id="run">"run"</button>
+    <!---->
+    <button id="add">"add"</button>
+    <!---->
+    <i>"none"</i>
+    <b>"2"</b>
+  </main>
+</body>

@@ -257,9 +257,14 @@ pub fn lower(
     // `importStatements` because a derived body can name another module's.
     const synthesised = try l.synthesisedValues();
     const import_statements = try l.importStatements();
+    // The nullary constructors' constants, after every body and every
+    // synthesised value that could name one has been built, and in front of
+    // all of them (`backend.md` §4, *A nullary constructor is one object*).
+    const nullary = try l.nullaryDecls();
 
     var body: std.ArrayList(Node.Index) = .empty;
     try body.appendSlice(scratch, import_statements);
+    try body.appendSlice(scratch, nullary);
     // What the markup lowering hoisted: after the imports, before the first
     // declaration, in hoist order (`backend.md` §15.1).
     if (l.mk) |st| try body.appendSlice(scratch, st.hoisted.items);
@@ -477,6 +482,12 @@ const Lowerer = struct {
     /// not an operator (§8.2), so the module emits the two-or-three-line
     /// `const` once and every use names it.
     needs: Primitives = .{},
+    /// The padded nullary constructors this module has written in value
+    /// position, each one module-level constant (`backend.md` §4, *A
+    /// nullary constructor is one object*). Discovered like `needs`, so
+    /// only a surviving body's constructors are written; keyed by the
+    /// constructor, in `scratch`.
+    nullary: std.AutoArrayHashMapUnmanaged(NullaryKey, Nullary) = .empty,
     /// How many `case` instructions of the function being lowered enclose
     /// the one being lowered now: the `<d>` of §7's `$j$<d>$<b>` and
     /// `$c$<d>` labels. It is reset at every function boundary, because a
@@ -549,6 +560,18 @@ const Lowerer = struct {
     /// The same exports by name, for `--release`'s cut of the runtime
     /// file to what the build imports (`backend.md` §9).
     markup_exports: std.ArrayList([]const u8) = .empty,
+
+    /// A constructor, this module's (`ext` false: a `Bir.ctors` index) or
+    /// another's (an interface constructor row of `module`).
+    const NullaryKey = struct { ext: bool, module: u32, ctor: u32 };
+
+    /// One nullary constructor's constant: its name, and the object it holds.
+    const Nullary = struct {
+        base: []const u8,
+        name: JsIr.NameIndex,
+        rep: CtorRep,
+        tag: Symbol,
+    };
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -1916,6 +1939,53 @@ const Lowerer = struct {
         }
     }
 
+    /// The module-level constant that holds nullary constructor `inst` of a
+    /// `tagged` type (`backend.md` §4, *A nullary constructor is one
+    /// object*): `<Module>$<Ctor>` for this module's own constructor,
+    /// `<Module>$<Declaring$Module>$<Ctor>` for an imported one. The name
+    /// is asked for at every use and the constant is written once, by
+    /// `nullaryDecls`.
+    fn nullaryConstant(l: *Lowerer, inst: Inst.Index, rep: CtorRep, tag: Symbol) !JsIr.NameIndex {
+        const d = l.bir.instData(inst);
+        const key: NullaryKey = switch (l.bir.instTag(inst)) {
+            .ctor => .{ .ext = false, .module = 0, .ctor = d.lhs },
+            else => .{ .ext = true, .module = d.lhs, .ctor = d.rhs },
+        };
+        const slot = try l.nullary.getOrPut(l.scratch, key);
+        if (slot.found_existing) return slot.value_ptr.name;
+        const base = if (key.ext) blk: {
+            const path = l.text(l.in.graph.moduleName(@enumFromInt(key.module)));
+            const out = try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ path, l.text(tag) });
+            for (out[0..path.len]) |*c| {
+                if (c.* == '.') c.* = '$';
+            }
+            break :blk out;
+        } else l.text(tag);
+        slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = rep, .tag = tag };
+        return slot.value_ptr.name;
+    }
+
+    /// Every constant `nullaryConstant` named, sorted by printed name so the
+    /// order is the source's and not the order of discovery (CLAUDE.md
+    /// rule 5). Each is an object literal of strings and `null`s, so it
+    /// reads nothing and may go first.
+    fn nullaryDecls(l: *Lowerer) ![]const Node.Index {
+        const values = l.nullary.values();
+        const Sorter = struct {
+            fn before(_: void, a: Nullary, b: Nullary) bool {
+                return std.mem.lessThan(u8, a.base, b.base);
+            }
+        };
+        const sorted = try l.scratch.dupe(Nullary, values);
+        std.mem.sort(Nullary, sorted, {}, Sorter.before);
+        const out = try l.scratch.alloc(Node.Index, sorted.len);
+        for (sorted, out) |c, *slot| {
+            const value = try l.ctorValue(c.rep, c.tag, &.{}, Node.no_pos);
+            slot.* = try l.add(.const_decl, Node.no_pos, @intFromEnum(c.name), value.int());
+        }
+        return out;
+    }
+
     // ---- Lists ------------------------------------------------------------
     //
     // `List` is a `foreign type`, so it has no beni constructors and the
@@ -2511,6 +2581,7 @@ const Lowerer = struct {
         if (l.ctorRepOf(inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
             const arity = l.ctorArity(inst);
+            if (arity == 0 and rep == .tagged) return l.ident(try l.nullaryConstant(inst, rep, tag), p);
             if (arity == 0) return l.ctorValue(rep, tag, &.{}, p);
             return l.ctorLambda(rep, tag, arity, p);
         }
@@ -7289,8 +7360,10 @@ test "if becomes a conditional expression and `&&` becomes `&&`" {
 test "a constructor of a payload-carrying type is padded to one shape" {
     // `fast-compiler.md` §9.4: Elm's own `List` violates shape consistency
     // and padding it measured ~11% on Firefox. `None` has no argument and
-    // still gets the slot.
+    // still gets the slot, in the one module-level constant every use of it
+    // reads (`backend.md` §4, *A nullary constructor is one object*).
     try expectJs(
+        \\const M$None = { $: "None", a: null };
         \\const M$Box$$order = { Some: 0, None: 1 };
         \\const M$Box$$compare = ($x, $y) => {
         \\  if ($x.$ !== $y.$) {
@@ -7315,7 +7388,7 @@ test "a constructor of a payload-carrying type is padded to one shape" {
         \\  }
         \\};
         \\const M$some = { $: "Some", a: 1 };
-        \\const M$none = { $: "None", a: null };
+        \\const M$none = M$None;
         \\const M$unwrap = (v$1) => {
         \\  if (v$1.$ === "Some") {
         \\    const n$2 = v$1.a;

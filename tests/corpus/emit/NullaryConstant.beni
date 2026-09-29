@@ -1,0 +1,65 @@
+-- emit: a nullary constructor of a type that also has a constructor with
+-- fields is ONE module-level constant per constructor, read at every use
+-- (backend.md §4, *A nullary constructor is one object*): `Run` is
+-- `NullaryConstant$Run` in `button`, in `both` twice and as the top-level
+-- `idle`, and core's `Nothing` is `NullaryConstant$Maybe$Nothing` — so
+-- `Run` is the same object every time it is evaluated. The constants sit in
+-- front of every declaration, so `idle` reads an initialised `const`.
+-- `Stop`, which no surviving body writes, gets none; a pattern and a tag
+-- test read the tag and never the constant; an all-nullary type (`Order`)
+-- stays a bare string; `Add 1` is still built where it is written.
+import Node exposing (Program)
+
+
+pub type Msg
+    = Run
+    | Stop
+    | Add Int
+
+
+pub idle : Msg
+idle =
+    Run
+
+
+pub button : String -> { label : String, msg : Msg }
+button label =
+    { label = label, msg = Run }
+
+
+pub both : Bool -> ( Msg, Msg )
+both b =
+    if b then
+        ( Run, Add 1 )
+
+    else
+        ( Run, Run )
+
+
+pub none : Int -> Maybe Int
+none n =
+    if n > 0 then
+        Just n
+
+    else
+        Nothing
+
+
+pub isRun : Msg -> Bool
+isRun m =
+    case m of
+        Run ->
+            True
+
+        _ ->
+            False
+
+
+pub order : Order
+order =
+    LT
+
+
+main : Program
+main =
+    Node.printLines []

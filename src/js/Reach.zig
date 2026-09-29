@@ -11,7 +11,10 @@
 //! Four things are deliberately NOT nodes, each because it has no separate
 //! existence in the output: a `type`, a `type alias` and a `foreign type`
 //! emit nothing; a **constructor** is an object literal at its use site, so
-//! a constructor named only in a pattern needs no edge; a **`$$order`
+//! a constructor named only in a pattern needs no edge — and a padded
+//! nullary one is a constant of the module that USES it, written when a
+//! surviving body names it (`backend.md` §4, *A nullary constructor is one
+//! object*), so it needs none either; a **`$$order`
 //! table** lives and dies with the `compare` whose row it hangs off
 //! (`Lower.orderTable` is reached only from a row whose arrow was built);
 //! and the three **primitive comparators** are discovered by

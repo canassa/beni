@@ -1,10 +1,10 @@
 abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 d607fd2b4f4a8690bdb35987c2e979eb6e6513093ed105b5eee2cbc99c72ea46
-abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 d912f61adf53b9ac4b5d48d148b412955bd9ae706dbb0d1709fe26dce2db9a86
-abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 3c9aac00d17f9bdd11edfe62b8649f0b2925536fea3c9242957f91f41930e98f
-abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 f114ff31ba67582af29a515a4b3d53adee4e479bfb007479230ded02a1794bea
+abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 023b90af72143c9d136f9b7d3bf141185587809b1303399b71ff672eb0710c6d
+abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 a738f6f118662e78e54c5efd2e8df74d991fedcce1aef44f207e91f87cb41c27
+abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 b239b41cee5cfb9f2955fafea952f4894edd80aeb35966deffc77f7b63f315f5
 abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 a069858265884c860de2ef4c4f59a79ea721ed2567437267a22d3fa611502914
-abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 ab74052790df6719fcc5fc44fea5686a66f0b8f3786c8e00527835a7491d9cdb
-abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 bb4afd9acff8fac6557860b91f9dfc064d2a9032823d6ed4ede814dac47c0e5a
+abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 2333303aebb45711d4d397ee3c2bc3317447dbb0646da3cc020d9c904524f91b
+abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 fad3b930fbe7d85c4520a92f888548eaa008b30152e1ea553d4d4ddaa9c1c192
 abuse_wide_test.test.== on a record builds and runs at the widest positional evidence #0 1d49cd64c18e45735014c9f3aff8c4d119c53ec0422d013ead220739044d88da
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 27898b5a7168951bdfe5454438723084016bf26da99f164914ed3fb3e3285c64
 abuse_wide_test.test.a 2 000-element list builds and runs #0 3d079ac5d44527b60831b3394dce4a9319f909a047fb132c0006743155aad7d4
@@ -97,7 +97,7 @@ cache_test.test.a warm rebuild is a cold build: the custom eq and compare remove
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #0 d94aeeefc546ccc8e5a50600eb60e29afa3e2034d23c6d4cd25fac78ac0d0144
 cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache and with only the importer edited #1 770fa371ca359351f8112859d468644c3dd06a02e6d31231a114aaf278fbeb95
 cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 eb37fe87548da26b0d0ff9b2116634f72f890755e15521b0c3f1dbd83bc24993
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 003a4e43001fc066875c9ec627ef9f4bb496d91e1ede8994c1f749a5789382be
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 49231d1ae4e115a4806ae0cc06dfa7e679fe9d9938205aba6d63bdc87eb4b735
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 ab1e1018e818544e8b5358220f336595e09cff9607821aac3ff8385c4f954e81
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 c38e8cec8af84b0b819390097e7b5feff3b08203363992716128d807a8b56eaf
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516

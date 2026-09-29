@@ -1,0 +1,54 @@
+-- A helper given a nullary constructor is skipped like one given any other
+-- unchanged argument (language.md §11.6, §11.12; backend.md §4, *A nullary
+-- constructor is one object*): `Run` and `Nothing` are the same object on
+-- every render, so `button "run" Run` and `maybeText Nothing` are called
+-- once, at mount, and never again. `button "add" (Add 1)` builds a new
+-- message each render and is called every time. `Debug.log` in each
+-- helper's body shows which calls happen; `Msg` has a constructor with a
+-- field, so its nullary constructors are objects and not bare strings.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Run
+    | Add Int
+
+
+type alias Model =
+    { count : Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Run ->
+            { model | count = model.count + 1 }
+
+        Add n ->
+            { model | count = model.count + n }
+
+
+button : String, Msg -> Html Msg
+button id msg =
+    <button id={id} onClick={msg}>{Debug.log id "button"}</button>
+
+
+maybeText : Maybe String -> Html Msg
+maybeText m =
+    <i>{Debug.log (Maybe.withDefault m "none") "maybeText"}</i>
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        {button "run" Run}
+        {button "add" (Add 1)}
+        {maybeText Nothing}
+        <b>{model.count}</b>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { count = 0 }, update = update, view = view }
