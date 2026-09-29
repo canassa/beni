@@ -1,0 +1,13 @@
+-- The components `Main` calls: `view` takes one record, `pair` takes two
+-- arguments, which no component call can supply.
+import Html exposing (Html)
+
+
+pub view : { label : String, count : Int } -> Html msg
+view props =
+    <span title={props.label}>{props.count}</span>
+
+
+pub pair : String, Int -> Html msg
+pair label count =
+    <span title={label}>{count}</span>

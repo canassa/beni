@@ -1,0 +1,11 @@
+-- `unknown_attribute` (checker-v2.md §25.3): `clas` is no attribute of
+-- `<p>` (11:8), with "did you mean" over the names `<p>` accepts and the
+-- quoted-name escape; `value` is declared only on form controls, so on a
+-- `<p>` it is unknown too (11:17), while the quoted `"hx-get"` is the escape
+-- and is never checked against the vocabulary.
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view url =
+    <p clas="a" value="b" "hx-get"={url} />

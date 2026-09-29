@@ -1,0 +1,12 @@
+-- A row function takes the item, or in a `For` the item and its position
+-- (checker-v2.md §25.4): a lambda of three parameters is refused (10:28),
+-- and so is a `Show` body of two (11:35).
+import Html exposing (Html)
+
+
+pub view : List String, Maybe String -> Html msg
+view names title =
+    <div>
+        <For each={names}>{\a b c -> <p>{a}</p>}</For>
+        <Show when={title} keyed>{\a b -> <p>{a}</p>}</Show>
+    </div>

@@ -39,7 +39,9 @@
 //!
 //! A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`)
 //! is run with `--core` added to the argv (language.md §5.4); its goldens sit
-//! next to it in that subdirectory. Every kind has this.
+//! next to it in that subdirectory. Every kind has this. A `check/good/`,
+//! `check/bad/` or `dispatch/` fixture under `markup/` is run with
+//! `--platform=html`, so its markup is typed against the HTML vocabulary.
 //!
 //! `BENI_WRITE_EXPECTED=1` blesses: goldens are (re)written from the actual
 //! output, which is fully materialised before any file is touched. The
@@ -400,6 +402,15 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     // not exist, and the one that wanted to be one carried an unrelated
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
+    // `markup/`: the fixtures that write markup, checked against the `html`
+    // platform's vocabulary (`checker-v2.md` §25), which a module sees only
+    // under `--platform`. The same mechanism as `core/`, for the check kinds.
+    if (kind == .check_good or kind == .check_bad or kind == .dispatch) {
+        const markup_dir = try std.fs.path.join(arena, &.{ kind_dir, "markup" });
+        const start = fixtures.items.len;
+        try collect(arena, markup_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.markup = true;
+    }
     // `emit/app/`: the goldens whose claim IS what elimination removes
     // (`backend.md` §9, §12). Everything else under `emit/` is built with
     // `--library`, so a golden is a claim about the shape of a declaration
@@ -877,6 +888,9 @@ const Fixture = struct {
     /// Under `emit/release/`: `--release` is added to the argv, so the
     /// golden is a shape claim about §9's release optimiser.
     release: bool = false,
+    /// Under `<kind>/markup/`: `--platform=html` is added to the argv, so
+    /// the fixture's markup is typed against the HTML vocabulary.
+    markup: bool = false,
 
     /// Whether `text` is in the fixture's repo-relative path, the path
     /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
@@ -900,7 +914,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1117,6 +1131,7 @@ const Case = struct {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
         if (c.fixture.core) try list.append(c.arena, "--core");
+        if (c.fixture.markup and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) try list.append(c.arena, "--platform=html");
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
             try list.append(c.arena, "--no-cache");
         }

@@ -1,0 +1,11 @@
+-- `unknown_element` (checker-v2.md §25.3): `<spam>` is no element of the
+-- HTML vocabulary (10:6), with "did you mean" over the declared names. The
+-- node is typed as if absent — its attribute and its children are still
+-- checked, so the hole `{count}` of a record type is its own message — and
+-- one misspelling is one message.
+import Html exposing (Html)
+
+
+pub view : { count : Int } -> Html msg
+view model =
+    <spam title="x">{model}</spam>

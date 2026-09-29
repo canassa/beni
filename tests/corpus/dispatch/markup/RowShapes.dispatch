@@ -1,0 +1,25 @@
+module RowShapes
+  decl viewRow evidence=0 arity=1 convention=plain
+  decl viewCell evidence=0 arity=2 convention=plain
+  decl viewAt evidence=0 arity=2 convention=plain
+  decl view evidence=0 arity=1 convention=plain
+  markup 24 element Html.li
+  markup 24 hole text string
+  markup 35 element Html.li
+  markup 35 hole text number
+  markup 46 element Html.li
+  markup 46 hole text string
+  markup 46 hole text number
+  markup 75 element Html.li
+  markup 75 hole text string
+  markup 75 hole text number
+  markup 84 element Html.h1
+  markup 84 hole text string
+  markup 92 element Html.p
+  markup 94 element Html.div
+  markup 94 for key arity=1 primitive=false
+  markup 94 for position arity=1 primitive=false
+  markup 94 for reference arity=2 primitive=true
+  markup 94 for reference arity=2 primitive=true
+  markup 94 show identity arity=1 primitive=true
+  markup 94 show key arity=1 primitive=false

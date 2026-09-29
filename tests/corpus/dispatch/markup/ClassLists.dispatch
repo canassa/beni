@@ -1,0 +1,14 @@
+module ClassLists
+  decl classes evidence=0 arity=0 convention=plain
+  decl view evidence=0 arity=2 convention=plain
+  decl plain evidence=0 arity=1 convention=plain
+  markup 32 element Html.div
+  markup 32 element Html.p
+  markup 32 attr Html.class string
+  markup 32 element Html.p
+  markup 32 attr Html.class class_list
+  markup 32 element Html.p
+  markup 32 attr Html.class class_list
+  markup 32 attr Html.style style_list
+  markup 35 element Html.p
+  markup 35 attr Html.class string

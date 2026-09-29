@@ -1,0 +1,16 @@
+-- A component is typed exactly as the call it means (checker-v2.md §25.5),
+-- so its mistakes are the call's: a prop missing from the closed record is
+-- `missing_field` (13:10), a misspelt one the same with the typo hint
+-- (14:10), and a callee that takes two arguments rather than one record is
+-- the call's arity message (15:10).
+import Badge
+import Html exposing (Html)
+
+
+pub view : Html msg
+view =
+    <div>
+        <Badge label="x" />
+        <Badge label="x" cuont={1} />
+        <Badge.pair label="x" />
+    </div>

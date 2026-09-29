@@ -1,0 +1,10 @@
+-- A quoted value is a `String` and a bare attribute is `True`, decided from
+-- the syntax (checker-v2.md §25.3): `tabindex` takes an `Int`, so a quoted
+-- value is `type_mismatch` at the value (10:19), and `title` takes a
+-- `String`, so a bare one is `type_mismatch` at the attribute (10:23).
+import Html exposing (Html)
+
+
+pub view : Html msg
+view =
+    <div tabindex="0" title />

@@ -1,0 +1,9 @@
+-- `child_not_renderable`'s "cannot tell" form (checker-v2.md §25.4): the
+-- hole's type is still a variable at its declaration's boundary (9:9), and
+-- how a hole updates is chosen from its type, so it must be known — as
+-- `ambiguous_interpolation` requires of `${…}`.
+import Html exposing (Html)
+
+
+render value =
+    <p>{value}</p>

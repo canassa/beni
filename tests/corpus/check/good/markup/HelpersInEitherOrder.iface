@@ -1,0 +1,2 @@
+module HelpersInEitherOrder
+  value view : List { id : Int, label : String } -> Html Msg

@@ -1,0 +1,21 @@
+-- Markup obligations are decided by types and never by declaration order
+-- (checker-v2.md §25.4, I9): `row` has no annotation, so its hole, its
+-- handler's form and the `For` row function that names it are decided when
+-- its group is checked, whichever of `row` and `view` is written first.
+-- `ordering_test.zig` checks this module with its declarations reversed.
+import Html exposing (Html)
+
+
+type Msg
+    = Picked Int
+
+
+pub view : List { id : Int, label : String } -> Html Msg
+view rows =
+    <ul>
+        <For each={rows} keyed={.id}>{row}</For>
+    </ul>
+
+
+row r =
+    <li onClick={Picked r.id}>{String.toUpper r.label}</li>

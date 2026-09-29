@@ -1,0 +1,25 @@
+-- `class` and `style` take a `String` or a typed list (language.md §11.19),
+-- and which form a value is, is decided by its type (checker-v2.md §25.4's
+-- `attr_form`): `class` given a `String`, a list literal and a list
+-- variable, `style` a list literal. A value whose type is still unknown at
+-- the declaration's boundary is the `String` form, recorded: `plain`'s
+-- `name` has no annotation and meets `class` only.
+import Html exposing (Html)
+
+
+classes : List ( String, Bool )
+classes =
+    [ ( "row", True ) ]
+
+
+pub view : String, Bool -> Html msg
+view size selected =
+    <div>
+        <p class="btn ${size}" />
+        <p class={[ ( "row", True ), ( "danger", selected ) ]} />
+        <p class={classes} style={[ ( "--gap", "4px" ) ]} />
+    </div>
+
+
+pub plain name =
+    <p class={name} />

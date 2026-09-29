@@ -1,0 +1,12 @@
+-- `markup_type_in_foreign` (checker-v2.md §25.2, boundary.md §9.3): the
+-- platform `views` layers on `node` and declares a `foreign` whose type
+-- mentions the markup type `Html.Html`. Its sibling would read one
+-- lowering's representation of markup, and `views` names no lowering of its
+-- own, so under whichever lowering the build selects the value could be
+-- another's: refused at the declaration, `platform/Render.beni` 4:13.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "hello"

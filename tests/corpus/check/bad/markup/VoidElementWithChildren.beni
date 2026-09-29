@@ -1,0 +1,9 @@
+-- `void_element_with_children` (checker-v2.md §25.3): the HTML vocabulary
+-- declares `br` `void`, so it takes no children, and giving it some is an
+-- error at the first child (9:9).
+import Html exposing (Html)
+
+
+pub view : Html msg
+view =
+    <br>line</br>

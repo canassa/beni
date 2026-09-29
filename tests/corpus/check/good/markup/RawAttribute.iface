@@ -1,0 +1,2 @@
+module RawAttribute
+  value view : String -> Html msg

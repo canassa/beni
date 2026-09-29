@@ -1,0 +1,4 @@
+import Html exposing (Html)
+
+
+pub foreign render : Html msg -> String

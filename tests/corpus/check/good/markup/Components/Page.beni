@@ -1,0 +1,28 @@
+-- Components across modules, typed exactly as the calls they mean
+-- (checker-v2.md §25.5): `<Card …>…</Card>` is `Card.view` of a closed
+-- record whose `children` is the markup between the tags, `<Card.header />`
+-- the member, and a leading spread a record update, so `open` comes from
+-- `Card.defaults`. `Html.map` nests the counter's `Int` messages under this
+-- page's `Msg`, and the two event forms are both here: `onClick={Reset}`
+-- sends a message, `onInput={Renamed}` is handed the payload.
+import Html exposing (Html)
+import Ui.Card as Card
+
+
+type Msg
+    = Counted Int
+    | Reset
+    | Renamed String
+
+
+pub view : { title : String, count : Int } -> Html Msg
+view model =
+    <main>
+        <Card title={model.title} open>
+            <Card.header title="Header" />
+            <input value={model.title} onInput={Renamed} />
+            <button onClick={Reset}>Reset</button>
+        </Card>
+        <Card {...Card.defaults} title="Spread" />
+        {Html.map (Card.counter { count = model.count }) Counted}
+    </main>

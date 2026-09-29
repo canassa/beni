@@ -4482,3 +4482,75 @@ test "a view module re-checked against the cached vocabulary module reads it as 
     try testing.expectEqual(@as(u64, 1), warm.counters.checked);
     try testing.expectEqual(@as(u64, 1), warm.counters.misses);
 }
+
+/// A two-module markup project for the cache scenarios: `Card` is a
+/// component, and `View` writes markup that calls it, with a `For` over
+/// records that says nothing about its keying — the `unkeyed_for` warning a
+/// cached entry must replay.
+fn writeMarkupProject(w: *World, card_class: []const u8) !void {
+    var buffer: [512]u8 = undefined;
+    try w.write("Card.beni", try std.fmt.bufPrint(&buffer,
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : {{ title : String }} -> Html msg
+        \\view props =
+        \\    <h2 class="{s}">{{props.title}}</h2>
+        \\
+    , .{card_class}));
+    try w.write("View.beni",
+        \\import Card
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\type Msg
+        \\    = Picked Int
+        \\
+        \\
+        \\pub view : List { id : Int, label : String } -> Html Msg
+        \\view rows =
+        \\    <ul>
+        \\        <Card title="Rows" />
+        \\        <For each={rows}>{\r -> <li onClick={Picked r.id}>{r.label}</li>}</For>
+        \\    </ul>
+        \\
+    );
+}
+
+test "a markup module installed from the cache replays its warning, and an edit to markup alone re-checks no importer" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `View`'s entry carries its `unkeyed_for` warning and its dispatch
+    // table, markup section included (checker-v2.md §25.7). Editing only
+    // `Card`'s markup moves no interface hash (§25.8), so the warm run checks
+    // `Card` alone, installs `View` from the cache, and must print what a run
+    // without a cache prints.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMarkupProject(&w, "card");
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=html", "--iface-hash", "--cache-dir=cache", "." };
+    const cold = try runCounted(&w, arena, &args, "cold.json");
+    try writeMarkupProject(&w, "card title");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const warm = try runCounted(&w, arena, &args, "warm.json");
+    const oracle = try w.runWith(&.{ "check", "--jobs=1", "--platform=html", "--iface-hash", "--no-cache", "." }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(oracle.stderr, warm.result.stderr);
+    try testing.expectEqualStrings(oracle.stdout, warm.result.stdout);
+    try testing.expect(std.mem.indexOf(u8, warm.result.stderr, "UNKEYED FOR") != null);
+    // Every interface hash is the cold run's: the edit changed no type.
+    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    try testing.expectEqual(@as(u64, 1), warm.counters.misses);
+}

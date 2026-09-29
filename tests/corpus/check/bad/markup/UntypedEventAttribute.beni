@@ -1,0 +1,11 @@
+-- `untyped_event_attribute` (the owner's refusal, language.md §11.5): a
+-- quoted attribute name that begins with `on`, in any case, would write an
+-- event handler the page runs as script, so it is refused, pointing to the
+-- typed event the vocabulary declares (11:13, 11:34). Other quoted names are
+-- the untyped escape and stay legal.
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view text =
+    <button "onclick"="alert(1)" "ONMOUSEOVER"={text} "hx-get"="/items" />

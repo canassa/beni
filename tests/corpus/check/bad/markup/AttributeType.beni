@@ -1,0 +1,14 @@
+-- A `{e}` value meets the attribute's declared type at the value's own
+-- region, and a mismatch names the attribute (checker-v2.md §25.3): a
+-- `String` for `tabindex` (12:22). A `class` list is a list of
+-- `( String, Bool )` pairs, and one of `( String, String )` is refused naming
+-- the attribute and both forms (13:19).
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view label =
+    <div>
+        <p tabindex={label} />
+        <p class={[ ( "row", "yes" ) ]} />
+    </div>

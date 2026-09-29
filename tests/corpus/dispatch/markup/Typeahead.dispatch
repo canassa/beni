@@ -1,0 +1,68 @@
+module Typeahead
+  decl view evidence=0 arity=1 convention=plain
+  decl viewStatus evidence=0 arity=1 convention=plain
+  decl viewHit evidence=0 arity=2 convention=plain
+  derived 0 compare Typeahead.Msg context=0
+    body 0 primitive string_compare
+    body 1 primitive string_compare
+    body 2 primitive num_compare
+  derived 1 eq Typeahead.Msg context=0
+    body 0 primitive strict_eq
+    body 1 primitive strict_eq
+    body 2 primitive strict_eq
+  derived 2 compare Typeahead.Status context=0
+    body 0 primitive string_compare
+    body 1 ext List compare
+      derived 4
+        primitive string_compare
+        primitive string_compare
+  derived 3 eq Typeahead.Status context=0
+    body 0 primitive strict_eq
+    body 1 ext List eq
+      derived 5
+        primitive strict_eq
+        primitive strict_eq
+  derived 4 compare r$id$title context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  derived 5 eq r$id$title context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 101
+    evidence primitive strict_eq
+  site 107
+    evidence primitive strict_eq
+  markup 39 element Html.div
+  markup 39 attr Html.class string
+  markup 39 attr Html.style style_list
+  markup 39 element Html.input
+  markup 39 attr Html.class string
+  markup 39 attr Html.value string
+  markup 39 attr Html.placeholder string
+  markup 39 event Html.onInput payload via Html.targetValue
+  markup 39 hole html
+  markup 50 element Html.p
+  markup 50 attr Html.class string
+  markup 54 element Html.p
+  markup 54 attr Html.class string
+  markup 54 escape "aria-busy" string
+  markup 60 element Html.p
+  markup 60 attr Html.class string
+  markup 60 attr Html.role string
+  markup 60 hole text string
+  markup 67 element Html.p
+  markup 67 attr Html.class string
+  markup 67 hole text string
+  markup 83 element Html.ul
+  markup 83 attr Html.class string
+  markup 83 for key arity=1 primitive=false
+  markup 128 element Html.li
+  markup 128 attr Html.class string
+  markup 128 element Html.span
+  markup 128 attr Html.class string
+  markup 128 hole text string
+  markup 128 element Html.button
+  markup 128 attr Html.class string
+  markup 128 attr Html.disabled bool
+  markup 128 event Html.onClick message
+  markup 128 hole text string

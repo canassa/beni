@@ -1,0 +1,11 @@
+-- A `Show` without `keyed` is refused under a vocabulary too (language.md
+-- §11.18): non-keyed `Show` is a `case`, and the message shows the `case`
+-- that says the same thing (10:10).
+import Html exposing (Html)
+
+
+pub view : Maybe String -> Html msg
+view title =
+    <div>
+        <Show when={title}>{\t -> <p>{t}</p>}</Show>
+    </div>

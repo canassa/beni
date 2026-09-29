@@ -1,0 +1,72 @@
+-- Research 28 §11.2's typeahead `view` in bare-text form, typed against
+-- the `html` vocabulary (checker-v2.md §25): every hole's kind is decided by
+-- its type and no conversion is written anywhere — `{hit.title}` is a text
+-- hole, `{viewStatus model}` a markup hole, `{if … then "★" else "☆"}` a
+-- text hole. `onInput={Typed}` is the payload form and `onClick={…}` the
+-- message form; `style` takes a style list; the hits are a `For` keyed by
+-- `.id`. The golden is the markup section of the dispatch table.
+import Html exposing (Html)
+
+
+type Status
+    = Idle
+    | Loading
+    | Failed String
+    | Loaded (List Hit)
+
+
+type alias Hit =
+    { id : String, title : String }
+
+
+type alias Model =
+    { query : String, width : Int, status : Status, favourites : List String, saving : List String }
+
+
+type Msg
+    = Typed String
+    | Favourited String Bool
+
+
+pub view : Model -> Html Msg
+view model =
+    <div class="typeahead" style={[ ( "max-width", "${model.width}px" ) ]}>
+        <input class="query" value={model.query} placeholder="Search…" onInput={Typed} />
+        {viewStatus model}
+    </div>
+
+
+viewStatus : Model -> Html Msg
+viewStatus model =
+    case model.status of
+        Idle ->
+            <p class="hint">Start typing.</p>
+
+        Loading ->
+            <p class="hint" "aria-busy"="true">Searching…</p>
+
+        Failed reason ->
+            <p class="error" role="alert">Could not search: {reason}</p>
+
+        Loaded [] ->
+            <p class="hint">No results for “{model.query}”.</p>
+
+        Loaded hits ->
+            <ul class="results">
+                <For each={hits} keyed={.id}>{\hit -> viewHit model hit}</For>
+            </ul>
+
+
+viewHit : Model, Hit -> Html Msg
+viewHit model hit =
+    let
+        isFav = List.member model.favourites hit.id
+
+        isSaving = List.member model.saving hit.id
+    in
+    <li class="hit">
+        <span class="title">{hit.title}</span>
+        <button class="fav" disabled={isSaving} onClick={Favourited hit.id (not isFav)}>
+            {if isFav then "★" else "☆"}
+        </button>
+    </li>

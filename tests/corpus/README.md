@@ -70,6 +70,10 @@ show a recorded build skipped, a changed one run, and a mismatch refused.
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).
 
+`check/good/`, `check/bad/` and `dispatch/` fixtures under a `markup/`
+subdirectory — files and projects alike — are run with `--platform=html`, so
+their markup is typed against the HTML vocabulary (`checker-v2.md` §25).
+
 Every fixture is **one idea, as small as the idea allows**, with a `--`
 comment on its first lines saying what it proves. In `parse/bad/` the comment
 also names the expected diagnostic code(s) and their `line:col`, so a blessed

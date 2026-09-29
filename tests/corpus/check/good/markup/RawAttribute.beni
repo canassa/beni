@@ -1,0 +1,10 @@
+-- `raw_markup_attribute` (language.md §11.14): an attribute the vocabulary
+-- declares `raw` — the HTML platform's `innerHTML` — writes its value into
+-- the page unescaped, and every use of it in the root package is a warning
+-- at the attribute (10:10). The module still checks.
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view trusted =
+    <div innerHTML={trusted} />

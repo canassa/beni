@@ -74,6 +74,14 @@ test "a schema endpoint's exclusion through its via target is the same refusal r
 // mentions the endpoint back, or which wrap a record endpoint. Reversed,
 // both stopped the checker with the invariant "an item was readied for a
 // frame that is gone".
+// A view whose `For` names an unannotated helper that writes markup: the
+// helper's hole, its handler's form and the row function's arity are
+// markup obligations, decided by types (`checker-v2.md` §25.4). Written with
+// the view first it checks clean; reversed, it must too.
+test "a view and the markup helper its For names check in the reverse order" {
+    try expectReversedChecks("tests/corpus/check/good/markup/HelpersInEitherOrder.beni");
+}
+
 test "a schema via a mutually recursive own type checks reversed" {
     try expectReversedChecks("tests/corpus/check/good/SchemaViaMutualOwnType.beni");
 }

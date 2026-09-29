@@ -1,0 +1,22 @@
+-- `key_not_primitive` (checker-v2.md §25.4): a key is compared by
+-- identity, so it must be a type whose `==` is identity. A record key is
+-- refused, for `For` (15:34) and for `Show` (16:37), and a key whose type
+-- is the annotation's variable cannot be known to be one (22:34).
+import Html exposing (Html)
+
+
+type alias Todo =
+    { id : Int, label : String }
+
+
+pub view : List Todo, Maybe Todo -> Html msg
+view todos editing =
+    <div>
+        <For each={todos} keyed={\t -> t}>{\t -> <p>{t.label}</p>}</For>
+        <Show when={editing} keyed={\t -> t}>{\t -> <p>{t.label}</p>}</Show>
+    </div>
+
+
+pub list : List a, (a -> k), (a -> Html msg) -> Html msg
+list items key row =
+    <ul><For each={items} keyed={key}>{row}</For></ul>

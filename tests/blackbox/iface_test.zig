@@ -114,6 +114,69 @@ fn expectSameThroughTheFormat(w: *World, args: []const []const u8, arena: std.me
     return first.?;
 }
 
+test "a markup module's dispatch table and diagnostics are the same at one job and eight, through the format" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The markup section of the dispatch table (checker-v2.md §25.7) is read
+    // off the tree, the vocabulary's rows and what the solver decided; none
+    // of it may depend on thread timing (CLAUDE.md rule 5), and all of it
+    // must survive `dispatch_bytes` (`--roundtrip-dispatch`). A component
+    // from another module, both handler forms, a class list, a hole of every
+    // kind, a `For` that is warned about and a keyed `Show`.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Card.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub view : { title : String, children : Html msg } -> Html msg
+        \\view props =
+        \\    <section><h2>{props.title}</h2>{props.children}</section>
+        \\
+    );
+    try w.write("View.beni",
+        \\import Card
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\type Msg
+        \\    = Picked Int
+        \\    | Typed String
+        \\
+        \\
+        \\pub view : List { id : Int, label : String }, Maybe String -> Html Msg
+        \\view rows title =
+        \\    <Card title="Rows">
+        \\        <input onInput={Typed} class={[ ( "wide", True ) ]} />
+        \\        <For each={rows}>{\r -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
+        \\        <Show when={title} keyed>{\t -> <p>{t}</p>}</Show>
+        \\        {List.map rows (\r -> <p>{r.label}</p>)}
+        \\    </Card>
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dumped = try expectSameThroughTheFormat(&w, &.{ "dump", "--stage=dispatch", "--platform=html", "." }, arena);
+    const tripped = try w.runWith(&.{ "dump", "--stage=dispatch", "--platform=html", "--jobs=8", "--roundtrip-dispatch", "." }, .{ .raw_diagnostics = true });
+    const checked = try expectSameThroughTheFormat(&w, &.{ "check", "--platform=html", "--no-cache", "." }, arena);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dumped.exit_code);
+    try testing.expectEqualStrings(dumped.stdout, tripped.stdout);
+    try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 for reference arity=1 primitive=false\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 event Html.onInput payload via Html.targetValue\n") != null);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expect(std.mem.indexOf(u8, checked.stderr, "UNKEYED FOR") != null);
+}
+
 test "a round-tripped record's raw dump is byte-identical, quantifiers and where clauses included" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

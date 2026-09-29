@@ -1,0 +1,18 @@
+-- An event handler is a message, or a function from the event's payload to
+-- one (checker-v2.md §25.4). `onInput` hands its handler a `String`, so a
+-- function of an `Int` is refused (16:25), and a message of another type
+-- than the markup's own is refused too (17:26).
+import Html exposing (Html)
+
+
+type Msg
+    = Typed String
+    | Clicked
+
+
+pub view : Html Msg
+view =
+    <div>
+        <input onInput={\n -> Typed (String.fromInt (n + 1))} />
+        <button onClick={"clicked"} />
+    </div>

@@ -1,0 +1,21 @@
+-- `unkeyed_for` (language.md §11.9, checker-v2.md §25.4): a `For` over
+-- records that says nothing about its keying is warned about at its tag
+-- (17:10), because an edited record is a new value and its row would be
+-- rebuilt. It is a warning, so the module still checks. Over a `String`,
+-- identity is equality and there is nothing to say; `keyed={True}` says
+-- identity is meant; a key says how rows are matched.
+import Html exposing (Html)
+
+
+type alias Todo =
+    { id : Int, label : String }
+
+
+pub view : List Todo, List String -> Html msg
+view todos tags =
+    <div>
+        <For each={todos}>{\t -> <p>{t.label}</p>}</For>
+        <For each={tags}>{\t -> <p>{t}</p>}</For>
+        <For each={todos} keyed>{\t -> <p>{t.label}</p>}</For>
+        <For each={todos} keyed={.id}>{\t -> <p>{t.label}</p>}</For>
+    </div>
