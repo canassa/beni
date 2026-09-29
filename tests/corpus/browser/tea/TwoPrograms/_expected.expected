@@ -1,0 +1,88 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>
+      "bumps "
+      "0"
+      <!---->
+      ", taps "
+      "0"
+      <!---->
+      ", frames "
+      "0"
+      <!---->
+    </p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>
+            "count "
+            "0"
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+-- click #inc
+console.log: inner counted: 1
+console.log: outer got: "Tapped"
+console.log: outer got: "Framed"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>
+      "bumps "
+      "0"
+      <!---->
+      ", taps "
+      "1"
+      <!---->
+      ", frames "
+      "1"
+      <!---->
+    </p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>
+            "count "
+            "1"
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+-- click #bump
+console.log: outer got: "Bump"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <p>
+      "bumps "
+      "1"
+      <!---->
+      ", taps "
+      "1"
+      <!---->
+      ", frames "
+      "1"
+      <!---->
+    </p>
+    <div id="frame">
+      <section id="inner">
+        <div>
+          <button id="inc">"inc"</button>
+          <p>
+            "count "
+            "1"
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>

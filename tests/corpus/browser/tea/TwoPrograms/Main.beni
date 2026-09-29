@@ -1,0 +1,82 @@
+-- Two programs on one page (backend.md §15.11; boundary.md §5): `outer`
+-- mounts at the page's body and renders `<section id="inner">`, and
+-- `inner` mounts there, after the section's children, with
+-- `Browser.mountAt`. Each has its own message type, and `Debug.log` in
+-- each `update` says which program received what (`inner` logs its new
+-- count: its message type has one constructor, so its `case` has no test
+-- to make and never evaluates a logged scrutinee).
+--
+-- A click on `inner`'s button bubbles as the DOM's does: `inner` gets
+-- `Inc`, then the section's own handler sends `Tapped` and the frame's
+-- `Framed`, both to `outer`, which rendered them — a handler's message
+-- goes to the nearest mount node strictly above its node, and the section
+-- is `inner`'s mount node, not a node of `inner`. A click in `outer`
+-- reaches `outer` alone. `main` is written with the `Tea.Program` alias,
+-- which the build looks through to `browser`'s `Program`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type OuterMsg
+    = Bump
+    | Tapped
+    | Framed
+
+
+type alias Outer =
+    bumps : Int
+    taps : Int
+    frames : Int
+
+
+updateOuter : OuterMsg, Outer -> Outer
+updateOuter msg model =
+    case Debug.log msg "outer got" of
+        Bump ->
+            { model | bumps = model.bumps + 1 }
+
+        Tapped ->
+            { model | taps = model.taps + 1 }
+
+        Framed ->
+            { model | frames = model.frames + 1 }
+
+
+viewOuter : Outer -> Html OuterMsg
+viewOuter model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p>bumps {model.bumps}, taps {model.taps}, frames {model.frames}</p>
+        <div id="frame" onClick={Framed}>
+            <section id="inner" onClick={Tapped} />
+        </div>
+    </main>
+
+
+type InnerMsg
+    = Inc
+
+
+updateInner : InnerMsg, Int -> Int
+updateInner msg n =
+    case msg of
+        Inc ->
+            Debug.log (n + 1) "inner counted"
+
+
+viewInner : Int -> Html InnerMsg
+viewInner n =
+    <div>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p>count {n}</p>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.programs
+        [ Tea.sandbox
+            { init = { bumps = 0, taps = 0, frames = 0 }, update = updateOuter, view = viewOuter }
+        , Browser.mountAt (Tea.sandbox { init = 0, update = updateInner, view = viewInner }) "inner"
+        ]

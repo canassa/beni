@@ -156,7 +156,8 @@ compiled in place for keyed and positional `For`, keyed `Show`, blocks for
 markup that escapes, delegated events, `Html.map`, and Solid 2's microtask
 render loop, all in one runtime file ([`backend.md`](docs/design/backend.md)
 §15, its *As built* note). `main` is `Browser.program { init, update, view }`,
-mounted at `document.body`. `tests/corpus/browser/dom/` runs pages for it,
+mounted at `document.body` unless `Browser.mountAt` names an element;
+`Browser.programs` puts several on one page. `tests/corpus/browser/dom/` runs pages for it,
 `emit/dom/` pins its shapes, and `tests/oracle/` compares its templates and
 walks with dom-expressions' own output, every difference listed. The Elm
 Architecture is the `browser-tea` platform layered on it, beni with no

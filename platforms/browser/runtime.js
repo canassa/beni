@@ -489,21 +489,25 @@ export const identity = (event) => event;
 
 // Send the message `node`'s handler makes of `event` to the program whose
 // mount node is nearest above it, through every `Html.map` it is inside,
-// innermost first.
+// innermost first. The search starts at the node's parent: a program
+// renders only inside its mount node, so a mount node's own handler is
+// the program's around it.
 const fire = (node, event, key, flags) => {
   if (flags & 1) event.preventDefault();
   const x = node[`${key}X`];
   let msg = x === undefined ? node[key] : node[key](x(event));
   for (let c = node.$$cx; c !== undefined && c !== null; c = c.up) msg = c.f(msg);
-  let root = node;
+  let root = node.parentNode;
   while (root !== null && root.$$root === undefined) root = root.parentNode;
   if (root !== null) root.$$root(msg);
   if (flags & 2) event.stopPropagation();
 };
 
-// The one listener per delegated event name: from the target up to the
-// program's mount node, every node with a handler for the event, until
-// one stops it.
+// The one listener per delegated event name: from the target up, every
+// node with a handler for the event, until one stops it. An event inside
+// a program mounted in another's markup goes on into the outer one, as
+// the DOM's own bubbling does, and each handler's message goes to the
+// program that rendered it.
 const delegated = (event) => {
   const key = `$$${event.type}`;
   for (let node = event.target; node !== null; node = node.parentNode) {
@@ -512,7 +516,6 @@ const delegated = (event) => {
       fire(node, event, key, flags);
       if (flags & 2) return;
     }
-    if (node.$$root !== undefined) return;
   }
 };
 
@@ -594,11 +597,27 @@ export const flush = () => {
   for (const render of renders) render();
 };
 
-// `(program)`: render `view init` into the page's body, and every message
-// through `update`: its model is rendered on the next flush, however many
-// messages arrive before it.
+// `(program)`: start every program the value holds (`Browser.js`: an array
+// of `{ a, n }`), in order, so one may mount at an element an earlier one
+// rendered. A mount node that is missing, or that holds a program already,
+// is a fault of the page, thrown before that program renders anything.
 export const run = (program) => {
-  const root = globalThis.document.body;
+  const document = globalThis.document;
+  for (const m of program) {
+    const root = m.n === null ? document.body : document.getElementById(m.n);
+    if (root === null) throw new Error(`no element has the id "${m.n}" to mount a program at`);
+    if (root.$$root !== undefined) {
+      throw new Error(`${m.n === null ? "the page's body" : `the element "${m.n}"`} already holds a program`);
+    }
+    mount(m.a, root);
+  }
+};
+
+// Render `view init` after the children of `root`, and mark `root` with
+// the program's `send`, which puts every message through `update`: the
+// model is rendered on the next flush, however many messages arrive
+// before it.
+const mount = (program, root) => {
   const s = slot(root, null, null);
   let model = program.init;
   let waiting = false;

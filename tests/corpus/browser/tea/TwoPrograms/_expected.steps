@@ -1,0 +1,6 @@
+# A click on `inner`'s button: `inner` gets `Inc`, and bubbling on, the
+# section and the frame `outer` rendered around it send `Tapped` and
+# `Framed` to `outer`.
+click #inc
+# A click in `outer` reaches `outer` alone.
+click #bump

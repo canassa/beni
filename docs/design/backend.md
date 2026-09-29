@@ -3386,10 +3386,33 @@ platform layered on it; `browser-tea` adds no JavaScript.
   `Browser` module legal because `browser` names `dom` (`boundary.md` §9.3), returns the record it
   was given — `init`, `update`, `view` and where to mount, whose final form waits on W9 (what `main`
   is in a page; `document.body` until then). `run(program)` is the only code that reads it.
+  *Settled 2026-09-29* (by the project's manager on the owner's delegation, reversible;
+  `plans/browser-decisions.md`), Elm's rule: **a program is given the node it mounts at, and
+  `document.body` is the default.** Two functions of `Browser`, and nothing else moves:
+  - `mountAt : Program, String -> Program` — the same program, mounted at the element whose `id` is
+    the string. An id and not a node, because beni has no value that is a node, and an id is what a
+    page author writes in the HTML the program is placed in.
+  - `programs : List Program -> Program` — several programs on one page, one build and one runtime,
+    started in list order, so a program may mount at an element an earlier one rendered.
+
+  `main` stays one `Program` (§5.3's one entry point per build): a page of several programs is one
+  value. At run time a `Program` is an array of mounts `{ a, n }`, the record and the id or `null`
+  for the body; `Browser.program` makes one, `mountAt` rewrites every `n`, `programs` concatenates.
+  **A missing element, or one that holds a program already, is a fault of the page**: `run` throws
+  before that program renders anything, as Elm's `init` does given no node. A program's element
+  must be in the page when the entry module runs, which a module script's deferred execution
+  gives any element of the HTML. Two builds on one page are two runtimes, each with its own
+  delegated listeners, and are not supported: a page of several programs is one build.
 - **Mount.** `run` renders `view(init)` synchronously, mounts its block in a slot at the mount node
-  with a `null` context, and marks the mount node with the program's `send` (`$$root`). A delegated
-  listener walks up from the event's target past the handler's node to the nearest `$$root` and
-  sends there, so two programs on one page each receive their own messages.
+  with a `null` context, after the node's children, which it leaves alone, and marks the mount node
+  with the program's `send` (`$$root`). A delegated listener walks up from the event's target past
+  the handler's node to the nearest `$$root` and sends there, so two programs on one page each
+  receive their own messages. *Made precise 2026-09-29*: the search for a handler's program starts
+  at the handler node's **parent** — a program renders only inside its mount node, so a mount node's
+  own handler belongs to the program around it — and the listener's walk does not stop at the first
+  `$$root`: an event inside a program mounted in another's markup bubbles on into the outer
+  program's handlers, as the DOM's own bubbling does, until a handler's declaration says
+  `stopPropagation`.
 - **A message does not render at once.** `send(msg)` runs `update`, stages the new model and, if no
   flush is queued, queues **one microtask flush** — Solid 2's `schedule()`
   (`references/solid/packages/signals/src/core/scheduler.ts:403-411`), which refuses a second until
@@ -3477,7 +3500,8 @@ each the smallest that let the lowering be written against interface 1.0 unchang
   scripting on the page never shows them. A constant `stateful` property is written through the
   property at mount and checked by `p` like a dynamic one.
 - **The program.** `Browser.program { init, update, view }` is the record it is given; `run` mounts
-  `view init` into `document.body` (MD30) and marks it with `$$root`. **A flush renders whenever a
+  `view init` into `document.body` (MD30) and marks it with `$$root`. *(Since 2026-09-29 the program
+  is an array of mounts and the body is only the default: §15.11, *The program*.)* **A flush renders whenever a
   message was sent since the last one, even when `update` returned the identical model**, which
   corrects §15.11's "`view` is skipped when the model did not change": an edit `update` rejects
   returns the model it was given, and only a render puts the input's value back (§15.10's
@@ -3518,6 +3542,15 @@ each the smallest that let the lowering be written against interface 1.0 unchang
   `$$root` as specified once a `Program` carries its mount node; until then there is one per page.
   The after-render queue, and the message sent from after-render work that renders in the next
   flush, wait on effects: nothing can put work in the queue before they land.
+  *Built 2026-09-29: two programs on one page*, by `Browser.mountAt` and `Browser.programs` (§15.11,
+  *The program*). `tests/corpus/browser/tea/TwoPrograms` mounts one program at the body and a
+  second at a `<section>` the first renders: a click on the inner program's button reaches it, and
+  bubbling on, the section's and its parent's handlers reach the outer one; a click in the outer
+  program reaches it alone. Starting the handler's search at the mount node itself sends the
+  section's message to the inner program, and stopping the walk at the first `$$root` loses the
+  parent's; the fixture fails either way. A missing element and a doubly used one throw at start,
+  and no page fixture states it: an uncaught exception fails a page case rather than being its
+  golden (`tests/corpus/README.md`).
 - **Bytes.** `bench/size.mjs` prints the empty mounted page per platform: for `browser`, 21 740 raw,
   6 251 brotli in development and 21 309 / 6 178 with `--release`; `browser-tea` one module and 163
   raw bytes more (2026-09-29). The runtime file is almost all of it (20 647 bytes): a sibling is

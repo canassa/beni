@@ -1267,6 +1267,13 @@ loop written in the fixture because `Tea` cannot build under `ssr`. Still not bu
 on one page (W9 did not settle where a program mounts), and the after-render queue with the
 message sent from it (effects).
 
+*Built, 2026-09-29:* two programs on one page, once `plans/browser-decisions.md` settled where a
+program mounts — `Browser.mountAt` and `Browser.programs`, the handler's program searched from its
+node's parent, the delegated walk no longer stopping at the first mount node
+(`backend.md` §15.11) — with `tests/corpus/browser/tea/TwoPrograms`; and `Tea.Program`, now that
+`main`'s annotation is compared through aliases (`boundary.md` §5, `run/MainTypeAlias`). MJ8 now
+owes only the after-render queue, which waits on effects.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as
