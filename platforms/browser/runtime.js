@@ -189,6 +189,9 @@ const mountRow = (row, item, position, cx) => {
   i.y = position;
   i.k = null;
   i.n = null;
+  i.kv = 0;
+  i.kc = null;
+  i.kt = null;
   return i;
 };
 
@@ -203,6 +206,9 @@ const patchRow = (row, i, item, position, cx) => {
   if (n !== i) {
     n.k = i.k;
     n.n = null;
+    n.kv = 0;
+    n.kc = i.kc;
+    n.kt = null;
   }
   return n;
 };
@@ -323,13 +329,27 @@ const inPlace = (s, items, keyOf, row, same) => {
   return position === old.length;
 };
 
+// Each render of a keyed list that runs its rows has a stamp of its own.
+let stamps = 0;
+
 // `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
 // key by the item itself. A row keeps its nodes while its key is in the
 // list; items that share a key are matched by their rank among them, so
 // every item renders once. A row whose item, position (when it reads it)
 // and inputs are all as last time is not run at all, and the rows move
 // only when the order of keys changed. `s.d` says last render's keys were
-// distinct, which is what lets `inPlace` keep the key map.
+// distinct, which is what lets `inPlace` run.
+//
+// **The key map `s.x` is kept from render to render**: it maps a key to the
+// first row that has it, and the rows after it that share it are a chain,
+// in list order, through `n`. A render stamps each row it keeps (`kv`), so
+// a surviving row costs one lookup and a few field writes, and the rows
+// left unstamped are dropped from the map afterwards. The chain is rebuilt
+// as the render goes: a key's first item takes the first row of its old
+// chain, its `k`th item the old chain's `k`th row — `kc` is where the old
+// chain is up to, `kt` the new chain's last row, both kept on the first —
+// and a key with more items than rows mounts the rest, with fewer leaves
+// the rest unstamped.
 export const forKeyed = (s, items, keyOf, row, inputs) => {
   const same = s.b !== null && sameInputs(s.y, inputs);
   if (!(items === s.b && same)) {
@@ -339,48 +359,60 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
       fallback(s, items.$ !== 1, row.f);
       return;
     }
+    const stamp = ++stamps;
     let distinct = true;
     const old = s.u ?? [];
-    const byKey = s.x;
+    const byKey = s.x ?? (s.x = new Map());
     const next = [];
-    const map = new Map();
     let moved = false;
     let position = 0;
     for (let at = items; at.$ === 1; at = at.b, position++) {
       const item = at.a;
       const key = keyOf === null ? item : keyOf(item);
-      let i = byKey === null ? undefined : byKey.get(key);
+      const h = byKey.get(key);
+      // The key's first item in this render: the chain starts again.
+      const first = h === undefined || h.kv !== stamp;
+      let i;
+      if (h === undefined) i = undefined;
+      else if (first) {
+        i = h;
+        h.kc = h.n;
+      } else {
+        distinct = false;
+        i = h.kc ?? undefined;
+        if (i !== undefined) h.kc = i.n;
+      }
       if (i !== undefined) {
-        if (i.n === null) byKey.delete(key);
-        else byKey.set(key, i.n);
-        i.n = null;
         if (!same || i.x !== item || (row.i && i.y !== position)) {
           const was = i.y;
           const n = patchRow(row, i, item, position, s.cx);
           if (n !== i) {
             old[was] = n;
+            if (first) byKey.set(key, n);
             i = n;
           }
         }
         if (!moved && old[position] !== i) moved = true;
       } else {
         i = mountRow(row, item, position, s.cx);
+        i.k = key;
+        if (first) byKey.set(key, i);
         moved = true;
       }
+      i.kv = stamp;
       i.x = item;
       i.y = position;
-      i.k = key;
-      const h = map.get(key);
-      if (h === undefined) map.set(key, i);
-      else {
-        distinct = false;
-        let t = h;
-        while (t.n !== null) t = t.n;
-        t.n = i;
+      if (i.n !== null) i.n = null;
+      if (first) {
+        i.kt = i;
+      } else {
+        h.kt.n = i;
+        h.kt = i;
       }
       next.push(i);
     }
     if (next.length !== old.length) moved = true;
+    for (const o of old) if (o.kv !== stamp && byKey.get(o.k) === o) byKey.delete(o.k);
     if (moved) {
       const parent = parentOf(s);
       if (old.length === 0) {
@@ -395,7 +427,6 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
       if (parked !== null) parked = null;
     }
     s.u = next;
-    s.x = map;
     s.d = distinct;
   }
   fallback(s, items.$ !== 1, row.f);

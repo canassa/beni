@@ -3384,6 +3384,20 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   reconciler runs only when the key order moved — the `moved` flag (research 36 §4.4) — so a
   selection change or a label edit never enters it. **Duplicate keys**: rows are matched by the key and
   the item's rank among equal keys, so every item renders once (`language.md` §11.9).
+  *Amended 2026-09-29* (research 39 §4.3, §7 question 4): **the key map is kept across a render
+  that moves rows.** It was rebuilt on every such render — per row a lookup, a delete or a chain
+  step, a duplicate check and an insert into a new `Map` — which is what left swap level with
+  Solid 2 and remove 9 % behind it. Now the map, from a key to the first row that has it, lives in
+  the slot from render to render; a render stamps each row it keeps, so a surviving row costs one
+  lookup and a few field writes, and afterwards drops from the map only the keys whose first row
+  went unstamped. **The rank chain is carried across**: the rows after the first that share a key
+  are a chain in list order, and a render rebuilds it as it goes — a key's `k`th item takes the old
+  chain's `k`th row, a key with more items than rows mounts the rest, and one with fewer leaves the
+  rest unstamped, to be removed — so duplicates render exactly as before. The runtime's instance
+  fields for this are `kv`, `kc` and `kt`, named apart from every field a kind's instance or a
+  runtime kind's already has. Pinned by `browser/dom/KeyedMoves` (a swap and removals with two items
+  on one key, a key emptied and added back), which fails against a map that assumes distinct keys
+  and against one that keeps a key none of the rows has any more.
 - **By position** (`forPosition`): slot *i* is patched with item *i*.
 - **By reference**: `forKeyed` with the item as its own key. Where the checker recorded the item type
   as primitive-`eq`, that is value keying and correct; otherwise it is Solid's default and `unkeyed_for`
