@@ -6,6 +6,8 @@
 //!                                   stderr is empty (no diagnostic at all)
 //!   parse/bad/X.beni  + X.diag      `check --diagnostics=json` equals the golden;
 //!                                   a `.beni` WITHOUT `.diag` is a failure
+//!   parse/*/X.beni    + X.tokens    optional, either kind: `dump --stage=tokens`
+//!                                   equals it too (the lexer's own golden)
 //!   fmt/X.beni        + X.expected  `fmt --stdout` equals the golden, formatting
 //!                                   the golden again is a fixed point, both parse
 //!                                   to the same AST, and both carry the same
@@ -1133,6 +1135,20 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
         try c.expectGolden("ast", r.stdout);
+        try c.tokens(0);
+    }
+
+    /// The optional token golden of a `parse/` fixture: when `X.tokens`
+    /// exists, `dump --stage=tokens` must print it exactly. It is how the
+    /// lexer's own decisions — which `<` opens markup, where a text run
+    /// ends — are pinned where the AST cannot show them. A fixture opts in
+    /// by carrying the file; blessing rewrites it. `exit_code` is the one
+    /// the dump owes: 1 when the file has diagnostics, as a bad one has.
+    fn tokens(c: Case, exit_code: u8) !void {
+        if (!c.goldenExists("tokens")) return;
+        const r = try c.compiler(&.{ "dump", "--stage=tokens", try c.fixturePath() });
+        try expectExit(exit_code, r);
+        try c.expectGolden("tokens", r.stdout);
     }
 
     fn bad(c: Case) !void {
@@ -1160,6 +1176,7 @@ const Case = struct {
             classify("{s} why=diag", .{failSignature(c.arena, r)});
             return err;
         };
+        try c.tokens(1);
     }
 
     /// The pending form of `bad` (`plans/checker-rewrite.md` §2.3): the
