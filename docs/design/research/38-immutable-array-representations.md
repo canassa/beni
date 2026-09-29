@@ -1352,6 +1352,11 @@ tree-shaking, then brotli 11.
 Adaptive and hybrid are the same size to within 40 bytes. Both are the cow and trie ports plus one
 dispatch per export.
 
+*Added 2026-09-30:* [research 40](40-array-sibling-under-brotli.md) takes the adaptive sibling
+from 1 499 to **1 093** bytes by hand, with the same results and the same speed. A real
+`--release` build of the seven scenarios cuts it to 901, and a program that never writes gets
+452. The report also lists which of the techniques beni's compactor could apply itself.
+
 ### 15.11 Verdict
 
 1. **Adaptive beats the hybrid where the hybrid was weakest, and ties it everywhere else.** On

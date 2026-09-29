@@ -1,0 +1,250 @@
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":1000,"med":3387,"q1":3381,"q3":3428,"lo":3347,"hi":4001,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":1000,"med":4044,"q1":3839,"q3":4863,"lo":3529,"hi":5716,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":21800,"q1":21640,"q3":22360,"lo":20850,"hi":22680,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":27580,"q1":26750,"q3":28000,"lo":24990,"hi":50800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":1000,"med":3608,"q1":3588,"q3":3623,"lo":3522,"hi":4065,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":1000,"med":4071,"q1":3753,"q3":4735,"lo":3660,"hi":5541,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":1000,"med":17410,"q1":17310,"q3":22320,"lo":16870,"hi":36910,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":19420,"q1":19060,"q3":19640,"lo":18470,"hi":27290,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":1000,"med":62640,"q1":57210,"q3":167300,"lo":37440,"hi":267000,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":1000,"med":3009,"q1":3006,"q3":3055,"lo":2934,"hi":7221,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":10000,"med":43770,"q1":43410,"q3":44690,"lo":42790,"hi":53240,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":10000,"med":52140,"q1":49710,"q3":58030,"lo":45210,"hi":58350,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":222200,"q1":221400,"q3":229000,"lo":207200,"hi":328300,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":302600,"q1":300800,"q3":304000,"lo":200700,"hi":304200,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":10000,"med":43580,"q1":43360,"q3":48480,"lo":43290,"hi":48970,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":10000,"med":34230,"q1":34140,"q3":34230,"lo":33790,"hi":34330,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":10000,"med":165100,"q1":164700,"q3":165600,"lo":156800,"hi":166100,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":184900,"q1":182500,"q3":197000,"lo":181700,"hi":198100,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":10000,"med":89870,"q1":89460,"q3":211600,"lo":89030,"hi":225100,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":10000,"med":30570,"q1":30560,"q3":30640,"lo":30420,"hi":30690,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/first","n":10000,"med":8852,"q1":8786,"q3":8939,"lo":8755,"hi":8968,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/steady","n":10000,"med":745.3,"q1":744.8,"q3":753.9,"lo":717,"hi":1010,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/undo 100","n":10000,"med":46150,"q1":45920,"q3":46690,"lo":44930,"hi":46980,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":182608}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":1000,"med":3287,"q1":3282,"q3":3364,"lo":3237,"hi":4697,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":1000,"med":3595,"q1":3593,"q3":4678,"lo":3517,"hi":5195,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":21800,"q1":21750,"q3":22650,"lo":21490,"hi":23730,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":26110,"q1":25860,"q3":34800,"lo":25450,"hi":52740,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":1000,"med":3525,"q1":3509,"q3":4253,"lo":3450,"hi":5960,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":1000,"med":3584,"q1":3577,"q3":3810,"lo":3537,"hi":4582,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":1000,"med":16170,"q1":16160,"q3":16330,"lo":16140,"hi":16410,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":18690,"q1":18580,"q3":19270,"lo":17760,"hi":19480,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":1000,"med":86390,"q1":43860,"q3":160300,"lo":38730,"hi":305200,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":1000,"med":2975,"q1":2974,"q3":4468,"lo":2894,"hi":5235,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":10000,"med":44890,"q1":43710,"q3":45450,"lo":41360,"hi":48040,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":10000,"med":51670,"q1":48740,"q3":55200,"lo":43170,"hi":57700,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":226500,"q1":217900,"q3":227900,"lo":216100,"hi":229100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":341700,"q1":303200,"q3":390300,"lo":286500,"hi":440400,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":10000,"med":44120,"q1":43940,"q3":45200,"lo":43680,"hi":48550,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":10000,"med":36530,"q1":34660,"q3":41890,"lo":33980,"hi":47040,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":10000,"med":166700,"q1":166100,"q3":167100,"lo":159800,"hi":176400,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":194900,"q1":191900,"q3":208200,"lo":188900,"hi":209200,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":10000,"med":93760,"q1":92540,"q3":219900,"lo":91080,"hi":231100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":10000,"med":31680,"q1":31550,"q3":31820,"lo":31010,"hi":31980,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/first","n":10000,"med":8883,"q1":8775,"q3":8926,"lo":8718,"hi":8967,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/steady","n":10000,"med":725.1,"q1":718.5,"q3":730.9,"lo":693.3,"hi":733.1,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/undo 100","n":10000,"med":46910,"q1":46860,"q3":73380,"lo":45850,"hi":98220,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":1000,"med":3286,"q1":3266,"q3":3335,"lo":3242,"hi":4631,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":1000,"med":4006,"q1":3711,"q3":4754,"lo":3425,"hi":4873,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":21470,"q1":21460,"q3":22390,"lo":21120,"hi":22760,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":31060,"q1":28110,"q3":34810,"lo":27510,"hi":50840,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":1000,"med":3715,"q1":3698,"q3":4328,"lo":3696,"hi":4808,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":1000,"med":3954,"q1":3899,"q3":4255,"lo":3820,"hi":5413,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":1000,"med":16810,"q1":16780,"q3":17050,"lo":16720,"hi":17650,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":19140,"q1":18750,"q3":33900,"lo":18580,"hi":35130,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":1000,"med":65660,"q1":61030,"q3":156100,"lo":37530,"hi":314600,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":1000,"med":2958,"q1":2937,"q3":4392,"lo":2883,"hi":5366,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":10000,"med":52490,"q1":50610,"q3":80730,"lo":43410,"hi":91140,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":10000,"med":51340,"q1":49530,"q3":54810,"lo":45010,"hi":56660,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":230800,"q1":229100,"q3":234800,"lo":213600,"hi":237300,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":276500,"q1":276300,"q3":280100,"lo":204100,"hi":283000,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":10000,"med":45060,"q1":44930,"q3":46250,"lo":44710,"hi":47410,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":10000,"med":35350,"q1":34830,"q3":38270,"lo":33310,"hi":42150,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":10000,"med":168200,"q1":166200,"q3":169300,"lo":162100,"hi":171100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":202000,"q1":197600,"q3":211600,"lo":194800,"hi":214200,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":10000,"med":91450,"q1":91360,"q3":209700,"lo":89620,"hi":222700,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":10000,"med":30840,"q1":30660,"q3":31080,"lo":30470,"hi":31200,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/first","n":10000,"med":9143,"q1":8974,"q3":9378,"lo":8859,"hi":10180,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/steady","n":10000,"med":809.5,"q1":785.8,"q3":856.1,"lo":716,"hi":993.8,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/undo 100","n":10000,"med":46630,"q1":46480,"q3":46750,"lo":46140,"hi":47080,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":1000,"med":3355,"q1":3314,"q3":3651,"lo":3271,"hi":3949,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":1000,"med":3867,"q1":3810,"q3":4815,"lo":3700,"hi":4992,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":20970,"q1":20940,"q3":22250,"lo":20890,"hi":22440,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":26680,"q1":25620,"q3":29280,"lo":24660,"hi":54050,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":1000,"med":3509,"q1":3494,"q3":3562,"lo":3475,"hi":5427,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":1000,"med":3784,"q1":3678,"q3":4056,"lo":3628,"hi":4417,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":1000,"med":16680,"q1":16650,"q3":16930,"lo":16610,"hi":17130,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":20300,"q1":20130,"q3":23910,"lo":19770,"hi":42360,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":1000,"med":38070,"q1":38040,"q3":38800,"lo":37780,"hi":39060,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":1000,"med":2935,"q1":2914,"q3":2949,"lo":2850,"hi":6128,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":10000,"med":41440,"q1":41000,"q3":42300,"lo":40520,"hi":42780,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":10000,"med":50190,"q1":48140,"q3":56310,"lo":46110,"hi":57240,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":228700,"q1":219600,"q3":230600,"lo":216900,"hi":231600,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":301000,"q1":300900,"q3":418600,"lo":248400,"hi":605700,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":10000,"med":43140,"q1":42390,"q3":47610,"lo":41110,"hi":67230,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":10000,"med":32050,"q1":32040,"q3":32150,"lo":31960,"hi":32190,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":10000,"med":162900,"q1":162900,"q3":164400,"lo":156500,"hi":168600,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":192800,"q1":192700,"q3":205400,"lo":189200,"hi":206000,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":10000,"med":71550,"q1":70200,"q3":72830,"lo":69270,"hi":91560,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":10000,"med":31070,"q1":30900,"q3":31120,"lo":30730,"hi":31130,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/first","n":10000,"med":9140,"q1":9041,"q3":9499,"lo":8888,"hi":10290,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/steady","n":10000,"med":1014,"q1":955,"q3":1084,"lo":875.6,"hi":1283,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/undo 100","n":10000,"med":47420,"q1":47240,"q3":47720,"lo":46540,"hi":47850,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":1000,"med":3847,"q1":3807,"q3":3864,"lo":3715,"hi":4088,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":1000,"med":4550,"q1":4359,"q3":5330,"lo":4249,"hi":6312,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":25050,"q1":24190,"q3":25490,"lo":22950,"hi":26760,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":28060,"q1":27790,"q3":31930,"lo":27190,"hi":68520,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":1000,"med":4251,"q1":4242,"q3":4268,"lo":4148,"hi":4905,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":1000,"med":4340,"q1":4096,"q3":5355,"lo":4004,"hi":5770,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":1000,"med":17100,"q1":17040,"q3":17200,"lo":16960,"hi":17240,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":19030,"q1":18990,"q3":19230,"lo":18800,"hi":19310,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":1000,"med":81400,"q1":80120,"q3":175900,"lo":38130,"hi":241700,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":1000,"med":3103,"q1":3082,"q3":4895,"lo":2998,"hi":5858,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":10000,"med":47100,"q1":46130,"q3":47930,"lo":43620,"hi":48540,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":10000,"med":53160,"q1":50640,"q3":57090,"lo":47970,"hi":61460,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":252100,"q1":232700,"q3":317700,"lo":219900,"hi":621800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":311600,"q1":307900,"q3":317500,"lo":208700,"hi":317800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":10000,"med":44800,"q1":44620,"q3":49240,"lo":44060,"hi":49910,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":10000,"med":35670,"q1":35670,"q3":35910,"lo":34980,"hi":37110,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":10000,"med":171800,"q1":171200,"q3":174900,"lo":166300,"hi":175400,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":204300,"q1":193000,"q3":220300,"lo":189600,"hi":223700,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":10000,"med":94210,"q1":93640,"q3":228300,"lo":92630,"hi":252400,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":10000,"med":31930,"q1":31830,"q3":32070,"lo":30930,"hi":32530,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/first","n":10000,"med":9903,"q1":9768,"q3":10380,"lo":9718,"hi":11160,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/steady","n":10000,"med":1101,"q1":839.1,"q3":1450,"lo":748.4,"hi":1801,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/undo 100","n":10000,"med":47250,"q1":47010,"q3":47430,"lo":46060,"hi":47560,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":1000,"med":3378,"q1":3365,"q3":3653,"lo":3325,"hi":4336,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":1000,"med":3968,"q1":3928,"q3":5313,"lo":3621,"hi":5711,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":24790,"q1":24650,"q3":25900,"lo":24360,"hi":33210,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":29310,"q1":28860,"q3":38160,"lo":28420,"hi":71180,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":1000,"med":4005,"q1":3993,"q3":4015,"lo":3926,"hi":4558,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":1000,"med":4165,"q1":4050,"q3":4503,"lo":4009,"hi":5653,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":1000,"med":17480,"q1":17260,"q3":17540,"lo":17180,"hi":17650,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":20850,"q1":20550,"q3":20900,"lo":20510,"hi":20920,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":1000,"med":38980,"q1":38790,"q3":72600,"lo":36490,"hi":77030,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":1000,"med":3010,"q1":2966,"q3":3492,"lo":2901,"hi":7713,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":10000,"med":45480,"q1":44890,"q3":46410,"lo":44240,"hi":48090,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":10000,"med":52470,"q1":48710,"q3":57120,"lo":45510,"hi":61860,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":235600,"q1":233600,"q3":242100,"lo":230200,"hi":246700,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":274400,"q1":273700,"q3":328400,"lo":267300,"hi":335100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":10000,"med":46780,"q1":45620,"q3":47370,"lo":45310,"hi":48810,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":10000,"med":35720,"q1":35520,"q3":45630,"lo":35070,"hi":48110,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":10000,"med":256900,"q1":229100,"q3":356000,"lo":172900,"hi":357500,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":209500,"q1":193200,"q3":212300,"lo":191800,"hi":220900,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":10000,"med":70580,"q1":70450,"q3":73120,"lo":66040,"hi":73160,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":10000,"med":30930,"q1":30710,"q3":31510,"lo":30580,"hi":31790,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/first","n":10000,"med":9717,"q1":9555,"q3":10420,"lo":9163,"hi":10740,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/steady","n":10000,"med":905.9,"q1":820.9,"q3":920.5,"lo":776.6,"hi":1009,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/undo 100","n":10000,"med":48710,"q1":48400,"q3":48990,"lo":47230,"hi":49090,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":1000,"med":6619,"q1":5885,"q3":8160,"lo":4424,"hi":8546,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":1000,"med":8204,"q1":8132,"q3":9144,"lo":7910,"hi":9836,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":53480,"q1":47250,"q3":79680,"lo":35390,"hi":106100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":34130,"q1":32430,"q3":46440,"lo":30420,"hi":72530,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":1000,"med":6376,"q1":5375,"q3":7478,"lo":4960,"hi":7830,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":1000,"med":7747,"q1":7472,"q3":10600,"lo":6892,"hi":13720,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":1000,"med":32130,"q1":26470,"q3":35600,"lo":23210,"hi":54550,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":23320,"q1":22830,"q3":24640,"lo":22260,"hi":26510,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":1000,"med":61140,"q1":41360,"q3":81600,"lo":40480,"hi":93830,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":1000,"med":7070,"q1":6745,"q3":7963,"lo":4408,"hi":8012,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":10000,"med":97550,"q1":68750,"q3":107600,"lo":67590,"hi":113900,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":10000,"med":53630,"q1":52800,"q3":56200,"lo":48130,"hi":74280,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":534500,"q1":487900,"q3":929800,"lo":365200,"hi":1024000,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":317900,"q1":309700,"q3":322700,"lo":305100,"hi":331100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":10000,"med":54240,"q1":51530,"q3":55630,"lo":49970,"hi":56070,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":10000,"med":63910,"q1":63800,"q3":65430,"lo":56330,"hi":74360,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":10000,"med":222800,"q1":220100,"q3":239200,"lo":211100,"hi":274700,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":219000,"q1":213700,"q3":225600,"lo":200200,"hi":431600,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":10000,"med":88860,"q1":88400,"q3":91810,"lo":83750,"hi":95700,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":10000,"med":66250,"q1":63960,"q3":71520,"lo":57420,"hi":76440,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/first","n":10000,"med":22060,"q1":16850,"q3":25190,"lo":12380,"hi":26670,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/steady","n":10000,"med":918.8,"q1":884.5,"q3":1280,"lo":766.7,"hi":1932,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/undo 100","n":10000,"med":51170,"q1":49940,"q3":52370,"lo":48460,"hi":52980,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":1000,"med":3409,"q1":3404,"q3":3453,"lo":3380,"hi":4044,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":1000,"med":4096,"q1":3877,"q3":4871,"lo":3679,"hi":5038,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":22240,"q1":22060,"q3":23340,"lo":21640,"hi":23450,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":28480,"q1":25940,"q3":28740,"lo":25740,"hi":61560,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":1000,"med":3667,"q1":3664,"q3":3675,"lo":3632,"hi":5797,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":1000,"med":4235,"q1":4169,"q3":4592,"lo":4146,"hi":4796,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":1000,"med":17370,"q1":17100,"q3":17400,"lo":16910,"hi":17420,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":19590,"q1":19470,"q3":36680,"lo":18410,"hi":38000,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":1000,"med":63780,"q1":60280,"q3":176000,"lo":39400,"hi":364300,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":1000,"med":3032,"q1":3021,"q3":4008,"lo":2973,"hi":6432,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":10000,"med":42660,"q1":42110,"q3":43700,"lo":40490,"hi":44210,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":10000,"med":52510,"q1":49190,"q3":60920,"lo":45310,"hi":61370,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":230700,"q1":228700,"q3":238100,"lo":217100,"hi":494200,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":324500,"q1":319500,"q3":325300,"lo":213600,"hi":331900,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":10000,"med":52010,"q1":50110,"q3":53720,"lo":48540,"hi":54190,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":10000,"med":36890,"q1":36880,"q3":37320,"lo":36820,"hi":43170,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":10000,"med":171400,"q1":166900,"q3":174500,"lo":165400,"hi":175400,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":193000,"q1":191500,"q3":204700,"lo":189400,"hi":207500,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":10000,"med":92630,"q1":92430,"q3":224500,"lo":90880,"hi":239800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":10000,"med":31390,"q1":31350,"q3":31530,"lo":30970,"hi":31720,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/first","n":10000,"med":9049,"q1":9036,"q3":9162,"lo":8898,"hi":9189,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/steady","n":10000,"med":759.8,"q1":754.9,"q3":805.4,"lo":730.7,"hi":1027,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/undo 100","n":10000,"med":47860,"q1":47330,"q3":48340,"lo":46310,"hi":104200,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/one version","n":10000,"bytes":81096}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":1000,"med":3350,"q1":3345,"q3":3647,"lo":3324,"hi":4133,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":1000,"med":4162,"q1":3726,"q3":4938,"lo":3677,"hi":5195,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":22220,"q1":22120,"q3":23390,"lo":21760,"hi":24890,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":27710,"q1":26260,"q3":36240,"lo":26050,"hi":50840,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":1000,"med":3630,"q1":3615,"q3":3643,"lo":3548,"hi":4092,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":1000,"med":3623,"q1":3606,"q3":3973,"lo":3603,"hi":4657,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":1000,"med":17220,"q1":17050,"q3":17310,"lo":16940,"hi":17400,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":18590,"q1":18570,"q3":18900,"lo":18450,"hi":18940,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":1000,"med":78730,"q1":59270,"q3":188600,"lo":38230,"hi":261900,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":1000,"med":3133,"q1":3096,"q3":4455,"lo":3051,"hi":5787,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/first","n":10000,"med":44580,"q1":44100,"q3":45880,"lo":43590,"hi":50910,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update one/steady","n":10000,"med":53580,"q1":50470,"q3":58360,"lo":45750,"hi":62270,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":228400,"q1":227500,"q3":241900,"lo":226100,"hi":242800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":320600,"q1":311900,"q3":397000,"lo":201300,"hi":672700,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/first","n":10000,"med":44840,"q1":44540,"q3":45400,"lo":44330,"hi":52760,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/swap/steady","n":10000,"med":34570,"q1":34070,"q3":36140,"lo":33450,"hi":36890,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one/first","n":10000,"med":176600,"q1":171600,"q3":179500,"lo":169400,"hi":179800,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":194500,"q1":193000,"q3":208200,"lo":188600,"hi":209700,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/append 1000/first","n":10000,"med":92140,"q1":91910,"q3":219500,"lo":89890,"hi":231900,"S":7}
+{"engine":"node","impl":"original.js","sc":"table","op":"table/select/steady","n":10000,"med":32550,"q1":32520,"q3":32700,"lo":32240,"hi":32920,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/first","n":10000,"med":9602,"q1":9570,"q3":9648,"lo":9418,"hi":9687,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/edit/steady","n":10000,"med":726.6,"q1":720.3,"q3":745.1,"lo":709.2,"hi":1006,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"history/undo 100","n":10000,"med":50990,"q1":50770,"q3":51410,"lo":50320,"hi":75660,"S":7}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"original.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":181968}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":1000,"med":3541,"q1":3523,"q3":3612,"lo":3460,"hi":4677,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":1000,"med":3941,"q1":3810,"q3":5539,"lo":3650,"hi":5909,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":1000,"med":23150,"q1":23000,"q3":23730,"lo":22310,"hi":26710,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":1000,"med":28960,"q1":26960,"q3":30070,"lo":25470,"hi":63930,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":1000,"med":3787,"q1":3780,"q3":3812,"lo":3743,"hi":4236,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":1000,"med":3789,"q1":3777,"q3":4085,"lo":3687,"hi":4884,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":1000,"med":16630,"q1":16610,"q3":16780,"lo":15780,"hi":17930,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":1000,"med":18570,"q1":18550,"q3":18920,"lo":18520,"hi":18920,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":1000,"med":109800,"q1":83540,"q3":147900,"lo":38250,"hi":259500,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":1000,"med":3009,"q1":3008,"q3":4762,"lo":2983,"hi":5917,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/first","n":10000,"med":46620,"q1":46280,"q3":49610,"lo":45870,"hi":50820,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update one/steady","n":10000,"med":51070,"q1":50820,"q3":56460,"lo":45030,"hi":58620,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/first","n":10000,"med":233400,"q1":225000,"q3":237000,"lo":222900,"hi":242000,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/update every 10th/steady","n":10000,"med":313800,"q1":298000,"q3":465000,"lo":207900,"hi":484600,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/first","n":10000,"med":45050,"q1":44790,"q3":45270,"lo":44340,"hi":49100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/swap/steady","n":10000,"med":34790,"q1":34160,"q3":40800,"lo":32500,"hi":43250,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one/first","n":10000,"med":169900,"q1":159600,"q3":170000,"lo":158600,"hi":171200,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/remove one + add one/steady","n":10000,"med":198800,"q1":196400,"q3":215700,"lo":189800,"hi":217100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/append 1000/first","n":10000,"med":97540,"q1":95020,"q3":235200,"lo":92840,"hi":248100,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"table","op":"table/select/steady","n":10000,"med":32640,"q1":32510,"q3":32700,"lo":32200,"hi":32910,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/first","n":10000,"med":10350,"q1":9836,"q3":10980,"lo":9518,"hi":12390,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/edit/steady","n":10000,"med":917.5,"q1":814.8,"q3":997.2,"lo":799.1,"hi":1172,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"history/undo 100","n":10000,"med":47110,"q1":46960,"q3":47370,"lo":45910,"hi":47490,"S":7}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/one version","n":10000,"bytes":80456}
+{"engine":"node","impl":"array.min.js","sc":"history","op":"retained/101 versions","n":10000,"bytes":182608}
