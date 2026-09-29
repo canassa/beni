@@ -66,6 +66,10 @@ pub const bir = struct {
     pub const Diagnostics = @import("bir/Diagnostics.zig");
     pub const prelude = @import("bir/prelude.zig");
 };
+pub const markup = struct {
+    pub const entities = @import("markup/entities.zig");
+    pub const text = @import("markup/text.zig");
+};
 pub const resolve = struct {
     pub const Graph = @import("resolve/Graph.zig");
     pub const Interface = @import("resolve/Interface.zig");
@@ -168,6 +172,7 @@ test {
     std.testing.refAllDecls(lex);
     std.testing.refAllDecls(parse);
     std.testing.refAllDecls(bir);
+    std.testing.refAllDecls(markup);
     std.testing.refAllDecls(resolve);
     std.testing.refAllDecls(frontend);
     std.testing.refAllDecls(cache);
