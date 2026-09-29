@@ -663,6 +663,15 @@ lexed the rest of the tag as code.*
 lexer at the offending byte, and the construct is lexed from there as if the push had happened
 without growing the stack past the limit, so the token stream stays well-formed. The stack is
 per-file scratch owned by the tokenizer, reset per file, allocated once per worker.
+*Superseded 2026-09-29, after the parser's review: lexed "as if the push had happened" without the
+entry it replaced, a closer popped an entry its opener never pushed, and markup nested past the
+bound through holes — an element and a hole a level — lexed its closers in the wrong modes, a cascade
+of `unclosed_element` and `expected_token` behind the one report. The stack now holds 4 096 entries
+in the tokenizer's frame and spills past them to the heap, so every token is the one the source
+spells, and the lexer reports nothing: the parser's depth guard, which counts every element and
+hole (§9.4), is the one bound, and its `nesting_too_deep` at a `<` is worded for markup. Its recovery
+skips the too-deep part to the `}` or the end of the block that closes it, so one mistake is one
+message.*
 
 **Text runs.** In `children`, a `markup_text` token is every byte from the current position up to
 the next `<`, `{`, `>`, `}`, column-1 break or end of file, and it is emitted only when non-empty —
@@ -763,7 +772,9 @@ the smallest reading, and these are they:
   the entry under one waits in a slot of its own — and the bound therefore counts markup entries
   and the bottom `normal` one. At the bound, `nesting_too_deep` is reported **once per
   file**, at the first push that does not fit, and the pushed mode replaces the top; a later pop
-  below the bottom stays at the bottom `normal` entry.
+  below the bottom stays at the bottom `normal` entry. *Superseded 2026-09-29 (§9.1): past the
+  frame's 4 096 entries the stack spills to a list the tokenizer allocates only then and frees at
+  the end of the file, and the lexer reports no `nesting_too_deep`.*
 - **Until §9.4 is built**, `markup_open` in `parseAtom` reports `not_implemented` at the `<` and
   skips to the end of the outermost element — counting `markup_open` against `/>` and a closing
   tag's `>` — or to a column-1 token, and returns an error placeholder; the lexer's own diagnostics
@@ -854,7 +865,11 @@ the parser takes the smallest reading, and these are they:
   expression error.
 - **`nesting_too_deep`** the lexer already reported at a `<` is not reported again by the parser at
   the same `<`, and a `markup_stray` token is skipped like an `invalid` one, its diagnostic the
-  lexer's.
+  lexer's. *Amended 2026-09-29 (§9.1): the lexer no longer reports nesting; the parser's
+  `nesting_too_deep` at a `<` is worded for markup, counting its elements and holes.*
+- **An element's attributes and children are siblings** (`Parse.Siblings`), as a `let`'s bindings
+  are: the field-access chains of its holes charge the declaration's depth as the deepest of them,
+  not their sum, so a flat page of thousands of `{x.r}` holes is not "nested" past the bound.
 - **`-<b />`** is `unexpected_token` with its own wording (negation takes a number), and **`<-div>`**
   is `unexpected_token` whose message says `<-` is the bind's arrow, when `<-` is followed by a name
   where an expression should start.
