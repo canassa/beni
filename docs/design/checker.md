@@ -221,6 +221,20 @@ until M4 caches it. `--core-root` reads the directory instead.
    target is `(module index, decl index)` or `(module index, ctor index)` — dense ids into the
    interface tables, so the checker never looks a name up again.
 
+   Resolution runs on the same DAG schedule as item 4 (`resolve/Resolve.zig`, `Schedule`): a
+   module is resolved once every module it imports has been, because what it reads of another
+   module is that module's interface and its `Bir` declaration tables — which import it
+   targets, and whether a missing name is private or absent — and every such target is one of
+   its graph dependencies. It writes only its own `Bir`, its own interface and its own
+   diagnostic list, which are concatenated in the graph's order afterwards, each item's
+   `available` range moved onto the joined name list; so the result is the serial walk's at
+   every `--jobs`. A cyclic project resolves on one thread, for item 4's reason. The pool is
+   bounded by `--jobs`, by the DAG's width, and by the instructions to resolve
+   (`insts_per_resolver`), with two threads kept whenever `--jobs` asked for more than one.
+   Measured on the generated 100k-line corpus at `--jobs=8`: the phase went from 4.6 ms of one
+   thread to 1.4 ms, and from 5.0 ms to 1.5 ms on a warm check, where it was the largest serial
+   step left.
+
 **Schema namespaces and endpoint elaboration** extend resolution here and the
 interface of §7. [`schema.md`](schema.md) §3–§4 owns K13(b) exposure, the two
 endpoint types, constructor/member lookup, explicit schema parameters and the

@@ -1470,6 +1470,16 @@ consequently has no source maps at all (03 §4).
 interface extraction; codegen per declaration as a bounded producer/consumer pipeline behind the
 checker (Zig budgets in-flight bytes rather than a task per function, 01 §8).
 
+*As built (2026-09-29):* codegen is parallel per MODULE, not per declaration, and behind the
+checker rather than overlapped with it: `Emit` runs reachability's edge lists, lowering,
+printing and the writes on one pool of threads, each module into a slot of its own, with every
+name a lowering invents kept in a per-module overlay on the interner (`backend.md` §9, *How the
+whole-program table is filled*). Resolution runs on the checker's DAG schedule (`checker.md`
+§4, item 5). On the generated 100k-line corpus at `--jobs=8`, a `--library` build went from
+about 69 ms to 50 ms (emit 27 → 10 ms) and a warm `check` from 23 to 19 ms, with the output
+byte-identical at every `--jobs` and single-thread instructions +0.3 % (`--release` +1.8 %, a
+second walk that lists each module's whole-program names).
+
 **Do not parallelise:** the warm single-edit path — at a 15ms budget, thread-pool wake-up and
 synchronisation can exceed the work, exactly what rustc measured where `-Z threads=8` *regressed*
 small inputs (04 §5). Nor the type checker's core: Zig's multi-year, still-incomplete InternPool

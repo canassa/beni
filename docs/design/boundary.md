@@ -1255,7 +1255,9 @@ not a sandbox.
   no state between calls, iterates no hash map, compares no pointers, reads no clock, and makes every
   name through `cx.fresh`, `cx.hoist` and `cx.hoistFunction`, which derive names from the site and a
   counter local to the module's lowering — never from a counter shared across workers, which is the
-  one way a lowering could break rule 5 (research 28 §9.3). The determinism test (`--jobs=1` against
+  one way a lowering could break rule 5 (research 28 §9.3). The emit workers call it for several
+  modules at once, one module per call, so state kept between calls would be a data race as well
+  as a determinism fault. The determinism test (`--jobs=1` against
   `--jobs=8`, twice each, byte-compared) covers it with no new machinery once a platform with markup
   is in the corpus.
 - **Identity is by site.** A template's identity — what decides whether one markup value patches

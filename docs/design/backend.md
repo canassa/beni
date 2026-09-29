@@ -1873,10 +1873,8 @@ anything has been assigned to a file.
 
 **Determinism and parallelism.** Per-module edge lists are built **in parallel**, one job per
 module, each writing only its own slot — the same shape as every other per-file phase. *(As landed
-they are built the way that asks for — each list is a pure function of that module's `Bir` and
-dispatch table and is written only into its own slot — but the jobs are not dispatched to workers:
-`Emit` is serial end to end today, lowering included, and this pass is microseconds. The fan-out is
-a drop-in when emit itself parallelises.)* The
+they are: each list is a pure function of that module's `Bir` and dispatch table, built on the
+emit workers by one `Reach.Builder` per thread and written only into its own slot.)* The
 **reachability walk is serial**, because a fixpoint over a whole-program graph is, and it is
 nothing: 278 nodes for the null program, O(declarations) at any size, microseconds against §13's
 800 ms budget. Node identity is input-derived end to end — `Graph.Index` comes from the sorted path
@@ -2298,6 +2296,20 @@ position in `emissionOrder` (§5) and of the binding's position inside it, both 
 **not** promised is that an edit renames nothing else: inserting a declaration shifts the global
 names after it. That is the honest guarantee, it is what §10's cross-chunk naming needs, and
 buying more is dart2js's 3× pool, which costs bytes for a property no test asserts.
+
+**How the whole-program table is filled when modules are emitted in parallel.** Modules are
+lowered and printed on the emit workers, each into a slot of its own, so the table cannot be
+filled as a side effect of printing, which is what "emission order" meant while emit was one
+thread. A `--release` build therefore runs in three steps: every module is lowered and planned
+(item 1) in parallel, and `Rename.collectGlobals` lists the whole-program names it mentions,
+once each, in the order the printer will meet them; then, serially and in module order, those
+lists are interned into the table — exactly the order the one-thread walk met them in, so every
+ordinal is what it was; then every module is renamed and printed in parallel against the table,
+which nobody writes any more. A name a lowering invents lives in its module's overlay on the
+session's interner (`InternPool.Overlay`) under a symbol no other module shares, so before a list
+is interned its names are moved into the session's pool by their text: two modules that name one
+derived function spell it the same and must get one short name. The output is byte-identical to
+the one-thread walk at every `--jobs`.
 
 **The alphabet** is 54 first characters — `a`–`z`, `A`–`Z`, `$`, `_` — and those 54 plus `0`–`9`
 afterwards, ordered so the two sets stay as close as possible (`DefaultNameGenerator`'s reason, quoted

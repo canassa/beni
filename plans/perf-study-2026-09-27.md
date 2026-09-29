@@ -134,6 +134,14 @@ The output is identical by construction (module-indexed slots).
 which holds if printed text comes from the name's bytes and never from a symbol id. That is
 already the rule after CK-71. Medium effort.
 
+*Landed 2026-09-29*: all five steps, plus the reachability edge lists on the same pool.
+Invented names go to a per-module `InternPool.Overlay`; `--release` lists each module's
+whole-program names in print order, interns them serially in module order, then prints in
+parallel. Plain corpus, `build --library`, `--jobs=8`, min of 11 interleaved (machine load
+1.5–2.5): 68.7 → 52.8 ms, emit 27.4 → 10.1 ms; `--release` 79.3 → 56.5 ms; warm build 52.4 →
+34.1 ms. Instructions at jobs=1 +0.3 % (`--release` +1.8 %: the extra walk that lists the
+names). Output byte-identical to the serial emit at `--jobs` 1, 3, 8 and 32, dev and release.
+
 ### 3. The JS printer's piece-list joiner, and a linear reserved-word scan — MEASURED
 
 **Evidence.** Under `Printer.statement`:
@@ -213,6 +221,14 @@ warm check).
 **Risk.** (a) is low (same scheduler, module-indexed results). (b) is medium: the key must cover
 everything resolution reads, and `reads.zig`'s coverage self-check is the tool for that.
 **Effort:** (a) a day; (b) days.
+
+*(a) landed 2026-09-29* as a second DAG pass with the check driver's rule (`Resolve.Schedule`):
+resolve 4.6 → 1.4 ms cold and 5.0 → 1.5 ms warm at `--jobs=8`; cold `check` 41.0 → 37.9 ms,
+warm `check` 21.9 → 19.1 ms (min of 11, against the parallel-emit build). *(b) was not done*:
+a hit is known only on the DAG, after `Types.build`, which reads every module's resolved
+interface shell, and the hit path's `verifyTargets` and every `build`'s emit read the resolved
+`Bir` — so skipping the rewrite needs the resolved `Bir` or the resolution side table in the
+front-end artifact first. After (a) it would save at most the ~1.5 ms that is left.
 
 ### 6. First-touch memory: page faults cost as much as a phase — PARTLY MEASURED
 
