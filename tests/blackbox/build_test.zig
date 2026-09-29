@@ -3218,3 +3218,76 @@ test "an unannotated pub function constant with a constraint builds and runs" {
     try testing.expectEqual(@as(usize, 3), std.mem.count(u8, r.stderr, "CONSTRAINT IN AN INFERRED INTERFACE"));
     try testing.expect(std.mem.indexOf(u8, r.stderr, "CONSTRAINED CONSTANT") == null);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// `bench/corpus` stays valid (its README; `frontend.md` §9.3).
+//
+// The corpus is what the throughput numbers of `bench/README.md` and the
+// output sizes of `bench/size.mjs` are stated against, and both assume it
+// checks and builds. It rotted once — a JSON module imported a library core
+// does not have, and a view imported HTML functions no platform declares —
+// and every check number over it then timed the error path while the size
+// benchmark silently left both modules out. These two scenarios are the
+// guard. The corpus is copied, so it runs from its own root exactly as the
+// README's commands do and nothing is written into the repository.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Print a failed run's diagnostics, so a red scenario names the file.
+fn reportUnclean(what: []const u8, r: world.Result) void {
+    if (r.exit_code != 0 or r.stderr.len != 0) {
+        std.debug.print("bench/corpus did not {s} clean:\n{s}\n", .{ what, r.stderr });
+    }
+}
+
+test "bench/corpus type-checks with no diagnostic and no platform" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("bench/corpus", "_expected.");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // No diagnostic of any severity: a warning is something every reader of
+    // the corpus steps past, and the corpus is meant to be idiomatic.
+    reportUnclean("check", checked);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+    try testing.expectEqualStrings("", checked.stderr);
+}
+
+test "bench/corpus builds as a library for the node platform" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("bench/corpus", "_expected.");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // The build `bench/size.mjs` makes of it: the corpus declares no `main`,
+    // so it is a library, rooted at every exported name.
+    const built = try w.run(&.{ "build", "--platform=node", "--library", "--out=out", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    reportUnclean("build", built);
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(w.exists("out/JsonCodecs.mjs"));
+    try testing.expect(w.exists("out/NotesApp.mjs"));
+}
