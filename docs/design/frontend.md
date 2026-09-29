@@ -867,6 +867,13 @@ the parser takes the smallest reading, and these are they:
   the same `<`, and a `markup_stray` token is skipped like an `invalid` one, its diagnostic the
   lexer's. *Amended 2026-09-29 (§9.1): the lexer no longer reports nesting; the parser's
   `nesting_too_deep` at a `<` is worded for markup, counting its elements and holes.*
+- **One mistake, one message, in its own words** (*added 2026-09-29, after the parser's review*).
+  A `{` without `...` in an element's tag is only lowering's `spread_on_element`, the parser asking
+  for `...` in a component's tag alone. A second element after `</p>` or `/>`, `<p>a</p><p>b</p>`, is
+  `unexpected_token` saying siblings need a fragment, not `element_as_argument`. A `</` read as code —
+  `<`, then an abutting `/` — is a closing tag: inside a hole it ends the hole's expression and is
+  `unclosed_delimiter` at the `{`, quoting the tag, with recovery past the declaration; outside every
+  hole it is `unexpected_token` over the whole tag, a closing tag with no element open, skipped.
 - **An element's attributes and children are siblings** (`Parse.Siblings`), as a `let`'s bindings
   are: the field-access chains of its holes charge the declaration's depth as the deepest of them,
   not their sum, so a flat page of thousands of `{x.r}` holes is not "nested" past the bound.
