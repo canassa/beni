@@ -236,8 +236,9 @@ Exposing    := 'exposing' '(' Exposed (',' Exposed)* ')'
 Exposed     := lower_ident | upper_ident
 
 Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Definition | Foreign)
-Foreign     := 'foreign' lower_ident ':' Type                 -- core root only, §5.4
+Foreign     := 'foreign' Rung lower_ident ':' Type            -- core root only, §5.4
              | 'equatable'? 'foreign' 'type' upper_ident lower_ident*   -- 'equatable' core only
+Rung        := 'pure' | 'impure' | 'suspends'                -- contextual words, §5.4
 Visibility  := 'pub' | 'pub' 'opaque'            -- 'opaque' only before 'type'
 TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' (Type | FieldBlock)
 FieldBlock  := LayoutField+                                  -- aligned, §4 rule 3
@@ -537,7 +538,7 @@ string primitives, the list representation — are declared without a body, impl
 
 ```elm
 --| Add two numbers.
-pub foreign add : number, number -> number
+pub foreign pure add : number, number -> number
 
 pub foreign type List a
 ```
@@ -545,6 +546,7 @@ pub foreign type List a
 | Rule | Detail |
 |---|---|
 | shape | `foreign name : Type` declares a value with that type and no definition. `foreign type T a…` declares a type with no constructors, so it is opaque by construction; `opaque` before `foreign` is `unexpected_token`. Both take `pub` and may carry a doc comment. |
+| rung | *Added 2026-09-30.* A `foreign` value states what calling it may do, between `foreign` and its name: `pub foreign pure add : number, number -> number`, `pub foreign impure log : a, String -> a`, and `suspends` for a primitive that may park its fiber. The word is contextual — an ordinary identifier everywhere else — and never omitted (`foreign_effect_missing`, `unknown_foreign_effect`). `pure` means total and non-throwing. The checker infers every other function's bits from these ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14). |
 | `foreign_outside_platform` | `foreign` is **legal only under the core root**, which is embedded in the compiler (`fast-compiler.md` §3.1, "Primitives"); a `foreign` declaration in any other module is this, reported by lowering. User code reaches JavaScript through the effects model (open), never through `foreign`. |
 | which types | the primitive types are foreign: `Int`, `Float`, `Char`, `String`, `List a`. `Bool`, `Maybe`, `Result` and `Order` are ordinary declared types in core. `Char` and `String` are declared in `Char` and `String`, not in `Basics`: under the module rule a type's methods are its declaring module's `pub` values, and `String.compare` is the method `String` should always have had (spec §5.1). Both stay prelude types, so no module gains an import. |
 | a `foreign` with a `where` clause | a `pub foreign` may carry a `where` clause (§3), and the sibling export's arity is then **evidence count + declared arity** — `core/List.beni`'s `eq` is declared 2-ary and is written `(m0, xs, ys)` in `core/List.js`. **This rule is documented and not enforced**: [`boundary.md`](boundary.md) §4's checks are export coverage and import coverage, and neither looks at arity. → `static-dispatch-spike.md` §5.2. |
@@ -991,6 +993,7 @@ markup_restructured  unknown_markup_lowering
 unknown_form_attribute  missing_form_attribute  markup_type_in_foreign
 untyped_event_attribute
 invalid_attribute_name  untyped_srcdoc_attribute
+foreign_effect_missing  unknown_foreign_effect
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1020,6 +1023,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | the seven before the last | markup | twenty codes appended on 2026-09-29 with the markup specification, again never inserted, on the first six of these lines; §11.17 says which phase reports each. *Revised the same day by the specification review, before anything was built:* three were renamed because `Show` shares them with `For` (`invalid_for_children` → `invalid_form_children`, `invalid_for_keyed` → `invalid_keyed`, `for_key_not_primitive` → `key_not_primitive`); the warning `html_entity_in_text` was withdrawn with the rule it enforced, because text now decodes character references (§11.4); and the seventh line was appended — `unknown_form_attribute` and `missing_form_attribute` for a built-in form's own attributes (§11.9, §11.18), and `markup_type_in_foreign` for a `foreign` that would build or read one lowering's representation of markup under another (`boundary.md` §9.3). Two are `warning`s, on by default for the root package only — `unkeyed_for` and `raw_markup_attribute` — and each names the escape that silences it. `markup_restructured` is the one code a platform's markup lowering reports rather than the compiler (`boundary.md` §9.4.7), and `unknown_markup_lowering` is a manifest's (`boundary.md` §9.2) |
 | `untyped_event_attribute` | markup again | appended on 2026-09-29, when markup was typed, again never inserted: the owner's refusal of a quoted attribute name beginning with `on`, in any case (§11.5). `"onclick"={text}` would write an event handler the page runs as script, the one route besides `raw` by which a `view` could inject one, so it is an error rather than a warning — a guarantee (rule 7), with the typed event attribute as the escape. Reported at the quoted name, and its hint names the events the element accepts whose name is the quoted one in another case |
 | the last line | markup again | appended on 2026-09-29, again never inserted, with the owner's decision to close the escape's other script sinks (§11.5). `invalid_attribute_name` is lowering's: a quoted name holding whitespace, a quote, `=`, `/`, `>` or a control character, or empty, which a page would end early and follow with an attribute the vocabulary never sees (`"x onclick"`); `untyped_srcdoc_attribute` is the checker's, beside `untyped_event_attribute`: a quoted `srcdoc`, in any case, a whole document the page runs, scripts included |
+| `foreign_effect_missing`, `unknown_foreign_effect` | effects | appended on 2026-09-30, again never inserted, with the first slice of effects ([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14.1). Both are the parser's: every `foreign` value states its rung — `pure`, `impure` or `suspends` — between `foreign` and its name, because a `foreign` has no body to infer from and a default of `pure` would let a clock read claim it may be duplicated. `foreign_effect_missing` is at a name that follows `foreign` directly; `unknown_foreign_effect` at a word that is not one of the three. The declaration is otherwise read as written |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment

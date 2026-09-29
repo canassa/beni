@@ -1199,3 +1199,198 @@ section to be judged against — §5.6 finds it two primitives short, `bracket` 
 `typed-effects-review.md` is the review of P1 this document came out of. Its §0.3 argued for the
 native lowering that §7 has now reversed, and its §A4 raised the two costs §7.3 and §7.5 now
 budget for — the de-tail-called effectful loop and the loop that never yields.
+
+---
+
+## 14. The inference step, as specified (2026-09-30)
+
+**Status: normative** for the first slice of [`plans/effects-plan.md`](../../plans/effects-plan.md)
+§4, the one the owner started on 2026-09-30 (decision 2): the checker infers both bits for every
+function, joins them across calls, higher-order parameters, `where` evidence, recursion and
+modules, publishes them in the interface and prints them in the dumps. **Nothing reads them yet.**
+No diagnostic depends on them, and no emitted byte: every `emit/` golden and every run hash is
+unchanged by this section. The `sync` check is the next slice and is not specified here. Where
+this section and §3.1 or §4 disagree, this section is the later position; the Effect v4 evidence
+it leans on is [`research/39`](research/39-effect-v4-and-the-inferred-bits.md).
+
+### 14.1 The `foreign` keyword
+
+```
+Foreign := 'foreign' Rung lower_ident ':' Type WhereClause?
+         | 'equatable'? 'foreign' 'type' upper_ident lower_ident*
+Rung    := 'pure' | 'impure' | 'suspends'
+```
+
+- **The three words are contextual**, like `equatable` (`language.md` §2.4): a word is the rung
+  only between `foreign` and the declared name, and stays an ordinary identifier everywhere else,
+  so no existing program loses a name.
+- **The rung is never omitted** (§3.1). `foreign name : T` is `foreign_effect_missing`, reported
+  by the parser at the name; a word other than the three, `foreign pur name : T`, is
+  `unknown_foreign_effect` at the word. Both are errors of the declaration, which is otherwise
+  read as written, so the rest of the file still checks.
+- **`pure` means total and non-throwing** (report 39 §9.3). A `foreign` that can throw or stop the
+  program is at least `impure`, because an optimiser that drops an unused pure call must not be
+  able to delete a crash. So `Debug.todo` is `impure`, with `Debug.log`.
+- **What each existing `foreign` declares.** Everything in `core/` and the platforms is `pure`
+  except `Debug.log` and `Debug.todo` (`impure`) and `Html.targetValue` and `Html.targetChecked`
+  (`impure`: they read a live DOM node, whose answer can change between two reads). Nothing is
+  `suspends` yet; the first `suspends` primitives arrive with the runtime.
+- **The formatter** prints the word between `foreign` and the name. The AST needs no field (the
+  word is the token before the name); the BIR declaration carries it (`Bir.Decl.rung`), so the
+  frontend artifact's format moves.
+
+### 14.2 What carries the bits
+
+**One value on a three-point ladder, `pure ⊏ impure ⊏ suspends`.** §2's two bits enter the
+inference only through a rung, and every rung is a point of this ladder (`suspends` implies
+`impure`), so joining the two bits independently and joining the ladder compute the same thing.
+The checker carries the ladder; the published record, the dumps and the later slices read the two
+bits off it.
+
+**A class is the union-find class of a type variable.** Every *function type* carries one — its
+own class, so two function types that unify are one class, with no second structure beside the
+store — and so does every *application of a nominal type* (§14.5). Records, tuples and type
+variables carry none. Two classes are also joined, outside unification, where §14.3 says so.
+This is §4.1's "the unifier is unchanged" made literal: nothing is added to `TypeStore` or to
+`unify`, and the bits ride beside unification as a graph of `⊑` edges the checker solves after
+every group of the module has been checked (§14.4).
+
+### 14.3 The constraints
+
+1. **A call joins its callee into its ambient.** `f a b`, `x.m a`, an operator's method, a type
+   dispatch and a markup component each add `callee ⊑ ambient`. The *ambient* is the function
+   whose body the call is in: a top-level or `let` definition's own arrow, a lambda's own arrow,
+   and, for a top-level value with no parameters, its **evaluation class** — module-local, never
+   published, printed by `dump --stage=types`, and what `sync` will read for `main` (decision 5).
+   A lambda that is only passed along joins nothing (§4.2 rule 4).
+2. **Unification joins.** Two function types that unify are one class, and so are the expansions
+   of one alias applied to one argument list when unification merges the two names without
+   meeting their expansions (`Unify.throughAlias`).
+3. **A reference to a top-level declaration instantiates its summary** (§14.4), own or imported:
+   each class of the scheme gets a fresh class at the use, which gets the scheme class's rung and
+   `d ⊑ c` for every scheme class `d` that `c` depends on. This is §4.2 rule 7 — top-level
+   definitions generalise their bits — and it is what makes `List.map` serve a pure and a
+   suspending callback with one definition. It is also §4.4's subsumption where it matters: a pure
+   function passed where a suspending one is expected meets a fresh class, never its definition.
+4. **A reference to a generalised local `let` binding shares its classes** (§4.2 rule 7): its
+   instance and its definition are one class, which is §4.3's extraction hazard, accepted.
+5. **An annotation's arrows are inferred, never promised.** The annotation says nothing about
+   bits, so the scheme callers instantiate and the reading the body is checked against are one:
+   their classes are joined, position by position.
+6. **A `foreign`'s rung is its own arrow's.** Its `where` evidence joins its own arrow — evidence
+   is handed over to be called during the call, as `core/List.js`'s `eq` loop does. A function
+   type in a *positive* position of the signature (one the host makes and hands back: a returned
+   function, a callback's own argument) gets the rung too. Every other function type in the
+   signature — a beni function handed to the host, which may spawn it, store it or call it later
+   — is independent of the call (report 39 §9.6). That is unsound for exactly one kind, a callback
+   the host calls synchronously during the call; the `sync` step closes it, since such a callback
+   must be `sync` (`plans/browser-decisions.md` W8). For `impure` alone the gap stays open until
+   then, and nothing reads `impure` before it.
+7. **A derived `eq` or `compare` joins its context.** The derived function calls the evidence of
+   each context entry, so each entry's method type `⊑` the method type it answers.
+8. **Recursion needs nothing.** A binding group's members share their variables until the group is
+   generalised, so the group is one graph; declarations that depend on each other only through
+   their annotations are solved together to the least fixpoint (§14.4).
+
+### 14.4 Summaries
+
+A top-level declaration's **summary** is what rule 3 instantiates: the classes of its published
+scheme — the body and its `where`-clause types, walked in the scheme's canonical order — and, per
+class, the rung it reaches and the other classes of the same scheme that reach it. A `foreign`'s
+summary is rule 6; every other declaration's is read off the graph of its body.
+
+- **When.** After P5 (checker-v2.md §5), once every group, nested check and derived context has
+  added its edges, and before P6 and P8. An own reference recorded during P4 is resolved then,
+  through the summary of the declaration it names. Declarations are solved in dependency order,
+  the order of their references; a set that depends on itself — two annotated declarations calling
+  each other — is iterated until no summary changes.
+- **Cost.** Linear in the edges per declaration for the rungs, and one pass per 64 scheme classes
+  for the dependencies (a bit set per node), so a scheme of `k` classes costs `⌈k/64⌉` passes over
+  its body. The plan's bound (§3 there: check ≤ +10 %, emit ± 0) is measured, not assumed.
+- **Determinism.** Everything is indexed by store variable and declaration index, both input
+  derived; no order depends on a hash or a thread (CLAUDE.md rule 5).
+
+### 14.5 Nominal types carry one hidden class
+
+A function type written in a **constructor field** of a `type` declaration is fixed at the
+declaration; it is not an argument that unification can carry from the value that went in to the
+function that comes out. `type Parser a = Parser (String -> Maybe ( a, String ))`, a decoder, a
+generator, a capability record behind an opaque type all store functions that way. Report 39 §9.7
+weighs three answers: a constant `suspends` saturates the standard library; a constant `pure`
+checked at the constructor forbids the capability the type exists to hold; a hidden class per use
+of the type is precise. **This step takes the third**, report 39's recommendation:
+
+- **Every application of a nominal type is a class**, `Parser Int` included, like a function type.
+- **A constructor joins its fields into its type.** Where a constructor's type is built for a use
+  — a construction or a pattern — every function type and every nominal application written in its
+  field types (through alias expansions, stopping at the declaration's type parameters) is joined
+  with the application the constructor returns. So one class per use of the type, shared by all
+  its arrows: `Parser (\s -> …)` and `case p of Parser run -> run s` meet in the class of
+  `Parser a` there, and a summary that runs a parser depends on its parser argument's class.
+- **Recursive types share it**: `type Stream = Stream (() -> ( Int, Stream ))` names `Stream` in
+  its own field, and that application is joined too.
+- **A type without a function in its fields** has classes nothing ever joins, which cost the
+  checker a variable it already had and the record nothing (§14.6 writes only what carries
+  information). A `foreign type` has no constructors: its values are the host's (`Html msg`,
+  `Program`), and a function stored in one is the host's to call, which is the `sync` step's.
+
+### 14.6 The interface
+
+Interface format 8 → 9 (`iface_bytes.format_version`): **a scheme gains one word, `effects`**,
+the `extra` offset of its effect block, or `no_terms` when every class of the scheme is pure and
+independent (so most schemes cost the word and nothing else). The block, in words:
+
+```
+class_count
+class_count × { rung, dep_count, dep_count × class }
+site_count
+site_count × { class, root, step_count, step_count × step }
+```
+
+- A **rung** is `0` pure, `1` impure, `2` suspends. A class's **deps** are classes of the same
+  block, ascending.
+- A **site** is one function type or nominal application of the scheme that belongs to a class
+  worth writing — one with a rung, a dependency or a dependant. Every store variable of such a
+  class gets a site, so a class split across two variables (§14.3 rule 4, §14.5) arrives joined.
+- A site is found by a **path**: `root` is `0` for the scheme's body and `k + 1` for its `k`th
+  `where`-clause type (quantifiers in scheme order, each quantifier's constraints in the order the
+  record writes them), and each **step** is `kind << 28 | index`: `0` parameter `i`, `1` result,
+  `2` argument `i` of an application, `3` tuple element `i`, `4` record field `index` (a
+  `SymbolIndex`, the field's name), `5` a record's extension, `6` an alias's expansion. The
+  reader follows the path through the variables it has just built; an alias's expansion is walked,
+  never its argument list.
+- **Order.** Sites in a depth-first walk of the scheme, parameters before result, arguments and
+  elements in order, fields by name text, the body before the `where` types, each variable once;
+  classes in order of their first site. Nothing in the block depends on symbol ids or `--jobs`.
+- **The firewall.** The block is hashed with the record (`fast-compiler.md` §8.1), so a
+  dependency whose bits change moves its hash and its dependents are re-checked. `entry_bytes`
+  6 → 7 embeds the record, and the frontend artifact 8 → 9 carries §14.1's word.
+
+### 14.7 What the dumps print
+
+`dump --stage=interface` and `dump --stage=types` print a class after the type it belongs to;
+diagnostics never do, so no message's text moves:
+
+- a function type prints its class after its result: `Request -> Response !suspends`; a nominal
+  application, and an alias of a function type or a nominal application, after the name, in
+  parentheses where it is an argument: `List (Parser a !e1)`;
+- the class is the join of its rung, its own name if another class depends on it, and the names of
+  the classes it depends on: `!impure`, `!e1`, `!(impure | e1 | e2)`; `suspends` absorbs the rest,
+  and a pure class nothing depends on prints nothing;
+- names are `e1`, `e2`, … in order of first print, one namer per declaration shared by its locals;
+  a function-typed result is parenthesised when its own arrow prints a class, so
+  `Int -> (Int -> Int !e1) !impure` cannot be misread;
+- `dump --stage=types` prints a top-level value's evaluation class, when it is not pure, as
+  `  -- evaluates: impure` after its scheme.
+
+`List.map : List a, (a -> b !e1) -> List b !e1` is the whole feature on one line.
+
+### 14.8 What this step does not do
+
+- **No `sync`, no diagnostic about a bit, no lowering.** Those are the plan's next slices.
+- **Library traversal order** (§5, decision 8) waits for the sequence decision.
+- **A schema's generated parse and print** will join their `via` conversions' classes when they are
+  generated; today `build` refuses a schema, and a published schema member has no block.
+- **Markup's host-called functions** — a handler, a `For` row, a `Show` body, an `Html.map`
+  function — are the host's to call and independent of the element, as rule 6's parameters are;
+  checker-v2.md §25.6 makes each one `sync` in the next slice.

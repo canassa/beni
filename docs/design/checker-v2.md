@@ -5321,3 +5321,26 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   `<div>{…}</div>` pass the parser and reach the generator's guard. That is one
   `nesting_too_deep` worded for markup, and the expression the generator did not read is `err`,
   so no hole above it reports that its type is unknown.
+
+## 26. Amendment of 2026-09-30: effect inference
+
+The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14; this
+section says only where it sits in this checker.
+
+- **Generation records, a phase solves.** The generator records a call's `callee ⊑ ambient` edge
+  (§6), `Instantiate.copy` records which scheme variable each copied function type or nominal
+  application came from, and the constructor rule of P2 §14.5 is applied where
+  `Instantiate.reference` builds a constructor's type. Nothing touches `unify` or the store's
+  layout: a class is a union-find class. The phase that solves them, `Effects.run`
+  (`check/Effects.zig`), runs after P5 and before P6, and writes each declaration's summary, which
+  P8 publishes and the dumps print.
+- **Imported summaries are applied at instantiation**, where `Instantiate.imported` reads the
+  scheme, by following each site's path in the variables just built (P2 §14.6). The plain-method
+  fast path (`Instances.plainImported`) applies the same summary by position, so taking it never
+  changes a bit.
+- **Wanteds.** After P5, every answered wanted adds what its answer means for the bits: a `derived`
+  answer joins each argument's method type into its own (P2 §14.3 rule 7), an `alias` answer is the
+  wanted it names. A `top` or `ext` answer needs nothing more: its method was instantiated through
+  its summary and unified with the wanted's type.
+- **Versions** (§14.3): `iface_bytes.format_version` 8 → 9, `entry_bytes.format_version` 6 → 7,
+  the frontend artifact 8 → 9.

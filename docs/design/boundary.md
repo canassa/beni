@@ -116,6 +116,15 @@ native code, ours is a module import.
 A `foreign` declaration binds to a sibling JavaScript file, one export per foreign value, under the
 same name — already specified in `language.md` §5.4 and load-bearing for §7 below.
 
+*Amended 2026-09-30.* A `foreign` value also **declares its rung** — `pure`, `impure` or
+`suspends` — between `foreign` and its name, and the checker infers every beni function's bits
+from those declarations ([`transparent-effects-proposal.md`](transparent-effects-proposal.md)
+§14.1). `pure` means total and non-throwing. The rung is a promise the platform author makes about
+the sibling, like the arity check 4 counts, and none of the checks below reads the JavaScript to
+test it. The rung describes the declaration's own arrow and its `where` evidence; a beni function
+passed to the sibling is independent of the call until the `sync` step makes such a parameter
+`sync` (P2 §14.3 rule 6).
+
 Four checks run at build time, and all four are things Elm does not do:
 
 1. **The type must be one of exactly two shapes.** Either (a) a total pure function over
