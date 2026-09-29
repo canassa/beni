@@ -829,6 +829,15 @@ writes surviving markup or is a surviving primitive. **`markup_type_in_foreign`*
 the build's lowering — the first `"lowering"` a package of the chain names — with the one the
 `foreign`'s own package names, which the graph carries per package.
 
+*As built, 2026-09-29, with the first lowering* (§9.4–§9.5): the first bullets above are
+superseded. **`node` names the `ssr` lowering** and its markup runtime, `markup.js`, beside its
+program runtime; **`html`'s `"zig"` key** names its parser table; and the binary has `ssr`, which
+`unknown_markup_lowering` now lists. **`node`'s `render` is `Ssr.render`**, a `foreign` of a module
+of its own, `Ssr`, rather than of `Node` as `backend.md` §15.6 wrote it: a module that imports
+`Html` has the vocabulary checked in every build that imports it, and every program built for
+`node` imports `Node` — measured, that was about 350 million instructions per compiler run, for
+programs that write no markup. A program that renders a view imports `Ssr`.
+
 ### 9.4 The markup lowering interface
 
 A **markup lowering** is a Zig module, compiled into the beni binary (§9.5), that turns the typed
@@ -1137,6 +1146,59 @@ region: the one code a lowering may raise, for markup the lowering cannot repres
 any emit diagnostic: after everything is produced and before a byte is written, so a refused build
 writes nothing (`backend.md` §2).
 
+*As built, 2026-09-29, for §9.4* (`src/markup/Interface.zig`, `src/js/MarkupTree.zig`, the markup
+section of `src/js/Lower.zig`, `src/js/Emit.zig`). Interface 1.0 is §9.4.2–§9.4.3 as written, with
+these readings and additions, each the smallest one that let the `ssr` lowering and a toy lowering
+be written against it; they are 1.0's contract:
+
+- **The builder is a table of functions behind opaque handles.** `Name`, `Expr`, `Block` and
+  `Value.Index` are `enum(u32)` handles the compiler maps to `JsIr` names and nodes; `Context` and
+  `Js` call through one `VTable`, so the interface module imports nothing of the compiler and a
+  lowering can spell no name it was not handed. `cx.js` builds the expressions and statements of
+  §9.4.3's list and nothing else (`Js.constant`, `let`, `assign`, `if`, `return`, `expression`,
+  `nested`; string, number and template literals; names, calls, member and index reads, object and
+  array literals, arrows, conditionals, the five binary and two unary operators).
+- **Three additions to the context.** `cx.arena`, working memory freed when the module's lowering
+  ends, since a lowering keeps no state and yet builds lists; `cx.isJust(e)`, because `Maybe`'s
+  payload slot is `null` for `Nothing` and for `Just ()` alike, so `cx.maybe` alone cannot tell them
+  apart; and `cx.hoisted(hint)`, the name the module's first hoist under a hint was given, which is
+  how `root` reads back what `module` hoisted without state of its own.
+- **Two additions to the tree.** `Component.children_nodes`: the children written as markup
+  between a component's tags are nodes of the tree, which the lowering renders as one markup value
+  in its own representation and hands to `cx.componentCall(node, children)` — the compiler cannot
+  build that value. And `Item.url`: an attribute whose row says `url`, or an escape whose name the
+  checker recorded as a URL, so a lowering reads one bit. An `entries` item's `dynamic` is the list
+  itself, rebuilt from its entries' values without evaluating anything twice, for a lowering that
+  writes the list through its runtime rather than entry by entry.
+- **What a value is.** A root's values are its instructions in `language.md` §6's order, which the
+  compiler evaluates where the root is evaluated, each bound to a `const` unless it is already a
+  name or a literal; a component's callee is not one (the call is built by `cx.componentCall`), and
+  neither is a literal `keyed` mode. A row's captures and inputs, an entries list and a prop that is
+  a constant are values too, but evaluate nothing: they are spelled where the lowering asks. A
+  `lambda` row's root has one value, the lambda's body; a `markup` row's root has its markup's.
+  `Row.reads_index` is the arity being 2, which is safe and says nothing more.
+- **`cx.rowValues` with no captures** reads the captured locals where the function is placed — by
+  closure, which is all a lowering whose rows are functions in place needs; given one name per
+  capture, the locals read under those names for that function only.
+- **`cx.extractor`** reports `not_implemented` for an event whose row names an extractor: its
+  reachability leg (`checker-v2.md` §25.7) lands with the first lowering that calls it. `ssr` drops
+  events and never does.
+- **`Tree.requires`** is 1.0 for every tree. The comparison with `Lowering.targets` is made, and a
+  tree a lowering does not cover is reported as `internal`, since no feature is gated yet.
+- **The runtime's checks** (§9.4.5) run in `build` and in `check --platform` whenever the chain names
+  a lowering this binary has and a `"markup".runtime`: an export missing is
+  `foreign_export_mismatch` in the runtime file at 1:1, or at the primitive's declaration for a
+  primitive; a miscounted well-known export is `foreign_arity_mismatch` at the export, a miscounted
+  primitive the same at its declaration (§4's check 4 wording); an export nothing declares, an
+  unbound reference and a relative import are what they are for a sibling; a primitive named like
+  one of the lowering's exports is `duplicate_declaration` at the primitive.
+- **Program start** is called when the lowering declares a `start` export and a module written
+  imports the markup runtime; the call's keys are written as string literals,
+  `start({"delegate": ["click"]});`.
+- **A module whose only survivors are markup primitives** — `html`'s `Html` when a program calls
+  `Html.text` and nothing else of it — is not written: its primitives are the runtime's exports and
+  nothing imports the module.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
@@ -1164,6 +1226,28 @@ not a sandbox.
   same binary — an external platform over `html` imports `platform_html`.
 - **A platform directory without Zig** — `--platform=<dir>` at run time, §5.3 — may still select any
   lowering the binary has by name. Only a platform that brings *new* Zig needs a rebuilt beni.
+
+*As built, 2026-09-29* (`build.zig`, `platforms/html/zig/`, `platforms/node/zig/`,
+`tests/platforms/toy/`). Where the list above left a choice:
+
+- **The `"zig"` key is read by `build.zig` alone**, at configure time; the compiler ignores it as
+  an unknown key. A platform's module is `platform_<name>`, and it imports the modules of every
+  platform its manifest's `"platforms"` reach, transitively, by name.
+- **The registry** is a generated module, `markup_lowerings`, whose `all` is every lowering of every
+  platform module, sorted by name at compile time; two of one name, and a lowering whose `targets`
+  this interface does not cover, are compile errors (§9.4.6's first check).
+- **`-Dplatform=<dir>`** takes the platform's name from its manifest's `"name"`, else the
+  directory's; it is embedded under `platforms/<name>` as a built-in one is, and a name taken twice
+  is a configure-time failure. A platform's `.zig` files are compiled, never embedded as assets.
+- **`beni.addPlatform(b, .{ .dir = … })`** returns the `beni` dependency built with that one
+  directory as `-Dplatform` (relative to the depending build's root); several platforms are one
+  `b.dependency("beni", .{ .platform = … })` with the list.
+- **The build id** hashes every `.zig` file under a compiled-in platform's directory, beside `src/`.
+- **The external path is a gate**: `test-blackbox` builds a beni with `tests/platforms/toy`
+  compiled in as `-Dplatform` would, at `zig-out/toy/bin/`, and
+  `tests/blackbox/external_platform_test.zig` builds and runs a program for it. The toy lowering,
+  written against 1.0, hoists a function in `module`, reads it back in `root` with `cx.hoisted`,
+  imports `platform_html`, and contributes start data; its runtime is also the program runtime.
 
 ### 9.6 Determinism, and what the cache must know
 

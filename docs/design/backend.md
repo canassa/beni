@@ -3231,6 +3231,46 @@ DOM (research 36 §2.12, §5.5): the same tree, and the same template split, emi
   because `node` names `ssr` (`boundary.md` §9.3) — so a `run/` fixture prints a view with
   `Node.printLines [ Node.render (view model) ]`.
 
+*As built, 2026-09-29* (`platforms/node/zig/ssr.zig`, `platforms/node/markup.js`,
+`platforms/html/zig/parser_table.zig`; `tests/corpus/run/Markup*`, `emit/MarkupSsr`). The list above
+holds, with these readings:
+
+- **A kind is hoisted and named by its site**, `<Module>$k<inst>` (§15.2), after the imports: an
+  array of the root's static strings, which the root's block concatenates with its values in
+  order — or, for a root with no dynamic part, the whole block `{ t: "…" }`, built once. The
+  concatenation begins with a string, so a number first is text. A name a declaration of the module
+  already has gets a tag instead (`run/MarkupHoistName`).
+- **Rows are functions in place.** A `markup` row is `(item, position) => { values; return block }`
+  with its values placed by `cx.rowValues`; a `lambda` row returns its body's value; a `function`
+  row calls the function. `Show` calls the body with `cx.maybe(when)` under `cx.isJust(when)`, so
+  `Just ()` shows its body.
+- **`list` takes the fallback as a third argument**, `list(items, row, fallback)` with `null` when
+  there is none: telling an empty list from a list whose rows render nothing needs the list's
+  representation, which is the runtime's. A `List (Html msg)` hole is `list` with the identity row.
+- **`rawText(text, tag)` is a seventh export.** Raw text (`<style>`) is written as it is: text known
+  when the view is compiled is `markup_restructured` if it would end the element early, and a text
+  hole's value goes through `rawText`, which writes `</` before the element's own name as `<\/` —
+  the runtime cannot refuse, and in CSS an escaped `/` is a `/`. Any other child of a raw-text
+  element, and anything but text and a text hole in escapable raw text (`<textarea>`, `<title>`), is
+  `markup_restructured`.
+- **Class and style lists written in place** are joined when compiled only when every entry is a
+  constant; with a dynamic entry the rebuilt list goes through `classes` or `styles`, so all three
+  forms write the same text. **A style list's property takes its last value, and an empty last value
+  removes it** — `language.md` §11.19's "the later wins", which "each property's last non-empty
+  value" above misstated for a list whose last entry for a property is empty.
+- **A `raw` attribute** (`innerHTML`) is the element's content, written unescaped before its
+  children, which is what the page shows after the property write.
+- **A `Bool` hole** writes `true` or `false`, as `"${b}"` does (§4); a `Char` is escaped as a string.
+- **The parser table** is the standard's rules for what a view writes statically: void elements; raw
+  and escapable raw text; a block element closing an open `<p>`; `<a>` in `<a>` and `<form>` in
+  `<form>`; a table's, row group's, row's and column group's allowed children and table parts
+  outside a table; `li`, `dt`, `dd`, `option` and `optgroup` directly inside their own kind; and
+  text straight in a table, which the parser moves out. Each is `markup_restructured`, one per root.
+- **`Html.map`** is `map(h, f) => h`, so nested maps render their markup unchanged.
+- **A view is printed with `Node.print (Ssr.render (view model))`**: `render` is the `foreign` of
+  `node`'s module `Ssr`, not of `Node`, so a program that writes no markup does not check the
+  vocabulary (`boundary.md` §9.3, *As built … with the first lowering*).
+
 ### 15.7 The release optimiser
 
 Nothing in §9's release slice changes, and three things are stated so that no later pass breaks them:

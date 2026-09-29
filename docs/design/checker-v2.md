@@ -5290,7 +5290,10 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   second bit of the row's byte 11), printed `escape "href" string url`.
 - **The extractor's reachability leg** (§25.7) is not built: no build lowers markup yet — `build`
   refuses a surviving markup root with `unknown_markup_lowering` (`boundary.md` §9.2) — so the leg
-  lands with the first lowering, which is its first reader.
+  lands with the first lowering, which is its first reader. *Amended 2026-09-29:* the first
+  lowering, `ssr`, drops events and reads no extractor, so the leg lands with the first that does;
+  until then `cx.extractor` refuses rather than import one reachability did not keep
+  (`boundary.md` §9.4, *As built*).
 - **`markup_type_in_foreign`** is checked with the vocabulary declarations, for every `foreign`
   value of a platform module when the build has a markup type. The graph carries the build's
   lowering (the first a package of the chain names) and each package's own, and the cache key of

@@ -139,6 +139,15 @@ the prelude, so `import Int32`. `language.md` §2.5 and Appendix A,
 `tests/corpus/run/Int32Hash` writes FNV-1a, xorshift32 and murmur3's `fmix32`
 in beni and checks them against published vectors.
 
+**Markup runs** (2026-09-29): the markup lowering interface
+(`src/markup/Interface.zig`, imported by a lowering as `beni_markup`;
+[`boundary.md`](docs/design/boundary.md) §9.4–§9.5) and the `node`
+platform's `ssr` lowering (`platforms/node/zig/`, runtime `markup.js`;
+[`backend.md`](docs/design/backend.md) §15.6). A platform's Zig is compiled
+into beni through a registry `build.zig` generates; `-Dplatform=<dir>` adds
+one, and `test-blackbox` proves it with `tests/platforms/toy`. A program
+renders a view with `Node.print (Ssr.render (view model))`.
+
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
 rewritten around them. It was built as a spike, measured

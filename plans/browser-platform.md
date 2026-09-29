@@ -1229,6 +1229,11 @@ front end, the interface and the vocabulary seam with a runtime of sixty lines, 
 first is what keeps it from being `dom`'s API wearing a hat. B0 is needed from MJ6's `browser/` tests
 on and can land any time before. MJ9 is last because it measures what MJ5–MJ8 built.
 
+*Built, 2026-09-29:* the lowering interface and the `ssr` lowering, as the *As built* notes of
+`boundary.md` §9.3, §9.4 and §9.5 and `backend.md` §15.6 record — including what they changed:
+`Ssr.render` in place of `Node.render`, `list`'s third argument, `rawText`, and the extractor's
+reachability leg left to the first lowering that reads an extractor.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as
