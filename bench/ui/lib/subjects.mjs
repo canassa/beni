@@ -10,6 +10,7 @@ export const subjects = [
   { name: "beni", kind: "beni", dir: "beni-dev" },
   { name: "beni-release", kind: "beni", dir: "beni-rel" },
   { name: "solid2", kind: "solid", entry: "bench" },
+  { name: "solid1", kind: "solid", src: "/out/solid1/main.js", module: false },
   { name: "p2", kind: "script", body: "static", src: "/apps/p2/bench.js" },
   { name: "vanillajs", kind: "script", body: "static", src: "/out/jfb/Main.js" },
   ...(existsSync(extra) ? JSON.parse(readFileSync(extra, "utf8")) : []),

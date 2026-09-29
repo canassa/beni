@@ -3,7 +3,7 @@
 // the same for total and paint. Never a geometric mean: research 29's
 // manager re-run moved one by 27 % while every per-operation median held.
 //
-//   node report.mjs out/cpu.json [--column=script|total|paint] [--vs=solid2,p2]
+//   node report.mjs out/cpu.json [--column=script|total|paint] [--vs=solid2,solid1,p2]
 
 import { readFileSync } from "node:fs";
 import { median, quantile } from "./lib/trace.mjs";
@@ -12,7 +12,7 @@ const file = process.argv[2] ?? "out/cpu.json";
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const data = JSON.parse(readFileSync(file, "utf8"));
 const columns = arg("column", "script,total,paint").split(",");
-const vs = arg("vs", "solid2,p2").split(",");
+const vs = arg("vs", "solid2,solid1,p2").split(",");
 
 const benchmarks = [...new Set(data.samples.map((s) => s.benchmark))];
 const subjects = [...new Set(data.samples.map((s) => s.subject))];

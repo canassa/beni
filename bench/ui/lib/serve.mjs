@@ -40,7 +40,8 @@ window.__mount = performance.now() - t0;
 window.__flush = rt.flush;
 </script></body></html>`;
     case "solid":
-      return `${head(subject.name)}<body><div id="main"></div><script type="module" src="/out/solid2/${subject.entry}.js"></script></body></html>`;
+      // Solid 2 is an ES module per page; Solid 1 is js-framework-benchmark's IIFE.
+      return `${head(subject.name)}<body><div id="main"></div><script ${subject.module === false ? "" : 'type="module" '}src="${subject.src ?? `/out/solid2/${subject.entry}.js`}"></script></body></html>`;
     case "script":
       return `${head(subject.name)}<body>${subject.body === "static" ? staticBody() : ""}<script ${subject.module ? 'type="module" ' : ""}src="${subject.src}"></script></body></html>`;
   }

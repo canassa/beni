@@ -6,6 +6,8 @@
 //   out/beni-rel/     the same with `--release`
 //   out/micro-*/      the static-heavy pages, dev and release
 //   out/solid2/       apps/solid2, Solid 2.0.0-rc.9 through Vite and terser
+//   out/solid1/       apps/solid1, Solid 1.9.15 built as js-framework-benchmark's
+//                     keyed solid entry is: Rollup, babel-preset-solid, terser
 //
 //   node build.mjs [--beni=<path to beni>] [--no-solid]
 //
@@ -74,6 +76,10 @@ if (!process.argv.includes("--no-solid")) {
     const r = spawnSync("npx", ["vite", "build", "--logLevel", "warn"], { cwd: solid, stdio: "inherit", env: { ...process.env, ENTRY: entry } });
     if (r.status !== 0) throw new Error(`vite build ${entry}: exit ${r.status}`);
   }
+  const solid1 = join(here, "apps/solid1");
+  if (!existsSync(join(solid1, "node_modules"))) run("npm", ["install", "--no-audit", "--no-fund"], solid1);
+  rmSync(join(here, "out/solid1"), { recursive: true, force: true });
+  run("npx", ["rollup", "-c", "--environment", "production", "--silent"], solid1);
 }
 
 const version = spawnSync(beni, ["version"], { encoding: "utf8" }).stdout.trim();
