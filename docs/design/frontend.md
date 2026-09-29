@@ -497,7 +497,10 @@ shape matches real code (module/import/type/function ratios taken from `referenc
 own examples: mostly small functions, some large `case`, records, pipelines) so the §2 budget
 numbers are stated against something honest. The generated tree is written under the build
 cache, never checked in; `bench/corpus/` is the permanent, checked-in pathological set that
-starts with a handful of real-shaped modules and every slow file ever found.
+starts with a handful of real-shaped modules and every slow file ever found. *(Amended 2026-09-29,
+not built:* `--phases=<phase>[,<phase>…]` stops the harness after the phases named, so an input only
+the lexer can read yet is measured without the later phases refusing it — markup's `bench/markup/`,
+§9.3.)*
 
 ## 6. `--self-profile`
 
@@ -592,6 +595,12 @@ text** (W30) the lexer cannot stay mode-free (research 28 §3.1), so it gains a 
 generalisation of the `string`/`interp` modes it already has (`src/lex/Tokenizer.zig:57-80`), not a
 second lexer.
 
+*Revised 2026-09-29, after the specification review.* The lexer's rules for a `<` in text, a spread
+after whitespace and a comment in a hole are stated (§9.1); its measurement is a lexer-only input
+(§9.3); `pub markup` and `Show` join the parser (§9.4); lowering decodes character references and
+owns the table (§9.7), records constants, list entries, rows of any shape and their inputs (§9.7);
+and the vocabulary module's own markup gets no edge to itself (§9.8).
+
 ### 9.1 The lexer's mode stack
 
 `Tokenizer.mode` becomes the top of a small **stack** of `{ mode, depth }` entries, bottom entry
@@ -599,10 +608,10 @@ second lexer.
 
 | Mode | Entered by | Lexes | Left by |
 |---|---|---|---|
-| `tag` | a markup `<` (§9.3) | the tag name, then attributes: `markup_attr`, `=`, a string (string mode pushed over it), `{` (pushes `hole`), `{...` (`l_brace` then `ellipsis`, pushes `hole`), `--` comments, whitespace and newlines | `>` (`markup_gt`: replaced by `children`) or `/>` (`markup_self_close`: popped) |
+| `tag` | a markup `<` (§9.3) | the tag name, then attributes: `markup_attr`, `=`, a string (string mode pushed over it), `{` (pushes `hole`), `--` comments, whitespace and newlines | `>` (`markup_gt`: replaced by `children`) or `/>` (`markup_self_close`: popped) |
 | `children` | an opening tag's `>`, or `<>` | text runs (`markup_text`), `{` (pushes `hole`), a markup `<` (pushes `tag`), `</` (`markup_close_open`: replaced by `close`) | through `close` |
 | `close` | `</` | the closing name, if any, then `>` | `markup_gt`: `close` and the `children` below it are popped |
-| `hole` | `{` in `tag` or `children` | exactly as `normal`, counting `{` and `}` | the `}` that brings its depth to 0 (`r_brace`), popped |
+| `hole` | `{` in `tag` or `children` | exactly as `normal`, counting `{` and `}`; in a hole opened in `tag` mode, `...` as its first token (below) | the `}` that brings its depth to 0 (`r_brace`), popped |
 
 **The stack is what a `normal` or `hole` context sees as "the lexer is in expression position"**, and
 nothing else about ordinary code changes: outside markup the stack is one entry and every token is
@@ -610,6 +619,18 @@ lexed exactly as today. A `"` in `tag` mode or in a hole pushes `string` over wh
 an attribute string or a string inside a hole is §2.6's string, interpolation included; §2.6's rule
 that a `"` inside an interpolation is an error is untouched, and so markup inside `${…}` never
 arises (`language.md` §11.2).
+
+**A spread is `{`, then `...` as the hole's first token**, whatever whitespace, newlines or comments
+come between them: `{...x}`, `{ ...x }` and a `{` whose `...` is on the next line all lex as `l_brace`,
+`ellipsis`, the expression, `r_brace`. Only the first token of a hole opened in `tag` mode can be an
+`ellipsis`; `...` anywhere else — later in the hole, in a `children` hole, in ordinary code — lexes exactly as
+it does today, as an error. Whether a spread is allowed
+where it stands is lowering's (`spread_on_element`, `spread_not_first`, §9.7), not the lexer's.
+
+**A comment in a hole runs to the end of the line**, as every comment does (`language.md` §2.3), `}`
+included. So `{-- note}` leaves the hole open; the lexer records, on the hole's stack entry, that a
+comment consumed the rest of the line the hole opened on, and the parser's `unclosed_delimiter` for
+that hole then says so and shows the two-line spelling (§9.5).
 
 **Column 1 ends every markup mode.** In `tag`, `children`, `close`, or a `hole` that has markup
 below it, a newline followed by a non-space byte at column 1 pops the stack back to its bottom
@@ -627,9 +648,12 @@ per-file scratch owned by the tokenizer, reset per file, allocated once per work
 **Text runs.** In `children`, a `markup_text` token is every byte from the current position up to
 the next `<`, `{`, `>`, `}`, column-1 break or end of file, and it is emitted only when non-empty —
 whitespace included, because whether whitespace is significant is decided by lowering (§9.7), not
-here. `>` and `}` there are each an `invalid` token with `unexpected_token` (`language.md` §11.4), and
-the text resumes after them. A tab is `tab_in_source` and a non-UTF-8 byte `invalid_utf8`, as
-everywhere; `--` is text.
+here. Three bytes stop a run and are not a token of their own, each an `invalid` token with
+`unexpected_token` whose message gives the hole that writes it, and the text resumes after them
+(`language.md` §11.4): `>` (`{">"}`), `}` (`{"}"}`), and a `<` whose next byte is not an ASCII letter,
+`/` or `>` (`{"<"}`) — `a < b` in text, or a `<` at the end of the file. A tab is `tab_in_source`,
+another control character `invalid_character` and a non-UTF-8 byte `invalid_utf8`, as everywhere;
+`--` is text; a character reference is text here and is decoded by lowering (§9.7).
 
 ### 9.2 Token kinds
 
@@ -647,11 +671,12 @@ scanner by the tag, as it does today.
 | `markup_name` | a tag name: `[a-z][A-Za-z0-9-]*`, or `Upper(.Upper)*(.lower)?` | the first byte outside the name |
 | `markup_attr` | an attribute name: `[A-Za-z][A-Za-z0-9_-]*` with `:` allowed after the first byte | the first byte outside the name |
 | `markup_text` | a text run | `<`, `{`, `>`, `}`, a newline followed by a non-space at column 1, end of file |
-| `ellipsis` | `...` directly after a `{` in `tag` mode | three bytes |
+| `ellipsis` | `...` as the first token of a hole opened in `tag` mode (§9.1) | three bytes |
 
 `markup_name` and `markup_attr` are interned while scanned, like identifiers (§3.3), so `payload`
 holds their `Symbol`. **Keywords are not recognised inside a tag**: `type`, `as` and `for` are
-`markup_attr`s there.
+`markup_attr`s there. `For` and `Show` are `markup_name`s like any capitalised tag; the parser, not
+the lexer, knows them (§9.4).
 
 A new tag set is a change to the front-end artifact's bytes, so the artifact's `format_version`
 moves (4 → 5, `src/frontend/artifact_bytes.zig`), and every older artifact is a miss; the compiler build
@@ -672,18 +697,25 @@ mode, a `<` is a `markup_open` when **both** hold:
 
 Otherwise the ordinary longest-match rules apply unchanged (`<=`, `<-`, `<|`, `<`), so every program
 that lexes today lexes to the same tokens. In `children` mode a `<` followed by a letter or `>` is
-always `markup_open`, and `</` always `markup_close_open`. The first rule costs ordinary code one
-test at each `<`, of a byte already in cache.
+always `markup_open`, `</` always `markup_close_open`, and any other `<` the error of §9.1. The first
+rule costs ordinary code one test at each `<`, of a byte already in cache.
 
-**The measurement this owes** (`fast-compiler.md` §2's budget): `zig build bench` on today's
-markup-free corpus must not regress, and `bench/corpus` gains markup-heavy modules — none exists
-today (research 28 §15) — so the cost of the modes themselves is a number and not an argument.
+**The measurement this owes** (`fast-compiler.md` §2's budget) has two halves. `zig build bench` on
+today's markup-free corpus must not regress. And the modes' own cost is measured on a **lexer-only
+input**, `bench/markup/`, a checked-in directory of markup-heavy modules (a benchmark table's view,
+a form, a page of mostly static markup, a deep tree), which `zig build bench -- --corpus=bench/markup
+--phases=lex` runs through the lexer alone — `--phases` is the new option that stops the harness
+after the phases named, because nothing past the lexer can read markup until the parser does, and
+nothing past the checker until a lowering exists. The input moves up the pipeline with the slices
+(`--phases=lex,parse` once the parser reads markup, every phase once markup builds under the `node`
+platform), and joins `bench/corpus/` only then; until it does, `bench/corpus/` stays buildable end
+to end, which it must, because `--library` builds of it are the size benchmark (`backend.md` §9).
 
 ### 9.4 Parser productions
 
 ```
 parseAtom       markup_open                       → parseMarkup
-parseMarkup     markup_open (markup_name | ε) …   → element or fragment
+parseMarkup     markup_open (markup_name | ε) …   → element, fragment, For or Show
 parseOpening    { markup_attr ['=' AttrValue] | string '=' AttrValue | '{' ellipsis Expr '}' }
                 (markup_gt Children | markup_self_close)
 parseChildren   { markup_text | '{' [Expr] '}' | parseMarkup } markup_close_open [markup_name] markup_gt
@@ -695,23 +727,28 @@ AttrValue       string | '{' Expr '}'
   admitting it there would be a rule with nothing to apply to. The negation arm does not admit it:
   `-<b />` is `unexpected_token`, because markup is not a number.
 - **A closing tag's name is compared by symbol** with the opener's; a fragment's closer has none.
+- **`For` and `Show`** are recognised by the tag's symbol and parsed as an element is; their node
+  tags differ (below) so that lowering can hold them to their own attributes and children
+  (`language.md` §11.9, §11.18). Nothing about their syntax is special.
 - **Layout**: every markup token obeys `language.md` §4 rule 2 — its column is greater than the
   enclosing block's indent — exactly as a bracket's contents do (rule 6). A text token's column is
   that of its first byte, so a text run may continue onto lines at any column right of column 1.
 - **Depth**: an element is one nesting level for `language.md` §10's 4 096-level limit; a view nested
   20 deep costs 20.
 - **Vocabulary declarations**: after `pub`, the words `element`, `attribute` or `event` followed by a
-  string begin a `VocabDecl` (`language.md` §11.14) — two tokens of lookahead past `pub`, where a
-  `Definition` would need a name. Facts are `lower_ident`s (with their string arguments, or `via`'s
+  string, or `markup` followed by a `lower_ident` and `:`, begin a `VocabDecl` (`language.md`
+  §11.14) — at most three tokens of lookahead past `pub`, where a `Definition` would have its name
+  and then parameters or `:`. Facts are `lower_ident`s (with their string arguments, or `via`'s
   name) up to `:` or the end of the declaration; a word that is no fact of the form is
   `unexpected_token`, naming the ones that are.
 
-**AST node tags** (§3.5): `markup_element`, `markup_fragment`, `markup_attr`, `markup_attr_escape`
-(the quoted name), `markup_spread`, `markup_text`, `markup_hole`, `markup_empty_hole`, and
-`vocab_element`, `vocab_attribute`, `vocab_event` for the declarations, each with a typed accessor
-(`ast.fullMarkupElement(index)`, …). `dump --stage=ast` prints them as S-expressions like every node:
+**AST node tags** (§3.5): `markup_element`, `markup_fragment`, `markup_for`, `markup_show`,
+`markup_attr`, `markup_attr_escape` (the quoted name), `markup_spread`, `markup_text`, `markup_hole`,
+`markup_empty_hole`, and `vocab_element`, `vocab_attribute`, `vocab_event`, `vocab_markup` for the
+declarations, each with a typed accessor (`ast.fullMarkupElement(index)`, …). `dump --stage=ast`
+prints them as S-expressions like every node:
 `(markup_element div (markup_attr class (str "a")) (markup_text "Hello ") (markup_hole (ident name)))`.
-Text is printed as written, before §9.7's trimming, since the AST is lossless.
+Text is printed as written, before §9.7's trimming and decoding, since the AST is lossless.
 
 ### 9.5 Recovery
 
@@ -722,7 +759,8 @@ Text is printed as written, before §9.7's trimming, since the AST is lossless.
 | an element with no closing tag before end of file, a column-1 break, or an outer element's closer | `unclosed_element`, at the opening `<`, naming the tag and the column the closer was needed at, as `unclosed_delimiter` does | the element is closed there |
 | `<div>…</span>` | `mismatched_closing_tag`, naming both | **accepted as the closer**, so one mistake is one message |
 | an opening tag whose `>` never comes | `expected_token` | the tag ends at the first token that cannot continue it |
-| `>` or `}` in text | `unexpected_token` (from the lexer, §9.1) | skipped |
+| `>`, `}` or a `<` not starting a tag, in text | `unexpected_token` (from the lexer, §9.1), with the hole that writes it | skipped |
+| a hole left open by a comment, `{-- note}` | `unclosed_delimiter` at the `{`, whose message says the comment ran to the end of the line and shows `{-- note` with `}` on the next line | the hole is closed where the enclosing element's recovery closes it |
 | `f <div />` | `element_as_argument` — when a comparison's `<` abuts a following name and the parse of its right operand fails at `/>`, `>` or an `=` right after that name, the parser reports this instead of the generic error, saying to parenthesise | the comparison's placeholder, as today |
 | `<-div>` | `unexpected_token` whose message says a tag name cannot begin with `-`, since `<-` lexes as one token (research 28 §3.5) | as today |
 | an unknown fact in a vocabulary declaration | `unexpected_token` | the fact is skipped |
@@ -733,42 +771,90 @@ Text is printed as written, before §9.7's trimming, since the AST is lossless.
 of §3.7, one bottom-up pass into the side array, and token line numbers for the author's breaks.
 What is new is one fact per gap between two children — **does the whitespace run there contain a
 newline, and is it empty** — read from the `markup_text` token that holds it (or from the absence of
-one), and never changed: the printer emits a newline where the gap had one and a single space where it
-had spaces and no newline. Text continuation lines are re-indented and their trailing spaces dropped;
-the bytes of a line are printed as written.
+one), with *whitespace* meaning `language.md` §11.4's Unicode set, and never changed: the printer
+emits a newline where the gap had one and a single space where it had whitespace and no newline.
+Text continuation lines are re-indented and their trailing whitespace dropped; the bytes of a line are
+printed as written, character references included. A hole holding only a comment is printed with its
+`}` on the next line, so formatting cannot produce `{-- note}`.
 
 **Two tests beyond idempotence and structure preservation**: `fmt/` goldens where text whitespace
 must not move (children on one line past 100 columns; a space between two elements; a text line with
-two spaces between words), and one `run/` fixture that renders a view through the `ssr` lowering
-before and after `beni fmt` and compares the two strings — the black-box form of "the formatter never
-changes what a page says".
+two spaces between words; a line whose only whitespace is a no-break space), and one `run/` fixture
+that renders a view through the `ssr` lowering before and after `beni fmt` and compares the two
+strings — the black-box form of "the formatter never changes what a page says".
 
 ### 9.7 BIR
 
 **Markup lowers to a dedicated instruction, not to calls** (W32; research 36 §6 withdraws research
 28's desugaring). A markup expression that is not the direct child of another element — the root of
-a `view`, a branch's body, an attribute's or a hole's own markup — is one `markup` instruction, and
-its instruction index is the **site** that identifies its template everywhere downstream
-(`backend.md` §15.2). The instruction points at a tree in a per-file side table:
+a `view`, a branch's body, an attribute's or a hole's own markup, the body of a row or `Show`
+lambda — is one `markup` instruction, and its instruction index is the **site** that identifies its
+template everywhere downstream (`backend.md` §15.2). The instruction points at a tree in a per-file
+side table:
 
 | Node | Holds |
 |---|---|
-| `element` | the tag's markup name (a `Symbol`), its attributes, its children |
+| `element` | the tag's markup name (a `Symbol`), its **items** — attributes, escapes and events in one list, in source order (`language.md` §11.5) — and its children |
 | `fragment` | its children |
-| `text` | the text **after `language.md` §11.4's trimming**, interned; a run that trims to nothing is no node |
-| `attr` | the name, and either a constant (a string without interpolation, a number, `True`, `False`, a bare name's `True`) or the instruction computing the value |
+| `text` | the text **after `language.md` §11.4's two steps**, trimmed then decoded, interned; a run that trims to nothing is no node |
+| `attr` | the name, and one of: a **constant** (below); the instruction computing the value; or **entries**, for a class or style list written in place |
 | `attr_escape` | the quoted name and its value, as `attr` |
 | `hole` | the instruction computing the value; an empty hole is no node |
-| `component` | the callee (an ordinary reference instruction, resolved by §8's rules: `qualified(TodoItem, view)` or `qualified(Card, header)`), the props as `(field symbol, value)` in source order, the spread's instruction if any, and the children in the form `language.md` §11.8 gives them |
-| `for` | the `each`, `keyed` and `fallback` values, the keying mode lowering can see (`key` function, literal `True`, literal `False`, absent), and the row function's `lambda` instruction |
+| `component` | the callee (an ordinary reference instruction, resolved as a qualified name is by `language.md` §6.2 and §8 step 1: `qualified(TodoItem, view)` or `qualified(Card, header)`), the props as `(field symbol, value)` in source order, the spread's instruction if any, and the children in the form `language.md` §11.8 gives them |
+| `for` | the `each`, `keyed` and `fallback` values, the keying mode lowering can see (`key` function, literal `True`, literal `False`, absent), and the **row** (below) |
+| `show` | the `when`, `keyed` and `fallback` values, the keying mode (`key` function, literal `True`), and the **row** of its body |
+
+**A constant** is `language.md` §11.5's: a quoted value without interpolation, stored as its text
+after character references are decoded; a bare name, stored as `True`; or a hole holding only a
+number literal (its spelling, with a leading `-` when negated), a string literal without
+interpolation (its text, not decoded — a hole's string never is), or the prelude's `True` or `False`,
+known as such because the name resolved to `import_ctor(Basics, …)`. A hole holding a constant still
+lowers its instruction, which the checker types like any other; the node records that the value is
+known, for a lowering to write into a template. **A quoted value with interpolation** is an
+ordinary `interp` instruction whose literal chunks are decoded here, before they reach the
+instruction, so a reference never spans an interpolation.
+
+**Entries** are recorded when an attribute's value is a list literal of two-element tuple literals
+whose first elements are string literals without interpolation: `class={[ ( "row", True ),
+( "danger", sel ) ]}`. Each entry holds its name's text and its second element as a constant (`True`,
+`False`, a string literal without interpolation) or the instruction computing it. The list still
+lowers to its ordinary instructions, in source order, and the checker types the whole list as it
+would anywhere; entries are what a lowering compiles away (`language.md` §11.19). The shape is read
+without knowing the attribute: lowering cannot know which attributes take lists, and entries on an
+attribute that takes none meet the checker's `type_mismatch` exactly as the list would.
+
+**A row** is what `For` renders per item and `Show` renders for its value. It records the row
+function's instruction and its **shape**:
+
+| Shape | When | Also recorded |
+|---|---|---|
+| `markup` | the function is a lambda — written, or made by a placeholder or an accessor (`language.md` §8) — whose body, after peeling any `let … in`, is a markup expression | the peeled `let` bindings, lowered in order before the markup's values; the lambda's parameters; its **captures** and **inputs** |
+| `lambda` | any other lambda | its parameters, captures and inputs; its body is one value |
+| `function` | anything else | nothing: the value is called per item, and is its own input |
+
+The **captures** of a lambda are the locals of the enclosing declaration its body uses, in first-use
+order: what a compiled row must be handed to run. Its **inputs** are `language.md` §11.9's: per
+captured local, the field paths through which the body reads it — a maximal chain of field accesses
+and tuple indices, `model.selected` or `model.theme.dark`, at most four links long, a longer chain
+cut to its first four — or the local itself when some use is anything else. A use as argument *i* of
+a call whose callee is a top-level function of this file contributes that function's **summary** for
+parameter *i*, prefixed by the argument's own path: the set of paths through which that function's
+body reads the parameter, computed by the same rule over its body — a record pattern
+`{ selected }` in the parameter is the path `selected`, any other pattern is a whole use — with
+calls between the file's functions iterated to a fixpoint from the empty set, which terminates
+because the path sets are finite and only grow. A path that has a prefix among the inputs is
+dropped, and the inputs are kept in first-use order. Summaries are computed on demand, only for
+functions a row's capture reaches, and memoised per file, so a file without markup pays nothing.
+Every part of this is a function of the file's bytes, which is why lowering, and not the checker or
+the backend, owns it.
 
 **The value instructions of a tree lie inside its declaration's instruction range in source order**
-— attribute values, then children, element by element, depth first — which is `language.md` §11.11's
+— items, then children, element by element, depth first — which is `language.md` §11.11's
 evaluation order, so every existing pass that walks a declaration's instructions (resolution, `refs`,
 `Dispatch.sitesIn`) sees them exactly as it sees any other expression, and nothing about the checker's
 or the backend's walks has to learn a second order. A nested child element contributes no instruction
-of its own; markup inside a hole or an attribute value is its own `markup` instruction, nested where
-the value is.
+of its own; markup inside a hole or an attribute value, or as a row's body, is its own `markup`
+instruction, nested where the value is.
 
 **What lowering resolves and what it cannot.** A component's callee is an ordinary name and resolves
 as one — it is an edge in `refs`. An element's or attribute's name cannot be resolved per file: it
@@ -779,15 +865,34 @@ against the vocabulary's interface (`checker-v2.md` §25.2). Everything else abo
 function of the file's bytes, so the `Bir` stays one (§3.6) and remains cacheable in its pre-resolve
 form.
 
-**Lowering's diagnostics**: `duplicate_attribute`, `spread_on_element`, `spread_not_first`,
-`invalid_for_children`, the warning `html_entity_in_text` (reported by trimming, which is where
-text is read), and `vocabulary_outside_platform` for a vocabulary declaration outside a platform
-package, beside `foreign_outside_platform` and on the same permission bit (§3.6's `Lower.Options`).
+**Character references are decoded here**, and the table is the compiler's: `src/markup/entities.zig`,
+generated at build time from a pinned copy of WHATWG's `entities.json` (`src/markup/entities.json`,
+the file `htmlize` 1.1.0 embeds for Solid's compiler) into a sorted name table searched for the
+longest match, beside the numeric rules of `language.md` §11.4. It is here and not in a platform
+because it is the language's text syntax (`language.md` §11.1): putting it in a lowering would make
+what a view says depend on which lowering compiles it, and every lowering — `dom`, `ssr`, a third
+party's — would have to carry the same 2 231 names and agree on them. Decoded in lowering, the text
+a lowering receives is already the text the page shows, so the `dom` and `ssr` results are the same
+characters by construction, and a lowering has nothing to decode. The table is part of `src/`, so the
+compiler build id covers it (`fast-compiler.md` §8). **Its test is htmlize's own**: the named, bare,
+longest-match, numeric and windows-1252 vectors of `htmlize` 1.1.0's `src/unescape/internal.rs`
+tests, ported as hermetic tests of the decoder, plus `run/` fixtures through `ssr` for text and for an
+attribute.
 
-**Vocabulary declarations** are three new declaration kinds, each with its name (an interned string),
-its facts and, for attributes and events, its annotation; the interface skeleton lists them beside the
-module's other `pub` names, and `dump --stage=bir` prints them and every markup tree. The `Bir`'s
-format moves with the artifact's (§9.2).
+**Lowering's diagnostics**: `duplicate_attribute`; `spread_on_element`, `spread_not_first`;
+`invalid_form_children` (a `For` or `Show` whose children are not one hole); `unknown_form_attribute`
+(an attribute `For` or `Show` does not take, with "did you mean" over the ones it does) and
+`missing_form_attribute` (`each` for `For`, `when` and `keyed` for `Show`); `invalid_keyed`, read
+from the value's shape: a quoted value, a constant other than `True` and `False`, or `False` on
+`Show` — any other expression is taken as a key function and typed as one, so a value that is not a
+function is the checker's `type_mismatch` at `keyed` (`checker-v2.md` §25.4); and `vocabulary_outside_platform` for a vocabulary declaration outside a platform package,
+beside `foreign_outside_platform` and on the same permission bit (§3.6's `Lower.Options`).
+
+**Vocabulary declarations** are four new declaration kinds, each with its name (an interned string,
+or for `markup` a symbol), its facts and, for attributes, events and primitives, its annotation; the
+interface skeleton lists them beside the module's other `pub` names, and `dump --stage=bir` prints
+them and every markup tree, rows' shapes, captures and inputs included. The `Bir`'s format moves with
+the artifact's (§9.2).
 
 ### 9.8 The vocabulary edge
 
@@ -798,3 +903,9 @@ import serves: ordering, the cache key's import terms (`fast-compiler.md` §8), 
 and the firewall cutoff. It is added by the graph phase and never written into the `Bir`, which does
 not know the platform. With no platform, or a platform that declares no vocabulary, there is no edge
 and the checker reports `no_markup_vocabulary` at the module's first markup instruction.
+
+**The vocabulary module itself gets no edge**: its markup resolves against its own declarations,
+which the checker reads before any of the module's values (`checker-v2.md` §25.2). A module the
+vocabulary module imports, directly or not, that writes markup closes a cycle through the edge; that
+is `import_cycle`, reported as the graph reports every cycle, and its message names the edge as "uses
+markup, so depends on the vocabulary module" so the cycle is legible.
