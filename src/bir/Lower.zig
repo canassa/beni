@@ -3096,6 +3096,41 @@ fn markupNode(l: *Lower, node: NodeIndex) Allocator.Error!Bir.ExtraIndex {
 
 const Items = struct { items: SubRange, spread: Inst.OptionalIndex, children_token: ?TokenIndex };
 
+/// The attribute names of one tag, each with the token that first wrote
+/// it, for `duplicate_attribute`: a scan of the few a person writes, and a
+/// map past `linear_limit`, so a generated tag of thousands costs n and
+/// not n²/2. A symbol is a sparse key here (the top of this file says why).
+const AttrNames = struct {
+    const linear_limit = 16;
+
+    few: [linear_limit]struct { Symbol, TokenIndex } = undefined,
+    len: usize = 0,
+    /// Every name, once there are more than `linear_limit`.
+    map: std.AutoHashMapUnmanaged(Symbol, TokenIndex) = .empty,
+
+    fn deinit(a: *AttrNames, gpa: Allocator) void {
+        a.map.deinit(gpa);
+    }
+
+    /// Records `name`, written at `token`; the token that wrote it first
+    /// when the tag already has it.
+    fn first(a: *AttrNames, gpa: Allocator, name: Symbol, token: TokenIndex) Allocator.Error!?TokenIndex {
+        if (a.len < linear_limit) {
+            for (a.few[0..a.len]) |e| if (e[0] == name) return e[1];
+            a.few[a.len] = .{ name, token };
+            a.len += 1;
+            return null;
+        }
+        if (a.map.count() == 0) {
+            for (a.few) |e| try a.map.put(gpa, e[0], e[1]);
+        }
+        const entry = try a.map.getOrPut(gpa, name);
+        if (entry.found_existing) return entry.value_ptr.*;
+        entry.value_ptr.* = token;
+        return null;
+    }
+};
+
 /// The attributes of an element (`component` false) or of a component, as
 /// `MarkupItem` records in source order. `duplicate_attribute` for a name
 /// written twice; a spread is a component's first attribute and nothing
@@ -3103,7 +3138,7 @@ const Items = struct { items: SubRange, spread: Inst.OptionalIndex, children_tok
 fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, component: bool) Allocator.Error!Items {
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
-    var seen: std.ArrayList(struct { Symbol, TokenIndex }) = .empty;
+    var seen: AttrNames = .{};
     defer seen.deinit(l.scratch_allocator);
     var spread: Inst.OptionalIndex = .none;
     var children_token: ?TokenIndex = null;
@@ -3122,22 +3157,18 @@ fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, compon
                 const item = try l.markupItem(attr);
                 const token = l.tree.nodeMainToken(attr);
                 const name = l.symbols.items[@intFromEnum(item.name)];
-                for (seen.items) |s| {
-                    if (s[0] == name) {
-                        // A quoted name is reported whole, quotes included.
-                        const last = if (l.tags[token] == .str_start) l.stringEnd(token) else token;
-                        const first_last = if (l.tags[s[1]] == .str_start) l.stringEnd(s[1]) else s[1];
-                        try l.diagnostics.append(l.gpa, .{
-                            .code = .duplicate_attribute,
-                            .start = l.starts[token],
-                            .end = l.tokenEnd(last),
-                            .other_start = l.starts[s[1]],
-                            .other_end = l.tokenEnd(first_last),
-                        });
-                        break;
-                    }
+                if (try seen.first(l.scratch_allocator, name, token)) |first| {
+                    // A quoted name is reported whole, quotes included.
+                    const last = if (l.tags[token] == .str_start) l.stringEnd(token) else token;
+                    const first_last = if (l.tags[first] == .str_start) l.stringEnd(first) else first;
+                    try l.diagnostics.append(l.gpa, .{
+                        .code = .duplicate_attribute,
+                        .start = l.starts[token],
+                        .end = l.tokenEnd(last),
+                        .other_start = l.starts[first],
+                        .other_end = l.tokenEnd(first_last),
+                    });
                 }
-                try seen.append(l.scratch_allocator, .{ name, token });
                 if (component and std.mem.eql(u8, l.interner.slice(name), "children")) children_token = token;
                 try l.pushScratch(try l.addExtra(item));
             },

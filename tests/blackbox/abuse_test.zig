@@ -1240,6 +1240,39 @@ test "the children of an element are siblings: 4 097 holes that read a field par
     try testing.expectEqualStrings(want.items, try w.read("Main.beni"));
 }
 
+test "a tag of 30 000 distinct attributes is checked for duplicates in linear time" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Lowering reports an attribute written twice (`duplicate_attribute`)
+    // and once compared each attribute with every one before it, n²/2
+    // comparisons: 450 million here, past the test budget on their own. The
+    // names are now a set, so the tag costs what its bytes cost. Nothing
+    // types markup without a vocabulary, so the one diagnostic is the
+    // checker's stop; there is no duplicate among the names.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const gpa = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    try src.appendSlice(gpa, "view =\n    <div");
+    for (0..30_000) |i| try src.print(gpa, " a{d}", .{i});
+    try src.appendSlice(gpa, " />\n");
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--no-cache", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(r, 1);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.no_markup_vocabulary, r.diagnostics[0].code);
+}
+
 test "a row of glued siblings past the line's width formats to output linear in its input" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
