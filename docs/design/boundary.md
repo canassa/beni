@@ -792,6 +792,28 @@ content categories, which would make misnesting a type error, are later (researc
 character references are not here**: they are JSX's text syntax, decoded by the compiler before any
 lowering sees the text (`language.md` §11.4, `frontend.md` §9.7).
 
+*As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
+The smallest readings, and what waits for the lowering interface:
+
+- **`html` ships**, with the HTML vocabulary, `Html msg`, the `Event` object type, the primitives
+  `text` and `map`, and the extractors `targetValue` and `targetChecked` in its sibling. **`node`
+  depends on it and re-exports `Html`, and names no `lowering` yet**: its `ssr` lowering, its markup
+  runtime and `html`'s `"zig"` key with the parser table arrive with the interface (§9.4–§9.5). Until
+  then a manifest's `"zig"` key is ignored like any unknown key, and no `browser` platform ships.
+- **This binary has no lowering**, so any `"lowering"` a chain names is `unknown_markup_lowering`,
+  checked by `check --platform` and `build` alike, and the message says the binary has none.
+- **A surviving primitive in a chain that names no lowering** is `unknown_markup_lowering` against
+  the selected platform's manifest, one diagnostic naming the first surviving primitive in module
+  order. A surviving markup ROOT cannot occur yet: a module that writes markup does not check
+  (`frontend.md` §9.7's stop, amended there).
+- **The vocabulary module and the markup type** are looked up among the chain's modules when the
+  graph is built: `"vocabulary"` names a module, `"type"` a `pub foreign type` of one parameter as
+  `Module.Name`. Either failing leaves the build without a vocabulary, and a module that writes
+  markup gets `no_markup_vocabulary` naming the key; its message says "this build's platform", not
+  the platform's name, which the checker is not given.
+- **The markup runtime's checks** (§9.4.5), and the primitives' binding to it, arrive with the first
+  lowering.
+
 ### 9.4 The markup lowering interface
 
 A **markup lowering** is a Zig module, compiled into the beni binary (§9.5), that turns the typed

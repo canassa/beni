@@ -1063,3 +1063,18 @@ which the checker reads before any of the module's values (`checker-v2.md` §25.
 vocabulary module imports, directly or not, that writes markup closes a cycle through the edge; that
 is `import_cycle`, reported as the graph reports every cycle, and its message names the edge as "uses
 markup, so depends on the vocabulary module" so the cycle is legible.
+
+*As built, 2026-09-29* (`src/resolve/Graph.zig`, `src/resolve/Interface.zig`). Two bullets of
+§9.7's *As built* are superseded: **vocabulary declarations are in the interface skeleton** — a
+markup primitive as a value flagged `markup`, the other three as rows of their own tables, which the
+checker completes or drops (`checker-v2.md` §25.8) — and **the stop before checking** now says
+`not_implemented` at the first markup root when the build has a vocabulary and `no_markup_vocabulary`
+only when it has none; a vocabulary declaration is checked rather than `not_implemented`. The edge
+itself, where this section left a choice:
+
+- It is added only when the chain's `"vocabulary"` and `"type"` both resolve (`boundary.md` §9.2);
+  otherwise there is no edge and the module's markup is `no_markup_vocabulary`.
+- A module that imports the vocabulary module AND writes markup has one edge, the import; only an
+  edge that exists because of markup is named in a cycle's message.
+- A cycle through the edge is reported, like every cycle, on its lexically first module, at the
+  import of the next module or, when that step is the markup edge, at the module's first markup root.

@@ -5126,6 +5126,42 @@ schemes, as before: a component is a function and publishes its scheme like any 
 markup tree, hole kind, template or row input appears in any record. So editing a `view`'s markup
 without changing its type moves no interface hash and re-checks no importer.
 
+*As built, 2026-09-29, for §25.1, §25.2 and §25.8* (`src/check/Vocab.zig`, `src/check/Publish.zig`,
+`src/resolve/Interface.zig`, `src/resolve/iface_bytes.zig`). The declarations are checked and
+published; typing markup against them is the next slice. Where the text left a choice:
+
+- **Codes.** §25.9 names none for a faulty vocabulary declaration, so the existing ones are reused,
+  each at the declaration's name: a fact written twice, an element both `svg` and `mathml`, an
+  attribute both `classes` and `styles`, an element named twice after `on`, and two declarations
+  that tie are `duplicate_declaration`; a value, payload or primitive type the form does not admit
+  is `type_mismatch`; a `via` naming no `foreign` value of the module is `unbound_variable`.
+- **A tie** is two exact names of one text, or two patterns whose literal parts have one length and
+  are prefix- and suffix-compatible (some name matches both); attributes and events share a
+  namespace. It is reported at the later declaration, naming the earlier.
+- **"A `foreign type`"** for an event's object and an extractor's parameter is any type declared
+  `foreign type`, core's included, so a payload of `String` with no `via` is accepted.
+- **Equality of an extractor's result with the payload** is structural over applications, tuples,
+  functions and `()`, aliases looked through; the payload types a vocabulary declares have no
+  variables.
+- **A primitive's type must mention the markup type** only when the build names one; checked with
+  no platform (`--core`), it need only be a function. A primitive that fails publishes `<error>` as
+  its scheme, as a failed annotated value does, rather than being absent: resolution has already
+  bound importers' uses to it, and `<error>` keeps them silent.
+- **The row** holds the name, a word of fact bits (one per `Bir.FactWord`, and a pattern bit), the
+  `property` or event `name` argument, the extractor BY NAME rather than a value index (an extractor
+  need not be `pub`), the `on` range and the scheme; 24 bytes on disk. `dump --stage=interface`
+  prints `element "input" void`, `attribute "value" on "input" property stateful : String`, and a
+  primitive as `markup value map : …`.
+- **The markup term of the cache key.** Why a module has no vocabulary, and which type is the markup
+  type, reach a module that writes markup and the vocabulary module through no import, so both keys
+  carry them in their option string (`cache/Key.zig`); every other module's key is unchanged.
+- **Markup under a vocabulary** is still stopped before it is typed: a module that writes markup is
+  `not_implemented` at its first markup root when the build has a vocabulary (the vocabulary module
+  itself included), and `no_markup_vocabulary` when it has none, worded for why (no platform, none
+  declared, a `"vocabulary"` or `"type"` that names nothing).
+- **Quoted `on*` attribute names** (the owner's refusal, `plans/browser-platform.md`) are not
+  refused yet: the escape is typed with the rest of markup, in the next slice.
+
 ### 25.9 Diagnostics
 
 The checker's codes of `language.md` §11.17, each through the one emit path (§15.1), each at the
