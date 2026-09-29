@@ -1,0 +1,14 @@
+-- An attribute's value (language.md §11.5, frontend.md §9.7): a constant
+-- the compiler knows — a quoted value, a bare name, or a hole holding only
+-- a number (negated or not), a string or `True`/`False` — which keeps its
+-- instruction when written in a hole; otherwise the instruction alone. A
+-- list of pairs written in place, each named by a string literal, also
+-- records its entries; a list held in a name, or one whose names are not
+-- literals, does not.
+view model classes name =
+    <div id="main" hidden tabindex={0} offset={-1} lang={"en"} open={True} spellcheck={False}
+        class={[ ( "row", True ), ( "danger", model.on ), ( "big", False ) ]}
+        style={[ ( "color", "red" ), ( "--gap", model.gap ) ]}>
+        <p class={classes} />
+        <p class={[ ( name, True ) ]} />
+    </div>

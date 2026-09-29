@@ -1,0 +1,9 @@
+(module
+  (definition view
+    (pat_var a)
+    (pat_var b)
+    (markup_element Card
+      (markup_spread
+        (ident a))
+      (markup_spread
+        (ident b)))))

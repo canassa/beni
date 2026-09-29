@@ -123,6 +123,7 @@ const Io = std.Io;
 const Ast = @import("../parse/Ast.zig");
 const Token = @import("../lex/Token.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
+const markup_text = @import("../markup/text.zig");
 const Node = Ast.Node;
 const Index = Node.Index;
 const TokenIndex = Ast.TokenIndex;
@@ -243,6 +244,61 @@ fn isSchema(tag: Node.Tag) bool {
         => true,
         else => false,
     };
+}
+
+/// Markup and the vocabulary declarations (language.md §11.15), measured
+/// and printed apart for `isSchema`'s reason: the recursive frames of the
+/// expression printer stay the size they were.
+fn isMarkup(tag: Node.Tag) bool {
+    return switch (tag) {
+        .markup_element,
+        .markup_fragment,
+        .markup_for,
+        .markup_show,
+        .markup_attr,
+        .markup_attr_escape,
+        .markup_spread,
+        .markup_text,
+        .markup_hole,
+        .markup_empty_hole,
+        .vocab_element,
+        .vocab_attribute,
+        .vocab_event,
+        .vocab_markup,
+        => true,
+        else => false,
+    };
+}
+
+/// Whitespace in the sense of language.md §11.4: the Unicode set.
+fn isBlank(line: []const u8) bool {
+    return markupWhitespaceEnd(line, 0) == line.len;
+}
+
+/// The end of the whitespace (§11.4's Unicode set, `\r` included) that
+/// starts at `from`.
+fn markupWhitespaceEnd(line: []const u8, from: usize) usize {
+    var i = from;
+    while (i < line.len) {
+        const n = markup_text.whitespaceAt(line, i);
+        if (n == 0) break;
+        i += n;
+    }
+    return i;
+}
+
+/// `line` without its trailing whitespace (§11.4's set).
+fn trimMarkupEnd(line: []const u8) []const u8 {
+    var end: usize = 0;
+    var i: usize = 0;
+    while (i < line.len) {
+        const n = markup_text.whitespaceAt(line, i);
+        if (n == 0) {
+            i += 1;
+            end = i;
+        } else i += n;
+    }
+    return line[0..end];
 }
 
 /// The four expression forms that may end an operator chain without
@@ -452,6 +508,7 @@ const Measurer = struct {
         if (tag.isBinop()) return m.chain(n);
         if (isAccess(tag)) return m.access(n);
         if (isSchema(tag)) return m.measureSchema(n);
+        if (isMarkup(tag)) return m.measureMarkup(n);
         switch (tag) {
             .root => unreachable, // measured by measureRoot
             .import => {
@@ -681,6 +738,95 @@ const Measurer = struct {
                 m.set(n, m.w(a.pattern) +| 4 +| m.tokenWidth(a.name), m.first(a.pattern), a.name);
             },
             else => unreachable, // binops, access and errors are dispatched above
+        }
+    }
+
+    /// Markup (language.md §11.15), kept out of `measure` for
+    /// `measureSchema`'s reason. An element's width is its one-line
+    /// rendering, `<div />` for one with no children; a line break anywhere
+    /// in it — between attributes, in a text run, in a child — makes it
+    /// `no_fit`, which is what keeps an element the author broke vertical.
+    fn measureMarkup(m: *Measurer, n: Index) Error!void {
+        const tree = m.tree;
+        const tag = tree.nodeTag(n);
+        const main = tree.nodeMainToken(n);
+        switch (tag) {
+            .markup_element, .markup_fragment, .markup_for, .markup_show => {
+                const mk = tree.fullMarkup(n);
+                const name_width: u32 = if (mk.name) |t| m.tokenWidth(t) else 0;
+                var width: u32 = 1 + name_width;
+                var prev: TokenIndex = mk.name orelse mk.open;
+                var broken = false;
+                for (mk.attrs) |a| {
+                    try m.measure(a);
+                    width +|= 1 +| m.w(a);
+                    if (m.tok_lines[m.first(a)] != m.tok_lines[prev]) broken = true;
+                    prev = m.last(a);
+                }
+                const open_end = mk.open_end orelse return error.SyntaxErrors;
+                if (m.tok_lines[open_end] != m.tok_lines[prev]) broken = true;
+                var last_tok = open_end;
+                if (mk.children.len == 0 and mk.name != null) {
+                    width +|= 3; // ` />`
+                } else {
+                    width +|= 1;
+                    for (mk.children) |c| {
+                        try m.measure(c);
+                        width +|= m.w(c);
+                    }
+                    width +|= 3 +| name_width;
+                }
+                if (mk.close) |c| last_tok = c + @as(u32, if (mk.name != null) 2 else 1);
+                m.set(n, if (broken) no_fit else width, mk.open, last_tok);
+            },
+            .markup_text => {
+                const text = Tokenizer.slice(m.source, .markup_text, m.starts[main]);
+                const width = if (std.mem.indexOfScalar(u8, text, '\n') == null) m.tokenWidth(main) else no_fit;
+                m.set(n, width, main, main);
+            },
+            .markup_hole => {
+                const e = tree.operand(n);
+                try m.measure(e);
+                m.set(n, 2 +| m.w(e), main, m.last(e) + 1);
+            },
+            .markup_empty_hole => m.set(n, 2, main, main + 1),
+            .markup_spread => {
+                const e = tree.operand(n);
+                try m.measure(e);
+                m.set(n, 5 +| m.w(e), main, m.last(e) + 1);
+            },
+            .markup_attr => {
+                const a = tree.fullMarkupAttr(n);
+                const value = a.value orelse return m.leaf(n);
+                try m.measure(value);
+                if (a.brace != null) {
+                    m.set(n, m.tokenWidth(main) + 3 +| m.w(value), main, m.last(value) + 1);
+                } else {
+                    m.set(n, m.tokenWidth(main) + 1 +| m.w(value), main, m.last(value));
+                }
+            },
+            .markup_attr_escape => {
+                const data = tree.nodeData(n);
+                const name: Index = @enumFromInt(data.lhs);
+                const value: Index = @enumFromInt(data.rhs);
+                try m.measure(name);
+                try m.measure(value);
+                const braced = m.tags[m.last(name) + 2] == .l_brace;
+                const extra: u32 = if (braced) 3 else 1;
+                m.set(n, m.w(name) +| extra +| m.w(value), main, m.last(value) + @intFromBool(braced));
+            },
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+                const v = tree.fullVocab(n);
+                if (v.name_string) |s| try m.measure(s);
+                var last_tok: TokenIndex = if (v.name_string) |s| m.last(s) else v.name;
+                if (v.facts_end > v.facts_start) last_tok = v.facts_end - 1;
+                if (v.type_expr) |t| {
+                    try m.measure(t);
+                    last_tok = m.last(t);
+                }
+                m.set(n, no_fit, v.header.pub_token.unwrap() orelse v.word, last_tok);
+            },
+            else => unreachable,
         }
     }
 
@@ -1362,6 +1508,7 @@ const Printer = struct {
                     try p.schemaBody(s.body, indent_step);
                 }
             },
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try p.vocab(n),
             else => return error.SyntaxErrors,
         }
     }
@@ -1940,8 +2087,237 @@ const Printer = struct {
             .@"if" => try p.ifExpr(n, indent, null),
             .let => try p.letExpr(n, indent),
             .case => try p.caseExpr(n, indent),
+            .markup_element, .markup_fragment, .markup_for, .markup_show => try p.markup(n),
             else => return error.SyntaxErrors, // fields, chunks and interps are printed by their parents
         }
+    }
+
+    // ---- Markup (language.md §11.15) ---------------------------------------
+    //
+    // The governing rule is that formatting never changes what a page says.
+    // So the whitespace between two children keeps what it was: none, a
+    // space on the line (which the page shows), or a line break (which it
+    // does not); only the indentation after a break and the number of blank
+    // lines change. The edges, between the opening tag and the first child
+    // and between the last child and the closing tag, may gain a line break
+    // where they had nothing, which the page does not show either.
+
+    fn markup(p: *Printer, n: Index) Error!void {
+        const tree = p.tree;
+        const mk = tree.fullMarkup(n);
+        const col = p.curCol();
+        // An element the author wrote on one line stays there when it
+        // follows something on its line — a sibling it may not be parted
+        // from, `\x ->`, an attribute's `=` — whatever its width; breaking
+        // it there would only move its own edges.
+        const one_line = p.fits(n) or (p.widths[n.int()] != no_fit and p.pending == 0 and p.col > p.line_indent);
+        try p.tok(mk.open);
+        if (mk.name) |t| try p.tok(t);
+        const open_end = mk.open_end orelse return error.SyntaxErrors;
+        const attrs_one_line = one_line or p.openTagFits(mk, col);
+        for (mk.attrs) |a| {
+            if (attrs_one_line) try p.space() else p.newline(col + indent_step);
+            try p.markupAttr(a, if (attrs_one_line) col else col + indent_step);
+        }
+        if (!attrs_one_line) {
+            try p.leading(open_end, col + indent_step);
+            p.newline(col);
+        }
+        // `<div />`, and `<div></div>` written so (§11.15).
+        if (mk.children.len == 0 and mk.name != null) {
+            if (attrs_one_line) try p.space();
+            try p.leading(open_end, null);
+            try p.raw("/>");
+            const last_tok = if (mk.close) |c| c + 2 else open_end;
+            try p.trailing(last_tok);
+            return;
+        }
+        try p.tok(open_end);
+        const close = mk.close orelse return error.SyntaxErrors;
+        if (one_line) {
+            for (mk.children) |c| try p.markupChild(c, col);
+        } else {
+            const inner = col + indent_step;
+            for (mk.children, 0..) |c, k| {
+                if (tree.nodeTag(c) == .markup_text) {
+                    try p.markupText(tree.nodeMainToken(c), k == 0, inner);
+                } else {
+                    if (k == 0) p.newline(inner);
+                    try p.markupChild(c, inner);
+                }
+            }
+            // The trailing edge: a space the page shows stays on the line;
+            // anything else ends it.
+            const last_child = mk.children[mk.children.len - 1];
+            if (tree.nodeTag(last_child) != .markup_text or !p.endsWithSpaceOnLine(tree.nodeMainToken(last_child))) p.newline(col);
+        }
+        try p.tok(close);
+        if (mk.name != null) try p.tok(close + 1);
+        try p.tok(if (mk.name != null) close + 2 else close + 1);
+    }
+
+    /// Whether the opening tag of `mk`, started at `col`, goes on one line:
+    /// it fits, the author broke no line inside it, and no comment is in it.
+    fn openTagFits(p: *const Printer, mk: Ast.full.Markup, col: u32) bool {
+        const open_end = mk.open_end.?;
+        var width: u32 = 1 + (if (mk.name) |t| @as(u32, @intCast(p.text(t).len)) else 0);
+        var prev: TokenIndex = mk.name orelse mk.open;
+        for (mk.attrs) |a| {
+            const w = p.widths[a.int()];
+            if (w == no_fit or p.tok_lines[p.first(a)] != p.tok_lines[prev]) return false;
+            width +|= 1 +| w;
+            prev = p.last(a);
+        }
+        if (p.tok_lines[open_end] != p.tok_lines[prev]) return false;
+        const i = firstCommentFrom(p.comments, mk.open + 1);
+        if (i < p.comments.len and p.comments[i].before_token <= open_end) return false;
+        width +|= if (mk.children.len == 0 and mk.name != null) 3 else 1;
+        return col +| width <= max_width;
+    }
+
+    /// A text run that ends in whitespace on its last line — a space the
+    /// page shows before the closing tag.
+    fn endsWithSpaceOnLine(p: *const Printer, t: TokenIndex) bool {
+        const seg = p.text(t);
+        const line_start = if (std.mem.lastIndexOfScalar(u8, seg, '\n')) |nl| nl + 1 else 0;
+        const line = seg[line_start..];
+        if (line_start != 0 and isBlank(line)) return false; // a break, not a space
+        return line.len > 0 and trimMarkupEnd(line).len < line.len;
+    }
+
+    /// A child printed where the cursor is: an element, a hole, or a text
+    /// run with no line break in it.
+    fn markupChild(p: *Printer, n: Index, indent: u32) Error!void {
+        switch (p.tree.nodeTag(n)) {
+            .markup_text => try p.tok(p.tree.nodeMainToken(n)),
+            .markup_hole, .markup_empty_hole => try p.markupHole(n, indent),
+            else => try p.expr(n, indent),
+        }
+    }
+
+    /// A text run in a vertical element (§11.15): its first line where the
+    /// cursor is (after a line break when it is the first child and begins
+    /// with a character, which the page does not show), each later line at
+    /// `inner` without its indentation, at most one blank line kept. A line's
+    /// trailing whitespace is dropped where a later line of the run shows —
+    /// the page joins the two with one space either way — and kept on the
+    /// run's last line of text, where the page shows it as a space.
+    fn markupText(p: *Printer, t: TokenIndex, first_child: bool, inner: u32) Error!void {
+        const seg = p.text(t);
+        if (std.mem.indexOfScalar(u8, seg, '\n') == null) {
+            if (first_child and seg.len > 0 and markup_text.whitespaceAt(seg, 0) == 0) p.newline(inner);
+            return p.raw(seg);
+        }
+        var last_shown: usize = 0;
+        var count: usize = 0;
+        var it = std.mem.splitScalar(u8, seg, '\n');
+        while (it.next()) |line| : (count += 1) {
+            if (!isBlank(line)) last_shown = count;
+        }
+        var blanks: u32 = 0;
+        var i: usize = 0;
+        it = std.mem.splitScalar(u8, seg, '\n');
+        while (it.next()) |line_raw| : (i += 1) {
+            const last_line = i + 1 == count;
+            const line = if (i == 0) line_raw else line_raw[markupWhitespaceEnd(line_raw, 0)..];
+            if (isBlank(line)) {
+                if (i != 0) blanks += 1;
+                if (last_line) p.blankLines(@min(blanks -| 1, 1), inner);
+                continue;
+            }
+            if (i == 0) {
+                if (first_child and markup_text.whitespaceAt(line, 0) == 0) p.newline(inner);
+            } else {
+                p.blankLines(@min(blanks, 1), inner);
+            }
+            blanks = 0;
+            try p.raw(if (!last_line and i < last_shown) trimMarkupEnd(line) else line);
+        }
+    }
+
+    /// `{e}`, `{}` or `{...e}`: on one line when it fits; otherwise the
+    /// expression continues 4 right of the `{` and the `}` closes on a line
+    /// of its own under the `{`, as does a hole that holds only a comment.
+    fn markupHole(p: *Printer, n: Index, indent: u32) Error!void {
+        const open = p.tree.nodeMainToken(n);
+        const col = p.curCol();
+        const one_line = p.fits(n);
+        try p.tok(open);
+        if (p.tree.nodeTag(n) == .markup_empty_hole) {
+            if (!one_line) {
+                try p.leading(open + 1, col + indent_step);
+                p.newline(col);
+            }
+            return p.tok(open + 1);
+        }
+        if (p.tree.nodeTag(n) == .markup_spread) try p.tok(open + 1); // `...`
+        const e = p.tree.operand(n);
+        try p.expr(e, if (one_line) indent else col);
+        if (!one_line) p.newline(col);
+        try p.tok(p.last(e) + 1);
+    }
+
+    /// One attribute: `name`, `name="…"`, `name={e}`, `"name"=…` or
+    /// `{...e}`. A string is printed as written, as every literal is.
+    fn markupAttr(p: *Printer, n: Index, indent: u32) Error!void {
+        const tree = p.tree;
+        switch (tree.nodeTag(n)) {
+            .markup_attr => {
+                const a = tree.fullMarkupAttr(n);
+                try p.tok(a.name);
+                const value = a.value orelse return;
+                try p.tok(a.name + 1); // `=`
+                try p.attrValue(value, a.brace, indent);
+            },
+            .markup_attr_escape => {
+                const data = tree.nodeData(n);
+                const name: Index = @enumFromInt(data.lhs);
+                try p.expr(name, indent);
+                const eq = p.last(name) + 1;
+                try p.tok(eq);
+                const brace: ?TokenIndex = if (p.tags[eq + 1] == .l_brace) eq + 1 else null;
+                try p.attrValue(@enumFromInt(data.rhs), brace, indent);
+            },
+            .markup_spread => try p.markupHole(n, indent),
+            else => return error.SyntaxErrors,
+        }
+    }
+
+    fn attrValue(p: *Printer, value: Index, brace: ?TokenIndex, indent: u32) Error!void {
+        const open = brace orelse return p.expr(value, indent);
+        const col = p.curCol();
+        const one_line = p.fitsAt(value, col + 1) and commentsBefore(p.comments, p.last(value) + 1).len == 0;
+        try p.tok(open);
+        try p.expr(value, if (one_line) indent else col);
+        if (!one_line) p.newline(col);
+        try p.tok(p.last(value) + 1);
+    }
+
+    /// A vocabulary declaration (language.md §11.14): one line, its facts
+    /// in source order, then the type as an annotation's.
+    fn vocab(p: *Printer, n: Index) Error!void {
+        const v = p.tree.fullVocab(n);
+        try p.header(v.header);
+        try p.tok(v.word);
+        try p.space();
+        if (v.name_string) |s| try p.expr(s, 0) else try p.tok(v.name);
+        var t = v.facts_start;
+        while (t < v.facts_end) {
+            try p.space();
+            if (p.tags[t] == .str_start) {
+                var end = t;
+                while (p.tags[end] != .str_end and p.tags[end] != .eof) end += 1;
+                try p.tokRange(t, end);
+                t = end + 1;
+            } else {
+                try p.tok(t);
+                t += 1;
+            }
+        }
+        const te = v.type_expr orelse return;
+        try p.space();
+        try p.tok(v.facts_end); // `:`
+        try p.annotated(te, 0);
     }
 
     /// One operator level, flattened: `a op b op c` on one line, or the
@@ -2484,10 +2860,15 @@ fn runWith(arena: Allocator, source: [:0]const u8, want_dump: bool) !Run {
 fn expectStable(arena: Allocator, first: Run, exact_dump: bool) !void {
     const again = try run(arena, try arena.dupeZ(u8, first.text));
     try testing.expectEqualStrings(first.text, again.text);
+    // A text run's bytes move under formatting while what it says does
+    // not (language.md §11.15); the black-box `fmt/` corpus compares what
+    // it says, through the lowered file.
+    const before = try withoutMarkupText(arena, first.dump);
+    const after = try withoutMarkupText(arena, again.dump);
     if (exact_dump) {
-        try testing.expectEqualStrings(first.dump, again.dump);
+        try testing.expectEqualStrings(before, after);
     } else {
-        try testing.expectEqualStrings(try sortedLines(arena, first.dump), try sortedLines(arena, again.dump));
+        try testing.expectEqualStrings(try sortedLines(arena, before), try sortedLines(arena, after));
     }
     // Hygiene: no trailing whitespace, LF only, one trailing newline.
     var it = std.mem.splitScalar(u8, first.text, '\n');
@@ -2501,6 +2882,27 @@ fn expectStable(arena: Allocator, first: Run, exact_dump: bool) !void {
         try testing.expect(first.text[first.text.len - 1] == '\n');
         try testing.expect(first.text.len == 1 or first.text[first.text.len - 2] != '\n');
     }
+}
+
+/// An AST dump with every `(markup_text "…")` child cut out, with the line
+/// break and indentation before it.
+fn withoutMarkupText(arena: Allocator, dump: []const u8) ![]const u8 {
+    const marker = "(markup_text \"";
+    var out: std.ArrayList(u8) = .empty;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, dump, pos, marker)) |at| {
+        var cut = at;
+        while (cut > pos and dump[cut - 1] == ' ') cut -= 1;
+        if (cut > pos and dump[cut - 1] == '\n') cut -= 1;
+        try out.appendSlice(arena, dump[pos..cut]);
+        var i = at + marker.len;
+        while (i < dump.len and dump[i] != '"') : (i += 1) {
+            if (dump[i] == '\\') i += 1;
+        }
+        pos = @min(i + 2, dump.len);
+    }
+    try out.appendSlice(arena, dump[pos..]);
+    return out.items;
 }
 
 fn sortedLines(arena: Allocator, text: []const u8) ![]u8 {

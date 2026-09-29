@@ -1,0 +1,24 @@
+-- The formatter never changes what a page says (language.md §11.15): it
+-- never adds or removes a line break in the whitespace between two
+-- children, and never touches the characters of a text line. So children
+-- written on one line stay there past 100 columns; the space between two
+-- elements stays; two spaces between words stay; a typed no-break space
+-- stays; and elements with no whitespace between them stay together.
+long =
+    <p><b>first child here</b> <i>second child here</i> <u>third child, long enough to pass the guide</u></p>
+
+
+spaced =
+    <p><b>a</b> <i>b</i></p>
+
+
+words =
+    <p>two  spaces</p>
+
+
+noBreak =
+    <p>a b</p>
+
+
+together =
+    <p><b>a</b><i>b</i>{x}</p>

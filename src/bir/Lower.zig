@@ -60,6 +60,8 @@ const Ast = @import("../parse/Ast.zig");
 const Bir = @import("Bir.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const prelude = @import("prelude.zig");
+const markup_entities = @import("../markup/entities.zig");
+const markup_text = @import("../markup/text.zig");
 
 const Symbol = InternPool.Symbol;
 const WellKnown = InternPool.WellKnown;
@@ -182,6 +184,11 @@ exposes_all_ctors: bool = false,
 cur_locals_start: u32 = 0,
 cur_refs_start: u32 = 0,
 cur_inst_start: u32 = 0,
+/// Set by the first `markup` instruction (frontend.md §9.7).
+uses_markup: bool = false,
+/// Every `For` row and `Show` body lowered, for the captures and inputs
+/// that `finishRows` computes once every declaration is lowered.
+rows: std.ArrayList(PendingRow) = .empty,
 
 pub const Options = struct {
     /// `--core`: the file is core, so `equatable` is legal (checker.md
@@ -282,6 +289,17 @@ const Frame = struct {
     }
 };
 
+/// A row whose captures and inputs are still to be computed: they read the
+/// summaries of functions declared anywhere in the file (frontend.md §9.7).
+const PendingRow = struct {
+    /// The `MarkupRow` record.
+    row: Bir.ExtraIndex,
+    decl: u32,
+    /// The row function's instructions, `[first, function]`.
+    first: u32,
+    function: u32,
+};
+
 const DeclSource = struct {
     node: NodeIndex,
     /// For a definition with an annotation: the annotation node.
@@ -355,6 +373,7 @@ pub fn lower(
         l.type_vars_seen.deinit(scratch);
         l.type_param_index.deinit(scratch);
         l.annotation_vars.deinit(scratch);
+        l.rows.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
     }
@@ -368,6 +387,7 @@ pub fn lower(
         try l.lowerImports();
         try l.collectDeclarations();
         try l.lowerDeclarations();
+        if (l.rows.items.len != 0) try l.finishRows();
     }
 
     var bir: Bir = .{
@@ -385,6 +405,7 @@ pub fn lower(
         .diagnostics = &.{},
         .module_doc_start = tree.module_doc.start,
         .module_doc_end = tree.module_doc.end,
+        .uses_markup = l.uses_markup,
     };
     errdefer bir.deinit(gpa);
     bir.extra = try l.extra.toOwnedSlice(gpa);
@@ -775,6 +796,7 @@ fn collectDeclarations(l: *Lower) Allocator.Error!void {
             .foreign_value => try l.declareValue(node, .none),
             .type_alias, .type_decl, .foreign_type => try l.declareType(node),
             .schema_decl => try l.declareSchema(node),
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try l.declareVocab(node),
             else => {}, // the parser puts only the kinds above at the root
         }
     }
@@ -785,10 +807,16 @@ fn collectDeclarations(l: *Lower) Allocator.Error!void {
 }
 
 fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.DeclHeader) Allocator.Error!u32 {
+    return l.newDeclNamed(kind, l.tokenSymbol(name_token), name_token, header);
+}
+
+/// `newDecl` for a declaration whose name is not its token's symbol: a
+/// vocabulary declaration's is the text of a string.
+fn newDeclNamed(l: *Lower, kind: Bir.Decl.Kind, name: Symbol, name_token: TokenIndex, header: Ast.DeclHeader) Allocator.Error!u32 {
     const index: u32 = @intCast(l.decls.items.len);
     try l.decls.append(l.gpa, .{
         .kind = kind,
-        .name = try l.addSymbol(l.tokenSymbol(name_token)),
+        .name = try l.addSymbol(name),
         .name_token = name_token,
         .is_pub = header.pub_token != .none,
         .is_opaque = header.opaque_token != .none,
@@ -857,6 +885,97 @@ fn declareSchema(l: *Lower, node: NodeIndex) Allocator.Error!void {
     // A schema is deliberately absent from `values` and `types`: resolution
     // adds the separate namespace and resolves its members (schema.md §3).
     try l.declareName(&l.schemas, l.tokenSymbol(d.name), d.name, index, .duplicate_declaration, false);
+}
+
+/// A vocabulary declaration (language.md §11.14): legal only where
+/// `foreign` is (`vocabulary_outside_platform`), named by its string's text
+/// or, for a markup primitive, by its name, which is a value name and meets
+/// the module's `duplicate_declaration`.
+fn declareVocab(l: *Lower, node: NodeIndex) Allocator.Error!void {
+    const v = l.tree.fullVocab(node);
+    const kind: Bir.Decl.Kind = switch (l.tree.nodeTag(node)) {
+        .vocab_element => .vocab_element,
+        .vocab_attribute => .vocab_attribute,
+        .vocab_event => .vocab_event,
+        else => .vocab_markup,
+    };
+    const name: Symbol = if (v.name_string) |s| blk: {
+        var text: std.ArrayList(u8) = .empty;
+        defer text.deinit(l.scratch_allocator);
+        try l.stringText(s, &text);
+        break :blk try l.interner.getOrPut(l.gpa, text.items);
+    } else l.tokenSymbol(v.name);
+    const index = try l.newDeclNamed(kind, name, v.name, v.header);
+    try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
+    if (kind == .vocab_markup) try l.declareName(&l.values, name, v.name, index, .duplicate_declaration, true);
+    if (!l.options.core and !l.options.platform) {
+        const first = v.header.pub_token.unwrap() orelse v.word;
+        const last = if (v.name_string) |s| l.stringEnd(l.tree.nodeMainToken(s)) else v.name;
+        try l.report(.vocabulary_outside_platform, l.starts[first], l.tokenEnd(last));
+    }
+}
+
+/// The `str_end` (or the token that cut the string off) of the one-line
+/// string whose `str_start` is `start`.
+fn stringEnd(l: *const Lower, start: TokenIndex) TokenIndex {
+    var t = start;
+    while (l.tags[t] != .str_end and l.tags[t] != .eof and !(l.tags[t] == .invalid and t != start and l.tokenEnd(t) == l.starts[t])) t += 1;
+    return t;
+}
+
+/// The literal text of a string with its escapes decoded; an
+/// interpolation's part is left out (the parser has reported one where a
+/// name is written).
+fn stringText(l: *Lower, node: NodeIndex, out: *std.ArrayList(u8)) Allocator.Error!void {
+    for (l.tree.fullString(node).parts) |p| {
+        if (l.tree.nodeTag(p) == .chunk) try decodeChunk(l.tokenText(l.tree.nodeMainToken(p)), l.scratch_allocator, out);
+    }
+}
+
+/// A vocabulary declaration's facts as `VocabFact` records, one per word,
+/// or per string of a word that takes several (`on "input" "select"`).
+fn lowerFacts(l: *Lower, v: Ast.full.VocabDecl) Allocator.Error!SubRange {
+    const start: u32 = @intCast(l.extra.items.len);
+    var word: ?Bir.FactWord = null;
+    var t = v.facts_start;
+    while (t < v.facts_end) {
+        switch (l.tags[t]) {
+            .lower_ident => {
+                // An unknown word is null; the parser has reported it.
+                word = factWord(l.tokenText(t));
+                t += 1;
+                const fw = word orelse continue;
+                if (fw == .via and t < v.facts_end and l.tags[t] == .lower_ident) {
+                    _ = try l.addExtra(Bir.VocabFact{ .word = .via, .arg = try l.addSymbol(l.tokenSymbol(t)) });
+                    t += 1;
+                } else if (t >= v.facts_end or l.tags[t] != .str_start) {
+                    _ = try l.addExtra(Bir.VocabFact{ .word = fw, .arg = .none });
+                }
+            },
+            .str_start => {
+                const end = l.stringEnd(t);
+                var text: std.ArrayList(u8) = .empty;
+                defer text.deinit(l.scratch_allocator);
+                var c = t + 1;
+                while (c < end) : (c += 1) {
+                    if (l.tags[c] == .str_chunk) try decodeChunk(l.tokenText(c), l.scratch_allocator, &text);
+                }
+                if (word) |fw| _ = try l.addExtra(Bir.VocabFact{ .word = fw, .arg = try l.addSymbol(try l.interner.getOrPut(l.gpa, text.items)) });
+                t = end + 1;
+            },
+            else => t += 1,
+        }
+    }
+    return .{ .start = @enumFromInt(start), .end = @enumFromInt(l.extra.items.len) };
+}
+
+/// The fact a word spells, or null for a word the parser reported.
+fn factWord(text: []const u8) ?Bir.FactWord {
+    inline for (@typeInfo(Bir.FactWord).@"enum".fields) |f| {
+        const w: Bir.FactWord = @enumFromInt(f.value);
+        if (std.mem.eql(u8, w.spelling(), text)) return w;
+    }
+    return null;
 }
 
 fn schemaTaggedNode(l: *const Lower, root: NodeIndex) ?NodeIndex {
@@ -1079,6 +1198,13 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                 const schema = l.tree.fullSchemaDecl(src.node);
                 try l.lowerTypeParams(schema.params);
                 l.decls.items[i].schema_body = (try l.lowerSchema(schema.body)).toOptional();
+            },
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+                const v = l.tree.fullVocab(src.node);
+                const facts = try l.lowerFacts(v);
+                l.decls.items[i].params_start = facts.start;
+                l.decls.items[i].params_end = facts.end;
+                if (v.type_expr) |te| l.decls.items[i].annotation = (try l.lowerRootType(te)).toOptional();
             },
             else => unreachable,
         }
@@ -2118,6 +2244,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // Only a `<-` right-hand side can hold one (§6.7); the parser has
         // reported it as `placeholder_outside_argument` already.
         .placeholder => return l.errorInst(.placeholder_outside_argument),
+        .markup_element, .markup_fragment, .markup_for, .markup_show => return l.lowerMarkup(node),
         else => {
             std.debug.assert(tag.isError());
             return l.errorInst(l.tree.fullError(node).code);
@@ -2927,6 +3054,988 @@ fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 }
 
 // ---------------------------------------------------------------------------
+// Markup (language.md §11, frontend.md §9.7)
+// ---------------------------------------------------------------------------
+
+/// A markup root: its tree, whose value instructions are lowered in source
+/// order — items, then children, element by element, depth first — and
+/// then the `markup` instruction that points at it.
+fn lowerMarkup(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    const open = l.tree.nodeMainToken(node);
+    const root = try l.markupNode(node);
+    l.uses_markup = true;
+    return l.addInstAt(open, .markup, @intFromEnum(root), 0);
+}
+
+/// An element, fragment, component or form, as a node record.
+fn markupNode(l: *Lower, node: NodeIndex) Allocator.Error!Bir.ExtraIndex {
+    const mk = l.tree.fullMarkup(node);
+    switch (l.tree.nodeTag(node)) {
+        .markup_fragment => {
+            const children = try l.markupChildren(mk.children);
+            return l.addExtra(Bir.MarkupFragment{ .kind = .fragment, .token = mk.open, .children_start = children.start, .children_end = children.end });
+        },
+        .markup_for, .markup_show => return l.markupForm(node, mk),
+        else => {
+            const name = mk.name.?;
+            if (std.ascii.isUpper(l.tokenText(name)[0])) return l.markupComponent(mk, name);
+            const items = try l.markupItems(mk.attrs, name, false);
+            const children = try l.markupChildren(mk.children);
+            return l.addExtra(Bir.MarkupElement{
+                .kind = .element,
+                .token = name,
+                .name = try l.addSymbol(l.tokenSymbol(name)),
+                .items_start = items.items.start,
+                .items_end = items.items.end,
+                .children_start = children.start,
+                .children_end = children.end,
+            });
+        },
+    }
+}
+
+const Items = struct { items: SubRange, spread: Inst.OptionalIndex, children_token: ?TokenIndex };
+
+/// The attributes of an element (`component` false) or of a component, as
+/// `MarkupItem` records in source order. `duplicate_attribute` for a name
+/// written twice; a spread is a component's first attribute and nothing
+/// else (`spread_on_element`, `spread_not_first`).
+fn markupItems(l: *Lower, attrs: []const NodeIndex, tag_name: TokenIndex, component: bool) Allocator.Error!Items {
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    var seen: std.ArrayList(struct { Symbol, TokenIndex }) = .empty;
+    defer seen.deinit(l.scratch_allocator);
+    var spread: Inst.OptionalIndex = .none;
+    var children_token: ?TokenIndex = null;
+    for (attrs, 0..) |attr, k| {
+        switch (l.tree.nodeTag(attr)) {
+            .markup_spread => {
+                const open = l.tree.nodeMainToken(attr);
+                const value = try l.lowerExpr(l.tree.operand(attr));
+                if (!component) {
+                    try l.reportMarkup(.spread_on_element, open, open + 1, tag_name, .none);
+                } else if (k != 0 or spread != .none) {
+                    try l.reportMarkup(.spread_not_first, open, open + 1, tag_name, .none);
+                } else spread = value.toOptional();
+            },
+            .markup_attr, .markup_attr_escape => {
+                const item = try l.markupItem(attr);
+                const token = l.tree.nodeMainToken(attr);
+                const name = l.symbols.items[@intFromEnum(item.name)];
+                for (seen.items) |s| {
+                    if (s[0] == name) {
+                        // A quoted name is reported whole, quotes included.
+                        const last = if (l.tags[token] == .str_start) l.stringEnd(token) else token;
+                        const first_last = if (l.tags[s[1]] == .str_start) l.stringEnd(s[1]) else s[1];
+                        try l.diagnostics.append(l.gpa, .{
+                            .code = .duplicate_attribute,
+                            .start = l.starts[token],
+                            .end = l.tokenEnd(last),
+                            .other_start = l.starts[s[1]],
+                            .other_end = l.tokenEnd(first_last),
+                        });
+                        break;
+                    }
+                }
+                try seen.append(l.scratch_allocator, .{ name, token });
+                if (component and std.mem.eql(u8, l.interner.slice(name), "children")) children_token = token;
+                try l.pushScratch(try l.addExtra(item));
+            },
+            else => {},
+        }
+    }
+    return .{ .items = try l.addRange(l.scratchSince(mark)), .spread = spread, .children_token = children_token };
+}
+
+/// One `name`, `name="…"`, `name={e}` or `"name"=…` (language.md §11.5).
+fn markupItem(l: *Lower, attr: NodeIndex) Allocator.Error!Bir.MarkupItem {
+    var item: Bir.MarkupItem = .{
+        .kind = .attr,
+        .token = l.tree.nodeMainToken(attr),
+        .name = .none,
+        .form = .bare,
+        .value = .none,
+        .constant = .none,
+        .constant_offset = 0,
+        .constant_len = 0,
+        .entries_start = @enumFromInt(0),
+        .entries_end = @enumFromInt(0),
+    };
+    if (l.tree.nodeTag(attr) == .markup_attr) {
+        const a = l.tree.fullMarkupAttr(attr);
+        item.name = try l.addSymbol(l.tokenSymbol(a.name));
+        try l.itemValue(&item, a.value, a.brace != null);
+    } else {
+        const data = l.tree.nodeData(attr);
+        const name_node: NodeIndex = @enumFromInt(data.lhs);
+        var text: std.ArrayList(u8) = .empty;
+        defer text.deinit(l.scratch_allocator);
+        try l.stringText(name_node, &text);
+        item.kind = .escape;
+        item.name = try l.addSymbol(try l.interner.getOrPut(l.gpa, text.items));
+        const eq = l.stringEnd(l.tree.nodeMainToken(name_node)) + 1;
+        try l.itemValue(&item, @enumFromInt(data.rhs), l.tags[eq + 1] == .l_brace);
+    }
+    return item;
+}
+
+/// An item's value: a constant, the instruction computing it, or both
+/// (frontend.md §9.7).
+fn itemValue(l: *Lower, item: *Bir.MarkupItem, value: ?NodeIndex, braced: bool) Allocator.Error!void {
+    const v = value orelse {
+        item.form = .bare;
+        item.constant = .true;
+        return;
+    };
+    if (braced) {
+        item.form = .braced;
+        const inst = try l.lowerExpr(v);
+        item.value = inst.toOptional();
+        const c = l.constantOf(v, inst);
+        item.constant = c.constant;
+        item.constant_offset = c.offset;
+        item.constant_len = c.len;
+        const entries = try l.listEntries(v, inst);
+        item.entries_start = entries.start;
+        item.entries_end = entries.end;
+        return;
+    }
+    item.form = .quoted;
+    if (l.tree.nodeTag(v) != .string) {
+        item.value = (try l.lowerExpr(v)).toOptional();
+        return;
+    }
+    const q = try l.quotedValue(v);
+    if (q.inst) |inst| {
+        item.value = inst.toOptional();
+    } else {
+        item.constant = .string;
+        item.constant_offset = q.offset;
+        item.constant_len = q.len;
+    }
+}
+
+const Quoted = struct { inst: ?Index, offset: u32, len: u32 };
+
+/// A quoted attribute value (language.md §11.5): a string whose literal
+/// text also decodes character references. Without interpolation it is a
+/// constant and lowers to no instruction; with one it is an `interp` whose
+/// chunks are decoded, each on its own, so a reference never spans an
+/// interpolation.
+fn quotedValue(l: *Lower, node: NodeIndex) Allocator.Error!Quoted {
+    const s = l.tree.fullString(node);
+    var has_interp = false;
+    for (s.parts) |p| {
+        if (l.tree.nodeTag(p) == .interp) has_interp = true;
+    }
+    if (!has_interp) {
+        const offset: u32 = @intCast(l.string_bytes.items.len);
+        for (s.parts) |p| {
+            if (l.tree.nodeTag(p) == .chunk) try decodeMarkupChunk(l.tokenText(l.tree.nodeMainToken(p)), l.gpa, &l.string_bytes);
+        }
+        return .{ .inst = null, .offset = offset, .len = @as(u32, @intCast(l.string_bytes.items.len)) - offset };
+    }
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    for (s.parts) |p| {
+        switch (l.tree.nodeTag(p)) {
+            .chunk => {
+                const offset: u32 = @intCast(l.string_bytes.items.len);
+                try decodeMarkupChunk(l.tokenText(l.tree.nodeMainToken(p)), l.gpa, &l.string_bytes);
+                try l.pushScratch(try l.addInstAt(l.tree.nodeMainToken(p), .chunk, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset));
+            },
+            .interp => try l.pushScratch(try l.lowerExpr(l.tree.operand(p))),
+            else => {},
+        }
+    }
+    const range = try l.addRange(l.scratchSince(mark));
+    return .{ .inst = try l.addInstAt(s.start_token, .interp, @intFromEnum(range.start), @intFromEnum(range.end)), .offset = 0, .len = 0 };
+}
+
+/// A quoted value as a value instruction, where one is needed: a form's
+/// attribute is an ordinary value.
+fn quotedInst(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    const q = try l.quotedValue(node);
+    return q.inst orelse l.addInstAt(l.tree.nodeMainToken(node), .string, q.offset, q.len);
+}
+
+/// A string chunk of markup: escapes decoded as in any string, and the
+/// literal text between them with its character references decoded, so a
+/// character an escape produces never begins a reference (§11.5).
+fn decodeMarkupChunk(text: []const u8, gpa: Allocator, out: *std.ArrayList(u8)) Allocator.Error!void {
+    var i: usize = 0;
+    while (i < text.len) {
+        const j = std.mem.indexOfScalarPos(u8, text, i, '\\') orelse text.len;
+        try markup_entities.decode(gpa, out, text[i..j]);
+        if (j == text.len) return;
+        if (j + 1 >= text.len) {
+            try out.append(gpa, '\\');
+            return;
+        }
+        const decoded = decodeEscape(text[j..]);
+        var buf: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(decoded.scalar, &buf) catch blk: {
+            buf[0..3].* = "\xEF\xBF\xBD".*;
+            break :blk 3;
+        };
+        try out.appendSlice(gpa, buf[0..n]);
+        i = j + decoded.len;
+    }
+}
+
+const ConstantOf = struct { constant: Bir.Constant, offset: u32 = 0, len: u32 = 0 };
+
+/// A hole holding only a constant (language.md §11.5): a number literal,
+/// negated or not, as spelled; a string literal without interpolation, as
+/// its text, undecoded; or the prelude's `True` or `False`.
+fn constantOf(l: *Lower, node: NodeIndex, inst: Index) ConstantOf {
+    const tags = l.insts.items(.tag);
+    const datas = l.insts.items(.data);
+    switch (l.tree.nodeTag(node)) {
+        .int, .float => {
+            const d = datas[inst.int()];
+            return .{ .constant = .number, .offset = d.lhs, .len = d.rhs };
+        },
+        .negate => {
+            const operand = l.tree.operand(node);
+            switch (l.tree.nodeTag(operand)) {
+                .int, .float => {},
+                else => return .{ .constant = .none },
+            }
+            const offset: u32 = @intCast(l.string_bytes.items.len);
+            l.string_bytes.append(l.gpa, '-') catch return .{ .constant = .none };
+            l.string_bytes.appendSlice(l.gpa, l.tokenText(l.tree.nodeMainToken(operand))) catch return .{ .constant = .none };
+            return .{ .constant = .number, .offset = offset, .len = @as(u32, @intCast(l.string_bytes.items.len)) - offset };
+        },
+        .string => {
+            if (tags[inst.int()] != .string) return .{ .constant = .none };
+            const d = datas[inst.int()];
+            return .{ .constant = .string, .offset = d.lhs, .len = d.rhs };
+        },
+        .ctor => return .{ .constant = l.boolConstant(inst) },
+        else => return .{ .constant = .none },
+    }
+}
+
+/// `true` or `false` for a reference to the prelude's `True` or `False`.
+fn boolConstant(l: *const Lower, inst: Index) Bir.Constant {
+    if (l.insts.items(.tag)[inst.int()] != .import_ctor) return .none;
+    const d = l.insts.items(.data)[inst.int()];
+    if (l.symbols.items[d.lhs] != WellKnown.Basics.symbol()) return .none;
+    const name = l.symbols.items[d.rhs];
+    if (name == WellKnown.True.symbol()) return .true;
+    if (name == WellKnown.False.symbol()) return .false;
+    return .none;
+}
+
+/// The entries of a class or style list written in place: a list literal of
+/// pair literals whose names are string literals without interpolation
+/// (frontend.md §9.7). Empty for any other value.
+fn listEntries(l: *Lower, node: NodeIndex, inst: Index) Allocator.Error!SubRange {
+    const empty: SubRange = .{ .start = @enumFromInt(0), .end = @enumFromInt(0) };
+    if (l.tree.nodeTag(node) != .list) return empty;
+    const elems = l.tree.children(node);
+    if (elems.len == 0) return empty;
+    for (elems) |e| {
+        if (l.tree.nodeTag(e) != .tuple or l.tree.children(e).len != 2) return empty;
+        const first = l.tree.children(e)[0];
+        if (l.tree.nodeTag(first) != .string) return empty;
+        for (l.tree.fullString(first).parts) |p| if (l.tree.nodeTag(p) == .interp) return empty;
+    }
+    const datas = l.insts.items(.data);
+    const list = Bir.inlineRange(datas[inst.int()]);
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    for (elems, @intFromEnum(list.start)..) |e, at| {
+        const pair = Bir.inlineRange(datas[l.extra.items[at]]);
+        const name_inst = l.extra.items[@intFromEnum(pair.start)];
+        const value_inst: Index = @enumFromInt(l.extra.items[@intFromEnum(pair.start) + 1]);
+        const second = l.tree.children(e)[1];
+        const c: ConstantOf = switch (l.tree.nodeTag(second)) {
+            .string, .ctor => l.constantOf(second, value_inst),
+            else => .{ .constant = .none },
+        };
+        try l.pushScratch(try l.addExtra(Bir.MarkupEntry{
+            .name_offset = datas[name_inst].lhs,
+            .name_len = datas[name_inst].rhs,
+            .constant = c.constant,
+            .constant_offset = c.offset,
+            .constant_len = c.len,
+            .value = value_inst,
+        }));
+    }
+    // The entries are records of their own; the range lists them.
+    return l.addRange(l.scratchSince(mark));
+}
+
+/// The children of an element, fragment or component, as node records: a
+/// text run that trims to nothing and an empty hole are no node.
+fn markupChildren(l: *Lower, children: []const NodeIndex) Allocator.Error!SubRange {
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    for (children) |c| {
+        switch (l.tree.nodeTag(c)) {
+            .markup_text => if (try l.markupText(l.tree.nodeMainToken(c))) |e| try l.pushScratch(e),
+            .markup_hole => {
+                const open = l.tree.nodeMainToken(c);
+                const value = try l.lowerExpr(l.tree.operand(c));
+                try l.pushScratch(try l.addExtra(Bir.MarkupHole{ .kind = .hole, .token = open, .value = value }));
+            },
+            // One level of recursion per element, which the parser bounds
+            // (frontend.md §9.4).
+            .markup_element, .markup_fragment, .markup_for, .markup_show => try l.pushScratch(try l.markupNode(c)),
+            else => {},
+        }
+    }
+    return l.addRange(l.scratchSince(mark));
+}
+
+/// A text run as the page shows it (language.md §11.4), interned; null
+/// when it trims to nothing.
+fn markupText(l: *Lower, token: TokenIndex) Allocator.Error!?Bir.ExtraIndex {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(l.scratch_allocator);
+    try markup_text.read(l.scratch_allocator, l.scratch_allocator, &out, l.tokenText(token));
+    if (out.items.len == 0) return null;
+    const text = try l.addSymbol(try l.interner.getOrPut(l.gpa, out.items));
+    return try l.addExtra(Bir.MarkupText{ .kind = .text, .token = token, .text = text });
+}
+
+/// `<M.c a={x}>k</M.c>` (language.md §11.8): the callee, then the props,
+/// then the children in the form `children` takes.
+fn markupComponent(l: *Lower, mk: Ast.full.Markup, name: TokenIndex) Allocator.Error!Bir.ExtraIndex {
+    const text = l.tokenText(name);
+    const dot = std.mem.lastIndexOfScalar(u8, text, '.');
+    // `Card.header` names that value; `Card` and `Ui.Card` a module's `view`.
+    const member = if (dot) |d| std.ascii.isLower(text[d + 1]) else false;
+    const module_text = if (member) text[0..dot.?] else text;
+    const value_text = if (member) text[dot.? + 1 ..] else "view";
+    const callee = try l.resolveModuleValue(name, module_text, value_text);
+    const items = try l.markupItems(mk.attrs, name, true);
+    const children = try l.markupChildren(mk.children);
+    const form: Bir.ChildrenForm = if (children.len() == 0)
+        .absent
+    else if (children.len() == 1 and l.recordKind(l.extra.items[@intFromEnum(children.start)]) == .hole)
+        .hole
+    else
+        .fragment;
+    if (form != .absent) {
+        if (items.children_token) |t| try l.reportMarkup(.duplicate_attribute, t, t, name, .children_twice);
+    }
+    return l.addExtra(Bir.MarkupComponent{
+        .kind = .component,
+        .token = name,
+        .callee = callee,
+        .props_start = items.items.start,
+        .props_end = items.items.end,
+        .spread = items.spread,
+        .children_form = form,
+        .children_start = children.start,
+        .children_end = children.end,
+    });
+}
+
+fn recordKind(l: *const Lower, index: u32) Bir.MarkupKind {
+    return @enumFromInt(l.extra.items[index]);
+}
+
+/// `Module.value` spelled as two texts, resolved as a qualified name is
+/// (§6.2): the component's callee.
+fn resolveModuleValue(l: *Lower, token: TokenIndex, module_text: []const u8, name_text: []const u8) Allocator.Error!Index {
+    l.cur_token = token;
+    const module: Symbol = found: {
+        if (l.importWithAlias(module_text)) |i| break :found l.importModule(i);
+        for (prelude.modules) |w| {
+            if (std.mem.eql(u8, @tagName(w), module_text)) break :found w.symbol();
+        }
+        try l.diagnostics.append(l.gpa, .{ .code = .unknown_module_alias, .start = l.starts[token], .end = l.tokenEnd(token), .markup = .component });
+        return l.errorInst(.unbound_variable);
+    };
+    const name = try l.interner.getOrPut(l.gpa, name_text);
+    return l.importRef(.qualified, .import_value, module, name);
+}
+
+/// `For` and `Show` (language.md §11.9, §11.18): their own attributes,
+/// checked here, then the row.
+fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!Bir.ExtraIndex {
+    const is_for = l.tree.nodeTag(node) == .markup_for;
+    const form_name = mk.name.?;
+    var record: Bir.MarkupForm = .{
+        .kind = if (is_for) .@"for" else .show,
+        .token = form_name,
+        .list = .none,
+        .keyed = .none,
+        .fallback = .none,
+        .mode = .absent,
+        .row = Bir.none_extra,
+    };
+    var list_token: ?TokenIndex = null;
+    var keyed_token: ?TokenIndex = null;
+    var fallback_token: ?TokenIndex = null;
+    for (mk.attrs) |attr| {
+        switch (l.tree.nodeTag(attr)) {
+            .markup_spread => {
+                const open = l.tree.nodeMainToken(attr);
+                _ = try l.lowerExpr(l.tree.operand(attr));
+                try l.reportMarkup(.spread_on_element, open, open + 1, form_name, .none);
+            },
+            .markup_attr_escape => {
+                const t = l.tree.nodeMainToken(attr);
+                try l.reportMarkup(.unknown_form_attribute, t, l.stringEnd(t), form_name, .none);
+            },
+            .markup_attr => {
+                const a = l.tree.fullMarkupAttr(attr);
+                const text = l.tokenText(a.name);
+                const list_word = if (is_for) "each" else "when";
+                const slot: *?TokenIndex = if (std.mem.eql(u8, text, list_word))
+                    &list_token
+                else if (std.mem.eql(u8, text, "keyed"))
+                    &keyed_token
+                else if (std.mem.eql(u8, text, "fallback"))
+                    &fallback_token
+                else {
+                    try l.reportMarkup(.unknown_form_attribute, a.name, a.name, form_name, .none);
+                    continue;
+                };
+                if (slot.*) |first| {
+                    try l.reportPair(.duplicate_attribute, a.name, first);
+                    continue;
+                }
+                slot.* = a.name;
+                if (slot == &keyed_token) {
+                    try l.formKeyed(&record, a, is_for, form_name);
+                    continue;
+                }
+                const inst = try l.formValue(a);
+                if (slot == &list_token) record.list = inst.toOptional() else record.fallback = inst.toOptional();
+            },
+            else => {},
+        }
+    }
+    if (list_token == null) try l.reportMarkup(.missing_form_attribute, form_name, form_name, form_name, if (is_for) .missing_each else .missing_when);
+    if (!is_for and keyed_token == null) try l.reportMarkup(.missing_form_attribute, form_name, form_name, form_name, .missing_keyed);
+
+    // Its only child is one hole holding the row function. Whitespace around
+    // it is layout, not a child: a form renders nothing but its row.
+    var hole: ?NodeIndex = null;
+    var offending: ?TokenIndex = null;
+    for (mk.children) |c| {
+        switch (l.tree.nodeTag(c)) {
+            .markup_empty_hole => {},
+            .markup_text => {
+                const text = l.tokenText(l.tree.nodeMainToken(c));
+                var i: usize = 0;
+                while (i < text.len) {
+                    const n = markup_text.whitespaceAt(text, i);
+                    if (n == 0) break;
+                    i += n;
+                }
+                if (i < text.len and offending == null) offending = l.tree.nodeMainToken(c);
+            },
+            .markup_hole => {
+                if (hole != null) {
+                    if (offending == null) offending = l.tree.nodeMainToken(c);
+                } else hole = c;
+            },
+            else => if (offending == null) {
+                offending = l.tree.nodeMainToken(c);
+            },
+        }
+    }
+    if (offending) |t| {
+        try l.reportMarkup(.invalid_form_children, t, t, form_name, .none);
+    } else if (hole) |h| {
+        record.row = @intFromEnum(try l.lowerRow(l.tree.operand(h)));
+    } else {
+        try l.reportMarkup(.invalid_form_children, form_name, form_name, form_name, .none);
+    }
+    return l.addExtra(record);
+}
+
+/// `keyed`: bare or `{True}` is by reference (by identity for `Show`),
+/// `{False}` by position, any other expression a key function; a quoted
+/// value, another constant, or `{False}` on `Show` is `invalid_keyed`.
+fn formKeyed(l: *Lower, record: *Bir.MarkupForm, a: Ast.full.MarkupAttr, is_for: bool, form_name: TokenIndex) Allocator.Error!void {
+    const value = a.value orelse {
+        record.mode = .literal_true;
+        return;
+    };
+    if (a.brace == null) {
+        try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value), form_name, .none);
+        return;
+    }
+    const inst = try l.lowerExpr(value);
+    record.keyed = inst.toOptional();
+    switch (l.constantOf(value, inst).constant) {
+        .true => record.mode = .literal_true,
+        .false => {
+            record.mode = .literal_false;
+            if (!is_for) try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value) + 1, form_name, .keyed_false_on_show);
+        },
+        .string, .number => try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value) + 1, form_name, .none),
+        .none => record.mode = .key_function,
+    }
+}
+
+/// A form's `each`, `when` or `fallback`: an ordinary value, whatever its
+/// spelling.
+fn formValue(l: *Lower, a: Ast.full.MarkupAttr) Allocator.Error!Index {
+    const value = a.value orelse {
+        l.cur_token = a.name;
+        return l.importRef(.import_ctor, .import_ctor, WellKnown.Basics.symbol(), WellKnown.True.symbol());
+    };
+    if (a.brace == null and l.tree.nodeTag(value) == .string) return l.quotedInst(value);
+    return l.lowerExpr(value);
+}
+
+/// The last token of a string or of any other value node, for a span.
+fn lastToken(l: *const Lower, node: NodeIndex) TokenIndex {
+    const main = l.tree.nodeMainToken(node);
+    if (l.tree.nodeTag(node) == .string) return l.stringEnd(main);
+    return main;
+}
+
+/// Report a markup lowering diagnostic spanning tokens `first..last`, with
+/// the tag's name as the second range.
+fn reportMarkup(l: *Lower, code: diagnostic.Code, first: TokenIndex, last: TokenIndex, tag_name: TokenIndex, detail: Diagnostics.Item.Markup) Allocator.Error!void {
+    try l.diagnostics.append(l.gpa, .{
+        .code = code,
+        .start = l.starts[first],
+        .end = l.tokenEnd(last),
+        .other_start = l.starts[tag_name],
+        .other_end = l.tokenEnd(tag_name),
+        .markup = detail,
+    });
+}
+
+/// A `For` row or a `Show` body (frontend.md §9.7): the function's
+/// instructions, then its shape. The captures and inputs of a lambda are
+/// computed by `finishRows`, once every declaration is lowered.
+fn lowerRow(l: *Lower, node: NodeIndex) Allocator.Error!Bir.ExtraIndex {
+    const first: u32 = @intCast(l.insts.len);
+    const function = try l.lowerExpr(node);
+    const tags = l.insts.items(.tag);
+    const datas = l.insts.items(.data);
+    var shape: Bir.RowShape = .function;
+    var body: Inst.OptionalIndex = .none;
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    if (tags[function.int()] == .lambda) {
+        shape = .lambda;
+        var at = datas[function.int()].rhs;
+        while (tags[at] == .let) {
+            try l.pushScratch(at);
+            at = datas[at].rhs;
+        }
+        if (tags[at] == .markup) {
+            shape = .markup;
+            body = @enumFromInt(at);
+        } else l.shrinkScratch(mark);
+    }
+    const lets = try l.addRange(l.scratchSince(mark));
+    const row = try l.addExtra(Bir.MarkupRow{
+        .function = function,
+        .shape = shape,
+        .body = body,
+        .lets_start = lets.start,
+        .lets_end = lets.end,
+        .captures_start = @enumFromInt(0),
+        .captures_end = @enumFromInt(0),
+        .inputs_start = @enumFromInt(0),
+        .inputs_end = @enumFromInt(0),
+    });
+    if (shape != .function) try l.rows.append(l.scratch_allocator, .{ .row = row, .decl = l.cur_decl, .first = first, .function = function.int() });
+    return row;
+}
+
+// ---- A row's captures and inputs (language.md §11.9, frontend.md §9.7) ----
+//
+// The captures of a row lambda are the locals of its declaration that it
+// uses and does not bind, in first-use order. Its inputs are, per capture,
+// the field paths through which it reads the local — a chain of field
+// accesses and tuple indices, cut to four links — or the local itself when
+// some use is anything else. A use as argument `i` of a call of a top-level
+// function of this file contributes that function's summary for parameter
+// `i`: the paths its body reads the parameter through, by the same rule, a
+// record pattern `{ a }` being the path `a`. Summaries are computed only
+// for the functions rows reach, iterated from the empty set to a fixpoint,
+// which ends because the sets only grow and are finite.
+
+/// A field path: `len` links, each a field's symbol or a tuple index with
+/// `Bir.tuple_link` set; none is the local itself.
+const Path = struct {
+    len: u8 = 0,
+    links: [Bir.max_input_links]u32 = @splat(0),
+
+    fn prefixOf(a: Path, b: Path) bool {
+        return a.len <= b.len and std.mem.eql(u32, a.links[0..a.len], b.links[0..a.len]);
+    }
+
+    fn eql(a: Path, b: Path) bool {
+        return a.len == b.len and std.mem.eql(u32, a.links[0..a.len], b.links[0..a.len]);
+    }
+
+    fn append(p: Path, link: u32) Path {
+        var r = p;
+        if (r.len < Bir.max_input_links) {
+            r.links[r.len] = link;
+            r.len += 1;
+        }
+        return r;
+    }
+
+    fn concat(p: Path, q: Path) Path {
+        var r = p;
+        for (q.links[0..q.len]) |k| r = r.append(k);
+        return r;
+    }
+};
+
+/// Paths kept minimal and in first-use order: one with a prefix in the set
+/// adds nothing, and one that is a prefix of others replaces them.
+const Paths = struct {
+    list: std.ArrayList(Path) = .empty,
+
+    fn add(s: *Paths, gpa: Allocator, p: Path) Allocator.Error!void {
+        for (s.list.items) |q| if (q.prefixOf(p)) return;
+        var i: usize = 0;
+        var placed = false;
+        while (i < s.list.items.len) {
+            if (p.prefixOf(s.list.items[i])) {
+                if (!placed) {
+                    s.list.items[i] = p;
+                    placed = true;
+                    i += 1;
+                } else _ = s.list.orderedRemove(i);
+            } else i += 1;
+        }
+        if (!placed) try s.list.append(gpa, p);
+    }
+
+    fn sameAs(a: Paths, b: Paths) bool {
+        if (a.list.items.len != b.list.items.len) return false;
+        for (a.list.items) |p| {
+            for (b.list.items) |q| {
+                if (p.eql(q)) break;
+            } else return false;
+        }
+        return true;
+    }
+};
+
+/// Where an instruction is an operand: its parent and the operand's
+/// position, `callee` then arguments for a `call`, the target for an access.
+const Parent = struct { inst: u32 = none_u32, pos: u32 = 0 };
+
+const Summary = struct { params: []Paths };
+
+const RowAnalysis = struct {
+    l: *Lower,
+    /// Per declaration, the parent of each of its instructions.
+    parents: std.AutoHashMapUnmanaged(u32, []Parent) = .empty,
+    /// Per function reached, its parameters' summaries, in the order they
+    /// were reached.
+    summaries: std.AutoArrayHashMapUnmanaged(u32, Summary) = .empty,
+
+    fn gpa(a: *RowAnalysis) Allocator {
+        return a.l.scratch_allocator;
+    }
+
+    fn deinit(a: *RowAnalysis) void {
+        var it = a.parents.valueIterator();
+        while (it.next()) |p| a.gpa().free(p.*);
+        a.parents.deinit(a.gpa());
+        for (a.summaries.values()) |s| freeParams(a.gpa(), s.params);
+        a.summaries.deinit(a.gpa());
+    }
+
+    fn freeParams(gpa_: Allocator, params: []Paths) void {
+        for (params) |*p| p.list.deinit(gpa_);
+        gpa_.free(params);
+    }
+
+    fn parentsOf(a: *RowAnalysis, decl: u32) Allocator.Error![]Parent {
+        if (a.parents.get(decl)) |p| return p;
+        const d = a.l.decls.items[decl];
+        const base = d.inst_start.int();
+        const map = try a.gpa().alloc(Parent, d.inst_end.int() - base);
+        @memset(map, .{});
+        var operands: std.ArrayList(u32) = .empty;
+        defer operands.deinit(a.gpa());
+        var i = base;
+        while (i < d.inst_end.int()) : (i += 1) {
+            operands.clearRetainingCapacity();
+            try a.l.operandsOf(i, &operands, a.gpa());
+            for (operands.items, 0..) |o, pos| {
+                if (o >= base and o < d.inst_end.int()) map[o - base] = .{ .inst = i, .pos = @intCast(pos) };
+            }
+        }
+        try a.parents.put(a.gpa(), decl, map);
+        return map;
+    }
+
+    /// The summary of function `decl`, registered (empty) the first time it
+    /// is asked for; the fixpoint fills it.
+    fn summaryOf(a: *RowAnalysis, decl: u32) Allocator.Error!Summary {
+        const gop = try a.summaries.getOrPut(a.gpa(), decl);
+        if (!gop.found_existing) {
+            const params = try a.gpa().alloc(Paths, a.l.decls.items[decl].params);
+            for (params) |*p| p.* = .{};
+            gop.value_ptr.* = .{ .params = params };
+        }
+        return gop.value_ptr.*;
+    }
+
+    /// Add to `out` the paths use `u` (a `local` instruction of `decl`)
+    /// reads its local through.
+    fn pathsOfUse(a: *RowAnalysis, decl: u32, u: u32, out: *Paths) Allocator.Error!void {
+        const l = a.l;
+        const tags = l.insts.items(.tag);
+        const datas = l.insts.items(.data);
+        const parents = try a.parentsOf(decl);
+        const base = l.decls.items[decl].inst_start.int();
+        var path: Path = .{};
+        var cur = u;
+        while (true) {
+            const p = parents[cur - base];
+            if (p.inst == none_u32 or p.pos != 0) break;
+            switch (tags[p.inst]) {
+                .field_access => path = path.append(@intFromEnum(l.symbols.items[datas[p.inst].rhs])),
+                .tuple_index => path = path.append(@min(datas[p.inst].rhs, Bir.tuple_link - 1) | Bir.tuple_link),
+                else => break,
+            }
+            cur = p.inst;
+        }
+        const p = parents[cur - base];
+        if (p.inst != none_u32 and tags[p.inst] == .call and p.pos >= 1) {
+            const callee = datas[p.inst].lhs;
+            if (tags[callee] == .top) {
+                const f = datas[callee].lhs;
+                const fd = l.decls.items[f];
+                if (fd.kind == .value and p.pos - 1 < fd.params) {
+                    const summary = try a.summaryOf(f);
+                    for (summary.params[p.pos - 1].list.items) |q| try out.add(a.gpa(), path.concat(q));
+                    return;
+                }
+            }
+        }
+        try out.add(a.gpa(), path);
+    }
+
+    /// Function `decl`'s parameter summaries from its body and the current
+    /// summaries of what it calls.
+    fn computeSummary(a: *RowAnalysis, decl: u32) Allocator.Error![]Paths {
+        const l = a.l;
+        const d = l.decls.items[decl];
+        const tags = l.insts.items(.tag);
+        const datas = l.insts.items(.data);
+        const params = l.extra.items[@intFromEnum(d.params_start)..@intFromEnum(d.params_end)];
+        const out = try a.gpa().alloc(Paths, params.len);
+        for (out, params) |*paths, param| {
+            paths.* = .{};
+            switch (tags[param]) {
+                .pat_record => {
+                    const locals = Bir.inlineRange(datas[param]);
+                    for (l.extra.items[@intFromEnum(locals.start)..@intFromEnum(locals.end)]) |local| {
+                        const name = l.locals.items[d.locals_start + local].name;
+                        try paths.add(a.gpa(), (Path{}).append(@intFromEnum(l.symbols.items[@intFromEnum(name)])));
+                    }
+                },
+                .pat_var => {
+                    const local = datas[param].lhs;
+                    var i = d.inst_start.int();
+                    while (i < d.inst_end.int()) : (i += 1) {
+                        if (tags[i] == .local and datas[i].lhs == local) try a.pathsOfUse(decl, i, paths);
+                    }
+                },
+                else => try paths.add(a.gpa(), .{}),
+            }
+        }
+        return out;
+    }
+
+    /// Recompute every summary reached until none changes.
+    fn fixpoint(a: *RowAnalysis) Allocator.Error!bool {
+        var changed = false;
+        var k: usize = 0;
+        while (k < a.summaries.count()) : (k += 1) {
+            const decl = a.summaries.keys()[k];
+            const next = try a.computeSummary(decl);
+            const current = a.summaries.values()[k];
+            for (next, current.params) |n, c| {
+                if (!n.sameAs(c)) changed = true;
+            }
+            a.summaries.values()[k] = .{ .params = next };
+            freeParams(a.gpa(), current.params);
+        }
+        return changed;
+    }
+};
+
+/// Fill every row's captures and inputs (see above).
+fn finishRows(l: *Lower) Allocator.Error!void {
+    var a: RowAnalysis = .{ .l = l };
+    defer a.deinit();
+    // Reach every function the rows' uses call, then iterate.
+    for (l.rows.items) |row| {
+        var sink: Paths = .{};
+        defer sink.list.deinit(l.scratch_allocator);
+        var i = row.first;
+        while (i <= row.function) : (i += 1) {
+            if (l.insts.items(.tag)[i] == .local) try a.pathsOfUse(row.decl, i, &sink);
+        }
+    }
+    while (try a.fixpoint()) {}
+
+    const tags = l.insts.items(.tag);
+    const datas = l.insts.items(.data);
+    for (l.rows.items) |row| {
+        const d = l.decls.items[row.decl];
+        var captures: std.ArrayList(u32) = .empty;
+        defer captures.deinit(l.scratch_allocator);
+        var i = row.first;
+        while (i <= row.function) : (i += 1) {
+            if (tags[i] != .local) continue;
+            const local = datas[i].lhs;
+            const binder = l.locals.items[d.locals_start + local].inst.int();
+            if (binder >= row.first and binder <= row.function) continue;
+            if (std.mem.indexOfScalar(u32, captures.items, local) == null) try captures.append(l.scratch_allocator, local);
+        }
+        const capture_range = try l.addRange(captures.items);
+        const inputs_start: u32 = @intCast(l.extra.items.len);
+        for (captures.items) |local| {
+            var paths: Paths = .{};
+            defer paths.list.deinit(l.scratch_allocator);
+            i = row.first;
+            while (i <= row.function) : (i += 1) {
+                if (tags[i] == .local and datas[i].lhs == local) try a.pathsOfUse(row.decl, i, &paths);
+            }
+            for (paths.list.items) |p| {
+                var links: [Bir.max_input_links]u32 = @splat(0);
+                for (p.links[0..p.len], 0..) |k, n| {
+                    links[n] = if (k & Bir.tuple_link != 0) k else @intFromEnum(try l.addSymbol(@enumFromInt(k)));
+                }
+                _ = try l.addExtra(Bir.MarkupInput{ .local = local, .len = p.len, .link0 = links[0], .link1 = links[1], .link2 = links[2], .link3 = links[3] });
+            }
+        }
+        const at = @intFromEnum(row.row);
+        l.extra.items[at + 5] = @intFromEnum(capture_range.start);
+        l.extra.items[at + 6] = @intFromEnum(capture_range.end);
+        l.extra.items[at + 7] = inputs_start;
+        l.extra.items[at + 8] = @intCast(l.extra.items.len);
+    }
+}
+
+/// The instructions `inst` has as operands, in position order: a `call`'s
+/// callee then its arguments, an access's target, a markup tree's values.
+/// Types are left out: no local is ever in one.
+fn operandsOf(l: *const Lower, inst: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
+    const tags = l.insts.items(.tag);
+    const d = l.insts.items(.data)[inst];
+    const extra = l.extra.items;
+    switch (tags[inst]) {
+        .tuple, .list, .interp, .pat_tuple, .pat_list => try out.appendSlice(gpa, extra[d.lhs..d.rhs]),
+        .record => {
+            var f = d.lhs;
+            while (f < d.rhs) : (f += 2) try out.append(gpa, extra[f + 1]);
+        },
+        .record_update => {
+            try out.append(gpa, d.lhs);
+            var f = extra[d.rhs];
+            while (f < extra[d.rhs + 1]) : (f += 2) try out.append(gpa, extra[f + 1]);
+        },
+        .field_access, .tuple_index, .@"try", .pat_as => try out.append(gpa, d.lhs),
+        .call, .pat_ctor => {
+            try out.append(gpa, d.lhs);
+            try out.appendSlice(gpa, extra[extra[d.rhs]..extra[d.rhs + 1]]);
+        },
+        .method_call => {
+            try out.append(gpa, d.lhs);
+            const m = extraAt(extra, d.rhs, Bir.MethodCall);
+            try out.appendSlice(gpa, extra[@intFromEnum(m.args_start)..@intFromEnum(m.args_end)]);
+        },
+        .type_dispatch => {
+            const t = extraAt(extra, d.rhs, Bir.TypeDispatch);
+            try out.appendSlice(gpa, extra[@intFromEnum(t.args_start)..@intFromEnum(t.args_end)]);
+        },
+        .lambda, .let => {
+            try out.appendSlice(gpa, extra[extra[d.lhs]..extra[d.lhs + 1]]);
+            try out.append(gpa, d.rhs);
+        },
+        .let_def => {
+            const def = extraAt(extra, d.lhs, Bir.LetDef);
+            try out.appendSlice(gpa, extra[@intFromEnum(def.params_start)..@intFromEnum(def.params_end)]);
+            try out.append(gpa, d.rhs);
+        },
+        .case => {
+            try out.append(gpa, d.lhs);
+            try out.appendSlice(gpa, extra[extra[d.rhs]..extra[d.rhs + 1]]);
+        },
+        .let_pattern, .branch, .pat_cons => {
+            try out.append(gpa, d.lhs);
+            try out.append(gpa, d.rhs);
+        },
+        .markup => try l.markupOperands(d.lhs, out, gpa),
+        else => {},
+    }
+}
+
+/// The value instructions of the markup tree rooted at record `at`, in
+/// source order.
+fn markupOperands(l: *const Lower, at: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
+    const extra = l.extra.items;
+    switch (@as(Bir.MarkupKind, @enumFromInt(extra[at]))) {
+        .element => {
+            const e = extraAt(extra, at, Bir.MarkupElement);
+            try l.itemOperands(e.items_start, e.items_end, out, gpa);
+            for (extra[@intFromEnum(e.children_start)..@intFromEnum(e.children_end)]) |c| try l.markupOperands(c, out, gpa);
+        },
+        .fragment => {
+            const f = extraAt(extra, at, Bir.MarkupFragment);
+            for (extra[@intFromEnum(f.children_start)..@intFromEnum(f.children_end)]) |c| try l.markupOperands(c, out, gpa);
+        },
+        .text => {},
+        .hole => try out.append(gpa, extraAt(extra, at, Bir.MarkupHole).value.int()),
+        .component => {
+            const c = extraAt(extra, at, Bir.MarkupComponent);
+            try out.append(gpa, c.callee.int());
+            if (c.spread.unwrap()) |s| try out.append(gpa, s.int());
+            try l.itemOperands(c.props_start, c.props_end, out, gpa);
+            for (extra[@intFromEnum(c.children_start)..@intFromEnum(c.children_end)]) |ch| try l.markupOperands(ch, out, gpa);
+        },
+        .@"for", .show => {
+            const f = extraAt(extra, at, Bir.MarkupForm);
+            for ([_]Inst.OptionalIndex{ f.list, f.keyed, f.fallback }) |v| {
+                if (v.unwrap()) |i| try out.append(gpa, i.int());
+            }
+            if (f.row != Bir.none_extra) try out.append(gpa, extraAt(extra, f.row, Bir.MarkupRow).function.int());
+        },
+    }
+}
+
+fn itemOperands(l: *const Lower, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
+    const extra = l.extra.items;
+    for (extra[@intFromEnum(start)..@intFromEnum(end)]) |at| {
+        const item = extraAt(extra, at, Bir.MarkupItem);
+        if (item.value.unwrap()) |v| try out.append(gpa, v.int());
+    }
+}
+
+/// Read a record out of `extra` at `index`, field by field, as
+/// `Bir.extraData` does once the arrays are frozen.
+fn extraAt(extra: []const u32, index: u32, comptime T: type) T {
+    var result: T = undefined;
+    inline for (std.meta.fields(T), 0..) |field, k| {
+        @field(result, field.name) = switch (@typeInfo(field.type)) {
+            .@"enum" => @enumFromInt(extra[index + k]),
+            .int => extra[index + k],
+            else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+        };
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Patterns
 // ---------------------------------------------------------------------------
 
@@ -3372,6 +4481,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try checkFields(bir, d, try checkRecordAt(bir, data.rhs));
         },
         .int, .float, .string, .chunk, .pat_int, .pat_string => try checkBytes(bir, data),
+        .markup => try testing.expect(bir.markupTreeValid(d, data.lhs)),
         .char, .pat_char => try testing.expect(data.lhs <= 0x10FFFF),
         .field_access => {
             try checkInDecl(d, @enumFromInt(data.lhs));

@@ -1,0 +1,5 @@
+-- A spread is a component's first attribute and nothing else: on an
+-- element it is spread_on_element (language.md §11.5), deferred rather
+-- than refused, at the spread (5:10).
+view attrs =
+    <div {...attrs} class="a" />

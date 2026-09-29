@@ -1,0 +1,12 @@
+-- `For` and `Show` take one child: a hole holding the function that renders
+-- (language.md §11.9, §11.18). Anything else between the tags is
+-- invalid_form_children, at the first thing that is not that hole — text
+-- (8:42), an element (9:42), a second hole (10:46) — or at the tag when
+-- there is nothing at all (11:10). Whitespace and an empty hole do not count.
+view model =
+    <div>
+        <For each={model.a}>{\x -> <p />} and</For>
+        <For each={model.a}>{\x -> <p />}<p /></For>
+        <For each={model.a}>{} {\x -> <p />} {\y -> <p />}</For>
+        <Show when={model.b} keyed></Show>
+    </div>

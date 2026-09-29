@@ -1,0 +1,14 @@
+-- A component is a call (language.md §11.8, frontend.md §9.7): its callee
+-- the module's `view`, or the value its tag names after the module, as a
+-- qualified name resolves; its props in source order after a leading
+-- spread; its children absent, one hole's value, or a fragment of the rest.
+import Ui.Card as Card
+import Ui.List as List
+
+
+view model =
+    <div>
+        <Card {...model.card} title="x" done />
+        <List>{\item -> <li>{item}</li>}</List>
+        <Card.header title="y"><h1>Hi</h1>text</Card.header>
+    </div>

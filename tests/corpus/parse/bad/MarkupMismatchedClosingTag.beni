@@ -1,0 +1,6 @@
+-- A closing tag whose name is not its element's, and not an element's
+-- further out, is mismatched_closing_tag, naming both, and is taken as the
+-- closer (frontend.md §9.5): one mistake, one message (6:14), and the
+-- siblings after it and the outer closer parse as written.
+view =
+    <div><p>a</span><p>b</p></div>

@@ -1,22 +1,23 @@
-5:1 lower_ident view
-5:6 equal =
-6:5 markup_open <
-6:6 markup_name div
-6:9 markup_gt >
-6:10 markup_open <
-6:11 markup_name span
-6:15 markup_gt >
-6:16 markup_text "unclosed\n\n"
-8:1 lower_ident after
-8:7 lower_ident a
-8:9 lower_ident b
-8:11 equal =
-9:5 lower_ident a
-9:7 op_lt <
-9:8 lower_ident b
-10:1 eof
+6:1 lower_ident view
+6:6 equal =
+7:5 markup_open <
+7:6 markup_name div
+7:9 markup_gt >
+7:10 markup_open <
+7:11 markup_name span
+7:15 markup_gt >
+7:16 markup_text "unclosed\n\n"
+9:1 lower_ident after
+9:7 lower_ident a
+9:9 lower_ident b
+9:11 equal =
+10:5 lower_ident a
+10:7 op_lt <
+10:8 lower_ident b
+11:1 eof
 -- comments
 1:1 plain -- A newline followed by a non-space byte at column 1 ends every markup mode
 2:1 plain -- (frontend.md §9.1): the unclosed `<div>` does not swallow the rest of the
-3:1 plain -- file as text. Its text run ends with the newline, and `after` is lexed as
-4:1 plain -- the declaration it is: only not_implemented at 6:5, and `after` checks.
+3:1 plain -- file as text. Its text run ends with the newline, `after` is lexed as the
+4:1 plain -- declaration it is and checks, and `<span>` and `<div>` are each
+5:1 plain -- unclosed_element at their `<` (7:10, 7:5), naming `after` on column 1.

@@ -1,0 +1,37 @@
+-- A `For` row and a `Show` body (language.md §11.9, §11.18, frontend.md
+-- §9.7) in their three shapes: a lambda whose body, past its `let`, is
+-- markup (compiled in place), a lambda made by a placeholder, and a
+-- function. A lambda's captures are the locals it uses from outside; its
+-- inputs are the field paths it reads them through, through the summaries
+-- of this file's functions it passes them to — `rowClass` reads
+-- `model.selected`, and `label`'s record pattern `{ title }` the path
+-- `title` — and `theme` is read as `theme.dark`.
+rowClass model row =
+    if model.selected == row.id then "danger" else ""
+
+
+label { title } =
+    title
+
+
+viewRow model row =
+    <tr>{row.name}{model.count}</tr>
+
+
+view model =
+    let
+        theme = model.theme
+    in
+    <table>
+        <For each={model.rows} keyed={.id}>
+            {\row ->
+                let
+                    cls = rowClass model row
+                in
+                <tr class={cls}><td>{label model.page}</td><td>{theme.dark}</td></tr>
+            }
+        </For>
+        <For each={model.rows}>{viewRow model _}</For>
+        <For each={model.rows} keyed={False}>{viewRow}</For>
+        <Show when={model.user} keyed={.id}>{\user -> <p>{user.name}</p>}</Show>
+    </table>

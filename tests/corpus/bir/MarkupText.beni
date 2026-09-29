@@ -1,0 +1,14 @@
+-- Text as the page shows it (language.md §11.4, frontend.md §9.7): lines
+-- trimmed and joined, whitespace collapsed, then character references
+-- decoded — so `&nbsp;` survives as U+00A0 and a typed U+00A0 collapses
+-- like a space; the longest name wins (`&notit;` is `¬it;`) and U+0080
+-- maps through windows-1252 (`&#x80;` is `€`); a run of only whitespace is
+-- no node. A quoted value decodes its literal text, chunk by chunk around
+-- an interpolation, but not what an escape produces (`\u{26}amp;`); a
+-- hole's string is never decoded.
+view x =
+    <p title="Fish &amp; chips" class="a &lt; ${x} &gt;" lang="\u{26}amp;">
+        Hello,&nbsp;world   and  more
+        &notit; &#x80; AT&T  space
+        <b>{"&amp;"}</b> <i>x</i>
+    </p>

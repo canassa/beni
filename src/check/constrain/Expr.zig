@@ -224,6 +224,10 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .@"error", .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => {
             return g.equal(expected, try g.fresh(.err), inst, category);
         },
+        // Markup types against a platform's vocabulary, which no platform
+        // declares yet: the module has its `no_markup_vocabulary` from P1
+        // (`Module.check`), so poison and stay quiet.
+        .markup => return g.equal(expected, try g.fresh(.err), inst, category),
         // A form the generator has no rule for, or no expression at all:
         // the compiler says so, never a silent poison: no failure to decide
         // is answered as success.

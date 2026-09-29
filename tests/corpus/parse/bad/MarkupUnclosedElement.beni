@@ -1,0 +1,11 @@
+-- An element whose closing tag never comes is unclosed_element at its `<`
+-- and name, and is closed there (frontend.md §9.5): here at the closing tag
+-- of the element around it, which then closes that one (7:9), and at the
+-- end of the file (11:5).
+outer =
+    <div>
+        <span>text</div>
+
+
+atEnd =
+    <p>text

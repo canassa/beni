@@ -1,8 +1,8 @@
 -- The names a tag holds (frontend.md §9.2): an element name with a hyphen,
 -- a component path and a component value; attribute names with `-` and `:`,
 -- keywords read as attribute names (`type`, `as`, `for`), a bare attribute,
--- a string value with an interpolation and a hole value; a fragment. Only
--- not_implemented at 7:5.
+-- a string value with an interpolation and a hole value; a fragment. The
+-- tree keeps each name as written, the value braced or quoted.
 view label =
     <my-widget aria-label="a ${label}" xlink:href={label} type="x" as for disabled>
         <Ui.Card />

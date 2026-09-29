@@ -47,5 +47,5 @@
 1:1 plain -- The names a tag holds (frontend.md §9.2): an element name with a hyphen,
 2:1 plain -- a component path and a component value; attribute names with `-` and `:`,
 3:1 plain -- keywords read as attribute names (`type`, `as`, `for`), a bare attribute,
-4:1 plain -- a string value with an interpolation and a hole value; a fragment. Only
-5:1 plain -- not_implemented at 7:5.
+4:1 plain -- a string value with an interpolation and a hole value; a fragment. The
+5:1 plain -- tree keeps each name as written, the value braced or quoted.

@@ -1,0 +1,9 @@
+-- An attribute is written once (language.md §11.5), or the second would
+-- silently win: duplicate_attribute at the second, naming the line of the
+-- first — on an element (7:29), however it is spelled (7:45), and on `For`
+-- (8:29).
+view model =
+    <div>
+        <p class="a" id="x" class={model.b} "id"="y" />
+        <For each={model.a} each={model.b}>{\x -> <p />}</For>
+    </div>

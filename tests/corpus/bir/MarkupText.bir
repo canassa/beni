@@ -1,0 +1,33 @@
+decl 0: value view
+  %0 = pat_var local 0 (x)
+  %1 = chunk "a < "
+  %2 = local 0 (x)
+  %3 = chunk " >"
+  %4 = interp [%1, %2, %3]
+  %5 = string "&amp;"
+  %6 = markup
+    element p
+      attr title = "Fish & chips"
+      attr class = %4
+      attr lang = "&amp;"
+      text "Hello,\u{a0}world and more ¬it; € AT&T space"
+      element b
+        hole %5
+      text " "
+      element i
+        text "x"
+  params [%0]
+  body %6
+  locals
+    0 x param %0
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

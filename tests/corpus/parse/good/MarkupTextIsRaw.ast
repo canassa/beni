@@ -1,0 +1,8 @@
+(module
+  (definition view
+    (pat_var name)
+    (markup_element p
+      (markup_text "\n        Don't -- \"quote\" ")
+      (markup_hole
+        (ident name))
+      (markup_text "\n    "))))

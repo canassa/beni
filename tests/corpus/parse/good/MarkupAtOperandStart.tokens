@@ -45,6 +45,6 @@
 -- comments
 1:1 plain -- A `<` followed by a letter or `>`, after a token that cannot end an
 2:1 plain -- operand, opens markup (frontend.md §9.3): after `=`, `(`, `[` and `,`,
-3:1 plain -- `->` and `<|`. The tokens show each `markup_open`. Markup is lexed but not
-4:1 plain -- yet parsed, so each expression is one not_implemented at its `<`: 7:5,
-5:1 plain -- 11:8, 15:7 and 15:15, 19:11, 23:10.
+3:1 plain -- `->` and `<|`. The tokens show each `markup_open`, and the tree each
+4:1 plain -- markup expression where the operand stands: a definition's body, an
+5:1 plain -- argument in parentheses, list elements, a lambda's body, `<|`'s operand.

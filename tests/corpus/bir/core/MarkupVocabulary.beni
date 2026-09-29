@@ -1,0 +1,27 @@
+-- The four vocabulary declarations, lowered in a platform package (run
+-- with --core, by the `core/` directory; language.md §11.14, frontend.md
+-- §9.7): each named by its string's text or, for a primitive, its name;
+-- facts one per word, and one per string of a word that takes several;
+-- attributes, events and primitives annotated; all in the interface.
+pub foreign type Html msg
+
+
+pub foreign type Event
+
+
+pub element "input" void
+
+
+pub attribute "value" property stateful on "input" "select" : String
+
+
+pub attribute "data-*" : String
+
+
+pub event "onInput" delegated via targetValue : String
+
+
+pub markup map : Html a, (a -> b) -> Html b
+
+
+foreign targetValue : Event -> String

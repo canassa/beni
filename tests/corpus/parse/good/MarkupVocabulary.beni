@@ -1,0 +1,19 @@
+-- The four vocabulary declarations (language.md §11.14, frontend.md §9.4):
+-- the words are contextual after `pub`, facts are words with their strings
+-- or `via`'s name, and `pub markup : T` still annotates a value named
+-- `markup`.
+pub element "input" void
+
+
+pub attribute "value" property stateful on "input" "select" : String
+
+
+pub event "onInput" name "input" delegated via targetValue : String
+
+
+pub markup map : Html a, (a -> b) -> Html b
+
+
+pub markup : Int
+markup =
+    1

@@ -1,0 +1,7 @@
+-- A vocabulary declaration is legal only in a platform package, like
+-- `foreign` (language.md §11.14): vocabulary_outside_platform, from `pub`
+-- to the name (4:1, 7:1).
+pub element "input" void
+
+
+pub markup text : String -> Int

@@ -1,0 +1,12 @@
+-- `For` and `Show` parse as elements do, and get node tags of their own
+-- (frontend.md §9.4): each attribute form and one hole holding the row.
+rows model =
+    <ul>
+        <For each={model.rows} keyed={.id} fallback={<li>None</li>}>
+            {\row -> <li>{row.label}</li>}
+        </For>
+    </ul>
+
+
+editor model =
+    <Show when={model.user} keyed>{\user -> <p>{user.name}</p>}</Show>

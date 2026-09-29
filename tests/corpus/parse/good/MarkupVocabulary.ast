@@ -1,0 +1,20 @@
+(module
+  (vocab_element pub "input" void)
+  (vocab_attribute pub "value" property stateful on "input" "select"
+    (type_con String))
+  (vocab_event pub "onInput" name "input" delegated via targetValue
+    (type_con String))
+  (vocab_markup pub map
+    (type_fn
+      (type_con Html
+        (type_var a))
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_var b)))
+      (type_con Html
+        (type_var b))))
+  (annotation pub markup
+    (type_con Int))
+  (definition markup
+    (int 1)))

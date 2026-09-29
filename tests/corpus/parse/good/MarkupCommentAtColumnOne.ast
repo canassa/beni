@@ -1,0 +1,12 @@
+(module
+  (definition tagged
+    (markup_element a
+      (markup_attr b
+        (string
+          (chunk "1")))
+      (markup_text "t")))
+  (definition holed
+    (pat_var x)
+    (markup_element p
+      (markup_hole
+        (ident x)))))

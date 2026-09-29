@@ -1,8 +1,8 @@
 -- A `<` followed by a letter or `>`, after a token that cannot end an
 -- operand, opens markup (frontend.md §9.3): after `=`, `(`, `[` and `,`,
--- `->` and `<|`. The tokens show each `markup_open`. Markup is lexed but not
--- yet parsed, so each expression is one not_implemented at its `<`: 7:5,
--- 11:8, 15:7 and 15:15, 19:11, 23:10.
+-- `->` and `<|`. The tokens show each `markup_open`, and the tree each
+-- markup expression where the operand stands: a definition's body, an
+-- argument in parentheses, list elements, a lambda's body, `<|`'s operand.
 bold =
     <b />
 

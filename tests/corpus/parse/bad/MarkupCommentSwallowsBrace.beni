@@ -1,7 +1,9 @@
 -- A comment in a hole runs to the end of its line, `}` included
 -- (frontend.md §9.1): `{-- note}` leaves the hole open, so the `</p>` on the
 -- next line is lexed as code in the hole, and the column-1 `after` ends the
--- markup. The comment is listed like any other; not_implemented at 6:5.
+-- markup. The comment is listed like any other, and the hole is one
+-- unclosed_delimiter at its `{` (8:8), whose message quotes the comment and
+-- shows the two-line spelling (frontend.md §9.5).
 view =
     <p>{-- note}
     </p>

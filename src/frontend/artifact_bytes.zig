@@ -77,7 +77,10 @@ pub const magic = "BENIFE\x00\x00";
 /// (frontend.md §9.2).
 /// 6 (2026-09-29): `Token.Tag` gained `markup_stray`, a byte a tag cannot
 /// hold (frontend.md §9.1).
-pub const format_version: u32 = 6;
+/// 7 (2026-09-29): markup's BIR — the `markup` instruction and its tree
+/// records in `extra`, four vocabulary declaration kinds, a lowering
+/// diagnostic's `markup` byte, and the `bir_flags` section (frontend.md §9.7).
+pub const format_version: u32 = 7;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -112,6 +115,8 @@ pub const Section = enum(u32) {
     diagnostics,
     strings,
     bir_module_doc,
+    /// One word of flags: bit 0 is `Bir.uses_markup` (frontend.md §9.7).
+    bir_flags,
 
     pub const count: u32 = @typeInfo(Section).@"enum".fields.len;
 };
@@ -257,6 +262,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
     lengths[@intFromEnum(Section.diagnostics)] = diagnosticsLen(in.diagnostics);
     lengths[@intFromEnum(Section.strings)] = Strings.header + distinct * Strings.row + blob_len;
     lengths[@intFromEnum(Section.bir_module_doc)] = 8;
+    lengths[@intFromEnum(Section.bir_flags)] = 4;
 
     var offsets: [Section.count]u32 = @splat(0);
     var at: u32 = body_start;
@@ -341,6 +347,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
         std.mem.writeInt(u32, dst[0..4], bir.module_doc_start, .little);
         std.mem.writeInt(u32, dst[4..8], bir.module_doc_end, .little);
     }
+    std.mem.writeInt(u32, s(out, offsets, lengths, .bir_flags)[0..4], @intFromBool(bir.uses_markup), .little);
 
     // 4. The body hash, last, over everything it covers.
     const digest = iface_bytes.hash(out[hashed_from..]);
@@ -611,6 +618,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     if (lengths[@intFromEnum(Section.bir_interface)] % 4 != 0) return error.BadArtifact;
     if (lengths[@intFromEnum(Section.line_starts)] % 4 != 0) return error.BadArtifact;
     if (lengths[@intFromEnum(Section.bir_module_doc)] != 8) return error.BadArtifact;
+    if (lengths[@intFromEnum(Section.bir_flags)] != 4) return error.BadArtifact;
     inline for (.{
         .{ Section.bir_decls, Bir.Decl },
         .{ Section.bir_ctors, Bir.Ctor },
@@ -688,6 +696,11 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
         const doc = sec(bytes, offsets, lengths, .bir_module_doc);
         out.bir.module_doc_start = std.mem.readInt(u32, doc[0..4], .little);
         out.bir.module_doc_end = std.mem.readInt(u32, doc[4..8], .little);
+    }
+    {
+        const flags = std.mem.readInt(u32, sec(bytes, offsets, lengths, .bir_flags)[0..4], .little);
+        if (flags > 1) return error.BadArtifact;
+        out.bir.uses_markup = flags == 1;
     }
 
     try out.tokens.resize(gpa, token_count);
@@ -888,9 +901,11 @@ const Sample = struct {
             .other_end = 4,
             .forward = .through,
             .inside_constraint = true,
+            .markup = .missing_keyed,
         }});
         bir.module_doc_start = 2;
         bir.module_doc_end = 5;
+        bir.uses_markup = true;
 
         var tokens: Token.TokenList = .empty;
         try tokens.append(gpa, .{ .tag = .lower_ident, .start = 0, .line = 0, .payload = 7 });
@@ -958,6 +973,7 @@ test "an artifact round-trips: every column, the symbols and the diagnostics" {
     try testing.expectEqualDeep(sample.bir.diagnostics, loaded.bir.diagnostics);
     try testing.expectEqual(sample.bir.module_doc_start, loaded.bir.module_doc_start);
     try testing.expectEqual(sample.bir.module_doc_end, loaded.bir.module_doc_end);
+    try testing.expectEqual(sample.bir.uses_markup, loaded.bir.uses_markup);
 
     // The two token columns that are cached, and the two that are not.
     try testing.expectEqualSlices(Token.Tag, sample.tokens.items(.tag), loaded.tokens.items(.tag));

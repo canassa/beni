@@ -1,7 +1,8 @@
 -- `...` is an `ellipsis` only as the first token of a hole opened in a tag
 -- (frontend.md §9.1). Later in such a hole, in a children hole, and in
--- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: the
--- markup is not_implemented at 6:5 and the code unexpected_token at 10:7.
+-- ordinary code `...a` lexes as it always did, `dot_dot` then `.a`: in the
+-- tag's hole expected_token for the `...` (7:12) and the `}` (7:14), and in
+-- the code unexpected_token (11:7). `Card` is not imported (7:6).
 view a =
     <Card {a ...a}>{...a}</Card>
 

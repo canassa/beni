@@ -1,0 +1,50 @@
+decl 0: value view
+  %0 = pat_var local 0 (model)
+  %1 = qualified Ui.Card.view via Card
+  %2 = local 0 (model)
+  %3 = field_access %2 .card
+  %4 = qualified Ui.List.view via List
+  %5 = pat_var local 1 (item)
+  %6 = local 1 (item)
+  %7 = markup
+    element li
+      hole %6
+  %8 = lambda [%5] -> %7
+  %9 = qualified Ui.Card.header via Card
+  %10 = markup
+    element div
+      component %1
+        spread %3
+        attr title = "x"
+        attr done = True
+      component %4
+        children hole
+          hole %8
+      component %9
+        attr title = "y"
+        children fragment
+          element h1
+            text "Hi"
+          text "text"
+  params [%0]
+  body %10
+  locals
+    0 model param %0
+    1 item param %5
+  refs
+    import_value Ui.Card.view
+    import_value Ui.List.view
+    import_value Ui.Card.header
+
+interface
+
+imports
+  import Ui.Card as Card
+  import Ui.List as List
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

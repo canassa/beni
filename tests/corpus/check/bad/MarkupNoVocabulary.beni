@@ -1,0 +1,10 @@
+-- A module that writes markup is typed against its platform's vocabulary
+-- (checker-v2.md §25.1), and no platform declares one yet: the checker
+-- says no_markup_vocabulary once, at the module's first markup root in
+-- source order (6:5) — not at the markup inside it, nor at a later root.
+view name =
+    <p>{<b>{name}</b>}</p>
+
+
+other =
+    <br />

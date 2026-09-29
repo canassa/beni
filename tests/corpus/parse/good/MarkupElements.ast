@@ -1,0 +1,49 @@
+(module
+  (definition view
+    (pat_var model)
+    (markup_element div
+      (markup_attr class
+        (string
+          (chunk "row")))
+      (markup_attr id braced
+        (field_access .id
+          (ident model)))
+      (markup_attr hidden)
+      (markup_attr_escape "hx-get"
+        (string
+          (chunk "/items")))
+      (markup_text "\n        Hello, ")
+      (markup_hole
+        (field_access .name
+          (ident model)))
+      (markup_text "!\n        ")
+      (markup_element br)
+      (markup_element hr)
+      (markup_text "\n        ")
+      (markup_fragment
+        (markup_hole
+          (field_access .a
+            (ident model)))
+        (markup_hole
+          (field_access .b
+            (ident model))))
+      (markup_text "\n        ")
+      (markup_empty_hole)
+      (markup_text "\n        ")
+      (markup_empty_hole)
+      (markup_text "\n        ")
+      (markup_element Card
+        (markup_spread
+          (field_access .card
+            (ident model)))
+        (markup_attr title
+          (string
+            (chunk "x")))
+        (markup_text "body"))
+      (markup_text "\n        ")
+      (markup_element Ui.Card)
+      (markup_text "\n        ")
+      (markup_element Card.header
+        (markup_attr done braced
+          (ctor True)))
+      (markup_text "\n    "))))

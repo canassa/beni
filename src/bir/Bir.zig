@@ -87,6 +87,10 @@ diagnostics: []const Diagnostics.Item,
 /// the AST so the interface builder need not keep the tree.
 module_doc_start: u32,
 module_doc_end: u32,
+/// The file writes markup (frontend.md §9.7): it depends on the vocabulary
+/// module of whatever platform the build names, which the module graph
+/// turns into an import (§9.8). A fact of the file's bytes, like the rest.
+uses_markup: bool = false,
 
 pub const InstList = std.MultiArrayList(Inst);
 
@@ -353,6 +357,14 @@ pub const Inst = struct {
         /// branch returns from, or `none` for the declaration itself. The
         /// choice of shape is the checker's, on this instruction.
         @"try",
+        /// A markup root (language.md §11, frontend.md §9.7): an element,
+        /// fragment, component, `For` or `Show` that is not the direct child
+        /// of another element. `lhs` is the `ExtraIndex` of its root node, a
+        /// record `markupNode` reads; `rhs` unused. The instruction's index
+        /// is the site that names its template downstream. The value
+        /// instructions of its tree come before it in the declaration's
+        /// range, in source order.
+        markup,
 
         // ---- Patterns --------------------------------------------------
 
@@ -592,6 +604,317 @@ pub const LetDef = struct {
     params_end: ExtraIndex,
 };
 
+// ---------------------------------------------------------------------------
+// Markup trees (frontend.md §9.7). A `markup` instruction's `lhs` is the
+// `ExtraIndex` of its root node. Every node record begins with its kind, so
+// `markupKind` tells which record to read; children and items are ranges of
+// `ExtraIndex`es of further records. Names and text are symbols, since only
+// the checker, which has the vocabulary, can resolve them.
+// ---------------------------------------------------------------------------
+
+pub const MarkupKind = enum(u32) {
+    element,
+    fragment,
+    text,
+    hole,
+    component,
+    @"for",
+    show,
+};
+
+/// `<div …>…</div>`: an element of the platform's vocabulary.
+pub const MarkupElement = struct {
+    kind: MarkupKind,
+    /// The tag's name token.
+    token: u32,
+    /// The tag's markup name.
+    name: SymbolIndex,
+    /// `MarkupItem` records, in source order.
+    items_start: ExtraIndex,
+    items_end: ExtraIndex,
+    /// Child node records, in source order.
+    children_start: ExtraIndex,
+    children_end: ExtraIndex,
+};
+
+/// `<>…</>`.
+pub const MarkupFragment = struct {
+    kind: MarkupKind,
+    /// The opening `<`.
+    token: u32,
+    children_start: ExtraIndex,
+    children_end: ExtraIndex,
+};
+
+/// A text run as the page shows it: trimmed, then with its character
+/// references decoded (language.md §11.4). A run that trims to nothing is
+/// no node.
+pub const MarkupText = struct {
+    kind: MarkupKind,
+    /// The run's first `markup_text` token.
+    token: u32,
+    text: SymbolIndex,
+};
+
+/// `{e}` between tags. An empty hole is no node.
+pub const MarkupHole = struct {
+    kind: MarkupKind,
+    /// The `{`.
+    token: u32,
+    value: Inst.Index,
+};
+
+/// `<Card …>…</Card>`: a call of the module's `view`, or of the named
+/// value (language.md §11.8).
+pub const MarkupComponent = struct {
+    kind: MarkupKind,
+    /// The tag's name token.
+    token: u32,
+    /// The callee, an ordinary reference instruction.
+    callee: Inst.Index,
+    /// `MarkupItem` records of kind `attr`: the props, in source order.
+    props_start: ExtraIndex,
+    props_end: ExtraIndex,
+    /// The leading `{...e}`, if any.
+    spread: Inst.OptionalIndex,
+    children_form: ChildrenForm,
+    /// `hole`: one hole node; `fragment`: the children as a fragment's.
+    children_start: ExtraIndex,
+    children_end: ExtraIndex,
+};
+
+/// What a component's `children` field is (language.md §11.8).
+pub const ChildrenForm = enum(u32) {
+    /// Nothing between the tags.
+    absent,
+    /// Exactly one hole: `children` is its value.
+    hole,
+    /// Anything else: `children` is one markup value, the children as a
+    /// fragment.
+    fragment,
+};
+
+/// `<For each={…} keyed={…} fallback={…}>{row}</For>` and
+/// `<Show when={…} keyed={…} fallback={…}>{body}</Show>`
+/// (language.md §11.9, §11.18). `list` is `each` or `when`.
+pub const MarkupForm = struct {
+    kind: MarkupKind,
+    /// The tag's name token.
+    token: u32,
+    list: Inst.OptionalIndex,
+    keyed: Inst.OptionalIndex,
+    fallback: Inst.OptionalIndex,
+    mode: KeyMode,
+    /// The `MarkupRow` record, or `none_extra` when the children are not one
+    /// hole (`invalid_form_children`).
+    row: u32,
+};
+
+pub const none_extra: u32 = std.math.maxInt(u32);
+
+/// The keying mode lowering can see in `keyed` (language.md §11.9).
+pub const KeyMode = enum(u32) {
+    absent,
+    /// `keyed={f}`: any expression but the literals below.
+    key_function,
+    /// Bare `keyed`, or `keyed={True}`.
+    literal_true,
+    /// `keyed={False}`.
+    literal_false,
+};
+
+/// What `For` renders per item and `Show` for its value (frontend.md §9.7).
+pub const MarkupRow = struct {
+    /// The row function's instruction.
+    function: Inst.Index,
+    shape: RowShape,
+    /// `markup`: the markup instruction the peeled body ends in.
+    body: Inst.OptionalIndex,
+    /// `markup`: the `let` instructions peeled off the body, outermost first.
+    lets_start: ExtraIndex,
+    lets_end: ExtraIndex,
+    /// `markup` and `lambda`: the captured locals, declaration-relative, in
+    /// first-use order.
+    captures_start: ExtraIndex,
+    captures_end: ExtraIndex,
+    /// `markup` and `lambda`: `MarkupInput` records.
+    inputs_start: ExtraIndex,
+    inputs_end: ExtraIndex,
+};
+
+pub const RowShape = enum(u32) {
+    /// A lambda whose body, after any `let … in`, is markup: compiled in
+    /// place.
+    markup,
+    /// Any other lambda, written or made by a placeholder or an accessor.
+    lambda,
+    /// Anything else: called per row, its own input.
+    function,
+};
+
+/// One input of a row: a captured local, or a field path through it of at
+/// most `max_input_links` links (language.md §11.9).
+pub const MarkupInput = struct {
+    local: u32,
+    /// 0 for the local itself.
+    len: u32,
+    /// Each link a field's `SymbolIndex`, or a tuple index with
+    /// `tuple_link` set.
+    link0: u32,
+    link1: u32,
+    link2: u32,
+    link3: u32,
+
+    pub fn link(i: MarkupInput, k: usize) u32 {
+        return switch (k) {
+            0 => i.link0,
+            1 => i.link1,
+            2 => i.link2,
+            else => i.link3,
+        };
+    }
+};
+
+pub const max_input_links = 4;
+pub const tuple_link: u32 = 1 << 31;
+
+/// One attribute of an element, component or form, in source order.
+pub const MarkupItem = struct {
+    kind: ItemKind,
+    /// The attribute's name token, the quoted name's `str_start`, or the
+    /// spread's `{`.
+    token: u32,
+    /// `attr`: the name's `SymbolIndex`; `escape`: the quoted name's text,
+    /// interned; `spread`: `none`.
+    name: SymbolIndex,
+    form: ValueForm,
+    /// The instruction computing the value; none for a bare name and a
+    /// quoted value without interpolation, which are constants.
+    value: Inst.OptionalIndex,
+    constant: Constant,
+    /// `string` and `number`: the text in `string_bytes`.
+    constant_offset: u32,
+    constant_len: u32,
+    /// A class or style list written in place: `MarkupEntry` records.
+    entries_start: ExtraIndex,
+    entries_end: ExtraIndex,
+};
+
+pub const ItemKind = enum(u32) { attr, escape, spread };
+
+pub const ValueForm = enum(u32) {
+    /// `disabled`.
+    bare,
+    /// `title="…"`.
+    quoted,
+    /// `title={e}`.
+    braced,
+};
+
+/// A value the compiler knows (language.md §11.5).
+pub const Constant = enum(u32) {
+    none,
+    /// Quoted text with its references decoded, or a hole's string literal
+    /// as written, undecoded.
+    string,
+    /// A number literal's spelling, `-` included when negated.
+    number,
+    true,
+    false,
+};
+
+/// One entry of a class or style list written in place (frontend.md §9.7).
+pub const MarkupEntry = struct {
+    /// The entry's name text, in `string_bytes`.
+    name_offset: u32,
+    name_len: u32,
+    constant: Constant,
+    constant_offset: u32,
+    constant_len: u32,
+    /// The instruction computing the entry's second element.
+    value: Inst.Index,
+};
+
+/// One fact of a vocabulary declaration (language.md §11.14). A fact with
+/// several strings is one record per string.
+pub const VocabFact = struct {
+    word: FactWord,
+    /// The string argument's text or `via`'s name, interned; `none` for a
+    /// word alone.
+    arg: SymbolIndex,
+};
+
+pub const FactWord = enum(u32) {
+    void,
+    svg,
+    mathml,
+    on,
+    property,
+    stateful,
+    url,
+    raw,
+    classes,
+    styles,
+    name,
+    delegated,
+    prevent_default,
+    stop_propagation,
+    via,
+
+    /// The word as a declaration writes it.
+    pub fn spelling(f: FactWord) []const u8 {
+        return switch (f) {
+            .prevent_default => "preventDefault",
+            .stop_propagation => "stopPropagation",
+            else => @tagName(f),
+        };
+    }
+};
+
+/// The kind of the markup node record at `index`.
+pub fn markupKind(bir: *const Bir, index: ExtraIndex) MarkupKind {
+    return @enumFromInt(bir.extra[@intFromEnum(index)]);
+}
+
+/// Append the value instructions of the markup tree whose root record is
+/// at `root` — attribute values, holes, callees, a form's values and row
+/// function — to `out`, in source order.
+pub fn markupValues(bir: *const Bir, gpa: Allocator, root: ExtraIndex, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+    switch (bir.markupKind(root)) {
+        .element => {
+            const e = bir.extraData(root, MarkupElement);
+            try bir.itemValues(gpa, e.items_start, e.items_end, out);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, ExtraIndex)) |c| try bir.markupValues(gpa, c, out);
+        },
+        .fragment => {
+            const f = bir.extraData(root, MarkupFragment);
+            for (bir.extraSlice(.{ .start = f.children_start, .end = f.children_end }, ExtraIndex)) |c| try bir.markupValues(gpa, c, out);
+        },
+        .text => {},
+        .hole => try out.append(gpa, bir.extraData(root, MarkupHole).value),
+        .component => {
+            const c = bir.extraData(root, MarkupComponent);
+            try out.append(gpa, c.callee);
+            if (c.spread.unwrap()) |s| try out.append(gpa, s);
+            try bir.itemValues(gpa, c.props_start, c.props_end, out);
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, ExtraIndex)) |ch| try bir.markupValues(gpa, ch, out);
+        },
+        .@"for", .show => {
+            const f = bir.extraData(root, MarkupForm);
+            for ([_]Inst.OptionalIndex{ f.list, f.keyed, f.fallback }) |v| {
+                if (v.unwrap()) |i| try out.append(gpa, i);
+            }
+            if (f.row != none_extra) try out.append(gpa, bir.extraData(@enumFromInt(f.row), MarkupRow).function);
+        },
+    }
+}
+
+fn itemValues(bir: *const Bir, gpa: Allocator, start: ExtraIndex, end: ExtraIndex, out: *std.ArrayList(Inst.Index)) Allocator.Error!void {
+    for (bir.extraSlice(.{ .start = start, .end = end }, ExtraIndex)) |at| {
+        if (bir.extraData(at, MarkupItem).value.unwrap()) |v| try out.append(gpa, v);
+    }
+}
+
 /// The most type parameters a `type`, `type alias`, `foreign type` or `schema` may declare:
 /// an arity is a `u16` in the interface record (`checker-v2.md` §14.2).
 /// Lowering refuses more with `too_many_type_parameters`, so a `Decl.params` of a
@@ -673,12 +996,31 @@ pub const Decl = struct {
         foreign_type,
         /// `schema T = ...` (schema.md §2). It occupies its own namespace.
         schema,
+        /// The four vocabulary declarations of a platform package
+        /// (language.md §11.14). `name` is the element's, attribute's or
+        /// event's name text, interned, or the primitive's name; the facts
+        /// are `VocabFact`s in `extra` at `params_start..params_end`;
+        /// `annotation` is the type after `:`, none for an element.
+        vocab_element,
+        vocab_attribute,
+        vocab_event,
+        vocab_markup,
 
         /// True for the kinds that declare a name in the value namespace.
+        /// A markup primitive's name is one too, for lowering's
+        /// `duplicate_declaration`, but it has no scheme until the checker
+        /// reads vocabulary declarations, so it is not published as a value.
         pub fn isValue(k: Kind) bool {
             return switch (k) {
                 .value, .annotation_only, .foreign_value => true,
-                .type, .type_alias, .foreign_type, .schema => false,
+                .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => false,
+            };
+        }
+
+        pub fn isVocab(k: Kind) bool {
+            return switch (k) {
+                .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => true,
+                else => false,
             };
         }
 
@@ -836,6 +1178,7 @@ pub const empty: Bir = .{
     .diagnostics = &.{},
     .module_doc_start = 0,
     .module_doc_end = 0,
+    .uses_markup = false,
 };
 
 pub fn deinit(bir: *Bir, gpa: Allocator) void {
@@ -918,7 +1261,10 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         var schema_i = d.inst_start.int();
         while (schema_i < d.inst_end.int()) : (schema_i += 1) {
             if (!verifySchemaInst(bir, d, @enumFromInt(schema_i), symbols_len)) return false;
+            if (bir.instTag(@enumFromInt(schema_i)) == .markup and
+                !verifyMarkup(bir, d, bir.instData(@enumFromInt(schema_i)).lhs, 0)) return false;
         }
+        if (d.kind.isVocab() and !verifyFacts(bir, d, symbols_len)) return false;
     }
 
     for (bir.ctors) |c| {
@@ -985,6 +1331,155 @@ fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32
         .schema_optional, .schema_nullable => true,
         else => true,
     };
+}
+
+/// Whether the record of type `T` at `at` lies inside `extra`, and each of
+/// its exhaustive enum fields holds a value its enum has — which is what
+/// makes `extraData` safe to call on it.
+fn recordFits(bir: *const Bir, at: u32, comptime T: type) bool {
+    if (at > bir.extra.len or extraLen(T) > bir.extra.len - at) return false;
+    inline for (std.meta.fields(T), 0..) |f, k| {
+        switch (@typeInfo(f.type)) {
+            .@"enum" => |e| if (e.is_exhaustive and !validEnum(f.type, bir.extra[at + k])) return false,
+            else => {},
+        }
+    }
+    return true;
+}
+
+fn validEnum(comptime E: type, raw: u32) bool {
+    inline for (@typeInfo(E).@"enum".fields) |f| {
+        if (f.value == raw) return true;
+    }
+    return false;
+}
+
+fn validOptionalIn(d: Decl, index: Inst.OptionalIndex) bool {
+    const i = index.unwrap() orelse return true;
+    return inDecl(d, i.int());
+}
+
+/// Whether the markup tree rooted at record `root`, of declaration `d`,
+/// passes `verify`'s checks.
+pub fn markupTreeValid(bir: *const Bir, d: Decl, root: u32) bool {
+    return verifyMarkup(bir, d, root, 0);
+}
+
+/// A markup tree's records (frontend.md §9.7): every record inside
+/// `extra`, every kind and form a value its enum has, every instruction in
+/// the declaration, every symbol and byte range in its array. Records nest
+/// as deep as the parser allows markup to (§9.4), and a deeper chain —
+/// which only a corrupt record can make — is refused rather than followed.
+fn verifyMarkup(bir: *const Bir, d: Decl, at: u32, depth: u32) bool {
+    if (depth > 8192 or at >= bir.extra.len) return false;
+    const symbols_len: u32 = @intCast(bir.symbols.len);
+    const raw_kind = bir.extra[at];
+    if (!validEnum(MarkupKind, raw_kind)) return false;
+    switch (@as(MarkupKind, @enumFromInt(raw_kind))) {
+        .element => {
+            if (!recordFits(bir, at, MarkupElement)) return false;
+            const e = bir.extraData(@enumFromInt(at), MarkupElement);
+            return validSymbol(e.name, symbols_len) and verifyItems(bir, d, e.items_start, e.items_end) and
+                verifyChildren(bir, d, e.children_start, e.children_end, depth);
+        },
+        .fragment => {
+            if (!recordFits(bir, at, MarkupFragment)) return false;
+            const f = bir.extraData(@enumFromInt(at), MarkupFragment);
+            return verifyChildren(bir, d, f.children_start, f.children_end, depth);
+        },
+        .text => {
+            if (!recordFits(bir, at, MarkupText)) return false;
+            return validSymbol(bir.extraData(@enumFromInt(at), MarkupText).text, symbols_len);
+        },
+        .hole => {
+            if (!recordFits(bir, at, MarkupHole)) return false;
+            return inDecl(d, bir.extraData(@enumFromInt(at), MarkupHole).value.int());
+        },
+        .component => {
+            if (!recordFits(bir, at, MarkupComponent)) return false;
+            const c = bir.extraData(@enumFromInt(at), MarkupComponent);
+            return inDecl(d, c.callee.int()) and validOptionalIn(d, c.spread) and
+                validEnum(ChildrenForm, @intFromEnum(c.children_form)) and
+                verifyItems(bir, d, c.props_start, c.props_end) and
+                verifyChildren(bir, d, c.children_start, c.children_end, depth);
+        },
+        .@"for", .show => {
+            if (!recordFits(bir, at, MarkupForm)) return false;
+            const f = bir.extraData(@enumFromInt(at), MarkupForm);
+            if (!validOptionalIn(d, f.list) or !validOptionalIn(d, f.keyed) or !validOptionalIn(d, f.fallback)) return false;
+            if (!validEnum(KeyMode, @intFromEnum(f.mode))) return false;
+            if (f.row == none_extra) return true;
+            if (!recordFits(bir, f.row, MarkupRow)) return false;
+            const r = bir.extraData(@enumFromInt(f.row), MarkupRow);
+            if (!inDecl(d, r.function.int()) or !validOptionalIn(d, r.body) or !validEnum(RowShape, @intFromEnum(r.shape))) return false;
+            if (!verifyInstRange(bir, d, .{ .start = r.lets_start, .end = r.lets_end })) return false;
+            const locals = d.locals_end -| d.locals_start;
+            const cs = @intFromEnum(r.captures_start);
+            const ce = @intFromEnum(r.captures_end);
+            if (!inRange(cs, ce, bir.extra.len)) return false;
+            for (bir.extra[cs..ce]) |local| if (local >= locals) return false;
+            const is = @intFromEnum(r.inputs_start);
+            const ie = @intFromEnum(r.inputs_end);
+            if (!inRange(is, ie, bir.extra.len) or (ie - is) % extraLen(MarkupInput) != 0) return false;
+            var i = is;
+            while (i < ie) : (i += extraLen(MarkupInput)) {
+                const input = bir.extraData(@enumFromInt(i), MarkupInput);
+                if (input.local >= locals or input.len > max_input_links) return false;
+                for (0..input.len) |k| {
+                    const link = input.link(k);
+                    if (link & tuple_link == 0 and link >= symbols_len) return false;
+                }
+            }
+            return true;
+        },
+    }
+}
+
+fn verifyChildren(bir: *const Bir, d: Decl, start: ExtraIndex, end: ExtraIndex, depth: u32) bool {
+    const s = @intFromEnum(start);
+    const e = @intFromEnum(end);
+    if (!inRange(s, e, bir.extra.len)) return false;
+    for (bir.extra[s..e]) |c| if (!verifyMarkup(bir, d, c, depth + 1)) return false;
+    return true;
+}
+
+fn verifyItems(bir: *const Bir, d: Decl, start: ExtraIndex, end: ExtraIndex) bool {
+    const s = @intFromEnum(start);
+    const e = @intFromEnum(end);
+    if (!inRange(s, e, bir.extra.len)) return false;
+    const symbols_len: u32 = @intCast(bir.symbols.len);
+    for (bir.extra[s..e]) |at| {
+        if (!recordFits(bir, at, MarkupItem)) return false;
+        const item = bir.extraData(@enumFromInt(at), MarkupItem);
+        if (!validEnum(ItemKind, @intFromEnum(item.kind)) or !validEnum(ValueForm, @intFromEnum(item.form)) or
+            !validEnum(Constant, @intFromEnum(item.constant))) return false;
+        if (!validSymbol(item.name, symbols_len) or !validOptionalIn(d, item.value)) return false;
+        if (!inRange(item.constant_offset, item.constant_offset +| item.constant_len, bir.string_bytes.len)) return false;
+        const es = @intFromEnum(item.entries_start);
+        const ee = @intFromEnum(item.entries_end);
+        if (!inRange(es, ee, bir.extra.len)) return false;
+        for (bir.extra[es..ee]) |e_at| {
+            if (!recordFits(bir, e_at, MarkupEntry)) return false;
+            const entry = bir.extraData(@enumFromInt(e_at), MarkupEntry);
+            if (!inDecl(d, entry.value.int()) or !validEnum(Constant, @intFromEnum(entry.constant))) return false;
+            if (!inRange(entry.name_offset, entry.name_offset +| entry.name_len, bir.string_bytes.len)) return false;
+            if (!inRange(entry.constant_offset, entry.constant_offset +| entry.constant_len, bir.string_bytes.len)) return false;
+        }
+    }
+    return true;
+}
+
+/// A vocabulary declaration's facts: whole `VocabFact` records, each word a
+/// fact and each argument a symbol.
+fn verifyFacts(bir: *const Bir, d: Decl, symbols_len: u32) bool {
+    const s = @intFromEnum(d.params_start);
+    const e = @intFromEnum(d.params_end);
+    if ((e - s) % extraLen(VocabFact) != 0) return false;
+    var i = s;
+    while (i < e) : (i += extraLen(VocabFact)) {
+        if (!validEnum(FactWord, bir.extra[i]) or !validSymbol(@enumFromInt(bir.extra[i + 1]), symbols_len)) return false;
+    }
+    return true;
 }
 
 fn validSchemaDecl(bir: *const Bir, raw: u32) bool {

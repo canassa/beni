@@ -564,6 +564,7 @@ pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, s
             try stack.append(scratch, @enumFromInt(data.rhs));
         },
         .pat_as => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .markup => try bir.markupValues(scratch, @enumFromInt(data.lhs), stack),
         .schema_app, .schema_value, .schema_tagged => {
             try stack.append(scratch, @enumFromInt(data.lhs));
             try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));

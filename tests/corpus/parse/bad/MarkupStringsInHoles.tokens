@@ -39,6 +39,6 @@
 -- comments
 1:1 plain -- A string inside a hole is an ordinary string, interpolation included
 2:1 plain -- (frontend.md §9.1): the `}` of `${…}` ends the interpolation, a `}` in
-3:1 plain -- the chunk is text, and the `}` after the string closes the hole. The
-4:1 plain -- markup is not_implemented at 7:5. Inside `${…}` a `<` is the operator even
+3:1 plain -- the chunk is text, and the `}` after the string closes the hole: the
+4:1 plain -- markup parses clean. Inside `${…}` a `<` is the operator even
 5:1 plain -- where markup could start (language.md §11.2): unexpected_token at 11:9.

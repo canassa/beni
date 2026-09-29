@@ -16,5 +16,5 @@
 -- comments
 1:1 plain -- Text between tags is raw (language.md §11.4, frontend.md §9.1): `--` is
 2:1 plain -- text and not a comment, `'` and `"` are ordinary characters, and a run
-3:1 plain -- keeps its whitespace and newlines up to the next `<` or `{`. The comments
-4:1 plain -- list holds only this note. Only not_implemented at 6:5.
+3:1 plain -- keeps its whitespace and newlines up to the next `<` or `{`, in the tree
+4:1 plain -- as in the tokens. The comments list holds only this note.

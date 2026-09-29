@@ -1,0 +1,15 @@
+-- Markup is an operand, never a bare argument (language.md §11.2): after
+-- `f` the `<` is a comparison, and when what follows its abutting name can
+-- only be markup — `/>`, `>`, or an `=` after attribute names — the parser
+-- says element_as_argument at the `<` and its name (7:7, 11:7, 15:7), once
+-- per mistake.
+selfClosing f =
+    f <br />
+
+
+closed f =
+    f <p>text</p>
+
+
+attributes f =
+    f <input value="x" />

@@ -1002,6 +1002,9 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         const d = bir.decl(di);
         if (d.kind.isValue()) continue;
         if (d.kind == .schema) continue; // Schemas have their own table.
+        // Vocabulary declarations publish tables of their own once the
+        // checker reads them (checker-v2.md §25.8); until then, nothing.
+        if (d.kind.isVocab()) continue;
         try type_decls.append(gpa, di);
         try b.types.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(d.name)),

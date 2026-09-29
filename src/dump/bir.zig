@@ -46,6 +46,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Token = @import("../lex/Token.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
+const markup_text = @import("../markup/text.zig");
 const Inst = Bir.Inst;
 const Index = Inst.Index;
 
@@ -175,17 +176,34 @@ const Dumper = struct {
         }
     }
 
+    /// A string in double quotes, escaped where a byte would not show: the
+    /// controls, and whitespace outside ASCII (a no-break space, say), which
+    /// a reader could not tell from a space.
     fn quoted(d: *Dumper, bytes: []const u8) !void {
         try d.w.writeByte('"');
-        for (bytes) |c| switch (c) {
-            '"' => try d.w.writeAll("\\\""),
-            '\\' => try d.w.writeAll("\\\\"),
-            '\n' => try d.w.writeAll("\\n"),
-            '\r' => try d.w.writeAll("\\r"),
-            '\t' => try d.w.writeAll("\\t"),
-            0...8, 11, 12, 14...31, 127 => try d.w.print("\\u{{{x}}}", .{c}),
-            else => try d.w.writeByte(c),
-        };
+        var i: usize = 0;
+        while (i < bytes.len) : (i += 1) {
+            const c = bytes[i];
+            switch (c) {
+                '"' => try d.w.writeAll("\\\""),
+                '\\' => try d.w.writeAll("\\\\"),
+                '\n' => try d.w.writeAll("\\n"),
+                '\r' => try d.w.writeAll("\\r"),
+                '\t' => try d.w.writeAll("\\t"),
+                0...8, 11, 12, 14...31, 127 => try d.w.print("\\u{{{x}}}", .{c}),
+                0x80...0xff => {
+                    const n = markup_text.whitespaceAt(bytes, i);
+                    if (n == 0) {
+                        try d.w.writeByte(c);
+                        continue;
+                    }
+                    const cp = std.unicode.utf8Decode(bytes[i..][0..n]) catch unreachable;
+                    try d.w.print("\\u{{{x}}}", .{cp});
+                    i += n - 1;
+                },
+                else => try d.w.writeByte(c),
+            }
+        }
         try d.w.writeByte('"');
     }
 
@@ -218,6 +236,10 @@ const Dumper = struct {
             .foreign_value => "foreign value",
             .foreign_type => "foreign type",
             .schema => "schema",
+            .vocab_element => "element",
+            .vocab_attribute => "attribute",
+            .vocab_event => "event",
+            .vocab_markup => "markup",
         };
     }
 
@@ -279,6 +301,29 @@ const Dumper = struct {
                 try d.refIndex(decl_.schema_body.unwrap().?);
                 try d.w.writeByte('\n');
             },
+            // `facts on "input" property "value" via targetValue`, then the
+            // type (language.md §11.14).
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+                const facts = d.bir.extraSlice(.{ .start = decl_.params_start, .end = decl_.params_end }, u32);
+                if (facts.len != 0) {
+                    try d.w.writeAll("  facts");
+                    var f_at: usize = 0;
+                    while (f_at < facts.len) : (f_at += Bir.extraLen(Bir.VocabFact)) {
+                        const f = d.bir.extraData(@enumFromInt(@intFromEnum(decl_.params_start) + f_at), Bir.VocabFact);
+                        try d.w.print(" {s}", .{f.word.spelling()});
+                        if (f.arg.unwrap()) |_| {
+                            try d.w.writeByte(' ');
+                            if (f.word == .via) try d.w.writeAll(d.sym(f.arg)) else try d.quoted(d.sym(f.arg));
+                        }
+                    }
+                    try d.w.writeByte('\n');
+                }
+                if (decl_.annotation.unwrap()) |a| {
+                    try d.w.writeAll("  annotation ");
+                    try d.refIndex(a);
+                    try d.w.writeByte('\n');
+                }
+            },
         }
 
         if (d.locals.len != 0) {
@@ -334,8 +379,18 @@ const Dumper = struct {
         if (decl_.is_pub) try d.w.writeAll("pub ");
         if (decl_.is_opaque) try d.w.writeAll("opaque ");
         if (decl_.is_equatable) try d.w.writeAll("equatable ");
-        try d.w.print("{s} {s}", .{ kindText(decl_.kind), d.sym(decl_.name) });
+        try d.w.print("{s} ", .{kindText(decl_.kind)});
+        try d.declHeading(decl_);
         if (decl_.kind == .value and decl_.annotation != .none) try d.w.writeAll(" (annotated)");
+    }
+
+    /// A declaration's name; an element's, attribute's or event's in quotes,
+    /// since it is the text of a string and need not be an identifier.
+    fn declHeading(d: *Dumper, decl_: Bir.Decl) !void {
+        switch (decl_.kind) {
+            .vocab_element, .vocab_attribute, .vocab_event => try d.quoted(d.sym(decl_.name)),
+            else => try d.w.writeAll(d.sym(decl_.name)),
+        }
     }
 
     /// The interface skeleton's view of a `pub` declaration.
@@ -365,6 +420,10 @@ const Dumper = struct {
                 if (decl_.is_equatable) try d.w.writeAll(" (equatable)");
             },
             .schema => try d.w.print("schema {s}", .{d.sym(decl_.name)}),
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+                try d.w.print("{s} ", .{kindText(decl_.kind)});
+                try d.declHeading(decl_);
+            },
         }
     }
 
@@ -659,6 +718,179 @@ const Dumper = struct {
                 const code: @import("diagnostic").Code = @enumFromInt(data.lhs);
                 try d.w.print(" {t}", .{code});
             },
+            .markup => try d.markupNode(@enumFromInt(data.lhs), 4),
         }
+    }
+
+    // ---- Markup trees (frontend.md §9.7) ----------------------------------
+    //
+    // The tree of a `markup` instruction follows its line, one node per
+    // line, each level two spaces further in: its items, then its children.
+
+    fn line(d: *Dumper, indent: usize) !void {
+        try d.w.writeByte('\n');
+        try d.w.splatByteAll(' ', indent);
+    }
+
+    fn markupNode(d: *Dumper, at: Bir.ExtraIndex, indent: usize) std.Io.Writer.Error!void {
+        const bir = d.bir;
+        try d.line(indent);
+        switch (bir.markupKind(at)) {
+            .element => {
+                const e = bir.extraData(at, Bir.MarkupElement);
+                try d.w.print("element {s}", .{d.sym(e.name)});
+                try d.items(e.items_start, e.items_end, indent + 2);
+                try d.markupChildren(e.children_start, e.children_end, indent + 2);
+            },
+            .fragment => {
+                const f = bir.extraData(at, Bir.MarkupFragment);
+                try d.w.writeAll("fragment");
+                try d.markupChildren(f.children_start, f.children_end, indent + 2);
+            },
+            .text => {
+                try d.w.writeAll("text ");
+                try d.quoted(d.sym(bir.extraData(at, Bir.MarkupText).text));
+            },
+            .hole => {
+                try d.w.writeAll("hole ");
+                try d.refIndex(bir.extraData(at, Bir.MarkupHole).value);
+            },
+            .component => {
+                const c = bir.extraData(at, Bir.MarkupComponent);
+                try d.w.writeAll("component ");
+                try d.refIndex(c.callee);
+                if (c.spread.unwrap()) |s| {
+                    try d.line(indent + 2);
+                    try d.w.writeAll("spread ");
+                    try d.refIndex(s);
+                }
+                try d.items(c.props_start, c.props_end, indent + 2);
+                if (c.children_form != .absent) {
+                    try d.line(indent + 2);
+                    try d.w.print("children {t}", .{c.children_form});
+                    try d.markupChildren(c.children_start, c.children_end, indent + 4);
+                }
+            },
+            .@"for", .show => {
+                const f = bir.extraData(at, Bir.MarkupForm);
+                const is_for = bir.markupKind(at) == .@"for";
+                try d.w.writeAll(if (is_for) "for" else "show");
+                if (f.list.unwrap()) |v| {
+                    try d.w.writeAll(if (is_for) " each " else " when ");
+                    try d.refIndex(v);
+                }
+                switch (f.mode) {
+                    .absent => {},
+                    .key_function => {
+                        try d.w.writeAll(" keyed key ");
+                        try d.refIndex(f.keyed.unwrap().?);
+                    },
+                    .literal_true => try d.w.writeAll(" keyed True"),
+                    .literal_false => try d.w.writeAll(" keyed False"),
+                }
+                if (f.fallback.unwrap()) |v| {
+                    try d.w.writeAll(" fallback ");
+                    try d.refIndex(v);
+                }
+                if (f.row != Bir.none_extra) try d.row(bir.extraData(@enumFromInt(f.row), Bir.MarkupRow), indent + 2);
+            },
+        }
+    }
+
+    fn markupChildren(d: *Dumper, start: Bir.ExtraIndex, end: Bir.ExtraIndex, indent: usize) !void {
+        for (d.bir.extraSlice(.{ .start = start, .end = end }, Bir.ExtraIndex)) |c| try d.markupNode(c, indent);
+    }
+
+    /// `attr class = "row"`, `attr id = %1`, `attr tabindex = %2 (constant 0)`,
+    /// `attr class = %6 entries ["row" = True, "danger" = %5]`,
+    /// `escape "hx-get" = %3`.
+    fn items(d: *Dumper, start: Bir.ExtraIndex, end: Bir.ExtraIndex, indent: usize) !void {
+        const bir = d.bir;
+        for (bir.extraSlice(.{ .start = start, .end = end }, Bir.ExtraIndex)) |at| {
+            const item = bir.extraData(at, Bir.MarkupItem);
+            try d.line(indent);
+            switch (item.kind) {
+                .attr => try d.w.print("attr {s} = ", .{d.sym(item.name)}),
+                .escape => {
+                    try d.w.writeAll("escape ");
+                    try d.quoted(d.sym(item.name));
+                    try d.w.writeAll(" = ");
+                },
+                .spread => try d.w.writeAll("spread "),
+            }
+            if (item.value.unwrap()) |v| {
+                try d.refIndex(v);
+                if (item.constant != .none) {
+                    try d.w.writeAll(" (constant ");
+                    try d.constant(item.constant, item.constant_offset, item.constant_len);
+                    try d.w.writeByte(')');
+                }
+            } else try d.constant(item.constant, item.constant_offset, item.constant_len);
+            const entries = bir.extraSlice(.{ .start = item.entries_start, .end = item.entries_end }, Bir.ExtraIndex);
+            if (entries.len != 0) {
+                try d.w.writeAll(" entries [");
+                for (entries, 0..) |e_at, k| {
+                    const e = bir.extraData(e_at, Bir.MarkupEntry);
+                    if (k != 0) try d.w.writeAll(", ");
+                    try d.quoted(bir.string_bytes[e.name_offset..][0..e.name_len]);
+                    try d.w.writeAll(" = ");
+                    if (e.constant != .none) {
+                        try d.constant(e.constant, e.constant_offset, e.constant_len);
+                    } else try d.refIndex(e.value);
+                }
+                try d.w.writeByte(']');
+            }
+        }
+    }
+
+    fn constant(d: *Dumper, c: Bir.Constant, offset: u32, len: u32) !void {
+        switch (c) {
+            .none => try d.w.writeAll("?"),
+            .string => try d.quoted(d.bir.string_bytes[offset..][0..len]),
+            .number => try d.w.writeAll(d.bir.string_bytes[offset..][0..len]),
+            .true => try d.w.writeAll("True"),
+            .false => try d.w.writeAll("False"),
+        }
+    }
+
+    /// `row lambda %9 captures [0 (model)] inputs [model.selected, x]`, and
+    /// for a row compiled in place its markup and the `let`s peeled off it.
+    fn row(d: *Dumper, r: Bir.MarkupRow, indent: usize) !void {
+        const bir = d.bir;
+        try d.line(indent);
+        try d.w.print("row {t} ", .{r.shape});
+        try d.refIndex(r.function);
+        if (r.body.unwrap()) |b| {
+            try d.w.writeAll(" body ");
+            try d.refIndex(b);
+        }
+        const lets: Bir.SubRange = .{ .start = r.lets_start, .end = r.lets_end };
+        if (lets.len() != 0) {
+            try d.w.writeAll(" lets ");
+            try d.refList(lets);
+        }
+        if (r.shape == .function) return;
+        try d.w.writeAll(" captures [");
+        for (bir.extraSlice(.{ .start = r.captures_start, .end = r.captures_end }, u32), 0..) |captured, k| {
+            if (k != 0) try d.w.writeAll(", ");
+            try d.local(captured, false);
+        }
+        try d.w.writeAll("] inputs [");
+        var at = @intFromEnum(r.inputs_start);
+        var k: usize = 0;
+        while (at < @intFromEnum(r.inputs_end)) : (at += Bir.extraLen(Bir.MarkupInput)) {
+            const input = bir.extraData(@enumFromInt(at), Bir.MarkupInput);
+            if (k != 0) try d.w.writeAll(", ");
+            k += 1;
+            const name = d.locals[input.local].name;
+            try d.w.writeAll(if (name.unwrap()) |_| d.sym(name) else "_");
+            for (0..input.len) |n| {
+                const link = input.link(n);
+                if (link & Bir.tuple_link != 0) {
+                    try d.w.print(".{d}", .{link & ~Bir.tuple_link});
+                } else try d.w.print(".{s}", .{d.symRaw(link)});
+            }
+        }
+        try d.w.writeByte(']');
     }
 };

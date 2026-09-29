@@ -1,7 +1,7 @@
 -- Text between tags is raw (language.md §11.4, frontend.md §9.1): `--` is
 -- text and not a comment, `'` and `"` are ordinary characters, and a run
--- keeps its whitespace and newlines up to the next `<` or `{`. The comments
--- list holds only this note. Only not_implemented at 6:5.
+-- keeps its whitespace and newlines up to the next `<` or `{`, in the tree
+-- as in the tokens. The comments list holds only this note.
 view name =
     <p>
         Don't -- "quote" {name}

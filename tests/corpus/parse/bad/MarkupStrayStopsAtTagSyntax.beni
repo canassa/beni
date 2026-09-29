@@ -2,8 +2,7 @@
 -- `{`, `}`, `"`, `=` or whitespace after it (frontend.md §9.1), so it
 -- cannot swallow the tag's own syntax: `\` before `>` and `'s` before `>`
 -- are one token each, each tag still ends at its `>`, and each stray is one
--- unexpected_token (8:8, 12:10). The markup is not_implemented at 8:5 and
--- 12:5.
+-- unexpected_token (7:8, 11:10) and nothing more.
 slash =
     <a \> b</a>
 

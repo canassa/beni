@@ -1,0 +1,10 @@
+-- `keyed` takes a key function or a mode, read from the value's shape
+-- (frontend.md §9.7): a quoted value (7:29) and a constant other than
+-- `True` or `False` (8:29) are invalid_keyed, and so is `keyed={False}` on
+-- `Show` (9:30), a non-keyed `Show`, whose message shows the `case`.
+view model =
+    <div>
+        <For each={model.a} keyed="id">{\x -> <p />}</For>
+        <For each={model.a} keyed={1}>{\x -> <p />}</For>
+        <Show when={model.b} keyed={False}>{\x -> <p />}</Show>
+    </div>

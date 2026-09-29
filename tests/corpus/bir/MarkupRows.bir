@@ -1,0 +1,147 @@
+decl 0: value rowClass
+  %0 = pat_var local 0 (model)
+  %1 = pat_var local 1 (row)
+  %2 = local 0 (model)
+  %3 = field_access %2 .selected
+  %4 = local 1 (row)
+  %5 = field_access %4 .id
+  %6 = method_call %3 .eq [%5] (==)
+  %7 = import_ctor Basics.True
+  %8 = pat_ctor %7 []
+  %9 = string "danger"
+  %10 = branch %8 -> %9
+  %11 = import_ctor Basics.False
+  %12 = pat_ctor %11 []
+  %13 = string ""
+  %14 = branch %12 -> %13
+  %15 = case %6 [%10, %14]
+  params [%0, %1]
+  body %15
+  locals
+    0 model param %0
+    1 row param %1
+  refs
+    import_ctor Basics.True
+    import_ctor Basics.False
+
+decl 1: value label
+  %0 = pat_record [local 0 (title)]
+  %1 = local 0 (title)
+  params [%0]
+  body %1
+  locals
+    0 title pattern %0
+
+decl 2: value viewRow
+  %0 = pat_var local 0 (model)
+  %1 = pat_var local 1 (row)
+  %2 = local 1 (row)
+  %3 = field_access %2 .name
+  %4 = local 0 (model)
+  %5 = field_access %4 .count
+  %6 = markup
+    element tr
+      hole %3
+      hole %5
+  params [%0, %1]
+  body %6
+  locals
+    0 model param %0
+    1 row param %1
+
+decl 3: value view
+  %0 = pat_var local 0 (model)
+  %1 = let_def local 1 (theme) [] = %3
+  %2 = local 0 (model)
+  %3 = field_access %2 .theme
+  %4 = local 0 (model)
+  %5 = field_access %4 .rows
+  %6 = pat_var local 2
+  %7 = local 2
+  %8 = field_access %7 .id
+  %9 = lambda [%6] -> %8
+  %10 = pat_var local 3 (row)
+  %11 = let_def local 4 (cls) [] = %15
+  %12 = top 0 (rowClass)
+  %13 = local 0 (model)
+  %14 = local 3 (row)
+  %15 = call %12 [%13, %14]
+  %16 = local 4 (cls)
+  %17 = top 1 (label)
+  %18 = local 0 (model)
+  %19 = field_access %18 .page
+  %20 = call %17 [%19]
+  %21 = local 1 (theme)
+  %22 = field_access %21 .dark
+  %23 = markup
+    element tr
+      attr class = %16
+      element td
+        hole %20
+      element td
+        hole %22
+  %24 = let [%11] in %23
+  %25 = lambda [%10] -> %24
+  %26 = local 0 (model)
+  %27 = field_access %26 .rows
+  %28 = pat_var local 5
+  %29 = top 2 (viewRow)
+  %30 = local 0 (model)
+  %31 = local 5
+  %32 = call %29 [%30, %31]
+  %33 = lambda [%28] -> %32
+  %34 = local 0 (model)
+  %35 = field_access %34 .rows
+  %36 = import_ctor Basics.False
+  %37 = top 2 (viewRow)
+  %38 = local 0 (model)
+  %39 = field_access %38 .user
+  %40 = pat_var local 6
+  %41 = local 6
+  %42 = field_access %41 .id
+  %43 = lambda [%40] -> %42
+  %44 = pat_var local 7 (user)
+  %45 = local 7 (user)
+  %46 = field_access %45 .name
+  %47 = markup
+    element p
+      hole %46
+  %48 = lambda [%44] -> %47
+  %49 = markup
+    element table
+      for each %5 keyed key %9
+        row markup %25 body %23 lets [%24] captures [0 (model), 1 (theme)] inputs [model.selected, model.page.title, theme.dark]
+      for each %27
+        row lambda %33 captures [0 (model)] inputs [model.count]
+      for each %35 keyed False
+        row function %37
+      show when %39 keyed key %43
+        row markup %48 body %47 captures [] inputs []
+  %50 = let [%1] in %49
+  params [%0]
+  body %50
+  locals
+    0 model param %0
+    1 theme let %1
+    2 _ fresh %6
+    3 row param %10
+    4 cls let %11
+    5 _ fresh %28
+    6 _ fresh %40
+    7 user param %44
+  refs
+    top 0 (rowClass)
+    top 1 (label)
+    top 2 (viewRow)
+    import_ctor Basics.False
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

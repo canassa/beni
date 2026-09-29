@@ -1,0 +1,38 @@
+(module
+  (definition rows
+    (pat_var model)
+    (markup_element ul
+      (markup_text "\n        ")
+      (markup_for For
+        (markup_attr each braced
+          (field_access .rows
+            (ident model)))
+        (markup_attr keyed braced
+          (accessor .id))
+        (markup_attr fallback braced
+          (markup_element li
+            (markup_text "None")))
+        (markup_text "\n            ")
+        (markup_hole
+          (lambda
+            (pat_var row)
+            (markup_element li
+              (markup_hole
+                (field_access .label
+                  (ident row))))))
+        (markup_text "\n        "))
+      (markup_text "\n    ")))
+  (definition editor
+    (pat_var model)
+    (markup_show Show
+      (markup_attr when braced
+        (field_access .user
+          (ident model)))
+      (markup_attr keyed)
+      (markup_hole
+        (lambda
+          (pat_var user)
+          (markup_element p
+            (markup_hole
+              (field_access .name
+                (ident user)))))))))

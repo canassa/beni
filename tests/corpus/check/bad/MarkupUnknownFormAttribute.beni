@@ -1,0 +1,8 @@
+-- An attribute `For` does not take is unknown_form_attribute, with "did
+-- you mean" over the ones it does (language.md §11.9): `key` is answered
+-- with `keyed` (7:32), so a misspelt `keyed` never keys a list by
+-- reference in silence.
+view model =
+    <ul>
+        <For each={model.rows} key={.id}>{\row -> <li />}</For>
+    </ul>

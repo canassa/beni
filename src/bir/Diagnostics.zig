@@ -39,12 +39,30 @@ pub const Item = struct {
     /// only INSIDE a constraint's type. The prose differs because the
     /// mistake does, and the fix for (b) is not "delete the clause".
     inside_constraint: bool = false,
+    /// Markup's lowering codes (language.md §11.17): which of a code's
+    /// readings fired. The second range is the tag's name.
+    markup: Markup = .none,
 
     pub fn hasOther(item: Item) bool {
         return item.other_end > item.other_start;
     }
 
     pub const Forward = enum(u8) { direct, self, through, self_through };
+
+    pub const Markup = enum(u8) {
+        none,
+        /// `duplicate_attribute`: `children` written as an attribute and
+        /// between the tags too.
+        children_twice,
+        /// `missing_form_attribute`: which one.
+        missing_each,
+        missing_when,
+        missing_keyed,
+        /// `invalid_keyed`: `keyed={False}` on `Show`.
+        keyed_false_on_show,
+        /// `unknown_module_alias`: the module of a component's tag.
+        component,
+    };
 };
 
 /// Write the Elm-style prose for `item`. No trailing newline.
@@ -147,7 +165,21 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\It is not declared in this module, listed in an `exposing` list, or part of the
             \\prelude. Check the spelling, or expose it from an import.
         , .{text}),
-        .unknown_module_alias => {
+        .unknown_module_alias => if (item.markup == .component) {
+            // A component's tag (language.md §11.8): `Card` and `Ui.Card`
+            // name a module, `Card.header` a module then a value.
+            const dot = std.mem.lastIndexOfScalar(u8, text, '.');
+            const member = if (dot) |d| d + 1 < text.len and std.ascii.isLower(text[d + 1]) else false;
+            const module = if (member) text[0..dot.?] else text;
+            try w.print(
+                \\I cannot find a module named `{s}` for the component `<{s}>`.
+                \\
+                \\A capitalised tag is a component: `<TodoItem …/>` calls the `view` of the module
+                \\imported as `TodoItem`, and `<Card.header …/>` the value `header` of the module
+                \\imported as `Card`. Import the module under that name, as in
+                \\`import Ui.TodoItem as TodoItem`.
+            , .{ module, text });
+        } else {
             const dot = std.mem.lastIndexOfScalar(u8, text, '.') orelse text.len;
             try w.print(
                 \\I cannot find a module named `{s}` for `{s}`.
@@ -293,10 +325,148 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\Each field applies `as`, `via`, `optional` and `nullable` at most once.
             \\Compose conversions explicitly when two transformations are needed.
         , .{ text, other_line }),
+        // Markup (language.md §11.17, frontend.md §9.7). The second range
+        // is the tag's name, except for `duplicate_attribute`'s ordinary
+        // reading, where it is the first occurrence.
+        .duplicate_attribute => if (item.markup == .children_twice) {
+            try w.print(
+                \\`<{s}>` is given `children` twice: as an attribute here, and between its tags.
+                \\
+                \\What is written between the tags IS the `children` field, so the second would
+                \\silently win. Keep one of the two.
+            , .{other});
+        } else {
+            try w.print(
+                \\The attribute `{s}` is written twice; the first is on line {d}.
+                \\
+                \\Each attribute is written once, or the second would silently win. Remove one of
+                \\the two.
+            , .{ text, other_line });
+        },
+        .spread_on_element => try w.print(
+            \\`<{s}>` cannot take a spread: a spread `{{...record}}` is the first attribute of a
+            \\component, whose record it extends.
+            \\
+            \\A spread of attributes onto an element is not supported yet. Write the attributes
+            \\it would set one by one.
+        , .{other}),
+        .spread_not_first => try w.print(
+            \\This spread is not the first attribute of `<{s}>`.
+            \\
+            \\A component's spread is the record its other attributes update, so it comes first
+            \\and there is one: `<{s} {{...defaults}} title="x" />`. Move it to the front.
+        , .{ other, other }),
+        .invalid_form_children => try w.print(
+            \\`<{s}>` takes exactly one child: a hole holding the function that renders {s}.
+            \\
+            \\    {s}
+        , .{
+            other,
+            if (std.mem.eql(u8, other, "For")) @as([]const u8, "each item") else "the value",
+            if (std.mem.eql(u8, other, "For"))
+                @as([]const u8, "<For each={items}>{\\item -> <li>{item.label}</li>}</For>")
+            else
+                "<Show when={model.user} keyed>{\\user -> <UserEditor user={user} />}</Show>",
+        }),
+        .unknown_form_attribute => {
+            const is_for = std.mem.eql(u8, other, "For");
+            const names: []const []const u8 = if (is_for) &.{ "each", "keyed", "fallback" } else &.{ "when", "keyed", "fallback" };
+            try w.print("`{s}` is not an attribute of `<{s}>`, which takes `{s}`, `{s}` and `{s}`.", .{ text, other, names[0], names[1], names[2] });
+            if (nearest(text, names)) |near| try w.print("\n\nHint: did you mean `{s}`?", .{near});
+        },
+        .missing_form_attribute => switch (item.markup) {
+            .missing_each => try w.writeAll(
+                \\This `<For>` has no `each`: the list it renders.
+                \\
+                \\    <For each={items} keyed={.id}>{\item -> <li>{item.label}</li>}</For>
+            ),
+            .missing_when => try w.writeAll(
+                \\This `<Show>` has no `when`: the `Maybe` whose value it shows.
+                \\
+                \\    <Show when={model.user} keyed>{\user -> <UserEditor user={user} />}</Show>
+            ),
+            else => try w.writeAll(
+                \\This `<Show>` has no `keyed`, so it would not say when to rebuild what it shows.
+                \\
+                \\A `<Show>` remounts its body when its value changes: `keyed` for a new value by
+                \\identity, `keyed={.id}` for a new key. To patch the body in place instead, write
+                \\the `case` it would be:
+                \\
+                \\    case model.user of
+                \\        Just user ->
+                \\            <UserEditor user={user} />
+                \\
+                \\        Nothing ->
+                \\            <p>Pick a user</p>
+            ),
+        },
+        .invalid_keyed => if (item.markup == .keyed_false_on_show) {
+            try w.writeAll(
+                \\`keyed={False}` would make a `<Show>` that never remounts, which is a `case`.
+                \\
+                \\Write `keyed`, or `keyed={.id}` for a key, or the `case` itself:
+                \\
+                \\    case model.user of
+                \\        Just user ->
+                \\            <UserEditor user={user} />
+                \\
+                \\        Nothing ->
+                \\            <p>Pick a user</p>
+            );
+        } else {
+            try w.print(
+                \\`{s}` is not a keying mode of `<{s}>`.
+                \\
+                \\`keyed` takes a key function, `keyed={{.id}}`, or a mode: bare `keyed` or
+                \\`keyed={{True}}` keeps a row by its item's identity, and `keyed={{False}}` (on `<For>`)
+                \\by its position.
+            , .{ text, other });
+        },
+        .vocabulary_outside_platform => try w.writeAll(
+            \\This vocabulary declaration is outside a platform package.
+            \\
+            \\`pub element`, `pub attribute`, `pub event` and `pub markup` declare the markup a
+            \\platform offers (`docs/design/language.md` §11.14). Like `foreign`, they are legal
+            \\in a package whose manifest says `"platform": true`, and nowhere else.
+        ),
         // Only the codes above are lowering errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
     }
+}
+
+/// The name of `names` nearest `text` by edit distance, if any is within
+/// half its length, or two edits: the "did you mean" of a form's attribute.
+fn nearest(text: []const u8, names: []const []const u8) ?[]const u8 {
+    var best: ?[]const u8 = null;
+    var best_distance: usize = std.math.maxInt(usize);
+    for (names) |n| {
+        const d = editDistance(text, n);
+        if (d < best_distance) {
+            best = n;
+            best_distance = d;
+        }
+    }
+    if (best_distance == 0 or best_distance > @max(text.len / 2, 2)) return null;
+    return best;
+}
+
+/// Levenshtein distance for short names; a name longer than 32 bytes is
+/// never near.
+fn editDistance(a: []const u8, b: []const u8) usize {
+    if (a.len > 32 or b.len > 32) return std.math.maxInt(usize) / 4;
+    var prev: [33]usize = undefined;
+    var cur: [33]usize = undefined;
+    for (0..b.len + 1) |j| prev[j] = j;
+    for (a, 0..) |ca, i| {
+        cur[0] = i + 1;
+        for (b, 0..) |cb, j| {
+            const cost: usize = if (ca == cb) 0 else 1;
+            cur[j + 1] = @min(@min(prev[j + 1] + 1, cur[j] + 1), prev[j] + cost);
+        }
+        @memcpy(prev[0 .. b.len + 1], cur[0 .. b.len + 1]);
+    }
+    return prev[b.len];
 }
 
 // ---------------------------------------------------------------------------

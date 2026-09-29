@@ -1,0 +1,18 @@
+-- Each production of an element (language.md §11.3, frontend.md §9.4): a
+-- quoted, a braced and a bare attribute, the quoted-name escape, bare text
+-- with holes between it, a nested element, a self-closing tag and one
+-- closed at once (the same tree), a fragment, an empty hole and one that
+-- holds only a comment; a component by module, by path and by value, with
+-- a spread first and its children.
+view model =
+    <div class="row" id={model.id} hidden "hx-get"="/items">
+        Hello, {model.name}!
+        <br /><hr></hr>
+        <>{model.a}{model.b}</>
+        {}
+        {-- a note
+        }
+        <Card {...model.card} title="x">body</Card>
+        <Ui.Card />
+        <Card.header done={True} />
+    </div>

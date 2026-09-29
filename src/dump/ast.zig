@@ -169,6 +169,11 @@ const Dumper = struct {
             try d.w.writeByte(')');
             return;
         }
+        if (isMarkupTag(tag)) {
+            try d.markupNode(n, indent);
+            try d.w.writeByte(')');
+            return;
+        }
         switch (tag) {
             .root => {
                 try d.open("module", main);
@@ -465,4 +470,100 @@ const Dumper = struct {
             else => unreachable,
         }
     }
+
+    /// Markup and the vocabulary declarations (language.md §11), kept out of
+    /// `node` for `schemaNode`'s reason. A tag prints its name inline; a
+    /// self-closing tag and one closed at once print alike, because they are
+    /// the same tree (§11.3). Text prints as written, before lowering trims
+    /// and decodes it (frontend.md §9.4); a braced attribute value is marked
+    /// `braced`, so `a={"x"}` and `a="x"` stay apart.
+    fn markupNode(d: *Dumper, n: Index, indent: usize) std.Io.Writer.Error!void {
+        const tree = d.tree;
+        const tag = tree.nodeTag(n);
+        const main = tree.nodeMainToken(n);
+        const inner = indent + 2;
+        switch (tag) {
+            .markup_element, .markup_fragment, .markup_for, .markup_show => {
+                const m = tree.fullMarkup(n);
+                try d.openTag(tag, main);
+                if (m.name) |name| try d.w.print(" {s}", .{d.text(name)});
+                try d.children(m.attrs, inner);
+                try d.children(m.children, inner);
+            },
+            .markup_attr => {
+                const a = tree.fullMarkupAttr(n);
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{d.text(a.name)});
+                if (a.brace != null) try d.w.writeAll(" braced");
+                if (a.value) |v| try d.child(v, inner);
+            },
+            .markup_attr_escape => {
+                const data = tree.nodeData(n);
+                try d.openTag(tag, main);
+                try d.w.writeByte(' ');
+                try d.stringSource(main);
+                var t = main;
+                while (d.tags[t] != .str_end and d.tags[t] != .eof and d.tags[t] != .invalid) t += 1;
+                if (d.tags[t + 1] == .equal and d.tags[t + 2] == .l_brace) try d.w.writeAll(" braced");
+                try d.child(@enumFromInt(data.rhs), inner);
+            },
+            .markup_spread, .markup_hole => {
+                try d.openTag(tag, main);
+                try d.child(tree.operand(n), inner);
+            },
+            .markup_empty_hole => try d.openTag(tag, main),
+            .markup_text => {
+                try d.openTag(tag, main);
+                try d.w.writeByte(' ');
+                try @import("tokens.zig").writeQuoted(d.w, d.text(main));
+            },
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+                const v = tree.fullVocab(n);
+                try d.openTag(tag, main);
+                try d.visibility(v.header);
+                try d.w.writeByte(' ');
+                if (v.name_string != null) try d.stringSource(v.name) else try d.w.writeAll(d.text(v.name));
+                var t = v.facts_start;
+                while (t < v.facts_end) : (t += 1) {
+                    try d.w.writeByte(' ');
+                    if (d.tags[t] == .str_start) {
+                        try d.stringSource(t);
+                        while (d.tags[t] != .str_end and t + 1 < v.facts_end) t += 1;
+                    } else try d.w.writeAll(d.text(t));
+                }
+                try d.docs(v.header, inner);
+                if (v.type_expr) |te| try d.child(te, inner);
+            },
+            else => unreachable,
+        }
+    }
+
+    /// A one-line string's source, from its `str_start` to its `str_end`.
+    fn stringSource(d: *Dumper, start: Ast.TokenIndex) !void {
+        var t = start;
+        while (d.tags[t] != .str_end and d.tags[t] != .eof and d.tags[t] != .invalid) t += 1;
+        const end = Tokenizer.tokenEnd(d.source, d.tags[t], d.starts[t]);
+        try d.w.writeAll(d.source[d.starts[start]..end]);
+    }
 };
+
+fn isMarkupTag(tag: Node.Tag) bool {
+    return switch (tag) {
+        .markup_element,
+        .markup_fragment,
+        .markup_for,
+        .markup_show,
+        .markup_attr,
+        .markup_attr_escape,
+        .markup_spread,
+        .markup_text,
+        .markup_hole,
+        .markup_empty_hole,
+        .vocab_element,
+        .vocab_attribute,
+        .vocab_event,
+        .vocab_markup,
+        => true,
+        else => false,
+    };
+}

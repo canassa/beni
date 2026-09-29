@@ -1400,13 +1400,30 @@ const Case = struct {
         // Structure-preserving: both parse to the same AST. The formatter
         // sorts imports (language.md §9), so the dumps are compared with
         // their import entries in sorted order.
+        // Markup's text runs are left out of the comparison: the formatter
+        // re-indents them and may break a line where the page shows
+        // nothing (language.md §11.15), so their bytes move while what
+        // they say does not — which the lowered file, whose text is
+        // trimmed and decoded, is compared for below.
         const before = try c.compiler(&.{ "dump", "--stage=ast", fixture });
         const after = try c.inProject(&.{ "dump", "--stage=ast", "Fixed.beni" });
         try expectExit(0, before);
         try expectExit(0, after);
-        if (!std.mem.eql(u8, try sortImports(c.arena, before.stdout), try sortImports(c.arena, after.stdout))) {
+        if (!std.mem.eql(u8, try withoutMarkupText(c.arena, try sortImports(c.arena, before.stdout)), try withoutMarkupText(c.arena, try sortImports(c.arena, after.stdout)))) {
             detail("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
+        }
+
+        // Page-preserving: markup says the same after formatting as before
+        // (language.md §11.15's governing rule), which the lowered trees
+        // show, text as the page shows it.
+        if (std.mem.indexOf(u8, before.stdout, "(markup_") != null) {
+            const bir_before = try c.compiler(&.{ "dump", "--stage=bir", fixture });
+            const bir_after = try c.inProject(&.{ "dump", "--stage=bir", "Fixed.beni" });
+            if (bir_before.exit_code != bir_after.exit_code or !std.mem.eql(u8, bir_before.stdout, bir_after.stdout)) {
+                detail("{s}: formatting changed what the markup says\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, bir_before.stdout, bir_after.stdout });
+                return error.PageChanged;
+            }
         }
 
         // Comment-preserving: the same comments, in the same order. The AST
@@ -1977,6 +1994,30 @@ fn commentTrailer(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
 
 /// An AST dump with its top-level `(import …)` entries (each with the
 /// `(exposed …)` lines under it) reordered by their text.
+/// An AST dump without its markup text nodes: every `(markup_text "…")`
+/// child is cut out with the line break and indentation before it, so the
+/// parentheses after it close where they would have had it not been there.
+fn withoutMarkupText(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    const marker = "(markup_text \"";
+    var out: std.ArrayList(u8) = .empty;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, dump, pos, marker)) |at| {
+        // Back over the indentation to the line break before the node.
+        var cut = at;
+        while (cut > pos and dump[cut - 1] == ' ') cut -= 1;
+        if (cut > pos and dump[cut - 1] == '\n') cut -= 1;
+        try out.appendSlice(arena, dump[pos..cut]);
+        // Past the quoted text, its escapes included, and the `)`.
+        var i = at + marker.len;
+        while (i < dump.len and dump[i] != '"') : (i += 1) {
+            if (dump[i] == '\\') i += 1;
+        }
+        pos = @min(i + 2, dump.len);
+    }
+    try out.appendSlice(arena, dump[pos..]);
+    return out.items;
+}
+
 fn sortImports(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
     // Each import block as `[start, end)` offsets into `dump`.
     var blocks: std.ArrayList([2]usize) = .empty;

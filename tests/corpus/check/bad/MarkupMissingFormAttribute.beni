@@ -1,0 +1,10 @@
+-- A form's required attributes (language.md §11.9, §11.18): `For` without
+-- `each` (7:10), and `Show` without `keyed` — whose message shows the
+-- `case` a non-keyed `Show` would be (8:10) — or without `when` (9:10).
+-- Each is missing_form_attribute at the tag.
+view model =
+    <div>
+        <For keyed={.id}>{\x -> <p />}</For>
+        <Show when={model.user}>{\u -> <p />}</Show>
+        <Show keyed>{\u -> <p />}</Show>
+    </div>

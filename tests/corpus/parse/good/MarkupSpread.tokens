@@ -17,6 +17,6 @@
 -- comments
 1:1 plain -- A spread is `{` then `...` as the hole's first token, whatever comes
 2:1 plain -- between them (frontend.md §9.1): `{ ...a }`, and a `{` whose `...` is on
-3:1 plain -- the next line after a comment, both lex `l_brace ellipsis`. Only
-4:1 plain -- not_implemented at 6:5.
+3:1 plain -- the next line after a comment, both lex `l_brace ellipsis` and parse as
+4:1 plain -- a `markup_spread`.
 8:13 plain -- the rest

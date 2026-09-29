@@ -133,6 +133,14 @@ module_doc: Ast.CommentRange = .empty,
 scratch: std.ArrayList(u32) = .empty,
 /// Scratch: the closers of every open bracket, innermost last.
 brackets: std.ArrayList(Tag) = .empty,
+/// Scratch: the name symbol of every element whose children are being
+/// parsed, innermost last (`fragment_symbol` for a fragment), so a closing
+/// tag can tell a mismatch from an outer element's closer (frontend.md §9.5).
+markup_open: std.ArrayList(u32) = .empty,
+/// How many elements were closed at an outer element's closing tag: the
+/// lexer, which does not match names, still counts each as open, and lexes
+/// what follows the outermost element as its children (`skipDrift`).
+markup_drift: u32 = 0,
 /// True while the `Type` of a TOP-LEVEL annotation or `foreign` value is
 /// being parsed: the only two positions a `where` clause may follow
 /// (static-dispatch-spike.md §2.1). It is what makes `where` a CONTEXTUAL
@@ -200,6 +208,7 @@ pub fn parse(
     // Free on an arena is a no-op; on a testing allocator it is the leak check.
     defer p.scratch.deinit(scratch);
     defer p.brackets.deinit(scratch);
+    defer p.markup_open.deinit(scratch);
     try p.nodes.ensureTotalCapacity(gpa, estimatedNodeCount(tokens.len));
     try p.extra.ensureTotalCapacity(gpa, estimatedExtraCount(tokens.len));
 
@@ -438,10 +447,28 @@ fn report(p: *Parse, item: Diagnostics.Item) Allocator.Error!?u32 {
     if (item.start == p.last_error_start) return null;
     // The lexer already reported this token (language.md §2: every lexical
     // error produces an `invalid` token); it needs no second diagnostic.
-    if (p.tags[p.tok_i] == .invalid and item.start == p.starts[p.tok_i]) return null;
+    if ((p.tags[p.tok_i] == .invalid or p.tags[p.tok_i] == .markup_stray) and item.start == p.starts[p.tok_i]) return null;
+    // Markup nested past the lexer's bound is past the parser's too, at the
+    // same `<`: one message for one mistake.
+    if (item.code == .nesting_too_deep and p.lexReportedAt(item.start, .nesting_too_deep)) return null;
     p.last_error_start = item.start;
     try p.errors.append(p.gpa, item);
     return @intCast(p.errors.items.len - 1);
+}
+
+/// Whether the lexer reported `code` at `start` (its items are in source
+/// order).
+fn lexReportedAt(p: *const Parse, start: u32, code: diagnostic.Code) bool {
+    var lo: usize = 0;
+    var hi: usize = p.lex_diagnostics.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (p.lex_diagnostics[mid].start < start) lo = mid + 1 else hi = mid;
+    }
+    while (lo < p.lex_diagnostics.len and p.lex_diagnostics[lo].start == start) : (lo += 1) {
+        if (p.lex_diagnostics[lo].code == code) return true;
+    }
+    return false;
 }
 
 /// An item at the next token, with the layout fields filled in when the
@@ -502,10 +529,14 @@ fn invalidNode(p: *Parse, tag: Node.Tag) Allocator.Error!Index {
     return p.addNode(.{ .tag = tag, .main_token = token, .data = .{ .lhs = @intFromEnum(code), .rhs = std.math.maxInt(u32) } });
 }
 
-/// Skip `invalid` tokens the lexer already reported (`peek` hides the
+/// Skip `invalid` tokens and markup strays the lexer already reported (`peek` hides the
 /// cut-off marker, so this never consumes it).
 fn skipInvalid(p: *Parse) void {
-    while (p.peek() == .invalid) _ = p.next();
+    while (true) {
+        const tag = p.peek();
+        if (tag != .invalid and tag != .markup_stray) return;
+        _ = p.next();
+    }
 }
 
 /// Expect exactly `tag` next. When it is missing, report `expected_token`
@@ -816,6 +847,12 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
         },
         .lower_ident => blk: {
             if (opaque_token) |t| _ = try p.report(p.itemAtToken(.opaque_not_on_type, t));
+            if (header.pub_token != .none) {
+                if (p.vocabForm()) |form| {
+                    try p.reportPendingAnnotation(pending);
+                    break :blk try p.parseVocab(header, form);
+                }
+            }
             if (p.isWord(p.tok_i, "schema") and p.peekAt(1) == .upper_ident) {
                 try p.reportPendingAnnotation(pending);
                 break :blk try p.parseSchemaDecl(header);
@@ -2042,6 +2079,12 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
         // does not recurse for it.
         if (!try p.enterSpine()) break;
         const op_token = p.next();
+        if (tok == .op_lt) {
+            if (try @call(.never_inline, markupArgument, .{ p, op_token })) |placeholder| {
+                lhs = try p.binary(info.tag, op_token, lhs, placeholder);
+                break;
+            }
+        }
         const rhs = if (isBlockStart(p.peek()))
             try p.parseExpr() // the last operand; extends as far as layout allows
         else if (p.peek() == .eof)
@@ -2189,6 +2232,15 @@ fn parseAtom(p: *Parse, operand_start: bool) Allocator.Error!Index {
             }
             if (try p.enter()) |placeholder| return placeholder;
             defer p.leave();
+            // `-<b />`: markup is not a number (frontend.md §9.4).
+            if (p.peek() == .markup_open) {
+                @branchHint(.cold);
+                var item = p.itemAt(.unexpected_token);
+                item.construct = .negated_markup;
+                const node = try p.errorNode(.error_expr, item);
+                p.recover();
+                return node;
+            }
             const operand = try p.parseAtomAccess(true);
             return p.unary(.negate, minus, operand);
         },
@@ -2205,48 +2257,607 @@ fn parseAtom(p: *Parse, operand_start: bool) Allocator.Error!Index {
             return node;
         },
         .invalid => return p.invalidNode(.error_expr),
-        .markup_open => return p.skipMarkup(),
+        // The lexer never produces `markup_open` after an operand
+        // (frontend.md §9.3), so only an operand start reaches this.
+        .markup_open => return @call(.never_inline, parseMarkup, .{p}),
         else => return p.unexpectedExpr(),
     }
 }
 
-/// Markup is lexed but not yet parsed (frontend.md §9.4 is still to be
-/// built): report `not_implemented` once at the opening `<` and skip the
-/// whole expression — to the end of its outermost element, a column-1
-/// token, or the end of the file — so the rest of the file parses as
-/// before. The lexer never produces `markup_open` after an operand
-/// (§9.3), so only an operand start reaches this.
-fn skipMarkup(p: *Parse) Allocator.Error!Index {
+fn unexpectedExpr(p: *Parse) Allocator.Error!Index {
     @branchHint(.cold);
-    const node = try p.errorNode(.error_expr, p.itemAt(.not_implemented));
-    var depth: u32 = 0;
-    var closing = false;
-    while (true) {
-        const tag = p.rawTag();
-        if (tag == .eof) break;
-        if (depth != 0 and p.col(p.tok_i) == 1) break;
-        p.tok_i += 1;
-        switch (tag) {
-            .markup_open => depth += 1,
-            .markup_close_open => closing = true,
-            .markup_self_close => depth -= 1,
-            .markup_gt => if (closing) {
-                closing = false;
-                depth -= 1;
-            },
-            else => {},
-        }
-        if (depth == 0) break;
-    }
-    p.recovering = false;
+    var item = p.itemAt(.unexpected_token);
+    item.construct = .expression;
+    // `<-div>`: `<-` is one token (language.md §2.2), so this is no tag.
+    if (p.rawTag() == .arrow_left and p.tok_i + 1 < p.tags.len and p.adjacent(p.tok_i + 1) and
+        isMarkupNameStart(p.tags[p.tok_i + 1])) item.construct = .dash_tag;
+    const node = try p.errorNode(.error_expr, item);
+    p.recoverUnlessStructural();
     return node;
 }
 
-fn unexpectedExpr(p: *Parse) Allocator.Error!Index {
-    @branchHint(.cold);
-    const node = try p.unexpected(.error_expr, .expression);
-    p.recoverUnlessStructural();
+// ---------------------------------------------------------------------------
+// Markup (language.md §11.3, frontend.md §9.4–§9.5)
+// ---------------------------------------------------------------------------
+
+fn isMarkupNameStart(tag: Tag) bool {
+    return switch (tag) {
+        .lower_ident, .upper_ident, .qualified_lower, .qualified_upper, .int, .float => true,
+        else => false,
+    };
+}
+
+/// Which built-in form, if any, a tag name spells (language.md §11.3).
+fn markupKind(p: *const Parse, name: ?TokenIndex) Node.Tag {
+    const t = name orelse return .markup_fragment;
+    const text = p.tokenText(t);
+    if (std.mem.eql(u8, text, "For")) return .markup_for;
+    if (std.mem.eql(u8, text, "Show")) return .markup_show;
+    return .markup_element;
+}
+
+/// A capitalised tag, or a module path then a lower name: a component,
+/// whose attributes are the fields of its one record (§11.8).
+fn isComponentName(p: *const Parse, name: TokenIndex) bool {
+    const text = p.tokenText(name);
+    return text.len > 0 and std.ascii.isUpper(text[0]);
+}
+
+/// Markup := Element | Fragment. One nesting level per element (§9.4).
+fn parseMarkup(p: *Parse) Allocator.Error!Index {
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    const saved_context = p.setContext(.markup_tag);
+    defer p.context = saved_context;
+    const open = p.next();
+    // The lexer opens markup only before a letter or `>`, and a letter
+    // right after the `<` is always the tag's name.
+    const name: ?TokenIndex = if (p.peek() == .markup_name) p.next() else null;
+    const kind = p.markupKind(name);
+    const component = if (name) |n| kind == .markup_element and p.isComponentName(n) else false;
+
+    var record: Ast.Markup = .{
+        .name = if (name) |n| .fromToken(n) else .none,
+        .attrs_start = @enumFromInt(0),
+        .attrs_end = @enumFromInt(0),
+        .children_start = @enumFromInt(0),
+        .children_end = @enumFromInt(0),
+        .open_end = .none,
+        .close = .none,
+    };
+    const attrs = try p.parseMarkupAttrs(name, component);
+    record.attrs_start = attrs.start;
+    record.attrs_end = attrs.end;
+
+    p.skipInvalid();
+    switch (p.peek()) {
+        .markup_self_close => record.open_end = .fromToken(p.next()),
+        .markup_gt => {
+            record.open_end = .fromToken(p.next());
+            try p.markup_open.append(p.scratch_allocator, if (name) |n| p.payloads[n] else fragment_symbol);
+            defer _ = p.markup_open.pop();
+            p.context = .markup_children;
+            const children = try p.parseMarkupChildren(open, name, &record);
+            record.children_start = children.start;
+            record.children_end = children.end;
+        },
+        else => {
+            // The tag ends at the first token that cannot continue it.
+            var item = p.itemAt(.expected_token);
+            item.expected = .markup_gt;
+            _ = try p.report(item);
+        },
+    }
+    const extra = try p.addExtra(record);
+    const node = try p.addNode(.{ .tag = kind, .main_token = open, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+    if (p.markup_drift > 0 and p.markup_open.items.len == 0) p.skipDrift();
     return node;
+}
+
+/// After the outermost element, the tokens the lexer made of what it took
+/// for the children of elements the parser closed at an outer closer, up to
+/// as many closing tags: they follow a reported error, and are skipped
+/// rather than reported again.
+fn skipDrift(p: *Parse) void {
+    @branchHint(.cold);
+    var nested: u32 = 0;
+    while (p.markup_drift > 0) {
+        switch (p.peek()) {
+            .eof => break,
+            .markup_open => {
+                nested += 1;
+                _ = p.next();
+            },
+            .markup_self_close => {
+                nested -|= 1;
+                _ = p.next();
+            },
+            .markup_close_open => {
+                _ = p.next();
+                if (p.peek() == .markup_name) _ = p.next();
+                if (p.peek() == .markup_gt) _ = p.next();
+                if (nested > 0) nested -= 1 else p.markup_drift -= 1;
+            },
+            else => _ = p.next(),
+        }
+    }
+    p.markup_drift = 0;
+}
+
+/// What `markup_open` holds for an open fragment: no symbol of a name,
+/// since a name is always interned before its payload is read.
+const fragment_symbol = std.math.maxInt(u32);
+
+/// Attr* up to the `>` or `/>` that ends the opening tag.
+fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool) Allocator.Error!SubRange {
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (true) {
+        const before = p.tok_i;
+        switch (p.peek()) {
+            .markup_attr => {
+                const attr = p.next();
+                if (component and !isFieldName(p.tokenText(attr))) try p.reportComponentProp(attr, name.?);
+                try p.pushScratch(try p.parseMarkupAttr(attr));
+            },
+            .str_start => {
+                const quoted = p.tok_i;
+                const name_node = try p.parseString();
+                if (component) try p.reportComponentProp(quoted, name.?);
+                if (p.tree_string_interpolates(name_node)) {
+                    @branchHint(.cold);
+                    var item = p.itemAtToken(.unexpected_token, quoted);
+                    item.construct = .attribute_name;
+                    _ = try p.report(item);
+                }
+                _ = try p.expectToken(.equal);
+                const value = try p.parseMarkupValue();
+                try p.pushScratch(try p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = name_node.int(), .rhs = value.int() } }));
+            },
+            .l_brace => try p.pushScratch(try p.parseSpread()),
+            .invalid, .markup_stray => _ = p.next(), // a stray byte the lexer reported
+            else => break,
+        }
+        p.assertProgress(before);
+    }
+    return p.listToRange(p.scratchSince(mark));
+}
+
+/// A component's attribute is a field of its record (language.md §11.8),
+/// so its name must be a lower identifier.
+fn isFieldName(text: []const u8) bool {
+    if (text.len == 0 or !std.ascii.isLower(text[0])) return false;
+    for (text[1..]) |c| if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+    return true;
+}
+
+fn reportComponentProp(p: *Parse, attr: TokenIndex, component: TokenIndex) Allocator.Error!void {
+    @branchHint(.cold);
+    var item = p.itemAtToken(.unexpected_token, attr);
+    // A quoted name spans its whole string.
+    if (p.tags[attr] == .str_start) {
+        var t = attr;
+        while (p.tags[t] != .str_end and p.tags[t] != .eof and p.tags[t] != .invalid) t += 1;
+        item.end = p.tokenEnd(t);
+    }
+    item.construct = .component_prop;
+    item.head_start = p.starts[component];
+    item.head_end = p.tokenEnd(component);
+    _ = try p.report(item);
+}
+
+/// Whether a `string` node has a `${…}` part.
+fn tree_string_interpolates(p: *const Parse, node: Index) bool {
+    if (p.nodes.items(.tag)[node.int()] != .string) return false;
+    const data = p.nodes.items(.data)[node.int()];
+    for (p.extra.items[data.lhs..data.rhs]) |part| {
+        if (p.nodes.items(.tag)[part] == .interp) return true;
+    }
+    return false;
+}
+
+/// `name`, or `name=value`.
+fn parseMarkupAttr(p: *Parse, name: TokenIndex) Allocator.Error!Index {
+    if (p.peek() != .equal) {
+        return p.addNode(.{ .tag = .markup_attr, .main_token = name, .data = .{ .lhs = @intFromEnum(Node.OptionalIndex.none), .rhs = 0 } });
+    }
+    _ = p.next();
+    const brace: u32 = if (p.peek() == .l_brace) p.tok_i else 0;
+    const value = try p.parseMarkupValue();
+    return p.addNode(.{ .tag = .markup_attr, .main_token = name, .data = .{ .lhs = value.int(), .rhs = brace } });
+}
+
+/// AttrValue := string | '{' Expr '}'.
+fn parseMarkupValue(p: *Parse) Allocator.Error!Index {
+    switch (p.peek()) {
+        .str_start => return p.parseString(),
+        .l_brace => {
+            const open = p.next();
+            const saved_context = p.setContext(.markup_hole);
+            defer p.context = saved_context;
+            try p.pushBracket(.r_brace);
+            defer p.popBracket();
+            const value = try p.parseExpr();
+            try p.expectCloser(.r_brace, open);
+            return value;
+        },
+        else => {
+            @branchHint(.cold);
+            // Left in place: it is most likely the next attribute.
+            return p.unexpected(.error_expr, .attribute_value);
+        },
+    }
+}
+
+/// `{...e}` (language.md §11.3). A `{` in a tag whose first token is not
+/// `...` is `expected_token`, and its expression is kept as the spread's so
+/// the tree stays complete.
+fn parseSpread(p: *Parse) Allocator.Error!Index {
+    const open = p.next();
+    const saved_context = p.setContext(.markup_hole);
+    defer p.context = saved_context;
+    try p.pushBracket(.r_brace);
+    defer p.popBracket();
+    if (p.eat(.ellipsis) == null) {
+        @branchHint(.cold);
+        var item = p.itemAt(.expected_token);
+        item.expected = .ellipsis;
+        _ = try p.report(item);
+    }
+    const value = try p.parseExpr();
+    try p.expectCloser(.r_brace, open);
+    return p.unary(.markup_spread, open, value);
+}
+
+/// Child* then the closing tag. The children end at `</`, at a token
+/// outside the block (a column-1 declaration, the end of the file), or at
+/// the closing tag of an element further out (§9.5).
+fn parseMarkupChildren(p: *Parse, open: TokenIndex, name: ?TokenIndex, record: *Ast.Markup) Allocator.Error!SubRange {
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (true) {
+        const before = p.tok_i;
+        switch (p.peek()) {
+            .markup_text => try p.pushScratch(try p.leaf(.markup_text, p.next())),
+            .l_brace => try p.pushScratch(try p.parseHole()),
+            .markup_open => try p.pushScratch(try p.parseMarkup()),
+            .invalid => _ = p.next(), // a stray byte in text, reported by the lexer
+            .markup_close_open => {
+                const close_name: ?TokenIndex = if (p.peekAt(1) == .markup_name) p.tok_i + 1 else null;
+                if (!p.closerMatches(name, close_name) and p.closesOuter(close_name)) {
+                    // `</outer>`: this element was never closed, and the
+                    // closer is the outer one's.
+                    try p.reportUnclosed(open, name, p.tok_i);
+                    p.markup_drift += 1;
+                    break;
+                }
+                record.close = .fromToken(p.next());
+                if (close_name != null) _ = p.next();
+                if (!p.closerMatches(name, close_name)) try p.reportMismatch(open, name, record.close.unwrap().?, close_name);
+                p.skipInvalid();
+                if (p.peek() == .markup_gt) {
+                    _ = p.next();
+                } else {
+                    var item = p.itemAt(.expected_token);
+                    item.expected = .markup_gt;
+                    _ = try p.report(item);
+                }
+                break;
+            },
+            else => {
+                // `eof`, or a token outside the block.
+                try p.reportUnclosed(open, name, p.tok_i);
+                break;
+            },
+        }
+        p.assertProgress(before);
+    }
+    return p.listToRange(p.scratchSince(mark));
+}
+
+/// Whether the closing tag named `close_name` (null for `</>`) closes the
+/// element named `name` (null for a fragment). Names compare by symbol.
+fn closerMatches(p: *const Parse, name: ?TokenIndex, close_name: ?TokenIndex) bool {
+    const a = name orelse return close_name == null;
+    const b = close_name orelse return false;
+    return p.payloads[a] == p.payloads[b];
+}
+
+/// Whether the closing tag names an element (or fragment) opened further
+/// out than the one being parsed.
+fn closesOuter(p: *const Parse, close_name: ?TokenIndex) bool {
+    const want = if (close_name) |c| p.payloads[c] else fragment_symbol;
+    const outer = p.markup_open.items[0 .. p.markup_open.items.len - 1];
+    for (outer) |s| if (s == want) return true;
+    return false;
+}
+
+/// `unclosed_element` at the opening `<` and its name, naming the token the
+/// element ended at, as `unclosed_delimiter` does.
+fn reportUnclosed(p: *Parse, open: TokenIndex, name: ?TokenIndex, at: TokenIndex) Allocator.Error!void {
+    var item = p.itemAtToken(.unclosed_element, open);
+    item.end = if (name) |n| p.tokenEnd(n) else p.tokenEnd(open + 1);
+    item.required_col = p.indent;
+    if (p.tags[at] != .eof) {
+        item.head_start = p.starts[at];
+        item.head_end = p.tokenEnd(at);
+        if (p.tags[at] == .markup_close_open) {
+            // The whole closing tag, `</name>`, is what the message quotes.
+            item.construct = .outer_closer;
+            var t = at + 1;
+            if (p.tags[t] == .markup_name) t += 1;
+            item.head_end = if (p.tags[t] == .markup_gt) p.tokenEnd(t) else p.tokenEnd(t - 1);
+        }
+    }
+    _ = try p.report(item);
+}
+
+/// `mismatched_closing_tag` at the closing tag, naming both.
+fn reportMismatch(p: *Parse, open: TokenIndex, name: ?TokenIndex, close: TokenIndex, close_name: ?TokenIndex) Allocator.Error!void {
+    var item = p.itemAtToken(.mismatched_closing_tag, close);
+    item.end = if (close_name) |c| p.tokenEnd(c) else p.tokenEnd(close);
+    item.head_start = p.starts[open];
+    item.head_end = if (name) |n| p.tokenEnd(n) else p.tokenEnd(open + 1);
+    _ = try p.report(item);
+}
+
+/// '{' Expr? '}' between tags. An empty hole, or one holding only
+/// comments, is a `markup_empty_hole`.
+fn parseHole(p: *Parse) Allocator.Error!Index {
+    const open = p.next();
+    const saved_context = p.setContext(.markup_hole);
+    defer p.context = saved_context;
+    if (p.peek() == .r_brace) {
+        _ = p.next();
+        return p.leaf(.markup_empty_hole, open);
+    }
+    if (p.commentSwallowsBrace(open)) {
+        @branchHint(.cold);
+        // `{-- note}`: the comment ran to the end of the line with the `}`
+        // in it, and nothing later closes the hole (§9.5).
+        var item = p.itemAtToken(.unclosed_delimiter, open);
+        item.expected = .r_brace;
+        item.construct = .comment_swallowed_brace;
+        const c = p.comments[p.firstCommentAfter(open)];
+        item.head_start = c.start;
+        item.head_end = Tokenizer.tokenEnd(p.source, .multiline_line, c.start);
+        _ = try p.report(item);
+        const node = try p.leaf(.markup_empty_hole, open);
+        try p.pushBracket(.r_brace);
+        defer p.popBracket();
+        p.recover();
+        return node;
+    }
+    try p.pushBracket(.r_brace);
+    defer p.popBracket();
+    const value = try p.parseExpr();
+    try p.expectCloser(.r_brace, open);
+    return p.unary(.markup_hole, open, value);
+}
+
+/// Index of the first comment after token `t`.
+fn firstCommentAfter(p: *const Parse, t: TokenIndex) usize {
+    var lo: usize = 0;
+    var hi: usize = p.comments.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (p.comments[mid].before_token <= t) lo = mid + 1 else hi = mid;
+    }
+    return lo;
+}
+
+/// A hole whose `{` is followed on its own line by a comment holding a
+/// `}`, and which nothing later in the block closes: the comment took the
+/// hole's `}` (language.md §11.3).
+fn commentSwallowsBrace(p: *const Parse, open: TokenIndex) bool {
+    const i = p.firstCommentAfter(open);
+    if (i >= p.comments.len or p.comments[i].before_token != open + 1) return false;
+    const c = p.comments[i];
+    const line_end = Tokenizer.tokenEnd(p.source, .multiline_line, c.start);
+    if (c.start < p.starts[open] or line_end < c.start) return false;
+    // The comment must start on the `{`'s line.
+    if (std.mem.indexOfScalar(u8, p.source[p.starts[open]..c.start], '\n') != null) return false;
+    if (std.mem.indexOfScalar(u8, p.source[c.start..line_end], '}') == null) return false;
+    // Anything that does close the hole later makes it an ordinary one.
+    var depth: u32 = 0;
+    var t = open + 1;
+    while (t < p.tags.len and p.tags[t] != .eof and p.inBlock(t)) : (t += 1) switch (p.tags[t]) {
+        .l_brace => depth += 1,
+        .r_brace => {
+            if (depth == 0) return false;
+            depth -= 1;
+        },
+        else => {},
+    };
+    return true;
+}
+
+/// `f <div />`: markup where an operand has already ended (language.md
+/// §11.2). One message, then the comparison's placeholder, returned, and the
+/// rest of the construct skipped; null for a comparison. Kept out of
+/// `parseBinop`'s loop, which it would otherwise slow for every operator.
+fn markupArgument(p: *Parse, op_token: TokenIndex) Allocator.Error!?Index {
+    if (!p.looksLikeMarkupArgument(op_token)) return null;
+    var item = p.itemAtToken(.element_as_argument, op_token);
+    item.end = p.tokenEnd(op_token + 1);
+    item.head_start = p.starts[op_token - 1];
+    item.head_end = p.tokenEnd(op_token - 1);
+    const placeholder = try p.errorNode(.error_expr, item);
+    p.recover();
+    return placeholder;
+}
+
+/// `f <div />` (language.md §11.2): after an operand the `<` is a
+/// comparison, and what follows its abutting name can only be markup — a
+/// `/>`, a `>`, or an `=` after the name and any attribute names. True when
+/// the comparison's right operand has that shape; `op` is the `<`.
+fn looksLikeMarkupArgument(p: *const Parse, op: TokenIndex) bool {
+    const name = op + 1;
+    if (name >= p.tags.len or !p.adjacent(name)) return false;
+    switch (p.tags[name]) {
+        .lower_ident, .upper_ident, .qualified_lower, .qualified_upper => {},
+        else => return false,
+    }
+    var n: u32 = 1;
+    while (true) : (n += 1) switch (p.peekAt(n)) {
+        .lower_ident => {},
+        .op_gt, .equal => return true,
+        .op_slash => {
+            const slash = p.tok_i + n;
+            return p.peekAt(n + 1) == .op_gt and p.adjacent(slash + 1);
+        },
+        else => return false,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Vocabulary declarations (language.md §11.14, frontend.md §9.4)
+// ---------------------------------------------------------------------------
+
+const VocabForm = enum { element, attribute, event, markup };
+
+/// After `pub`: which vocabulary declaration begins here, if any. The
+/// words are contextual, so this is two tokens of lookahead past the word.
+fn vocabForm(p: *const Parse) ?VocabForm {
+    // The token after the word decides before its text is read: a `pub`
+    // annotation, `pub name : T`, costs two tag tests.
+    if (p.peek() != .lower_ident) return null;
+    switch (p.peekAt(1)) {
+        .str_start => {
+            const text = p.tokenText(p.tok_i);
+            if (std.mem.eql(u8, text, "element")) return .element;
+            if (std.mem.eql(u8, text, "attribute")) return .attribute;
+            if (std.mem.eql(u8, text, "event")) return .event;
+            return null;
+        },
+        .lower_ident => {
+            if (p.peekAt(2) != .colon) return null;
+            return if (std.mem.eql(u8, p.tokenText(p.tok_i), "markup")) .markup else null;
+        },
+        else => return null,
+    }
+}
+
+/// VocabDecl := 'pub' ('element' | 'attribute' | 'event') string Fact* (':' Type)?
+///            | 'pub' 'markup' lower_ident ':' Type
+fn parseVocab(p: *Parse, header: Ast.DeclHeader, form: VocabForm) Allocator.Error!Index {
+    p.context = .vocabulary;
+    _ = p.next(); // the contextual word
+    var record: Ast.VocabDecl = .{
+        .header = header,
+        .name = .none,
+        .facts_start = 0,
+        .facts_end = 0,
+        .type_expr = .none,
+    };
+    const name_token = p.tok_i;
+    if (form == .markup) {
+        _ = p.next();
+    } else {
+        const name = try p.parseString();
+        record.name = name.toOptional();
+        if (p.tree_string_interpolates(name)) {
+            @branchHint(.cold);
+            var item = p.itemAtToken(.unexpected_token, name_token);
+            item.construct = .vocabulary_name;
+            _ = try p.report(item);
+        }
+    }
+    record.facts_start = p.tok_i;
+    if (form != .markup) try p.parseFacts(form);
+    record.facts_end = p.tok_i;
+    if (form != .element) {
+        _ = try p.expectToken(.colon);
+        record.type_expr = (try p.parseTopType()).toOptional();
+    }
+    const tag: Node.Tag = switch (form) {
+        .element => .vocab_element,
+        .attribute => .vocab_attribute,
+        .event => .vocab_event,
+        .markup => .vocab_markup,
+    };
+    const extra = try p.addExtra(record);
+    return p.addNode(.{ .tag = tag, .main_token = name_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+/// What a fact word takes after it.
+const FactArgs = enum { none, strings, optional_string, string, name };
+
+fn factArgs(form: VocabForm, word: []const u8) ?FactArgs {
+    const Row = struct { []const u8, FactArgs };
+    const rows: []const Row = switch (form) {
+        .element => &.{ .{ "void", .none }, .{ "svg", .none }, .{ "mathml", .none } },
+        .attribute => &.{
+            .{ "on", .strings }, .{ "property", .optional_string }, .{ "stateful", .none }, .{ "url", .none },
+            .{ "raw", .none },   .{ "classes", .none },             .{ "styles", .none },
+        },
+        .event => &.{
+            .{ "on", .strings },          .{ "name", .string },          .{ "delegated", .none },
+            .{ "preventDefault", .none }, .{ "stopPropagation", .none }, .{ "via", .name },
+        },
+        .markup => &.{},
+    };
+    for (rows) |r| if (std.mem.eql(u8, r[0], word)) return r[1];
+    return null;
+}
+
+/// A fact's string argument, consumed as tokens: the facts are kept as a
+/// token range (`Ast.VocabDecl`), and lowering reads the text from there.
+fn skipFactString(p: *Parse) void {
+    _ = p.next(); // str_start
+    while (true) {
+        if (p.atCutMarker()) {
+            _ = p.next();
+            return;
+        }
+        switch (p.peek()) {
+            .eof => return,
+            .str_end => {
+                _ = p.next();
+                return;
+            },
+            else => _ = p.next(),
+        }
+    }
+}
+
+/// Fact* up to `:` or the end of the declaration. A word that is no fact of
+/// the form is `unexpected_token`, naming the ones that are, and skipped.
+fn parseFacts(p: *Parse, form: VocabForm) Allocator.Error!void {
+    while (p.peek() == .lower_ident) {
+        const word = p.next();
+        const args = factArgs(form, p.tokenText(word)) orelse {
+            @branchHint(.cold);
+            var item = p.itemAtToken(.unexpected_token, word);
+            item.construct = switch (form) {
+                .element => .element_fact,
+                .attribute => .attribute_fact,
+                .event, .markup => .event_fact,
+            };
+            _ = try p.report(item);
+            continue;
+        };
+        switch (args) {
+            .none => {},
+            .strings => {
+                if (p.peek() != .str_start) {
+                    var item = p.itemAt(.expected_token);
+                    item.expected = .str_start;
+                    _ = try p.report(item);
+                }
+                while (p.peek() == .str_start) p.skipFactString();
+            },
+            .optional_string => if (p.peek() == .str_start) p.skipFactString(),
+            .string => if (p.peek() == .str_start) {
+                p.skipFactString();
+            } else {
+                var item = p.itemAt(.expected_token);
+                item.expected = .str_start;
+                _ = try p.report(item);
+            },
+            .name => _ = try p.expectToken(.lower_ident),
+        }
+    }
 }
 
 /// '(' ')' | '(' operator ')' | '(' Expr ')' | '(' Expr (',' Expr)+ ')'
@@ -3221,6 +3832,34 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             const b = tree.fullBranch(n);
             try checkIndex(tree, b.pattern);
             try checkIndex(tree, b.body);
+        },
+        .markup_element, .markup_fragment, .markup_for, .markup_show => {
+            const m = tree.fullMarkup(n);
+            try testing.expect(m.open < token_count);
+            if (m.name) |t| try testing.expect(t < token_count);
+            if (m.open_end) |t| try testing.expect(t < token_count);
+            if (m.close) |t| try testing.expect(t < token_count);
+            try checkIndices(tree, m.attrs);
+            try checkIndices(tree, m.children);
+        },
+        .markup_attr => {
+            const a = tree.fullMarkupAttr(n);
+            if (a.value) |v| try checkIndex(tree, v);
+            if (a.brace) |t| try testing.expect(t < token_count);
+        },
+        .markup_attr_escape => {
+            const d = tree.nodeData(n);
+            try checkIndex(tree, @enumFromInt(d.lhs));
+            try checkIndex(tree, @enumFromInt(d.rhs));
+        },
+        .markup_spread, .markup_hole => try checkIndex(tree, tree.operand(n)),
+        .markup_text, .markup_empty_hole => {},
+        .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => {
+            const v = tree.fullVocab(n);
+            try checkHeader(v.header, token_count, comment_count);
+            if (v.name_string) |s| try checkIndex(tree, s);
+            try testing.expect(v.facts_start <= v.facts_end and v.facts_end <= token_count);
+            if (v.type_expr) |t| try checkIndex(tree, t);
         },
         else => {
             try testing.expect(tag.isBinop());
@@ -5001,7 +5640,8 @@ const soup_pieces = [_][]const u8{
     "/=",     "<",      ">",      "<=",                 ">=",         "&&",       "||",
     "|>",     "<|",     "<-",     "<--",                " ",          " ",        " ",
     "\n",     "\n",     "\n    ", "\n        ",         "-- c\n",     "--| d\n",  "--! m\n",
-    "@",      "\t",     "12abc",
+    "@",      "\t",     "12abc",  "<div",               "</",         "/>",       "<>",
+    "</>",    "{...",   " text ",
 };
 
 const fragment_pieces = [_][]const u8{
@@ -5030,6 +5670,11 @@ const fragment_pieces = [_][]const u8{
     "schema LayoutUser =\n    id : Int as \"user-id\"\n    nested :\n        name : String optional nullable\n",
     "schema Page item = { items : List item via (convert item) }\n",
     "schema Message tagged \"kind\" of Count Int as \"count\" | Reset\n",
+    "v =\n    <div class=\"a\" id={x} hidden>Hi {x}!<br /><></></div>\n",
+    "w = (<For each={xs} keyed={.id}>{\\x -> <li>{x}</li>}</For>)\n",
+    "c = <Card {...d} title=\"t\">{-- n\n    }</Card>\n",
+    "pub element \"input\" void\n",
+    "pub event \"onInput\" on \"input\" via value : String\n",
     "schema LayoutMessage tagged \"kind\" of\n    Count as \"count\"\n        value : Int\n    Reset\n",
     "o f =\n    let\n        x <- f 1\n        y = 2\n    in\n    x + y\n",
 };

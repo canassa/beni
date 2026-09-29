@@ -58,7 +58,7 @@ pub fn write(
 /// spaces, in double quotes so it stays on its line and its edges show:
 /// `"`, `\`, `\n`, `\r` and `\t` are escaped, any other control byte is
 /// `\xNN`, and every other byte is written as it is.
-fn writeQuoted(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
+pub fn writeQuoted(w: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {
     try w.writeByte('"');
     for (text) |b| switch (b) {
         '"' => try w.writeAll("\\\""),

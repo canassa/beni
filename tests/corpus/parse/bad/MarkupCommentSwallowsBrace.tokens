@@ -1,20 +1,22 @@
-5:1 lower_ident view
-5:6 equal =
-6:5 markup_open <
-6:6 markup_name p
-6:7 markup_gt >
-6:8 l_brace {
-7:5 op_lt <
-7:6 op_slash /
-7:7 lower_ident p
-7:8 op_gt >
-10:1 lower_ident after
-10:7 equal =
-11:5 int 1
-12:1 eof
+7:1 lower_ident view
+7:6 equal =
+8:5 markup_open <
+8:6 markup_name p
+8:7 markup_gt >
+8:8 l_brace {
+9:5 op_lt <
+9:6 op_slash /
+9:7 lower_ident p
+9:8 op_gt >
+12:1 lower_ident after
+12:7 equal =
+13:5 int 1
+14:1 eof
 -- comments
 1:1 plain -- A comment in a hole runs to the end of its line, `}` included
 2:1 plain -- (frontend.md §9.1): `{-- note}` leaves the hole open, so the `</p>` on the
 3:1 plain -- next line is lexed as code in the hole, and the column-1 `after` ends the
-4:1 plain -- markup. The comment is listed like any other; not_implemented at 6:5.
-6:9 plain -- note}
+4:1 plain -- markup. The comment is listed like any other, and the hole is one
+5:1 plain -- unclosed_delimiter at its `{` (8:8), whose message quotes the comment and
+6:1 plain -- shows the two-line spelling (frontend.md §9.5).
+8:9 plain -- note}

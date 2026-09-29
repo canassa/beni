@@ -1,29 +1,28 @@
-7:1 lower_ident slash
-7:7 equal =
-8:5 markup_open <
-8:6 markup_name a
-8:8 markup_stray \
-8:9 markup_gt >
-8:10 markup_text " b"
-8:12 markup_close_open </
-8:14 markup_name a
-8:15 markup_gt >
-11:1 lower_ident quote
-11:7 equal =
-12:5 markup_open <
-12:6 markup_name a
-12:8 markup_attr it
-12:10 markup_stray 's
-12:12 markup_gt >
-12:13 markup_text "t"
-12:14 markup_close_open </
-12:16 markup_name a
-12:17 markup_gt >
-13:1 eof
+6:1 lower_ident slash
+6:7 equal =
+7:5 markup_open <
+7:6 markup_name a
+7:8 markup_stray \
+7:9 markup_gt >
+7:10 markup_text " b"
+7:12 markup_close_open </
+7:14 markup_name a
+7:15 markup_gt >
+10:1 lower_ident quote
+10:7 equal =
+11:5 markup_open <
+11:6 markup_name a
+11:8 markup_attr it
+11:10 markup_stray 's
+11:12 markup_gt >
+11:13 markup_text "t"
+11:14 markup_close_open </
+11:16 markup_name a
+11:17 markup_gt >
+12:1 eof
 -- comments
 1:1 plain -- A stray byte in a tag is one token that stops before the first `>`, `/`,
 2:1 plain -- `{`, `}`, `"`, `=` or whitespace after it (frontend.md §9.1), so it
 3:1 plain -- cannot swallow the tag's own syntax: `\` before `>` and `'s` before `>`
 4:1 plain -- are one token each, each tag still ends at its `>`, and each stray is one
-5:1 plain -- unexpected_token (8:8, 12:10). The markup is not_implemented at 8:5 and
-6:1 plain -- 12:5.
+5:1 plain -- unexpected_token (7:8, 11:10) and nothing more.

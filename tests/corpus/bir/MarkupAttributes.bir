@@ -1,0 +1,71 @@
+decl 0: value view
+  %0 = pat_var local 0 (model)
+  %1 = pat_var local 1 (classes)
+  %2 = pat_var local 2 (name)
+  %3 = int 0
+  %4 = int 1
+  %5 = import_value Basics.negate
+  %6 = call %5 [%4]
+  %7 = string "en"
+  %8 = import_ctor Basics.True
+  %9 = import_ctor Basics.False
+  %10 = string "row"
+  %11 = import_ctor Basics.True
+  %12 = tuple [%10, %11]
+  %13 = string "danger"
+  %14 = local 0 (model)
+  %15 = field_access %14 .on
+  %16 = tuple [%13, %15]
+  %17 = string "big"
+  %18 = import_ctor Basics.False
+  %19 = tuple [%17, %18]
+  %20 = list [%12, %16, %19]
+  %21 = string "color"
+  %22 = string "red"
+  %23 = tuple [%21, %22]
+  %24 = string "--gap"
+  %25 = local 0 (model)
+  %26 = field_access %25 .gap
+  %27 = tuple [%24, %26]
+  %28 = list [%23, %27]
+  %29 = local 1 (classes)
+  %30 = local 2 (name)
+  %31 = import_ctor Basics.True
+  %32 = tuple [%30, %31]
+  %33 = list [%32]
+  %34 = markup
+    element div
+      attr id = "main"
+      attr hidden = True
+      attr tabindex = %3 (constant 0)
+      attr offset = %6 (constant -1)
+      attr lang = %7 (constant "en")
+      attr open = %8 (constant True)
+      attr spellcheck = %9 (constant False)
+      attr class = %20 entries ["row" = True, "danger" = %15, "big" = False]
+      attr style = %28 entries ["color" = "red", "--gap" = %26]
+      element p
+        attr class = %29
+      element p
+        attr class = %33
+  params [%0, %1, %2]
+  body %34
+  locals
+    0 model param %0
+    1 classes param %1
+    2 name param %2
+  refs
+    import_value Basics.negate
+    import_ctor Basics.True
+    import_ctor Basics.False
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

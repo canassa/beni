@@ -1,0 +1,14 @@
+-- A component's attributes are the fields of its one record (language.md
+-- §11.8): a spread comes first and there is one, so a spread after a prop
+-- (11:25) and a second spread (12:28) are spread_not_first; and `children`
+-- written as an attribute and between the tags is duplicate_attribute
+-- (13:15), naming the component.
+import Card
+
+
+view model =
+    <div>
+        <Card title="x" {...model.a} />
+        <Card {...model.a} {...model.b} />
+        <Card children={model.c}>body</Card>
+    </div>

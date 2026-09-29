@@ -152,6 +152,7 @@ pub fn check(in: Input) Error!Check.Counters {
         try report.emitText(.recursive_alias, region, null, "This schema endpoint is a structural alias that refers to itself.\n\nUse a tagged schema for recursive data so the endpoint has a nominal constructor.\n");
     }
     for (schemas.errors.items) |e| try report.emitText(e.code, e.region, null, e.message);
+    try reportMarkup(&report, bir);
 
     // P2: every annotated value's scheme, before any body is checked.
     for (bir.decls, 0..) |d, i| {
@@ -310,6 +311,38 @@ pub fn check(in: Input) Error!Check.Counters {
         .instantiations = solver.instantiate.instantiations,
         .derived_context_runs = solver.contexts.runs_total,
     };
+}
+
+/// Markup, until the checker reads vocabularies (checker-v2.md §25): a
+/// module that writes markup has no vocabulary to type it against —
+/// `no_markup_vocabulary`, once, at its first markup root in source order —
+/// and a vocabulary declaration is lowered but not yet checked.
+fn reportMarkup(report: *Report, bir: *const Bir) Error!void {
+    if (bir.uses_markup) {
+        var first: ?Bir.Inst.Index = null;
+        const tags = bir.insts.items(.tag);
+        const tokens = bir.insts.items(.main_token);
+        for (tags, 0..) |tag, i| {
+            if (tag != .markup) continue;
+            if (first == null or tokens[i] < tokens[first.?.int()]) first = @enumFromInt(i);
+        }
+        if (first) |root| try report.emitText(.no_markup_vocabulary, root, null,
+            \\This module writes markup, but there is no markup vocabulary to check it against.
+            \\
+            \\Which elements, attributes and events exist is declared by a platform package
+            \\(`pub element`, `pub attribute`, `pub event`), and a module's markup is typed
+            \\against the vocabulary of the platform its build names with `--platform=<name>`.
+            \\No platform of this version of beni declares one yet.
+        );
+    }
+    for (bir.decls) |d| {
+        if (!d.kind.isVocab()) continue;
+        try report.emitText(.not_implemented, d.inst_start, d.name_token,
+            \\This vocabulary declaration is read, but this version of beni does not check
+            \\vocabulary declarations yet, so a platform that declares markup cannot be
+            \\checked or built.
+        );
+    }
 }
 
 fn newTable(gpa: Allocator, len: usize) Error![]Var.Optional {

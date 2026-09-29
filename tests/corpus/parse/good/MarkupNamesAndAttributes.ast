@@ -1,0 +1,24 @@
+(module
+  (definition view
+    (pat_var label)
+    (markup_element my-widget
+      (markup_attr aria-label
+        (string
+          (chunk "a ")
+          (interp
+            (ident label))))
+      (markup_attr xlink:href braced
+        (ident label))
+      (markup_attr type
+        (string
+          (chunk "x")))
+      (markup_attr as)
+      (markup_attr for)
+      (markup_attr disabled)
+      (markup_text "\n        ")
+      (markup_element Ui.Card)
+      (markup_text "\n        ")
+      (markup_element Card.header)
+      (markup_text "\n        ")
+      (markup_fragment)
+      (markup_text "\n    "))))

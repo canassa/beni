@@ -455,6 +455,58 @@ pub const Node = struct {
         /// is the name's token.
         pat_as,
 
+        // ---- Markup (language.md §11.3, frontend.md §9.4) ----------------
+        //
+        // The four markup expressions share one record: `main_token` is the
+        // opening `<` and `lhs` the `ExtraIndex` of a `Markup` (`rhs`
+        // unused). `fullMarkup` reads it.
+
+        /// `<div …>…</div>`, `<div … />`, a component `<Card … />`.
+        markup_element,
+        /// `<>…</>`: no name and no attributes.
+        markup_fragment,
+        /// `<For …>…</For>`, the built-in list form (§11.9).
+        markup_for,
+        /// `<Show …>…</Show>`, the built-in keyed conditional (§11.18).
+        markup_show,
+        /// `name`, `name="…"` or `name={e}` in a tag. `main_token` is the
+        /// `markup_attr`; `lhs` is the value node as a `Node.OptionalIndex`
+        /// (`none` for a bare name); `rhs` is the `{` of a braced value, 0
+        /// for a quoted value or a bare name.
+        markup_attr,
+        /// `"name"=value`, the untyped escape (§11.5). `main_token` is the
+        /// name's `str_start`; `lhs` is the name's `string` node; `rhs` is
+        /// the value node. Whether the value is braced is the token after
+        /// the `=`.
+        markup_attr_escape,
+        /// `{...e}` in a tag. `main_token` is the `{`; `lhs` is `e`.
+        markup_spread,
+        /// A run of text between tags, as written. `main_token` is the
+        /// `markup_text`.
+        markup_text,
+        /// `{e}` between tags. `main_token` is the `{`; `lhs` is `e`.
+        markup_hole,
+        /// `{}`, or a hole holding only comments. `main_token` is the `{`;
+        /// the `}` is the next token.
+        markup_empty_hole,
+
+        // ---- Vocabulary declarations (language.md §11.14) --------------
+        //
+        // `lhs` is the `ExtraIndex` of a `VocabDecl`, which begins with a
+        // `DeclHeader`; `rhs` unused. `main_token` is the name: the name's
+        // `str_start` for the first three, the `lower_ident` for
+        // `vocab_markup`. The contextual word (`element`, …) is the token
+        // before it.
+
+        /// `pub element "input" void`.
+        vocab_element,
+        /// `pub attribute "value" property on "input" : String`.
+        vocab_attribute,
+        /// `pub event "onInput" via targetValue : String`.
+        vocab_event,
+        /// `pub markup map : Html a, (a -> b) -> Html b`.
+        vocab_markup,
+
         // ---- Error placeholders ----------------------------------------
         //
         // Where a construct was required and could not be parsed. `main_token`
@@ -484,7 +536,23 @@ pub const Node = struct {
 
         pub fn isDecl(tag: Tag) bool {
             return switch (tag) {
-                .annotation, .definition, .type_alias, .type_decl, .foreign_value, .foreign_type, .schema_decl => true,
+                .annotation, .definition, .type_alias, .type_decl, .foreign_value, .foreign_type, .schema_decl, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => true,
+                else => false,
+            };
+        }
+
+        /// The four tags `fullMarkup` reads.
+        pub fn isMarkup(tag: Tag) bool {
+            return switch (tag) {
+                .markup_element, .markup_fragment, .markup_for, .markup_show => true,
+                else => false,
+            };
+        }
+
+        /// The four vocabulary declarations `fullVocab` reads.
+        pub fn isVocab(tag: Tag) bool {
+            return switch (tag) {
+                .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => true,
                 else => false,
             };
         }
@@ -637,6 +705,42 @@ pub const SchemaVariant = struct {
 pub const If = struct {
     then_expr: Node.Index,
     else_expr: Node.Index,
+};
+
+/// Every markup expression's record (`markup_element`, `markup_fragment`,
+/// `markup_for`, `markup_show`).
+pub const Markup = struct {
+    /// The tag name (`markup_name`); none for a fragment.
+    name: OptionalTokenIndex,
+    /// `SubRange` of attribute nodes: `markup_attr`, `markup_attr_escape`,
+    /// `markup_spread`, `error_expr`.
+    attrs_start: ExtraIndex,
+    attrs_end: ExtraIndex,
+    /// `SubRange` of child nodes: `markup_text`, `markup_hole`,
+    /// `markup_empty_hole`, markup expressions, `error_expr`.
+    children_start: ExtraIndex,
+    children_end: ExtraIndex,
+    /// The `>` that ends the opening tag or the `/>` of a self-closing one;
+    /// none when the parser ended the tag at a token that could not continue
+    /// it.
+    open_end: OptionalTokenIndex,
+    /// The `</` of the closing tag; none for a self-closing tag or an
+    /// element the parser closed at `unclosed_element`.
+    close: OptionalTokenIndex,
+};
+
+/// A vocabulary declaration's record (language.md §11.14).
+pub const VocabDecl = struct {
+    header: DeclHeader,
+    /// The name's `string` node; none for `vocab_markup`, whose name is its
+    /// `main_token`.
+    name: Node.OptionalIndex,
+    /// The facts, as the token range `[facts_start, facts_end)`: each fact
+    /// word followed by its arguments (strings, or `via`'s name).
+    facts_start: u32,
+    facts_end: u32,
+    /// The type after `:`; none for `vocab_element`.
+    type_expr: Node.OptionalIndex,
 };
 
 // ---------------------------------------------------------------------------
@@ -829,6 +933,42 @@ pub const full = struct {
     pub const PatAs = struct {
         pattern: Node.Index,
         name: TokenIndex,
+    };
+
+    pub const Markup = struct {
+        /// The opening `<`.
+        open: TokenIndex,
+        name: ?TokenIndex,
+        attrs: []const Node.Index,
+        children: []const Node.Index,
+        open_end: ?TokenIndex,
+        close: ?TokenIndex,
+
+        /// `<div />`: the opening tag ended with `/>`.
+        pub fn selfClosing(m: @This(), tags: []const Token.Tag) bool {
+            const end = m.open_end orelse return false;
+            return tags[end] == .markup_self_close;
+        }
+    };
+
+    pub const MarkupAttr = struct {
+        name: TokenIndex,
+        value: ?Node.Index,
+        /// The `{` of a braced value.
+        brace: ?TokenIndex,
+    };
+
+    pub const VocabDecl = struct {
+        header: DeclHeader,
+        /// The contextual word: `element`, `attribute`, `event` or `markup`.
+        word: TokenIndex,
+        /// The name's `string` node, or null for `vocab_markup`.
+        name_string: ?Node.Index,
+        /// The name token: the string's `str_start`, or the primitive's name.
+        name: TokenIndex,
+        facts_start: TokenIndex,
+        facts_end: TokenIndex,
+        type_expr: ?Node.Index,
     };
 
     pub const ErrorNode = struct {
@@ -1236,6 +1376,45 @@ pub fn fullPatAs(tree: *const Ast, node: Node.Index) full.PatAs {
     return .{ .pattern = @enumFromInt(data.lhs), .name = data.rhs };
 }
 
+pub fn fullMarkup(tree: *const Ast, node: Node.Index) full.Markup {
+    std.debug.assert(tree.nodeTag(node).isMarkup());
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), Markup);
+    return .{
+        .open = tree.nodeMainToken(node),
+        .name = d.name.unwrap(),
+        .attrs = tree.extraSlice(.{ .start = d.attrs_start, .end = d.attrs_end }, Node.Index),
+        .children = tree.extraSlice(.{ .start = d.children_start, .end = d.children_end }, Node.Index),
+        .open_end = d.open_end.unwrap(),
+        .close = d.close.unwrap(),
+    };
+}
+
+pub fn fullMarkupAttr(tree: *const Ast, node: Node.Index) full.MarkupAttr {
+    std.debug.assert(tree.nodeTag(node) == .markup_attr);
+    const data = tree.nodeData(node);
+    const value: Node.OptionalIndex = @enumFromInt(data.lhs);
+    return .{
+        .name = tree.nodeMainToken(node),
+        .value = value.unwrap(),
+        .brace = if (data.rhs == 0) null else data.rhs,
+    };
+}
+
+pub fn fullVocab(tree: *const Ast, node: Node.Index) full.VocabDecl {
+    std.debug.assert(tree.nodeTag(node).isVocab());
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), VocabDecl);
+    const name = tree.nodeMainToken(node);
+    return .{
+        .header = d.header,
+        .word = name - 1,
+        .name_string = d.name.unwrap(),
+        .name = name,
+        .facts_start = d.facts_start,
+        .facts_end = d.facts_end,
+        .type_expr = d.type_expr.unwrap(),
+    };
+}
+
 pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
     std.debug.assert(tree.nodeTag(node).isError());
     const data = tree.nodeData(node);
@@ -1248,10 +1427,11 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
 
 /// The single child of the one-operand tags: `type_paren`, `record_type_field`,
 /// `interp`, `negate`, `paren`, `field`, `field_access`, `tuple_index`,
-/// `question`, `let_annotation`, `pat_paren`, and schema wrappers/modifiers.
+/// `question`, `let_annotation`, `pat_paren`, and schema wrappers/modifiers, and
+/// the markup `{…}` forms.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => {},
+        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
     return @enumFromInt(tree.nodeData(node).lhs);

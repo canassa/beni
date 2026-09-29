@@ -1,0 +1,18 @@
+-- Vocabulary declarations are read and lowered (run with --core, by the
+-- `core/` directory), but the checker does not read them yet: each is
+-- not_implemented at its name (8:13, 11:15, 14:12), and a use of a markup
+-- primitive in the same module (18:5) adds nothing to that.
+pub foreign type Html msg
+
+
+pub element "input" void
+
+
+pub attribute "value" : String
+
+
+pub markup map : Html a, (a -> b) -> Html b
+
+
+mapped html =
+    map html identity

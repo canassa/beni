@@ -77,6 +77,10 @@ pub const Context = enum {
     string,
     interpolation,
     where_clause,
+    markup_tag,
+    markup_children,
+    markup_hole,
+    vocabulary,
 };
 
 /// A construct whose start was required and not found.
@@ -100,6 +104,30 @@ pub const Construct = enum {
     /// range is `T`. When the program is resolved, the constructors are
     /// named in its text (`Session.rewriteMessage`).
     expose_all,
+    /// `<-div>`: `<-` is one token, so no tag can begin there.
+    dash_tag,
+    /// `-<b />`: negation takes a number.
+    negated_markup,
+    /// A quoted attribute name holding an interpolation.
+    attribute_name,
+    /// Neither a string nor `{` after an attribute's `=`.
+    attribute_value,
+    /// An attribute of a component that is not a field name (§11.8); the
+    /// head range is the component's name.
+    component_prop,
+    /// For `unclosed_element`: the element ended at the closing tag of an
+    /// element further out, which the head range quotes.
+    outer_closer,
+    /// For `unclosed_delimiter`: a hole's `}` is inside the comment that
+    /// follows its `{`, which the head range quotes (§9.5).
+    comment_swallowed_brace,
+    /// A vocabulary declaration's name holding an interpolation.
+    vocabulary_name,
+    /// A word that is no fact of `pub element`, `pub attribute` or `pub
+    /// event` (language.md §11.14).
+    element_fact,
+    attribute_fact,
+    event_fact,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -130,6 +158,10 @@ fn contextText(c: Context) []const u8 {
         .string => "a string",
         .interpolation => "the `${…}` inside this string",
         .where_clause => "a `where` clause",
+        .markup_tag => "an opening tag",
+        .markup_children => "the children of an element",
+        .markup_hole => "a `{…}` in markup",
+        .vocabulary => "a vocabulary declaration",
     };
 }
 
@@ -149,6 +181,14 @@ fn constructText(c: Construct) []const u8 {
         .constraint => "a `where` constraint like `k.compare : k, k -> Order`",
         .float_pattern => "a pattern",
         .expose_all => "a name to expose",
+        .dash_tag, .negated_markup => "an expression",
+        .attribute_name, .vocabulary_name => "a name",
+        .attribute_value => "a string or `{`",
+        .component_prop => "a field name",
+        .outer_closer, .comment_swallowed_brace => "something else",
+        .element_fact => "a fact of `pub element`: `void`, `svg` or `mathml`",
+        .attribute_fact => "a fact of `pub attribute`: `on`, `property`, `stateful`, `url`, `raw`, `classes` or `styles`",
+        .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
     };
 }
 
@@ -160,8 +200,23 @@ fn tokenText(tag: Token.Tag) []const u8 {
         .int => "an integer",
         .interp_end => "}",
         .str_end => "\"",
+        .str_start => "a string",
+        .markup_gt => ">",
+        .markup_self_close => "/>",
+        .markup_close_open => "</",
+        .ellipsis => "...",
         else => @tagName(tag),
     };
+}
+
+/// `<div>` and `</div>` for the text `<div` (or `</div`), `<>` and `</>`
+/// for a fragment's.
+fn tagName(text: []const u8) []const u8 {
+    var t = text;
+    if (t.len > 0 and t[0] == '<') t = t[1..];
+    if (t.len > 0 and t[0] == '/') t = t[1..];
+    if (t.len > 0 and t[t.len - 1] == '>') t = t[0 .. t.len - 1];
+    return t;
 }
 
 /// Write the Elm-style prose for `item`. No trailing newline.
@@ -218,6 +273,42 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .unexpected_token => {
             if (at_eof) {
                 try w.print("I got to the end of the file while parsing {s}. I was expecting {s}.", .{ contextText(item.context), constructText(item.construct) });
+            } else if (item.construct == .dash_tag) {
+                try w.writeAll(
+                    \\I ran into `<-` where an expression should start. `<-` is one token, the arrow
+                    \\of a `let` bind (`x <- f a`), so this is no tag: a tag's name cannot begin with
+                    \\`-`.
+                    \\
+                    \\A tag's name starts with a letter: `<div>`, `<my-widget>`, `<Card>`.
+                );
+            } else if (item.construct == .negated_markup) {
+                try w.writeAll(
+                    \\I found markup after a `-`. Negation takes a number, and markup is not one.
+                    \\
+                    \\Remove the `-`, or negate the number you meant: `-x`, `-(a + b)`.
+                );
+            } else if (item.construct == .attribute_name or item.construct == .vocabulary_name) {
+                try w.writeAll(
+                    \\This name holds a `${…}`, but a name is fixed text. Write it without the
+                    \\interpolation.
+                );
+            } else if (item.construct == .attribute_value) {
+                try w.print(
+                    \\I was parsing {s} and ran into `{s}` after an attribute's `=`.
+                    \\
+                    \\An attribute's value is a string, `title="Hello"`, or an expression in braces,
+                    \\`title={{greeting}}`.
+                , .{ contextText(item.context), text });
+            } else if (item.construct == .component_prop) {
+                try w.print(
+                    \\`{s}` cannot be an attribute of `<{s}>`.
+                    \\
+                    \\A component's attributes are the fields of the one record it takes, so each is a
+                    \\field name: a lower-case letter, then letters, digits and `_`. Give the
+                    \\component a field of that shape and pass the value there.
+                , .{ text, head });
+            } else if (item.construct == .element_fact or item.construct == .attribute_fact or item.construct == .event_fact) {
+                try w.print("`{s}` is not {s}.", .{ text, constructText(item.construct) });
             } else if (item.construct == .float_pattern) {
                 try w.print(
                     \\`{s}` is a float, and a pattern cannot match a float.
@@ -280,7 +371,18 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\Split it into smaller pieces with `let`, or remove some of the nesting.
         , .{max_depth}),
-        .unclosed_delimiter => {
+        .unclosed_delimiter => if (item.construct == .comment_swallowed_brace) {
+            try w.print(
+                \\This `{{` is never closed: the comment after it, `{s}`, runs to the end of
+                \\the line, and the `}}` on that line is part of the comment.
+                \\
+                \\A comment inside markup ends where its line ends, so a `{{…}}` that holds only a
+                \\comment closes on the next line:
+                \\
+                \\    {{-- note
+                \\    }}
+            , .{std.mem.trimEnd(u8, head, " ")});
+        } else {
             const closer: []const u8 = if (text.len > 0) switch (text[0]) {
                 '(' => ")",
                 '[' => "]",
@@ -485,14 +587,59 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\Module documentation must come before the first import or declaration. Move it to
             \\the top, or use `--|` to document a declaration, or `--` for an ordinary comment.
         ),
-        // Markup is lexed (frontend.md §9.1–§9.3) but not yet parsed: the
-        // whole expression is skipped as one error at its `<`.
-        .not_implemented => try w.writeAll(
-            \\I found markup here, which this version of beni can read but not yet compile.
-            \\
-            \\Markup expressions are not supported yet; build this view with function calls
-            \\instead.
-        ),
+        // Markup (language.md §11.17, frontend.md §9.5). The span of an
+        // `unclosed_element` is the `<` and the name, so `text` is `<div` or
+        // `<>`; the head range quotes the token it ended at.
+        .unclosed_element => {
+            const name = tagName(text);
+            if (item.construct == .outer_closer) {
+                try w.print(
+                    \\I found `{s}`, which closes an element further out, before the `</{s}>` that
+                    \\closes this `<{s}>`.
+                    \\
+                    \\Every element is closed before the element around it: `<{s}>…</{s}>`.
+                , .{ head, name, name, name, name });
+            } else if (item.head_end == item.head_start) {
+                try w.print(
+                    \\I was parsing the children of this `<{s}>` and got to the end of the file without
+                    \\finding the `</{s}>` that closes it.
+                , .{ name, name });
+            } else {
+                const head_col = diagnostic.position(line_starts, item.head_start).col;
+                try w.print(
+                    \\I was parsing the children of this `<{s}>` and ran into `{s}` on column {d} before
+                    \\finding the `</{s}>` that closes it.
+                    \\
+                    \\Everything inside the element must be indented more than column {d}, the column
+                    \\of the block it is in. `{s}` is not, so the element ended there and its closing
+                    \\tag is missing.
+                , .{ name, head, head_col, name, item.required_col, head });
+            }
+        },
+        .mismatched_closing_tag => {
+            const name = tagName(head);
+            const closer = tagName(text);
+            try w.print(
+                \\The closing tag `</{s}>` does not match the `<{s}>` it closes.
+                \\
+                \\A closing tag repeats its opening tag's name exactly: `<{s}>…</{s}>`. I read
+                \\`</{s}>` as the end of `<{s}>` and went on.
+            , .{ closer, name, name, name, closer, name });
+        },
+        .element_as_argument => {
+            const name = tagName(text);
+            try w.print(
+                \\This `<` is a comparison, not the start of markup: it comes right after `{s}`,
+                \\which ends an operand, so `<{s}` compares `{s}` with `{s}`, and what follows can
+                \\only be markup.
+                \\
+                \\Markup is an operand, never a bare argument. Parenthesise it, or pass it with
+                \\`<|`:
+                \\
+                \\    f (<{s} … />)
+                \\    f <| <{s} … />
+            , .{ head, name, head, name, name, name });
+        },
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),

@@ -1,0 +1,34 @@
+5:1 lower_ident tagged
+5:8 equal =
+6:5 markup_open <
+6:6 markup_name a
+8:9 markup_attr b
+8:10 equal =
+8:11 str_start "
+8:12 str_chunk 1
+8:13 str_end "
+8:14 markup_gt >
+8:15 markup_text "t"
+8:16 markup_close_open </
+8:18 markup_name a
+8:19 markup_gt >
+11:1 lower_ident holed
+11:7 lower_ident x
+11:9 equal =
+12:5 markup_open <
+12:6 markup_name p
+12:7 markup_gt >
+12:8 l_brace {
+14:9 lower_ident x
+14:10 r_brace }
+14:11 markup_close_open </
+14:13 markup_name p
+14:14 markup_gt >
+15:1 eof
+-- comments
+1:1 plain -- A `--` comment at column 1 inside a tag or a hole is a comment and not a
+2:1 plain -- declaration: comments are not tokens, so the column-1 rule that ends
+3:1 plain -- markup does not fire on one (frontend.md §9.1). The tokens and the tree
+4:1 plain -- show the tag and the hole going on after the comment, to their ends.
+7:1 plain -- note
+13:1 plain -- note

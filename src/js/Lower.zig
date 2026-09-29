@@ -943,6 +943,9 @@ const Lowerer = struct {
             // constructor is an object literal at its use site and a type
             // has no runtime existence at all.
             .type, .type_alias, .foreign_type, .schema => return,
+            // A vocabulary declaration is data for the checker and the
+            // markup lowering, and has no value of its own to emit.
+            .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => return,
             // The parser already reported it and there is no body.
@@ -2207,6 +2210,11 @@ const Lowerer = struct {
             // from a successful build; emitting `undefined` rather than
             // asserting keeps a bug in that gate from becoming a crash.
             .@"error" => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // Markup compiles through a platform's markup lowering, which
+            // does not exist yet; the checker refuses every module that
+            // writes markup (`no_markup_vocabulary`), so no build reaches
+            // this, and like `error` it is `undefined` rather than a crash.
+            .markup => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             // Every remaining tag is a TYPE or a PATTERN, which no
             // expression position holds: patterns are lowered by
             // `bindings`, types never reach the backend at all

@@ -1,0 +1,23 @@
+(module
+  (definition bold
+    (markup_element b))
+  (definition paren
+    (pat_var f)
+    (apply
+      (ident f)
+      (paren
+        (markup_element b))))
+  (definition items
+    (list
+      (markup_element li)
+      (markup_element li)))
+  (definition row
+    (lambda
+      (pat_var r)
+      (markup_element tr)))
+  (definition piped
+    (pat_var f)
+    (pipe_left
+      (ident f)
+      (markup_fragment
+        (markup_text "x")))))

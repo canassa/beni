@@ -13,5 +13,5 @@
 -- comments
 1:1 plain -- A `<` in text not followed by a letter, `/` or `>` cannot stand there
 2:1 plain -- (language.md §11.4): it is one `invalid` token, unexpected_token at 6:10
-3:1 plain -- with the `{"<"}` spelling, and the text resumes after it. The markup
-4:1 plain -- itself is not_implemented at 6:5.
+3:1 plain -- with the `{"<"}` spelling, and the text resumes after it; the parser
+4:1 plain -- skips it.

@@ -1,0 +1,38 @@
+-- The layout of markup (language.md §11.15): `<div></div>` is written
+-- `<div />`; attributes go one per line, 4 in from the `<`, with `/>`
+-- under it, when they do not fit or the author broke them, and an element
+-- whose tag broke is vertical; text lines are re-indented to the children's
+-- column and blank lines kept to one; a hole holding only a comment closes
+-- under its `{`; a row lambda too long for its line continues 4 in from
+-- its `{`, the `}` under the `{`.
+empty = <div></div>
+
+
+selfClosed = <br/>
+
+
+long = <input type="text" value={model.value} placeholder="A placeholder that is long enough" disabled />
+
+
+broken =
+    <input type="text"
+        value={model.value} />
+
+
+kept =
+    <label class="field">
+      Name
+        <input value={model.name} />
+
+
+              and more text
+    </label>
+
+
+noted =
+    <p>{-- a note
+    }</p>
+
+
+rows items =
+    <ul><For each={items} keyed={.id}>{\item -> <li class={item.cls} title={item.title}>{item.label} and a longer tail than fits</li>}</For></ul>
