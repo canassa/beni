@@ -5092,7 +5092,10 @@ hold the programs, and `ordering_test.zig` the second with its two `let` binding
   not typed.
 - **`unkeyed_for`**, a `warning`, for a `For` with no `keyed` in a module of the root package: at the
   declaration's boundary, if `a` is not a primitive-`eq` type — a record, a custom type, a variable —
-  the warning is reported at the `For`, naming `keyed={…}` and `keyed={True}`.
+  the warning is reported at the `For`, naming `keyed={…}` and `keyed={True}`. *Amended 2026-09-29:* the
+  `keyed={…}` it names is one the item has — `keyed={.id}`, else the first primitive-`eq` field of
+  a record item by name text — and, for an item that is not a record or has no such field, a key
+  function, `keyed={\item -> …}`.
 
 **`Show`**, likewise: `when : Maybe a`; `fallback : H m`; the body a row as `For`'s, arity 1 only;
 `keyed={f}` as `For`'s, with the same `key(k)` obligation. Bare `keyed` and `keyed={True}` are the

@@ -253,7 +253,9 @@ pub fn keyNotPrimitive(r: *Report, region: Bir.Inst.Index, v: ?Var) Error!void {
     try emit(r, .key_not_primitive, .@"error", region, null, &out);
 }
 
-pub fn unkeyedFor(r: *Report, region: Bir.Inst.Index, token: u32, item: Var) Error!void {
+/// `field` is a primitive-`eq` field of a record item to suggest keying by;
+/// without one, the hint suggests a key function.
+pub fn unkeyedFor(r: *Report, region: Bir.Inst.Index, token: u32, item: Var, field: ?[]const u8) Error!void {
     var out: std.Io.Writer.Allocating = .init(r.gpa);
     defer out.deinit();
     const w = &out.writer;
@@ -265,7 +267,13 @@ pub fn unkeyedFor(r: *Report, region: Bir.Inst.Index, token: u32, item: Var) Err
         \\so each row is kept by the item's identity. An item that is edited is a new
         \\value, so its row is rebuilt, and focus and input inside it are lost.
         \\
-        \\Hint: key the rows, `keyed={.id}`, or say that identity is meant, `keyed={True}`.
+        \\
     ) catch return error.OutOfMemory;
+    if (field) |f| {
+        w.print("Hint: key the rows, `keyed={{.{s}}}`, ", .{f}) catch return error.OutOfMemory;
+    } else {
+        w.writeAll("Hint: key the rows by a `String` or an `Int` computed from each item, `keyed={\\item -> …}`, ") catch return error.OutOfMemory;
+    }
+    w.writeAll("or say that identity is meant, `keyed={True}`.") catch return error.OutOfMemory;
     try emit(r, .unkeyed_for, .warning, region, token, &out);
 }

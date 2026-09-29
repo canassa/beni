@@ -85,4 +85,5 @@
 # component's markup children typed at the enclosing root's messages and the
 # message that said so, markup nested past the checker's depth, and
 # `unkeyed_for`'s hint. Written and checked on fc4b31e.
-tests/pending/check/good/markup/UnkeyedForHint.beni GoldenMismatch
+# All six fixed and promoted the same day (into tests/corpus/, and
+# ordering_test.zig for the swapped let).

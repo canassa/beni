@@ -1,7 +1,7 @@
--- CK-220: `unkeyed_for`'s hint names a key the item type has (language.md
+-- `unkeyed_for`'s hint names a key the item type has (language.md
 -- §11.9): over records with no `id` but a `String` field `slug`, it
 -- suggests `keyed={.slug}` (16:10); over lists of numbers, which have no
--- field at all, a key function (17:10). On the base both suggested
+-- field at all, a key function (17:10), where a single hint once suggested
 -- `keyed={.id}`, which neither item type has.
 import Html exposing (Html)
 

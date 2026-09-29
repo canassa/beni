@@ -271,7 +271,28 @@ fn item(s: *Solve, id: Id, row: Row, default: bool) Error!void {
     try record(s, row, @intFromBool(yes));
     if (yes or row.index & Obligations.markup_flag == 0 or !s.informational) return;
     const form = s.cx.bir.extraData(@enumFromInt(row.index & ~Obligations.markup_flag), Bir.MarkupForm);
-    try MarkupTexts.unkeyedFor(s.report, row.region, form.token, a);
+    try MarkupTexts.unkeyedFor(s.report, row.region, form.token, a, keyField(s, a));
+}
+
+/// The field of a record item that `unkeyed_for`'s hint suggests keying
+/// by: `id` when it is a primitive-`eq` field, else the first such field
+/// by name text. Null for an item that is not a record, or has none.
+fn keyField(s: *Solve, a: Var) ?[]const u8 {
+    const rec = switch (s.store().resolvedContent(a)) {
+        .structure => |st| switch (st) {
+            .record => |r| r,
+            else => return null,
+        },
+        else => return null,
+    };
+    var best: ?[]const u8 = null;
+    for (Walk.recordFields(s.store(), rec)) |f| {
+        if (primitiveEq(s, f.value) != true) continue;
+        const text = s.cx.interner.slice(f.name);
+        if (std.mem.eql(u8, text, "id")) return text;
+        if (best == null or std.mem.lessThan(u8, text, best.?)) best = text;
+    }
+    return best;
 }
 
 // ---------------------------------------------------------------------------
