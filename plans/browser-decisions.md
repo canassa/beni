@@ -156,7 +156,7 @@ against it** — the same position the sheet already takes on component librarie
 | Item | Answer |
 |---|---|
 | **W2** | **As recommended** (2026-09-29): a defect is always logged and stops the app; a crash screen in development builds only; an optional `onDefect` hook later |
-| **W3** | |
+| **W3** | **As recommended** (2026-09-29): the hybrid rule — 256 operations between clock reads, a 1 ms slice — yielding through `MessageChannel`, one tier (no microtask yield loop); the numbers are platform constants. A one-shot bounded microtask flush (W28) is unaffected. Web Workers are a separate question, to be designed with effects and code splitting |
 | **W6** | |
 | **W7** | |
 | **W8** | **As recommended** (2026-09-29): the platform's callback registration takes `sync` functions only, checked through `boundary.md` §4 (a `foreign` that receives a beni function the sibling may invoke declares that parameter `sync`); a handler that needs slow work spawns a fiber and returns |
