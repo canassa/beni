@@ -475,9 +475,9 @@ pub const Node = struct {
         /// for a quoted value or a bare name.
         markup_attr,
         /// `"name"=value`, the untyped escape (§11.5). `main_token` is the
-        /// name's `str_start`; `lhs` is the name's `string` node; `rhs` is
-        /// the value node. Whether the value is braced is the token after
-        /// the `=`.
+        /// name's `str_start`; `lhs` is the `ExtraIndex` of a
+        /// `MarkupAttrEscape`, which records the value and its brace, so no
+        /// reader re-derives either from the tokens after the name.
         markup_attr_escape,
         /// `{...e}` in a tag. `main_token` is the `{`; `lhs` is `e`.
         markup_spread,
@@ -729,6 +729,17 @@ pub const Markup = struct {
     close: OptionalTokenIndex,
 };
 
+/// A `markup_attr_escape`'s record.
+pub const MarkupAttrEscape = struct {
+    /// The name's `string` node.
+    name: Node.Index,
+    /// The value; none when the tag ended before one (the parser has
+    /// reported it).
+    value: Node.OptionalIndex,
+    /// The `{` of a braced value; none for a quoted one.
+    brace: OptionalTokenIndex,
+};
+
 /// A vocabulary declaration's record (language.md §11.14).
 pub const VocabDecl = struct {
     header: DeclHeader,
@@ -952,7 +963,10 @@ pub const full = struct {
     };
 
     pub const MarkupAttr = struct {
+        /// The `markup_attr`, or the escape's `str_start`.
         name: TokenIndex,
+        /// The escape's name as a `string` node; null for a `markup_attr`.
+        name_string: ?Node.Index,
         value: ?Node.Index,
         /// The `{` of a braced value.
         brace: ?TokenIndex,
@@ -1389,12 +1403,23 @@ pub fn fullMarkup(tree: *const Ast, node: Node.Index) full.Markup {
     };
 }
 
+/// A `markup_attr` or a `markup_attr_escape`.
 pub fn fullMarkupAttr(tree: *const Ast, node: Node.Index) full.MarkupAttr {
-    std.debug.assert(tree.nodeTag(node) == .markup_attr);
     const data = tree.nodeData(node);
+    if (tree.nodeTag(node) == .markup_attr_escape) {
+        const d = tree.extraData(@enumFromInt(data.lhs), MarkupAttrEscape);
+        return .{
+            .name = tree.nodeMainToken(node),
+            .name_string = d.name,
+            .value = d.value.unwrap(),
+            .brace = d.brace.unwrap(),
+        };
+    }
+    std.debug.assert(tree.nodeTag(node) == .markup_attr);
     const value: Node.OptionalIndex = @enumFromInt(data.lhs);
     return .{
         .name = tree.nodeMainToken(node),
+        .name_string = null,
         .value = value.unwrap(),
         .brace = if (data.rhs == 0) null else data.rhs,
     };

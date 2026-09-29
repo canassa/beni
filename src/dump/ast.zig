@@ -498,14 +498,12 @@ const Dumper = struct {
                 if (a.value) |v| try d.child(v, inner);
             },
             .markup_attr_escape => {
-                const data = tree.nodeData(n);
+                const a = tree.fullMarkupAttr(n);
                 try d.openTag(tag, main);
                 try d.w.writeByte(' ');
                 try d.stringSource(main);
-                var t = main;
-                while (d.tags[t] != .str_end and d.tags[t] != .eof and d.tags[t] != .invalid) t += 1;
-                if (d.tags[t + 1] == .equal and d.tags[t + 2] == .l_brace) try d.w.writeAll(" braced");
-                try d.child(@enumFromInt(data.rhs), inner);
+                if (a.brace != null) try d.w.writeAll(" braced");
+                if (a.value) |v| try d.child(v, inner);
             },
             .markup_spread, .markup_hole => {
                 try d.openTag(tag, main);

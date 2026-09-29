@@ -806,12 +806,12 @@ const Measurer = struct {
                 }
             },
             .markup_attr_escape => {
-                const data = tree.nodeData(n);
-                const name: Index = @enumFromInt(data.lhs);
-                const value: Index = @enumFromInt(data.rhs);
+                const a = tree.fullMarkupAttr(n);
+                const name = a.name_string.?;
                 try m.measure(name);
+                const value = a.value orelse return m.set(n, m.w(name), main, m.last(name));
                 try m.measure(value);
-                const braced = m.tags[m.last(name) + 2] == .l_brace;
+                const braced = a.brace != null;
                 const extra: u32 = if (braced) 3 else 1;
                 m.set(n, m.w(name) +| extra +| m.w(value), main, m.last(value) + @intFromBool(braced));
             },
@@ -2270,13 +2270,14 @@ const Printer = struct {
                 try p.attrValue(value, a.brace, indent);
             },
             .markup_attr_escape => {
-                const data = tree.nodeData(n);
-                const name: Index = @enumFromInt(data.lhs);
+                const a = tree.fullMarkupAttr(n);
+                const name = a.name_string.?;
                 try p.expr(name, indent);
-                const eq = p.last(name) + 1;
-                try p.tok(eq);
-                const brace: ?TokenIndex = if (p.tags[eq + 1] == .l_brace) eq + 1 else null;
-                try p.attrValue(@enumFromInt(data.rhs), brace, indent);
+                // A tree with syntax errors is never printed, so an escape
+                // here has its `=` and its value.
+                const value = a.value orelse return error.SyntaxErrors;
+                try p.tok(p.last(name) + 1); // `=`
+                try p.attrValue(value, a.brace, indent);
             },
             .markup_spread => try p.markupHole(n, indent),
             else => return error.SyntaxErrors,

@@ -2410,9 +2410,7 @@ fn parseMarkupAttrs(p: *Parse, name: ?TokenIndex, component: bool) Allocator.Err
                     item.construct = .attribute_name;
                     _ = try p.report(item);
                 }
-                _ = try p.expectToken(.equal);
-                const value = try p.parseMarkupValue();
-                try p.pushScratch(try p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = name_node.int(), .rhs = value.int() } }));
+                try p.pushScratch(try p.parseEscapeValue(quoted, name_node));
             },
             .l_brace => try p.pushScratch(try p.parseSpread()),
             .invalid, .markup_stray => _ = p.next(), // a stray byte the lexer reported
@@ -2465,6 +2463,24 @@ fn parseMarkupAttr(p: *Parse, name: TokenIndex) Allocator.Error!Index {
     const brace: u32 = if (p.peek() == .l_brace) p.tok_i else 0;
     const value = try p.parseMarkupValue();
     return p.addNode(.{ .tag = .markup_attr, .main_token = name, .data = .{ .lhs = value.int(), .rhs = brace } });
+}
+
+/// `"name"` then `=` and its value. Without the `=`, a braced value right
+/// after the name is still read as its value, so the one mistake is one
+/// message; anything else leaves the escape with no value.
+fn parseEscapeValue(p: *Parse, quoted: TokenIndex, name_node: Index) Allocator.Error!Index {
+    var record: Ast.MarkupAttrEscape = .{ .name = name_node, .value = .none, .brace = .none };
+    // A name cut off by the end of its line or file is the lexer's one
+    // message, and nothing after it is an `=`.
+    const cut = p.tags[p.tok_i - 1] != .str_end;
+    const has_value = if (cut) false else try p.expectToken(.equal) != null or
+        (p.peek() == .l_brace and p.peekAt(1) != .ellipsis);
+    if (has_value) {
+        if (p.peek() == .l_brace) record.brace = .fromToken(p.tok_i);
+        record.value = (try p.parseMarkupValue()).toOptional();
+    }
+    const extra = try p.addExtra(record);
+    return p.addNode(.{ .tag = .markup_attr_escape, .main_token = quoted, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
 
 /// AttrValue := string | '{' Expr '}'.
@@ -3842,15 +3858,11 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkIndices(tree, m.attrs);
             try checkIndices(tree, m.children);
         },
-        .markup_attr => {
+        .markup_attr, .markup_attr_escape => {
             const a = tree.fullMarkupAttr(n);
+            if (a.name_string) |s| try checkIndex(tree, s);
             if (a.value) |v| try checkIndex(tree, v);
             if (a.brace) |t| try testing.expect(t < token_count);
-        },
-        .markup_attr_escape => {
-            const d = tree.nodeData(n);
-            try checkIndex(tree, @enumFromInt(d.lhs));
-            try checkIndex(tree, @enumFromInt(d.rhs));
         },
         .markup_spread, .markup_hole => try checkIndex(tree, tree.operand(n)),
         .markup_text, .markup_empty_hole => {},
@@ -5538,6 +5550,31 @@ test "lexer errors produce placeholders with the lexical code and no second diag
         \\      (chunk "b"))))
         \\
     , &.{});
+}
+
+test "recovery: a quoted attribute name without `=` records its value and brace, or none" {
+    try expectTree("v y = <a \"x\" {y} />\nw = <a \"x\" \"z\"=\"q\" />\nu = <a \"x\"",
+        \\(module
+        \\  (definition v
+        \\    (pat_var y)
+        \\    (markup_element a
+        \\      (markup_attr_escape "x" braced
+        \\        (ident y))))
+        \\  (definition w
+        \\    (markup_element a
+        \\      (markup_attr_escape "x")
+        \\      (markup_attr_escape "z"
+        \\        (string
+        \\          (chunk "q")))))
+        \\  (definition u
+        \\    (markup_element a
+        \\      (markup_attr_escape "x"))))
+        \\
+    , &.{
+        .{ .code = .expected_token, .line = 1, .col = 14 },
+        .{ .code = .expected_token, .line = 2, .col = 12 },
+        .{ .code = .expected_token, .line = 3, .col = 11 },
+    });
 }
 
 test "nesting deeper than the limit is cut off with a diagnostic, not a stack overflow" {

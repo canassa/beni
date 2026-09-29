@@ -1,0 +1,12 @@
+-- A quoted attribute name with no `=` after it is one expected_token, at
+-- what stands there: here a braced value, which is still read as the
+-- escape's value (8:17), and the end of the file (12:16), where the escape
+-- has no value at all. Lowering reads the value and its brace from what the
+-- parser recorded, never from the tokens after the name, which at the end
+-- of the file are not there.
+braced y =
+    <a "hx-get" {y} />
+
+
+atEnd =
+    <a "hx-get"

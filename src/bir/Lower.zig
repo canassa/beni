@@ -3161,21 +3161,17 @@ fn markupItem(l: *Lower, attr: NodeIndex) Allocator.Error!Bir.MarkupItem {
         .entries_start = @enumFromInt(0),
         .entries_end = @enumFromInt(0),
     };
-    if (l.tree.nodeTag(attr) == .markup_attr) {
-        const a = l.tree.fullMarkupAttr(attr);
-        item.name = try l.addSymbol(l.tokenSymbol(a.name));
-        try l.itemValue(&item, a.value, a.brace != null);
-    } else {
-        const data = l.tree.nodeData(attr);
-        const name_node: NodeIndex = @enumFromInt(data.lhs);
+    const a = l.tree.fullMarkupAttr(attr);
+    if (a.name_string) |name_node| {
         var text: std.ArrayList(u8) = .empty;
         defer text.deinit(l.scratch_allocator);
         try l.stringText(name_node, &text);
         item.kind = .escape;
         item.name = try l.addSymbol(try l.interner.getOrPut(l.gpa, text.items));
-        const eq = l.stringEnd(l.tree.nodeMainToken(name_node)) + 1;
-        try l.itemValue(&item, @enumFromInt(data.rhs), l.tags[eq + 1] == .l_brace);
+    } else {
+        item.name = try l.addSymbol(l.tokenSymbol(a.name));
     }
+    try l.itemValue(&item, a.value, a.brace != null);
     return item;
 }
 
@@ -3588,11 +3584,14 @@ fn formValue(l: *Lower, a: Ast.full.MarkupAttr) Allocator.Error!Index {
     return l.lowerExpr(value);
 }
 
-/// The last token of a string or of any other value node, for a span.
+/// The last token of a constant's node — a string, a number negated or
+/// not, a constructor — for a span.
 fn lastToken(l: *const Lower, node: NodeIndex) TokenIndex {
-    const main = l.tree.nodeMainToken(node);
-    if (l.tree.nodeTag(node) == .string) return l.stringEnd(main);
-    return main;
+    return switch (l.tree.nodeTag(node)) {
+        .string => l.stringEnd(l.tree.nodeMainToken(node)),
+        .negate => l.tree.nodeMainToken(l.tree.operand(node)),
+        else => l.tree.nodeMainToken(node),
+    };
 }
 
 /// Report a markup lowering diagnostic spanning tokens `first..last`, with
