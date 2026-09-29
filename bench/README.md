@@ -19,6 +19,44 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-29 — the parser, formatter and lowering read markup
+
+**Machine 2**, as the entry below, every run pinned with `taskset -c 7`, interleaved against a
+binary built from the commit before (the lexer's three review fixes, already in). The parser,
+formatter and BIR lowering now read markup (`frontend.md` §9.4–§9.7).
+
+**Markup-free parsing does not regress; markup-free lexing moved, and not because of the lexer.**
+Medians (MB/s):
+
+| corpus | lex before | lex after | parse before | parse after |
+|---|---:|---:|---:|---:|
+| `bench/corpus`, 7 runs (`--iterations=100`) | 231.6 | 222.9 | 308.4 | 308.2 |
+| `--generate=100000`, 5 runs (`--iterations=40`) | 260.1 | 245.8 | 289.8 | 285.8 |
+
+Counted with `perf_event_open` over the generated corpus, per iteration (40 minus 10, over 30):
+
+| | lex instructions | lex cycles | lex branch misses | parse instructions | parse cycles |
+|---|---:|---:|---:|---:|---:|
+| before | 73 757 528 | 27.2 M | 206 580 | 65 868 113 | 24.6 M |
+| after | 73 772 992 | 28.9 M | 270 945 | 66 801 091 | 25.1 M |
+| before + the 22 new diagnostic codes only | 73 772 986 | 29.2 M | 310 388 | 66 315 012 | 24.5 M |
+
+The lexer's source is byte-identical before and after, and it retires the same instructions; what
+moved is branch misses, by a third. The last row is the commit before with nothing changed but 22
+codes appended to `diagnostic.Code` and their titles, and it reproduces the whole lexing loss — worse
+than the full change. So it is where code lands, not what it does: aligning `tokenize` to 64 bytes
+or to 4 KiB did not recover it this time (it did in the entry below). Parsing retires 1.4 % more
+instructions, half of that from the same 22 codes, for cycles within the runs' spread; testing the
+token after a `pub` word before reading its text took the vocabulary declarations' lookahead from
++2.0 % to that.
+
+**Markup itself**, `zig build bench -- --corpus=bench/markup --phases=lex,parse,lower
+--iterations=500` (4 files, 553 lines, 19 853 bytes, 4 085 tokens, 2 007 nodes, 718 instructions),
+three runs: lex **269–276 MB/s**; parse **420–430 MB/s, 12.3–12.6 M LOC/s**; lower **180–182 MB/s,
+5.3 M LOC/s**, text trimming and entity decoding included.
+
+---
+
 ## 2026-09-29 — the lexer's markup modes
 
 **Machine 2** (AMD Ryzen 9 5950X, Linux 6.12.110, Zig 0.16.0, ReleaseFast),
