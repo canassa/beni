@@ -491,6 +491,16 @@ whose argument did, and nothing else. Mount is unchanged (4.49 ms).
   benchmark's `view` is `{ $: "Run", a: null }`, built again each time, so `button "run" "…" Run`
   never has identical arguments and all six buttons' helpers are called on every render. Sharing one
   object per nullary constructor would let those calls be skipped; it is a representation change
-  (`backend.md` §4) and was not made here.
+  (`backend.md` §4) and was not made here. **Built the same day** (`backend.md` §4, *A nullary
+  constructor is one object*): each module now writes one constant per such constructor, so the six
+  button helpers are skipped after mount. Same harness, n = 15, CPUs 8–15, load 1.0–2.0,
+  `results/2026-09-29-table-nullary-constants.json`, script medians against the unchanged compiler
+  in the same batch: update every 10th 1.80 → **1.58** ms (0.57× Solid 2's 2.79), select 2.14 →
+  2.11 (level; 0.65× Solid 2's 3.26). The helper-heavy page passes no nullary constructor and did
+  not move (5.22 → 5.25 µs a message at 1×, `…static-page-nullary-constants.json`). Output size:
+  `bench/size.mjs` gross over 229 programs, dev raw +0.04 % and brotli +0.09 %, `--release` raw
+  −0.54 % and brotli +0.13 % (+291 bytes); `bench/corpus` under `--release` −651 raw, +117 brotli
+  of 19 547 — a constant used once costs its definition and a name, where brotli already folded the
+  repeated literal.
 - The remaining losses are remove (1.04×) and a swap that ties; the key map is no longer where
   their time goes, `List` is (§4.4).
