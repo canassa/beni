@@ -24,7 +24,8 @@
 //! held the flat sites and `parts` of static-dispatch-spike.md §7.1; a v1 or
 //! v2 sidecar is a miss. Version 4 widens a context entry's `param`
 //! to a `u32` in the same 8-byte row: a record past 65 535 fields has that
-//! many positions.
+//! many positions. Version 5 adds the `markup` column, one 20-byte row per
+//! markup node (checker-v2.md §25.7).
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -72,7 +73,7 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 4;
+pub const format_version: u32 = 5;
 
 pub const Column = enum(u32) {
     terms,
@@ -84,6 +85,7 @@ pub const Column = enum(u32) {
     contexts,
     derived,
     tries,
+    markup,
     symbols,
     module_refs,
     type_refs,
@@ -104,6 +106,7 @@ pub const Column = enum(u32) {
             .contexts => 8,
             .derived => 32,
             .tries => 8,
+            .markup => 20,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -254,6 +257,20 @@ pub fn write(
         row[4] = @intFromEnum(t.shape);
     }
 
+    const markup = try gpa.alloc(u8, d.markup.len * Column.markup.width());
+    defer gpa.free(markup);
+    for (d.markup, 0..) |n, i| {
+        const row = markup[i * 20 ..][0..20];
+        std.mem.writeInt(u32, row[0..4], @intFromEnum(n.root), .little);
+        std.mem.writeInt(u32, row[4..8], n.node, .little);
+        row[8] = @intFromEnum(n.kind);
+        row[9] = n.detail;
+        row[10] = n.arity;
+        row[11] = @intFromBool(n.primitive);
+        std.mem.writeInt(u32, row[12..16], n.row, .little);
+        std.mem.writeInt(u32, row[16..20], n.extractor, .little);
+    }
+
     // The two reference tables are complete only now, because writing a
     // term or a shape is what appends to them.
     const module_refs = try gpa.alloc(u8, w.module_refs.items.len * Column.module_refs.width());
@@ -284,6 +301,7 @@ pub fn write(
         contexts,
         derived,
         tries,
+        markup,
         symbols,
         module_refs,
         type_refs,
@@ -299,6 +317,7 @@ pub fn write(
         @intCast(d.contexts.len),
         @intCast(d.derived.len),
         @intCast(d.tries.len),
+        @intCast(d.markup.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -672,6 +691,25 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             };
         }
     }
+    {
+        const in_bytes = col(bytes, offsets, .markup);
+        const markup = try gpa.alloc(Dispatch.Markup, lengths[@intFromEnum(Column.markup)]);
+        out.table.markup = markup;
+        for (markup, 0..) |*n, i| {
+            const row = in_bytes[i * 20 ..][0..20];
+            if (row[11] > 1) return error.BadSidecar;
+            n.* = .{
+                .root = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .node = std.mem.readInt(u32, row[4..8], .little),
+                .kind = std.enums.fromInt(Dispatch.Markup.Kind, row[8]) orelse return error.BadSidecar,
+                .detail = row[9],
+                .arity = row[10],
+                .primitive = row[11] == 1,
+                .row = std.mem.readInt(u32, row[12..16], .little),
+                .extractor = std.mem.readInt(u32, row[16..20], .little),
+            };
+        }
+    }
 
     if (!verify(&out)) return error.BadSidecar;
     return out;
@@ -914,6 +952,7 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqualSlices(Dispatch.TermIndex, a.args, b.args);
     try testing.expectEqualSlices(Dispatch.Site, a.sites, b.sites);
     try testing.expectEqualSlices(Dispatch.Try, a.tries, b.tries);
+    try testing.expectEqualSlices(Dispatch.Markup, a.markup, b.markup);
     try testing.expectEqualSlices(Dispatch.DeclInfo, a.decls, b.decls);
     try testing.expectEqualSlices(Dispatch.LetInfo, a.lets, b.lets);
     try testing.expectEqualSlices(Dispatch.Derived, a.derived, b.derived);

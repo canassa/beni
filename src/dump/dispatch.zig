@@ -136,6 +136,9 @@ pub fn write(
             try cx.writeTermLine(w, root, 2);
         }
     }
+    // The markup section (checker-v2.md §25.7): one line per node, roots in
+    // instruction order, each tree depth first.
+    for (dispatch.markup) |n| try cx.writeMarkup(w, n);
 }
 
 const Context = struct {
@@ -215,6 +218,66 @@ const Context = struct {
                 return false;
             },
         }
+    }
+
+    /// `markup <root> <kind> …`: a row by its vocabulary module and name,
+    /// then what was decided about the node.
+    fn writeMarkup(cx: *const Context, w: *std.Io.Writer, n: Dispatch.Markup) Error!void {
+        const M = Dispatch.Markup;
+        try w.print("  markup {d} {s}", .{ n.root.int(), switch (n.kind) {
+            .attribute => "attr",
+            else => @tagName(n.kind),
+        } });
+        switch (n.kind) {
+            .element => try cx.writeRow(w, "elements", n.row),
+            .attribute => {
+                try cx.writeRow(w, "attributes", n.row);
+                try w.print(" {s}", .{@tagName(std.enums.fromInt(M.Class, n.detail) orelse .string)});
+            },
+            .escape => {
+                const name = if (n.node < cx.bir.extra.len) cx.interner.slice(cx.bir.symbol(cx.bir.extraData(@enumFromInt(n.node), Bir.MarkupItem).name)) else "?";
+                try w.print(" \"{s}\" string", .{name});
+            },
+            .event => {
+                try cx.writeRow(w, "events", n.row);
+                try w.print(" {s}", .{@tagName(std.enums.fromInt(M.Form, n.detail) orelse .message)});
+                if (n.extractor != M.no_row) if (cx.vocabulary()) |v| {
+                    const iface = &cx.interfaces[v.int()];
+                    if (n.extractor < iface.values.len) try w.print(" via {s}.{s}", .{
+                        cx.interner.slice(cx.graph.moduleName(v)),
+                        cx.interner.slice(iface.valueName(@enumFromInt(n.extractor))),
+                    });
+                };
+            },
+            .hole => try w.writeAll(switch (std.enums.fromInt(M.Hole, n.detail) orelse .html) {
+                .text_string => " text string",
+                .text_number => " text number",
+                .text_char => " text char",
+                .text_bool => " text bool",
+                .html => " html",
+                .maybe_html => " maybe_html",
+                .list_html => " list_html",
+            }),
+            .@"for" => try w.print(" {s} arity={d} primitive={}", .{ @tagName(std.enums.fromInt(M.ForMode, n.detail) orelse .reference), n.arity, n.primitive }),
+            .show => try w.print(" {s} arity={d} primitive={}", .{ @tagName(std.enums.fromInt(M.ShowMode, n.detail) orelse .identity), n.arity, n.primitive }),
+        }
+        try w.writeByte('\n');
+    }
+
+    fn vocabulary(cx: *const Context) ?Graph.Index {
+        const v = cx.graph.markup.vocabulary orelse return null;
+        if (v.int() >= cx.interfaces.len) return null;
+        return v;
+    }
+
+    fn writeRow(cx: *const Context, w: *std.Io.Writer, comptime table: []const u8, row: u32) Error!void {
+        const v = cx.vocabulary() orelse return w.writeAll(" ?");
+        const rows = @field(cx.interfaces[v.int()], table);
+        if (row >= rows.len) return w.writeAll(" ?");
+        try w.print(" {s}.{s}", .{
+            cx.interner.slice(cx.graph.moduleName(v)),
+            cx.interner.slice(cx.interfaces[v.int()].symbol(rows[row].name)),
+        });
     }
 
     fn writeShape(cx: *const Context, w: *std.Io.Writer, shape: Dispatch.Shape) Error!void {

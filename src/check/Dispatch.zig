@@ -231,6 +231,43 @@ pub const Try = struct {
     pub const Kind = enum(u8) { maybe, result };
 };
 
+/// What the checker decided about one markup node (checker-v2.md §25.7):
+/// the backend sees no types, so a hole's conversion, an attribute's value
+/// class, a handler's form, a row's arity and a key's mode cross as data.
+/// The row facts themselves — `void`, `property`, `delegated` and the rest
+/// — are not copied: they are read from the vocabulary module's interface,
+/// by `row`.
+pub const Markup = struct {
+    /// The markup root the node belongs to.
+    root: Bir.Inst.Index,
+    /// The node's or item's record: an index into the module's `Bir.extra`.
+    node: u32,
+    kind: Kind,
+    /// `attribute`, `escape`: a `Class`; `event`: a `Form`; `hole`: a
+    /// `Hole`; `for`: a `ForMode`; `show`: a `ShowMode`.
+    detail: u8 = 0,
+    /// `for`, `show`: the row function's arity, 1 or 2.
+    arity: u8 = 0,
+    /// `for`, `show`: the item's type is primitive-`eq`, so identity is
+    /// equality.
+    primitive: bool = false,
+    /// `element`, `attribute`, `event`: the row's index in the vocabulary
+    /// module's table of that form.
+    row: u32 = no_row,
+    /// `event`: the extractor its row names, as a value of the vocabulary
+    /// module's interface, or `no_row` (none, or not `pub`).
+    extractor: u32 = no_row,
+
+    pub const no_row: u32 = std.math.maxInt(u32);
+
+    pub const Kind = enum(u8) { element, attribute, escape, event, hole, @"for", show };
+    pub const Class = enum(u8) { string, int, float, bool, maybe_string, class_list, style_list };
+    pub const Form = enum(u8) { message, payload };
+    pub const Hole = enum(u8) { text_string, text_number, text_char, text_bool, html, maybe_html, list_html };
+    pub const ForMode = enum(u8) { key, position, reference };
+    pub const ShowMode = enum(u8) { key, identity };
+};
+
 terms: []const Term = &.{},
 /// Term indices: every `args`, `Site.evidence` and `Derived.body` range
 /// points in here.
@@ -251,6 +288,9 @@ derived: []const Derived = &.{},
 tries: []const Try = &.{},
 /// The names `Shape.record` ranges over.
 symbols: []const Symbol = &.{},
+/// One row per markup node the checker decided something about, markup
+/// roots in instruction order and each tree depth first (§25.7).
+markup: []const Markup = &.{},
 
 pub const empty: Dispatch = .{};
 
@@ -265,13 +305,14 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.derived);
     gpa.free(d.tries);
     gpa.free(d.symbols);
+    gpa.free(d.markup);
     d.* = .empty;
 }
 
 /// Whether the table holds anything at all. A module with no dispatch prints
 /// its `module` line and nothing else.
 pub fn isEmpty(d: *const Dispatch) bool {
-    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0;
+    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.markup.len == 0;
 }
 
 pub fn term(d: *const Dispatch, i: TermIndex) Term {

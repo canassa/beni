@@ -124,6 +124,15 @@ pub const Markup = struct {
     /// The markup type: a `pub foreign type` of one parameter.
     type_module: Symbol.Optional = .none,
     type_name: Symbol.Optional = .none,
+    /// `children`, interned: the field a component's children fill
+    /// (`language.md` §11.8), which no source need spell.
+    children: Symbol.Optional = .none,
+    /// The build's markup lowering (`boundary.md` §9.2), the first one a
+    /// package of the chain names, and per chain index the one that
+    /// package's own manifest names (owned): what `markup_type_in_foreign`
+    /// compares (`checker-v2.md` §25.2).
+    lowering: Symbol.Optional = .none,
+    layer_lowerings: []const Symbol.Optional = &.{},
 
     pub const Status = enum(u8) {
         /// The run names no platform.
@@ -159,6 +168,9 @@ pub const Platforms = struct {
     /// manifests spell them; null where no package declares one.
     vocabulary: ?[]const u8 = null,
     markup_type: ?[]const u8 = null,
+    /// Per chain index, the `"markup".lowering` that package's own manifest
+    /// names, if any.
+    lowerings: []const ?[]const u8 = &.{},
 
     pub const Reexport = struct {
         /// The module name as the manifest spells it.
@@ -237,6 +249,7 @@ pub fn deinit(g: *Graph, gpa: Allocator) void {
     gpa.free(g.name_rows);
     gpa.free(g.rows);
     gpa.free(g.sees);
+    gpa.free(g.markup.layer_lowerings);
     g.* = undefined;
 }
 
@@ -538,6 +551,18 @@ pub fn build(
 /// looked up among the platform modules, the type checked for what §9.2
 /// says it is: a `pub foreign type` of one parameter.
 fn resolveMarkup(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, interner: *InternPool.Global, platforms: Platforms) Allocator.Error!Markup {
+    var m = try resolveVocabulary(g, gpa, artifacts, interner, platforms);
+    if (!platforms.chain) return m;
+    const layers = try gpa.alloc(Symbol.Optional, platforms.lowerings.len);
+    for (layers, platforms.lowerings) |*l, own| {
+        l.* = if (own) |text| (try interner.getOrPut(gpa, text)).toOptional() else .none;
+        if (m.lowering == .none) m.lowering = l.*;
+    }
+    m.layer_lowerings = layers;
+    return m;
+}
+
+fn resolveVocabulary(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, interner: *InternPool.Global, platforms: Platforms) Allocator.Error!Markup {
     if (!platforms.chain) return .{ .status = .no_platform };
     const vocabulary_text = platforms.vocabulary orelse return .{ .status = .undeclared };
     const vocabulary = g.find(.platform, try interner.getOrPut(gpa, vocabulary_text)) orelse
@@ -557,6 +582,7 @@ fn resolveMarkup(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, i
         .vocabulary = vocabulary,
         .type_module = module_name.toOptional(),
         .type_name = type_name.toOptional(),
+        .children = (try interner.getOrPut(gpa, "children")).toOptional(),
     };
 }
 

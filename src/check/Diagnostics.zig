@@ -41,6 +41,7 @@ const Diagnostics = @This();
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 const Category = @import("Category.zig").Category;
+const MarkupTexts = @import("MarkupTexts.zig");
 
 /// A checker diagnostic, message already rendered.
 pub const Item = struct {
@@ -330,7 +331,7 @@ pub const Reporter = struct {
         , .{ name, buffer.written() }) catch return error.OutOfMemory;
     }
 
-    const Lines = struct { intro: []const u8, found: []const u8, wanted: []const u8 };
+    pub const Lines = struct { intro: []const u8, found: []const u8, wanted: []const u8 };
 
     /// What the compiler was looking at, in Elm's words. The strings are
     /// built into `scratch` because several of them name something.
@@ -416,6 +417,8 @@ pub const Reporter = struct {
                 .found = "The conversion has type:",
                 .wanted = "But this field needs:",
             },
+            // Markup names the attribute, event or form it was looking at.
+            .markup_attribute, .markup_list_attribute, .markup_handler, .markup_form, .markup_row, .markup_child => return MarkupTexts.categoryLines(scratch, r.env.interner, category),
             // `.where_clause` (a `where` clause's method type against the
             // method it resolved to) keeps the general lines.
             .try_value, .pattern, .ctor_arg, .destructure, .general, .where_clause => return .{

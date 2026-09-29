@@ -447,17 +447,31 @@ const Emitter = struct {
         );
     }
 
-    /// A markup primitive that survives elimination, in a build whose chain
-    /// names no lowering, is `unknown_markup_lowering` against the selected
-    /// platform's manifest (`boundary.md` §9.2): the primitive's
-    /// implementation is the lowering's runtime, and there is none.
+    /// A markup primitive or a markup root that survives elimination, in a
+    /// build whose chain names no lowering, is `unknown_markup_lowering`
+    /// against the selected platform's manifest (`boundary.md` §9.2): the
+    /// primitive's implementation is the lowering's runtime, the root's
+    /// compilation is the lowering's, and there is none.
     fn refuseMarkupWithoutLowering(e: *Emitter) !void {
         if (e.options.platform.lowering != null) return;
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             const b = e.bir(m);
             for (b.decls, 0..) |d, index| {
-                if (d.kind != .vocab_markup or !e.live.decl(m, index)) continue;
+                if (!e.live.decl(m, index)) continue;
+                if (d.kind.isValue() and writesMarkup(b, d)) return e.reportInFile(
+                    .unknown_markup_lowering,
+                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name }) },
+                    \\This build writes markup in `{s}.{s}`, but the platform `{s}` names no markup
+                    \\lowering to compile it.
+                    \\
+                    \\Markup compiles through the build's markup lowering (`docs/design/boundary.md`
+                    \\§9.4), which a platform names in its manifest's `"markup"` `"lowering"`, or
+                    \\inherits from a platform it depends on.
+                ,
+                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.options.platform.name },
+                );
+                if (d.kind != .vocab_markup) continue;
                 return e.reportInFile(
                     .unknown_markup_lowering,
                     .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name }) },
@@ -472,6 +486,14 @@ const Emitter = struct {
                 );
             }
         }
+    }
+
+    fn writesMarkup(b: *const Bir, d: Bir.Decl) bool {
+        const tags = b.insts.items(.tag);
+        for (tags[d.inst_start.int()..d.inst_end.int()]) |tag| {
+            if (tag == .markup) return true;
+        }
+        return false;
     }
 
     fn refuseSchemas(e: *Emitter) !bool {

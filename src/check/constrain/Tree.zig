@@ -105,6 +105,53 @@ pub const Node = struct {
         /// A form the generator must never meet: `internal` at `region`, and
         /// `a` (the expected type) poisoned.
         internal,
+        /// A markup obligation (checker-v2.md §25.4): `a` = `extra` index of
+        /// a `MarkupObligation`. Decided now when its owner is known, else
+        /// an obligation riding on it.
+        markup_obligation,
+        /// A markup fault found from the syntax and the vocabulary alone
+        /// (§25.3): `a` = `extra` index of a `MarkupFault`. Reported when
+        /// the solver reaches it, so it is attributed to the declaration
+        /// being solved.
+        markup_fault,
+    };
+};
+
+/// Payload of `Node.Tag.markup_obligation`: an `Obligations.Kind`, its
+/// variables (`count` of them, deciding first) and the row's `index`.
+pub const MarkupObligation = struct {
+    kind: u32,
+    count: u32,
+    v0: Var,
+    v1: Var,
+    v2: Var,
+    index: u32,
+};
+
+/// Payload of `Node.Tag.markup_fault`.
+pub const MarkupFault = struct {
+    kind: Kind,
+    /// The token the message underlines.
+    token: u32,
+    /// The name the message is about: the tag, the attribute, the escape.
+    name: Symbol,
+    /// The element the item was written on, for its suggestions.
+    tag: Symbol,
+    /// `quoted_value`, `bare_value`: the row's type, as `Var`.
+    type: u32,
+
+    pub const Kind = enum(u32) {
+        unknown_element,
+        unknown_attribute,
+        /// `name` is the element; `token` its first child.
+        void_children,
+        raw_attribute,
+        /// A quoted attribute name beginning with `on`.
+        event_escape,
+        /// A quoted value for a row whose type no quoted value is.
+        quoted_value,
+        /// A bare attribute for a row that is not `Bool`.
+        bare_value,
     };
 };
 

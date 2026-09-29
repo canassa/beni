@@ -2213,9 +2213,9 @@ const Lowerer = struct {
             // asserting keeps a bug in that gate from becoming a crash.
             .@"error" => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             // Markup compiles through a platform's markup lowering, which
-            // does not exist yet; the checker refuses every module that
-            // writes markup (`no_markup_vocabulary`), so no build reaches
-            // this, and like `error` it is `undefined` rather than a crash.
+            // does not exist yet; `Emit` refuses a build in which markup
+            // survives (`unknown_markup_lowering`), so no build reaches this,
+            // and like `error` it is `undefined` rather than a crash.
             .markup => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             // Every remaining tag is a TYPE or a PATTERN, which no
             // expression position holds: patterns are lowered by

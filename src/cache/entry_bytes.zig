@@ -57,7 +57,9 @@ pub const magic = "BENICAC\x00";
 /// 4: the `interface` section became `iface_bytes` format 7 and the
 /// `schema_plan` section `schema_plan_bytes` format 2, an alias named in a
 /// term with its body on its `type_refs` row (§14.2, §14.3).
-pub const format_version: u32 = 4;
+/// 5: the `dispatch` section became `dispatch_bytes` format 5, with the
+/// markup section (checker-v2.md §25.7).
+pub const format_version: u32 = 5;
 
 /// The four sections, in this order and no other.
 pub const Section = enum(u32) {

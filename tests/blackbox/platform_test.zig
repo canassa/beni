@@ -422,8 +422,9 @@ test "the vocabulary module may write markup against its own declarations" {
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `frontend.md` §9.8: the markup edge is never added from a module to
-    // itself, so a vocabulary module that writes markup is no cycle. Its
-    // markup is the one thing this version cannot type yet.
+    // itself, so a vocabulary module that writes markup is no cycle, and
+    // its markup is typed against the rows it has already checked, read
+    // from its own record (`checker-v2.md` §25.2).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try writeVocabularyPlatform(&w,
@@ -443,21 +444,58 @@ test "the vocabulary module may write markup against its own declarations" {
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const checked = try w.run(&.{ "check", "--platform=vocab", "Main.beni" });
+    const dumped = try w.runWith(&.{ "dump", "--stage=dispatch", "--platform=vocab", "vocab/Voc.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+    try testing.expectEqual(@as(u8, 0), dumped.exit_code);
+    try testing.expectEqualStrings(
+        \\module Voc
+        \\  decl view evidence=0 arity=0 convention=plain
+        \\  markup 3 element Voc.p
+        \\
+    , dumped.stdout);
+}
+
+test "a foreign that mentions the markup type is legal in the platform that names the build's lowering" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §25.2: a `foreign` whose type mentions the markup type
+    // reads one lowering's markup, which is right exactly when its own
+    // platform names the build's lowering. `top` names `strings` over
+    // `html`'s vocabulary, so its `render` is legal; this binary has no
+    // lowering called `strings`, and that is the one diagnostic.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("top/beni.json",
+        \\{ "platform": true, "name": "top", "platforms": ["html"], "markup": { "lowering": "strings", "runtime": "markup.js" } }
+    );
+    try w.write("top/Render.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub foreign render : Html msg -> String
+        \\
+    );
+    try w.write("top/Render.js", "export const render = (html) => String(html);\n");
+    try w.write("top/markup.js", "export const text = (s) => s;\nexport const map = (h, f) => h;\n");
+    try w.write("Main.beni", "x : Int\nx =\n    1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=top", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), checked.exit_code);
     try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
-    try testing.expectEqualDeep(diagnostic.Diagnostic{
-        .code = .not_implemented,
-        .severity = .@"error",
-        .span = .{ .file = "vocab/Voc.beni", .start = .{ .line = 9, .col = 5 }, .end = .{ .line = 9, .col = 6 } },
-        .title = "NOT IMPLEMENTED YET",
-        .message = "This module writes markup, and its platform declares the vocabulary to check it\n" ++
-            "against, but this version of beni does not type markup yet, so a module that\n" ++
-            "writes markup cannot be checked or built.",
-    }, checked.diagnostics[0]);
+    try testing.expectEqual(diagnostic.Code.unknown_markup_lowering, checked.diagnostics[0].code);
 }
 
 test "a module the vocabulary module imports that writes markup closes a cycle through the markup edge" {

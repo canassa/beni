@@ -191,10 +191,10 @@ fn isErr(cx: *const Context, v: Var) bool {
     return cx.store.resolvedContent(v) == .err;
 }
 
-const ValueClass = enum { string, int, float, bool, maybe_string, other };
+pub const ValueClass = enum { string, int, float, bool, maybe_string, other };
 
 /// Which of §11.14's five value types `v` is, after aliases.
-fn valueClass(cx: *const Context, v: Var) ValueClass {
+pub fn valueClass(cx: *const Context, v: Var) ValueClass {
     const wk = cx.types.well_known;
     const app = appOf(cx, v) orelse return .other;
     if (app.type == wk.string and app.args.len == 0) return .string;
@@ -289,7 +289,7 @@ fn allSame(cx: *const Context, xs: []const Var, ys: []const Var, depth: u32) boo
 }
 
 /// Whether the markup type occurs anywhere in `v`.
-fn mentionsType(cx: *const Context, v: Var, t: MarkupType) Error!bool {
+pub fn mentionsType(cx: *const Context, v: Var, t: MarkupType) Error!bool {
     var stack: std.ArrayList(Var) = .empty;
     defer stack.deinit(cx.scratch);
     try stack.append(cx.scratch, v);

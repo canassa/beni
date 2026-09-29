@@ -58,6 +58,7 @@ const Contexts = @import("Contexts.zig");
 const Decl = @import("constrain/Decl.zig");
 const Walk = @import("Walk.zig");
 const Vocab = @import("Vocab.zig");
+const Markup = @import("Markup.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -131,7 +132,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try schemas.buildAll();
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
     defer too_deep.deinit(scratch);
-    const cx: Context = .{
+    var cx: Context = .{
         .gpa = gpa,
         .scratch = scratch,
         .store = store,
@@ -179,6 +180,13 @@ pub fn check(in: Input) Error!Check.Counters {
     // depend on no value but a `via` extractor, whose P2 scheme is all they
     // read, and the module's own markup resolves against them.
     try Vocab.check(&cx, &report, decl_scheme, markupType(in.graph));
+    try foreignMarkup(&cx, &report, decl_scheme);
+    // The vocabulary this module's markup is typed against, read now that
+    // its rows are checked (§25.2) and before any value group.
+    const empty_provenance: Interface.Provenance = .empty;
+    const provenance = if (in.module.int() < in.provenance.len) &in.provenance[in.module.int()] else &empty_provenance;
+    var markup_view: ?Markup = if (bir.uses_markup) try Markup.build(&cx, provenance, &report.failed, decl_scheme) else null;
+    if (markup_view) |*view| cx.markup = view;
 
     // P3: the own-name index (§5): every value by name, once.
     const own_values = try ownIndex(scratch, bir);
@@ -228,6 +236,11 @@ pub fn check(in: Input) Error!Check.Counters {
     if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
+    // The markup section (§25.7), for a module that checked clean: every
+    // name resolved and every obligation was decided.
+    if (cx.markup) |view| if (!quiet and report.errors == 0) {
+        in.dispatch.markup = try view.section(gpa, solver.markup_decisions.items);
+    };
     if (in.profile) |p| p.end(in.tid, p6_token.?, .elaborate, file.int(), 0);
 
     // P7.
@@ -255,13 +268,12 @@ pub fn check(in: Input) Error!Check.Counters {
 
     // P8.
     const p8_token = if (in.profile) |p| p.begin() else null;
-    const empty_provenance: Interface.Provenance = .empty;
     try Publish.fill(.{
         .cx = &cx,
         .report = &report,
         .stacks = &solver.stacks,
         .iface = &in.interfaces[in.module.int()],
-        .provenance = if (in.module.int() < in.provenance.len) &in.provenance[in.module.int()] else &empty_provenance,
+        .provenance = provenance,
         .decl_scheme = decl_scheme,
         .roundtrip = in.roundtrip_interfaces,
         .types = in.types,
@@ -326,14 +338,12 @@ fn markupType(graph: *const Graph) ?Vocab.MarkupType {
     return .{ .module = module, .name = name };
 }
 
-/// Markup, until the checker types it (checker-v2.md §25): a module that
-/// writes markup is reported once, at its first markup root in source
-/// order — `no_markup_vocabulary` when the build has no vocabulary to type
-/// it against, and `not_implemented` when it has one, since typing markup
-/// against a vocabulary is not built yet. Every `markup` instruction types
-/// as the error type, so nothing cascades from either.
+/// A module that writes markup in a build with no vocabulary to type it
+/// against (checker-v2.md §25.1): `no_markup_vocabulary`, once, at its first
+/// markup root in source order. Every `markup` instruction then types as the
+/// error type, so nothing cascades from it.
 fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!void {
-    if (!bir.uses_markup) return;
+    if (!bir.uses_markup or graph.markup.status == .ok) return;
     var first: ?Bir.Inst.Index = null;
     const tags = bir.insts.items(.tag);
     const tokens = bir.insts.items(.main_token);
@@ -351,11 +361,7 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
         \\
     ;
     switch (graph.markup.status) {
-        .ok => try report.emitText(.not_implemented, root, null,
-            \\This module writes markup, and its platform declares the vocabulary to check it
-            \\against, but this version of beni does not type markup yet, so a module that
-            \\writes markup cannot be checked or built.
-        ),
+        .ok => {},
         .no_platform => try report.emitText(.no_markup_vocabulary, root, null, lead ++
             \\This run names no platform: pass `--platform=<name>`, where `html` holds the
             \\HTML vocabulary and every platform built on it has it too.
@@ -374,6 +380,44 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
             \\and it names none (`docs/design/boundary.md` §9.2).
         ),
     }
+}
+
+/// A `foreign` of a platform package whose declared type mentions the markup
+/// type builds or reads one lowering's representation of markup
+/// (checker-v2.md §25.2, `boundary.md` §9.3), so it is legal only when the
+/// package's own manifest names a lowering and that lowering is the build's:
+/// `markup_type_in_foreign` otherwise, at the declaration.
+fn foreignMarkup(cx: *const Context, report: *Report, decl_scheme: []const Var.Optional) Error!void {
+    const graph = cx.graph;
+    if (graph.modulePackage(cx.module) != .platform) return;
+    const t = markupType(graph) orelse return;
+    const layer = graph.module(cx.module).layer;
+    const own: InternPool.Symbol.Optional = if (layer < graph.markup.layer_lowerings.len) graph.markup.layer_lowerings[layer] else .none;
+    const selected = graph.markup.lowering;
+    if (own != .none and own == selected) return;
+    for (cx.bir.decls, 0..) |d, i| {
+        if (d.kind != .foreign_value) continue;
+        const v = decl_scheme[i].unwrap() orelse continue;
+        if (cx.store.resolvedContent(v) == .err or !try Vocab.mentionsType(cx, v, t)) continue;
+        report.at(@intCast(i));
+        const name = cx.interner.slice(cx.bir.symbol(d.name));
+        const type_text = try std.fmt.allocPrint(cx.scratch, "{s}.{s}", .{ cx.interner.slice(t.module), cx.interner.slice(t.name) });
+        const selected_text = if (selected.unwrap()) |s| try std.fmt.allocPrint(cx.scratch, "selects `{s}`", .{cx.interner.slice(s)}) else "selects none";
+        const own_text = if (own.unwrap()) |s| try std.fmt.allocPrint(cx.scratch, "names `{s}`", .{cx.interner.slice(s)}) else "names none";
+        const message = try std.fmt.allocPrint(cx.scratch,
+            \\The `foreign` value `{s}` has a type that mentions the markup type `{s}`.
+            \\
+            \\Its JavaScript builds or reads the markup of one markup lowering, so it is
+            \\legal only in a platform whose own manifest names the lowering the build
+            \\selects; under another, it would hand that lowering's runtime a value it
+            \\misreads. This build {s}, and this platform {s}.
+            \\
+            \\Hint: a markup primitive, `pub markup {s} : …` in the vocabulary module, is
+            \\implemented by every lowering's runtime and serves them all.
+        , .{ name, type_text, selected_text, own_text, name });
+        try report.emitText(.markup_type_in_foreign, d.inst_start, d.name_token, message);
+    }
+    report.at(null);
 }
 
 fn newTable(gpa: Allocator, len: usize) Error![]Var.Optional {

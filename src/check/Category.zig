@@ -55,5 +55,24 @@ pub const Category = struct {
         /// A requirement that came from a `where` clause, checked
         /// against the method type it resolved to (checker-v2.md §9.2).
         where_clause,
+        /// A markup attribute's value against its declared type
+        /// (checker-v2.md §25.3); `index` the attribute's name `Symbol`.
+        markup_attribute,
+        /// A `class` or `style` value against the form its type chose
+        /// (§25.4); `index` the attribute's name `Symbol`.
+        markup_list_attribute,
+        /// An event's handler against the form its type chose (§25.4);
+        /// `index` the event's name `Symbol`.
+        markup_handler,
+        /// A `For`'s or `Show`'s own attribute; `index` a `FormAttribute`.
+        markup_form,
+        /// A `For` row or a `Show` body against the function the form
+        /// calls; `index` 0 for `For`, 1 for `Show`.
+        markup_row,
+        /// Markup in a hole, whose messages must be the root's.
+        markup_child,
     };
 };
+
+/// Which attribute of `For` or `Show` a `markup_form` category is about.
+pub const FormAttribute = enum(u32) { each, when, fallback, keyed };

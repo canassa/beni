@@ -32,6 +32,7 @@ const TypeStore = @import("../TypeStore.zig");
 const Tree = @import("Tree.zig");
 const Pattern = @import("Pattern.zig");
 const Decl = @import("Decl.zig");
+const Markup = @import("Markup.zig");
 const Walk = @import("../Walk.zig");
 const Evidence = @import("../Evidence.zig");
 const InternPool = @import("../../InternPool.zig");
@@ -224,10 +225,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .@"error", .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => {
             return g.equal(expected, try g.fresh(.err), inst, category);
         },
-        // Markup types against a platform's vocabulary, which no platform
-        // declares yet: the module has its `no_markup_vocabulary` from P1
-        // (`Module.check`), so poison and stay quiet.
-        .markup => return g.equal(expected, try g.fresh(.err), inst, category),
+        // Markup, typed against the build's vocabulary (checker-v2.md §25).
+        .markup => return Markup.root(g, inst, expected, category),
         // A form the generator has no rule for, or no expression at all:
         // the compiler says so, never a silent poison: no failure to decide
         // is answered as success.

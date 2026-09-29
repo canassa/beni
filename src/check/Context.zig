@@ -45,6 +45,12 @@ too_deep: *std.ArrayList(TooDeep),
 /// annotated declaration gets a reading of its annotation that nothing
 /// unifies, which the dump prints (`constrain/Decl.zig`'s `Member.display`).
 keep_display: bool = false,
+/// The vocabulary this module's markup is typed against (checker-v2.md
+/// §25.2), when it writes markup and the build has one. Set after the
+/// vocabulary declarations are checked and before any value group.
+markup: ?*Markup = null,
+
+const Markup = @import("Markup.zig");
 
 /// One written or inferred type too deep to finish: where the message points,
 /// and the declaration whose failure bit it sets (§15.2).

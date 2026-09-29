@@ -25,6 +25,7 @@ const Walk = @import("Walk.zig");
 const Evidence = @import("Evidence.zig");
 const Resolve = @import("Resolve.zig");
 const Recursion = @import("Recursion.zig");
+const MarkupDecide = @import("MarkupDecide.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -65,7 +66,9 @@ fn attach(s: *Solve, id: Id) Error!void {
     // target's.
     if (s.recursive_frames != 0) try Recursion.row(s, id);
     const rank = try lowerDependants(s, row);
-    if (row.kind == .@"try") {
+    // A markup row joins the same list: its default is taken at its owner's
+    // boundary, before quantification, because some defaults unify (§25.4).
+    if (row.kind == .@"try" or row.kind.isMarkup()) {
         const at = if (rank == TypeStore.generalized) s.frames.items.len else rank;
         try s.frames.items[at - 1].tries.append(gpa, id.int());
     }
@@ -151,13 +154,14 @@ fn decide(s: *Solve, id: Id, default: bool) Error!void {
         .interpolatable => try interpolatable(s, id, row),
         .equatable => try equatable(s, id, row),
         .@"try" => try tryShape(s, id, row, default),
+        .renderable, .handler, .attr_form, .row, .key, .item => try MarkupDecide.decide(s, id, row, default),
     }
 }
 
 /// Put `id` back on its variables: it was readied, but what decides it is
 /// still a flex — a bind to an alias whose expansion is a variable, which
 /// `resolved` looks through — so nothing is decided.
-fn reopen(s: *Solve, id: Id) Error!void {
+pub fn reopen(s: *Solve, id: Id) Error!void {
     s.obligations.rowPtr(id).state = .open;
     try attach(s, id);
 }
@@ -385,6 +389,7 @@ pub fn close(s: *Solve) Error!void {
                     .interpolatable => if (flags.kind != .number) try s.report.ambiguousInterpolation(row.region),
                     .equatable => {},
                     .@"try" => try s.report.internal(row.region, "a `?` reached quantification undecided; §8.1 step 3 defaults every one at its target's boundary first (checker-v2.md §8.6)"),
+                    .renderable, .handler, .attr_form, .row, .key, .item => try s.report.internal(row.region, "a markup obligation reached quantification undecided; §8.1 step 3 decides every one at its owner's boundary first (checker-v2.md §25.4)"),
                 }
             }
         }
@@ -403,7 +408,7 @@ pub fn settle(s: *Solve, set: Obligations.Set) Error!void {
         switch (r.kind) {
             .tuple_index => try s.poison(r.vars[1]),
             .@"try" => try s.poison(r.vars[2]),
-            .interpolatable, .equatable => {},
+            .interpolatable, .equatable, .renderable, .handler, .attr_form, .row, .key, .item => {},
         }
     }
 }

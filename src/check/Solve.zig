@@ -15,8 +15,9 @@
 //!   2. adjust ranks over the young pool (`Generalize.adjustRanks`, `owned`),
 //!      so a variable's rank now says whether it escapes;
 //!   3. defaults — every `try` on this frame's open list whose target still
-//!      sits at its rank is decided as `Result`; one whose target escaped
-//!      moves to its frame's list (§8.6); if one was decided,
+//!      sits at its rank is decided as `Result`, and every markup obligation
+//!      whose owner does is decided by its boundary rule (§25.4); one that
+//!      escaped moves to its frame's list (§8.6); if one was decided,
 //!      or anything was readied, back to 1;
 //!   4. occurs over the frame's binders — parameters and pattern variables,
 //!      then headers — one run of shared epochs (`Walk.Occurs`,
@@ -65,6 +66,7 @@ const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Context = @import("Context.zig");
 const Decide = @import("Decide.zig");
+const MarkupDecide = @import("MarkupDecide.zig");
 const Generalize = @import("Generalize.zig");
 const Groups = @import("Groups.zig");
 const Recursion = @import("Recursion.zig");
@@ -105,6 +107,9 @@ marker: Marker = undefined,
 /// The shape every `?` was decided as, for the dispatch table (`checker.md`
 /// §6.5): P9 sorts them by instruction.
 tries: std.ArrayList(Dispatch.Try) = .empty,
+/// What each markup obligation was decided as (checker-v2.md §25.7), by the
+/// record it is about: P9 builds the table's markup section from it.
+markup_decisions: std.ArrayList(MarkupDecide.Decision) = .empty,
 /// Step 5's quantified variables that still carry obligations (step 7).
 carriers: std.ArrayList(Var) = .empty,
 /// One `ready` queue per top-level-kind frame ever pushed (§9.1): a frame's
@@ -197,6 +202,7 @@ pub fn deinit(s: *Solve) void {
     s.obligations.deinit(gpa);
     s.marker.deinit();
     s.tries.deinit(gpa);
+    s.markup_decisions.deinit(gpa);
     s.carriers.deinit(gpa);
     for (s.queues.items) |*q| q.deinit(gpa);
     s.queues.deinit(gpa);
@@ -392,6 +398,13 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                 try s.poison(@enumFromInt(node.a));
                 try s.report.internal(node.region, "the checker met a form its subset excludes; the subset gate (checker-v2.md §5) should have refused this module");
             },
+            .markup_obligation => {
+                const o = s.tree.extraData(node.a, Tree.MarkupObligation);
+                const vars = [_]Var{ o.v0, o.v1, o.v2 };
+                const id = try s.obligations.create(s.cx.gpa, @enumFromInt(o.kind), node.region, vars[0..o.count], o.index, null);
+                try Decide.begin(s, id);
+            },
+            .markup_fault => try MarkupDecide.fault(s, node.region, s.tree.extraData(node.a, Tree.MarkupFault)),
         }
         // Eager draining (§9.1): what this node readied is decided now, at
         // the same step a type known earlier would have been.

@@ -4,8 +4,10 @@
 //! the type is known: which element a `.0` names (`tuple_index`), whether a
 //! `${…}` part can be put into a string (`interpolatable`), whether explicit
 //! `Basics.eq`/`neq` may compare it (`equatable`, §11.4), and which shape a
-//! `?` has (`try`, §8.6). Each is one row of this table, append-only and
-//! index-based, like the wanteds of §4.2.
+//! `?` has (`try`, §8.6), and markup's questions about a hole, a handler, a
+//! `class` or `style` value, a row function, a key and a `For`'s item
+//! (§25.4). Each is one row of this table, append-only and index-based,
+//! like the wanteds of §4.2.
 //!
 //! **An open obligation rides on its deciding variables**, through the
 //! shared `Flags.obls` field (§4.1): a set here. What the
@@ -62,7 +64,38 @@ pub const Kind = enum(u8) {
     /// `e?`: `vars` = the subject, the target's result (the owner), the
     /// instruction's value.
     @"try",
+    /// A markup hole (checker-v2.md §25.4): `vars` = the part, the root's
+    /// message variable. `index` is the hole's record.
+    renderable,
+    /// An event's handler: `vars` = the handler, the event's payload, the
+    /// root's message variable. `index` is the item's record.
+    handler,
+    /// The value of a `classes` or `styles` attribute: `vars` = the value.
+    /// `index` is the item's record, with `markup_flag` set for `styles`.
+    attr_form,
+    /// A `For` row or `Show` body that is not a lambda: `vars` = the
+    /// function, the item, the root's message variable. `index` is the
+    /// row's record, with `markup_flag` set in a `For`.
+    row,
+    /// The result of a `keyed` function: `vars` = the key. `index` is the
+    /// form's record.
+    key,
+    /// Whether a `For`'s item or a `Show`'s value is a primitive-`eq` type:
+    /// `vars` = the item. `index` is the form's record, with `markup_flag`
+    /// set when an answer of no is the `unkeyed_for` warning.
+    item,
+
+    /// The kinds markup adds (§25.4). Each has a decision at its owner's
+    /// boundary, taken with `try`'s defaults (§8.1 step 3), because some of
+    /// those decisions unify.
+    pub fn isMarkup(k: Kind) bool {
+        return @intFromEnum(k) >= @intFromEnum(Kind.renderable);
+    }
 };
+
+/// The bit of a markup row's `index` that its kind gives a meaning of its
+/// own; the other bits are a record's index into the module's `Bir.extra`.
+pub const markup_flag: u32 = 1 << 31;
 
 pub const State = enum(u8) {
     open,
@@ -109,6 +142,7 @@ pub const Row = struct {
         return switch (r.kind) {
             .tuple_index, .interpolatable, .equatable => 1,
             .@"try" => 2,
+            .renderable, .handler, .attr_form, .row, .key, .item => 1,
         };
     }
 
@@ -117,6 +151,7 @@ pub const Row = struct {
         return switch (r.kind) {
             .tuple_index, .interpolatable, .equatable => 0,
             .@"try" => 1,
+            .renderable, .handler, .attr_form, .row, .key, .item => 0,
         };
     }
 
@@ -126,6 +161,7 @@ pub const Row = struct {
             .tuple_index => &.{1},
             .interpolatable, .equatable => &.{},
             .@"try" => &.{ 0, 2 },
+            .renderable, .handler, .attr_form, .row, .key, .item => &.{},
         };
     }
 };

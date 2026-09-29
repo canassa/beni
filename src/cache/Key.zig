@@ -75,6 +75,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Artifacts = @import("../Artifacts.zig");
+const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -530,7 +531,7 @@ fn ownTermsOf(
     // vocabulary, and which type is the markup type. Every other module's
     // option string is unchanged, so its key is too.
     const markup = graph.markup;
-    const option_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
+    const markup_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
         try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s}", .{
             option_string,
             markup.status,
@@ -539,6 +540,18 @@ fn ownTermsOf(
         })
     else
         option_string;
+    // A platform module's `foreign` values are refused when their type
+    // mentions the markup type and the package's own lowering is not the
+    // build's (`checker-v2.md` §25.2): both lowerings reach it through no
+    // import, so a platform module that declares a `foreign` carries them.
+    const option_text = if (module.package == .platform and markup.type_name != .none and declaresForeign(artifacts.bir(file))) blk: {
+        const own = if (module.layer < markup.layer_lowerings.len) markup.layer_lowerings[module.layer] else .none;
+        break :blk try std.fmt.allocPrint(scratch, "{s};lowering={s},{s}", .{
+            markup_text,
+            if (own.unwrap()) |s| interner.slice(s) else "",
+            if (markup.lowering.unwrap()) |s| interner.slice(s) else "",
+        });
+    } else markup_text;
 
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(gpa);
@@ -551,6 +564,13 @@ fn ownTermsOf(
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
     });
     return bytes.toOwnedSlice(gpa);
+}
+
+fn declaresForeign(bir: *const Bir) bool {
+    for (bir.decls) |d| {
+        if (d.kind == .foreign_value) return true;
+    }
+    return false;
 }
 
 fn importLessThan(_: void, a: Import, b: Import) bool {

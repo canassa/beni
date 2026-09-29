@@ -58,6 +58,9 @@ const files = [_]File{
     .{ .path = "Instantiate.zig", .text = @embedFile("Instantiate.zig") },
     .{ .path = "InterfaceTerms.zig", .text = @embedFile("InterfaceTerms.zig") },
     .{ .path = "Marker.zig", .text = @embedFile("Marker.zig") },
+    .{ .path = "Markup.zig", .text = @embedFile("Markup.zig") },
+    .{ .path = "MarkupDecide.zig", .text = @embedFile("MarkupDecide.zig") },
+    .{ .path = "MarkupTexts.zig", .text = @embedFile("MarkupTexts.zig") },
     .{ .path = "Messages.zig", .text = @embedFile("Messages.zig") },
     .{ .path = "Module.zig", .text = @embedFile("Module.zig") },
     .{ .path = "Obligations.zig", .text = @embedFile("Obligations.zig") },
@@ -87,6 +90,7 @@ const files = [_]File{
     .{ .path = "rules_test.zig", .text = "" },
     .{ .path = "constrain/Decl.zig", .text = @embedFile("constrain/Decl.zig") },
     .{ .path = "constrain/Expr.zig", .text = @embedFile("constrain/Expr.zig") },
+    .{ .path = "constrain/Markup.zig", .text = @embedFile("constrain/Markup.zig") },
     .{ .path = "constrain/Pattern.zig", .text = @embedFile("constrain/Pattern.zig") },
     .{ .path = "constrain/Tree.zig", .text = @embedFile("constrain/Tree.zig") },
 };
