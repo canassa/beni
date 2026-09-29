@@ -42,6 +42,16 @@ pub const Item = struct {
     /// Markup's lowering codes (language.md §11.17): which of a code's
     /// readings fired. The second range is the tag's name.
     markup: Markup = .none,
+    /// `keyed_false_on_show` and `missing_keyed`: the text inside the braces
+    /// of the `Show`'s `when`, of its body's hole and of its `fallback`,
+    /// each empty when it is not written in braces — what the message
+    /// writes the `case` that says the same thing from.
+    when_start: u32 = 0,
+    when_end: u32 = 0,
+    body_start: u32 = 0,
+    body_end: u32 = 0,
+    fallback_start: u32 = 0,
+    fallback_end: u32 = 0,
 
     pub fn hasOther(item: Item) bool {
         return item.other_end > item.other_start;
@@ -393,20 +403,18 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\
                 \\    <Show when={model.user} keyed>{\user -> <UserEditor user={user} />}</Show>
             ),
-            else => try w.writeAll(
-                \\This `<Show>` has no `keyed`, so it would not say when to rebuild what it shows.
-                \\
-                \\A `<Show>` remounts its body when its value changes: `keyed` for a new value by
-                \\identity, `keyed={.id}` for a new key. To patch the body in place instead, write
-                \\the `case` it would be:
-                \\
-                \\    case model.user of
-                \\        Just user ->
-                \\            <UserEditor user={user} />
-                \\
-                \\        Nothing ->
-                \\            <p>Pick a user</p>
-            ),
+            else => {
+                try w.writeAll(
+                    \\This `<Show>` has no `keyed`, so it would not say when to rebuild what it shows.
+                    \\
+                    \\A `<Show>` remounts its body when its value changes: `keyed` for a new value by
+                    \\identity, `keyed={.id}` for a new key. To patch the body in place instead, write
+                    \\the `case` it would be:
+                    \\
+                    \\
+                );
+                try writeShowCase(w, source, item);
+            },
         },
         .invalid_keyed => if (item.markup == .keyed_false_on_show) {
             try w.writeAll(
@@ -414,13 +422,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\
                 \\Write `keyed`, or `keyed={.id}` for a key, or the `case` itself:
                 \\
-                \\    case model.user of
-                \\        Just user ->
-                \\            <UserEditor user={user} />
                 \\
-                \\        Nothing ->
-                \\            <p>Pick a user</p>
             );
+            try writeShowCase(w, source, item);
         } else {
             try w.print(
                 \\`{s}` is not a keying mode of `<{s}>`.
@@ -445,6 +449,74 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
 
 /// The name of `names` nearest `text` by edit distance, if any is within
 /// half its length, or two edits: the "did you mean" of a form's attribute.
+/// The `case` a `Show` would be, four spaces in, from the program's own
+/// `when`, body and `fallback` (`Item.when_start` and the rest): `Just`
+/// with the body's parameter and what it returns, `Nothing` with the
+/// fallback, or an empty fragment when there is none. An example stands in
+/// when the `when` or the body is not one the message can take apart.
+fn writeShowCase(w: *std.Io.Writer, source: []const u8, item: Item) std.Io.Writer.Error!void {
+    const blank = " \t\r\n";
+    const when = std.mem.trim(u8, source[item.when_start..item.when_end], blank);
+    const body = std.mem.trim(u8, source[item.body_start..item.body_end], blank);
+    const fallback = std.mem.trim(u8, source[item.fallback_start..item.fallback_end], blank);
+    if (when.len == 0 or body.len == 0 or std.mem.indexOfScalar(u8, when, '\n') != null) return w.writeAll(
+        \\    case model.user of
+        \\        Just user ->
+        \\            <UserEditor user={user} />
+        \\
+        \\        Nothing ->
+        \\            <p>Pick a user</p>
+    );
+    try w.print("    case {s} of\n", .{when});
+    const arrow = if (body[0] == '\\') std.mem.indexOf(u8, body, "->") else null;
+    if (arrow) |at| {
+        try w.print("        Just {s} ->\n", .{std.mem.trim(u8, body[1..at], blank)});
+        try writeBlock(w, source, std.mem.trim(u8, body[at + 2 ..], blank), "            ");
+    } else if (std.mem.indexOfAny(u8, body, blank) == null) {
+        try w.print("        Just value ->\n            {s} value", .{body});
+    } else if (std.mem.indexOfScalar(u8, body, '\n') == null) {
+        try w.print("        Just value ->\n            ({s}) value", .{body});
+    } else {
+        try w.writeAll("        Just value ->\n");
+        try writeBlock(w, source, body, "            ");
+    }
+    try w.writeAll("\n\n        Nothing ->\n");
+    if (fallback.len == 0) return w.writeAll("            <></>");
+    try writeBlock(w, source, fallback, "            ");
+}
+
+/// `text`, a slice of `source`, with each line after `indent`: its first
+/// line where it starts, the rest kept where they stand relative to it.
+fn writeBlock(w: *std.Io.Writer, source: []const u8, text: []const u8, indent: []const u8) std.Io.Writer.Error!void {
+    const start = @intFromPtr(text.ptr) - @intFromPtr(source.ptr);
+    const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..start], '\n')) |n| n + 1 else 0;
+    const first_column = start - line_start;
+    var base = first_column;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    _ = lines.next();
+    while (lines.next()) |line| {
+        const content = std.mem.trimEnd(u8, line, " \t\r");
+        if (content.len == 0) continue;
+        base = @min(base, content.len - std.mem.trimStart(u8, content, " ").len);
+    }
+    lines.reset();
+    var first = true;
+    while (lines.next()) |line| {
+        const content = std.mem.trimEnd(u8, line, " \t\r");
+        if (first) {
+            try w.writeAll(indent);
+            try w.splatByteAll(' ', first_column - base);
+            try w.writeAll(content);
+            first = false;
+            continue;
+        }
+        try w.writeByte('\n');
+        if (content.len == 0) continue;
+        try w.writeAll(indent);
+        try w.writeAll(content[@min(base, content.len)..]);
+    }
+}
+
 fn nearest(text: []const u8, names: []const []const u8) ?[]const u8 {
     var best: ?[]const u8 = null;
     var best_distance: usize = std.math.maxInt(usize);

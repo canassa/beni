@@ -80,7 +80,9 @@ pub const magic = "BENIFE\x00\x00";
 /// 7 (2026-09-29): markup's BIR — the `markup` instruction and its tree
 /// records in `extra`, four vocabulary declaration kinds, a lowering
 /// diagnostic's `markup` byte, and the `bir_flags` section (frontend.md §9.7).
-pub const format_version: u32 = 7;
+/// 8 (2026-09-29): a lowering diagnostic carries the ranges of a `Show`'s
+/// `when`, body and `fallback`, which its message writes as a `case`.
+pub const format_version: u32 = 8;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

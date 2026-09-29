@@ -3528,6 +3528,12 @@ fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!B
     var list_token: ?TokenIndex = null;
     var keyed_token: ?TokenIndex = null;
     var fallback_token: ?TokenIndex = null;
+    // What a `Show` that says nothing about remounting would be as a
+    // `case`, which its message writes out: the braces of `when` and
+    // `fallback`, and the span of `keyed={False}`.
+    var when_brace: ?TokenIndex = null;
+    var fallback_brace: ?TokenIndex = null;
+    var keyed_false: ?[2]TokenIndex = null;
     for (mk.attrs) |attr| {
         switch (l.tree.nodeTag(attr)) {
             .markup_spread => {
@@ -3559,9 +3565,10 @@ fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!B
                 }
                 slot.* = a.name;
                 if (slot == &keyed_token) {
-                    try l.formKeyed(&record, a, is_for, form_name);
+                    keyed_false = try l.formKeyed(&record, a, is_for, form_name);
                     continue;
                 }
+                if (slot == &list_token) when_brace = a.brace else fallback_brace = a.brace;
                 const inst = try l.formValue(a);
                 if (slot == &list_token) record.list = inst.toOptional() else record.fallback = inst.toOptional();
             },
@@ -3569,7 +3576,6 @@ fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!B
         }
     }
     if (list_token == null) try l.reportMarkup(.missing_form_attribute, form_name, form_name, form_name, if (is_for) .missing_each else .missing_when);
-    if (!is_for and keyed_token == null) try l.reportMarkup(.missing_form_attribute, form_name, form_name, form_name, .missing_keyed);
 
     // Its only child is one hole holding the row function. Whitespace around
     // it is layout, not a child: a form renders nothing but its row.
@@ -3605,20 +3611,71 @@ fn markupForm(l: *Lower, node: NodeIndex, mk: Ast.full.Markup) Allocator.Error!B
     } else {
         try l.reportMarkup(.invalid_form_children, form_name, form_name, form_name, .none);
     }
+    // A `Show` that does not say when it remounts: the message writes the
+    // `case` it would be, from the program's own `when`, body and
+    // `fallback`, so both are reported once all three are known.
+    if (!is_for) {
+        const body_brace: ?TokenIndex = if (offending == null) if (hole) |h| l.tree.nodeMainToken(h) else null else null;
+        if (keyed_false) |span| {
+            try l.reportShowCase(.invalid_keyed, span[0], span[1], form_name, .keyed_false_on_show, when_brace, body_brace, fallback_brace);
+        } else if (keyed_token == null) {
+            try l.reportShowCase(.missing_form_attribute, form_name, form_name, form_name, .missing_keyed, when_brace, body_brace, fallback_brace);
+        }
+    }
     return l.addExtra(record);
+}
+
+/// `reportMarkup` with the text inside the braces of a `Show`'s `when`,
+/// body and `fallback`, each empty when it is not written in braces.
+fn reportShowCase(l: *Lower, code: diagnostic.Code, first: TokenIndex, last: TokenIndex, tag_name: TokenIndex, detail: Diagnostics.Item.Markup, when: ?TokenIndex, body: ?TokenIndex, fallback: ?TokenIndex) Allocator.Error!void {
+    const w = if (when) |t| l.braceInner(t) else [2]u32{ 0, 0 };
+    const b = if (body) |t| l.braceInner(t) else [2]u32{ 0, 0 };
+    const f = if (fallback) |t| l.braceInner(t) else [2]u32{ 0, 0 };
+    try l.diagnostics.append(l.gpa, .{
+        .code = code,
+        .start = l.starts[first],
+        .end = l.tokenEnd(last),
+        .other_start = l.starts[tag_name],
+        .other_end = l.tokenEnd(tag_name),
+        .markup = detail,
+        .when_start = w[0],
+        .when_end = w[1],
+        .body_start = b[0],
+        .body_end = b[1],
+        .fallback_start = f[0],
+        .fallback_end = f[1],
+    });
+}
+
+/// The source bytes between the brace `open` and the `}` that closes it,
+/// from the first token inside to the last; empty when there is none.
+fn braceInner(l: *const Lower, open: TokenIndex) [2]u32 {
+    var depth: u32 = 0;
+    var t = open + 1;
+    while (t < l.tags.len) : (t += 1) switch (l.tags[t]) {
+        .l_brace => depth += 1,
+        .r_brace => if (depth == 0) break else {
+            depth -= 1;
+        },
+        .eof => return .{ 0, 0 },
+        else => {},
+    };
+    if (t == open + 1 or t >= l.tags.len) return .{ 0, 0 };
+    return .{ l.starts[open + 1], l.tokenEnd(t - 1) };
 }
 
 /// `keyed`: bare or `{True}` is by reference (by identity for `Show`),
 /// `{False}` by position, any other expression a key function; a quoted
-/// value, another constant, or `{False}` on `Show` is `invalid_keyed`.
-fn formKeyed(l: *Lower, record: *Bir.MarkupForm, a: Ast.full.MarkupAttr, is_for: bool, form_name: TokenIndex) Allocator.Error!void {
+/// value, another constant, or `{False}` on `Show` is `invalid_keyed`. The
+/// last is returned, as the tokens it spans, for `markupForm` to report.
+fn formKeyed(l: *Lower, record: *Bir.MarkupForm, a: Ast.full.MarkupAttr, is_for: bool, form_name: TokenIndex) Allocator.Error!?[2]TokenIndex {
     const value = a.value orelse {
         record.mode = .literal_true;
-        return;
+        return null;
     };
     if (a.brace == null) {
         try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value), form_name, .none);
-        return;
+        return null;
     }
     const inst = try l.lowerExpr(value);
     record.keyed = inst.toOptional();
@@ -3626,11 +3683,12 @@ fn formKeyed(l: *Lower, record: *Bir.MarkupForm, a: Ast.full.MarkupAttr, is_for:
         .true => record.mode = .literal_true,
         .false => {
             record.mode = .literal_false;
-            if (!is_for) try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value) + 1, form_name, .keyed_false_on_show);
+            if (!is_for) return .{ a.name, l.lastToken(value) + 1 };
         },
         .string, .number => try l.reportMarkup(.invalid_keyed, a.name, l.lastToken(value) + 1, form_name, .none),
         .none => record.mode = .key_function,
     }
+    return null;
 }
 
 /// A form's `each`, `when` or `fallback`: an ordinary value, whatever its

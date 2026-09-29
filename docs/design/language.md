@@ -1698,7 +1698,8 @@ key**, `keyed={.id}`, the spelling `For` already has. A key must be primitive-`e
 **Non-keyed `Show` is not provided** (the owner's answer): `<Show when={x}>` without `keyed` is
 `missing_form_attribute`, and `keyed={False}` is `invalid_keyed`; each message shows the `case` that
 says the same thing, since a non-keyed conditional is exactly `case x of Just v -> … ; Nothing ->
-…` (§11.6).
+…` (§11.6). *Amended 2026-09-29:* the `case` is written from the `Show`'s own `when`, body and
+`fallback` (an empty fragment when it has none), not a fixed example.
 
 **Evaluation and skipping**: the attributes in source order; then, on `Just v`, the key function
 once, then the body — which **may be skipped**, like a row, when `v` and the body's inputs (§11.9's
