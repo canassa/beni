@@ -47,10 +47,12 @@ const Error = Tree.Error;
 pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Category) Error!Constraint {
     g.depth += 1;
     defer g.depth -= 1;
-    // Unreachable from a file the parser accepted; noted, never silent.
+    // Reachable from a file the parser accepted only through markup's holes
+    // (`Generator.depth`); noted, never silent. What was not read is
+    // poisoned, so nothing that meets it says a second thing about it.
     if (g.depth > Generator.max_depth) {
-        try g.cx.noteTooDeep(inst, @intFromEnum(g.decl));
-        return g.true_();
+        try g.cx.noteTooDeepAs(inst, @intFromEnum(g.decl), if (g.markup_roots != 0) .markup else .type);
+        return g.equal(expected, try g.fresh(.err), inst, category);
     }
 
     const bir = g.cx.bir;

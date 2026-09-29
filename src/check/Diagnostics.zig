@@ -978,7 +978,6 @@ pub const Reporter = struct {
         , .{limit}) catch return error.OutOfMemory;
         try r.emit(.nesting_too_deep, region, &out);
     }
-
     // ---- Static dispatch (static-dispatch-spike.md §10) ------------------
     //
     // **The two-span rule** (§10 preamble, A.37). Three of these codes are

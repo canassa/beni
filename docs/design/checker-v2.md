@@ -5303,3 +5303,8 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   name is the quoted one in another case.
 - **Warnings** are emitted under the same switch as `ambiguous_method_receiver`, for modules of
   the root package only.
+- *Added 2026-09-29.* **Markup deeper than the generator follows.** The parser counts an element
+  and a hole a level each; the generator counts a hole's expression too, so 1 400 levels of
+  `<div>{…}</div>` pass the parser and reach the generator's guard. That is one
+  `nesting_too_deep` worded for markup, and the expression the generator did not read is `err`,
+  so no hole above it reports that its type is unknown.

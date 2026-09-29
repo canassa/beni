@@ -289,9 +289,13 @@ pub const Generator = struct {
     decl: Bir.DeclIndex = @enumFromInt(0),
     locals_base: u32 = 0,
     /// The generator's recursion guard: the parser bounds a
-    /// declaration at `Parse.max_depth` levels, so a file it accepted never
-    /// reaches this, and one that could was already reported.
+    /// declaration at `Parse.max_depth` levels, so a file it accepted
+    /// reaches this only through markup, whose holes the parser counts once
+    /// and this counts twice, as a node and as the expression it holds.
     depth: u32 = 0,
+    /// How many markup roots enclose the node being generated: what a
+    /// `nesting_too_deep` from the guard above is worded for.
+    markup_roots: u32 = 0,
     /// The result variable of the declaration being generated, when it has
     /// parameters: the target of a `?` whose instruction names none (§8.6).
     decl_result: ?Var = null,

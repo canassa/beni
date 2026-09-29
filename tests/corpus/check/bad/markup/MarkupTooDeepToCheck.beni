@@ -1,10 +1,10 @@
--- CK-219: markup nested more deeply than the checker follows is one
+-- Markup nested more deeply than the checker follows is one
 -- `nesting_too_deep`, worded for markup, at the innermost hole the checker
--- reached (14:*), and nothing more: the part it could not read is poisoned,
+-- reached (14:8405), and nothing more: the part it could not read is poisoned,
 -- so no hole reports that it cannot tell its type. 1 400 levels of
 -- `<div>{…}</div>` is the fewest the checker gives up on while the parser
--- accepts them. On the base the message spoke of a type and a type alias,
--- and a second message, `child_not_renderable`, said the hole's type was
+-- accepts them. The message is about markup, not a type and a type alias,
+-- and no second message, a `child_not_renderable`, says a hole's type is
 -- unknown.
 import Html exposing (Html)
 

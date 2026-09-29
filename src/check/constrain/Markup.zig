@@ -45,6 +45,8 @@ pub fn root(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
     const vocab = g.cx.markup orelse return g.equal(expected, try g.fresh(.err), inst, category);
     var w: Walker = .{ .g = g, .vocab = vocab, .inst = inst, .m = try g.freshFlex() };
     defer w.parts.deinit(g.cx.scratch);
+    g.markup_roots += 1;
+    defer g.markup_roots -= 1;
     try w.add(try g.equal(expected, try w.html(), inst, category));
     try w.node(@enumFromInt(g.cx.bir.instData(inst).lhs));
     return g.conj(w.parts.items);
@@ -117,9 +119,10 @@ const Walker = struct {
         const g = w.g;
         g.depth += 1;
         defer g.depth -= 1;
-        // The parser bounds how deep markup nests; a file it accepted never
-        // reaches this.
-        if (g.depth > Generator.max_depth) return g.cx.noteTooDeep(w.inst, @intFromEnum(g.decl));
+        // The parser bounds how deep markup nests, counting elements and
+        // holes; this also counts each hole's expression, so a file it
+        // accepted can reach it (`Generator.depth`).
+        if (g.depth > Generator.max_depth) return g.cx.noteTooDeepAs(w.inst, @intFromEnum(g.decl), .markup);
         const b = w.bir();
         switch (b.markupKind(at)) {
             .element => try w.element(b.extraData(at, Bir.MarkupElement)),

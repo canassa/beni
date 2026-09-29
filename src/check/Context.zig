@@ -54,7 +54,15 @@ const Markup = @import("Markup.zig");
 
 /// One written or inferred type too deep to finish: where the message points,
 /// and the declaration whose failure bit it sets (§15.2).
-pub const TooDeep = struct { region: Bir.Inst.Index, decl: ?u32 };
+pub const TooDeep = struct {
+    region: Bir.Inst.Index,
+    decl: ?u32,
+    /// What was too deep, which the message names: a written or inferred
+    /// type, or markup the generator could not follow.
+    what: What = .type,
+
+    pub const What = enum { type, markup };
+};
 
 /// Another module's interface, noted for the covered-read self-check
 /// (`reads.zig`): every cross-module read on the checking path goes through
@@ -84,6 +92,10 @@ pub fn readAnnotation(cx: *const Context, b: *Types.Builder, annotation: Bir.Ins
 
 pub fn noteTooDeep(cx: *const Context, region: Bir.Inst.Index, decl: ?u32) Error!void {
     try cx.too_deep.append(cx.scratch, .{ .region = region, .decl = decl });
+}
+
+pub fn noteTooDeepAs(cx: *const Context, region: Bir.Inst.Index, decl: ?u32, what: TooDeep.What) Error!void {
+    try cx.too_deep.append(cx.scratch, .{ .region = region, .decl = decl, .what = what });
 }
 
 /// The instruction a `nesting_too_deep` about declaration `decl` points at:

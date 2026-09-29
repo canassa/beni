@@ -324,7 +324,6 @@ pub fn nestingTooDeep(r: *Report, region: Bir.Inst.Index, limit: u32) Error!void
     try r.texts.nestingTooDeep(region, limit);
     try r.flush();
 }
-
 pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void {
     try r.texts.internal(region, what);
     try r.flush();

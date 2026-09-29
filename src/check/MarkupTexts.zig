@@ -218,6 +218,24 @@ pub fn childUnknown(r: *Report, region: Bir.Inst.Index) Error!void {
     try emit(r, .child_not_renderable, .@"error", region, null, &out);
 }
 
+/// Markup the parser accepted but the generator could not follow to the
+/// bottom: the generator counts the expression inside each hole as well as
+/// the elements and holes the parser counts. What it did not read is
+/// poisoned, so this is the one message.
+pub fn tooDeep(r: *Report, region: Bir.Inst.Index, limit: u32) Error!void {
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    out.writer.print(
+        \\This markup nests more deeply than I can check: counting its elements, its
+        \\holes and the expressions inside them, it goes more than {d} levels down.
+        \\
+        \\I gave up part way down, so I cannot check this declaration. Split the markup
+        \\into smaller pieces, bound by `let` or written as functions.
+        \\
+    , .{limit}) catch return error.OutOfMemory;
+    try emit(r, .nesting_too_deep, .@"error", region, null, &out);
+}
+
 const primitives = "`String`, `Int`, `Float`, `Char`, `Bool` or `Order`";
 
 pub fn keyNotPrimitive(r: *Report, region: Bir.Inst.Index, v: ?Var) Error!void {

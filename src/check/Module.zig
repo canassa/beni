@@ -51,6 +51,8 @@ const Solve = @import("Solve.zig");
 const Resolve = @import("Resolve.zig");
 const Evidence = @import("Evidence.zig");
 const Eager = @import("Eager.zig");
+const Tree = @import("constrain/Tree.zig");
+const MarkupTexts = @import("MarkupTexts.zig");
 const Instances = @import("Instances.zig");
 const Elaborate = @import("Elaborate.zig");
 const Groups = @import("Groups.zig");
@@ -473,7 +475,10 @@ fn reportTooDeep(report: *Report, notes: []Context.TooDeep, reported: *std.Array
         previous = note.region.toOptional();
         if (std.sort.binarySearch(Bir.Inst.Index, reported.items[0..before], note.region, regionOrder) != null) continue;
         report.at(note.decl);
-        try report.nestingTooDeep(note.region, Types.Builder.max_depth);
+        switch (note.what) {
+            .type => try report.nestingTooDeep(note.region, Types.Builder.max_depth),
+            .markup => try MarkupTexts.tooDeep(report, note.region, Tree.Generator.max_depth),
+        }
         try reported.append(scratch, note.region);
     }
     report.at(null);

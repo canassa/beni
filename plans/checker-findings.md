@@ -5419,7 +5419,10 @@ written with a red fixture on `fc4b31e` before its fix.*
 - **Fixture** `check/bad/markup/MarkupTooDeepToCheck.beni`, red `exit=1
   codes=child_not_renderable×1,nesting_too_deep×1 why=code`.
 - **Slice** the fixes to markup's type-checking.
-- **Status** open.
+- **Status** fixed (2026-09-29), `checker-v2.md` §25.9's *As built*, *added 2026-09-29*: a note from
+  the generator's guard inside markup is worded for markup (`Context.TooDeep.what`), and the
+  expression the guard stops at is `err` rather than an unconstrained variable. Promoted into
+  `tests/corpus/`.
 
 ### CK-220 — `unkeyed_for` suggests `keyed={.id}` for items that have no `id`
 
@@ -5651,7 +5654,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-216 | latent | K5 | promoted: `build/bad/MarkupTypeInForeignNested/` | the fixes to markup's type-checking (fixed) |
 | CK-217 | valid-program-rejected | K15 | promoted: `check/good/markup/ComponentChildrenOwnMessages/` | the fixes to markup's type-checking (fixed) |
 | CK-218 | diagnostic-quality | K13 | promoted: `check/bad/markup/ComponentChildrenNotMarkup/` | the fixes to markup's type-checking (fixed) |
-| CK-219 | diagnostic-quality | K13 | `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking |
+| CK-219 | diagnostic-quality | K13 | promoted: `check/bad/markup/MarkupTooDeepToCheck.beni` | the fixes to markup's type-checking (fixed) |
 | CK-220 | diagnostic-quality | K13 | `check/good/markup/UnkeyedForHint.beni` | the fixes to markup's type-checking |
 
 Totals:
