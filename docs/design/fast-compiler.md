@@ -544,6 +544,11 @@ and an *untagged* data union, since the tag already discriminates). Shapes are i
 4. **Offsets, never slices, into source text.** A slice is 16 bytes; an offset is 4.
 5. **No `HashMap` keyed by a dense id.** Roc enforces this with a CI lint (05 §4); adopt the same
    lint. Dense ids index parallel arrays.
+   *As built (2026-09-29):* the lint is `src/rules_test.zig`, a unit test and so a gate. It refuses a
+   hash map, `int_hash.Map`, `Symbol.Map` or `U32Set` declared with a `u32` key or any `enum(u32)`
+   key, unless an allowlist entry says why a column does not serve there. A short-lived table over a
+   large id space is a stamped column (`src/stamped.zig`). Lowering's name tables stay maps: a
+   column per worker was measured slower (the allowlist gives the numbers).
 
 ### 5.1 Interning — with the contention caveat
 
