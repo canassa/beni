@@ -79,19 +79,22 @@ mode: Mode = .normal,
 depth: u32 = 0,
 /// The entries below the top, bottom first; `saved[0]`, when `sp > 0`, is
 /// the bottom `normal` entry. Per-file scratch in `tokenize`'s frame, so
-/// neither allocated nor copied; its length is the bound less the top.
-/// Empty in a tokenizer built without one, whose every push is then at the
-/// bound.
+/// neither allocated nor copied, holding the bound less the top; the
+/// entries past it go to `spill`. Empty in a tokenizer built without one,
+/// whose every entry below the top is then spilled.
 saved: []Saved = &.{},
-/// How many entries sit below the top.
+/// How many entries of `saved` are in use.
 sp: u32 = 0,
+/// The entries below the top that do not fit in `saved`, bottom first:
+/// markup nested past the bound is lexed exactly as it would be without
+/// one, so the parser's depth guard, which reports it, sees the tokens
+/// the source spells and recovers at the right closer (frontend.md §9.1).
+/// Allocated only by such a file, and freed by `tokenize`.
+spill: std.ArrayList(Saved) = .empty,
 /// How many entries of the stack, the top and the one under a string
 /// included, are markup modes (`hole`, `tag`, `children`, `close`).
 /// Non-zero exactly when a column-1 byte must end markup.
 markup: u32 = 0,
-/// Set once `nesting_too_deep` has been reported, so a runaway input gets
-/// one diagnostic rather than one per level.
-too_deep: bool = false,
 /// Offset of the `"` that opened the string being scanned, for the span of
 /// an `unterminated_string`.
 string_start: u32 = 0,
@@ -135,8 +138,9 @@ pub const Mode = enum(u8) {
     }
 };
 
-/// The mode stack's bound (frontend.md §9.1): a push past it is
-/// `nesting_too_deep`.
+/// How many entries the mode stack holds in `tokenize`'s frame; deeper
+/// markup spills to the heap. Nesting that deep is the parser's
+/// `nesting_too_deep` (frontend.md §9.1).
 pub const max_stack = 4096;
 
 const Saved = struct { mode: Mode, depth: u32 };
@@ -189,6 +193,7 @@ pub fn tokenize(gpa: Allocator, source: [:0]const u8, interner: *InternPool.Loca
     out.line_starts.appendAssumeCapacity(0);
     var saved: [max_stack - 1]Saved = undefined;
     var t: Tokenizer = .{ .source = source, .gpa = gpa, .interner = interner, .out = out, .saved = &saved };
+    defer t.spill.deinit(gpa);
     while (try t.next() != .eof) {}
 }
 
@@ -370,7 +375,7 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
                 // whatever whitespace or comments came between. Anywhere
                 // else `...` is `..` and a stray `.`, as it always was.
                 if (src[t.index + 2] == '.' and t.mode == .hole and t.depth == 1 and
-                    t.prevTag() == .l_brace and t.sp != 0 and t.saved[t.sp - 1].mode == .tag)
+                    t.prevTag() == .l_brace and t.modeBelow() == .tag)
                 {
                     break :state t.take(3, .ellipsis);
                 }
@@ -828,40 +833,38 @@ fn endsOperand(tag: Tag) bool {
     return operand_enders[@intFromEnum(tag)];
 }
 
-/// Push `mode` with brace depth `depth` over the current top. At the bound
-/// the stack does not grow: `nesting_too_deep` is reported (once per file)
-/// at the byte that asked, and the new mode replaces the top, so the
-/// construct still lexes as that mode and every token stays well-formed.
+/// Push `mode` with brace depth `depth` over the current top. Past the
+/// bound the entry below goes to `spill`.
 fn pushMode(t: *Tokenizer, mode: Mode, depth: u32) Allocator.Error!void {
+    const entry: Saved = .{ .mode = t.mode, .depth = t.depth };
     if (t.sp == t.saved.len) {
         @branchHint(.cold);
-        if (!t.too_deep) {
-            t.too_deep = true;
-            try t.report(.nesting_too_deep, t.index, t.index + 1);
-        }
-        t.replaceMode(mode);
-        t.depth = depth;
-        return;
+        try t.spill.append(t.gpa, entry);
+    } else {
+        t.saved[t.sp] = entry;
+        t.sp += 1;
     }
-    t.saved[t.sp] = .{ .mode = t.mode, .depth = t.depth };
-    t.sp += 1;
     t.mode = mode;
     t.depth = depth;
     t.markup += @intFromBool(mode.isMarkup());
 }
 
-/// Pop the top entry. Popping the bottom leaves it in place: after the
-/// bound replaced an entry, a construct's end can outnumber its starts.
+/// Pop the top entry. Popping the bottom leaves it in place.
 fn popMode(t: *Tokenizer) void {
     t.markup -= @intFromBool(t.mode.isMarkup());
-    if (t.sp == 0) {
-        t.mode = .normal;
-        t.depth = 0;
-        return;
-    }
-    t.sp -= 1;
-    t.mode = t.saved[t.sp].mode;
-    t.depth = t.saved[t.sp].depth;
+    const entry = if (t.spill.pop()) |e| e else if (t.sp > 0) blk: {
+        t.sp -= 1;
+        break :blk t.saved[t.sp];
+    } else Saved{ .mode = .normal, .depth = 0 };
+    t.mode = entry.mode;
+    t.depth = entry.depth;
+}
+
+/// The mode of the entry below the top; `normal` at the bottom.
+fn modeBelow(t: *const Tokenizer) Mode {
+    if (t.spill.items.len > 0) return t.spill.items[t.spill.items.len - 1].mode;
+    if (t.sp > 0) return t.saved[t.sp - 1].mode;
+    return .normal;
 }
 
 /// Replace the top entry's mode, as a tag's `>` turns it into children.
@@ -874,6 +877,7 @@ fn replaceMode(t: *Tokenizer, mode: Mode) void {
 /// Back to the bottom `normal` entry.
 fn popAll(t: *Tokenizer) void {
     t.sp = 0;
+    t.spill.clearRetainingCapacity();
     t.mode = .normal;
     t.depth = 0;
     t.markup = 0;
@@ -2434,35 +2438,48 @@ fn nestedTags(n: usize) ![:0]u8 {
     return text;
 }
 
-test "markup: the mode stack holds 4096 entries, and one more is nesting_too_deep once" {
+test "markup: nesting past the stack's frame spills and lexes as it would without a bound" {
     var interner: InternPool.Local = .empty;
     defer interner.deinit(testing.allocator);
 
-    // 4095 tags: the stack is exactly full, and nothing is reported.
-    const full = try nestedTags(max_stack - 1);
-    defer testing.allocator.free(full);
-    var out: Output = .empty;
-    defer out.deinit(testing.allocator);
-    try tokenize(testing.allocator, full, &interner, &out);
-    try testing.expectEqual(@as(usize, 0), out.diagnostics.items().len);
-
-    // Two past it: one report, at the first `<` that did not fit, and every
-    // tag still lexed as a tag.
+    // Two tags past the frame: no report (the depth is the parser's to
+    // judge), and every tag still lexed as a tag.
     const over = try nestedTags(max_stack + 1);
     defer testing.allocator.free(over);
     var out_over: Output = .empty;
     defer out_over.deinit(testing.allocator);
     try tokenize(testing.allocator, over, &interner, &out_over);
-    const at: u32 = 1 + 3 * (max_stack - 1);
-    try testing.expectEqualSlices(Diagnostics.Item, &.{.{ .code = .nesting_too_deep, .start = at, .end = at + 1 }}, out_over.diagnostics.items());
+    try testing.expectEqual(@as(usize, 0), out_over.diagnostics.items().len);
     try testing.expectEqual(@as(usize, 1 + 3 * (max_stack + 1) + 1), out_over.tokens.len);
     try testing.expectEqual(Tag.markup_open, out_over.tokens.items(.tag)[out_over.tokens.len - 4]);
+
+    // Elements and holes alternating, two stack entries a level, past the
+    // frame: every closer pops the entry its opener pushed, so the tokens
+    // repeat one level's shape all the way in and all the way out.
+    const levels = max_stack / 2 + 2;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(testing.allocator);
+    for (0..levels) |_| try source.appendSlice(testing.allocator, "<a>{");
+    try source.append(testing.allocator, 'x');
+    for (0..levels) |_| try source.appendSlice(testing.allocator, "}</a>");
+    try source.appendSlice(testing.allocator, "\ny = 1");
+    try source.append(testing.allocator, 0);
+    var out: Output = .empty;
+    defer out.deinit(testing.allocator);
+    try tokenize(testing.allocator, source.items[0 .. source.items.len - 1 :0], &interner, &out);
+    try testing.expectEqual(@as(usize, 0), out.diagnostics.items().len);
+    const tags = out.tokens.items(.tag);
+    const in_shape = [_]Tag{ .markup_open, .markup_name, .markup_gt, .l_brace };
+    const out_shape = [_]Tag{ .r_brace, .markup_close_open, .markup_name, .markup_gt };
+    for (0..levels) |i| try testing.expectEqualSlices(Tag, &in_shape, tags[4 * i ..][0..4]);
+    try testing.expectEqual(Tag.lower_ident, tags[4 * levels]);
+    for (0..levels) |i| try testing.expectEqualSlices(Tag, &out_shape, tags[4 * levels + 1 + 4 * i ..][0..4]);
+    try testing.expectEqualSlices(Tag, &.{ .lower_ident, .equal, .int, .eof }, tags[8 * levels + 1 ..]);
 }
 
-test "markup: closing more than was opened past the bound never underflows the stack" {
-    // Past the bound the top was replaced rather than pushed, so the
-    // closers below outnumber what the stack holds; each pops at most to
-    // the bottom `normal` entry, and the rest is ordinary code.
+test "markup: closing more than was opened past the frame never underflows the stack" {
+    // The closers outnumber the openers; each pops at most to the bottom
+    // `normal` entry, and the rest is ordinary code.
     const over = try nestedTags(max_stack + 1);
     defer testing.allocator.free(over);
     var source: std.ArrayList(u8) = .empty;

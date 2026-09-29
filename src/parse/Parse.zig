@@ -448,27 +448,9 @@ fn report(p: *Parse, item: Diagnostics.Item) Allocator.Error!?u32 {
     // The lexer already reported this token (language.md §2: every lexical
     // error produces an `invalid` token); it needs no second diagnostic.
     if ((p.tags[p.tok_i] == .invalid or p.tags[p.tok_i] == .markup_stray) and item.start == p.starts[p.tok_i]) return null;
-    // Markup nested past the lexer's bound is past the parser's too, at the
-    // same `<`: one message for one mistake.
-    if (item.code == .nesting_too_deep and p.lexReportedAt(item.start, .nesting_too_deep)) return null;
     p.last_error_start = item.start;
     try p.errors.append(p.gpa, item);
     return @intCast(p.errors.items.len - 1);
-}
-
-/// Whether the lexer reported `code` at `start` (its items are in source
-/// order).
-fn lexReportedAt(p: *const Parse, start: u32, code: diagnostic.Code) bool {
-    var lo: usize = 0;
-    var hi: usize = p.lex_diagnostics.len;
-    while (lo < hi) {
-        const mid = lo + (hi - lo) / 2;
-        if (p.lex_diagnostics[mid].start < start) lo = mid + 1 else hi = mid;
-    }
-    while (lo < p.lex_diagnostics.len and p.lex_diagnostics[lo].start == start) : (lo += 1) {
-        if (p.lex_diagnostics[lo].code == code) return true;
-    }
-    return false;
 }
 
 /// An item at the next token, with the layout fields filled in when the
@@ -1922,7 +1904,9 @@ fn enter(p: *Parse) Allocator.Error!?Index {
         p.depth += 1;
         return null;
     }
-    const node = try p.errorNode(.error_expr, p.itemAt(.nesting_too_deep));
+    var item = p.itemAt(.nesting_too_deep);
+    if (p.peek() == .markup_open) item.construct = .markup;
+    const node = try p.errorNode(.error_expr, item);
     p.recover();
     return node;
 }

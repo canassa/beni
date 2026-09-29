@@ -256,12 +256,6 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                 else => try w.print("I found `{s}` here, where it cannot stand.", .{text}),
             },
         },
-        .nesting_too_deep => try w.print(
-            \\This markup is nested more than {d} levels deep, counting its elements and
-            \\holes, which is more than I can follow.
-            \\
-            \\Split the markup into smaller pieces, bound by `let` or written as functions.
-        , .{@import("Tokenizer.zig").max_stack}),
         // The tokenizer produces only the codes above; anything else means a
         // caller reused this accumulator for a non-lexical code.
         else => try w.writeAll(diagnostic.title(item.code)),

@@ -128,6 +128,9 @@ pub const Construct = enum {
     element_fact,
     attribute_fact,
     event_fact,
+    /// For `nesting_too_deep`: the level that did not fit is an element or
+    /// a hole in markup.
+    markup,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -185,7 +188,7 @@ fn constructText(c: Construct) []const u8 {
         .attribute_name, .vocabulary_name => "a name",
         .attribute_value => "a string or `{`",
         .component_prop => "a field name",
-        .outer_closer, .comment_swallowed_brace => "something else",
+        .outer_closer, .comment_swallowed_brace, .markup => "something else",
         .element_fact => "a fact of `pub element`: `void`, `svg` or `mathml`",
         .attribute_fact => "a fact of `pub attribute`: `on`, `property`, `stateful`, `url`, `raw`, `classes` or `styles`",
         .event_fact => "a fact of `pub event`: `on`, `name`, `delegated`, `preventDefault`, `stopPropagation` or `via`",
@@ -365,7 +368,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 try w.print("I was parsing {s} and ran into `{s}`. I was expecting {s}.", .{ contextText(item.context), text, constructText(item.construct) });
             }
         },
-        .nesting_too_deep => try w.print(
+        .nesting_too_deep => if (item.construct == .markup) try w.print(
+            \\This markup is nested more than {d} levels deep, counting its elements and
+            \\holes, which is more than I can follow.
+            \\
+            \\Split the markup into smaller pieces, bound by `let` or written as functions.
+        , .{max_depth}) else try w.print(
             \\This expression is nested more than {d} levels deep, which is more than I can
             \\handle.
             \\
