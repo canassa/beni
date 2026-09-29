@@ -60,6 +60,16 @@
           packages = [ pkgs.lcov ];
         };
 
+        # `nix develop .#browser`: the default shell plus Chromium, for
+        # `zig build test-browser`, which runs the `browser/` corpus in a
+        # headless browser instead of the happy-dom the gates use
+        # (tests/blackbox/browser.zig). nixpkgs builds Chromium for Linux
+        # only; elsewhere, point `-Dchrome=` at an installed Chrome.
+        browser = pkgs.mkShell {
+          inputsFrom = [ default ];
+          packages = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.chromium ];
+        };
+
         # `nix develop .#compare`: the default shell plus every compiler the
         # cross-language benchmark times (docs/design/compare-bench.md §8).
         compare =
