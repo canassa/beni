@@ -240,12 +240,16 @@ const park = (i) => {
 };
 
 // The rows `a` were become the rows `b`, moving as few as it can: udomdiff
-// over instances rather than nodes, each instance a run of siblings.
-const reconcile = (parent, a, b, after) => {
-  let aEnd = a.length;
-  let bEnd = b.length;
-  let aStart = 0;
-  let bStart = 0;
+// over instances rather than nodes, each instance a run of siblings. Only
+// `a[start, aLength)` and `b[start, bLength)` differ: the rows before
+// `start` are in place and the same in both, and so are the rows after the
+// ranges, which begin at `after` (the node after the list when there are
+// none).
+const reconcile = (parent, a, b, start, aLength, bLength, after) => {
+  let aEnd = aLength;
+  let bEnd = bLength;
+  let aStart = start;
+  let bStart = start;
   let map = null;
   while (aStart < aEnd || bStart < bEnd) {
     if (a[aStart] === b[bStart]) {
@@ -258,7 +262,7 @@ const reconcile = (parent, a, b, after) => {
       bEnd--;
     }
     if (aEnd === aStart) {
-      const node = bEnd < b.length ? (bStart !== 0 ? last(b[bStart - 1]).nextSibling : first(b[bEnd])) : after;
+      const node = bEnd < bLength ? (bStart !== 0 ? last(b[bStart - 1]).nextSibling : first(b[bEnd])) : after;
       while (bStart < bEnd) put(parent, b[bStart++], node);
     } else if (bEnd === bStart) {
       while (aStart < aEnd) {
@@ -299,38 +303,147 @@ const reconcile = (parent, a, b, after) => {
   }
 };
 
-// The keyed list when every item's key is the key of the row already at
-// its position and last render's keys were distinct: nothing moves and
-// the key map stands, so only the rows whose item or inputs changed run.
-// A selection or a label edit takes this path. False, having patched the
-// rows before it, at the first key that differs, when the list is longer
-// or shorter than the rows; `forKeyed` then goes through the whole list,
-// where a row already patched is by then as last time.
-const inPlace = (s, items, keyOf, row, same) => {
-  const old = s.u;
-  let position = 0;
-  for (let at = items; at.$ === 1; at = at.b, position++) {
-    if (position === old.length) return false;
-    let i = old[position];
-    const item = at.a;
-    const key = keyOf === null ? item : keyOf(item);
-    if (i.k !== key) return false;
-    if (!same || i.x !== item) {
-      const n = patchRow(row, i, item, position, s.cx);
-      if (n !== i) {
-        old[position] = n;
-        s.x.set(key, n);
-        n.y = position;
-        i = n;
-      }
-      i.x = item;
-    }
-  }
-  return position === old.length;
-};
-
 // Each render of a keyed list that runs its rows has a stamp of its own.
 let stamps = 0;
+
+// The keyed list when last render's keys were distinct, matched as Solid's
+// `mapArray` and dom-expressions' `reconcileArrays` match a list: the rows
+// whose keys are where they were at the start, then at the end, then a
+// pair of rows at the two ends that changed places, again until none does.
+// Only what is left between them is looked up in the key map, so a
+// selection, a label edit, a remove, an append and a swap of two rows
+// touch the map for the rows they add or remove and no others. An item
+// identical to its row's last item has that row's key, so its key is not
+// asked for. No row past the start is patched or moved until every key is
+// known to be distinct: false, having patched only the rows at the start
+// (which do not move) and mounted rows for new keys, when two items share
+// a key; `forKeyed` then goes through the whole list, where a row already
+// patched is by then as last time and a row mounted is its key's first.
+const trimmed = (s, items, keyOf, row, same) => {
+  const old = s.u;
+  const m = old.length;
+  // A list that was empty or is: the full pass mounts it in one fragment
+  // or empties the parent at once.
+  if (m === 0 || items.$ !== 1) return false;
+  const stamp = ++stamps;
+  let p = 0;
+  let at = items;
+  for (; at.$ === 1 && p < m; at = at.b, p++) {
+    let i = old[p];
+    const item = at.a;
+    if (i.x !== item) {
+      if (i.k !== (keyOf === null ? item : keyOf(item))) break;
+    } else if (same) {
+      i.kv = stamp;
+      continue;
+    }
+    const n = patchRow(row, i, item, p, s.cx);
+    if (n !== i) {
+      old[p] = n;
+      s.x.set(n.k, n);
+      n.y = p;
+      i = n;
+    }
+    i.x = item;
+    i.kv = stamp;
+  }
+  if (p === m && at.$ !== 1) return true;
+  // The rest of the items, each key asked for once and only if needed.
+  const xs = [];
+  for (; at.$ === 1; at = at.b) xs.push(at.a);
+  const n = p + xs.length;
+  const ks = new Array(xs.length);
+  const keyAt = (b) => {
+    const k = ks[b - p];
+    if (k !== undefined) return k;
+    const item = xs[b - p];
+    return (ks[b - p] = keyOf === null ? item : keyOf(item));
+  };
+  // Row `i` shows item `b`: the same item, or failing that the same key.
+  const hit = (i, b) => i.x === xs[b - p] || i.k === keyAt(b);
+  const next = new Array(n);
+  for (let b = 0; b < p; b++) next[b] = old[b];
+  let aStart = p;
+  let aEnd = m;
+  let bStart = p;
+  let bEnd = n;
+  // The end, written out: it is most of a remove.
+  while (aStart < aEnd && bStart < bEnd) {
+    const i = old[aEnd - 1];
+    if (i.x !== xs[bEnd - 1 - p] && i.k !== keyAt(bEnd - 1)) break;
+    i.kv = stamp;
+    next[--bEnd] = i;
+    aEnd--;
+  }
+  const aOuter = aEnd;
+  const bOuter = bEnd;
+  let crossed = false;
+  while (aEnd - aStart > 1 && bEnd - bStart > 1 && hit(old[aStart], bEnd - 1) && hit(old[aEnd - 1], bStart)) {
+    crossed = true;
+    const i = old[aStart++];
+    const j = old[--aEnd];
+    i.kv = stamp;
+    j.kv = stamp;
+    next[--bEnd] = i;
+    next[bStart++] = j;
+    while (aStart < aEnd && bStart < bEnd) {
+      const k = old[aStart];
+      if (k.x !== xs[bStart - p] && k.k !== keyAt(bStart)) break;
+      k.kv = stamp;
+      next[bStart++] = k;
+      aStart++;
+    }
+    while (aStart < aEnd && bStart < bEnd && hit(old[aEnd - 1], bEnd - 1)) {
+      const k = old[--aEnd];
+      k.kv = stamp;
+      next[--bEnd] = k;
+    }
+  }
+  // What is left: its keys looked up, a new key's row mounted (and marked
+  // with the stamp's negation), a key found twice handing over. A row
+  // mounted here that the full pass is handed is its key's first row.
+  const byKey = s.x;
+  for (let b = bStart; b < bEnd; b++) {
+    const key = keyAt(b);
+    const h = byKey.get(key);
+    if (h === undefined) {
+      const i = mountRow(row, xs[b - p], b, s.cx);
+      i.k = key;
+      i.kv = -stamp;
+      byKey.set(key, i);
+      next[b] = i;
+    } else if (h.kv === stamp || h.kv === -stamp) return false;
+    else {
+      h.kv = stamp;
+      next[b] = h;
+    }
+  }
+  for (let b = p; b < n; b++) {
+    const item = xs[b - p];
+    let i = next[b];
+    if (i.kv === -stamp) i.kv = stamp;
+    else if (!same || i.x !== item || (row.i && i.y !== b)) {
+      const r = patchRow(row, i, item, b, s.cx);
+      if (r !== i) {
+        old[i.y] = r;
+        r.kv = stamp;
+        byKey.set(r.k, r);
+        next[b] = r;
+        i = r;
+      }
+    }
+    i.x = item;
+    i.y = b;
+  }
+  for (let a = aStart; a < aEnd; a++) if (old[a].kv !== stamp) byKey.delete(old[a].k);
+  if (crossed || aStart < aEnd || bStart < bEnd) {
+    const after = bOuter < n ? first(next[bOuter]) : last(old[m - 1]).nextSibling;
+    reconcile(parentOf(s), old, next, p, aOuter, bOuter, after);
+    if (parked !== null) parked = null;
+  }
+  s.u = next;
+  return true;
+};
 
 // `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
 // key by the item itself. A row keeps its nodes while its key is in the
@@ -338,7 +451,7 @@ let stamps = 0;
 // every item renders once. A row whose item, position (when it reads it)
 // and inputs are all as last time is not run at all, and the rows move
 // only when the order of keys changed. `s.d` says last render's keys were
-// distinct, which is what lets `inPlace` run.
+// distinct, which is what lets `trimmed` run.
 //
 // **The key map `s.x` is kept from render to render**: it maps a key to the
 // first row that has it, and the rows after it that share it are a chain,
@@ -355,7 +468,7 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
   if (!(items === s.b && same)) {
     s.b = items;
     s.y = inputs;
-    if (s.d && inPlace(s, items, keyOf, row, same)) {
+    if (s.d && trimmed(s, items, keyOf, row, same)) {
       fallback(s, items.$ !== 1, row.f);
       return;
     }
@@ -423,7 +536,7 @@ export const forKeyed = (s, items, keyOf, row, inputs) => {
         // The rows are all the parent holds: empty it at once, as Solid
         // does, rather than remove a thousand rows one by one.
         parent.textContent = "";
-      } else reconcile(parent, old, next, last(old[old.length - 1]).nextSibling);
+      } else reconcile(parent, old, next, 0, old.length, next.length, last(old[old.length - 1]).nextSibling);
       if (parked !== null) parked = null;
     }
     s.u = next;

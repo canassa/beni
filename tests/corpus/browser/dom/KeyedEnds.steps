@@ -1,0 +1,33 @@
+# Mark the nodes: every row of `#at`, rows b and f of `#drawn`, rows b and e of `#framed`.
+input #at>li:nth-child(1)>input "1"
+input #at>li:nth-child(2)>input "2"
+input #at>li:nth-child(3)>input "3"
+input #at>li:nth-child(4)>input "4"
+input #at>li:nth-child(5)>input "5"
+input #at>li:nth-child(6)>input "6"
+input #drawn>li:nth-child(2)>input "2"
+input #drawn>li:nth-child(6)>input "6"
+input #framed>li:nth-child(3)>input "2"
+input #framed>li:nth-child(6)>input "5"
+# c goes from the middle; d, e and f keep their nodes and move up one.
+click #remove
+# b and e change places inside the list, then the first and the last.
+click #inner
+click #ends
+# g is mounted in the middle, then h replaces it there.
+click #insert
+click #replace
+# f goes from the start; a, at the end, is a new item: patched in `#at`, a new node in `#drawn`.
+click #edit
+# A second key-1 item before the last: it is the key's first item and takes the row.
+click #copylast
+click #dedupe
+# A second key-5 item after the first: the first keeps its row, the second is new.
+click #copyfirst
+click #dedupe
+# The first and the last change places, h becoming done: a new node in `#drawn`, at the end.
+click #flip
+# Two new items on one new key in the middle; then the first goes, and the second takes its row.
+click #twins
+input #at>li:nth-child(2)>input "9"
+click #dedupe

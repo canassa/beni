@@ -3438,6 +3438,27 @@ compiler gives every node one owning slot, so the ownership tags have no job.
   runtime kind's already has. Pinned by `browser/dom/KeyedMoves` (a swap and removals with two items
   on one key, a key emptied and added back), which fails against a map that assumes distinct keys
   and against one that keeps a key none of the rows has any more.
+  *Amended 2026-09-30* (research 39 §11): **the ends first, as Solid does.** Solid 1's `mapArray` and
+  dom-expressions' `reconcileArrays` skip the common start and end of the two lists before they
+  build a map, so a remove touches no map and a swap of two rows touches one only for the rows
+  between them, and `reconcileArrays` finds the swapped pair at the ends in constant time. `forKeyed`
+  did one map lookup and a row's worth of field writes for every row of every render that moved
+  one, and remove lost to Solid 1 by 1.7× on it. Now, **when last render's keys were distinct**
+  (`s.d`), the list is matched in udomdiff's order before any lookup: the rows whose keys are where
+  they were at the start (patched as they are passed, as before, since they do not move); then at
+  the end; then, while the two rows at the ends of what is left have changed places, that pair,
+  and the start and end again. An item `===` its row's last item has that row's key (keys are pure
+  functions of the item), so its key is not computed; otherwise the key is computed once per item.
+  Only the rows between the matched ends go through the key map, and the array reconciler runs over
+  that range alone, with the node after it as its end. **Duplicate keys still render by rank**: a
+  new key found twice — in what is left, or equal to a key matched at an end — hands the render to
+  the full pass above, which is why nothing after the start is written until every key left is
+  looked up; a row mounted for a new key before the hand-over is its key's first row, which the full
+  pass takes. A list that is empty or was goes to the full pass too, for its one fragment or its one
+  `textContent`. Pinned by `browser/dom/KeyedEnds` (a remove, an inner and an end swap, an insert and
+  a replacement in the middle, a row at an end whose item is new, rows that show their position, a
+  function row whose branch changes at an end and in an end pair, and a key copied into the middle
+  from each end), whose golden was recorded on the runtime before this change.
 - **By position** (`forPosition`): slot *i* is patched with item *i*.
 - **By reference**: `forKeyed` with the item as its own key. Where the checker recorded the item type
   as primitive-`eq`, that is value keying and correct; otherwise it is Solid's default and `unkeyed_for`

@@ -1,0 +1,153 @@
+-- A keyed `For` whose rows are matched at the ends before anything is
+-- looked up (backend.md §15.5, *the ends first*): the rows whose keys are
+-- where they were at the start and at the end, then pairs of rows at the
+-- two ends that changed places, and only what is left through the key
+-- map. The inputs are not controlled, so typed text shows which node is
+-- where; `#at` shows each row's position and `#framed` sits between two
+-- other children.
+--
+-- A remove from the middle leaves every other node where it was and
+-- renumbers the rows after it. Two rows swapped inside the list, and the
+-- first and the last, move with their nodes. An insert and a replacement
+-- in the middle mount one row each. A row at the end whose item is new
+-- but whose key is not keeps its node and is patched, and one drawn by a
+-- function whose branch changes becomes a new node there, as does one of
+-- the two end rows that change places, the other moving. An item in the
+-- middle that takes the key of a row at an end is that key's first item,
+-- so it takes the row, by rank (language.md §11.9), and the later item
+-- with the key gets a new one; the same for a key at the start, whose
+-- first item is the one at the start. Two items with one new key in the
+-- middle get a row each; when the first goes, the second takes its row.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = RemoveMiddle
+    | SwapInner
+    | SwapEnds
+    | Insert
+    | Replace
+    | EditEnd
+    | CopyLast
+    | CopyFirst
+    | Dedupe
+    | Flip
+    | Twins
+
+
+type alias Row =
+    { id : Int, label : String, done : Bool }
+
+
+row : Int, String -> Row
+row id label =
+    { id = id, label = label, done = False }
+
+
+swapAt : List Row, Int, Int -> List Row
+swapAt rows i j =
+    case ( List.drop rows i |> List.head, List.drop rows j |> List.head ) of
+        ( Just a, Just b ) ->
+            List.indexedMap rows (\k r -> if k == i then b else if k == j then a else r)
+
+        _ ->
+            rows
+
+
+insertAt : List Row, Int, Row -> List Row
+insertAt rows k r =
+    List.take rows k ++ (r :: List.drop rows k)
+
+
+lastOf : List Row -> Row
+lastOf rows =
+    List.reverse rows |> List.head |> Maybe.withDefault (row 0 "none")
+
+
+update : Msg, List Row -> List Row
+update msg rows =
+    case msg of
+        RemoveMiddle ->
+            List.filter rows (\r -> r.id /= 3)
+
+        SwapInner ->
+            swapAt rows 1 (List.length rows - 2)
+
+        SwapEnds ->
+            swapAt rows 0 (List.length rows - 1)
+
+        Insert ->
+            insertAt rows 2 (row 7 "g")
+
+        Replace ->
+            List.map rows (\r -> if r.id == 7 then row 8 "h" else r)
+
+        EditEnd ->
+            List.indexedMap (List.drop rows 1) (\k r -> if k == List.length rows - 2 then { r | label = r.label ++ "!", done = True } else r)
+
+        CopyLast ->
+            insertAt rows 1 (lastOf rows)
+
+        CopyFirst ->
+            case rows of
+                first :: _ ->
+                    insertAt rows 2 first
+
+                [] ->
+                    rows
+
+        Dedupe ->
+            List.foldr rows [] (\r kept -> if List.any kept (\k -> k.id == r.id) then kept else r :: kept)
+
+        Flip ->
+            List.indexedMap (swapAt rows 0 (List.length rows - 1)) (\k r -> if k == List.length rows - 1 then { r | done = not r.done } else r)
+
+        Twins ->
+            insertAt (insertAt rows 1 (row 9 "i")) 3 (row 9 "j")
+
+
+viewRow : Row -> Html Msg
+viewRow r =
+    if r.done then
+        <li class="done">{r.label}</li>
+
+    else
+        <li><input />{r.label}</li>
+
+
+view : List Row -> Html Msg
+view rows =
+    <main>
+        <button id="remove" onClick={RemoveMiddle}>remove</button>
+        <button id="inner" onClick={SwapInner}>inner</button>
+        <button id="ends" onClick={SwapEnds}>ends</button>
+        <button id="insert" onClick={Insert}>insert</button>
+        <button id="replace" onClick={Replace}>replace</button>
+        <button id="edit" onClick={EditEnd}>edit</button>
+        <button id="copylast" onClick={CopyLast}>copy last</button>
+        <button id="copyfirst" onClick={CopyFirst}>copy first</button>
+        <button id="dedupe" onClick={Dedupe}>dedupe</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="twins" onClick={Twins}>twins</button>
+        <ul id="at">
+            <For each={rows} keyed={.id}>{\r k -> <li><input />{r.label} at {k}</li>}</For>
+        </ul>
+        <ul id="drawn">
+            <For each={rows} keyed={.id}>{viewRow}</For>
+        </ul>
+        <ol id="framed">
+            <li>first</li>
+            <For each={rows} keyed={.id}>{\r -> <li><input />{r.label}</li>}</For>
+            <li>last</li>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = [ row 1 "a", row 2 "b", row 3 "c", row 4 "d", row 5 "e", row 6 "f" ]
+        , update = update
+        , view = view
+        }
