@@ -236,7 +236,7 @@ const Context = struct {
             },
             .escape => {
                 const name = if (n.node < cx.bir.extra.len) cx.interner.slice(cx.bir.symbol(cx.bir.extraData(@enumFromInt(n.node), Bir.MarkupItem).name)) else "?";
-                try w.print(" \"{s}\" string", .{name});
+                try w.print(" \"{s}\" string{s}", .{ name, if (n.url) " url" else "" });
             },
             .event => {
                 try cx.writeRow(w, "events", n.row);

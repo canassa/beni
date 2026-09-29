@@ -355,7 +355,13 @@ const Section = struct {
         const it = bir.extraData(at, Bir.MarkupItem);
         switch (it.kind) {
             .spread => {},
-            .escape => try s.add(.{ .root = s.root, .node = @intFromEnum(at), .kind = .escape, .detail = @intFromEnum(Dispatch.Markup.Class.string) }),
+            .escape => try s.add(.{
+                .root = s.root,
+                .node = @intFromEnum(at),
+                .kind = .escape,
+                .detail = @intFromEnum(Dispatch.Markup.Class.string),
+                .url = urlName(m.cx.interner.slice(bir.symbol(it.name))),
+            }),
             .attr => {
                 const row = m.item(tag, bir.symbol(it.name)) orelse return;
                 if (row.form == .event) {
@@ -385,6 +391,16 @@ const Section = struct {
 
 /// An event row's extractor as a value of the vocabulary module's
 /// interface, or `no_row` when it has none or it is not `pub`.
+/// Whether a quoted attribute name is one a page loads or follows a URL
+/// through, in any case, so its value is sanitised as a `url` attribute's
+/// is (language.md §11.5).
+pub fn urlName(name: []const u8) bool {
+    for ([_][]const u8{ "href", "src", "action", "formaction", "xlink:href" }) |u| {
+        if (std.ascii.eqlIgnoreCase(name, u)) return true;
+    }
+    return false;
+}
+
 fn extractor(m: *const Markup, row: Row) u32 {
     const via = row.via.unwrap() orelse return no_row;
     const cx = m.cx;

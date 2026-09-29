@@ -1,0 +1,14 @@
+-- A quoted `href`, `src`, `action`, `formaction` or `xlink:href`, in any
+-- case, is a URL, and the markup section says so (`url`), so a lowering
+-- gives it the `javascript:` sanitising a typed `url` attribute gets
+-- (language.md §11.5, the owner's decision closing markup's other script
+-- sinks). Any other quoted name is a plain string (`"data-href"`).
+import Html exposing (Html)
+
+
+pub view : String -> Html msg
+view link =
+    <div>
+        <span "href"={link} "SRC"={link} "data-href"={link} />
+        <span "action"={link} "FormAction"={link} "xlink:href"={link} />
+    </div>

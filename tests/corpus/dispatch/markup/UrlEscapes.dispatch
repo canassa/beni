@@ -1,0 +1,11 @@
+module UrlEscapes
+  decl view evidence=0 arity=1 convention=plain
+  markup 12 element Html.div
+  markup 12 element Html.span
+  markup 12 escape "href" string url
+  markup 12 escape "SRC" string url
+  markup 12 escape "data-href" string
+  markup 12 element Html.span
+  markup 12 escape "action" string url
+  markup 12 escape "FormAction" string url
+  markup 12 escape "xlink:href" string url

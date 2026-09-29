@@ -3053,7 +3053,7 @@ written in source order, attributes and events interleaved (`language.md` §11.5
 | attribute, `maybe_string` | absent on `Nothing`, through `cx.maybe` | guarded |
 | attribute, fact `property` | `el[prop] = v` | guarded |
 | attribute, fact `stateful` | `el[prop] = v` | **compared with the live value**, `if (el[prop] !== v) el[prop] = v;`, so a rejected edit does not stay on screen (research 36 §4.8); no instance field |
-| attribute, fact `url` | through the runtime's `safeUrl` | guarded |
+| attribute, fact `url`; an escape the markup section records `url` (*amended 2026-09-29*, `language.md` §11.5) | through the runtime's `safeUrl` | guarded |
 | attribute, fact `raw` | through the runtime's `rawHtml` | guarded |
 | attribute, `svg` namespace prefix (`xlink:href`) | `setAttributeNS` through the runtime | guarded |
 | attribute, `class_list`, entries in place | a constant `True` entry baked into the template's `class`, a constant `False` dropped, a dynamic one `el.classList.toggle(name, f)` — Solid's split of a class object literal (`c/shared/attr_plan.rs:824-895`, `c/dom/set_attr.rs:80-101`) — when the literal names are distinct and hold no whitespace; otherwise as the next row | each dynamic entry guarded on its flag |
@@ -3204,7 +3204,7 @@ DOM (research 36 §2.12, §5.5): the same tree, and the same template split, emi
   representation under `ssr` — Solid's shape (`rt/server.js:2601`), so a string already rendered is
   never escaped twice.
 - **Escaping is by type, at compile time**: a `string` text hole gets `escape(v)`, a number none; an
-  `html` hole splices `.t`; an attribute value gets `escapeAttr`, a `url` one `safeUrl` first, a
+  `html` hole splices `.t`; an attribute value gets `escapeAttr`, a `url` one (or an escape recorded `url`) `safeUrl` first, a
   `raw` one nothing (and was warned about). A `Bool` attribute is written or omitted, a `Maybe String`
   omitted on `Nothing`. **Text arrives decoded** (`frontend.md` §9.7) and is escaped into the static
   strings exactly as `dom` escapes its template (§15.3), raw-text elements included, so both

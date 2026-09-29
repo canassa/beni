@@ -25,7 +25,8 @@
 //! v2 sidecar is a miss. Version 4 widens a context entry's `param`
 //! to a `u32` in the same 8-byte row: a record past 65 535 fields has that
 //! many positions. Version 5 adds the `markup` column, one 20-byte row per
-//! markup node (checker-v2.md §25.7).
+//! markup node (checker-v2.md §25.7). Version 6 gives an escape row's byte 11
+//! a second bit, `url` (language.md §11.5).
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -73,7 +74,7 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 5;
+pub const format_version: u32 = 6;
 
 pub const Column = enum(u32) {
     terms,
@@ -266,7 +267,7 @@ pub fn write(
         row[8] = @intFromEnum(n.kind);
         row[9] = n.detail;
         row[10] = n.arity;
-        row[11] = @intFromBool(n.primitive);
+        row[11] = @as(u8, @intFromBool(n.primitive)) | @as(u8, @intFromBool(n.url)) << 1;
         std.mem.writeInt(u32, row[12..16], n.row, .little);
         std.mem.writeInt(u32, row[16..20], n.extractor, .little);
     }
@@ -697,14 +698,15 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         out.table.markup = markup;
         for (markup, 0..) |*n, i| {
             const row = in_bytes[i * 20 ..][0..20];
-            if (row[11] > 1) return error.BadSidecar;
+            if (row[11] > 3) return error.BadSidecar;
             n.* = .{
                 .root = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .node = std.mem.readInt(u32, row[4..8], .little),
                 .kind = std.enums.fromInt(Dispatch.Markup.Kind, row[8]) orelse return error.BadSidecar,
                 .detail = row[9],
                 .arity = row[10],
-                .primitive = row[11] == 1,
+                .primitive = row[11] & 1 != 0,
+                .url = row[11] & 2 != 0,
                 .row = std.mem.readInt(u32, row[12..16], .little),
                 .extractor = std.mem.readInt(u32, row[16..20], .little),
             };

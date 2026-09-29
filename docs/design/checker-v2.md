@@ -5130,7 +5130,7 @@ node in instruction order:
 | Node | Recorded |
 |---|---|
 | element | the element row (vocabulary module, row index) |
-| attribute | the attribute row, or `escape`; the value class (`string`, `int`, `float`, `bool`, `maybe_string`, `class_list`, `style_list`) |
+| attribute | the attribute row, or `escape`; the value class (`string`, `int`, `float`, `bool`, `maybe_string`, `class_list`, `style_list`); for an escape, whether its name is a URL one (`url`, *added 2026-09-29*: `href`, `src`, `action`, `formaction`, `xlink:href`, in any case), which a lowering sanitises as a `url` row's value |
 | event | the event row; the form (`message` or `payload`); the extractor, as an `ext` term when the row has one |
 | hole | the kind (`text`, `html`, `maybe_html`, `list_html`) and, for `text`, the stringification (`string`, `number`, `char`, `bool`) |
 | component | nothing new: its site is an ordinary §13 site |
@@ -5286,7 +5286,8 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   attribute has none of its own: `attr Html.class class_list`, `event Html.onInput payload via
   Html.targetValue`, `hole text number`, `for key arity=1 primitive=false`, `show identity arity=1
   primitive=true`. `dispatch_bytes` is format 5 (a `markup` column of 20-byte rows) and
-  `entry_bytes` format 5.
+  `entry_bytes` format 5. *Amended 2026-09-29:* format 6 of both, for an escape's `url` bit (the
+  second bit of the row's byte 11), printed `escape "href" string url`.
 - **The extractor's reachability leg** (§25.7) is not built: no build lowers markup yet — `build`
   refuses a surviving markup root with `unknown_markup_lowering` (`boundary.md` §9.2) — so the leg
   lands with the first lowering, which is its first reader.

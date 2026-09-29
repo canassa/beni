@@ -1273,7 +1273,10 @@ whitespace, a quote, `=`, `/`, `>` or a control character, or is empty, is
 `invalid_attribute_name` — a page would end the name there and read what follows as another
 attribute, so `"x onclick"` would write an event handler. A quoted `srcdoc`, in any case, is
 `untyped_srcdoc_attribute`: it writes a whole document the page runs, scripts included, and a
-frame's document is loaded from a URL instead.
+frame's document is loaded from a URL instead. And a quoted `href`, `src`, `action`,
+`formaction` or `xlink:href`, in any case, is a URL like the attribute a vocabulary declares
+`url`: a lowering refuses a script URL in it exactly as it does there (`checker-v2.md` §25.7
+records which escapes are URLs, `backend.md` §15).
 
 **Each attribute may be written once** (`duplicate_attribute`). *Amended 2026-09-29:* on an
 element, names are compared as HTML compares them, ASCII case folded, so `title` and `"TITLE"`

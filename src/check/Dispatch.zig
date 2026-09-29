@@ -251,6 +251,11 @@ pub const Markup = struct {
     /// `for`, `show`: the item's type is primitive-`eq`, so identity is
     /// equality.
     primitive: bool = false,
+    /// `escape`: the quoted name is one a URL is written to (`href`,
+    /// `src`, `action`, `formaction`, `xlink:href`, in any case), so a
+    /// lowering sanitises the value as it does a `url` attribute's
+    /// (language.md §11.5).
+    url: bool = false,
     /// `element`, `attribute`, `event`: the row's index in the vocabulary
     /// module's table of that form.
     row: u32 = no_row,

@@ -123,7 +123,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
     // of it may depend on thread timing (CLAUDE.md rule 5), and all of it
     // must survive `dispatch_bytes` (`--roundtrip-dispatch`). A component
     // from another module, both handler forms, a class list, a hole of every
-    // kind, a `For` that is warned about and a keyed `Show`.
+    // kind, a `For` that is warned about, a keyed `Show` and a URL escape.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -151,7 +151,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
         \\pub view : List { id : Int, label : String }, Maybe String -> Html Msg
         \\view rows title =
         \\    <Card title="Rows">
-        \\        <input onInput={Typed} class={[ ( "wide", True ) ]} />
+        \\        <input onInput={Typed} class={[ ( "wide", True ) ]} "formaction"="/rows" />
         \\        <For each={rows}>{\r -> <li onClick={Picked r.id}>{r.label}{r.id}</li>}</For>
         \\        <Show when={title} keyed>{\t -> <p>{t}</p>}</Show>
         \\        {List.map rows (\r -> <p>{r.label}</p>)}
@@ -173,6 +173,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
     try testing.expectEqualStrings(dumped.stdout, tripped.stdout);
     try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 for reference arity=1 primitive=false\n") != null);
     try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 event Html.onInput payload via Html.targetValue\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 escape \"formaction\" string url\n") != null);
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expect(std.mem.indexOf(u8, checked.stderr, "UNKEYED FOR") != null);
 }
