@@ -1,0 +1,59 @@
+--! The attributes of `Ui.Html`, one function each, in Elm's shape.
+
+import Ui.Html exposing (Attribute, Property, Toggle, Classes)
+
+
+pub class : String -> Attribute msg
+class name =
+    Property "class" name
+
+
+--| The classes whose entry is `True`.
+pub classList : List ( String, Bool ) -> Attribute msg
+classList entries =
+    Classes entries
+
+
+pub id : String -> Attribute msg
+id name =
+    Property "id" name
+
+
+pub title : String -> Attribute msg
+title text =
+    Property "title" text
+
+
+pub placeholder : String -> Attribute msg
+placeholder hint =
+    Property "placeholder" hint
+
+
+pub value : String -> Attribute msg
+value current =
+    Property "value" current
+
+
+pub type_ : String -> Attribute msg
+type_ kind =
+    Property "type" kind
+
+
+pub href : String -> Attribute msg
+href url =
+    Property "href" url
+
+
+pub disabled : Bool -> Attribute msg
+disabled on =
+    Toggle "disabled" on
+
+
+pub checked : Bool -> Attribute msg
+checked on =
+    Toggle "checked" on
+
+
+pub attribute : String, String -> Attribute msg
+attribute name text =
+    Property name text

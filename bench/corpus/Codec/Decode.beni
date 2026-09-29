@@ -1,0 +1,395 @@
+--! Decoders: descriptions of how to turn a `Codec.Value` into typed data,
+--! built from primitives and combinators and run with `decodeValue` or
+--! `decodeString`. A failure says where in the value it happened, so a
+--! bad field three objects deep is reported by its path.
+
+import Codec.Parse as Parse
+import Codec.Value as Value exposing (Value, Null, Boolean, Number, Text, Array, Object)
+import Dict exposing (Dict)
+
+
+pub opaque type Decoder a
+    = Decoder (Value -> Result Error a)
+
+
+pub type Error
+    = Field String Error
+    | Index Int Error
+    | OneOf (List Error)
+    | Failure String Value
+    | Syntax String
+
+
+-- Running
+pub decodeValue : Decoder a, Value -> Result Error a
+decodeValue decoder value =
+    case decoder of
+        Decoder run ->
+            run value
+
+
+pub decodeString : Decoder a, String -> Result Error a
+decodeString decoder text =
+    case Parse.parse text of
+        Ok value ->
+            decodeValue decoder value
+
+        Err problem ->
+            Err (Syntax problem)
+
+
+pub errorToString : Error -> String
+errorToString error =
+    errorToStringHelp error []
+
+
+errorToStringHelp : Error, List String -> String
+errorToStringHelp error context =
+    case error of
+        Field name inner ->
+            errorToStringHelp inner (".${name}" :: context)
+
+        Index i inner ->
+            errorToStringHelp inner ("[${i}]" :: context)
+
+        OneOf errors ->
+            case errors of
+                [] ->
+                    "Ran into oneOf with no possibilities" ++ atPath context
+
+                [ only ] ->
+                    errorToStringHelp only context
+
+                _ ->
+                    let
+                        numbered i problem =
+                            "(${i + 1}) " ++ indent (errorToString problem)
+                    in
+                    ("Every possibility failed" ++ atPath context ++ ":")
+                        :: List.indexedMap errors numbered
+                        |> String.join "\n\n"
+
+        Failure message value ->
+            "Problem with the value"
+                ++ atPath context
+                ++ ", "
+                ++ Value.kind value
+                ++ ":\n\n    "
+                ++ indent (Value.print value 4)
+                ++ "\n\n"
+                ++ message
+
+        Syntax problem ->
+            "This is not valid JSON: " ++ problem
+
+
+atPath : List String -> String
+atPath context =
+    case context of
+        [] ->
+            ""
+
+        _ ->
+            " at json" ++ String.concat (List.reverse context)
+
+
+indent : String -> String
+indent text =
+    String.join (String.split text "\n") "\n    "
+
+
+-- Primitives
+pub string : Decoder String
+string =
+    Decoder
+        (\value ->
+            case value of
+                Text s ->
+                    Ok s
+
+                _ ->
+                    Err (Failure "Expecting a STRING" value)
+        )
+
+
+pub int : Decoder Int
+int =
+    Decoder
+        (\value ->
+            case value of
+                Number n ->
+                    if toFloat (round n) == n then
+                        Ok (round n)
+                    else
+                        Err (Failure "Expecting an INT" value)
+
+                _ ->
+                    Err (Failure "Expecting an INT" value)
+        )
+
+
+pub float : Decoder Float
+float =
+    Decoder
+        (\value ->
+            case value of
+                Number n ->
+                    Ok n
+
+                _ ->
+                    Err (Failure "Expecting a FLOAT" value)
+        )
+
+
+pub bool : Decoder Bool
+bool =
+    Decoder
+        (\value ->
+            case value of
+                Boolean b ->
+                    Ok b
+
+                _ ->
+                    Err (Failure "Expecting a BOOL" value)
+        )
+
+
+pub null : a -> Decoder a
+null result =
+    Decoder
+        (\value ->
+            case value of
+                Null ->
+                    Ok result
+
+                _ ->
+                    Err (Failure "Expecting null" value)
+        )
+
+
+pub raw : Decoder Value
+raw =
+    Decoder Ok
+
+
+-- Structure
+pub field : String, Decoder a -> Decoder a
+field name decoder =
+    Decoder
+        (\value ->
+            case Value.get value name of
+                Just inner ->
+                    decodeValue decoder inner
+                        |> Result.mapError (Field name _)
+
+                Nothing ->
+                    Err (Failure "Expecting an OBJECT with a field named `${name}`" value)
+        )
+
+
+pub at : List String, Decoder a -> Decoder a
+at names decoder =
+    List.foldr names decoder field
+
+
+pub index : Int, Decoder a -> Decoder a
+index i decoder =
+    Decoder
+        (\value ->
+            case value of
+                Array items ->
+                    case List.head (List.drop items i) of
+                        Just item ->
+                            decodeValue decoder item
+                                |> Result.mapError (Index i _)
+
+                        Nothing ->
+                            Err (Failure "Expecting a LONGER array. Need index ${i}" value)
+
+                _ ->
+                    Err (Failure "Expecting an ARRAY" value)
+        )
+
+
+pub list : Decoder a -> Decoder (List a)
+list decoder =
+    Decoder
+        (\value ->
+            case value of
+                Array items ->
+                    listHelp decoder 0 items []
+
+                _ ->
+                    Err (Failure "Expecting a LIST" value)
+        )
+
+
+listHelp : Decoder a, Int, List Value, List a -> Result Error (List a)
+listHelp decoder i items acc =
+    case items of
+        [] ->
+            Ok (List.reverse acc)
+
+        item :: rest ->
+            case decodeValue decoder item of
+                Ok decoded ->
+                    listHelp decoder (i + 1) rest (decoded :: acc)
+
+                Err error ->
+                    Err (Index i error)
+
+
+pub keyValuePairs : Decoder a -> Decoder (List ( String, a ))
+keyValuePairs decoder =
+    Decoder
+        (\value ->
+            case value of
+                Object fields ->
+                    pairsHelp decoder fields []
+
+                _ ->
+                    Err (Failure "Expecting an OBJECT" value)
+        )
+
+
+pairsHelp :
+    Decoder a
+    , List ( String, Value )
+    , List ( String, a )
+    -> Result Error (List ( String, a ))
+pairsHelp decoder fields acc =
+    case fields of
+        [] ->
+            Ok (List.reverse acc)
+
+        ( name, item ) :: rest ->
+            case decodeValue decoder item of
+                Ok decoded ->
+                    pairsHelp decoder rest (( name, decoded ) :: acc)
+
+                Err error ->
+                    Err (Field name error)
+
+
+pub dict : Decoder a -> Decoder (Dict String a)
+dict decoder =
+    map (keyValuePairs decoder) Dict.fromList
+
+
+-- Choices
+pub maybe : Decoder a -> Decoder (Maybe a)
+maybe decoder =
+    oneOf [ map decoder Just, succeed Nothing ]
+
+
+pub nullable : Decoder a -> Decoder (Maybe a)
+nullable decoder =
+    oneOf [ null Nothing, map decoder Just ]
+
+
+pub oneOf : List (Decoder a) -> Decoder a
+oneOf decoders =
+    Decoder (\value -> oneOfHelp decoders value [])
+
+
+oneOfHelp : List (Decoder a), Value, List Error -> Result Error a
+oneOfHelp decoders value errors =
+    case decoders of
+        [] ->
+            Err (OneOf (List.reverse errors))
+
+        decoder :: rest ->
+            case decodeValue decoder value of
+                Ok decoded ->
+                    Ok decoded
+
+                Err error ->
+                    oneOfHelp rest value (error :: errors)
+
+
+-- Combinators
+pub succeed : a -> Decoder a
+succeed result =
+    Decoder (\_ -> Ok result)
+
+
+pub fail : String -> Decoder a
+fail message =
+    Decoder (\value -> Err (Failure message value))
+
+
+pub andThen : Decoder a, (a -> Decoder b) -> Decoder b
+andThen decoder next =
+    Decoder
+        (\value ->
+            decodeValue decoder value
+                |> Result.andThen (\a -> decodeValue (next a) value)
+        )
+
+
+pub map : Decoder a, (a -> value) -> Decoder value
+map decoder f =
+    Decoder (\value -> Result.map (decodeValue decoder value) f)
+
+
+pub map2 : Decoder a, Decoder b, (a, b -> value) -> Decoder value
+map2 da db f =
+    Decoder (\value -> Result.map2 (decodeValue da value) (decodeValue db value) f)
+
+
+pub map3 : Decoder a, Decoder b, Decoder c, (a, b, c -> value) -> Decoder value
+map3 da db dc f =
+    Decoder
+        (\value ->
+            Result.map3 (decodeValue da value) (decodeValue db value) (decodeValue dc value) f
+        )
+
+
+pub map4 : Decoder a, Decoder b, Decoder c, Decoder d, (a, b, c, d -> value) -> Decoder value
+map4 da db dc dd f =
+    Decoder
+        (\value ->
+            Result.map4
+                (decodeValue da value)
+                (decodeValue db value)
+                (decodeValue dc value)
+                (decodeValue dd value)
+                f
+        )
+
+
+pub map5 :
+    Decoder a
+    , Decoder b
+    , Decoder c
+    , Decoder d
+    , Decoder e
+    , (a, b, c, d, e -> value)
+    -> Decoder value
+map5 da db dc dd de f =
+    Decoder
+        (\value ->
+            Result.map5
+                (decodeValue da value)
+                (decodeValue db value)
+                (decodeValue dc value)
+                (decodeValue dd value)
+                (decodeValue de value)
+                f
+        )
+
+
+pub map6 :
+    Decoder a
+    , Decoder b
+    , Decoder c
+    , Decoder d
+    , Decoder e
+    , Decoder f
+    , (a, b, c, d, e, f -> value)
+    -> Decoder value
+map6 da db dc dd de df f =
+    map2
+        (map5 da db dc dd de (\a b c d five -> f a b c d five _))
+        df
+        (\partial last -> partial last)

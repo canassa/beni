@@ -22,11 +22,61 @@ module is written, valid under `docs/design/language.md`:
 | `Router.beni` | URL routing: parse, print, breadcrumbs, guards |
 | `PrettyPrinter.beni` | Wadler-style document algebra and a JSON printer on it |
 | `FormValidation.beni` | accumulating validation, combinators, a sign-up form |
+| `Codec/Value.beni`, `Codec/Parse.beni`, `Codec/Decode.beni`, `Codec/Encode.beni` | the JSON library `JsonCodecs` is written against: a JSON value type and its printer, a recursive-descent reader, decoder combinators with path-carrying errors, encoders |
+| `Ui/Html.beni`, `Ui/Html/Attributes.beni`, `Ui/Html/Events.beni` | the plain-call view layer `NotesApp` is written against, in the shape of Elm's `Html`: elements, attributes, handlers, `map`, a string renderer |
 | `Counter.beni`, `Data/Parser.beni`, `Data/Token.beni`, `Ui/View.beni` | the skeleton's own small real-shaped modules |
 
 Module names come from the path (`language.md` §1): `Data/Parser.beni` is
 `Data.Parser`, so every segment is `UpperCamel` and subdirectories are
 module paths, not categories.
+
+**The corpus is self-contained.** It imports core and its own modules and
+nothing else: no platform, no package. Core ships no JSON library, and no
+platform declares HTML functions to call — the `html` platform declares a
+markup vocabulary, and markup cannot be built until a platform names a
+markup lowering — so the two libraries an application module leans on are
+written here, in beni, the way an application's own would be. Markup is
+measured on its own, in `bench/markup/`, and joins this directory once it
+builds (`frontend.md` §9.3).
+
+## Checking it
+
+```sh
+beni check bench/corpus                                    # no platform needed
+beni build --platform=node --library --out=out bench/corpus  # the build bench/size.mjs makes
+```
+
+Both must be clean — exit 0 and no diagnostic of any severity, warnings
+included — and two black-box scenarios in `tests/blackbox/build_test.zig`
+hold them to it inside the gates (`bench/corpus type-checks with no
+diagnostic and no platform`, `bench/corpus builds as a library for the node
+platform`). They exist because the corpus did rot: until 2026-09-29
+`JsonCodecs` imported `Json.Decode` and `Json.Encode`, which core does not
+have, and `NotesApp` imported `Html`, `Html.Attributes` and `Html.Events`
+functions no platform declares, so 208 errors came out of every check, every
+check number over the corpus measured the error path, and `bench/size.mjs`
+quietly left those two modules out of every size it reported for it.
+
+What that repair changed, per file (lines, bytes, and tokens with each file's
+`eof`, as `zig build bench` counts them):
+
+| File | before: lines / bytes / tokens | after |
+|---|---:|---:|
+| `JsonCodecs.beni` | 308 / 7 785 / 1 084 | 309 / 7 827 / 1 084 |
+| `NotesApp.beni` | 391 / 10 099 / 1 551 | 392 / 10 139 / 1 551 |
+| `Codec/Value.beni` | — | 216 / 5 096 / 724 |
+| `Codec/Parse.beni` | — | 282 / 7 274 / 1 018 |
+| `Codec/Decode.beni` | — | 395 / 9 539 / 1 488 |
+| `Codec/Encode.beni` | — | 84 / 1 795 / 287 |
+| `Ui/Html.beni` | — | 234 / 6 107 / 924 |
+| `Ui/Html/Attributes.beni` | — | 59 / 1 064 / 181 |
+| `Ui/Html/Events.beni` | — | 35 / 769 / 135 |
+| **the corpus** | **11 files, 2 687 / 62 636 / 9 568** | **18 files, 3 994 / 94 362 / 14 325** |
+
+The two application modules keep their code: `JsonCodecs` changed its two
+imports and one argument order (`Encode.encode value 2`, subject first),
+`NotesApp` its three imports; the token counts did not move. What grew the
+corpus by half is the two libraries, which are what the old imports stood for.
 
 ## `pathological/` — the inputs that hurt
 
@@ -50,15 +100,11 @@ cannot hide inside a corpus average:
 | `QuestionChain8000.beni` | an 8000-link `r????…` chain — the third |
 | `AsWithoutName.beni` | `(x as)` with no name after `as` — panicked lowering in Debug and silently bound a variable called `main` in ReleaseFast |
 
-**Two things about this directory are deliberate and slightly awkward.**
-First, its files have diagnostics *on purpose*: three of them are what
+**Its files have diagnostics on purpose**: three of them are what
 `nesting_too_deep` looks like and one is a syntax error, so the rule "every
-file in `bench/corpus` must be valid" does not apply here — check the rest
-with `beni check bench/corpus/*.beni bench/corpus/Data bench/corpus/Ui`.
-Second, `pathological` is not an upper identifier, so these files have no
-module name and `beni check bench/corpus` reports `invalid_module_path` for
-each of them; the bench does not care (it lowers with the name it is given),
-and the lowercase name marks the directory as not-a-module-tree.
+file in `bench/corpus` must be valid" does not apply to them, which is why
+they live outside this directory. `pathological` is lower-case to mark it
+as not-a-module-tree: checked from `bench/`, its files have no module name.
 
 **Too big to check in.** Anything over 256 KB is a generator case instead,
 so the repository does not carry ten megabytes of `1, 1, 1, …` forever:
@@ -95,8 +141,10 @@ scenario.
   "fix" the file to be faster — that defeats the purpose.
 - **A realistic module.** Translate a real Elm module (the `references/elm`
   checkout has plenty) rather than writing a toy; keep it 150–400 lines and
-  valid, so `beni check bench/corpus` stays clean. Idiomatic input is what
-  the `fast-compiler.md` §2 budget is stated against.
+  valid, so both commands under *Checking it* stay clean. A library it needs
+  that core does not ship is written here too, as `Codec/` and `Ui/Html`
+  were. Idiomatic input is what the `fast-compiler.md` §2 budget is stated
+  against.
 - Every file must be valid — the bench does not tolerate diagnostics, so a
   file that fails `beni check` is a bug in the file, not a benchmark. The
   one exception is `pathological/`, above, where the diagnostic IS the

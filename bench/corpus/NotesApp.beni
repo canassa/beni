@@ -1,11 +1,12 @@
 --! A notes application: model, messages, update with undo history, search,
---! tagging, and a view. Real-application shape for the benchmark corpus.
+--! tagging, and a view on the in-corpus `Ui.Html`. Real-application shape for
+--! the benchmark corpus.
 
 import Dict exposing (Dict)
-import Html exposing (Html, button, div, h1, input, li, span, text, textarea, ul)
-import Html.Attributes exposing (class, classList, placeholder, value)
-import Html.Events exposing (onClick, onInput)
 import Set exposing (Set)
+import Ui.Html exposing (Html, button, div, h1, input, li, span, text, textarea, ul)
+import Ui.Html.Attributes exposing (class, classList, placeholder, value)
+import Ui.Html.Events exposing (onClick, onInput)
 
 
 pub type alias Note =

@@ -1,10 +1,11 @@
 --! JSON encoders and decoders for an order-processing domain: nested
 --! records, enums decoded via `andThen`, optional fields with defaults,
---! `oneOf` fallbacks, and round-trip helpers.
+--! `oneOf` fallbacks, and round-trip helpers, over the in-corpus `Codec`
+--! library.
 
+import Codec.Decode as Decode exposing (Decoder)
+import Codec.Encode as Encode
 import Dict exposing (Dict)
-import Json.Decode as Decode exposing (Decoder)
-import Json.Encode as Encode
 
 
 pub type alias Customer =
@@ -279,7 +280,7 @@ roundTrip json =
         orders =
             parseOrders json?
     in
-    Ok (Encode.encode 2 (Encode.list orders encodeOrder))
+    Ok (Encode.encode (Encode.list orders encodeOrder) 2)
 
 
 pub summarize : String -> Result String (Dict String Int)

@@ -1,0 +1,282 @@
+--! A recursive-descent reader from JSON text to `Codec.Value`. It works
+--! on the text as a list of characters, each step returning what it read
+--! and the characters after it, and it names what it expected and where
+--! when the text is not JSON.
+
+import Codec.Value exposing (Value, Null, Boolean, Number, Text, Array, Object)
+
+
+type alias Step a =
+    Result String ( a, List Char )
+
+
+--| The text as one JSON value, with nothing but whitespace after it.
+pub parse : String -> Result String Value
+parse input =
+    let
+        chars =
+            String.toList input
+
+        ( value, rest ) =
+            parseValue chars?
+    in
+    case skipSpace rest of
+        [] ->
+            Ok value
+
+        c :: _ ->
+            Err (unexpected c "the end of the input" (consumed chars rest))
+
+
+consumed : List Char, List Char -> Int
+consumed all rest =
+    List.length all - List.length rest
+
+
+unexpected : Char, String, Int -> String
+unexpected c wanted at =
+    "unexpected '${c}' at character ${at}, expecting ${wanted}"
+
+
+parseValue : List Char -> Step Value
+parseValue chars =
+    case skipSpace chars of
+        'n' :: 'u' :: 'l' :: 'l' :: rest ->
+            Ok ( Null, rest )
+
+        't' :: 'r' :: 'u' :: 'e' :: rest ->
+            Ok ( Boolean True, rest )
+
+        'f' :: 'a' :: 'l' :: 's' :: 'e' :: rest ->
+            Ok ( Boolean False, rest )
+
+        '"' :: rest ->
+            parseString rest []
+                |> Result.map (\( s, after ) -> ( Text s, after ))
+
+        '[' :: rest ->
+            parseArray (skipSpace rest)
+
+        '{' :: rest ->
+            parseObject (skipSpace rest)
+
+        c :: rest ->
+            if c == '-' || Char.isDigit c then
+                parseNumber (c :: rest)
+            else
+                Err "unexpected '${c}', expecting a value"
+
+        [] ->
+            Err "unexpected end of input, expecting a value"
+
+
+skipSpace : List Char -> List Char
+skipSpace chars =
+    case chars of
+        ' ' :: rest ->
+            skipSpace rest
+
+        '\n' :: rest ->
+            skipSpace rest
+
+        '\r' :: rest ->
+            skipSpace rest
+
+        '\t' :: rest ->
+            skipSpace rest
+
+        _ ->
+            chars
+
+
+parseString : List Char, List Char -> Step String
+parseString chars acc =
+    case chars of
+        '"' :: rest ->
+            Ok ( String.fromList (List.reverse acc), rest )
+
+        '\\' :: escaped :: rest ->
+            case escaped of
+                'n' ->
+                    parseString rest ('\n' :: acc)
+
+                't' ->
+                    parseString rest ('\t' :: acc)
+
+                'r' ->
+                    parseString rest ('\r' :: acc)
+
+                'b' ->
+                    parseString rest (Char.fromCode 8 :: acc)
+
+                'f' ->
+                    parseString rest (Char.fromCode 12 :: acc)
+
+                'u' ->
+                    let
+                        ( code, after ) =
+                            parseHex4 rest?
+                    in
+                    parseString after (Char.fromCode code :: acc)
+
+                _ ->
+                    if escaped == '"' || escaped == '\\' || escaped == '/' then
+                        parseString rest (escaped :: acc)
+                    else
+                        Err "unknown escape '\\${escaped}' in a string"
+
+        c :: rest ->
+            if Char.toCode c < 32 then
+                Err "a control character must be escaped in a string"
+            else
+                parseString rest (c :: acc)
+
+        [] ->
+            Err "unexpected end of input inside a string"
+
+
+parseHex4 : List Char -> Step Int
+parseHex4 chars =
+    case chars of
+        a :: b :: c :: d :: rest ->
+            let
+                digits =
+                    [ a, b, c, d ]
+            in
+            if List.all digits Char.isHexDigit then
+                Ok ( List.foldl digits 0 (\digit total -> total * 16 + hexValue digit), rest )
+            else
+                Err "expecting four hexadecimal digits after \\u"
+
+        _ ->
+            Err "unexpected end of input inside a \\u escape"
+
+
+hexValue : Char -> Int
+hexValue c =
+    let
+        code =
+            Char.toCode c
+    in
+    if Char.isDigit c then
+        code - 48
+    else if Char.isUpper c then
+        code - 55
+    else
+        code - 87
+
+
+parseNumber : List Char -> Step Value
+parseNumber chars =
+    let
+        ( digits, rest ) =
+            span chars isNumberChar
+
+        text =
+            String.fromList digits
+    in
+    case String.toFloat text of
+        Just n ->
+            Ok ( Number n, rest )
+
+        Nothing ->
+            Err "'${text}' is not a number"
+
+
+isNumberChar : Char -> Bool
+isNumberChar c =
+    Char.isDigit c || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
+
+
+span : List a, (a -> Bool) -> ( List a, List a )
+span items predicate =
+    let
+        go taken remaining =
+            case remaining of
+                x :: rest ->
+                    if predicate x then
+                        go (x :: taken) rest
+                    else
+                        ( List.reverse taken, remaining )
+
+                [] ->
+                    ( List.reverse taken, [] )
+    in
+    go [] items
+
+
+parseArray : List Char -> Step Value
+parseArray chars =
+    case chars of
+        ']' :: rest ->
+            Ok ( Array [], rest )
+
+        _ ->
+            parseElements chars []
+
+
+parseElements : List Char, List Value -> Step Value
+parseElements chars acc =
+    let
+        ( item, rest ) =
+            parseValue chars?
+    in
+    case skipSpace rest of
+        ',' :: more ->
+            parseElements more (item :: acc)
+
+        ']' :: more ->
+            Ok ( Array (List.reverse (item :: acc)), more )
+
+        c :: _ ->
+            Err "unexpected '${c}' in an array, expecting ',' or ']'"
+
+        [] ->
+            Err "unexpected end of input inside an array"
+
+
+parseObject : List Char -> Step Value
+parseObject chars =
+    case chars of
+        '}' :: rest ->
+            Ok ( Object [], rest )
+
+        _ ->
+            parseMembers chars []
+
+
+parseMembers : List Char, List ( String, Value ) -> Step Value
+parseMembers chars acc =
+    case skipSpace chars of
+        '"' :: afterQuote ->
+            let
+                ( key, afterKey ) =
+                    parseString afterQuote []?
+            in
+            case skipSpace afterKey of
+                ':' :: afterColon ->
+                    let
+                        ( item, rest ) =
+                            parseValue afterColon?
+                    in
+                    case skipSpace rest of
+                        ',' :: more ->
+                            parseMembers more (( key, item ) :: acc)
+
+                        '}' :: more ->
+                            Ok ( Object (List.reverse (( key, item ) :: acc)), more )
+
+                        c :: _ ->
+                            Err "unexpected '${c}' in an object, expecting ',' or '}'"
+
+                        [] ->
+                            Err "unexpected end of input inside an object"
+
+                _ ->
+                    Err "expecting ':' after the field name \"${key}\""
+
+        c :: _ ->
+            Err "unexpected '${c}', expecting a field name"
+
+        [] ->
+            Err "unexpected end of input, expecting a field name"
