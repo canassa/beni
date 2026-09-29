@@ -57,6 +57,17 @@ pub const Names = struct {
         }.f };
     }
 
+    /// A module lowered through an overlay (`js/Lower.lower`): its invented
+    /// names are the overlay's and every other is the global pool's.
+    pub fn fromOverlay(overlay: *const InternPool.Overlay) Names {
+        return .{ .context = overlay, .lookup = struct {
+            fn f(context: *const anyopaque, symbol: InternPool.Symbol) []const u8 {
+                const o: *const InternPool.Overlay = @ptrCast(@alignCast(context));
+                return o.slice(symbol);
+            }
+        }.f };
+    }
+
     pub fn fromLocal(local: *const InternPool.Local) Names {
         return .{ .context = local, .lookup = struct {
             fn f(context: *const anyopaque, symbol: InternPool.Symbol) []const u8 {

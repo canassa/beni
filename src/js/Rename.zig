@@ -48,6 +48,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
 const Print = @import("Print.zig");
+const Opt = @import("Opt.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -198,12 +199,19 @@ pub const Failure = struct {
 /// The renamer for one module. Created once per module, then driven by the
 /// printer one top-level declaration at a time: `enter` assigns that
 /// declaration's namespace and `ordinal` reads it back.
+///
+/// `globals` is read and never written here: every whole-program name a
+/// module mentions has its ordinal before the module is printed
+/// (`collectGlobals`, then `Globals.intern` in module order), which is what
+/// lets modules print on several threads while they share the table.
 pub const Module = struct {
     ir: *const JsIr,
-    globals: *Globals,
+    globals: *const Globals,
     gpa: Allocator,
-    /// What `globals` grows from.
-    table: Allocator,
+    /// Set only by `collectGlobals`: the walk then records every
+    /// whole-program name in the order it first meets it, and assigns
+    /// nothing.
+    met: ?*Met = null,
     /// The ordinal assigned to each local `NameIndex`, valid when `stamp`
     /// agrees with `current`. One array for the module and a stamp per
     /// declaration, so restarting the alphabet costs no `@memset`.
@@ -312,12 +320,15 @@ pub const Module = struct {
 
     fn see(m: *Module, n: NameIndex, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
         const i = n.unwrap() orelse return;
-        if (i >= m.local.len) return;
+        if (i >= m.ir.names.len) return;
         const name = m.ir.name(n);
         if (name.module != .none) {
-            try mentioned.append(m.gpa, try m.globals.intern(m.table, name));
+            if (m.met) |met| return met.see(m.gpa, n);
+            const o = m.globals.lookup(name) orelse return m.unresolved(n);
+            try mentioned.append(m.gpa, o);
             return;
         }
+        if (m.met != null) return;
         if (m.stamp[i] == m.current) return; // already in this declaration's list
         m.stamp[i] = m.current;
         m.local[i] = std.math.maxInt(u32); // assigned below; a read before then is a bug
@@ -405,14 +416,49 @@ pub const Module = struct {
 };
 
 /// A renamer for one module. Its own lists come from `gpa`, an arena reset
-/// after the module; `globals` outlives the module, so what it gains comes
-/// from `table`, which lives as long as `globals` does.
-pub fn begin(gpa: Allocator, table: Allocator, ir: *const JsIr, globals: *Globals) Allocator.Error!Module {
+/// after the module. Every whole-program name the module mentions must
+/// already be in `globals`; one that is not is reported as `unresolved`.
+pub fn begin(gpa: Allocator, ir: *const JsIr, globals: *const Globals) Allocator.Error!Module {
     const local = try gpa.alloc(u32, ir.names.len);
     const stamp = try gpa.alloc(u32, ir.names.len);
     @memset(stamp, 0);
-    return .{ .ir = ir, .globals = globals, .gpa = gpa, .table = table, .local = local, .stamp = stamp };
+    return .{ .ir = ir, .globals = globals, .gpa = gpa, .local = local, .stamp = stamp };
 }
+
+/// The whole-program names one module mentions, each once, in the order the
+/// printer meets them. Handing each module's list to `Globals.intern`, one
+/// module after another in module order, numbers the table exactly as
+/// printing the modules one after another would — so no name depends on
+/// which thread printed which module, or when (CLAUDE.md rule 5).
+///
+/// `plan` is the one the module is printed under: a statement it drops is
+/// never printed, so its names are not met here either. The list comes from
+/// `gpa`, an arena, as the walk's own lists do.
+pub fn collectGlobals(gpa: Allocator, ir: *const JsIr, plan: *const Opt.Plan) Allocator.Error![]const NameIndex {
+    const empty: Globals = .{};
+    var met: Met = .{ .seen = try .initEmpty(gpa, ir.names.len) };
+    var m: Module = .{ .ir = ir, .globals = &empty, .gpa = gpa, .local = &.{}, .stamp = &.{}, .met = &met };
+    var unused: std.ArrayList(u32) = .empty;
+    for (ir.extraSlice(ir.body, Index)) |stmt| {
+        if (plan.isDropped(stmt)) continue;
+        try m.collect(stmt, &unused);
+    }
+    return met.order.items;
+}
+
+/// What `collectGlobals` records: whole-program names by first encounter.
+/// A module's names are distinct by value (`JsIr.Builder.intern`), so a
+/// name's index is its identity and a bit per index is the seen set.
+const Met = struct {
+    seen: std.DynamicBitSetUnmanaged,
+    order: std.ArrayList(NameIndex) = .empty,
+
+    fn see(met: *Met, gpa: Allocator, n: NameIndex) Allocator.Error!void {
+        if (met.seen.isSet(n.int())) return;
+        met.seen.set(n.int());
+        try met.order.append(gpa, n);
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -501,6 +547,43 @@ test "the whole-program table hands out ordinals in call order and repeats itsel
     try testing.expectEqual(@as(?u32, null), g.lookup(.{ .module = @enumFromInt(9), .base = @enumFromInt(9), .tag = 0 }));
 }
 
+test "a module's whole-program names are collected once each, in print order, skipping dropped statements" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const gpa = arena_state.allocator();
+    var b: JsIr.Builder = .init(gpa);
+    const module: JsIr.Symbol = @enumFromInt(1);
+    const f = try b.intern(.qualified(module, @enumFromInt(10)));
+    const g = try b.intern(.qualified(module, @enumFromInt(11)));
+    const h = try b.intern(.qualified(module, @enumFromInt(12)));
+    const x = try b.intern(.local(@enumFromInt(20)));
+    // `const f = g;`, `const h = x;` (a local, never collected), then
+    // `const x = f;` — `f` again, which is not collected twice.
+    const s1 = try testNode(&b, .const_decl, f.int(), (try testNode(&b, .ident, g.int(), 0)).int());
+    const s2 = try testNode(&b, .const_decl, h.int(), (try testNode(&b, .ident, x.int(), 0)).int());
+    const s3 = try testNode(&b, .const_decl, x.int(), (try testNode(&b, .ident, f.int(), 0)).int());
+    const ir = try b.toOwned(try b.addRange(&.{ s1, s2, s3 }));
+
+    try testing.expectEqualSlices(NameIndex, &.{ f, g, h }, try collectGlobals(gpa, &ir, &Opt.Plan.none));
+
+    // A statement the plan drops is never printed, so its names are not met.
+    const dropped = try gpa.alloc(u32, (ir.nodes.len + 31) / 32);
+    @memset(dropped, 0);
+    dropped[s2.int() / 32] |= @as(u32, 1) << @intCast(s2.int() % 32);
+    const plan: Opt.Plan = .{ .dropped = dropped };
+    const met = try collectGlobals(gpa, &ir, &plan);
+    try testing.expectEqualSlices(NameIndex, &.{ f, g }, met);
+
+    // Numbered in that order, the renamer finds every name it meets.
+    var globals: Globals = .{};
+    for (met) |n| _ = try globals.intern(gpa, ir.name(n));
+    var m = try begin(gpa, &ir, &globals);
+    try m.enter(s1);
+    try testing.expectEqual(@as(?Failure, null), m.failure);
+    try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
+    try testing.expectEqual(@as(?u32, 1), m.ordinal(g));
+}
+
 const small_stack = @import("../small_stack.zig");
 
 /// Twice the depth a walk that recursed once per link fails at on
@@ -538,7 +621,7 @@ fn nameDeepChain() !void {
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
     var globals: Globals = .{};
-    var m = try begin(gpa, gpa, &ir, &globals);
+    var m = try begin(gpa, &ir, &globals);
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
     try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
@@ -571,7 +654,7 @@ test "a declaration of 16 384 locals is named and self-checked in linear time" {
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
     var globals: Globals = .{};
-    var m = try begin(gpa, gpa, &ir, &globals);
+    var m = try begin(gpa, &ir, &globals);
     try m.enter(decl);
     try testing.expectEqual(@as(?Failure, null), m.failure);
     try testing.expectEqual(@as(?u32, 2), m.ordinal(locals[0]));

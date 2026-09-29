@@ -190,12 +190,14 @@ pub const Markup = struct {
 
 /// Lower one checked module. `scratch` is the caller's arena — every
 /// intermediate list below lives in it and nothing here frees individually.
-/// `interner` gains the handful of compiler-owned names (`$t`, `$x`, `$`)
-/// and is read for the field-order sort.
+/// `interner` is this module's overlay on the session's pool: the names
+/// lowering invents (`$m$3`, `Main$eq$Point`) go into it and never into the
+/// shared pool, which is what lets several modules lower at once. It is read
+/// for the field-order sort, and the printer reads it to spell every name.
 pub fn lower(
     gpa: Allocator,
     scratch: Allocator,
-    interner: *InternPool.Global,
+    interner: *InternPool.Overlay,
     input: Input,
 ) Allocator.Error!Result {
     var b: JsIr.Builder = .init(gpa);
@@ -271,6 +273,21 @@ pub fn lower(
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .start = if (l.mk) |st| st.start.items else &.{},
     };
+}
+
+/// Intern into the session's pool, before any module is lowered, every
+/// name lowering spells from a fixed string: `WellKnown`'s, the slot names
+/// `a` to `z`, and the rest below. A lowering then finds each of them there
+/// instead of adding it to its module's overlay, which is one insertion per
+/// name per module saved. What a name is interned as reaches no output.
+pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Error!void {
+    const fixed = [_][]const u8{
+        "$t", "$x", "$p", "$",  "$y", "$a",    "$b",       "codePointAt", "reduceRight",
+        "$l", "$h", "$d", "$e", "$m", "apply", "_derived", "$markup",     "children",
+    };
+    for (fixed) |text| _ = try global.getOrPut(gpa, text);
+    inline for (@typeInfo(Lowerer.Runtime).@"enum".fields) |field| _ = try global.getOrPut(gpa, field.name);
+    for (0..26) |i| _ = try global.getOrPut(gpa, &.{@as(u8, 'a') + @as(u8, @intCast(i))});
 }
 
 /// The compiler's own identifiers, interned once per module. They all start
@@ -424,7 +441,7 @@ const Lowerer = struct {
     gpa: Allocator,
     scratch: Allocator,
     b: *JsIr.Builder,
-    interner: *InternPool.Global,
+    interner: *InternPool.Overlay,
     in: Input,
     bir: *const Bir,
     module_name: Symbol,
@@ -2441,7 +2458,7 @@ const Lowerer = struct {
             return null;
         }
         const iface = &l.in.interfaces[module.int()];
-        const index = iface.findCtor(l.interner, ctor.symbol()) orelse {
+        const index = iface.findCtor(l.interner.global, ctor.symbol()) orelse {
             _ = try l.missingCoreValue(p, @tagName(owner), spelling, "that module declares no such constructor");
             return null;
         };
@@ -2604,7 +2621,7 @@ const Lowerer = struct {
     /// requirements, checker-v2.md §13.3): the arguments themselves
     /// are the term's own `args`.
     fn requirementCount(l: *Lowerer, t: Dispatch.Term) u32 {
-        return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types, l.interner);
+        return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types, l.interner.global);
     }
 
     /// The beni arity of a term: how many parameters its eta-expansion
@@ -4208,8 +4225,8 @@ const Lowerer = struct {
                 if (e.module != list or e.module.int() >= l.in.interfaces.len) return null;
                 const iface = &l.in.interfaces[e.module.int()];
                 const v = @intFromEnum(e.value);
-                if (iface.findValue(l.interner, eq)) |i| if (@intFromEnum(i) == v) break :blk eq;
-                if (iface.findValue(l.interner, compare)) |i| if (@intFromEnum(i) == v) break :blk compare;
+                if (iface.findValue(l.interner.global, eq)) |i| if (@intFromEnum(i) == v) break :blk eq;
+                if (iface.findValue(l.interner.global, compare)) |i| if (@intFromEnum(i) == v) break :blk compare;
                 return null;
             },
             .top => |use| blk: {
@@ -4343,7 +4360,7 @@ const Lowerer = struct {
                 // one answer. A record the checker wrote has a row for every
                 // type it can reach, so no row is a table the checker did not
                 // write, and a wall.
-                const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner, use.type, use.kind) orelse return false;
+                const published = Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner.global, use.type, use.kind) orelse return false;
                 return published.row.status == .present;
             },
             else => return false,
@@ -5014,7 +5031,7 @@ const Lowerer = struct {
         if (module.int() >= l.in.interfaces.len) {
             return l.missingCoreValue(p, @tagName(owner), spelling, "its interface is not available here");
         }
-        const index = l.in.interfaces[module.int()].findValue(l.interner, function.symbol()) orelse
+        const index = l.in.interfaces[module.int()].findValue(l.interner.global, function.symbol()) orelse
             return l.missingCoreValue(p, @tagName(owner), spelling, "that module does not expose it");
         try l.need(module, @intFromEnum(index));
         return l.ident(try l.externalName(module, @intFromEnum(index)), p);
@@ -6161,7 +6178,7 @@ const Lowerer = struct {
             .module = l.in.module.int(),
             .dispatch = l.in.dispatch,
             .vocabulary = mk.vocabulary,
-            .interner = l.interner,
+            .interner = l.interner.global,
             .live = live.items,
         }) orelse return;
         const st = try l.scratch.create(MarkupState);
@@ -6928,7 +6945,9 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
     const file = session.graph.moduleFile(m);
     const tokens = session.artifacts.spans(file);
 
-    var result = try lower(gpa, arena, &session.interner, .{
+    var overlay: InternPool.Overlay = .init(&session.interner);
+    defer overlay.deinit(gpa);
+    var result = try lower(gpa, arena, &overlay, .{
         .bir = session.artifacts.bir(file),
         .token_starts = tokens.starts,
         .module = m,
@@ -6945,7 +6964,7 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
     defer result.deinit(gpa);
     // The in-bounds invariants of `JsIr`, on every tree the tests build.
     try result.ir.verify();
-    return Print.print(gpa, arena, &result.ir, .fromGlobal(&session.interner), .{});
+    return Print.print(gpa, arena, &result.ir, .fromOverlay(&overlay), .{});
 }
 
 fn expectJs(expected: []const u8, source: [:0]const u8) !void {
@@ -7373,7 +7392,9 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     const specifiers = try arena.alloc([]const u8, count);
     for (specifiers) |*specifier| specifier.* = "./x.mjs";
     const file = session.graph.moduleFile(m);
-    var result = try lower(gpa, arena, &session.interner, .{
+    var overlay: InternPool.Overlay = .init(&session.interner);
+    defer overlay.deinit(gpa);
+    var result = try lower(gpa, arena, &overlay, .{
         .bir = session.artifacts.bir(file),
         .token_starts = session.artifacts.spans(file).starts,
         .module = m,
@@ -7435,6 +7456,10 @@ test "the evidence-count assert counts the roots and every term's arguments, in 
     l.in.dispatch = &table;
     l.in.interfaces = &.{};
     l.in.types = &types;
+    // Handed through to the table's queries and never read for this table.
+    const global: InternPool.Global = .{};
+    var overlay: InternPool.Overlay = .init(&global);
+    l.interner = &overlay;
     // `termShapeOk` reads what `readTable` judged once, bottom-up.
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();

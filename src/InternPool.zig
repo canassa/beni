@@ -353,8 +353,12 @@ const Pool = struct {
     /// writes nothing — see `Global.find` for why that distinction is worth
     /// a second function.
     fn find(pool: *const Pool, bytes: []const u8) ?Symbol {
+        return pool.findHashed(Hasher.hash(bytes), bytes);
+    }
+
+    /// `find` with the hash already taken: `hash` is `Hasher.hash(bytes)`.
+    fn findHashed(pool: *const Pool, hash: u64, bytes: []const u8) ?Symbol {
         if (pool.slots.len == 0) return null;
-        const hash = Hasher.hash(bytes);
         const mask = pool.slots.len - 1;
         var i: usize = @intCast(hash & mask);
         while (true) : (i = (i + 1) & mask) {
@@ -555,6 +559,65 @@ pub const Global = struct {
     }
 };
 
+/// A private extension of a `Global` that other threads are reading: what
+/// one task needs to intern while the session's pool is shared and may not
+/// grow. Text the global pool already holds answers with its global symbol;
+/// any other text is interned HERE, under a symbol with `bit` set, which no
+/// global symbol has.
+///
+/// It is how the emitter lowers modules on several threads at once. A
+/// lowering invents names (`$m$3`, `Main$eq$Point`) and the printer spells
+/// them by their TEXT, so which pool a name went to never reaches an
+/// output; what must hold is that one module's names come from one pool,
+/// so that equal text is one symbol inside that module. Two overlays may
+/// hold the same text under different symbols, and a pass that compares
+/// names ACROSS modules must first map them into the global pool
+/// (`Emit`'s release merge does, in module order).
+pub const Overlay = struct {
+    global: *const Global,
+    pool: Pool = .{},
+
+    /// Set on every symbol this overlay hands out and on no global one: a
+    /// global pool is never 2³¹ names long.
+    pub const bit: u32 = 1 << 31;
+
+    pub fn init(global: *const Global) Overlay {
+        return .{ .global = global };
+    }
+
+    pub fn deinit(o: *Overlay, gpa: Allocator) void {
+        o.pool.deinit(gpa);
+    }
+
+    pub fn isOverlay(symbol: Symbol) bool {
+        return @intFromEnum(symbol) & bit != 0;
+    }
+
+    pub fn slice(o: *const Overlay, symbol: Symbol) []const u8 {
+        const i = @intFromEnum(symbol);
+        if (i & bit != 0) return o.pool.slice(@enumFromInt(i & ~bit));
+        return o.global.slice(symbol);
+    }
+
+    /// The global symbol for `bytes` if the shared pool has it, else this
+    /// overlay's. Never writes the global pool.
+    pub fn getOrPut(o: *Overlay, gpa: Allocator, bytes: []const u8) Allocator.Error!Symbol {
+        const hash = Hasher.hash(bytes);
+        if (o.global.pool.findHashed(hash, bytes)) |s| return s;
+        const local = try o.pool.getOrPutHashed(gpa, hash, bytes);
+        std.debug.assert(@intFromEnum(local) & bit == 0);
+        return @enumFromInt(@intFromEnum(local) | bit);
+    }
+
+    /// The symbol for `bytes` in either pool, or null. Never writes.
+    pub fn find(o: *const Overlay, bytes: []const u8) ?Symbol {
+        const hash = Hasher.hash(bytes);
+        if (o.global.pool.findHashed(hash, bytes)) |s| return s;
+        const local = o.pool.findHashed(hash, bytes) orelse return null;
+        return @enumFromInt(@intFromEnum(local) | bit);
+    }
+};
+
 /// Intern every `WellKnown` name, in declaration order, into an empty pool.
 fn registerWellKnown(pool: *Pool, gpa: Allocator) Allocator.Error!void {
     std.debug.assert(pool.entries.items.len == 0);
@@ -583,6 +646,39 @@ test "Local.init shares the well-known prefix with Global, so merge is the ident
     defer testing.allocator.free(remap);
     for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @intFromEnum(g));
     try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count)), remap[@intFromEnum(view)]);
+}
+
+test "an overlay answers global text with the global symbol and keeps new text to itself" {
+    const gpa = testing.allocator;
+    var global = try Global.init(gpa);
+    defer global.deinit(gpa);
+    const view = try global.getOrPut(gpa, "view");
+    const before = global.count();
+
+    var a: Overlay = .init(&global);
+    defer a.deinit(gpa);
+    var b: Overlay = .init(&global);
+    defer b.deinit(gpa);
+    try testing.expectEqual(view, try a.getOrPut(gpa, "view"));
+    try testing.expect(!Overlay.isOverlay(view));
+
+    // New text: an overlay symbol, stable within its overlay, spelled back
+    // by it, and never added to the shared pool.
+    const x = try a.getOrPut(gpa, "$m$3");
+    try testing.expect(Overlay.isOverlay(x));
+    try testing.expectEqual(x, try a.getOrPut(gpa, "$m$3"));
+    try testing.expectEqualStrings("$m$3", a.slice(x));
+    try testing.expectEqualStrings("view", a.slice(view));
+    try testing.expectEqual(@as(?Symbol, x), a.find("$m$3"));
+    try testing.expectEqual(@as(?Symbol, null), a.find("absent"));
+    try testing.expectEqual(before, global.count());
+    try testing.expectEqual(@as(?Symbol, null), global.find("$m$3"));
+
+    // Another overlay holds the same text on its own: equal text is one
+    // symbol inside an overlay, not across two.
+    const y = try b.getOrPut(gpa, "$m$3");
+    try testing.expect(Overlay.isOverlay(y));
+    try testing.expectEqualStrings("$m$3", b.slice(y));
 }
 
 test "Local dedups equal bytes and distinguishes different ones" {

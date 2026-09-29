@@ -501,6 +501,15 @@ pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
     return ir.names[index.int()];
 }
 
+/// Replace one row of the name column, which this IR owns. For a pass that
+/// re-interns a name's symbols into another pool, with the same text: the
+/// emitter moves a module's whole-program names from the module's overlay
+/// into the session's pool before `--release` numbers them.
+pub fn setName(ir: *JsIr, index: NameIndex, n: Name) void {
+    const names: []Name = @constCast(ir.names);
+    names[index.int()] = n;
+}
+
 /// The bytes of a `number`, `string` or `template_chunk` node.
 pub fn bytes(ir: *const JsIr, node: Node.Index) []const u8 {
     const d = ir.data(node);

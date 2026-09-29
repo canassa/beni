@@ -603,6 +603,121 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     try w.expectProgram("one/_main.mjs", .{ .stdout = "12\n" });
 }
 
+test "names several emit workers invent for one type agree, and the build is byte-identical at every --jobs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Modules are lowered and printed on several threads, each inventing
+    // names in a pool of its own (`InternPool.Overlay`). Here three modules
+    // compare values of one type declared in a fourth, so each of them
+    // invents, on its own worker, the name of `Shapes`' derived `eq` and
+    // `compare` — the same TEXT under a different symbol in every pool. Under
+    // `--release` the import in each module and the export in `Shapes` must
+    // still come out with ONE short name, which only holds if the names are
+    // merged by text before they are numbered; a program whose names were
+    // numbered by symbol would fail to load. And none of it may move with
+    // the thread count, so every tree is built twice at each `--jobs`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Shapes.beni",
+        \\pub type Point
+        \\    = Point Int Int
+        \\
+        \\
+        \\pub type Shape
+        \\    = Dot Point
+        \\    | Line Point Point
+        \\
+    );
+    const user =
+        \\import Shapes exposing (Point, Shape, Dot, Line)
+        \\
+        \\
+        \\pub same : Shape, Shape -> Bool
+        \\same a b =
+        \\    a == b
+        \\
+        \\
+        \\pub before : Shape, Shape -> Bool
+        \\before a b =
+        \\    a < b
+        \\
+    ;
+    for ([_][]const u8{ "src/A.beni", "src/B.beni", "src/C.beni" }) |path| try w.write(path, user);
+    try w.write("src/Main.beni",
+        \\import A
+        \\import B
+        \\import C
+        \\import Node exposing (Program)
+        \\import Shapes exposing (Point, Shape, Dot, Line)
+        \\import String
+        \\
+        \\
+        \\flag : Bool -> String
+        \\flag b =
+        \\    if b then
+        \\        "y"
+        \\
+        \\    else
+        \\        "n"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    let
+        \\        p =
+        \\            Dot (Point 1 2)
+        \\
+        \\        q =
+        \\            Line (Point 1 2) (Point 3 4)
+        \\    in
+        \\    Node.print (flag (A.same p p) ++ flag (B.same p q) ++ flag (C.before p q) ++ flag (A.before q p))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const Build = struct { out: []const u8, jobs: []const u8, release: bool };
+    const builds = [_]Build{
+        .{ .out = "dev-1a", .jobs = "--jobs=1", .release = false },
+        .{ .out = "dev-8a", .jobs = "--jobs=8", .release = false },
+        .{ .out = "dev-1b", .jobs = "--jobs=1", .release = false },
+        .{ .out = "dev-8b", .jobs = "--jobs=8", .release = false },
+        .{ .out = "rel-1a", .jobs = "--jobs=1", .release = true },
+        .{ .out = "rel-8a", .jobs = "--jobs=8", .release = true },
+        .{ .out = "rel-1b", .jobs = "--jobs=1", .release = true },
+        .{ .out = "rel-8b", .jobs = "--jobs=8", .release = true },
+    };
+    for (builds) |b| {
+        const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}", .{b.out});
+        const r = if (b.release)
+            try w.runWith(&.{ "build", "--platform=node", "--release", "--no-cache", out, b.jobs, "src" }, .{ .raw_diagnostics = true })
+        else
+            try w.runWith(&.{ "build", "--platform=node", "--no-cache", out, b.jobs, "src" }, .{ .raw_diagnostics = true });
+        try expectBuilt(r);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (builds[1..4]) |b| try expectSameTree(&w, "dev-1a", b.out);
+    for (builds[5..8]) |b| try expectSameTree(&w, "rel-1a", b.out);
+    // The derived functions really are named from three importing modules,
+    // so a green run means their names were merged rather than that there
+    // was nothing to merge.
+    for ([_][]const u8{ "dev-1a/A.mjs", "dev-1a/B.mjs", "dev-1a/C.mjs" }) |path| {
+        const js = try w.read(path);
+        try testing.expect(std.mem.indexOf(u8, js, "Shapes$Shape$$") != null);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram("dev-8a/_main.mjs", .{ .stdout = "ynyn\n" });
+    try w.expectProgram("rel-8a/_main.mjs", .{ .stdout = "ynyn\n" });
+}
+
 /// The SHA-256 of `bytes`, hex, in a per-call buffer.
 fn digest(bytes: []const u8) [64]u8 {
     var raw: [32]u8 = undefined;

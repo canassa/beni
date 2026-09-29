@@ -127,6 +127,13 @@ pub const Phase = enum {
     /// bytes for every module, plus the platform checks and the writes.
     /// `bench`'s `emit` line measures the same work without the I/O.
     emit,
+    /// One module's `Bir` → `JsIr` → bytes, inside `emit`, on the worker
+    /// that took it. Under `--release` a module has two: lowering and
+    /// planning, then renaming and printing.
+    emit_module,
+    /// The writes that end `emit`: the output record, every output file,
+    /// and the removal of what only the previous build wrote.
+    write,
     render,
 };
 

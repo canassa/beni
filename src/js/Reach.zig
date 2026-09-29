@@ -77,15 +77,12 @@
 //! sorted-by-name order §7.1 of the spike fixes before anything indexes it.
 //! The output is a SET, so visit order cannot reach the bytes.
 //!
-//! **Parallelism, and what is not done yet.** §9 asks for the per-module
-//! edge lists to be built in parallel, one job per module. They are built
-//! the way that asks for — each module's list is a pure function of its own
-//! `Bir` and dispatch table and is written only into its own slot — but the
-//! jobs are not dispatched to workers, because `Emit` is serial end to end
-//! today (lowering, the expensive half, runs one module at a time in
-//! `emitModules`) and this pass is microseconds: 278 nodes for the null
-//! program, O(declarations) at any size. Fanning it out is a drop-in when
-//! emit itself parallelises.
+//! **Parallelism.** §9 asks for the per-module edge lists to be built in
+//! parallel, one job per module, and `Emit` does so on its workers: each
+//! module's list is a pure function of its own `Bir` and dispatch table,
+//! built by one thread's `Builder` and written only into its own slot. The
+//! walk over them (`walk`) is serial and O(declarations). `run` is the two
+//! on one thread.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -297,6 +294,17 @@ pub fn mainOf(bir: *const Bir) ?u32 {
 /// answer is read by `Lower` during the same `Emit.run` and by nothing
 /// afterwards.
 pub fn run(scratch: Allocator, in: Input) Allocator.Error!Result {
+    const edges = try scratch.alloc(ModuleEdges, in.graph.count());
+    var b: Builder = .init(in, scratch);
+    for (edges, 0..) |*slot, i| slot.* = try b.module(@enumFromInt(@as(u32, @intCast(i))));
+    return walk(scratch, in, edges);
+}
+
+/// The walk over every module's edges (`Builder.module`), from the roots:
+/// serial, because a fixpoint over a whole-program graph is, and it is
+/// small — O(declarations). The survivor sets live in `scratch`; `edges` is
+/// read and not kept.
+pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator.Error!Result {
     const count = in.graph.count();
     const modules = try scratch.alloc(Live, count);
     for (modules, 0..) |*slot, i| {
@@ -307,19 +315,6 @@ pub fn run(scratch: Allocator, in: Input) Allocator.Error!Result {
         };
     }
 
-    var b: Builder = .{ .in = in, .scratch = scratch };
-    // The two corrected `primitive`/`err` legs name one declaration each,
-    // the same one for every module, so they are resolved once here rather
-    // than at every edge.
-    b.string_compare = in.coreDecl(.String, .compare);
-    b.basics_eq = in.coreDecl(.Basics, .eq);
-
-    const edges = try scratch.alloc(ModuleEdges, count);
-    for (edges, 0..) |*slot, i| slot.* = try b.module(@enumFromInt(@as(u32, @intCast(i))));
-
-    // ---- The walk. Serial, because a fixpoint over a whole-program graph
-    // is, and it is nothing: O(declarations), microseconds against §13's
-    // 800 ms budget.
     var stack: std.ArrayList(Node) = .empty;
     var roots: std.ArrayList(Node) = .empty;
     try in.collectRoots(scratch, &roots);
@@ -355,7 +350,7 @@ fn mark(modules: []Live, node: Node) bool {
 
 /// One module's edge lists: two flat target arrays with a start offset per
 /// node, the same shape every other sidecar table here has.
-const ModuleEdges = struct {
+pub const ModuleEdges = struct {
     decl_at: []const u32 = &.{},
     decl_targets: []const Node = &.{},
     derived_at: []const u32 = &.{},
@@ -371,7 +366,9 @@ const ModuleEdges = struct {
     }
 };
 
-const Builder = struct {
+/// Builds modules' edge lists, one module at a time. One per thread: its
+/// `stream` is its own, and `scratch` is where the lists it returns live.
+pub const Builder = struct {
     in: Input,
     scratch: Allocator,
     /// `core.String`'s `compare` and `core.Basics`' `eq`, the two
@@ -384,10 +381,22 @@ const Builder = struct {
     /// allocation.
     stream: std.ArrayList(Edges.Edge) = .empty,
 
+    /// The two corrected `primitive`/`err` legs name one declaration each,
+    /// the same one for every module, so they are resolved once here rather
+    /// than at every edge.
+    pub fn init(in: Input, scratch: Allocator) Builder {
+        return .{
+            .in = in,
+            .scratch = scratch,
+            .string_compare = in.coreDecl(.String, .compare),
+            .basics_eq = in.coreDecl(.Basics, .eq),
+        };
+    }
+
     /// Every edge out of every node of one module. Writes nothing outside
-    /// its own return value, which is what makes the loop above a parallel
-    /// fan-out the day emit becomes one.
-    fn module(b: *Builder, m: Graph.Index) Allocator.Error!ModuleEdges {
+    /// its own return value, so modules can be built on several threads at
+    /// once, each with its own `Builder`.
+    pub fn module(b: *Builder, m: Graph.Index) Allocator.Error!ModuleEdges {
         const bir = b.in.birOf(m);
         const dispatch = b.in.dispatchOf(m);
 

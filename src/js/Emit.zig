@@ -269,7 +269,10 @@ pub fn run(
         .io_failure = io_failure,
     };
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
-    defer e.module_arena.deinit();
+    defer {
+        for (e.owned.items) |text| gpa.free(text);
+        e.owned.deinit(gpa);
+    }
 
     // §2's rule 1, on the one part of the output shape a platform declares
     // (`boundary.md` §5.2). First, and before the entry-point search: a
@@ -299,6 +302,9 @@ pub fn run(
     // BEFORE lowering: an unreachable declaration is then never lowered at
     // all, so the pass pays for itself in emit time rather than costing
     // anything.
+    var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
+    defer pool.deinit();
+    e.pool = &pool;
     try e.eliminate(entry);
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -336,7 +342,9 @@ pub fn run(
     const previous = try e.readRecord();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
+    const write_token = session.profile.begin();
     try e.flush(previous);
+    session.profile.end(0, write_token, .write, Profile.Event.no_file, 0);
     return .{
         .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
         .files_written = e.files_written,
@@ -394,17 +402,18 @@ const Emitter = struct {
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
-    /// One module's lowering, planning, renaming and printing allocate
-    /// here, and it is reset before the next module: nothing a module
-    /// builds on the way to its bytes outlives it, so emit's working
-    /// memory is one module's, not the whole build's.
-    module_arena: Arena = .init(std.heap.page_allocator),
     /// Whether a module written imports the markup runtime, which the
     /// build then copies (`backend.md` §15.1).
     uses_markup_runtime: bool = false,
     /// The program start data every module's markup lowering contributed
     /// (`boundary.md` §9.4.5), in module order. Scratch-owned.
     start: std.ArrayList(Lower.StartPair) = .empty,
+    /// The printed modules in `pending`, gpa-owned: they are handed over
+    /// rather than copied, and freed when the phase ends.
+    owned: std.ArrayList([]u8) = .empty,
+    /// The threads of every parallel step from reachability on, made by
+    /// `run` before the first of them.
+    pool: *Workers = undefined,
     files_written: u32 = 0,
     bytes_written: u64 = 0,
 
@@ -1436,12 +1445,14 @@ const Emitter = struct {
         const count = e.graph().count();
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
+        var insts: usize = 0;
         for (birs, tables, 0..) |*b, *d, i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
+            insts += b.*.insts.len;
         }
-        e.live = try Reach.run(e.scratch, .{
+        const in: Reach.Input = .{
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -1451,8 +1462,28 @@ const Emitter = struct {
             .types = &e.session.checked.types,
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
-        });
+        };
+        // Every module's edges on the workers, each into its own slot and
+        // its worker's `kept` arena, then the walk here.
+        const edges = try e.scratch.alloc(Reach.ModuleEdges, count);
+        const builders = try e.scratch.alloc(Reach.Builder, e.pool.workers.len);
+        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.kept.allocator());
+        const all = try e.scratch.alloc(u32, count);
+        for (all, 0..) |*slot, i| slot.* = @intCast(i);
+        try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders }, EdgeTask.build, e.wanted(insts, insts_per_edge_builder));
+        e.live = try Reach.walk(e.scratch, in, edges);
+        for (e.pool.workers) |*w| w.kept.reset(.retain_capacity);
     }
+
+    /// One module's reachability edges (`Reach.Builder.module`).
+    const EdgeTask = struct {
+        edges: []Reach.ModuleEdges,
+        builders: []Reach.Builder,
+
+        fn build(t: EdgeTask, w: *Worker, i: u32) Allocator.Error!void {
+            t.edges[i] = try t.builders[w.tid].module(@enumFromInt(i));
+        }
+    };
 
     // ---- backend.md §9: `--release` refuses `Debug` ----------------------
 
@@ -1629,6 +1660,19 @@ const Emitter = struct {
 
     // ---- Emission ---------------------------------------------------------
 
+    /// Lower and print every live module, on as many workers as the build
+    /// has and the work can keep busy, and produce the files in module
+    /// order.
+    ///
+    /// **The output is the serial walk's, byte for byte, at every
+    /// `--jobs`** (CLAUDE.md rule 5). Each module is lowered into its own
+    /// `ModuleSlot` through its own overlay on the session's pool
+    /// (`InternPool.Overlay`), so no worker writes anything another reads;
+    /// a name is printed from its text, never from a symbol id, so which
+    /// pool held it does not reach a byte. Everything the modules share is
+    /// decided serially, in module order, before or between the parallel
+    /// steps: the specifier tables before, and under `--release` the
+    /// whole-program names in between (`numberGlobals`).
     fn emitModules(e: *Emitter, entry: ?Entry) !void {
         const count = e.graph().count();
         // The output path of every module, so a specifier is a string join
@@ -1642,8 +1686,6 @@ const Emitter = struct {
         // 8.7 % of a 100k-line build's cycles and half its page faults
         // (plans/perf-study-2026-09-27.md, item 1).
         var by_depth: std.ArrayList(?[]const []const u8) = .empty;
-        // Whether any module written imports the one engine.
-        var uses_runtime = false;
         // The build's markup lowering, with what every module's lowering of
         // its markup needs (`boundary.md` §9.4).
         const markup_output = try e.markupRuntimeOutputPath();
@@ -1653,79 +1695,229 @@ const Emitter = struct {
         else
             null;
 
-        for (0..count) |i| {
+        // What each worker needs of the shared arena is made here, first:
+        // the arena is the calling thread's alone.
+        const slots = try e.scratch.alloc(ModuleSlot, count);
+        @memset(slots, .{ .overlay = .init(&e.session.interner) });
+        defer for (slots) |*slot| slot.deinit(e.gpa);
+        var todo: std.ArrayList(u32) = .empty;
+        var insts: usize = 0;
+        for (slots, 0..) |*slot, i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             // §5: a module with nothing reachable is not written at all,
             // and nothing imports it, because imports are use-driven and a
             // use is an edge.
             if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
+            const source_path = e.session.store.path(e.graph().moduleFile(m));
+            slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
+            slot.sibling = try e.siblingSpecifier(source_path);
+            slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
+            if (lowering != null and vocabulary != null and markup_output != null) slot.markup = .{
+                .lowering = lowering.?,
+                .vocabulary = vocabulary.?,
+                .runtime = try relativeSpecifier(e.scratch, paths[i], markup_output.?),
+                .build = .{ .release = e.options.release, .library = e.options.library },
+            };
+            try todo.append(e.scratch, @intCast(i));
+            insts += e.bir(m).insts.len;
+        }
+
+        // The last write to the session's pool until every module is
+        // lowered: from here on the workers only read it.
+        try Lower.internFixedNames(e.gpa, &e.session.interner);
+        const context: Task = .{ .e = e, .slots = slots, .entry = entry };
+        try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+        if (e.options.release) {
+            try e.numberGlobals(slots, todo.items);
+            try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
+        }
+
+        // Diagnostics and files in module order, whatever order the workers
+        // finished in.
+        var uses_runtime = false;
+        for (todo.items) |i| {
+            const slot = &slots[i];
+            const m: Graph.Index = @enumFromInt(i);
             const file = e.graph().moduleFile(m);
-            const specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
+            if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
+                for (lowered.diagnostics) |d| {
+                    const token = d.token orelse if (d.region.int() < e.bir(m).insts.len)
+                        e.bir(m).insts.items(.main_token)[d.region.int()]
+                    else
+                        0;
+                    try e.diagnostics.append(e.gpa, .{ .code = d.code, .file = file, .token = token, .message = d.message });
+                }
+                // The messages are the diagnostics' now.
+                e.gpa.free(lowered.diagnostics);
+                lowered.diagnostics = &.{};
+                continue;
+            };
+            uses_runtime = uses_runtime or slot.uses_runtime;
+            e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+            for (slot.start) |pair| try e.start.append(e.scratch, .{
+                .key = try e.scratch.dupe(u8, pair.key),
+                .value = try e.scratch.dupe(u8, pair.value),
+            });
+            if (slot.rename_failure) |failure| try e.reportRenameFailure(&slot.lowered.?.ir, &slot.overlay, file, failure);
+            const text = slot.text orelse continue;
+            slot.text = null;
+            try e.produceOwned(paths[i], text, e.session.store.path(file));
+        }
+        if (uses_runtime) try e.emitDerivedRuntime();
+    }
 
-            const source_path = e.session.store.path(file);
-            const sibling = try e.siblingSpecifier(source_path);
-            const tokens = e.session.artifacts.spans(file);
+    /// One module's way from `Bir` to bytes. Written by the one worker that
+    /// took the module, read by the calling thread once every worker is done.
+    const ModuleSlot = struct {
+        specifiers: []const []const u8 = &.{},
+        sibling: []const u8 = "",
+        derived_runtime: []const u8 = "",
+        /// What the build's markup lowering needs of this module, when it
+        /// has one (`boundary.md` §9.4).
+        markup: ?Lower.Markup = null,
+        /// The names this module's lowering invents, and the printer's way
+        /// to spell every name.
+        overlay: InternPool.Overlay,
+        /// Kept past printing only under `--release`, and for a module whose
+        /// lowering reported, whose diagnostics are read in module order.
+        lowered: ?Lower.Result = null,
+        /// Whether the module imports the derived-comparison engine, and
+        /// the markup runtime.
+        uses_runtime: bool = false,
+        uses_markup_runtime: bool = false,
+        /// The program start data its markup lowering contributed, in the
+        /// lowering worker's `kept` arena.
+        start: []const Lower.StartPair = &.{},
+        /// `--release` only: §9 item 1's plan, and the whole-program names
+        /// the module mentions in print order (`Rename.collectGlobals`),
+        /// both in the lowering worker's `kept` arena.
+        plan: Opt.Plan = .none,
+        met: []const JsIr.NameIndex = &.{},
+        /// The module's bytes, gpa-owned until `produceOwned` takes them.
+        text: ?[]u8 = null,
+        rename_failure: ?Rename.Failure = null,
 
-            // Whatever the previous module built on the way to its bytes is
-            // gone by now: its text was copied by `produce`.
-            e.module_arena.reset(.retain_capacity);
-            const scratch = e.module_arena.allocator();
-            var lowered = try Lower.lower(e.gpa, scratch, &e.session.interner, .{
+        fn deinit(slot: *ModuleSlot, gpa: Allocator) void {
+            if (slot.lowered) |*lowered| lowered.deinit(gpa);
+            if (slot.text) |text| gpa.free(text);
+            slot.overlay.deinit(gpa);
+            slot.* = undefined;
+        }
+    };
+
+    /// What a worker runs per module.
+    const Task = struct {
+        e: *Emitter,
+        slots: []ModuleSlot,
+        entry: ?Entry,
+
+        /// `Bir` → `JsIr`, and in a development build straight on to the
+        /// bytes. Under `--release`, the plan and the module's whole-program
+        /// names instead: its bytes wait for `numberGlobals`.
+        fn lower(t: Task, w: *Worker, i: u32) Allocator.Error!void {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const m: Graph.Index = @enumFromInt(i);
+            const file = e.graph().moduleFile(m);
+            const token = e.session.profile.begin();
+            defer e.session.profile.end(w.tid, token, .emit_module, file.int(), 0);
+            const scratch = w.module.allocator();
+            slot.lowered = try Lower.lower(e.gpa, scratch, &slot.overlay, .{
                 .bir = e.bir(m),
-                .token_starts = tokens.starts,
+                .token_starts = e.session.artifacts.spans(file).starts,
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
                 .dispatch = e.dispatchOf(m),
                 .types = &e.session.checked.types,
-                .specifiers = specifiers,
-                .sibling = sibling,
-                .entry_decl = e.entryDeclOf(m, entry),
+                .specifiers = slot.specifiers,
+                .sibling = slot.sibling,
+                .entry_decl = e.entryDeclOf(m, t.entry),
                 .live = &e.live,
-                .derived_runtime = try relativeSpecifier(scratch, paths[i], derived_runtime_path),
-                .markup = if (lowering != null and vocabulary != null and markup_output != null) .{
-                    .lowering = lowering.?,
-                    .vocabulary = vocabulary.?,
-                    .runtime = try relativeSpecifier(scratch, paths[i], markup_output.?),
-                    .build = .{ .release = e.options.release, .library = e.options.library },
-                } else null,
+                .derived_runtime = slot.derived_runtime,
+                .markup = slot.markup,
             });
-            defer lowered.ir.deinit(e.gpa);
-            defer e.gpa.free(lowered.diagnostics);
-            for (lowered.diagnostics) |d| {
-                const token = d.token orelse if (d.region.int() < e.bir(m).insts.len)
-                    e.bir(m).insts.items(.main_token)[d.region.int()]
-                else
-                    0;
-                try e.diagnostics.append(e.gpa, .{ .code = d.code, .file = file, .token = token, .message = d.message });
+            const lowered = &slot.lowered.?;
+            if (lowered.diagnostics.len != 0) return;
+            slot.uses_runtime = lowered.uses_runtime;
+            slot.uses_markup_runtime = lowered.uses_markup_runtime;
+            // Read in module order once every module is lowered; the
+            // lowering's own copy goes with its tree.
+            const start = try w.kept.allocator().alloc(Lower.StartPair, lowered.start.len);
+            for (start, lowered.start) |*to, pair| to.* = .{
+                .key = try w.kept.allocator().dupe(u8, pair.key),
+                .value = try w.kept.allocator().dupe(u8, pair.value),
+            };
+            slot.start = start;
+            if (!e.options.release) {
+                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{});
+                // Nothing after this reads the tree or the overlay: the bytes
+                // are what is left of the module.
+                lowered.deinit(e.gpa);
+                slot.lowered = null;
+                slot.overlay.deinit(e.gpa);
+                slot.overlay = .init(&e.session.interner);
+                return;
             }
-            if (lowered.diagnostics.len != 0) continue;
-            uses_runtime = uses_runtime or lowered.uses_runtime;
-            e.uses_markup_runtime = e.uses_markup_runtime or lowered.uses_markup_runtime;
-            for (lowered.start) |pair| try e.start.append(e.scratch, .{
-                .key = try e.scratch.dupe(u8, pair.key),
-                .value = try e.scratch.dupe(u8, pair.value),
-            });
-
             // §9's release optimiser, between `Lower.lower` and
             // `Print.print`: item 1 plans, item 2 names, the printer spends
-            // both. Everything is `.{}` for a dev build, which is what makes
-            // "a golden moved" a finding (§2).
-            const plan: Opt.Plan = if (e.options.release) try Opt.run(scratch, &lowered.ir) else .none;
-            var renamer: ?Rename.Module = if (e.options.release)
-                try Rename.begin(scratch, e.scratch, &lowered.ir, &e.globals)
-            else
-                null;
-            const text = try Print.print(e.gpa, scratch, &lowered.ir, .fromGlobal(&e.session.interner), .{
-                .plan = &plan,
-                .rename = if (renamer) |*r| r else null,
-                .compact = e.options.release,
-            });
-            if (renamer) |r| try e.reportRenameFailure(&lowered.ir, file, r);
-            defer e.gpa.free(text);
-            try e.produce(paths[i], text, source_path);
+            // both.
+            const plan = try Opt.run(scratch, &lowered.ir);
+            const kept = w.kept.allocator();
+            slot.plan = .{
+                .dropped = try kept.dupe(u32, plan.dropped),
+                .inlined = try kept.dupe(JsIr.Node.OptionalIndex, plan.inlined),
+            };
+            slot.met = try kept.dupe(JsIr.NameIndex, try Rename.collectGlobals(scratch, &lowered.ir, &slot.plan));
         }
-        if (uses_runtime) try e.emitDerivedRuntime();
+
+        /// `--release`'s second step: short names and compact bytes, once
+        /// every whole-program name has its ordinal.
+        fn print(t: Task, w: *Worker, i: u32) Allocator.Error!void {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const token = e.session.profile.begin();
+            defer e.session.profile.end(w.tid, token, .emit_module, e.graph().moduleFile(@enumFromInt(i)).int(), 0);
+            const lowered = &(slot.lowered orelse return);
+            if (lowered.diagnostics.len != 0) return;
+            const scratch = w.module.allocator();
+            var renamer = try Rename.begin(scratch, &lowered.ir, &e.globals);
+            slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{
+                .plan = &slot.plan,
+                .rename = &renamer,
+                .compact = true,
+            });
+            slot.rename_failure = renamer.failure;
+        }
+    };
+
+    /// §9 item 2's whole-program namespace, numbered serially and in module
+    /// order from each module's names in print order — the order a serial
+    /// build meets them in while printing one module after another. Each
+    /// name is moved out of its module's overlay into the session's pool
+    /// first, because two modules name one function by the same TEXT and
+    /// the table is keyed by symbol.
+    fn numberGlobals(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        const interner = &e.session.interner;
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            for (slot.met) |n| {
+                var name = lowered.ir.name(n);
+                var moved = false;
+                if (name.module.unwrap()) |module| if (InternPool.Overlay.isOverlay(module)) {
+                    name.module = (try interner.getOrPut(e.gpa, slot.overlay.slice(module))).toOptional();
+                    moved = true;
+                };
+                if (InternPool.Overlay.isOverlay(name.base)) {
+                    name.base = try interner.getOrPut(e.gpa, slot.overlay.slice(name.base));
+                    moved = true;
+                }
+                if (moved) lowered.ir.setName(n, name);
+                _ = try e.globals.intern(e.scratch, name);
+            }
+        }
     }
 
     /// Whether a module's only survivors are markup primitives: each is the
@@ -1739,6 +1931,176 @@ const Emitter = struct {
         }
         return true;
     }
+
+    /// The most threads emit may use: the build's `--jobs`, but no more
+    /// than there are modules.
+    fn workerCount(e: *Emitter) usize {
+        return @min(e.session.options.jobs, @max(e.graph().count(), 1));
+    }
+
+    /// The threads one round can keep busy: one per `per` units of `work`,
+    /// so a small project does not pay for threads it cannot keep busy.
+    /// An explicit `--jobs` above 1 still gets two, so that asking for a
+    /// parallel emit always runs one, whatever the project's size.
+    fn wanted(e: *const Emitter, work: usize, per: usize) usize {
+        const by_work = std.math.divCeil(usize, work, per) catch unreachable;
+        return @max(@as(usize, if (e.session.options.size_by_work) 1 else 2), by_work);
+    }
+
+    /// One emit worker's own memory. Nothing in it is shared: a worker
+    /// reads the session and writes the slot of the item it took.
+    const Worker = struct {
+        /// Index into the profile's per-thread buffers.
+        tid: u32,
+        /// One item's working memory, reset before the next: nothing a
+        /// module builds on the way to its bytes outlives it.
+        module: Arena = .init(std.heap.page_allocator),
+        /// What one round hands a later one: the reachability edges until
+        /// the walk, and under `--release` what lowering hands printing.
+        kept: Arena = .init(std.heap.page_allocator),
+        failure: ?Allocator.Error = null,
+    };
+
+    /// The emit phase's threads: the calling one and up to `jobs - 1` more,
+    /// spawned the first time a round wants them, and kept for every
+    /// round of the phase — the reachability edges, lowering, `--release`'s
+    /// printing and the writes. Each is spawned with the stack every tree
+    /// walk in the compiler gets (`Session.check_stack_size`), because
+    /// lowering and printing recurse on expression depth.
+    const Workers = struct {
+        gpa: Allocator,
+        io: Io,
+        workers: []Worker,
+        threads: std.ArrayList(std.Thread) = .empty,
+        /// A spawn failed once: the phase goes on with the threads it has.
+        spawn_failed: bool = false,
+        mutex: Io.Mutex = .init,
+        /// Signalled when a round starts, and to leave.
+        start: Io.Condition = .init,
+        /// Signalled by the last spawned thread to finish a round.
+        done: Io.Condition = .init,
+        /// Bumped once per round: a thread that has done round `r` waits
+        /// for `r + 1`.
+        round: u32 = 0,
+        /// Spawned threads still in the current round.
+        busy: usize = 0,
+        quit: bool = false,
+        job: Job = undefined,
+
+        const Job = struct {
+            context: *const anyopaque,
+            call: *const fn (context: *const anyopaque, w: *Worker, item: u32) Allocator.Error!void,
+            items: []const u32,
+            next: std.atomic.Value(u32),
+        };
+
+        fn init(gpa: Allocator, io: Io, n: usize) Allocator.Error!Workers {
+            const workers = try gpa.alloc(Worker, @max(n, 1));
+            for (workers, 0..) |*w, tid| w.* = .{ .tid = @intCast(tid) };
+            return .{ .gpa = gpa, .io = io, .workers = workers };
+        }
+
+        fn deinit(p: *Workers) void {
+            p.mutex.lockUncancelable(p.io);
+            p.quit = true;
+            p.start.broadcast(p.io);
+            p.mutex.unlock(p.io);
+            for (p.threads.items) |t| t.join();
+            p.threads.deinit(p.gpa);
+            for (p.workers) |*w| {
+                w.module.deinit();
+                w.kept.deinit();
+            }
+            p.gpa.free(p.workers);
+        }
+
+        /// `task(context, worker, item)` for every item of `items`, claimed
+        /// in order by whichever thread is free. Which thread ran an item
+        /// changes nothing but the time: a task writes only its item's slot.
+        fn run(
+            p: *Workers,
+            items: []const u32,
+            context: anytype,
+            comptime task: fn (@TypeOf(context), *Worker, u32) Allocator.Error!void,
+            want: usize,
+        ) Allocator.Error!void {
+            const Context = @TypeOf(context);
+            const Thunk = struct {
+                fn call(cx: *const anyopaque, w: *Worker, item: u32) Allocator.Error!void {
+                    const c: *const Context = @ptrCast(@alignCast(cx));
+                    return task(c.*, w, item);
+                }
+            };
+            p.job = .{ .context = &context, .call = Thunk.call, .items = items, .next = .init(0) };
+            for (p.workers) |*w| w.failure = null;
+            // Threads are spawned the first time a round wants them and kept
+            // for the rounds after; a round that wants fewer still wakes
+            // them all, and the extra ones find nothing to claim.
+            const threads = @min(want, p.workers.len) -| 1;
+            if (!p.spawn_failed and p.threads.items.len < threads) {
+                try p.threads.ensureTotalCapacity(p.gpa, p.workers.len - 1);
+                for (p.workers[1 + p.threads.items.len .. 1 + threads]) |*w| {
+                    const t = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, loop, .{ p, w, p.round }) catch {
+                        // Fewer threads is a slower emit, not a failed one:
+                        // the ones there are take every item.
+                        p.spawn_failed = true;
+                        break;
+                    };
+                    p.threads.appendAssumeCapacity(t);
+                }
+            }
+            p.mutex.lockUncancelable(p.io);
+            p.round += 1;
+            p.busy = p.threads.items.len;
+            p.start.broadcast(p.io);
+            p.mutex.unlock(p.io);
+
+            p.drain(&p.workers[0]);
+
+            // No worker is still writing a slot once this returns.
+            p.mutex.lockUncancelable(p.io);
+            while (p.busy != 0) p.done.waitUncancelable(p.io, &p.mutex);
+            p.mutex.unlock(p.io);
+            for (p.workers) |*w| {
+                if (w.failure) |err| return err;
+            }
+        }
+
+        fn drain(p: *Workers, w: *Worker) void {
+            while (true) {
+                const k = p.job.next.fetchAdd(1, .monotonic);
+                if (k >= p.job.items.len) return;
+                w.module.reset(.retain_capacity);
+                p.job.call(p.job.context, w, p.job.items[k]) catch |err| {
+                    w.failure = err;
+                    return;
+                };
+            }
+        }
+
+        fn loop(p: *Workers, w: *Worker, done_round: u32) void {
+            // A thread is spawned before its first round is announced, so it
+            // starts as having done the round before and waits for the bump.
+            var seen = done_round;
+            while (true) {
+                p.mutex.lockUncancelable(p.io);
+                while (p.round == seen and !p.quit) p.start.waitUncancelable(p.io, &p.mutex);
+                if (p.quit) {
+                    p.mutex.unlock(p.io);
+                    return;
+                }
+                seen = p.round;
+                p.mutex.unlock(p.io);
+
+                p.drain(w);
+
+                p.mutex.lockUncancelable(p.io);
+                p.busy -= 1;
+                if (p.busy == 0) p.done.signal(p.io);
+                p.mutex.unlock(p.io);
+            }
+        }
+    };
 
     /// `_core/_derived.mjs`, written iff a module written imports it
     /// (`backend.md` §4, *Derived comparisons do not grow the native stack*):
@@ -1758,10 +2120,9 @@ const Emitter = struct {
     /// with the offending name in it, because the alternative is a
     /// `SyntaxError` at load — or, worse, a silently wrong value — in a
     /// program nobody thought to test.
-    fn reportRenameFailure(e: *Emitter, ir: *const JsIr, file: SourceStore.Index, renamer: Rename.Module) !void {
-        const failure = renamer.failure orelse return;
+    fn reportRenameFailure(e: *Emitter, ir: *const JsIr, overlay: *const InternPool.Overlay, file: SourceStore.Index, failure: Rename.Failure) !void {
         const base = if (failure.name.unwrap()) |i|
-            e.session.interner.slice(ir.names[i].base)
+            overlay.slice(ir.names[i].base)
         else
             "a name";
         try e.report(
@@ -2051,6 +2412,20 @@ const Emitter = struct {
 
     /// Record one output file. `bytes` is copied into the scratch arena
     /// because the printer's buffer is freed as soon as the module is done.
+    /// `produce` for bytes the build already owns, gpa-allocated: they are
+    /// taken rather than copied, and freed when the phase ends.
+    fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {
+        {
+            errdefer e.gpa.free(bytes);
+            try e.owned.append(e.gpa, bytes);
+        }
+        try e.pending.append(e.scratch, .{
+            .path = try e.scratch.dupe(u8, relative_path),
+            .bytes = bytes,
+            .origin = try e.scratch.dupe(u8, origin),
+        });
+    }
+
     fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
         try e.pending.append(e.scratch, .{
             .path = try e.scratch.dupe(u8, relative_path),
@@ -2281,23 +2656,57 @@ const Emitter = struct {
     }
 
     fn writeOutputs(e: *Emitter) Error!void {
+        // Each directory once, and not once per file: a tree of 600 modules
+        // in a dozen directories made 600 `mkdirat` calls, almost all of
+        // them answered "exists". In the order the files come, so a
+        // directory that cannot be made is the one the first file needing
+        // it would have named.
+        var made: std.StringHashMapUnmanaged(void) = .empty;
         for (e.pending.items) |output| {
-            const path = std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, output.path }) catch
-                return error.OutOfMemory;
-            if (std.fs.path.dirname(path)) |dir| {
-                Io.Dir.cwd().createDirPath(e.session.io, dir) catch |err| {
-                    e.io_failure.* = .{ .path = dir, .err = err };
-                    return error.OutputPath;
-                };
-            }
-            Io.Dir.cwd().writeFile(e.session.io, .{ .sub_path = path, .data = output.bytes }) catch |err| {
+            const dir = std.fs.path.dirname(output.path) orelse continue;
+            if ((try made.getOrPut(e.scratch, dir)).found_existing) continue;
+            const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, dir });
+            Io.Dir.cwd().createDirPath(e.session.io, path) catch |err| {
                 e.io_failure.* = .{ .path = path, .err = err };
                 return error.OutputPath;
             };
+        }
+        // The files on the emit workers: every one has its own path, so no
+        // two writes touch one file, and the failure reported is the first
+        // in `pending` order whichever worker met it.
+        const failures = try e.scratch.alloc(?anyerror, e.pending.items.len);
+        @memset(failures, null);
+        const all = try e.scratch.alloc(u32, e.pending.items.len);
+        for (all, 0..) |*slot, i| slot.* = @intCast(i);
+        try e.pool.run(all, WriteTask{ .e = e, .failures = failures }, WriteTask.write, e.wanted(all.len, files_per_writer));
+        for (e.pending.items, failures) |output, failure| {
+            if (failure) |err| {
+                e.io_failure.* = .{ .path = try e.outputFilePath(e.scratch, output.path), .err = err };
+                return error.OutputPath;
+            }
             e.files_written += 1;
             e.bytes_written += output.bytes.len;
         }
     }
+
+    fn outputFilePath(e: *const Emitter, arena: Allocator, relative: []const u8) Allocator.Error![]const u8 {
+        return std.fmt.allocPrint(arena, "{s}/{s}", .{ e.options.out_dir, relative });
+    }
+
+    /// Write one of `pending`, recording a failure rather than stopping:
+    /// which one is reported is decided afterwards, in `pending` order.
+    const WriteTask = struct {
+        e: *Emitter,
+        failures: []?anyerror,
+
+        fn write(t: WriteTask, w: *Worker, i: u32) Allocator.Error!void {
+            const output = t.e.pending.items[i];
+            const path = try t.e.outputFilePath(w.module.allocator(), output.path);
+            Io.Dir.cwd().writeFile(t.e.session.io, .{ .sub_path = path, .data = output.bytes }) catch |err| {
+                t.failures[i] = err;
+            };
+        }
+    };
 };
 
 /// What a hand-written JavaScript file is called once the build has copied
@@ -2305,6 +2714,20 @@ const Emitter = struct {
 /// `.mjs`; the `.foreign` part keeps the copy from colliding with the
 /// generated module of the same name and says which half of the module it is.
 pub const foreign_extension = ".foreign.mjs";
+
+/// `Bir` instructions one emit worker is worth spawning for (`wanted`).
+/// Lowering and printing get through about ten thousand instructions a millisecond,
+/// so this is some 1.5 ms of work per thread, against a spawn and a
+/// `Session.check_stack_size` mapping.
+pub const insts_per_emitter = 16 * 1024;
+
+/// The same for building the reachability edges (`Reach.Builder`), which
+/// gets through about a hundred thousand instructions a millisecond.
+pub const insts_per_edge_builder = 128 * 1024;
+
+/// Output files one writing thread is worth, under the same rule: a file is
+/// an open, a write and a close, some 20 µs.
+pub const files_per_writer = 64;
 
 /// Whether `name` is a legal entry file name (§2's rule 1, `boundary.md`
 /// §5.2's `"entry"`): one path segment, a leading `_`, a trailing `.mjs`,

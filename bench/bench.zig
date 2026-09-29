@@ -697,7 +697,9 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
             const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             const file = session.graph.moduleFile(module);
             const tokens = session.artifacts.spans(file);
-            var lowered = try JsLower.lower(gpa, arena.allocator(), &session.interner, .{
+            var overlay: InternPool.Overlay = .init(&session.interner);
+            defer overlay.deinit(gpa);
+            var lowered = try JsLower.lower(gpa, arena.allocator(), &overlay, .{
                 .bir = birs[i],
                 .token_starts = tokens.starts,
                 .module = module,
@@ -717,7 +719,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
                 gpa.free(lowered.diagnostics);
             }
             nodes += lowered.ir.nodes.len;
-            const text = try JsPrint.print(gpa, arena.allocator(), &lowered.ir, .fromGlobal(&session.interner), .{});
+            const text = try JsPrint.print(gpa, arena.allocator(), &lowered.ir, .fromOverlay(&overlay), .{});
             defer gpa.free(text);
             bytes += text.len;
             arena.reset(.retain_capacity);
