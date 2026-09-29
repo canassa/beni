@@ -325,6 +325,10 @@ async function chromePage(endpoint) {
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   await send("Page.enable", {}, sessionId);
+  // A headless target is never the focused window, so `focus()` would move
+  // `document.activeElement` without firing `focus` and `blur`; emulated
+  // focus makes it fire them, as happy-dom and a focused browser do.
+  await send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `(${prelude})();` }, sessionId);
   const loaded = new Promise((done) => {
     events.push((m) => {
