@@ -179,8 +179,9 @@ the DOM — what a click renders, a controlled input reverting an edit,
 focus surviving a render — is a `tests/corpus/browser/` fixture: the
 program (for the `tests/platforms/page` test platform, or a project's own
 `platform/`; under `browser/dom/`, for the real `browser` platform and its
-`dom` lowering), a `.steps` script (`click` — with a count, several in one
-task — `flush`, `input`, `key`, `focus`, one CSS selector each) and a
+`dom` lowering; under `browser/tea/`, for `browser-tea`), a `.steps` script
+(`click` — with a count, several in one task — `flush`, `input`, `type` —
+a task per character — `key`, `focus`, one CSS selector each) and a
 blessed `.expected` transcript of `document.body`
 after the load and each step. The gates run it under happy-dom in Node;
 `zig build test-browser` runs the same fixtures in headless Chrome, and a
