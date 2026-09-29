@@ -1,0 +1,9 @@
+-- Braces without `...` in an element's tag parse, and are lowering's
+-- spread_on_element; the formatter prints them as written and adds no
+-- `...`, which would change what the braces hold.
+view x =
+    <div {x} />
+
+
+form x =
+    <For each {x.rows}>{\r -> <li>{r}</li>}</For>

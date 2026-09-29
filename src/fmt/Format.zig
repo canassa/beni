@@ -793,7 +793,10 @@ const Measurer = struct {
             .markup_spread => {
                 const e = tree.operand(n);
                 try m.measure(e);
-                m.set(n, 5 +| m.w(e), main, m.last(e) + 1);
+                // Braces without the `...`, on an element, are lowering's
+                // error, and are printed as written.
+                const dots: u32 = if (m.tags[main + 1] == .ellipsis) 3 else 0;
+                m.set(n, 2 +| dots +| m.w(e), main, m.last(e) + 1);
             },
             .markup_attr => {
                 const a = tree.fullMarkupAttr(n);
@@ -2291,7 +2294,7 @@ const Printer = struct {
             }
             return p.tok(open + 1);
         }
-        if (p.tree.nodeTag(n) == .markup_spread) try p.tok(open + 1); // `...`
+        if (p.tree.nodeTag(n) == .markup_spread and p.tags[open + 1] == .ellipsis) try p.tok(open + 1);
         const e = p.tree.operand(n);
         try p.expr(e, if (one_line) indent else col);
         if (!one_line) p.newline(col);
