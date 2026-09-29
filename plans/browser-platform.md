@@ -1274,6 +1274,22 @@ node's parent, the delegated walk no longer stopping at the first mount node
 `main`'s annotation is compared through aliases (`boundary.md` §5, `run/MainTypeAlias`). MJ8 now
 owes only the after-render queue, which waits on effects.
 
+*Measured, 2026-09-29 (MJ9):* [research 39](../docs/design/research/39-beni-markup-against-solid-2.md),
+with the harness rebuilt in `bench/ui/` (research 29's did not survive). Script medians against
+Solid 2.0.0-rc.9 in the same batch: beni wins seven of nine (create 1k 0.82×, replace 0.84×, update
+every 10th 0.67×, select 0.88×, create 10k 0.80×, append 0.85×, clear 0.89×), ties swap (1.03×,
+ranges overlapping) and loses remove (1.09×); `--release` is the same. Within 20 % of the
+hand-written P2 only on replace (1.11×) and clear (1.01×) — the bar is **not met** on seven.
+Two runtime fixes landed with it (a keyed list patched in place while its keys keep their order;
+a list that is all its parent holds cleared at once). Priced but not built: `==` against a
+constructor as a tag test plus handler holes not rebuilt on an input-only patch (select → 1.02×
+P2), and the key map kept across a render that moves rows (swap → 0.82× Solid 2, remove → 1.01×);
+the rest of swap and remove is the model half on `List`. **MD18: the helper-heavy page loses to
+Solid 2 by 4.5× per message** (30 µs against 6.8; one `view` is 4.3, one component per section
+7.0), so more direct consumers do pay — research 39 §6.3 and §7 recommend skipping a helper call
+in a hole whose arguments are identical. Size: 11 697 brotli released (5 739 minified) against
+Solid 2's 22 131.
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as
