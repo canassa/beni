@@ -1299,6 +1299,19 @@ six unchanged and ahead. **The helper-heavy page went from 29.5 to 5.2 µs a mes
 2's inline page and ahead of beni's component page (6.2). Within 20 % of P2: still only replace and
 clear. What is left on swap and remove is the model half on `List`.
 
+*Measured, 2026-09-30, against Solid 1 as well* (research 39 §11): Solid 1.9.15, built as
+js-framework-benchmark's keyed entry, joins the batch, and remove and swap are timed in halves.
+That corrected the line above: the render, not `List`, was most of both — a key-map pass over every
+row of any render that moved one. `forKeyed` now matches the ends first, as Solid's `mapArray` and
+udomdiff do (`backend.md` §15.5), and the render fell 0.83 → 0.44 ms on remove and 1.31 → 0.94 on
+swap. Same batch, script medians: **beni's is below Solid 2's on all nine** (swap 0.82×, remove
+0.72×, both outside the ranges). **Against Solid 1**: ahead on swap (0.86×) and create 10k (0.93×),
+level within the ranges on six (medians behind on create 1k 1.14×, replace 1.07×, remove
+1.06–1.10×), and **behind on select, 1.23–1.32×** — Solid 1's selector touches two rows, beni's
+input reruns all thousand (P3's selector recognition). Priced, not built: a tail-sharing `List.filter`
+and a one-pass `indexedMap` in core take remove to 0.73× Solid 1; swap's model half is `List`'s shape
+and waits on `core/Array`. Size: 6 195 brotli released against Solid 1's 4 356 (1.42×).
+
 **Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
 modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
 after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as

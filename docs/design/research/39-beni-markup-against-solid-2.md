@@ -504,3 +504,176 @@ whose argument did, and nothing else. Mount is unchanged (4.49 ms).
   repeated literal.
 - The remaining losses are remove (1.04×) and a swap that ties; the key map is no longer where
   their time goes, `List` is (§4.4).
+
+## 11. Addendum, 2026-09-30: Solid 1, and remove and swap taken apart
+
+The owner's rule is that beni matches or beats Solid on every operation, and that where it does
+not, what Solid does differently is found and adopted. §10 left remove a 4 % loss to Solid 2 and
+swap a tie, and put the rest on the model half, `update` over `List` (§4.4). This section adds
+**Solid 1.9.15** as a subject, checks that claim by timing the two halves apart, and builds the
+renderer fix it points to. (§10.3's last bullet is corrected here: `List` was not where most of
+the time went.)
+
+### 11.1 Solid 1 as a subject
+
+`bench/ui/apps/solid1/` is js-framework-benchmark's keyed `solid` entry at the harness's pinned
+commit (`652198560d0c`): `src/main.jsx` verbatim, `rollup.config.js` unchanged but for the output
+path. `solid-js` 1.9.15 (the latest 1.x on npm), `babel-preset-solid` 1.9.15 with
+`omitNestedClosingTags` (its `babel-plugin-jsx-dom-expressions` is 0.40.10), Rollup 4.63.5,
+node-resolve, terser with three passes, one IIFE. `build.mjs` builds it and the page loads it as a
+classic script into `#main`; `verify.mjs` passes it on every button. Its app is Solid's own:
+`createSelector` for the selection, a label signal per row, `toSpliced` for remove, an array swap.
+
+### 11.2 The two halves, measured
+
+`bench/ui/halves.mjs` takes one operation as the table benchmark meets it — a fresh page, the
+benchmark's own warm-up, its throttle — and times it in the page: `performance.now()` around a
+synthetic click on the target (beni's delegated listener and `update`; everything Solid 1 and P2
+do; Solid 2's handler) and around the microtasks the click queued (beni's render, Solid 2's flush),
+read by a microtask queued after the click returns. n = 20 fresh pages per cell, CPUs 8–15, load
+2.6–3.6 (another session was running), medians [IQR], ms (`results/2026-09-30-halves.json`;
+`beni-before` is §10's runtime, `beni-list` is §11.6's experiment):
+
+| swap, 4× | click (update) | microtask (render) | both |
+|---|--:|--:|--:|
+| beni-before | 0.700 [0.436–0.984] | 1.313 [1.083–1.551] | 1.968 [1.833–2.145] |
+| **beni** | 0.725 [0.371–0.929] | **0.938** [0.750–1.054] | **1.455** [1.234–1.914] |
+| beni-list | 0.438 [0.095–0.737] | 0.815 [0.754–1.005] | 1.222 [1.088–1.406] |
+| Solid 1 | 1.980 [1.756–2.198] | 0.047 | 2.103 [1.914–2.519] |
+| Solid 2 | 0.550 [0.344–0.629] | 1.613 [1.326–1.755] | 2.108 [1.821–2.272] |
+| P2 | 0.875 [0.761–1.015] | 0.043 | 1.045 [0.889–1.179] |
+
+| remove, 2× | click (update) | microtask (render) | both |
+|---|--:|--:|--:|
+| beni-before | 0.160 [0.155–0.220] | 0.827 [0.608–0.855] | 1.000 [0.975–1.011] |
+| **beni** | 0.155 [0.150–0.179] | **0.435** [0.430–0.445] | **0.595** [0.589–0.606] |
+| beni-list | 0.090 [0.090–0.151] | 0.412 [0.361–0.421] | 0.510 [0.505–0.516] |
+| Solid 1 | 0.588 [0.580–0.653] | 0.040 | 0.627 [0.624–0.696] |
+| Solid 2 | 0.115 [0.110–0.121] | 0.867 [0.691–0.885] | 0.982 [0.873–1.005] |
+| P2 | 0.545 [0.540–0.558] | 0.055 | 0.600 [0.590–0.648] |
+
+**§4.4's attribution was wrong.** On §10's runtime the render, not `update`, was most of both
+operations: remove 0.83 ms of render against 0.16 of `update`, swap 1.31 against 0.70. And the
+render's time was not the DOM. `bench/ui/probe.mjs` builds a copy whose runtime stamps the seams of
+a render; on §10's runtime (n = 20, load 2.0–2.6) remove's render was the key-map pass 0.40 ms, its
+sweep 0.02 and the reconcile, DOM included, 0.12; swap's was the pass 0.49 and the reconcile 0.47.
+§10's kept key map made that pass one lookup per row instead of four hash operations, but it still
+visited every row of any render that moved one — a `keyOf` call, a `Map.get`, a stamp and five field
+writes, a thousand times — in code the benchmark meets cold (§3.3).
+
+### 11.3 What Solid does differently
+
+Both Solids **match a list's ends before they build any map**. Solid 1's `mapArray`
+(`solid-js/dist/solid.js`) and Solid 2's `updateKeyedMap` (`references/solid/packages/signals/src/
+map.ts`) skip the common start of the old and new item arrays, then the common end, comparing items
+by identity (Solid 2 also by its `keyed` function), and build `newIndices` only over what is left.
+dom-expressions' `reconcileArrays` (udomdiff) does the same over nodes and finds two rows that
+changed places at the ends of what is left in constant time. So Solid 1's remove never touches a
+map — the 996-row end copied into `temp` and back, one owner disposed, one `removeChild` — and its
+whole remove, `findIndex` and `toSpliced` included, is 0.63 ms against the 0.83 of beni's render
+alone. Its swap does build a 998-entry `Map` in `mapArray` (the middle is rows 1–998), about 3 000
+hash operations, which is why beni can beat it there once the pass is gone.
+
+Solid 2 trims the same way, and its flush is still slower than Solid 1's whole operation (remove
+0.87 against 0.63); where that goes was not profiled here.
+
+### 11.4 The fix: the ends first
+
+Built (`backend.md` §15.5, *Amended 2026-09-30*; `platforms/browser/runtime.js`, `trimmed`), with
+`browser/dom/KeyedEnds` recorded on the runtime before it. When last render's keys were distinct,
+`forKeyed` now matches in udomdiff's order: the start (patched in passing, as the old in-place pass
+did), the end, and — what Solid does only in its DOM step — pairs of rows at the two ends that
+changed places, again until none has. An item `===` its row's last item has that row's key, so its
+key function is not called. Only the rows between the matched ends are looked up, and the
+reconciler runs over that range alone. Remove is one walk to collect the items, one identity
+comparison per row at the end, a position write per row and one drop; swap is the same with one
+crossed pair and two moves, and no map operation at all. A key found twice hands the render to the
+full pass, so duplicate keys still render by rank; the fixture's `copylast`, `copyfirst` and `twins`
+steps pin that, and a runtime with the hand-over removed fails it, as does one that stops patching
+rows whose position changed.
+
+The fixture could not be red first: the change is behaviour-preserving by design, so its golden was
+recorded on §10's runtime and passes unchanged on the new one; what makes it a guard is the two
+mutations above, each of which fails it.
+
+Render after the fix (§11.2's table): remove **0.83 → 0.435 ms**, swap **1.31 → 0.94**. The probe puts
+remove's render at 0.12 for the ends, 0.05 for the row walk and 0.18 for the reconcile, now the one
+`remove()` and the DOM's work around it; swap's is mostly the two `insertBefore`s.
+
+### 11.5 The table, four frameworks
+
+One batch, n = 15, CPUs 8–15, Chromium 153.0.8010.36, **1-minute load 1.7–3.5** at the benchmarks'
+starts — higher than §10's, and every absolute number is about 15–25 % above §10's, so compare
+within this table only (`results/2026-09-30-table-four-frameworks.json`). Script medians [IQR], ms:
+
+| operation | **beni** | beni `--release` | beni-before | **Solid 2** | **Solid 1** | **P2** | beni ÷ S2 | beni ÷ S1 |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| create 1k | 6.03 [5.29–6.36] | 5.50 | 5.49 | 6.57 [6.50–7.39] | 5.28 [5.21–6.07] | 4.30 [4.25–5.16] | 0.92 | 1.14 |
+| replace 1k | 14.2 [13.0–14.8] | 13.2 | 12.8 | 15.9 [14.8–17.1] | 13.3 [13.0–15.1] | 11.2 [11.1–13.1] | 0.89 | 1.07 |
+| update every 10th | 2.55 [2.18–2.75] | 2.45 | 2.49 | 3.74 [3.52–3.93] | 2.74 [2.58–2.79] | 1.51 [1.46–1.76] | 0.68 | 0.93 |
+| select | 2.75 [2.54–3.09] | 2.57 | 2.74 | 3.96 [3.70–4.24] | **2.09** [1.88–2.40] | 2.55 [2.26–2.80] | 0.70 | **1.32** |
+| swap | **1.93** [1.53–2.05] | 1.76 | 2.32 | 2.37 [2.24–2.68] | 2.24 [2.02–2.31] | 1.02 [0.81–1.20] | **0.82** | **0.86** |
+| remove | **0.97** [0.72–1.01] | 0.95 | 1.21 | 1.35 [1.13–1.39] | 0.92 [0.90–0.96] | 0.82 [0.61–0.84] | **0.72** | 1.06 |
+| create 10k | 63.5 [61.9–64.8] | 64.3 | 65.3 | 82.9 [80.5–84.3] | 68.3 [67.0–68.9] | 52.4 [51.1–52.9] | 0.77 | 0.93 |
+| append 1k | 6.30 [5.78–6.71] | 6.54 | 6.76 | 7.99 [7.12–8.28] | 6.32 [5.64–6.61] | 5.04 [4.69–5.35] | 0.79 | 1.00 |
+| clear | 28.5 [25.7–28.9] | 27.7 | 27.2 | 30.7 [29.8–32.2] | 28.6 [27.4–29.2] | 26.8 [26.6–27.8] | 0.93 | 1.00 |
+
+Select, swap and remove again on their own, n = 20, load 1.8–4.4
+(`results/2026-09-30-select-swap-remove.json`):
+
+| operation | beni | beni-before | beni-list | Solid 2 | Solid 1 | P2 |
+|---|--:|--:|--:|--:|--:|--:|
+| select | 2.47 [2.27–2.91] | 2.48 | 2.54 | 3.90 [3.49–4.27] | **2.00** [1.88–2.09] | 2.14 [1.88–2.47] |
+| swap | **1.70** [1.45–1.81] | 2.12 | 1.44 | 2.32 [2.20–2.65] | 1.89 [1.80–1.96] | 1.12 [1.01–1.17] |
+| remove | 0.95 [0.89–1.00] | 1.35 | 0.63 | 1.09 [1.05–1.29] | 0.86 [0.68–0.91] | 0.72 [0.59–0.85] |
+
+- **Against Solid 2, beni now has the lower median on all nine**, and swap (0.73–0.82×) and remove
+  (0.72–0.87×) are wins outside the ranges in both batches for the first time.
+- **Against Solid 1**: ahead on create 10k (0.93×, the ranges apart) and on swap (0.86–0.90×, the
+  ranges just touching); level within the ranges on update, create 1k, replace, append, clear and
+  remove, where beni's median is behind on create 1k (1.14×), replace (1.07×) and remove
+  (1.06–1.10×); **behind on select, 1.23–1.32×, the ranges apart**. Solid 1 is the harder bar: its
+  median beats Solid 2's on every operation here.
+- In the page (§11.2) remove is 0.595 against Solid 1's 0.627 and swap 1.455 against 2.103; the trace
+  also counts the delegated dispatch and beni's second task, which is the likeliest reason remove's
+  trace median stays behind (not measured apart).
+- `--release` stays inside the development build's ranges.
+
+### 11.6 What remains
+
+**Remove: the model half.** beni's render is now below Solid 1's whole operation; what is left is
+`update`. The app's `List.filter model.rows (\row -> row.id /= id)` is the idiomatic `List` code and
+is not written badly, but core's `filter` is a `foldl` and a `reverse`: two passes and about 2 000
+cells to drop one row. `experiments.mjs`'s `beni-list` prices a `filter` that asks `isGood` once per
+element, in order, and shares the tail after the last element it drops (with a one-pass
+`indexedMap`): **remove 0.95 → 0.63** (0.73× Solid 1, 0.88× P2), `update` 0.155 → 0.090 ms in the
+page. What it would take: `filter` and `indexedMap` rewritten in `core/List.beni` — both are beni,
+not `foreign` — the tail-sharing `filter` as two tail-recursive walks, the first remembering the last
+dropped position. It needs no `core/Array`, and nothing observable changes: `isGood` still runs once
+per element, first to last. Not built here: the brief was not to rewrite core `List`.
+
+**Swap: the model half, and it is `List`'s shape.** `swapRows` walks to rows 1 and 998 with
+`List.drop` and rebuilds with `indexedMap` — reasonable `List` code. A one-pass `indexedMap` takes
+the page's `update` from 0.73 to 0.44 ms, but a swap on a cons list rebuilds every cell before the
+later index however it is written. Elm's own entry in js-framework-benchmark keeps its rows in an
+`Array` and swaps with two `Array.get` and two `Array.set` (and removes with `Array.filter`); that is
+the `core/Array` decision pending with the owner (research 38), and P2's 0.87 ms click, an array
+swap, is what it stands for.
+
+**Select against Solid 1: a structural loss, not a list one.** Solid 1's `createSelector` notifies
+only the two rows whose selection changed; beni's row reads `model.selected` as an input, so a new
+selection runs every row's `p` — a thousand calls, two of which write a class. §10's fixes made each
+call cheap; the count is the gap. Matching Solid 1 here is research 29 §7.2's P3 *selector
+recognition* (a row input compared against the row's own key), which `backend.md` §15.5 leaves as
+later work.
+
+**Size.** Solid 1 is 4 356 bytes brotli as served (4 354 minified); beni `--release` is 6 195 (5 568
+minified): **1.42× Solid 1**, and 0.28× Solid 2's 22 131.
+
+**Could not determine.** Why Solid 2's flush costs more than Solid 1's whole operation; and the
+split of remove's trace time between the dispatch and the two tasks.
+
+Re-run: `node bench/ui/build.mjs` and `node bench/ui/experiments.mjs`; then, under
+`nix develop .#browser`, `node bench/ui/halves.mjs --taskset=8-15`, `node bench/ui/probe.mjs` followed
+by `halves.mjs --subjects=beni-probe`, and `node bench/ui/bench.mjs --n=15 --taskset=8-15
+--subjects=beni,beni-release,solid2,solid1,p2,vanillajs,beni-list`.
