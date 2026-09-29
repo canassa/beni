@@ -744,8 +744,11 @@ the smallest reading, and these are they:
   starts (`invalidEnd`), capped as §9.1 says: `12` is one token, not two, and a `'` runs as a
   character literal would until the tag's own syntax stops it. Its code is `unexpected_token` for printable ASCII; a tab, a bare `\r`, a control
   byte and non-ASCII keep the codes they have everywhere (`tab_in_source`, `bare_carriage_return`,
-  `invalid_character`, `invalid_utf8`). A `}` in a tag and a `}` in text share one message, which
-  says it closes nothing and gives `{"}"}`.
+  `invalid_character`, `invalid_utf8`). The message is chosen by where the byte stood, which the
+  diagnostic carries: in text a `<`, `>` or `}` gives the hole that writes it (`{"}"}`); in an opening
+  tag every stray, a `<` or a `}` included, names the tag's parts; in a closing tag it says a closing
+  tag holds only a name. *Amended 2026-09-29, after the lexer's review: the message was chosen from the
+  byte alone, so a `<` or a `}` inside a tag was told about the text between tags.*
 - **A text run is raw, like a comment**: a tab, a control byte, a bare `\r` or malformed UTF-8
   inside it is reported and the run stays one token, so a `markup_text` is never split and its end
   is §9.2's stop set exactly. The **newline before a column-1 break is the run's last byte**, and a

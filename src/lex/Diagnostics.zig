@@ -1,12 +1,13 @@
 //! Lexical diagnostics as the tokenizer records them (docs/design/frontend.md
 //! §1.1, language.md §2, §10).
 //!
-//! The tokenizer never formats text: an item is a code and a byte range,
-//! twelve bytes, appended to a list. That keeps the scanning loop free of
-//! allocation beyond the append, keeps the record small enough to sit in a
-//! file's artifact set for a daemon to re-report without re-lexing,
-//! and lets the prose be a pure function of `(code, the offending bytes)`,
-//! written once in `message`. The session turns an item into a
+//! The tokenizer never formats text: an item is a code, a byte range and,
+//! for a markup stray byte, the mode it stood in, appended to a list. That
+//! keeps the scanning loop free of allocation beyond the append, keeps the
+//! record small enough to sit in a file's artifact set for a daemon to
+//! re-report without re-lexing, and lets the prose be a pure function of
+//! `(code, the offending bytes, where they stood)`, written once in
+//! `message`. The session turns an item into a
 //! `diagnostic.Diagnostic` by resolving offsets against the file's
 //! line-start table (`position`) and rendering `message` into owned memory.
 //!
@@ -30,6 +31,21 @@ pub const Item = struct {
     code: diagnostic.Code,
     start: u32,
     end: u32,
+    /// Where a markup stray byte stood, for a message that fits the place:
+    /// the same `}` means one thing between tags and another inside one.
+    where: Where = .code,
+};
+
+/// The lexer's mode at a stray byte (frontend.md §9.1).
+pub const Where = enum(u8) {
+    /// Ordinary code, a string, a hole: not a markup stray.
+    code,
+    /// Inside an opening tag.
+    tag,
+    /// Inside a closing tag.
+    closing_tag,
+    /// In the text between tags.
+    text,
 };
 
 pub fn deinit(d: *Diagnostics, gpa: Allocator) void {
@@ -38,8 +54,13 @@ pub fn deinit(d: *Diagnostics, gpa: Allocator) void {
 }
 
 pub fn report(d: *Diagnostics, gpa: Allocator, code: diagnostic.Code, start: u32, end: u32) Allocator.Error!void {
+    return d.reportAt(gpa, code, start, end, .code);
+}
+
+/// `report`, for a markup stray byte, saying where it stood.
+pub fn reportAt(d: *Diagnostics, gpa: Allocator, code: diagnostic.Code, start: u32, end: u32, where: Where) Allocator.Error!void {
     std.debug.assert(start <= end);
-    try d.list.append(gpa, .{ .code = code, .start = start, .end = end });
+    try d.list.append(gpa, .{ .code = code, .start = start, .end = end, .where = where });
 }
 
 /// Every item so far, in source order.
@@ -185,15 +206,35 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                 \\for a multi-byte character that was cut short.
             );
         },
-        // Markup's stray bytes (frontend.md §9.1): the three that cannot
-        // stand in text say which hole writes them; any other is a byte a
-        // tag cannot hold.
-        .unexpected_token => {
-            const which: ?[]const u8 = if (text.len == 1) switch (text[0]) {
-                '<', '>', '}' => text,
-                else => null,
-            } else null;
-            if (which) |c| switch (c[0]) {
+        // Markup's stray bytes (frontend.md §9.1), each told where it stood:
+        // the three that cannot stand in text say which hole writes them,
+        // and a byte a tag cannot hold names the tag's parts.
+        .unexpected_token => switch (item.where) {
+            .tag => {
+                if (std.mem.eql(u8, text, "<")) {
+                    try w.writeAll(
+                        \\I found a `<` inside a tag, where no tag can begin: a tag ends with `>`, or
+                        \\`/>` when it has no children, before the next one starts.
+                    );
+                } else if (std.mem.eql(u8, text, "}")) {
+                    try w.writeAll("I found a `}` inside a tag that closes no `{`.");
+                } else {
+                    try w.print("I found `{s}` inside a tag, where it cannot stand.", .{text});
+                }
+                try w.writeAll(
+                    \\
+                    \\
+                    \\A tag holds its name and its attributes — `name`, `name="…"`, `name={…}` —
+                    \\and ends with `>`, or `/>` when it has no children.
+                );
+            },
+            .closing_tag => try w.print(
+                \\I found `{s}` inside a closing tag, where it cannot stand.
+                \\
+                \\A closing tag holds the name of the element it closes and nothing else:
+                \\`</div>`, or `</>` for a fragment.
+            , .{text}),
+            .text, .code => switch (if (text.len == 1) text[0] else 0) {
                 '<' => try w.writeAll(
                     \\I found a `<` that does not start a tag. A tag's `<` is followed directly by
                     \\its name, by `/` in a closing tag, or by `>` in a fragment.
@@ -206,20 +247,14 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
                     \\
                     \\Write the character as a hole holding a string: `{">"}`.
                 ),
-                else => try w.writeAll(
+                '}' => try w.writeAll(
                     \\I found a `}` that closes no `{`.
                     \\
                     \\In the text between tags, write the character as a hole holding a string:
                     \\`{"}"}`.
                 ),
-            } else {
-                try w.print(
-                    \\I found `{s}` inside a tag, where it cannot stand.
-                    \\
-                    \\A tag holds its name and its attributes — `name`, `name="…"`, `name={{…}}` —
-                    \\and ends with `>`, or `/>` when it has no children.
-                , .{text});
-            }
+                else => try w.print("I found `{s}` here, where it cannot stand.", .{text}),
+            },
         },
         .nesting_too_deep => try w.print(
             \\This markup is nested more than {d} levels deep, counting its elements and
@@ -365,13 +400,44 @@ test "message: markup's stray bytes name the hole that writes them; a byte in a 
         5,
         6,
     );
-    try expectMessage(
+    try expectMessageAt(
         "I found `12` inside a tag, where it cannot stand.\n\nA tag holds its name and its attributes — `name`, `name=\"…\"`, `name={…}` —\nand ends with `>`, or `/>` when it has no children.",
-        .unexpected_token,
         "<p 12>",
         3,
         5,
+        .tag,
     );
+}
+
+test "message: a `<` or `}` inside a tag, and a byte in a closing tag, say where they stood" {
+    try expectMessageAt(
+        "I found a `<` inside a tag, where no tag can begin: a tag ends with `>`, or\n`/>` when it has no children, before the next one starts.\n\nA tag holds its name and its attributes — `name`, `name=\"…\"`, `name={…}` —\nand ends with `>`, or `/>` when it has no children.",
+        "<div <b>",
+        5,
+        6,
+        .tag,
+    );
+    try expectMessageAt(
+        "I found a `}` inside a tag that closes no `{`.\n\nA tag holds its name and its attributes — `name`, `name=\"…\"`, `name={…}` —\nand ends with `>`, or `/>` when it has no children.",
+        "<div }>",
+        5,
+        6,
+        .tag,
+    );
+    try expectMessageAt(
+        "I found `.` inside a closing tag, where it cannot stand.\n\nA closing tag holds the name of the element it closes and nothing else:\n`</div>`, or `</>` for a fragment.",
+        "<p>x</p .>",
+        8,
+        9,
+        .closing_tag,
+    );
+}
+
+fn expectMessageAt(expected: []const u8, source: []const u8, start: u32, end: u32, where: Where) !void {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try message(.{ .code = .unexpected_token, .start = start, .end = end, .where = where }, source, &out.writer);
+    try testing.expectEqualStrings(expected, out.written());
 }
 
 test "message: strings and interpolation" {

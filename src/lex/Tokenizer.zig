@@ -661,12 +661,12 @@ fn nextMarkup(t: *Tokenizer) Allocator.Error!Tag {
                     // `a < b` in text: the `<` alone is the error, and the
                     // text resumes after it (language.md §11.4).
                     else => {
-                        try t.report(.unexpected_token, t.index, t.index + 1);
+                        try t.reportAt(.unexpected_token, t.index, t.index + 1, .text);
                         break :state t.take(1, .invalid);
                     },
                 },
                 '>', '}' => {
-                    try t.report(.unexpected_token, t.index, t.index + 1);
+                    try t.reportAt(.unexpected_token, t.index, t.index + 1, .text);
                     break :state t.take(1, .invalid);
                 },
                 '{' => {
@@ -701,7 +701,7 @@ fn nextMarkup(t: *Tokenizer) Allocator.Error!Tag {
                 0x80...0xff => if (utf8Sequence(src, t.index).valid) .invalid_character else .invalid_utf8,
                 else => .unexpected_token,
             };
-            try t.report(code, t.index, end);
+            try t.reportAt(code, t.index, end, if (t.mode == .close) .closing_tag else .tag);
             t.index = end;
             break :state .markup_stray;
         },
@@ -961,6 +961,12 @@ fn textBytes(t: *Tokenizer, from: u32, to: u32) Allocator.Error!void {
 
 fn report(t: *Tokenizer, code: diagnostic.Code, start: u32, end: u32) Allocator.Error!void {
     try t.out.diagnostics.report(t.gpa, code, start, end);
+}
+
+/// `report` for a markup stray byte, with the mode it stood in, which the
+/// message is chosen by.
+fn reportAt(t: *Tokenizer, code: diagnostic.Code, start: u32, end: u32, where: Diagnostics.Where) Allocator.Error!void {
+    try t.out.diagnostics.reportAt(t.gpa, code, start, end, where);
 }
 
 fn intern(t: *Tokenizer, hash: u64, from: u32, to: u32) Allocator.Error!u32 {
@@ -2382,7 +2388,7 @@ test "markup: errors inside text are reported and the run stays one token" {
             .{ .code = .invalid_character, .start = 7, .end = 8 },
             .{ .code = .invalid_utf8, .start = 9, .end = 10 },
             .{ .code = .bare_carriage_return, .start = 11, .end = 12 },
-            .{ .code = .unexpected_token, .start = 13, .end = 14 },
+            .{ .code = .unexpected_token, .start = 13, .end = 14, .where = .text },
         },
     });
 }
