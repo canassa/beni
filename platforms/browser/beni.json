@@ -1,0 +1,10 @@
+{
+  "platform": true,
+  "name": "browser",
+  "program": "Browser.Program",
+  "runtime": "runtime.js",
+  "platforms": ["html"],
+  "reexports": ["Html"],
+  "markup": { "lowering": "dom", "runtime": "runtime.js" },
+  "zig": "zig/root.zig"
+}
