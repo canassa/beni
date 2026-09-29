@@ -377,7 +377,8 @@ pub fn close(s: *Solve) Error!void {
                 .flex, .rigid => |fl| fl,
                 else => continue,
             };
-            for (s.obligations.members(flags.obls)) |id| {
+            var on = s.obligations.members(flags.obls);
+            while (on.next()) |id| {
                 const row = s.obligations.rowPtr(id);
                 if (row.state != .open or (row.kind == .tuple_index) != tuples) continue;
                 row.state = .done;
@@ -400,7 +401,8 @@ pub fn close(s: *Solve) Error!void {
 /// so each is settled as a decision on `err` would settle it — done, and its
 /// results poisoned — without going through the queue.
 pub fn settle(s: *Solve, set: Obligations.Set) Error!void {
-    for (s.obligations.members(set)) |id| {
+    var on = s.obligations.members(set);
+    while (on.next()) |id| {
         const row = s.obligations.rowPtr(id);
         if (row.state != .open) continue;
         row.state = .done;

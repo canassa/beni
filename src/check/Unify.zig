@@ -254,7 +254,8 @@ inline fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
 fn releaseSlow(u: *Unify, flags: TypeStore.Flags) Error!void {
     if (flags.obls != .none) {
         // `Obligations.ready`, routed: each row to its own frame's queue.
-        for (u.obligations.members(flags.obls)) |id| {
+        var on = u.obligations.members(flags.obls);
+        while (on.next()) |id| {
             const r = u.obligations.rowPtr(id);
             if (r.state != .open) continue;
             r.state = .ready;

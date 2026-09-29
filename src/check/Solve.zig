@@ -83,6 +83,7 @@ const Unify = @import("Unify.zig");
 const Walk = @import("Walk.zig");
 const lists = @import("../lists.zig");
 const Tree = @import("constrain/Tree.zig");
+const Retained = @import("Retained.zig");
 
 const Solve = @This();
 
@@ -94,6 +95,8 @@ const Frame = Generalize.Frame;
 
 cx: *const Context,
 report: *Report,
+/// The worker's lists, which this module borrows (`init`, `deinit`).
+retained: *Retained,
 tree: *const Tree.Tree = undefined,
 frames: std.ArrayList(Frame) = .empty,
 captures: std.ArrayList(Generalize.Capture) = .empty,
@@ -169,8 +172,15 @@ informational: bool = false,
 pub const OwnValue = struct { name: InternPool.Symbol, decl: u32 };
 
 /// In place: the unifier, instantiator and walks point at `s`'s own lists.
-pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
-    s.* = .{ .cx = cx, .report = report, .module_report = report };
+/// The frame stack, the captures, the walk stacks and the obligation tables
+/// are the worker's (`retained`), lent for the module and given back by
+/// `deinit`.
+pub fn init(s: *Solve, cx: *const Context, report: *Report, retained: *Retained) void {
+    s.* = .{ .cx = cx, .report = report, .module_report = report, .retained = retained };
+    std.mem.swap(std.ArrayList(Frame), &s.frames, &retained.frames);
+    std.mem.swap(std.ArrayList(Generalize.Capture), &s.captures, &retained.captures);
+    std.mem.swap(Walk.Stacks, &s.stacks, &retained.stacks);
+    std.mem.swap(Obligations, &s.obligations, &retained.obligations);
     s.stacks.obligations = &s.obligations;
     s.unifier = .{
         .store = cx.store,
@@ -193,13 +203,19 @@ pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
 
 pub fn deinit(s: *Solve) void {
     const gpa = s.cx.gpa;
+    // What an error left on the frame stack is freed; the lists go back to
+    // the worker, cleared.
     for (s.frames.items) |*f| f.deinit(gpa);
-    s.frames.deinit(gpa);
-    s.captures.deinit(gpa);
-    s.stacks.deinit(gpa);
+    s.frames.clearRetainingCapacity();
+    s.captures.clearRetainingCapacity();
+    s.stacks.clear();
+    s.obligations.clear();
+    std.mem.swap(std.ArrayList(Frame), &s.frames, &s.retained.frames);
+    std.mem.swap(std.ArrayList(Generalize.Capture), &s.captures, &s.retained.captures);
+    std.mem.swap(Walk.Stacks, &s.stacks, &s.retained.stacks);
+    std.mem.swap(Obligations, &s.obligations, &s.retained.obligations);
     s.instantiate.deinit();
     s.unifier.deinit();
-    s.obligations.deinit(gpa);
     s.marker.deinit();
     s.tries.deinit(gpa);
     s.markup_decisions.deinit(gpa);
@@ -857,7 +873,8 @@ fn occursRequirements(s: *Solve, run: *Walk.Occurs) Error!void {
             try s.reportCycle(region, .none, c.fn_var, null);
             run.restart(st);
         }
-        for (s.obligations.members(flags.obls)) |o| {
+        var on = s.obligations.members(flags.obls);
+        while (on.next()) |o| {
             const row = s.obligations.row(o);
             if (row.state != .open) continue;
             for (row.vars) |x| {

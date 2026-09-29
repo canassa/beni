@@ -284,23 +284,19 @@ pub fn letExpr(g: *Generator, data: Bir.Inst.Data, expected: Var, category: Cate
     return inner;
 }
 
-/// One `let` group's header, in a frame of its own one rank in.
+/// One `let` group's header, in a frame of its own one rank in. Its pool,
+/// binders and annotated bindings are pushed above the enclosing frame's on
+/// the generator's lists, copied into the tree, and popped.
 fn bindingGroup(g: *Generator, members: []const Bir.Inst.Index) Error!Tree.Let {
     const outer_rank = g.rank;
-    const outer_pool = g.pool;
-    const outer_binders = g.frame_binders;
-    const outer_annotated = g.frame_annotated;
+    const pool_base = g.pool.items.len;
+    const binders_base = g.frame_binders.items.len;
+    const annotated_base = g.frame_annotated.items.len;
     g.rank = outer_rank + 1;
-    g.pool = .empty;
-    g.frame_binders = .empty;
-    g.frame_annotated = .empty;
     defer {
-        g.pool.deinit(g.gpa);
-        g.frame_binders.deinit(g.gpa);
-        g.frame_annotated.deinit(g.gpa);
-        g.pool = outer_pool;
-        g.frame_binders = outer_binders;
-        g.frame_annotated = outer_annotated;
+        g.pool.shrinkRetainingCapacity(pool_base);
+        g.frame_binders.shrinkRetainingCapacity(binders_base);
+        g.frame_annotated.shrinkRetainingCapacity(annotated_base);
         g.rank = outer_rank;
     }
 
@@ -312,20 +308,23 @@ fn bindingGroup(g: *Generator, members: []const Bir.Inst.Index) Error!Tree.Let {
     for (members, checks) |m, cv| try parts.append(g.cx.scratch, try defineBinding(g, m, cv));
     const header_con = try g.conj(parts.items);
 
+    const pool = g.pool.items[pool_base..];
+    const binders = g.frame_binders.items[binders_base..];
+    const annotated = g.frame_annotated.items[annotated_base..];
     const vars_start: u32 = @intCast(g.tree.extra.items.len);
-    try g.tree.extra.appendSlice(g.gpa, @ptrCast(g.pool.items));
+    try g.tree.extra.appendSlice(g.gpa, @ptrCast(pool));
     const binders_start: u32 = @intCast(g.tree.extra.items.len);
-    try g.tree.extra.appendSlice(g.gpa, g.frame_binders.items);
+    try g.tree.extra.appendSlice(g.gpa, binders);
     const annotated_start: u32 = @intCast(g.tree.extra.items.len);
-    try g.tree.extra.appendSlice(g.gpa, g.frame_annotated.items);
+    try g.tree.extra.appendSlice(g.gpa, annotated);
     return .{
         .rank = outer_rank + 1,
         .vars_start = vars_start,
-        .vars_len = @intCast(g.pool.items.len),
+        .vars_len = @intCast(pool.len),
         .binders_start = binders_start,
-        .binders_len = @intCast(g.frame_binders.items.len),
+        .binders_len = @intCast(binders.len),
         .annotated_start = annotated_start,
-        .annotated_len = @intCast(g.frame_annotated.items.len),
+        .annotated_len = @intCast(annotated.len),
         .header_con = header_con,
         .body_con = .none,
     };

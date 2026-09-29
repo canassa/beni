@@ -72,6 +72,7 @@ const files = [_]File{
     .{ .path = "Render.zig", .text = @embedFile("Render.zig") },
     .{ .path = "Report.zig", .text = @embedFile("Report.zig") },
     .{ .path = "Resolve.zig", .text = @embedFile("Resolve.zig") },
+    .{ .path = "Retained.zig", .text = @embedFile("Retained.zig") },
     .{ .path = "Scc.zig", .text = @embedFile("Scc.zig") },
     .{ .path = "Schema.zig", .text = @embedFile("Schema.zig") },
     .{ .path = "SchemaPlan.zig", .text = @embedFile("SchemaPlan.zig") },

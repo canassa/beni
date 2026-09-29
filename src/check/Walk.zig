@@ -304,6 +304,22 @@ pub const Stacks = struct {
     assert_marks: std.ArrayList(u32) = .empty,
     assert_epoch: u32 = 0,
     assert_frames: std.ArrayList(Frame) = .empty,
+
+    /// Empty, keeping every list's room, for the next module. The debug
+    /// colours stay: their epoch only grows, so an old colour never passes
+    /// for a new one.
+    pub fn clear(s: *Stacks) void {
+        s.frames.clearRetainingCapacity();
+        s.vars.clearRetainingCapacity();
+        s.ranks.clearRetainingCapacity();
+        s.rank_kids.clearRetainingCapacity();
+        s.ordered.clearRetainingCapacity();
+        s.kids.clearRetainingCapacity();
+        s.fields.clearRetainingCapacity();
+        s.assert_frames.clearRetainingCapacity();
+        s.obligations = null;
+    }
+
     pub fn deinit(s: *Stacks, gpa: Allocator) void {
         s.assert_marks.deinit(gpa);
         s.assert_frames.deinit(gpa);

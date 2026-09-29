@@ -264,11 +264,15 @@ pub const Generator = struct {
     gpa: Allocator,
     /// The rank expressions are generated at; a `let` group bumps it.
     rank: u32,
-    /// Variables made at `rank` since the current frame opened.
+    /// Variables made at `rank` since the current frame opened, above the
+    /// enclosing frames': a `let` group pushes its own and pops them
+    /// (`Decl.bindingGroup`).
     pool: std.ArrayList(Var) = .empty,
-    /// Indices into `tree.binders` registered in the current frame.
+    /// Indices into `tree.binders` registered in the current frame, stacked
+    /// the same way.
     frame_binders: std.ArrayList(u32) = .empty,
-    /// `tree.annotated` indices of the current frame's annotated bindings.
+    /// `tree.annotated` indices of the current frame's annotated bindings,
+    /// stacked the same way.
     frame_annotated: std.ArrayList(u32) = .empty,
     /// Per local of the module (absolute index), the variable its binder
     /// made: written by patterns and `let` declarations, read by `.local`
@@ -306,13 +310,6 @@ pub const Generator = struct {
     pub const Target = struct { inst: Bir.Inst.Index, result: Var };
 
     pub const max_depth = Parse.max_depth + 104;
-
-    pub fn deinit(g: *Generator) void {
-        g.pool.deinit(g.gpa);
-        g.frame_binders.deinit(g.gpa);
-        g.frame_annotated.deinit(g.gpa);
-        g.targets.deinit(g.gpa);
-    }
 
     // ---- Tree building ---------------------------------------------------
 

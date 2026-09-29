@@ -113,10 +113,8 @@ status: []Status,
 frame_of: []u32,
 /// The union-find parent of a merged group (§10.4); `none` for a root.
 merged_into: []u32,
-/// One tree per nesting level, reused: a nested group's tree is needed only
-/// while it is checked, and nested checks finish innermost first.
-trees: std.ArrayList(*Tree.Tree) = .empty,
-/// Checks in progress: the level the next one's tree is taken from.
+/// Checks in progress: the level the next one's tree is taken from
+/// (`Retained.level`).
 active: u32 = 0,
 
 // What a check writes besides the solver's state (Module's tables).
@@ -161,13 +159,7 @@ pub fn init(cx: *const Context, sccs: Scc.IndexGroups, local_type: []Var.Optiona
 }
 
 pub fn deinit(gs: *Groups) void {
-    const gpa = gs.cx.gpa;
-    for (gs.trees.items) |t| {
-        t.deinit(gpa);
-        gpa.destroy(t);
-    }
-    gs.trees.deinit(gpa);
-    gs.hints.deinit(gpa);
+    gs.hints.deinit(gs.cx.gpa);
 }
 
 pub fn count(gs: *const Groups) u32 {
@@ -231,19 +223,11 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
     const level = gs.active;
     gs.active += 1;
     defer gs.active -= 1;
-    if (level == gs.trees.items.len) {
-        const t = try gpa.create(Tree.Tree);
-        t.* = .{};
-        gs.trees.append(gpa, t) catch |err| {
-            gpa.destroy(t);
-            return err;
-        };
-    }
-    const tree = gs.trees.items[level];
-    tree.nodes.clearRetainingCapacity();
-    tree.extra.clearRetainingCapacity();
-    tree.binders.clearRetainingCapacity();
-    tree.annotated.clearRetainingCapacity();
+    // The tree and the generator's lists are this nesting level's, the
+    // worker's (`Retained`): a nested group's are needed only while it is
+    // checked, and nested checks finish innermost first.
+    const lists = try s.retained.level(gpa, level);
+    const tree = &lists.tree;
 
     const indices = gs.members(g);
     const dm = try scratch.alloc(Decl.Member, indices.len);
@@ -263,8 +247,25 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
         .evidence = &s.evidence,
         .groups = gs,
         .group = g,
+        .pool = lists.pool,
+        .frame_binders = lists.frame_binders,
+        .frame_annotated = lists.frame_annotated,
+        .targets = lists.targets,
     };
-    defer gen.deinit();
+    lists.pool = .empty;
+    lists.frame_binders = .empty;
+    lists.frame_annotated = .empty;
+    lists.targets = .empty;
+    defer {
+        gen.pool.clearRetainingCapacity();
+        gen.frame_binders.clearRetainingCapacity();
+        gen.frame_annotated.clearRetainingCapacity();
+        gen.targets.clearRetainingCapacity();
+        lists.pool = gen.pool;
+        lists.frame_binders = gen.frame_binders;
+        lists.frame_annotated = gen.frame_annotated;
+        lists.targets = gen.targets;
+    }
     const token = if (gs.profile) |p| p.begin() else null;
     const root_con = try Decl.group(&gen, dm);
     if (gs.profile) |p| gs.constrain_ns += p.since(token.?);

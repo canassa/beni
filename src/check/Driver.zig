@@ -43,6 +43,7 @@ const reads = @import("reads.zig");
 const Check = @import("Check.zig");
 const Incremental = @import("Incremental.zig");
 const ModuleCheck = @import("Module.zig");
+const Retained = @import("Retained.zig");
 
 const Driver = @This();
 const Error = Check.Error;
@@ -216,6 +217,8 @@ fn serial(d: *Driver, scratch: *Arena) Error!void {
     defer patterns.deinit();
     var recorder: reads.Recorder = try .init(d.gpa, d.graph.count());
     defer recorder.deinit(d.gpa);
+    var retained: Retained = .{};
+    defer retained.deinit(d.gpa);
     // Core first, then the rest — still a topological order, because a
     // core module imports nothing outside core, and the order in which
     // `core_surface` becomes computable at `--jobs=1`. Within each half
@@ -227,7 +230,7 @@ fn serial(d: *Driver, scratch: *Arena) Error!void {
     for ([_]bool{ true, false }) |core| {
         for (d.graph.order) |m| {
             if ((d.graph.modulePackage(m) == .core) != core) continue;
-            try d.check(m, scratch, &patterns, 0, &recorder);
+            try d.check(m, scratch, &patterns, 0, &recorder, &retained);
             scratch.reset(.retain_capacity);
             if (core and d.core_pending != 0) d.core_pending -= 1;
             if (d.core_pending == 0) try d.closeCoreSurface(scratch);
@@ -352,6 +355,11 @@ fn worker(d: *Driver, tid: u32, own: ?*Arena) void {
     // worth failing a build over — the self-check turns itself off.
     var recorder: reads.Recorder = reads.Recorder.init(d.gpa, d.graph.count()) catch reads.Recorder.empty;
     defer recorder.deinit(d.gpa);
+    // The checker's working lists, kept from one module to the next
+    // (`Retained`): a module that fits in what an earlier one needed
+    // allocates none of them.
+    var retained: Retained = .{};
+    defer retained.deinit(d.gpa);
 
     while (true) {
         d.mutex.lockUncancelable(d.io);
@@ -369,7 +377,7 @@ fn worker(d: *Driver, tid: u32, own: ?*Arena) void {
         d.queue_head += 1;
         d.mutex.unlock(d.io);
 
-        const result = d.check(m, scratch, &patterns, tid, &recorder);
+        const result = d.check(m, scratch, &patterns, tid, &recorder, &retained);
         scratch.reset(.retain_capacity);
         d.finish(m, result);
     }
@@ -406,7 +414,7 @@ fn finish(d: *Driver, m: Graph.Index, result: Error!void) void {
     d.wake.broadcast(d.io);
 }
 
-fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, recorder: *reads.Recorder) Error!void {
+fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, recorder: *reads.Recorder, retained: *Retained) Error!void {
     // The key and the entry load, before the check: whichever of the two
     // paths runs, it runs with the key already finished.
     try d.claim(m, scratch, tid);
@@ -415,7 +423,7 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
         // On every path out, including the failing one: a recorder left
         // published would attribute the NEXT module's reads to this one.
         defer reads.end();
-        try d.checkInner(m, scratch, patterns, tid);
+        try d.checkInner(m, scratch, patterns, tid, retained);
         try d.verifyReads(m, recorder);
     }
     // **Published before `finish(m)` releases the dependents.** `finish`
@@ -425,7 +433,7 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
     try d.publish(m, scratch, tid);
 }
 
-fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
+fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, retained: *Retained) Error!void {
     const dependency_errors = d.dependencyErrors(m);
     defer if (m.int() < d.tainted.len) {
         d.tainted[m.int()] = dependency_errors or d.reportedError(m);
@@ -471,6 +479,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .informational = d.options.informational,
         .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
         .dependency_errors = dependency_errors,
+        .retained = retained,
     });
 }
 

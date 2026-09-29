@@ -133,6 +133,7 @@ pub const check = struct {
     pub const Render = @import("check/Render.zig");
     pub const Report = @import("check/Report.zig");
     pub const Resolve = @import("check/Resolve.zig");
+    pub const Retained = @import("check/Retained.zig");
     pub const rules_test = @import("check/rules_test.zig");
     pub const Scc = @import("check/Scc.zig");
     pub const SchemaPlanBuild = @import("check/SchemaPlanBuild.zig");

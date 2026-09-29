@@ -59,6 +59,7 @@ const Decl = @import("constrain/Decl.zig");
 const Walk = @import("Walk.zig");
 const Vocab = @import("Vocab.zig");
 const Markup = @import("Markup.zig");
+const Retained = @import("Retained.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -92,6 +93,9 @@ pub const Input = struct {
     /// An error reached a dependency, transitively (`Driver.tainted`): an
     /// `err` this module meets may carry that dependency's message.
     dependency_errors: bool = false,
+    /// The worker's working lists, lent to this module's solver; null for a
+    /// check of its own.
+    retained: ?*Retained = null,
 };
 
 pub fn check(in: Input) Error!Check.Counters {
@@ -101,6 +105,9 @@ pub fn check(in: Input) Error!Check.Counters {
     const token = if (in.profile) |p| p.begin() else null;
     defer if (in.profile) |p| p.end(in.tid, token.?, .check, file.int(), 0);
     const quiet = in.quiet or in.graph.isPoisoned(in.module);
+    var own_retained: Retained = .{};
+    defer own_retained.deinit(gpa);
+    const retained = in.retained orelse &own_retained;
 
     // P1.
     // An owned store is carved out of the worker's scratch arena, which the
@@ -193,7 +200,7 @@ pub fn check(in: Input) Error!Check.Counters {
 
     // P4.
     var solver: Solve = undefined;
-    solver.init(&cx, &report);
+    solver.init(&cx, &report, retained);
     defer solver.deinit();
     solver.decl_scheme = decl_scheme;
     solver.own_values = own_values;

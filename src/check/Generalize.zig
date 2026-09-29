@@ -200,8 +200,15 @@ pub fn pushFrame(s: *Solve, rank: u32, kind: Frame.Kind) Error!void {
         },
         .let => s.frame().queue,
     };
+    // The frame's pool and `?` list are its depth's (`Retained`).
+    const depth = s.frames.items.len;
+    var lent = s.retained.takeFrame(depth);
+    errdefer lent.pool.deinit(gpa);
+    errdefer lent.tries.deinit(gpa);
     try s.frames.append(gpa, .{
         .rank = rank,
+        .pool = lent.pool,
+        .tries = lent.tries,
         .captures_start = @intCast(s.captures.items.len),
         .wanteds_start = @intCast(s.evidence.wanteds.items.len),
         .rows_start = @intCast(s.obligations.rows.items.len),
@@ -250,6 +257,9 @@ pub fn popFrame(s: *Solve) void {
         if (!std.debug.runtime_safety) s.free_queues.append(gpa, f.queue) catch {};
         if (s.frames.items.len != 0) takeReady(s, s.frame().queue);
     }
+    s.retained.giveFrame(gpa, s.frames.items.len, .{ .pool = f.pool, .tries = f.tries });
+    f.pool = .empty;
+    f.tries = .empty;
     f.deinit(gpa);
     s.obligations.current_queue = if (s.frames.items.len != 0) s.frame().queue else Obligations.no_queue;
 }

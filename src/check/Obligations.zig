@@ -29,10 +29,15 @@
 //! never happens: a `?` target keeps its own success type polymorphic.
 //! `Walk.owned` yields a row's dependants from its owner only.
 //!
-//! **A set is a growable list per variable, mutated in place**: attaching
-//! appends, and a merge moves the smaller set's open rows into the larger
-//! (union by size). So R rows and M merges cost O(R log R + M) (§4.5's cost
-//! claim). Nothing here is undone: the checker never speculates (§7.5).
+//! **A set is two runs of the append-only `links` table** (§4.5's
+//! `obl_links`), one per variable, grown in place: attaching appends to a
+//! run, into the room it has, else at the table's tail, and a run that is
+//! full and not at the tail moves there with twice the room, so attaching
+//! is O(1) amortised and every slot is written once. A merge moves the
+//! smaller set's open rows into the larger (union by size). So R rows and M
+//! merges cost O(R log R + M) (§4.5's cost claim). A worker keeps the tables
+//! from one module to the next, and `clear` empties them between. Nothing
+//! here is undone: the checker never speculates (§7.5).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -166,24 +171,33 @@ pub const Row = struct {
     }
 };
 
-const List = std.ArrayList(Id);
+/// One run of `links`: a set's `len` ids from `start`, with room for `cap`
+/// before whatever follows it.
+const Run = struct {
+    start: u32 = 0,
+    len: u32 = 0,
+    cap: u32 = 0,
+};
 
 /// What rides on one variable: every row it decides (`all`, what binding it
 /// readies), and the part of them it owns (`owned`, what `Walk.owned` yields
 /// dependants from). Kept apart so a variable that decides many rows it does
 /// not own — the subject of many `?` — is not walked through them.
-const SetData = struct {
-    all: List = .empty,
-    owned: List = .empty,
-
-    fn deinit(d: *SetData, gpa: Allocator) void {
-        d.all.deinit(gpa);
-        d.owned.deinit(gpa);
-    }
+const SetRuns = struct {
+    all: Run = .{},
+    owned: Run = .{},
 };
 
+/// The smallest room a run is given when it moves to the tail.
+const min_run = 4;
+
 rows: std.ArrayList(Row) = .empty,
-sets: std.ArrayList(SetData) = .empty,
+/// Every set's ids, in runs (§4.5's `obl_links`). Append-only: a slot is
+/// written once, when its run first holds that many ids, and never again,
+/// so a run read from `members` keeps its ids whatever is attached or
+/// merged while it is walked.
+links: std.ArrayList(Id) = .empty,
+sets: std.ArrayList(SetRuns) = .empty,
 seq: u32 = 0,
 /// The queue of the current frame (`Generalize.Frame.queue`): what a row and
 /// a wanted created now route to (§9.1). `Solve` keeps it with its frames.
@@ -194,8 +208,18 @@ pub const no_queue = std.math.maxInt(u32);
 
 pub fn deinit(o: *Obligations, gpa: Allocator) void {
     o.rows.deinit(gpa);
-    for (o.sets.items) |*s| s.deinit(gpa);
+    o.links.deinit(gpa);
     o.sets.deinit(gpa);
+}
+
+/// Empty, keeping what the tables had room for: the next module's rows
+/// and sets reuse it.
+pub fn clear(o: *Obligations) void {
+    o.rows.clearRetainingCapacity();
+    o.links.clearRetainingCapacity();
+    o.sets.clearRetainingCapacity();
+    o.seq = 0;
+    o.current_queue = no_queue;
 }
 
 pub fn row(o: *const Obligations, id: Id) Row {
@@ -236,16 +260,37 @@ pub fn repoint(o: *Obligations, start: u32, from: u32, to: u32) void {
     }
 }
 
-/// The rows a set holds, open or not.
-pub fn members(o: *const Obligations, set: Set) []const Id {
-    if (set == .none) return &.{};
-    return o.sets.items[@intFromEnum(set)].all.items;
+/// The rows a set holds, open or not, as they are now. Attaching or merging
+/// while they are walked adds nothing to the walk and takes nothing from it.
+pub fn members(o: *const Obligations, set: Set) Members {
+    if (set == .none) return .{ .links = &o.links, .at = 0, .end = 0 };
+    const r = o.sets.items[@intFromEnum(set)].all;
+    return .{ .links = &o.links, .at = r.start, .end = r.start + r.len };
 }
 
-/// The rows of a set whose owner is the variable that carries it.
+pub const Members = struct {
+    links: *const std.ArrayList(Id),
+    at: u32,
+    end: u32,
+
+    pub fn next(m: *Members) ?Id {
+        if (m.at == m.end) return null;
+        const id = m.links.items[m.at];
+        m.at += 1;
+        return id;
+    }
+
+    pub fn count(m: Members) u32 {
+        return m.end - m.at;
+    }
+};
+
+/// The rows of a set whose owner is the variable that carries it. A view of
+/// `links`: valid until the next attach or merge.
 pub fn owned(o: *const Obligations, set: Set) []const Id {
     if (set == .none) return &.{};
-    return o.sets.items[@intFromEnum(set)].owned.items;
+    const r = o.sets.items[@intFromEnum(set)].owned;
+    return o.links.items[r.start..][0..r.len];
 }
 
 /// The first open `equatable` row of `set`, if it has one.
@@ -266,9 +311,29 @@ pub fn with(o: *Obligations, gpa: Allocator, set: Set, id: Id, owner: bool) Erro
         break :blk fresh;
     };
     const d = &o.sets.items[@intFromEnum(at)];
-    try d.all.append(gpa, id);
-    if (owner) try d.owned.append(gpa, id);
+    try o.push(gpa, &d.all, id);
+    if (owner) try o.push(gpa, &d.owned, id);
     return at;
+}
+
+/// One id more on `run`: into its room, or the room grown at the tail of
+/// `links`, or the run moved to the tail with twice the room. A move leaves
+/// the old slots as they were.
+fn push(o: *Obligations, gpa: Allocator, run: *Run, id: Id) Error!void {
+    if (run.len == run.cap) {
+        const cap = @max(min_run, run.cap * 2);
+        const tail: u32 = @intCast(o.links.items.len);
+        if (run.start + run.cap == tail) {
+            try o.links.resize(gpa, run.start + cap);
+        } else {
+            try o.links.resize(gpa, tail + cap);
+            @memcpy(o.links.items[tail..][0..run.len], o.links.items[run.start..][0..run.len]);
+            run.start = tail;
+        }
+        run.cap = cap;
+    }
+    o.links.items[run.start + run.len] = id;
+    run.len += 1;
 }
 
 /// The union of two sets, for a merge of the two variables that carry them:
@@ -279,22 +344,26 @@ pub fn merged(o: *Obligations, gpa: Allocator, a: Set, b: Set) Error!Set {
     if (a == .none) return b;
     const da = &o.sets.items[@intFromEnum(a)];
     const db = &o.sets.items[@intFromEnum(b)];
-    const big, const small, const kept = if (da.all.items.len >= db.all.items.len) .{ da, db, a } else .{ db, da, b };
-    for (small.all.items) |id| {
-        if (o.row(id).state == .open) try big.all.append(gpa, id);
+    const big, const small, const kept = if (da.all.len >= db.all.len) .{ da, db, a } else .{ db, da, b };
+    // By position, not by slice: `push` can move `links`.
+    for (small.all.start..small.all.start + small.all.len) |i| {
+        const id = o.links.items[i];
+        if (o.row(id).state == .open) try o.push(gpa, &big.all, id);
     }
-    for (small.owned.items) |id| {
-        if (o.row(id).state == .open) try big.owned.append(gpa, id);
+    for (small.owned.start..small.owned.start + small.owned.len) |i| {
+        const id = o.links.items[i];
+        if (o.row(id).state == .open) try o.push(gpa, &big.owned, id);
     }
-    small.all.clearRetainingCapacity();
-    small.owned.clearRetainingCapacity();
+    // Emptied, and its slots left behind: a later attach starts a new run.
+    small.* = .{};
     return kept;
 }
 
 /// Move every open row of `set` to `queue` (§4.5: readied through its
 /// variable). A row already on a queue, or done, stays where it is.
 pub fn ready(o: *Obligations, gpa: Allocator, set: Set, queue: *std.ArrayList(u32)) Error!void {
-    for (o.members(set)) |id| {
+    var it = o.members(set);
+    while (it.next()) |id| {
         const r = o.rowPtr(id);
         if (r.state != .open) continue;
         r.state = .ready;
@@ -341,8 +410,8 @@ test "a merge moves the smaller set's open rows into the larger, in place" {
     sb = try o.with(testing.allocator, sb, c, true);
     const both = try o.merged(testing.allocator, sa, sb);
     try testing.expectEqual(sb, both);
-    try testing.expectEqual(@as(usize, 3), o.members(both).len);
-    try testing.expectEqual(@as(usize, 0), o.members(sa).len);
+    try testing.expectEqual(@as(u32, 3), o.members(both).count());
+    try testing.expectEqual(@as(u32, 0), o.members(sa).count());
 
     var queue: std.ArrayList(u32) = .empty;
     defer queue.deinit(testing.allocator);
