@@ -43,11 +43,14 @@ const schema_plan_bytes = @import("schema_plan_bytes.zig");
 
 /// One entry, decoded and validated, waiting to be installed.
 ///
-/// `bytes` is kept because the diagnostics' messages point into it: they are
-/// copied into session memory only when they are replayed, which keeps a hit
-/// to one allocation per module for the common case of no diagnostics at all.
+/// `bytes` is kept when the entry has diagnostics, because their messages
+/// point into it: they are copied into session memory only when they are
+/// replayed. With none — the common case — the bytes are freed as soon as the
+/// entry is decoded, so a hit waiting on its dependencies holds only what
+/// it will install.
 pub const Loaded = struct {
-    /// Owned. The file's bytes; `diagnostics` borrows from them.
+    /// Owned. The file's bytes, which `diagnostics` borrows from; empty when
+    /// there are no diagnostics, because nothing else does.
     bytes: []u8,
     /// Owned. Moved into `interfaces[m]` by the hit path.
     record: Interface,
@@ -188,6 +191,13 @@ fn loadWith(
     if (!matchesShell(&out.record, shell)) {
         out.deinit(gpa);
         return null;
+    }
+    // Everything but the diagnostics' prose has been decoded into memory of
+    // its own, so an entry with no diagnostics — nearly every one — gives its
+    // bytes back now rather than holding them until the module is installed.
+    if (out.diagnostics.len == 0) {
+        gpa.free(out.bytes);
+        out.bytes = &.{};
     }
     return out;
 }
