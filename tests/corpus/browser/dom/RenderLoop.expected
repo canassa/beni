@@ -1,0 +1,64 @@
+-- load
+console.log: view: 0
+console.log: row: "a"
+console.log: row: "b"
+console.log: row: "c"
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="select">"select"</button>
+    <p>"0"</p>
+    <ul>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"c"</li>
+    </ul>
+  </main>
+</body>
+-- click #tick 5
+(the step's task ended)
+console.log: view: 5
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="select">"select"</button>
+    <p>"5"</p>
+    <ul>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"c"</li>
+    </ul>
+  </main>
+</body>
+-- click #select
+console.log: view: 5
+console.log: row: "a"
+console.log: row: "b"
+console.log: row: "c"
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="select">"select"</button>
+    <p>"5"</p>
+    <ul>
+      <li>"a"</li>
+      <li class="sel">"b"</li>
+      <li>"c"</li>
+    </ul>
+  </main>
+</body>
+-- flush #tick
+console.log: view: 6
+(flushed)
+<body>
+  <main>
+    <button id="tick">"tick"</button>
+    <button id="select">"select"</button>
+    <p>"6"</p>
+    <ul>
+      <li>"a"</li>
+      <li class="sel">"b"</li>
+      <li>"c"</li>
+    </ul>
+  </main>
+</body>

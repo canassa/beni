@@ -1,0 +1,30 @@
+-- What each attribute writes under `dom` (backend.md §15.3's table). A
+-- class list written in place is split when compiled: a constant `True`
+-- entry is in the template's `class`, a constant `False` one is dropped,
+-- and a dynamic one is a toggle of its own, guarded on its flag; a style
+-- list likewise, a dynamic entry one `style.setProperty`. Any other list
+-- goes through the runtime's `classes` or `styles`, handed the previous
+-- list to take away what only it held. A `property` attribute is a
+-- property write, a `stateful` one compared with the page's live value
+-- rather than the last value written, so an edit the model rejected is put
+-- back. A URL goes through `safeUrl`, a quoted `src` included.
+import Html exposing (Html)
+
+
+pub inPlace : { danger : Bool, color : String } -> Html msg
+inPlace r =
+    <tr class={[ ( "row", True ), ( "gone", False ), ( "danger", r.danger ) ]} style={[ ( "font-size", "12px" ), ( "color", r.color ) ]}><td>x</td></tr>
+
+
+pub lists : { classes : List ( String, Bool ), styles : List ( String, String ) } -> Html msg
+lists r =
+    <p class={r.classes} style={r.styles}>x</p>
+
+
+pub fields : { text : String, on : Bool, url : String } -> Html msg
+fields r =
+    <form action={r.url}>
+        <input value={r.text} checked={r.on} />
+        <a href={r.url}>link</a>
+        <b "src"={r.url} />
+    </form>

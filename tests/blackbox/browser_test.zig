@@ -18,6 +18,7 @@ const std = @import("std");
 const testing = std.testing;
 const world = @import("world.zig");
 const World = world.World;
+const browser = @import("browser.zig");
 
 /// A button whose message `update` cannot handle: clicking it throws.
 const button =
@@ -299,4 +300,72 @@ test "a changed step script loads a recorded page again though its golden still 
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
+}
+
+test "a library build's page delivers the events its markup delegates, with no program start" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A `--library` build writes no entry file, so nothing calls the
+    // runtime's `start` with the events to listen for: each kind registers
+    // the names it delegates when it mounts (backend.md §15.3). The page's
+    // own entry mounts the exported program.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : Int -> Html Int
+        \\view count =
+        \\    <button id="inc" onClick={count + 1}>{count}</button>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = 0, update = \n _ -> n, view = view }
+        \\
+    );
+    try w.write("page.steps", "click #inc\nclick #inc\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=browser", "--library", "--out=out", "Main.beni" });
+    try expectExit(0, built);
+    try w.write("out/page.mjs",
+        \\import { run } from "./_platform/runtime.foreign.mjs";
+        \\import { Main$main } from "./Main.mjs";
+        \\
+        \\run(Main$main);
+        \\
+    );
+    const h = try browser.harness(testing.io);
+    const shown = try browser.drive(&w, h, null, "out/page.mjs", "page.steps", world.default_timeout_ms);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, shown);
+    try testing.expectEqualStrings(
+        \\-- load
+        \\<body>
+        \\  <button id="inc">"0"</button>
+        \\</body>
+        \\-- click #inc
+        \\<body>
+        \\  <button id="inc">"1"</button>
+        \\</body>
+        \\-- click #inc
+        \\<body>
+        \\  <button id="inc">"2"</button>
+        \\</body>
+        \\
+    , shown.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out/_main.mjs"));
 }

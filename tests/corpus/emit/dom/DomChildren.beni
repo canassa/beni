@@ -1,0 +1,30 @@
+-- Markup that escapes, and the holes that receive it (backend.md §15.3,
+-- §15.4; research 36 §2.4, §2.10). A root anywhere is a block `{ t, v }`:
+-- an `if` in a hole is two sites, so two kinds, and the slot remounts when
+-- the branch changes. `Html`, `Maybe Html` and `List Html` holes are one
+-- runtime call each — `childHtml`, `childMaybe` and `childList` — decided
+-- by the hole's type, never by the value. A fragment's markup is several
+-- top-level nodes, each of its holes with a marker, and the template
+-- flagged to clone them all. `Html.text` and `Html.map` are the runtime's
+-- exports.
+import Html exposing (Html)
+
+
+pub branch : Bool -> Html msg
+branch on =
+    <div>{if on then <b>on</b> else <i>off</i>}</div>
+
+
+pub holes : { one : Html msg, maybe : Maybe (Html msg), many : List (Html msg) } -> Html msg
+holes r =
+    <section><h1>title</h1>{r.one}{r.maybe}<ul>{r.many}</ul></section>
+
+
+pub fragment : String -> Html msg
+fragment name =
+    <>Hi {name}<hr />{Html.text name}</>
+
+
+pub mapped : Html Int -> Html String
+mapped inner =
+    <div>{Html.map inner String.fromInt}</div>

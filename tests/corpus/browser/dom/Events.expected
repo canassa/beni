@@ -1,0 +1,124 @@
+-- load
+<body>
+  <main>
+    <ul>
+      <li>
+        <button id="b1">"1"</button>
+      </li>
+      <li>
+        <button id="b2">"2"</button>
+      </li>
+      <li>
+        <button id="b3">"3"</button>
+      </li>
+    </ul>
+    <p>
+      "picked "
+      "0"
+    </p>
+    <input id="draft" .value="">
+    <button id="leaf">"leaf"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #b2
+<body>
+  <main>
+    <ul>
+      <li>
+        <button id="b1">"1"</button>
+      </li>
+      <li>
+        <button id="b2">"2"</button>
+      </li>
+      <li>
+        <button id="b3">"3"</button>
+      </li>
+    </ul>
+    <p>
+      "picked "
+      "2"
+    </p>
+    <input id="draft" .value="">
+    <button id="leaf">"leaf"</button>
+    <ol></ol>
+  </main>
+</body>
+-- focus #draft
+<body>
+  <main>
+    <ul>
+      <li>
+        <button id="b1">"1"</button>
+      </li>
+      <li>
+        <button id="b2">"2"</button>
+      </li>
+      <li>
+        <button id="b3">"3"</button>
+      </li>
+    </ul>
+    <p>
+      "picked "
+      "2"
+    </p>
+    <input id="draft" .value="" :focus>
+    <button id="leaf">"leaf"</button>
+    <ol>
+      <li>"focused"</li>
+    </ol>
+  </main>
+</body>
+-- input #draft "Ada"
+<body>
+  <main>
+    <ul>
+      <li>
+        <button id="b1">"1"</button>
+      </li>
+      <li>
+        <button id="b2">"2"</button>
+      </li>
+      <li>
+        <button id="b3">"3"</button>
+      </li>
+    </ul>
+    <p>
+      "picked "
+      "2"
+    </p>
+    <input id="draft" .value="Ada" :focus>
+    <button id="leaf">"leaf"</button>
+    <ol>
+      <li>"focused"</li>
+    </ol>
+  </main>
+</body>
+-- input #draft "Ada!"
+(the DOM did not change)
+-- click #leaf
+<body>
+  <main>
+    <ul>
+      <li>
+        <button id="b1">"1"</button>
+      </li>
+      <li>
+        <button id="b2">"2"</button>
+      </li>
+      <li>
+        <button id="b3">"3"</button>
+      </li>
+    </ul>
+    <p>
+      "picked "
+      "2"
+    </p>
+    <input id="draft" .value="Ada" :focus>
+    <button id="leaf">"leaf"</button>
+    <ol>
+      <li>"leaf inner outer"</li>
+      <li>"focused"</li>
+    </ol>
+  </main>
+</body>

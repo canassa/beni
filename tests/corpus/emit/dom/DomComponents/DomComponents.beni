@@ -1,0 +1,14 @@
+-- Components under `dom` (backend.md §15.3; language.md §11.8; research
+-- 36 §2.5, §4.3). A component is called through a function made where the
+-- markup is evaluated, so the kind's `p` calls it again only when a prop
+-- is not the one it had last time — a pure function given the same props
+-- gives the same markup. Children written as markup are one block of a
+-- kind of their own, named by the site and the component's node; with no
+-- values it is one block, hoisted, so it is the same prop every time.
+import Card
+import Html exposing (Html)
+
+
+pub page : { title : String, name : String } -> Html msg
+page r =
+    <main><Card title={r.title}>Welcome, <b>{r.name}</b>!</Card><Card title="static">no values</Card></main>

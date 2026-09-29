@@ -19,9 +19,20 @@
 // The steps file has one step per line; `#` starts a comment line:
 //
 //   click <selector>            a bubbling, cancelable `click` MouseEvent
+//   click <selector> <n>        `n` of them in one task, then the line
+//                               `(the step's task ended)` in the transcript
+//   flush <selector>            a click, then the program runtime's `flush`
+//                               export in the same task, then the line
+//                               `(flushed)`
 //   input <selector> "<text>"   set `.value`, then a bubbling `input` InputEvent
 //   key <selector> <key>        `keydown` then `keyup` KeyboardEvents with that `key`
 //   focus <selector>            `.focus()`
+//
+// The two lines are written when the step's own task ends, before any
+// microtask it queued, so what the page logged before and after them says
+// what ran in that task: a render the program ran at once is logged
+// before the line, one it deferred after. The program runtime is the
+// build's `_platform/runtime.foreign.mjs`.
 //
 // A selector is one CSS selector without spaces (`#id`, `li:nth-child(2)>a`)
 // and must match an element. Events are dispatched with `dispatchEvent`, in
@@ -77,6 +88,14 @@ async function load(url) {
     await import(url);
   } catch (error) {
     record.errors.push(record.describe(error));
+    return;
+  }
+  // The same module instance the program's entry file imported, for the
+  // `flush` step; a platform whose runtime has another name has none.
+  try {
+    record.runtime = await import(new URL("./_platform/runtime.foreign.mjs", url).href);
+  } catch {
+    record.runtime = null;
   }
 }
 
@@ -87,8 +106,17 @@ function step(s) {
   const init = { bubbles: true, cancelable: true, composed: true };
   switch (s.command) {
     case "click":
-      target.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
+      for (let n = 0; n < (s.count ?? 1); n++) target.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
+      if (s.count !== undefined) globalThis.__beniHarness.log.push("(the step's task ended)");
       return null;
+    case "flush": {
+      const runtime = globalThis.__beniHarness.runtime;
+      if (typeof runtime?.flush !== "function") return "the program runtime exports no `flush`";
+      target.dispatchEvent(new MouseEvent("click", { ...init, button: 0, detail: 1 }));
+      runtime.flush();
+      globalThis.__beniHarness.log.push("(flushed)");
+      return null;
+    }
     case "input":
       if (!("value" in target)) return `\`${s.selector}\` has no \`value\``;
       target.value = s.text;
@@ -192,7 +220,10 @@ if (stepsPath !== undefined) {
     if (!m) usage(`${where}: \`${line}\` is not \`<command> <selector> [<argument>]\``);
     const [, command, selector, argument] = m;
     const s = { line, where, command, selector };
-    if (command === "click" || command === "focus") {
+    if (command === "click" && argument !== undefined) {
+      if (!/^[1-9][0-9]*$/.test(argument)) usage(`${where}: \`click\` takes a selector and at most a count`);
+      s.count = Number(argument);
+    } else if (command === "click" || command === "focus" || command === "flush") {
       if (argument !== undefined) usage(`${where}: \`${command}\` takes a selector only`);
     } else if (command === "input") {
       try {

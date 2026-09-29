@@ -1,0 +1,82 @@
+-- A `For` in a page (backend.md §15.5; language.md §11.9). The inputs
+-- are not controlled, so the text a step types into one is held by the
+-- node alone and shows which node is where. By key, a row keeps its nodes
+-- wherever its key moves: a rotation moves the typed text with its row
+-- and leaves the input it did not move focused, reversing three rows
+-- moves the first and last rows' own nodes, and a new label patches the
+-- row's text in place. By position, row `k`
+-- keeps its nodes whatever item is there, so the typed text stays where
+-- it was and shows beside another item — what the `unkeyed_for` warning
+-- is about. Items that share a key are all rendered, matched by their rank
+-- among the ones with that key.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Rotate
+    | Reverse
+    | Relabel
+    | Duplicate
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, tags : List String }
+
+
+rotate : List a -> List a
+rotate xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            rest ++ [ x ]
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Rotate ->
+            { model | rows = rotate model.rows }
+
+        Reverse ->
+            { model | rows = List.reverse model.rows }
+
+        Relabel ->
+            { model | rows = List.map model.rows (\row -> if row.id == 2 then { row | label = "two" } else row) }
+
+        Duplicate ->
+            { model | tags = "a" :: model.tags }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="rotate" onClick={Rotate}>rotate</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="duplicate" onClick={Duplicate}>duplicate</button>
+        <ul id="keyed">
+            <For each={model.rows} keyed={.id}>{\row -> <li><input id={"k${String.fromInt row.id}"} />{row.label}</li>}</For>
+        </ul>
+        <ul id="position">
+            <For each={model.rows} keyed={False}>{\row -> <li><input />{row.label}</li>}</For>
+        </ul>
+        <ul id="tags">
+            <For each={model.tags} keyed={\tag -> tag}>{\tag -> <li>{tag}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { rows = [ { id = 1, label = "one" }, { id = 2, label = "2" }, { id = 3, label = "three" } ], tags = [ "a", "b", "a" ] }
+        , update = update
+        , view = view
+        }

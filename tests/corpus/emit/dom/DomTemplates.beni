@@ -1,0 +1,32 @@
+-- The `dom` lowering's templates (backend.md §15.2–§15.3; research 36
+-- §2.1–§2.3). A site is a kind, `<Module>$k<instruction>`, whose `m`
+-- clones the template `<Module>$t<instruction>`, declares every walk
+-- before the first write, and returns the instance; `p` writes a hole
+-- only when its value is not the one it wrote last. Markup with no values
+-- is one block, hoisted. A constant attribute is in the template, its
+-- quotes dropped where HTML allows and no space after a quoted value; an
+-- end tag the parser implies is left out. A text hole that is its
+-- parent's only child is a text node of the template; any other is made
+-- at mount before its marker — the next node of the template, or a `<!>`
+-- between two text runs or where its parent has several holes.
+import Html exposing (Html)
+
+
+pub static : Html msg
+static =
+    <div class="a b" id="x"><span>hi</span><br /><p>there <b>you &amp; me</b></p></div>
+
+
+pub text : { name : String, count : Int, more : Float } -> Html msg
+text r =
+    <p>Hello {r.name}, you have {r.count} items and {r.more} more.</p>
+
+
+pub only : { id : Int, label : String } -> Html msg
+only row =
+    <tr><td class="col-md-1">{row.id}</td><td class="col-md-4"><a>{row.label}</a></td></tr>
+
+
+pub attributes : { id : String, title : String, off : Bool, tab : Int } -> Html msg
+attributes r =
+    <div id={r.id} title={r.title} hidden={r.off} tabindex={r.tab} aria-label="static"><input disabled type="text" /></div>

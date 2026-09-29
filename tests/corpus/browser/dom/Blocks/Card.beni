@@ -1,0 +1,8 @@
+-- See Main.beni: a component with a title, an optional footer and its
+-- children.
+import Html exposing (Html)
+
+
+pub view : { title : String, footer : Maybe (Html msg), children : Html msg } -> Html msg
+view props =
+    <section><h2>{props.title}</h2>{props.children}{props.footer}</section>

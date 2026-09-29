@@ -1,0 +1,1 @@
+{ "platform": true, "name": "page", "platforms": ["browser"], "reexports": ["Browser", "Html"], "markup": { "vocabulary": "Vocab", "type": "Html.Html" } }

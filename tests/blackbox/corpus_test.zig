@@ -476,6 +476,24 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         try collect(arena, release_dir, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
     }
+    // `dom/`: the fixtures built for the `browser` platform, whose markup
+    // the `dom` lowering compiles (`backend.md` §15.10) — `emit/dom/` and
+    // `emit/release/dom/` for its shapes, `browser/dom/` for its pages.
+    if (kind == .emit or kind == .browser) {
+        const dom_dir = try std.fs.path.join(arena, &.{ kind_dir, "dom" });
+        const start = fixtures.items.len;
+        try collect(arena, dom_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.dom = true;
+        if (kind == .emit) {
+            const release_dom = try std.fs.path.join(arena, &.{ kind_dir, "release", "dom" });
+            const release_start = fixtures.items.len;
+            try collect(arena, release_dom, false, false, &fixtures, false);
+            for (fixtures.items[release_start..]) |*fixture| {
+                fixture.dom = true;
+                fixture.release = true;
+            }
+        }
+    }
     return fixtures.items;
 }
 
@@ -954,6 +972,9 @@ const Fixture = struct {
     /// Under `<kind>/markup/`: `--platform=html` is added to the argv, so
     /// the fixture's markup is typed against the HTML vocabulary.
     markup: bool = false,
+    /// Under `emit/dom/`, `emit/release/dom/` or `browser/dom/`: built for
+    /// the `browser` platform, whose `dom` lowering compiles the markup.
+    dom: bool = false,
 
     /// Whether `text` is in the fixture's repo-relative path, the path
     /// `BENI_CORPUS_ONLY` and `BENI_BLESS_ONLY` are matched against.
@@ -977,7 +998,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1698,6 +1719,8 @@ const Case = struct {
         const h = try browser.harness(testing.io);
         const platform_arg = if (platform)
             "--platform=platform"
+        else if (c.fixture.dom)
+            "--platform=browser"
         else
             try std.fmt.allocPrint(c.arena, "--platform={s}", .{h.platform});
         const sources = try c.writeSources();
@@ -1920,7 +1943,7 @@ const Case = struct {
         }
 
         var args: std.ArrayList([]const u8) = .empty;
-        try args.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
+        try args.appendSlice(c.arena, &.{ "build", if (c.fixture.dom) "--platform=browser" else "--platform=node", "--out=out" });
         if (!c.fixture.app) try args.append(c.arena, "--library");
         // `--allow-debug` rides with `--release` here for `run/`'s reason:
         // one rule for the whole corpus, so that a shape golden can be about

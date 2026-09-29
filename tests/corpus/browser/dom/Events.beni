@@ -1,0 +1,66 @@
+-- Events in a page built by the `dom` lowering (backend.md §15.3,
+-- §15.11). A click is delegated: one listener on the document for the
+-- whole page, and the handler a property of the node, so a button deep in
+-- a list sends its own message. An input's handler takes the value the
+-- vocabulary's extractor reads. The input is controlled: the view writes
+-- the model's text into its live `value`, so an edit `update` rejects is
+-- put back by the next render, and the input keeps its focus because the
+-- render patches the node. A message from inside two `Html.map`s passes
+-- through the inner function first. `focus` is not delegated, so the
+-- input listens for it itself.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Picked Int
+    | Typed String
+    | Focused
+    | Wrapped String
+
+
+type alias Model =
+    { picked : Int, draft : String, log : List String }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Picked n ->
+            { model | picked = n }
+
+        Typed text ->
+            if String.contains text "!" then
+                model
+
+            else
+                { model | draft = text }
+
+        Focused ->
+            { model | log = "focused" :: model.log }
+
+        Wrapped text ->
+            { model | log = text :: model.log }
+
+
+leaf : Html String
+leaf =
+    <button id="leaf" onClick={"leaf"}>leaf</button>
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <ul>
+            <For each={[ 1, 2, 3 ]}>{\n -> <li><button id={"b${String.fromInt n}"} onClick={Picked n}>{n}</button></li>}</For>
+        </ul>
+        <p>picked {model.picked}</p>
+        <input id="draft" value={model.draft} onInput={Typed} onFocus={Focused} />
+        {Html.map (Html.map leaf (\s -> s ++ " inner")) (\s -> Wrapped (s ++ " outer"))}
+        <ol><For each={model.log} keyed={False}>{\line -> <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { picked = 0, draft = "", log = [] }, update = update, view = view }

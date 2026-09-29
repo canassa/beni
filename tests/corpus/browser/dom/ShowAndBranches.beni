@@ -1,0 +1,68 @@
+-- A keyed `Show` and branches in a page (backend.md §15.4–§15.5;
+-- language.md §11.6, §11.18). The inputs are not controlled, so text a
+-- step types into one shows whether its node survived. A `Show` keyed by
+-- `.id` patches its body while the shown user's id is the same, even
+-- across an edit of the user's record, and remounts it for another id; the
+-- one keyed by identity remounts for the edited record, a new value. An
+-- `if` in a hole is two sites, so a branch change remounts and the other
+-- branch's input does not carry the typed text across, however alike the
+-- two inputs are; the same branch patches.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Rename
+    | Next
+    | Flip
+
+
+type alias User =
+    { id : Int, name : String }
+
+
+type alias Model =
+    { user : Maybe User, left : Bool }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Rename ->
+            { model | user = Maybe.map model.user (\u -> { u | name = u.name ++ "!" }) }
+
+        Next ->
+            { model | user = Just { id = 2, name = "Grace" } }
+
+        Flip ->
+            { model | left = not model.left }
+
+
+side : Bool -> Html msg
+side left =
+    if left then
+        <input id="left" />
+
+    else
+        <input id="right" />
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="next" onClick={Next}>next</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <Show when={model.user} keyed={.id} fallback={<p>nobody</p>}>
+            {\u -> <label>{u.name}<input id="by-key" /></label>}
+        </Show>
+        <Show when={model.user} keyed>
+            {\u -> <label>{u.name}<input id="by-identity" /></label>}
+        </Show>
+        <div>{side model.left}</div>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { user = Just { id = 1, name = "Ada" }, left = True }, update = update, view = view }

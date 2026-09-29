@@ -1,0 +1,68 @@
+-- Markup that escapes, in a page (backend.md §15.3–§15.4, §15.6). A
+-- helper's result, a `let` and a `case` branch are blocks their holes
+-- patch or remount; a component gets its children written as markup as
+-- one block and places them, with an optional footer, a `Maybe Html`
+-- hole; a `List Html` hole matches its blocks by position; `Html.text` is
+-- a text block. A class list written in place toggles its one dynamic
+-- class and leaves the template's constant one alone, and a `For` shows
+-- its fallback while its list is empty. A URL that would run script is
+-- written as nothing: the `href` a view computes cannot become
+-- `javascript:`.
+import Browser
+import Card
+import Html exposing (Html)
+
+
+type Msg
+    = Toggle
+
+
+type Status
+    = Idle
+    | Busy Int
+
+
+type alias Model =
+    { on : Bool, status : Status, items : List String }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Toggle ->
+            { on = not model.on, status = Busy (List.length model.items + 1), items = "x" :: model.items }
+
+
+badge : String -> Html msg
+badge label =
+    <b>{label}</b>
+
+
+view : Model -> Html Msg
+view model =
+    let
+        greeting =
+            <em>{if model.on then "on" else "off"}</em>
+    in
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p id="classes" class={[ ( "base", True ), ( "on", model.on ) ]}>{greeting}</p>
+        <a id="link" href={if model.on then "https://example.com/" else "javascript:alert(1)"}>link</a>
+        {case model.status of
+            Idle ->
+                badge "idle"
+
+            Busy n ->
+                <i>busy {n}</i>
+        }
+        <Card title="Card" footer={if model.on then Just (badge "footer") else Nothing}>
+            {Html.text "text"} and <b>markup</b>
+        </Card>
+        <ol>{List.map model.items (\item -> <li>{item}</li>)}</ol>
+        <ul><For each={model.items} keyed={False} fallback={<li>empty</li>}>{\item -> <li>{item}</li>}</For></ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { on = False, status = Idle, items = [] }, update = update, view = view }

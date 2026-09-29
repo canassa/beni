@@ -1,0 +1,7 @@
+-- See DomComponents.beni: a component module.
+import Html exposing (Html)
+
+
+pub view : { title : String, children : Html msg } -> Html msg
+view props =
+    <article><h2>{props.title}</h2>{props.children}</article>

@@ -1,0 +1,49 @@
+-- The render loop (backend.md §15.11) and the rows a render runs
+-- (§15.5; language.md §11.9, §11.11). `Debug.log` in the view and in the
+-- row counts what runs. A message does not render at once: five in one
+-- task run `update` five times and render once, on the microtask after
+-- the task, and the runtime's `flush` renders at once, before it returns.
+-- A row runs only when its item or one of its inputs changed: its inputs
+-- are the fields it reads of what is outside it — `model.selected`, not
+-- `model` — so a message that changes only `ticks` runs none of the rows,
+-- and one that changes `selected` runs every row, each deciding its class.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Tick
+    | Select String
+
+
+type alias Model =
+    { rows : List String, selected : String, ticks : Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Tick ->
+            { model | ticks = model.ticks + 1 }
+
+        Select name ->
+            { model | selected = name }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="tick" onClick={Tick}>tick</button>
+        <button id="select" onClick={Select "b"}>select</button>
+        <p>{Debug.log model.ticks "view"}</p>
+        <ul>
+            <For each={model.rows}>
+                {\row -> <li class={[ ( "sel", row == model.selected ) ]}>{Debug.log row "row"}</li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { rows = [ "a", "b", "c" ], selected = "", ticks = 0 }, update = update, view = view }

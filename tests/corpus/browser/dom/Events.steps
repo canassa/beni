@@ -1,0 +1,6 @@
+click #b2
+focus #draft
+input #draft "Ada"
+# Rejected by `update`: the render puts "Ada" back.
+input #draft "Ada!"
+click #leaf

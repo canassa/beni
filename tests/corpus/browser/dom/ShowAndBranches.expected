@@ -1,0 +1,180 @@
+-- load
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Ada"
+      <input id="by-key" .value="">
+    </label>
+    <!---->
+    <label>
+      "Ada"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="left" .value="">
+    </div>
+  </main>
+</body>
+-- input #by-key "typed"
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Ada"
+      <input id="by-key" .value="typed">
+    </label>
+    <!---->
+    <label>
+      "Ada"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="left" .value="">
+    </div>
+  </main>
+</body>
+-- input #by-identity "typed"
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Ada"
+      <input id="by-key" .value="typed">
+    </label>
+    <!---->
+    <label>
+      "Ada"
+      <input id="by-identity" .value="typed">
+    </label>
+    <div>
+      <input id="left" .value="">
+    </div>
+  </main>
+</body>
+-- input #left "typed"
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Ada"
+      <input id="by-key" .value="typed">
+    </label>
+    <!---->
+    <label>
+      "Ada"
+      <input id="by-identity" .value="typed">
+    </label>
+    <div>
+      <input id="left" .value="typed">
+    </div>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Ada!"
+      <input id="by-key" .value="typed">
+    </label>
+    <!---->
+    <label>
+      "Ada!"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="left" .value="typed">
+    </div>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Grace"
+      <input id="by-key" .value="">
+    </label>
+    <!---->
+    <label>
+      "Grace"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="left" .value="typed">
+    </div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Grace"
+      <input id="by-key" .value="">
+    </label>
+    <!---->
+    <label>
+      "Grace"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="right" .value="">
+    </div>
+  </main>
+</body>
+-- input #right "kept"
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Grace"
+      <input id="by-key" .value="">
+    </label>
+    <!---->
+    <label>
+      "Grace"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="right" .value="kept">
+    </div>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="next">"next"</button>
+    <button id="flip">"flip"</button>
+    <label>
+      "Grace!"
+      <input id="by-key" .value="">
+    </label>
+    <!---->
+    <label>
+      "Grace!"
+      <input id="by-identity" .value="">
+    </label>
+    <div>
+      <input id="right" .value="kept">
+    </div>
+  </main>
+</body>

@@ -1,0 +1,50 @@
+-- `For` and `Show` under `dom` (backend.md §15.5; research 36 §2.9,
+-- §4.4–§4.5). A row whose body is markup is compiled in place, as a pair
+-- the runtime's list calls: `m(item, position, cx)` mounts a row, `p(inst,
+-- item, position)` patches one, each placing the row's values itself. The
+-- pair is made where the list is evaluated, with the row's inputs beside
+-- it — `model.selected`, not `model` — which the runtime compares to skip
+-- a row whose item and inputs did not change. By key the list is
+-- `forKeyed` with the key function, by reference with none, by position
+-- `forPosition`. A row that is not markup, a lambda or a function, is a
+-- block the runtime mounts per row. A keyed `Show` compares its key, its
+-- value and its body's inputs before it builds the body's block.
+import Html exposing (Html)
+
+
+type alias Row =
+    { id : Int, label : String }
+
+
+type alias Model =
+    { rows : List Row, selected : Int, names : List String }
+
+
+viewName : String -> Html msg
+viewName name =
+    <li>{name}</li>
+
+
+pub table : Model -> Html msg
+table model =
+    <table>
+        <tbody>
+            <For each={model.rows} keyed={.id}>
+                {\row -> <tr class={[ ( "danger", row.id == model.selected ) ]}><td>{row.label}</td></tr>}
+            </For>
+        </tbody>
+    </table>
+
+
+pub lists : Model -> Html msg
+lists model =
+    <div>
+        <ol><For each={model.names} keyed={False}>{\name i -> <li>{i}. {name}</li>}</For></ol>
+        <ul><For each={model.names} fallback={<li>none</li>}>{viewName}</For></ul>
+        <ul><For each={model.names}>{\name -> if name == "" then <li>blank</li> else <li>{name}</li>}</For></ul>
+    </div>
+
+
+pub first : Model -> Html msg
+first model =
+    <Show when={List.head model.rows} keyed={.id} fallback={<p>none</p>}>{\row -> <p>{row.label} of {model.selected}</p>}</Show>

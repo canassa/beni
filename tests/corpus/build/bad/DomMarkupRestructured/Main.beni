@@ -1,0 +1,36 @@
+-- `markup_restructured` from the `dom` lowering (boundary.md §9.4.7,
+-- backend.md §15.3): markup whose template the page's HTML parser would
+-- read back as another tree than the one written. One diagnostic per root,
+-- at the node, and nothing is written: a `<div>` in a `<p>`, which the
+-- parser closes first (16:9); a row straight in a `<table>`, which it
+-- moves into a `tbody` of its own (21:13); a `<style>` whose text holds its
+-- own end tag, the reference decoded before the lowering sees it (26:17);
+-- and children of a `<br>`, which this platform's vocabulary does not call
+-- void but the parser does, so they would follow it (31:6).
+import Browser
+import Html exposing (Html)
+
+
+para : Html msg
+para =
+    <p><div>x</div></p>
+
+
+table : Html msg
+table =
+    <table><tr><td>x</td></tr></table>
+
+
+style : Html msg
+style =
+    <style>a { } &lt;/STYLE&gt;</style>
+
+
+break : Html msg
+break =
+    <br>x</br>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = (), update = \_ m -> m, view = \_ -> <div>{[ para, table, style, break ]}</div> }

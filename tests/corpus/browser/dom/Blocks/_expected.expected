@@ -1,0 +1,85 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="classes" class="base">
+      <em>"off"</em>
+    </p>
+    <a id="link" href="">"link"</a>
+    <b>"idle"</b>
+    <!---->
+    <section>
+      <h2>"Card"</h2>
+      "text"
+      " and "
+      <b>"markup"</b>
+      <!---->
+      <!---->
+    </section>
+    <ol></ol>
+    <ul>
+      <li>"empty"</li>
+    </ul>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="classes" class="base on">
+      <em>"on"</em>
+    </p>
+    <a id="link" href="https://example.com/">"link"</a>
+    <i>
+      "busy "
+      "1"
+    </i>
+    <!---->
+    <section>
+      <h2>"Card"</h2>
+      "text"
+      " and "
+      <b>"markup"</b>
+      <!---->
+      <b>"footer"</b>
+      <!---->
+    </section>
+    <ol>
+      <li>"x"</li>
+    </ol>
+    <ul>
+      <li>"x"</li>
+    </ul>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p id="classes" class="base">
+      <em>"off"</em>
+    </p>
+    <a id="link" href="">"link"</a>
+    <i>
+      "busy "
+      "2"
+    </i>
+    <!---->
+    <section>
+      <h2>"Card"</h2>
+      "text"
+      " and "
+      <b>"markup"</b>
+      <!---->
+      <!---->
+    </section>
+    <ol>
+      <li>"x"</li>
+      <li>"x"</li>
+    </ol>
+    <ul>
+      <li>"x"</li>
+      <li>"x"</li>
+    </ul>
+  </main>
+</body>

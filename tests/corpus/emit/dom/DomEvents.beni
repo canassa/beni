@@ -1,0 +1,27 @@
+-- Events under `dom` (backend.md §15.3; research 36 §2.7, §4.6). A
+-- delegated event is one property write, `$$click`, which `p` rewrites
+-- only when the handler changed; a handler that takes a payload also gets
+-- its extractor, `Html.targetValue` imported from the vocabulary module,
+-- or the runtime's `identity` for the event itself. A declaration's
+-- `preventDefault` is a flag on the node. An event that is not delegated
+-- gets one stable listener at mount, which reads the handler the node
+-- holds when it fires. A node with a handler records the mount context
+-- when there is one, for `Html.map`. This is a `--library` build, which
+-- has no program start: each kind registers the names it delegates.
+import Html exposing (Html)
+
+
+type Msg
+    = Clicked Int
+    | Typed String
+    | Sent
+    | Focused
+    | Down Html.Event
+
+
+pub view : Int -> Html Msg
+view n =
+    <form onSubmit={Sent}>
+        <button onClick={Clicked n}>go</button>
+        <input onInput={Typed} onFocus={Focused} onKeyDown={Down} />
+    </form>

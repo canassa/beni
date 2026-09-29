@@ -60,6 +60,8 @@ build_test.test.check 4: a foreign typed through an alias counts the alias's par
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 453a4bab4a9058992f5712af64f2221ef28f0d0bb992c3acb309c3f8981b9f45
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 b2f3dfdd25e234c7575b0d6aacc10038c95f1c4adb63d3157594659d19522f8d
 build_test.test.modules import each other through ESM, and the program runs #0 88ef3d66dcd52555d14e6001d536ac74cdba25c0e7ffa4579c4f8316002b155e
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 17acc02c830141c31fdb03cb287c046941966308b8994cda70b547d082efe8e2
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 cf410c235b318c71a8eda0cd8481ed035f8f3cb762ecd7f0add900b57db12cb8
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 8eaa307c0e5193d966eba4f51fc799d319fd9e69ecaacea6655a37867cecc6f1
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 164f34d8eb90f40f16b0d5b0e8327293a3401d9a82e3e7466b513bf85351b578
 cache_test.test.a constrained function constant rewritten as a let keeps its importer's cached calling convention #0 8dcd0687e3c2ef12bab5ef5f1e41af7ff1c284063fb4cbd8c762787c1cc255c5
