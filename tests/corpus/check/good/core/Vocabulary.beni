@@ -1,0 +1,46 @@
+-- A vocabulary module's interface (checker-v2.md §25.8): each element,
+-- attribute and event is a row of its own table, sorted by name text and then
+-- by `on` set — the two `value` attributes are one name on disjoint elements —
+-- with its facts, its `on` names sorted, and an attribute's or event's type.
+-- A markup primitive is a value flagged `markup`, with its scheme. Run with
+-- `--core`, by the `core/` directory, so the declarations are legal.
+pub foreign type Html msg
+
+
+pub foreign type Event
+
+
+pub foreign targetValue : Event -> String
+
+
+pub markup map : Html a, (a -> b) -> Html b
+
+
+pub element "input" void
+
+
+pub element "div"
+
+
+pub element "*-*"
+
+
+pub attribute "value" property stateful on "select" "input" : String
+
+
+pub attribute "value" on "option" : String
+
+
+pub attribute "data-*" : String
+
+
+pub attribute "class" classes : String
+
+
+pub attribute "hidden" : Maybe String
+
+
+pub event "onInput" name "input" delegated via targetValue : String
+
+
+pub event "onClick" delegated : Event

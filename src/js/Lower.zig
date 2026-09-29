@@ -1143,6 +1143,8 @@ const Lowerer = struct {
             const d = l.bir.decl(decl_index);
             if (!d.kind.isValue()) continue;
             if (d.kind == .annotation_only) continue;
+            // A markup primitive is the markup runtime's, not this module's.
+            if (d.kind == .vocab_markup) continue;
             if (d.kind == .value and d.body == .none) continue;
             if (!l.liveDecl(decl_index.int())) continue;
             try names.append(l.scratch, try l.name(.{

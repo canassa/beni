@@ -1,0 +1,15 @@
+module Vocabulary
+  foreign type Event
+  foreign type Html a
+  markup value map : Html a, (a -> b) -> Html b
+  foreign value targetValue : Event -> String
+  element "*-*"
+  element "div"
+  element "input" void
+  attribute "class" classes : String
+  attribute "data-*" : String
+  attribute "hidden" : Maybe String
+  attribute "value" on "input" "select" property stateful : String
+  attribute "value" on "option" : String
+  event "onClick" delegated : Event
+  event "onInput" name "input" delegated via targetValue : String

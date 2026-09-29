@@ -100,6 +100,7 @@ pub fn fill(in: Input) Error!void {
     gpa.free(@constCast(iface.schema_ctors));
     iface.schema_ctors = ctors;
 
+    try vocabTables(&p, in, iface);
     try ctorTerms(&p, prov, iface);
     try typeFacts(&p, prov, iface, in.contexts, in.report);
     try writer.attach(iface);
@@ -112,6 +113,36 @@ pub fn fill(in: Input) Error!void {
     gpa.free(ref_ids.*);
     ref_ids.* = &.{};
     ref_ids.* = try in.types.resolveRefs(gpa, iface, cx.graph);
+}
+
+/// The vocabulary tables (§25.8): each row whose declaration checked, with
+/// its attribute's value type or its event's payload type as a scheme. A
+/// declaration whose failure bit is set is published as absent, so an
+/// importer's markup meets `unknown_element` or `unknown_attribute` rather
+/// than a half-read row (§25.2).
+fn vocabTables(p: *Publisher, in: Input, iface: *Interface) Error!void {
+    const gpa = p.cx.gpa;
+    const decls = in.provenance.vocab_decl;
+    var at: usize = 0;
+    inline for (.{ "elements", "attributes", "events" }) |field| {
+        const old = @field(iface, field);
+        var kept: std.ArrayList(Interface.VocabRow) = .empty;
+        errdefer kept.deinit(gpa);
+        for (old) |row| {
+            const decl = if (at < decls.len) decls[at] else null;
+            at += 1;
+            const d = decl orelse continue;
+            if (d.int() < in.report.failed.bit_length and in.report.failed.isSet(d.int())) continue;
+            var published = row;
+            if (!std.mem.eql(u8, field, "elements")) {
+                const root = if (d.int() < in.decl_scheme.len) in.decl_scheme[d.int()].unwrap() else null;
+                published.scheme = try p.scheme(root, d);
+            }
+            try kept.append(gpa, published);
+        }
+        gpa.free(old);
+        @field(iface, field) = try kept.toOwnedSlice(gpa);
+    }
 }
 
 /// What a value declaration publishes (§14.1): a function of the

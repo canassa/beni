@@ -61,6 +61,7 @@ const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Interface = @import("Interface.zig");
+const Bir = @import("../bir/Bir.zig");
 
 const Symbol = InternPool.Symbol;
 
@@ -76,10 +77,14 @@ pub const magic = "BENIIFC\x00";
 /// two words (§14.2).
 /// 7: an `alias` term holds its arguments only; the alias's body is on its
 /// `type_refs` row, which grows to 16 bytes (§14.2).
-pub const format_version: u32 = 7;
+/// 8: a value may be a markup primitive (bit 1 of its flag byte), and a
+/// vocabulary module has three tables, `elements`, `attributes` and
+/// `events` (§25.8).
+pub const format_version: u32 = 8;
 
-/// The fifteen columns, in this order and no other (`hidden_types` since
-/// format 4, `checker-v2.md` §14.2). `terms` is split into
+/// The eighteen columns, in this order and no other (`hidden_types` since
+/// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
+/// §25.8). `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
 /// that is what the record already is and what §8.3 wants to map.
 pub const Column = enum(u32) {
@@ -96,6 +101,9 @@ pub const Column = enum(u32) {
     schemas,
     schema_members,
     schema_ctors,
+    elements,
+    attributes,
+    events,
     symbols,
     strings,
 
@@ -113,6 +121,7 @@ pub const Column = enum(u32) {
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 16,
             .hidden_types => 24,
+            .elements, .attributes, .events => 24,
             .schemas => 32,
             .schema_members, .schema_ctors => 16,
             .strings => 1,
@@ -220,6 +229,9 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     lengths[@intFromEnum(Column.schemas)] = @intCast(iface.schemas.len);
     lengths[@intFromEnum(Column.schema_members)] = @intCast(iface.schema_members.len);
     lengths[@intFromEnum(Column.schema_ctors)] = @intCast(iface.schema_ctors.len);
+    lengths[@intFromEnum(Column.elements)] = @intCast(iface.elements.len);
+    lengths[@intFromEnum(Column.attributes)] = @intCast(iface.attributes.len);
+    lengths[@intFromEnum(Column.events)] = @intCast(iface.events.len);
     lengths[@intFromEnum(Column.symbols)] = @intCast(iface.symbols.len);
     lengths[@intFromEnum(Column.strings)] = @intCast(blob.items.len);
 
@@ -251,9 +263,12 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             const row = out[i * 12 ..][0..12];
             std.mem.writeInt(u32, row[0..4], @intFromEnum(v.name), .little);
             std.mem.writeInt(u32, row[4..8], @intFromEnum(v.scheme), .little);
-            row[8] = @intFromBool(v.is_foreign);
+            row[8] = @as(u8, @intFromBool(v.is_foreign)) | (@as(u8, @intFromBool(v.is_markup_primitive)) << 1);
         }
     }
+    writeVocab(bytes[offsets_of[@intFromEnum(Column.elements)]..], iface.elements);
+    writeVocab(bytes[offsets_of[@intFromEnum(Column.attributes)]..], iface.attributes);
+    writeVocab(bytes[offsets_of[@intFromEnum(Column.events)]..], iface.events);
     {
         const out = bytes[offsets_of[@intFromEnum(Column.types)]..];
         for (iface.types, 0..) |t, i| {
@@ -372,6 +387,57 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     return bytes;
 }
 
+/// A vocabulary table (`Interface.VocabRow`): six words per row.
+fn writeVocab(out: []u8, rows: []const Interface.VocabRow) void {
+    for (rows, 0..) |r, i| {
+        writeWords(out[i * 24 ..][0..24], &.{
+            @intFromEnum(r.name),
+            r.facts,
+            @intFromEnum(r.arg),
+            @intFromEnum(r.via),
+            r.on,
+            @intFromEnum(r.scheme),
+        });
+    }
+}
+
+fn readVocab(gpa: Allocator, in: []const u8, n: u32) Allocator.Error![]Interface.VocabRow {
+    const rows = try gpa.alloc(Interface.VocabRow, n);
+    for (rows, 0..) |*r, i| {
+        const row = in[i * 24 ..][0..24];
+        r.* = .{
+            .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+            .facts = std.mem.readInt(u32, row[4..8], .little),
+            .arg = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+            .via = @enumFromInt(std.mem.readInt(u32, row[12..16], .little)),
+            .on = std.mem.readInt(u32, row[16..20], .little),
+            .scheme = @enumFromInt(std.mem.readInt(u32, row[20..24], .little)),
+        };
+    }
+    return rows;
+}
+
+/// Whether a vocabulary table's names, `on` ranges and schemes stay inside
+/// their columns, and its facts name only fact words and the pattern bit.
+fn verifyVocab(iface: *const Interface, rows: []const Interface.VocabRow) bool {
+    const symbols = iface.symbols.len;
+    const known: u32 = (@as(u32, 1) << @typeInfo(Bir.FactWord).@"enum".fields.len) - 1;
+    for (rows) |r| {
+        if (@intFromEnum(r.name) >= symbols) return false;
+        if (r.facts & ~(known | Interface.VocabRow.pattern_bit) != 0) return false;
+        if (r.arg.unwrap()) |s| if (@intFromEnum(s) >= symbols) return false;
+        if (r.via.unwrap()) |s| if (@intFromEnum(s) >= symbols) return false;
+        if (r.scheme != .none and @intFromEnum(r.scheme) >= iface.schemes.len) return false;
+        if (r.on != Interface.no_terms) {
+            const names = rangeOf(iface, r.on) orelse return false;
+            for (names) |name| {
+                if (name >= symbols) return false;
+            }
+        }
+    }
+    return true;
+}
+
 fn writeWords(out: []u8, words: []const u32) void {
     for (words, 0..) |word, i| std.mem.writeInt(u32, out[i * 4 ..][0..4], word, .little);
 }
@@ -488,9 +554,13 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .scheme = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
                 .is_foreign = row[8] & 1 == 1,
+                .is_markup_primitive = row[8] & 2 == 2,
             };
         }
     }
+    iface.elements = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.elements)]..], lengths[@intFromEnum(Column.elements)]);
+    iface.attributes = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.attributes)]..], lengths[@intFromEnum(Column.attributes)]);
+    iface.events = try readVocab(gpa, bytes[offsets_of[@intFromEnum(Column.events)]..], lengths[@intFromEnum(Column.events)]);
     {
         const in = bytes[offsets_of[@intFromEnum(Column.types)]..];
         const types = try gpa.alloc(Interface.Type, lengths[@intFromEnum(Column.types)]);
@@ -717,6 +787,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         if (@intFromEnum(v.name) >= symbols) return false;
         if (v.scheme != .none and @intFromEnum(v.scheme) >= iface.schemes.len) return false;
     }
+    if (!verifyVocab(iface, iface.elements) or !verifyVocab(iface, iface.attributes) or !verifyVocab(iface, iface.events)) return false;
     for (iface.types) |t| {
         if (@intFromEnum(t.name) >= symbols) return false;
         if (t.ctors_start > t.ctors_end or t.ctors_end > iface.ctors.len) return false;
@@ -970,6 +1041,9 @@ fn expectSameRecord(a: *const Interface, b: *const Interface, interner: *const I
     try testing.expectEqualSlices(u32, a.extra, b.extra);
     try testing.expectEqualSlices(Interface.TypeRef, a.type_refs, b.type_refs);
     try testing.expectEqualSlices(Interface.HiddenType, a.hidden_types, b.hidden_types);
+    try testing.expectEqualSlices(Interface.VocabRow, a.elements, b.elements);
+    try testing.expectEqualSlices(Interface.VocabRow, a.attributes, b.attributes);
+    try testing.expectEqualSlices(Interface.VocabRow, a.events, b.events);
     try testing.expectEqual(a.terms.len, b.terms.len);
     if (a.terms.len != 0) {
         try testing.expectEqualSlices(Interface.Term.Tag, a.terms.items(.tag), b.terms.items(.tag));

@@ -881,3 +881,60 @@ test "an alias chain another module names is written once per record, in bytes l
         return error.InterfaceNotLinear;
     }
 }
+
+test "a vocabulary module's tables and markup primitives travel through the format unchanged" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Interface v8's three tables (checker-v2.md §25.8): a row's facts, its
+    // `on` names, its property or event name, its extractor and its type, and
+    // a value's `markup` flag, all of which `dump --stage=raw` prints. Run
+    // with `--core`, which makes the declarations legal without a platform.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Vocab.beni",
+        \\pub foreign type Html msg
+        \\
+        \\
+        \\pub foreign type Event
+        \\
+        \\
+        \\pub foreign targetValue : Event -> String
+        \\
+        \\
+        \\pub markup map : Html a, (a -> b) -> Html b
+        \\
+        \\
+        \\pub element "input" void
+        \\
+        \\
+        \\pub attribute "value" property stateful on "select" "input" : String
+        \\
+        \\
+        \\pub attribute "value" on "option" : String
+        \\
+        \\
+        \\pub event "onInput" name "input" delegated via targetValue : String
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const base = try expectSameThroughTheFormat(&w, &.{ "dump", "--stage=raw", "--core", "Vocab.beni" }, arena_state.allocator());
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), base.exit_code);
+    try testing.expectEqualStrings("", base.stderr);
+    // The record really carries every table, so the equality above is about
+    // them and not about an empty record.
+    try testing.expect(std.mem.indexOf(u8, base.stdout, "markup_primitive=true") != null);
+    try testing.expect(std.mem.indexOf(u8, base.stdout, "\nelements 0 input ") != null);
+    try testing.expect(std.mem.indexOf(u8, base.stdout, " on \"input\" \"select\" property stateful\n") != null);
+    try testing.expect(std.mem.indexOf(u8, base.stdout, "\nevents 0 onInput ") != null);
+    try testing.expect(std.mem.indexOf(u8, base.stdout, " via targetValue\n") != null);
+}

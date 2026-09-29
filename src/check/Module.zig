@@ -57,6 +57,7 @@ const Groups = @import("Groups.zig");
 const Contexts = @import("Contexts.zig");
 const Decl = @import("constrain/Decl.zig");
 const Walk = @import("Walk.zig");
+const Vocab = @import("Vocab.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -173,6 +174,11 @@ pub fn check(in: Input) Error!Check.Counters {
             decl_scheme[i] = (try cx.store.freshErr(TypeStore.generalized)).toOptional();
         }
     }
+
+    // The vocabulary declarations (§25.2), before any value group: they
+    // depend on no value but a `via` extractor, whose P2 scheme is all they
+    // read, and the module's own markup resolves against them.
+    try Vocab.check(&cx, &report, decl_scheme, null);
 
     // P3: the own-name index (§5): every value by name, once.
     const own_values = try ownIndex(scratch, bir);
@@ -313,10 +319,9 @@ pub fn check(in: Input) Error!Check.Counters {
     };
 }
 
-/// Markup, until the checker reads vocabularies (checker-v2.md §25): a
-/// module that writes markup has no vocabulary to type it against —
-/// `no_markup_vocabulary`, once, at its first markup root in source order —
-/// and a vocabulary declaration is lowered but not yet checked.
+/// Markup, until the checker types it (checker-v2.md §25): a module that
+/// writes markup has no vocabulary to type it against — `no_markup_vocabulary`,
+/// once, at its first markup root in source order.
 fn reportMarkup(report: *Report, bir: *const Bir) Error!void {
     if (bir.uses_markup) {
         var first: ?Bir.Inst.Index = null;
@@ -333,14 +338,6 @@ fn reportMarkup(report: *Report, bir: *const Bir) Error!void {
             \\(`pub element`, `pub attribute`, `pub event`), and a module's markup is typed
             \\against the vocabulary of the platform its build names with `--platform=<name>`.
             \\No platform of this version of beni declares one yet.
-        );
-    }
-    for (bir.decls) |d| {
-        if (!d.kind.isVocab()) continue;
-        try report.emitText(.not_implemented, d.inst_start, d.name_token,
-            \\This vocabulary declaration is read, but this version of beni does not check
-            \\vocabulary declarations yet, so a platform that declares markup cannot be
-            \\checked or built.
         );
     }
 }

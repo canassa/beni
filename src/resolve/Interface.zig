@@ -80,6 +80,11 @@ type_refs: []const TypeRef,
 /// (`checker-v2.md` §14.2). Never a declaration:
 /// resolution does not read it. Empty in a record the old checker wrote.
 hidden_types: []const HiddenType = &.{},
+/// Owned. The vocabulary declarations that checked (`checker-v2.md` §25.8),
+/// one table per form, each sorted by name text, then by `on` set.
+elements: []const VocabRow = &.{},
+attributes: []const VocabRow = &.{},
+events: []const VocabRow = &.{},
 /// Owned. The one symbol column; every name above is an index into it,
 /// exactly as `Bir` does it, so a remap is one loop and the cache can load the
 /// whole record without a fixup pass.
@@ -286,8 +291,40 @@ pub const Value = struct {
     /// JavaScript binding on the module-qualified name, so the interface
     /// has to say which names are bound that way.
     is_foreign: bool,
+    /// A markup primitive, `pub markup name : T` (`language.md` §11.14): a
+    /// value whose implementation is the build's markup runtime's export of
+    /// this name (`boundary.md` §9.3), never the module's sibling.
+    is_markup_primitive: bool = false,
     /// The inferred or annotated scheme. `none` until the module is checked.
     scheme: SchemeIndex,
+};
+
+/// One row of a vocabulary module's `elements`, `attributes` or `events`
+/// table (`checker-v2.md` §25.8): a `pub element`, `pub attribute` or
+/// `pub event` declaration that checked.
+pub const VocabRow = struct {
+    /// The markup name's text: `div`, `aria-label`, `data-*`, `onInput`.
+    name: SymbolIndex,
+    /// One bit per `Bir.FactWord` the declaration writes (bit `@intFromEnum`
+    /// of the word), and `pattern_bit` when the name holds a `*`.
+    facts: u32,
+    /// `property`'s JavaScript name for an attribute, or an event's `name`
+    /// (the DOM event's name); `none` when the declaration gives none.
+    arg: SymbolIndex.Optional = .none,
+    /// An event's `via` extractor, by name: a `foreign` value of this module.
+    via: SymbolIndex.Optional = .none,
+    /// The `on` element names, sorted by text, as an `extra` range
+    /// (`range`); `no_terms` when the row applies to every element.
+    on: u32 = no_terms,
+    /// An attribute's value type or an event's payload type; `none` for an
+    /// element.
+    scheme: SchemeIndex = .none,
+
+    pub const pattern_bit: u32 = 1 << 31;
+
+    pub fn has(row: VocabRow, word: Bir.FactWord) bool {
+        return row.facts & (@as(u32, 1) << @intCast(@intFromEnum(word))) != 0;
+    }
 };
 
 pub const TypeKind = enum(u8) {
@@ -638,6 +675,9 @@ pub const Provenance = struct {
     ctor_index: []const u32,
     /// `schemas[i]` was declared by `schema_decl[i]`.
     schema_decl: []const Bir.DeclIndex,
+    /// The vocabulary rows' declarations, `elements` then `attributes` then
+    /// `events`, each in its table's order.
+    vocab_decl: []const Bir.DeclIndex = &.{},
 
     pub const empty: Provenance = .{ .value_decl = &.{}, .type_decl = &.{}, .ctor_index = &.{}, .schema_decl = &.{} };
 
@@ -646,6 +686,7 @@ pub const Provenance = struct {
         gpa.free(p.type_decl);
         gpa.free(p.ctor_index);
         gpa.free(p.schema_decl);
+        gpa.free(p.vocab_decl);
         p.* = Provenance.empty;
     }
 
@@ -697,6 +738,9 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
     gpa.free(iface.extra);
     gpa.free(iface.type_refs);
     gpa.free(iface.hidden_types);
+    gpa.free(iface.elements);
+    gpa.free(iface.attributes);
+    gpa.free(iface.events);
     gpa.free(iface.symbols);
     iface.* = undefined;
 }
@@ -989,10 +1033,19 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         try b.values.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(d.name)),
             .is_foreign = d.kind == .foreign_value,
+            .is_markup_primitive = d.kind == .vocab_markup,
             .scheme = .none,
         });
     }
     try b.sortByName(Value, b.values.items, value_decls.items);
+
+    // The vocabulary tables (`checker-v2.md` §25.8): every declaration's row,
+    // which the checker keeps or drops and completes with its type.
+    var vocab_decls: std.ArrayList(Bir.DeclIndex) = .empty;
+    errdefer vocab_decls.deinit(gpa);
+    try b.vocabRows(.vocab_element, &b.elements, &vocab_decls);
+    try b.vocabRows(.vocab_attribute, &b.attributes, &vocab_decls);
+    try b.vocabRows(.vocab_event, &b.events, &vocab_decls);
 
     // Types in declaration order first, then sorted; a constructor's
     // owning index is patched afterwards, because sorting moves the types.
@@ -1002,8 +1055,8 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         const d = bir.decl(di);
         if (d.kind.isValue()) continue;
         if (d.kind == .schema) continue; // Schemas have their own table.
-        // Vocabulary declarations publish tables of their own once the
-        // checker reads them (checker-v2.md §25.8); until then, nothing.
+        // Vocabulary declarations have tables of their own (above;
+        // checker-v2.md §25.8).
         if (d.kind.isVocab()) continue;
         try type_decls.append(gpa, di);
         try b.types.append(gpa, .{
@@ -1061,6 +1114,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         .type_decl = try type_decls.toOwnedSlice(gpa),
         .ctor_index = try ctor_indices.toOwnedSlice(gpa),
         .schema_decl = try b.schema_decls.toOwnedSlice(gpa),
+        .vocab_decl = try vocab_decls.toOwnedSlice(gpa),
     } };
 }
 
@@ -1075,8 +1129,102 @@ const Builder = struct {
     schema_members: std.ArrayList(SchemaMember) = .empty,
     schema_ctors: std.ArrayList(SchemaCtor) = .empty,
     schema_decls: std.ArrayList(Bir.DeclIndex) = .empty,
+    elements: std.ArrayList(VocabRow) = .empty,
+    attributes: std.ArrayList(VocabRow) = .empty,
+    events: std.ArrayList(VocabRow) = .empty,
     extra: std.ArrayList(u32) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
+
+    /// The rows of every `pub` declaration of form `kind`, appended to
+    /// `rows` sorted by name text and then by `on` set, their declarations
+    /// to `decls` in the same order.
+    fn vocabRows(b: *Builder, kind: Bir.Decl.Kind, rows: *std.ArrayList(VocabRow), decls: *std.ArrayList(Bir.DeclIndex)) Allocator.Error!void {
+        const bir = b.bir;
+        const first = decls.items.len;
+        var on: std.ArrayList(Symbol) = .empty;
+        defer on.deinit(b.gpa);
+        for (bir.interface) |di| {
+            const d = bir.decl(di);
+            if (d.kind != kind) continue;
+            const name = bir.symbol(d.name);
+            var row: VocabRow = .{ .name = try b.symbolIndex(name), .facts = 0 };
+            if (std.mem.indexOfScalar(u8, b.interner.slice(name), '*') != null) row.facts |= VocabRow.pattern_bit;
+            on.clearRetainingCapacity();
+            for (bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.VocabFact)) |f| {
+                row.facts |= @as(u32, 1) << @intCast(@intFromEnum(f.word));
+                if (f.arg == .none) continue;
+                const arg = bir.symbol(f.arg);
+                switch (f.word) {
+                    .on => try on.append(b.gpa, arg),
+                    .property, .name => row.arg = (try b.symbolIndex(arg)).toOptional(),
+                    .via => row.via = (try b.symbolIndex(arg)).toOptional(),
+                    else => {},
+                }
+            }
+            if (on.items.len != 0) {
+                std.mem.sort(Symbol, on.items, b.interner, textLessThan);
+                row.on = @intCast(b.extra.items.len);
+                try b.extra.append(b.gpa, @intCast(on.items.len));
+                for (on.items) |s| try b.extra.append(b.gpa, @intFromEnum(try b.symbolIndex(s)));
+            }
+            try rows.append(b.gpa, row);
+            try decls.append(b.gpa, di);
+        }
+        // Sort the rows and their declarations together (§25.8's order).
+        const n = rows.items.len;
+        const order = try b.gpa.alloc(u32, n);
+        defer b.gpa.free(order);
+        for (order, 0..) |*o, i| o.* = @intCast(i);
+        const Cx = struct {
+            b: *const Builder,
+            rows: []const VocabRow,
+            fn lessThan(cx: @This(), x: u32, y: u32) bool {
+                return cx.b.vocabLessThan(cx.rows[x], cx.rows[y]);
+            }
+        };
+        std.mem.sort(u32, order, Cx{ .b = b, .rows = rows.items }, Cx.lessThan);
+        const sorted_rows = try b.gpa.dupe(VocabRow, rows.items);
+        defer b.gpa.free(sorted_rows);
+        const sorted_decls = try b.gpa.dupe(Bir.DeclIndex, decls.items[first..]);
+        defer b.gpa.free(sorted_decls);
+        for (order, 0..) |from, i| {
+            rows.items[i] = sorted_rows[from];
+            decls.items[first + i] = sorted_decls[from];
+        }
+    }
+
+    fn textLessThan(interner: *const InternPool.Global, a: Symbol, c: Symbol) bool {
+        return std.mem.lessThan(u8, interner.slice(a), interner.slice(c));
+    }
+
+    /// §25.8's row order: name text, then the `on` set as a list of texts.
+    fn vocabLessThan(b: *const Builder, x: VocabRow, y: VocabRow) bool {
+        const nx = b.interner.slice(b.symbols.items[@intFromEnum(x.name)]);
+        const ny = b.interner.slice(b.symbols.items[@intFromEnum(y.name)]);
+        switch (std.mem.order(u8, nx, ny)) {
+            .lt => return true,
+            .gt => return false,
+            .eq => {},
+        }
+        const ox = b.onTexts(x);
+        const oy = b.onTexts(y);
+        for (0..@min(ox.len, oy.len)) |i| {
+            const tx = b.interner.slice(b.symbols.items[ox[i]]);
+            const ty = b.interner.slice(b.symbols.items[oy[i]]);
+            switch (std.mem.order(u8, tx, ty)) {
+                .lt => return true,
+                .gt => return false,
+                .eq => {},
+            }
+        }
+        return ox.len < oy.len;
+    }
+
+    fn onTexts(b: *const Builder, row: VocabRow) []const u32 {
+        if (row.on == no_terms) return &.{};
+        const len = b.extra.items[row.on];
+        return b.extra.items[row.on + 1 ..][0..len];
+    }
 
     fn deinit(b: *Builder) void {
         b.values.deinit(b.gpa);
@@ -1086,6 +1234,9 @@ const Builder = struct {
         b.schema_members.deinit(b.gpa);
         b.schema_ctors.deinit(b.gpa);
         b.schema_decls.deinit(b.gpa);
+        b.elements.deinit(b.gpa);
+        b.attributes.deinit(b.gpa);
+        b.events.deinit(b.gpa);
         b.extra.deinit(b.gpa);
         b.symbols.deinit(b.gpa);
     }
@@ -1175,6 +1326,9 @@ const Builder = struct {
         iface.schemas = try b.schemas.toOwnedSlice(b.gpa);
         iface.schema_members = try b.schema_members.toOwnedSlice(b.gpa);
         iface.schema_ctors = try b.schema_ctors.toOwnedSlice(b.gpa);
+        iface.elements = try b.elements.toOwnedSlice(b.gpa);
+        iface.attributes = try b.attributes.toOwnedSlice(b.gpa);
+        iface.events = try b.events.toOwnedSlice(b.gpa);
         iface.extra = try b.extra.toOwnedSlice(b.gpa);
         iface.symbols = try b.symbols.toOwnedSlice(b.gpa);
         return iface;

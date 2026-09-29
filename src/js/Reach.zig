@@ -268,6 +268,7 @@ pub const Input = struct {
                 const d = bir.decl(index);
                 if (!d.kind.isValue()) continue;
                 if (d.kind == .annotation_only) continue;
+                if (d.kind == .vocab_markup) continue;
                 if (d.kind == .value and d.body == .none) continue;
                 try out.append(scratch, .{ .module = m, .kind = .decl, .index = index.int() });
             }

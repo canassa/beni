@@ -1,0 +1,35 @@
+-- The types a vocabulary declaration may carry (checker-v2.md §25.2), each
+-- fault `type_mismatch` at the declaration's name, or `unbound_variable` for
+-- a `via` that names no `foreign` value of the module: an attribute of a type
+-- a lowering cannot write (20:15), a `classes` attribute that is not a
+-- `String` (23:15), an event with no `via` whose payload is not a
+-- `foreign type` (26:11), a `via` naming an ordinary value (29:11), an
+-- extractor whose result is not the payload (32:11), and a primitive that is
+-- not a function (35:12).
+pub foreign type Event
+
+
+pub foreign targetValue : Event -> String
+
+
+pub plain : Event -> String
+plain _ =
+    ""
+
+
+pub attribute "count" : List Int
+
+
+pub attribute "class" classes : Bool
+
+
+pub event "onClick" : ()
+
+
+pub event "onInput" via plain : String
+
+
+pub event "onCheck" via targetValue : Bool
+
+
+pub markup empty : Int

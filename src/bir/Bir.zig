@@ -1006,14 +1006,14 @@ pub const Decl = struct {
         vocab_event,
         vocab_markup,
 
-        /// True for the kinds that declare a name in the value namespace.
-        /// A markup primitive's name is one too, for lowering's
-        /// `duplicate_declaration`, but it has no scheme until the checker
-        /// reads vocabulary declarations, so it is not published as a value.
+        /// True for the kinds that declare a name in the value namespace. A
+        /// markup primitive is one: a value with an annotation and no body,
+        /// as a `foreign` value is, published with its scheme and flagged
+        /// (`checker-v2.md` §25.8).
         pub fn isValue(k: Kind) bool {
             return switch (k) {
-                .value, .annotation_only, .foreign_value => true,
-                .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => false,
+                .value, .annotation_only, .foreign_value, .vocab_markup => true,
+                .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event => false,
             };
         }
 

@@ -49,6 +49,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const Interface = @import("../resolve/Interface.zig");
+const Bir = @import("../bir/Bir.zig");
 const Render = @import("../check/Render.zig");
 const Schemes = @import("../check/Schemes.zig");
 const TypeStore = @import("../check/TypeStore.zig");
@@ -130,12 +131,43 @@ pub fn write(
     for (iface.values, 0..) |v, i| {
         try w.writeAll("  ");
         if (v.is_foreign) try w.writeAll("foreign ");
+        if (v.is_markup_primitive) try w.writeAll("markup ");
         try w.print("value {s}", .{interner.slice(iface.symbol(v.name))});
         if (v.scheme != .none) {
             try w.writeAll(" : ");
             try writeScheme(w, gpa, iface, type_ids, @enumFromInt(i), types, interner);
         }
         try w.writeByte('\n');
+    }
+    // The vocabulary tables (`checker-v2.md` §25.8), each row with its facts
+    // in the order `Bir.FactWord` lists them.
+    inline for (.{ .{ "element", "elements" }, .{ "attribute", "attributes" }, .{ "event", "events" } }) |table| {
+        for (@field(iface, table[1])) |row| {
+            try w.print("  {s} \"{s}\"", .{ table[0], interner.slice(iface.symbol(row.name)) });
+            try writeFacts(w, iface, interner, row);
+            if (row.scheme != .none) {
+                try w.writeAll(" : ");
+                try writeSchemeIndex(w, gpa, iface, type_ids, row.scheme, types, interner);
+            }
+            try w.writeByte('\n');
+        }
+    }
+}
+
+fn writeFacts(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, row: Interface.VocabRow) Error!void {
+    inline for (@typeInfo(Bir.FactWord).@"enum".fields) |f| {
+        const word: Bir.FactWord = @enumFromInt(f.value);
+        if (row.has(word)) {
+            try w.print(" {s}", .{word.spelling()});
+            switch (word) {
+                .on => for (iface.range(row.on)) |name| {
+                    try w.print(" \"{s}\"", .{interner.slice(iface.symbol(@enumFromInt(name)))});
+                },
+                .property, .name => if (row.arg.unwrap()) |s| try w.print(" \"{s}\"", .{interner.slice(iface.symbol(s))}),
+                .via => if (row.via.unwrap()) |s| try w.print(" {s}", .{interner.slice(iface.symbol(s))}),
+                else => {},
+            }
+        }
     }
 }
 
@@ -174,12 +206,28 @@ pub fn writeRaw(
 ) Error!void {
     try w.print("module {s}\n", .{module_name});
     for (iface.values, 0..) |v, i| {
-        try w.print("value {d} {s} foreign={} scheme={d}\n", .{
+        try w.print("value {d} {s} foreign={} scheme={d}", .{
             i,
             interner.slice(iface.symbol(v.name)),
             v.is_foreign,
             @intFromEnum(v.scheme),
         });
+        if (v.is_markup_primitive) try w.writeAll(" markup_primitive=true");
+        try w.writeByte('\n');
+    }
+    inline for (.{ "elements", "attributes", "events" }) |table| {
+        for (@field(iface, table), 0..) |row, i| {
+            try w.print("{s} {d} {s} facts={x} on={d} scheme={d}", .{
+                table,
+                i,
+                interner.slice(iface.symbol(row.name)),
+                row.facts,
+                row.on,
+                @intFromEnum(row.scheme),
+            });
+            try writeFacts(w, iface, interner, row);
+            try w.writeByte('\n');
+        }
     }
     for (iface.types, 0..) |t, i| {
         try w.print("type {d} {s} arity={d} kind={t} opaque={} equatable={} ctors={d}..{d} eq={t} compare={t} payload=", .{
