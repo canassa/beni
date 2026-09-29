@@ -25,35 +25,61 @@ Those documents are normative; where this plan's revision-2 text below disagrees
 and the items they overturn are marked **SUPERSEDED** in place and listed in the table below. The new
 slice plan is **§7**.
 
+**Revision 3.1, 2026-09-29 — after the specification review.** The owner answered the review
+([`browser-decisions.md`](browser-decisions.md), *Spec review answers*): text follows Solid 2 exactly,
+keyed `Show` stays, `class` and `style` get typed forms, and the lowering interface is stable under
+additive change. The five sections were revised in place with the review's findings fixed. **The
+ids in this plan are renamed** so they collide with nothing: the specification's decisions are
+**MD1…** (they were D1–D23, which `checker-v2.md` §21 and `plans/m4-plan.md` also use) and the markup
+slices **MJ0…** (they were J0–J9, which research 28 §12 and research 36 §7 use for their own lists,
+and those reports keep theirs).
+
 ### Decisions this spec took
 
 The owner's answers leave these open; the specification chose, and each is the owner's to overturn.
+**Status** says whether the owner's answers have since settled it; *new* marks a decision the review
+revision had to take.
 
-| # | Decision | Why | Where |
-|---|---|---|---|
-| D1 | **A capitalised tag names a module and the component is its `view`**; `<Card.header />` is that module's `header` | JSX's "a capital names a value" is impossible — a capitalised expression is a constructor — and a lower-case tag is an element (W31); the member form is Solid's member-expression rule and removes "one component per module" | `language.md` §11.8 |
-| D2 | **Props are a closed record; optional props are a leading spread**, `<Card {...Card.defaults} title="x" />` = record update; a spread elsewhere is refused | no new language feature; a later spread would only override props the closed type already has | §11.8 |
-| D3 | **`children`**: nothing → absent; one hole → that value (render functions work); otherwise one fragment | Solid's single-or-array rule, typed | §11.8 |
-| D4 | **`For` uses Solid 2's actual spelling, one `keyed` attribute** (`keyed={f}`, `{False}`, `{True}`), not question 4's `key=`; absent means by reference, warned (`unkeyed_for`) unless the item type is primitive-`eq`; a key must be a primitive-`eq` type; duplicate keys render by (key, rank); `fallback`; the row function may take its position | Solid 2 is the reference; identity on a record key would be a silent wrong answer; a dropped duplicate would be too | §11.9, `backend.md` §15.5 |
-| D5 | **No `Show`, `Switch`, `Match`** (research 36 kept `Show` as sugar) | the decision sheet's *What is forced*: `if`/`case` are expressions | §11.6 |
-| D6 | **A `List (Html msg)` hole is positional and never warned** (W33's warning is not carried to it) | it is the explicit spelling of positions, and `For` is where keys live | §11.6 |
-| D7 | **Whitespace is the space and the newline only** — Solid collapses every Unicode `White_Space`, NO-BREAK SPACE included | the one character typed so as not to collapse must not | §11.4 |
-| D8 | **Text is literal: no HTML character references**, and a reference-shaped run is the warning `html_entity_in_text`; `>` and `}` in text are refused (the JSX specification's rule) | decoding needs HTML's 2 231 names in the language and would make text depend on the lowering | §11.4 |
-| D9 | **An attribute string is a beni string** (escapes, `${…}`); a quoted attribute name is the untyped escape | one string syntax; `class="btn ${size}"` | §11.5 |
-| D10 | **Spread on an element is deferred** (`spread_on_element`) | it moves every attribute of the element to run time (research 27 §6.11 D); a spread of known fields needs its own design | §11.5 |
-| D11 | **A handler's form is decided by its type**; a variable at generalisation is a message | static and deterministic; the one corner, a function-valued message, is written as a lambda | §11.7, `checker-v2.md` §25.4 |
-| D12 | **Until effects land, `preventDefault`/`stopPropagation` are facts of an event's declaration** | W34's "the handler calls it itself" needs effectful handlers | §11.7, §11.14 |
-| D13 | **Vocabulary declarations name their markup name with a string**, carry facts as contextual words, allow one `*` (`"data-*"`, `"aria-*"`, `"*-*"` for custom elements), scope attributes with `on`, admit five value types, and take a payload extractor with `via` (an ordinary `foreign`); `url` makes a lowering sanitise script URLs (Elm's rule) and `raw` is the warned `innerHTML` escape | a markup name is not an identifier; `pub element "x"` is unambiguous with two tokens of lookahead | §11.14, `boundary.md` §9.3 |
-| D14 | **`void` is both a vocabulary typing fact and a `dom` parser-table fact**; a disagreement is `markup_restructured` | question 2 put the parser's rules in the lowering; the checker still needs to refuse children | §11.5, `backend.md` §15.3 |
-| D15 | **Markup needs no import**: the graph adds the platform's vocabulary module as an import of every module that writes markup; the markup type is named by the manifest | Solid's intrinsic elements need none either, and the per-file `Bir` cannot name the platform | `frontend.md` §9.8, `boundary.md` §9.2 |
-| D16 | **Layering**: manifest keys `"platforms"` and `"reexports"`; a dependency's output under `_platform/_<name>/`; `program`/`runtime`/`entry`/`markup` inherited first-found; built-in platforms `html`, `browser`, `browser-tea`, `node`; **TEA is beni over `browser`'s `Program`** with no runtime of its own | siblings may not import files, so layers share beni, not JavaScript; one vocabulary serves `dom` and `ssr` | `boundary.md` §9.1 |
-| D17 | **The lowering interface**: the compiler evaluates every value and hands the lowering names, never expressions; the lowering runs in `build` only, through a builder that can name no host global; two callbacks (`module`, `root`) plus `rowValues`; one diagnostic, `markup_restructured`; external platforms by `-Dplatform=<dir>` or `beni.addPlatform`; a platform's Zig may import the Zig of platforms it depends on | evaluation order and the wall stay the compiler's, not every lowering's | `boundary.md` §9.4–§9.5 |
-| D18 | **Only `For` rows are compiled away in the first interface version**; components, helpers, branches and `view`'s root are blocks. Research 36 also listed component calls and inline `if`s as direct consumers | blocks were measured ahead of Solid 2; J9's helper-heavy page decides whether more pay | `backend.md` §15.4 |
-| D19 | **Delegated events are registered by the entry file's call of the runtime's `start`**; a `--library` build registers per kind through `delegate` | loading a module must do nothing (`backend.md` §9) | `boundary.md` §9.4.5, `backend.md` §15.3 |
-| D20 | **The checker's markup facts ride in the dispatch table** (`dispatch_bytes` 4 → 5, `entry_bytes` 4 → 5); vocabularies in the interface (`iface_bytes` 7 → 8); the front-end artifact 4 → 5 | one sidecar, one round-trip flag | `checker-v2.md` §25.7–§25.8 |
-| D21 | **The plain-call form is the component equivalence**, exactly; element-level plain calls are a platform's run-time constructors (Solid's `dynamic`), never recognised by the compiler; research 28's rule 19 is withdrawn | W32: JSX is the template compiler | `language.md` §11.13 |
-| D22 | **A component or a row may be skipped** when its inputs are identical, so a render evaluates it zero or one times; never once effects make it `impure` | `lazy`'s job, done by the compiler at boundaries the program drew | §11.8, §11.11 |
-| D23 | **The formatter writes `<div />`** (a space, JSX's formatters' spelling), normalises `<div></div>` to it (W41), and never changes a whitespace gap's newline or emptiness | canonical, and cannot change the page | §11.15 |
+| # | Decision | Why | Where | Status |
+|---|---|---|---|---|
+| MD1 | **A capitalised tag names a module and the component is its `view`**; `<Card.header />` is that module's `header` | JSX's "a capital names a value" is impossible — a capitalised expression is a constructor — and a lower-case tag is an element (W31); the member form is Solid's member-expression rule and removes "one component per module" | `language.md` §11.8 | open |
+| MD2 | **Props are a closed record; optional props are a leading spread**, `<Card {...Card.defaults} title="x" />` = record update; a spread elsewhere is refused | no new language feature; a later spread would only override props the closed type already has | §11.8 | open |
+| MD3 | **`children`**: nothing → absent; one hole → that value (render functions work); otherwise one fragment. **Children are evaluated eagerly** — forced by strict evaluation, not chosen; a component wanting laziness takes a function | Solid's single-or-array rule, typed; Solid's lazy `get children()` has no counterpart in a strict language | §11.8 | open |
+| MD4 | **`For` uses Solid 2's actual spelling, one `keyed` attribute** (`keyed={f}`, `{False}`, `{True}`), not question 4's `key=`; absent means by reference, warned (`unkeyed_for`) unless the item type is primitive-`eq`; a key must be a primitive-`eq` type; duplicate keys render by (key, rank); `fallback`; the row function may take its position. **Absent `keyed` over a primitive-`eq` item type is not a silent default, and so is consistent with research 36 question 4's "no silent default"**: identity on a `String` or `Int` is equality, so by reference there is by value, exactly what `keyed={\x -> x}` would say — there is no second mode for silence to hide | Solid 2 is the reference; identity on a record key would be a silent wrong answer; a dropped duplicate would be too | §11.9, `backend.md` §15.5 | open |
+| MD5 | **Keyed `Show` is kept; non-keyed `Show`, `Switch` and `Match` are not provided** (`if`/`case` are expressions) | the owner's answer | §11.6, §11.18 | **settled by the owner** (spec review), replacing "no `Show`" |
+| MD6 | **A `List (Html msg)` hole is positional and never warned** (W33's warning is not carried to it) | it is the explicit spelling of positions, and `For` is where keys live | §11.6 | open |
+| MD7 | ~~Whitespace is the space and the newline only~~ | — | — | **withdrawn by the owner**: text collapses all Unicode whitespace, as Solid's `trim_jsx_text` does (§11.4) |
+| MD8 | ~~Text is literal: no HTML character references, and `html_entity_in_text`~~ | — | — | **withdrawn by the owner**: references are decoded exactly as Solid decodes them, and the warning is gone (§11.4). `>`, `}` and a stray `<` in text stay refused |
+| MD9 | **An attribute string is a beni string** (escapes, `${…}`); a quoted attribute name is the untyped escape | one string syntax; `class="btn ${size}"` | §11.5 | open, amended by MD25 |
+| MD10 | **Spread on an element is deferred** (`spread_on_element`), and with it **a tag chosen at run time** (`Html.node`, Solid's `<Dynamic>`) | it moves every attribute of the element to run time (research 27 §6.11 D); a spread of known fields needs its own design, and so do untypable attributes | §11.5, §11.13 | open |
+| MD11 | **A handler's form is decided by its type**; a variable at generalisation is a message | static and deterministic; the one corner, a function-valued message, is written as a lambda | §11.7, `checker-v2.md` §25.4 | open |
+| MD12 | **Until effects land, `preventDefault`/`stopPropagation` are facts of an event's declaration** | W34's "the handler calls it itself" needs effectful handlers | §11.7, §11.14 | open |
+| MD13 | **Vocabulary declarations name their markup name with a string**, carry facts as contextual words, allow one `*` (`"data-*"`, `"aria-*"`, `"*-*"` for custom elements), scope attributes with `on`, admit five value types, and take a payload extractor with `via` (an ordinary `foreign`); `url` makes a lowering sanitise script URLs (Elm's rule) and `raw` is the warned `innerHTML` escape; `classes` and `styles` admit the lists of MD27 | a markup name is not an identifier; `pub element "x"` is unambiguous with two tokens of lookahead | §11.14, `boundary.md` §9.3 | open |
+| MD14 | **`void` is both a vocabulary typing fact and a parser-table fact**; a disagreement is `markup_restructured` | question 2 put the parser's rules in the lowering; the checker still needs to refuse children | §11.5, `backend.md` §15.3 | open |
+| MD15 | **Markup needs no import**: the graph adds the platform's vocabulary module as an import of every module that writes markup, never of the vocabulary module itself; the markup type is named by the manifest | Solid's intrinsic elements need none either, and the per-file `Bir` cannot name the platform | `frontend.md` §9.8, `boundary.md` §9.2 | open |
+| MD16 | **Layering**: manifest keys `"platforms"` and `"reexports"`; a dependency's output under `_platform/_<name>/`; `program`/`runtime`/`entry` and each `markup` field inherited first-found; built-in platforms `html`, `browser`, `browser-tea`, `node`; **TEA is beni over `browser`'s `Program`** with no runtime of its own | siblings may not import files, so layers share beni, not JavaScript | `boundary.md` §9.1 | open |
+| MD17 | **The lowering interface**: the compiler evaluates every value and hands the lowering handles, never expressions; the lowering runs in `build` only, through a builder that can name no host global; two callbacks (`module`, `root`) plus `rowValues`; one diagnostic, `markup_restructured`; external platforms by `-Dplatform=<dir>` or `beni.addPlatform`; a platform's Zig may import the Zig of platforms it depends on | evaluation order and the wall stay the compiler's, not every lowering's | `boundary.md` §9.4–§9.5 | open; versioning settled, MD32 |
+| MD18 | **Only `For` rows are compiled away in interface version 1.0**; components, helpers, branches, `Show` bodies and `view`'s root are blocks. Research 36 also listed component calls and inline `if`s as direct consumers | blocks were measured ahead of Solid 2; MJ9's helper-heavy page decides whether more pay | `backend.md` §15.4–§15.5 | open |
+| MD19 | **Delegated events are registered by the entry file's call of the runtime's `start`**, whose data is one object of sorted keys to sorted string arrays; a `--library` build registers per kind through `delegate` | loading a module must do nothing (`backend.md` §9) | `boundary.md` §9.4.5, `backend.md` §15.1, §15.3 | open |
+| MD20 | **The checker's markup facts ride in the dispatch table** (`dispatch_bytes` 4 → 5, `entry_bytes` 4 → 5); vocabularies in the interface (`iface_bytes` 7 → 8); the front-end artifact 4 → 5 | one sidecar, one round-trip flag | `checker-v2.md` §25.7–§25.8 | open |
+| MD21 | **The plain-call form is the component equivalence**, exactly; run-time constructors are markup primitives (MD28), never recognised by the compiler; research 28's rule 19 is withdrawn | W32: JSX is the template compiler | `language.md` §11.13 | open |
+| MD22 | **A component, a row or a `Show` body may be skipped** when its inputs are identical, so a render evaluates it zero or one times; never once effects make it `impure` | `lazy`'s job, done by the compiler at boundaries the program drew | §11.8, §11.11 | open |
+| MD23 | **The formatter writes `<div />`** (a space, JSX's formatters' spelling), normalises `<div></div>` to it (W41), and never changes a whitespace gap's newline or emptiness | canonical, and cannot change the page | §11.15 | open |
+| MD24 | *New.* **The character-reference table is the compiler's**, generated from WHATWG's `entities.json`, and text is decoded in BIR lowering after trimming — Solid's order, so a typed no-break space collapses and `&nbsp;` survives; every lowering receives decoded text, and `dom` re-encodes it for its template | decoding is JSX's text syntax, not vocabulary; in a platform, what a page says would depend on the lowering and every lowering would carry 2 231 names | `language.md` §11.4, `frontend.md` §9.7 | for the owner |
+| MD25 | *New.* **A quoted attribute value, and a quoted component prop, decode references in their literal text** — Solid decodes every JSX attribute string (`shared/attr_plan.rs:374`) and string prop (`shared/component.rs:87`); a character an escape writes never begins a reference, an interpolation's value and a `{"…"}` hole are never decoded | the owner takes Solid 2's answer by default, and nothing in beni forces a departure | `language.md` §11.5 | for the owner |
+| MD26 | *New.* **`Show`'s shape**: `when : Maybe a` (beni has no truthiness), `keyed` required, the body one function hole `a -> Html msg`, `fallback` optional; **`keyed={f}` keys by a primitive key**, beni's addition, because by identity remounts on every edit of the shown record in an immutable language — `For`'s hazard; `keyed={False}` and a missing `keyed` are refused with the `case` spelling | Solid 2's keyed `Show` (`flow.ts:164-241`), typed | `language.md` §11.18 | for the owner |
+| MD27 | *New.* **`class` and `style` keep their names and take typed lists**: `List ( String, Bool )` and `List ( String, String )`, declared by the facts `classes` and `styles`; a list literal of pairs is split at compile time into template constants and guarded toggles, any other list goes through ports of Solid's `className`/`style` diffs. **Lists, not records**: class names and CSS properties are not field names, and "a record of `Bool`s" is not a beni type. An empty style value removes the property; a class listed twice is present if any entry is `True` | Solid 2 merged `classList` into `class` and rejected two names (`07-dom.md:158`); `List ( String, Bool )` is Elm's `classList` | `language.md` §11.19, `backend.md` §15.3, §15.6 | for the owner |
+| MD28 | *New.* **Markup primitives**: `pub markup name : T` in the vocabulary binds to the build's markup runtime, so `Html.text` and `Html.map` serve every lowering; a `foreign` whose type mentions the markup type is legal only in a platform that names the build's lowering (`markup_type_in_foreign`) | one sibling cannot build two lowerings' representations; this is the per-lowering runtime export the review asked for | `language.md` §11.13–§11.14, `boundary.md` §9.3 | for the owner |
+| MD29 | *New.* **`Html.map` is Elm's**, implemented in `dom` by a mount context chain: each event node inside a map points at its context, a map's `p` updates its function in place, the listener applies the chain innermost first; `ssr`'s `map` is the identity | TEA with a nested `Msg` needs it; free outside maps, one property write per event node inside | `language.md` §11.13, `backend.md` §15.3 | for the owner |
+| MD30 | *New.* **`browser`'s program runtime and markup runtime are one file**, so a delegated listener can reach `send`; its `Program` is data `run` interprets, mounted at `document.body` until W9 says what `main` is | a sibling may not import another file | `boundary.md` §9.2, `backend.md` §15.11 | for the owner |
+| MD31 | *New.* **The row function is any function**; a row is skipped on its item, position and **inputs** — the field paths its body reads from each captured local, through calls to the same module's functions by summary, else the whole local — so `rowClass model row` skips on `model.selected`. No warning when a row captures a whole record the analysis cannot see into; `--self-profile` counts them. *The owner may prefer a warning* (`row_reads_whole_record`, at the capture, naming the field to pass instead): it would be a rule-7 warning, never an error | rule 8: an unchanged row must cost a pointer comparison for the idiomatic shape, research 29 §7.2's field dependencies | `language.md` §11.9, `frontend.md` §9.7, `backend.md` §15.5 | for the owner |
+| MD32 | *New, the owner's principle applied.* **Interface versioning `{ major, minor }`**: every enumeration non-exhaustive and read through accessors, so an addition never breaks an old lowering's compile; a feature a lowering must render is gated by `Tree.requires` against `Lowering.targets`, refused as `markup_feature_unsupported` rather than rendered wrong; only a breaking change moves the major, found at `comptime` | "stable under additive change" (spec review answers) | `boundary.md` §9.4.6 | settled in principle; mechanism for the owner |
+| MD33 | *New.* **The `html` layer is kept** under `browser` and `node`, holding the vocabulary, the markup type, the primitives and the parser table | a view module must check against one `Html` type to build under both lowerings; the alternative, a vocabulary per platform, gives two unrelated types | `boundary.md` §9.1 | **for the owner** |
+| MD34 | *New.* **The `markup` key is inherited field by field**: `html` declares `vocabulary` and `type`, `browser` and `node` `lowering` and `runtime` (from one package); `check --platform=html` works, `build --platform=html` without `--library` is refused as having no `program` | the review's gaps in how a program-less, lowering-less platform behaves | `boundary.md` §9.1–§9.2 | for the owner |
+| MD35 | *New.* **The built-in forms' own attributes are validated** (`unknown_form_attribute`, `missing_form_attribute`), and three codes are renamed for `Show` (`invalid_form_children`, `invalid_keyed`, `key_not_primitive`) | a misspelt `keyed` must not silently key by reference | `language.md` §10, §11.9 | for the owner |
+| MD36 | *New.* **The render loop (W28) as a contract**: one microtask flush per batch, patch then after-render work, no layout reads in the patch, the runtime's `flush` drains now; `Browser.flush` and after-render capabilities are values `run` interprets and arrive with effects. **Controlled inputs need no synchronous render**, since a microtask flush reconciles before the next input event | W28's answer, with the pieces effects owe named so no phase is missing | `backend.md` §15.11 | settled by W28; the pre-effects position for the owner |
+| MD37 | *New.* **Portals and `ref` are out of scope** for now | portals wait on the mount and after-render design; `ref` on question 6 | `language.md` §11.16 | for the owner |
+| MD38 | *New, open — not decided.* **The untyped escape can write an event-handler attribute**: `"onclick"={userText}` is a script sink, which Elm closes by refusing `on*` attribute names (research 24 §6.3, `VirtualDom.js:274-333`). The spec leaves the escape unrestricted; closing it would be a guarantee (no script injection from view data), so it would be an error with the typed event as the escape | the one hole beside `raw` a `view` could inject script through | `language.md` §11.5 | **question for the owner** |
 
 ### What the decisions overturned
 
@@ -61,21 +87,22 @@ The owner's answers leave these open; the specification chose, and each is the o
 |---|---|---|
 | §1.1's `view` (quoted text, `Html.keyed`) and its "plain-call form of one branch" | **SUPERSEDED** | bare text and `For`: `language.md` §11.4, §11.9; the plain-call form is §11.13 |
 | §2.2's rows *template extraction* (`backend.md` §11), *fallback tree path*, *element vocabulary* (W37) | **SUPERSEDED** | `backend.md` §15; blocks, §15.4; vocabulary declarations, `language.md` §11.14 |
-| §2.3's seam (desugar to calls, a `--release` recogniser), `Keyed msg`, the handler variant as data | **SUPERSEDED** | templates by construction, never `--release`-gated (W32); `For` (W33); event facts (D12) |
+| §2.3's seam (desugar to calls, a `--release` recogniser), `Keyed msg`, the handler variant as data | **SUPERSEDED** | templates by construction, never `--release`-gated (W32); `For` (W33); event facts (MD12) |
 | §2.3's *fallback path* subsection (W29 open) | **ANSWERED** | blocks, `backend.md` §15.4 (question 3) |
-| §2.4 items 1–2 (one render per frame; a render-now) | **SUPERSEDED** | W28: Solid 2's microtask flush and `flush()`, `backend.md` §15.3 |
-| §3's **L1** (quoted text, JSX as sugar) | **SUPERSEDED** | J1–J5 (§7) |
-| §3's **L2** (typed holes over `Html.keyed`/`Keyed msg`) | **SUPERSEDED** | J4 (§7) |
-| §3's **L3** (the identity promise) | **KEPT**, folded into J4–J5 | `language.md` §11.12, `backend.md` §15.8 |
-| §3's **R1** (a `--release`-gated recogniser, `backend.md` §11) | **SUPERSEDED** | J6 and J9 (§7); its exit table survives as J9's bar |
-| §3's **R2** (`Keyed msg`, `unkeyed_list_hole`) | **SUPERSEDED** | `For` and `unkeyed_for`, J7 |
-| §3's **R3** (field analysis) | **KEPT** | after J9, and after X3 |
-| §3's **X1** (the fallback experiment) | **SUPERSEDED** | question 3 accepted blocks; J9's helper-heavy page measures them |
-| §3's **B2′**, **B3** | **SUPERSEDED** | J6–J8 |
+| §2.4 items 1–2 (one render per frame; a render-now) | **SUPERSEDED** | W28: Solid 2's microtask flush and `flush()`, `backend.md` §15.11; items 3–4 are specified there too |
+| §3's **L1** (quoted text, JSX as sugar) | **SUPERSEDED** | MJ1–MJ5 (§7) |
+| §3's **L2** (typed holes over `Html.keyed`/`Keyed msg`) | **SUPERSEDED** | MJ4 (§7) |
+| §3's **L3** (the identity promise) | **KEPT**, folded into MJ4–MJ5 | `language.md` §11.12, `backend.md` §15.8 |
+| §3's **R1** (a `--release`-gated recogniser, `backend.md` §11) | **SUPERSEDED** | MJ6 and MJ9 (§7); its exit table survives as MJ9's bar |
+| §3's **R2** (`Keyed msg`, `unkeyed_list_hole`) | **SUPERSEDED** | `For` and `unkeyed_for`, MJ7 |
+| §3's **R3** (field analysis) | **KEPT**, rung 3 specified at the row | a row's inputs are the fields it reads (MD31, `language.md` §11.9); the model-level diff and the selector (rung 4) after MJ9, and after X3 |
+| §3's **X1** (the fallback experiment) | **SUPERSEDED** | question 3 accepted blocks; MJ9's helper-heavy page measures them |
+| §3's **B2′**, **B3** | **SUPERSEDED** | MJ6–MJ8 |
 | W37 (well-known runtime names declared by a platform) | **SUPERSEDED** | a lowering's runtime exports, `boundary.md` §9.4.5 |
 | §4's rows for `language.md`, `frontend.md`, `checker.md`, `backend.md` new §11, `boundary.md` new §9 | **DONE, differently** | the five sections named at the top of this block |
-| §5 risk 1 (what an `Html msg` is) | **ANSWERED** | a block, `backend.md` §15.4; J9 measures it |
+| §5 risk 1 (what an `Html msg` is) | **ANSWERED** | a block, `backend.md` §15.4; MJ9 measures it |
 | §6's phases 1–2 (L1, R1, L2, R2, B2′, B3) | **SUPERSEDED** | §7's order |
+| this block's own MD5, MD7, MD8 (revision 3) | **OVERTURNED** by the owner's spec review answers | keyed `Show` (MD5, MD26), Solid's whitespace and character references (MD24, MD25) |
 
 **How to read it.** Every part is marked with the `W` ids it depends on, so the plan survives the
 owner choosing differently. Evidence is **R24** … **R29** (`docs/design/research/24…29`); no number
@@ -593,7 +620,7 @@ fallback for subtrees the recogniser cannot prove.
 
 ### 2.4 The render loop contract
 
-> **Items 1–2 SUPERSEDED 2026-09-29** by W28: Solid 2's microtask flush and an explicit `flush()` (`backend.md` §15.3). Items 3–6 stand.
+> **Items 1–2 SUPERSEDED 2026-09-29** by W28: Solid 2's microtask flush and an explicit `flush()` (`backend.md` §15.11). Items 3–6 stand, and 3–4 are specified in `backend.md` §15.11.
 
 *Depends on: **W28**.*
 
@@ -728,7 +755,7 @@ platform's signatures, and it is the only thing the ordering costs.
 | **L2** | Typed child holes and the attribute vocabulary in the checker | L1, W33, W34, W37 |
 | **L3** | The identity promise, specified and pinned | W27 |
 
-> **SUPERSEDED 2026-09-29** by J1–J5 (§7): text is bare (W30), markup is not sugar (W32), and the render-to-string platform is the `node` platform's `ssr` lowering.
+> **SUPERSEDED 2026-09-29** by MJ1–MJ5 (§7): text is bare (W30), markup is not sugar (W32), and the render-to-string platform is the `node` platform's `ssr` lowering.
 
 **L1 — JSX as sugar.** *Spec first (rule 1): `language.md` §3's grammar, a new subsection beside
 *Evaluation order* carrying R28 §11.1's twenty rules, §9's formatting rules and §10's new codes
@@ -754,7 +781,7 @@ appended never inserted; `frontend.md`'s new §9.*
   added so the question can be asked at all — R28 §15 records that nobody has measured one because
   none exists.
 
-> **SUPERSEDED 2026-09-29** by J4 (§7) and `checker-v2.md` §25: the hole set has no `Keyed msg`.
+> **SUPERSEDED 2026-09-29** by MJ4 (§7) and `checker-v2.md` §25: the hole set has no `Keyed msg`.
 
 **L2 — typed child holes and the vocabulary.**
 - *Goal.* `checker.md` §6.1 gains one obligation — `renderable(var, region)` beside `equatable`,
@@ -772,7 +799,7 @@ appended never inserted; `frontend.md`'s new §9.*
 - *Exit.* `child_not_renderable` names the type and the accepted shapes; the typeahead compiles with
   no wrappers; a `check/bad` fixture per code.
 
-> **KEPT 2026-09-29**, specified as `language.md` §11.12 and pinned per `backend.md` §15.8; built in J4–J5 (§7).
+> **KEPT 2026-09-29**, specified as `language.md` §11.12 and pinned per `backend.md` §15.8; built in MJ4–MJ5 (§7).
 
 **L3 — the identity promise, specified and pinned.** *This is the slice that makes W26 sound.*
 - *Goal.* One paragraph in `language.md` §6: **an update preserves the identity of every field it does
@@ -796,7 +823,7 @@ appended never inserted; `frontend.md`'s new §9.*
 | **R2** | The keyed list hole and the unkeyed warning | R1, W33 |
 | **R3** | The field-dependency analysis, and the selector pattern only if asked | R1, W42, **X3** |
 
-> **SUPERSEDED 2026-09-29**: templates are not a `--release`-gated recogniser but what markup compiles to, always (W32); the lowering is platform code (`boundary.md` §9.4, `backend.md` §15). Its exit table survives as J9's bar (§7).
+> **SUPERSEDED 2026-09-29**: templates are not a `--release`-gated recogniser but what markup compiles to, always (W32); the lowering is platform code (`boundary.md` §9.4, `backend.md` §15). Its exit table survives as MJ9's bar (§7).
 
 **R1 — the recogniser and the lowering.** *Spec first: `backend.md`'s new §11.*
 - *Goal.* A `--release`-gated pass over BIR that recognises the `Html.*` call shape, extracts a
@@ -832,7 +859,7 @@ appended never inserted; `frontend.md`'s new §9.*
   R29's **E1 static-heavy page** (2 000 elements, 50 holes, one changing), because the table benchmark's
   list hole is the whole app and E1 is the shape almost every real screen has.
 
-> **SUPERSEDED 2026-09-29**: no `Keyed msg`; lists are `For` (W33), warned by `unkeyed_for` — J7 (§7).
+> **SUPERSEDED 2026-09-29**: no `Keyed msg`; lists are `For` (W33), warned by `unkeyed_for` — MJ7 (§7).
 
 **R2 — the keyed list hole.**
 - *Goal.* `Keyed msg` from `Html.keyed`, the `udomdiff`-shaped reconciler behind the wall, and the
@@ -923,7 +950,7 @@ question (§5 risk 5).*
 - *Exit.* The empty mounted page's floor measured, dev and `--release`, into `bench/size.mjs`. First
   half of W11; today's runtime-free floor is 2 147 B raw / 833 brotli.
 
-> **SUPERSEDED 2026-09-29** by J6–J7 (§7).
+> **SUPERSEDED 2026-09-29** by MJ6–MJ7 (§7).
 
 **B2′ — the template renderer and events.** *Replaces revision 1's B2, which built a virtual DOM.*
 - *Goal.* §2.3's renderer in a page: the template runtime behind the wall, the compiler's mount/update
@@ -937,7 +964,7 @@ question (§5 risk 5).*
   virtual DOM alone is 29 782 B, 27.2 % of a counter); `addEventListener` called **once** for a
   1 000-handler list, which is Solid's measured figure and is the delegation working (R27 §6.2).
 
-> **SUPERSEDED 2026-09-29** by J8 (§7): the loop is W28's microtask flush, and TEA is the `browser-tea` platform.
+> **SUPERSEDED 2026-09-29** by MJ8 (§7): the loop is W28's microtask flush, and TEA is the `browser-tea` platform.
 
 **B3 — the TEA loop with a pure `update`.** `Browser.element` with `init`/`update`/`view`, no commands,
 no subscriptions; the model cell, the dispatcher with §2.5's re-entrancy guard, and the animator.
@@ -1164,39 +1191,48 @@ pass away.
 
 ---
 
-## 7. The markup slice plan (revision 3, 2026-09-29)
+## 7. The markup slice plan (revision 3.1, 2026-09-29)
 
-Research 36 §7's J0–J8, adapted to the owner's *JSX targets* answer: the compiler builds **one
-lowering interface** and the platforms build the lowerings on it, so the `ssr` and `dom` slices are
-platform work in `platforms/node/` and `platforms/browser/`, and the interface slice comes before
-either. Each slice is specified already (J0), lands whole with the three gates green, and gets
-hand-picked tests: the smallest fixture that reaches each new branch, never a sweep (the matrix was
-deleted for that reason, `fast-compiler.md` §8). Line counts are research 36's, re-cut.
+Research 36 §7's J0–J8 (that report's own ids), adapted to the owner's *JSX targets* answer: the
+compiler builds **one lowering interface** and the platforms build the lowerings on it, so the `ssr`
+and `dom` slices are platform work in `platforms/node/` and `platforms/browser/`, and the interface
+slice comes before either. Each slice is specified already (MJ0), lands whole with the three gates
+green, and gets hand-picked tests: the smallest fixture that reaches each new branch, never a sweep
+(the matrix was deleted for that reason, `fast-compiler.md` §8). Line counts are research 36's,
+re-cut. *Revision 3.1* renamed the slices (they were J0–J9), moved markup's BIR into MJ2, where no
+slice held it, and added the review's work to each slice.
 
 **Nothing here needs the effects work** (§3, *What needs effects*): until `sync` exists every
-handler is vacuously `sync`, and `preventDefault` is a declaration fact (D12).
+handler is vacuously `sync`, and `preventDefault` is a declaration fact (MD12). `Browser.flush` and
+after-render capabilities are the two pieces of MJ8's loop that wait on effects (MD36).
 
 | # | Slice | Builds | Size | Tests that prove it |
 |---|---|---|---|---|
-| **J0** | **Specification** | `language.md` §11, `frontend.md` §9, `checker-v2.md` §25, `boundary.md` §9, `backend.md` §15, this block | docs | reviewed against research 36 §2's examples and the owner's answers |
-| **J1** | **Lexer modes** | the mode stack, eight token kinds, the operand-start rule, the column-1 reset, the depth bound; front-end artifact v5 (`frontend.md` §9.1–§9.3) | 350–450 | `parse/` token dumps: `a <b`, `f a <b`, `(<)`, `x = <b />`, `[ <li />, <li /> ]`, text holding `--`, `'` and `"`, a string inside a hole, `${…}` holding `<`, a column-1 declaration after an unclosed element, the 4 096 bound; `--roundtrip-frontend` over a markup file; **`zig build bench` unchanged on the markup-free corpus**, and markup-heavy modules added to `bench/corpus` |
-| **J2** | **Parser, AST, recovery, formatter, dump** | `frontend.md` §9.4–§9.6; `language.md` §11.15 | 1 000–1 250 | `parse/good` AST goldens per production (element, fragment, attribute forms, spread, holes, the vocabulary declarations); `parse/bad` for `unclosed_element`, `mismatched_closing_tag` (one message), `element_as_argument`, `>` in text, `<-div>`; `fmt/` goldens where whitespace must not move — children on one line past 100 columns, a space between two elements, two spaces between words — plus `<div></div>` → `<div />`; idempotence over all of them |
-| **J3** | **Layered platforms and vocabularies** | `"platforms"`, `"reexports"`, the chain's enumeration and output under `_platform/_<name>/`, inherited output keys (`boundary.md` §9.1); the three declarations through lowering, and their interface tables (iface v8); the `markup` key's validation; the `html` platform, and `node` depending on it | 400–600 | **every `run/` program's emitted bytes unchanged** (the run-hash file does not move); `check/good` `.iface` of a vocabulary module; `build/bad` for a platform cycle, `unknown_markup_lowering`, `vocabulary_outside_platform`, an app importing a module no platform re-exports (the message names the key); a two-layer test platform under `tests/` whose top declares nothing and inherits `program` |
-| **J4** | **Checker** | resolution against the vocabulary, the two obligations, `For`'s checks, components as calls, the warnings, the markup section of the dispatch table (`checker-v2.md` §25) | 700–1 000 + 200–300 of diagnostics | a `check/bad` fixture per code of §25.9; `check/good` for research 28 §11.2's typeahead in bare-text form — **no conversion written anywhere** — with its `dispatch/` golden showing hole kinds and handler forms; `ordering_test.zig` permutations of a module whose component and `view` are in both orders; `cache_test.zig`: editing a vocabulary declaration re-checks the markup-using modules and nothing else, editing only a `view`'s markup moves no interface hash |
-| **J5** | **The lowering interface, and `ssr`** | `src/markup/Interface.zig`, the registry `build.zig` generates, `-Dplatform=<dir>` and `beni.addPlatform`, the runtime-export checks (`boundary.md` §9.4–§9.6); BIR → tree; the values prelude; `platforms/node/lowering/ssr.zig` and the Node markup runtime; the HTML parser table in `html`'s Zig | 800–1 100 + ~40 JS | **the first slice that runs markup.** `run/`: text and attribute escaping (`&`, `<`, `"`, a script URL), every attribute value class, `For` in its three modes and `fallback`, components with every `children` form and a leading spread, fragments, blocks from a helper, a `let` and a `case`, a view formatted and re-rendered to the same string; `build/bad` for a runtime missing a well-known export and one with the wrong arity; **the identity pair** — `emit/` and `emit/release/` goldens of a record update, and a `run/` fixture over a test platform's `refEq`; the determinism scenarios with a markup program in; **one `build.zig` step that builds beni with a toy external lowering from `tests/platforms/` and runs one fixture through it** |
+| **MJ0** | **Specification** | `language.md` §11, `frontend.md` §9, `checker-v2.md` §25, `boundary.md` §9, `backend.md` §15, this block; revised after the review | docs | reviewed against research 36 §2's examples and the owner's answers, including the spec review's |
+| **MJ1** | **Lexer modes** | the mode stack, eight token kinds, the operand-start rule, the column-1 reset, the depth bound, the three stray bytes in text, a spread after whitespace, a stray byte in a tag; front-end artifact v5 (`frontend.md` §9.1–§9.3); `bench/markup/` and the bench harness's `--phases` | 350–450 | `parse/` token dumps: `a <b`, `f a <b`, `(<)`, `x = <b />`, `[ <li />, <li /> ]`, text holding `--`, `'` and `"`, text holding `a < b` (one `invalid`, the text resuming), `>` and `}` in text, `{ ...x }` and `{` then `...` on the next line, `...` later in a hole (not an `ellipsis`), a string inside a hole, `${…}` holding `<`, `{-- note}` (the `}` inside the comment), a stray `<` inside a tag, a column-1 declaration after an unclosed element, the 4 096 bound; `--roundtrip-frontend` over a markup file; **`zig build bench` unchanged on the markup-free corpus**, and `zig build bench -- --corpus=bench/markup --phases=lex` recorded in the commit |
+| **MJ2** | **Parser, AST, recovery, formatter, BIR, dump** | `frontend.md` §9.4–§9.7; `language.md` §11.3–§11.5, §11.15; the character-reference table and decoder (`src/markup/entities.zig`); markup trees, constants, entries, rows with captures and inputs, lowering's diagnostics | 1 400–1 800 | `parse/good` AST goldens per production (element, fragment, `For`, `Show`, attribute forms, spread, holes, the four vocabulary declarations); `parse/bad` for `unclosed_element`, `mismatched_closing_tag` (one message), `element_as_argument`, `>` in text, `<-div>`, `{-- note}` (the message naming the comment); `fmt/` goldens where whitespace must not move — children on one line past 100 columns, a space between two elements, two spaces between words, a no-break space — plus `<div></div>` → `<div />` and a comment hole; idempotence over all of them; `bir/` goldens for trimmed and decoded text (`&nbsp;` kept, a typed U+00A0 collapsed, `&notit;`, `&#x80;`), a decoded quoted attribute and an undecoded `{"&amp;"}`, entries, and the three row shapes with inputs through a same-module helper; the decoder's hermetic tests are `htmlize` 1.1.0's vectors; `check/bad` (lowering's codes) for `duplicate_attribute`, `spread_on_element`, `spread_not_first`, `invalid_form_children`, `unknown_form_attribute` (`key=`), `missing_form_attribute` (`For` without `each`, `Show` without `keyed`), `invalid_keyed` (`keyed="x"`, `Show keyed={False}`) and `vocabulary_outside_platform`; `bench -- --corpus=bench/markup --phases=lex,parse` |
+| **MJ3** | **Layered platforms and vocabularies** | `"platforms"`, `"reexports"`, the chain's enumeration and output under `_platform/_<name>/`, inherited output keys and `markup` fields (`boundary.md` §9.1–§9.2); the four declarations through lowering, and their interface tables (iface v8); the `markup` key's validation; the `html` platform (vocabulary, primitives `text` and `map`, no program), and `node` depending on it and re-exporting `Html`; the vocabulary module's own markup, with no edge to itself | 450–650 | **every `run/` program's emitted bytes unchanged** (the run-hash file does not move); `check/good` `.iface` of a vocabulary module; `build/bad` for a platform cycle, `unknown_markup_lowering` (a name the binary lacks, and a surviving root under a chain that names none), `vocabulary_outside_platform`, an app importing a module no platform re-exports (the message names the key), `build --platform=html` without `--library` (exit 2, "only depended on"), a `lowering` and a `runtime` from different packages; `check --platform=html` of a view module; a vocabulary module whose own `view` writes markup, and one whose import writes markup (`import_cycle`, naming the markup edge); a two-layer test platform under `tests/` whose top declares nothing and inherits `program` |
+| **MJ4** | **Checker** | resolution against the vocabulary, the four obligations, `For`'s and `Show`'s checks, components as calls, the list forms, primitives, `markup_type_in_foreign`, the warnings, the markup section of the dispatch table (`checker-v2.md` §25) | 800–1 100 + 200–300 of diagnostics | a `check/bad` fixture per code of §25.9; `check/good` for research 28 §11.2's typeahead in bare-text form — **no conversion written anywhere** — with its `dispatch/` golden showing hole kinds, handler forms, list forms and row arities; `class` given a `String`, a list literal and a list variable; a row given as `{viewRow}`, `{viewRow model _}` and a two-parameter lambda; `Show` by identity and by key, with `key_not_primitive` on a record key; `markup_type_in_foreign` in `html` and a legal one in `node`; `ordering_test.zig` permutations of a module whose component and `view` are in both orders; `cache_test.zig`: editing a vocabulary declaration re-checks the markup-using modules and nothing else, editing only a `view`'s markup moves no interface hash |
+| **MJ5** | **The lowering interface, and `ssr`** | `src/markup/Interface.zig` at version 1.0 (`boundary.md` §9.4.2–§9.4.3), the `"zig"` key, the registry `build.zig` generates, `-Dplatform=<dir>` and `beni.addPlatform`, the runtime-export checks over the union of the lowering's exports, the primitives and `run` (`boundary.md` §9.4–§9.6); the `comptime` version check and `Tree.requires`; BIR → tree; the values prelude; `platforms/node/zig/ssr.zig` and the Node markup runtime with `text`, `map`, `classes` and `styles`; the HTML parser table in `html`'s Zig | 900–1 200 + ~60 JS | **the first slice that runs markup.** `run/`: text (collapsing over the Unicode set, every reference kind) and attribute escaping (`&`, `<`, `"`, a script URL), every attribute value class including both list forms and their in-place split, `For` in its three modes and `fallback`, `Show` by identity, by key and with a fallback, components with every `children` form and a leading spread, fragments, `Html.text`, nested `Html.map` (identity under `ssr`), blocks from a helper, a `let` and a `case`, a `script` element's raw text, a view formatted and re-rendered to the same string; `build/bad` for a runtime missing a well-known export, one missing a primitive, one with the wrong arity, and a primitive named like an export; **the identity pair** — `emit/` and `emit/release/` goldens of a record update, and a `run/` fixture over a test platform's `refEq`; the determinism scenarios with a markup program in; **one `build.zig` step that builds beni with a toy external lowering from `tests/platforms/` targeting 1.0 and runs one fixture through it** |
 | **B0** | **The browser corpus kind** (§3, unchanged) | one long-lived headless Chrome, a target per fixture, virtual time | harness | ≤ +2 % of `test-blackbox`; loud skip with no Chrome |
-| **J6** | **The `dom` lowering and the `browser` runtime** | `platforms/browser/lowering/dom.zig`: templates, walks, markers, `m`/`p`, blocks and slots, component slots, events and the start data (`backend.md` §15.1–§15.4); `platforms/browser/markup.js` (~300 lines, from research 36 §4.7's runtime) | 1 300–1 700 + ~300 JS | `emit/` goldens for research 36 §2.1–§2.11's shapes; one `emit/release/` golden with walks inlined; **the differential oracle** — dom-expressions' 16 client fixtures in beni, template strings and walks compared with the vendored compiler's; `markup_restructured` for `<p><div>` and for a vocabulary that says `br` is not void; `browser/`: a delegated `click` listens once for a thousand rows, a branch swap does not carry an `<input>`'s value across, a controlled input reverts a rejected edit, a `--library` build still delivers events |
-| **J7** | **`For` in a page** | `forKeyed`, `forPosition`, reference keying, duplicate keys (`backend.md` §15.5) | 300–400 | `browser/`: a keyed reorder keeps a focused input in its row and a positional one does not (the warning's point); duplicate keys render every item; update-every-10th keeps the same `<tr>` nodes; swap moves the same nodes |
-| **J8** | **`browser` and `browser-tea`** | `browser`'s low-level `Program` and mount; the render loop of W28 — a microtask flush, `Browser.flush`, post-flush work after the DOM is written; `browser-tea` in beni over it | 300–500 beni + ~100 JS | `browser/`: five messages in one task render once, `flush()` renders now; a DOM-free `run/` fixture drives the TEA loop through `ssr`; the empty mounted page's bytes, dev and `--release`, into `bench/size.mjs` (W11's first half) |
-| **J9** | **End to end against Solid 2** | research 29's benchmark app in beni markup, compiled by beni | — | research 29's harness with **Solid 2.0.0-rc.9 re-run in the same batch**; the per-operation script medians of R1's table above, beaten per operation and allowed 20 % over the hand-written P2; research 29's static-heavy page; **a helper-heavy page** (research 36 question 3), which decides D18; size against Solid 2's 22 163 brotli. Never a geometric mean |
-| later | hydration (an `ssr`/`dom` pairing); `ref` as an element handle delivered in a message (question 6, W44); spread of known attributes (D10); more direct consumers (D18, if J9 says so); R3's field analysis (W42, after X3); `sync` handlers that call `preventDefault` themselves, once effects land (W34); typed content categories | | | |
+| **MJ6** | **The `dom` lowering and the `browser` runtime** | `platforms/browser/zig/dom.zig`: templates with re-encoded text, walks, markers, `m`/`p` as statements, blocks and the three slot exports, component slots, the list forms, events, the mount context and `map`, and the start data (`backend.md` §15.1–§15.4); `platforms/browser/runtime.js`, program and markup runtime in one file (~350 lines, from research 36 §4.7's runtime) | 1 400–1 800 + ~350 JS | `emit/` goldens for research 36 §2.1–§2.11's shapes, a class list split in place, and a `p` written as `if`s; one `emit/release/` golden with walks inlined; **the differential oracle** (`backend.md` §15.10) — the sixteen `__dom_fixtures__` in beni, template strings and walks against the checked-in extraction of Solid's `output.js`, with the listed differences; `markup_restructured` for `<p><div>`, for a vocabulary that says `br` is not void, and for a `style` whose text holds `</style`; `browser/`: a delegated `click` listens once for a thousand rows, a branch swap does not carry an `<input>`'s value across, a controlled input reverts a rejected edit, a message from inside two `Html.map`s arrives mapped innermost first, a class list toggles one class and leaves the template's, a `--library` build still delivers events |
+| **MJ7** | **`For` and `Show` in a page** | `forKeyed`, `forPosition`, reference keying, duplicate keys, row inputs, `show`/`hide` (`backend.md` §15.5) | 350–450 | `browser/`: a keyed reorder keeps a focused input in its row and a positional one does not (the warning's point); duplicate keys render every item; update-every-10th keeps the same `<tr>` nodes; swap moves the same nodes; an edit to an unrelated model field calls no row function (the inputs' point, counted by an instrumented row); a keyed `Show` remounts on a new value, patches on the same one and, by key, patches across an edit of the shown record |
+| **MJ8** | **`browser` and `browser-tea`** | `browser`'s low-level `Program`, `run`, mount and `$$root`; the render loop of `backend.md` §15.11 — one microtask flush, patch then after-render work, the runtime's `flush`; `browser-tea` in beni over it, `Html.map` for nested `Msg` | 300–500 beni + ~120 JS | `browser/`: five messages in one task render once, the runtime's `flush` renders now (driven by the harness, since `Browser.flush` arrives with effects), a message sent from after-render work renders in the next flush, two programs on one page each receive their own messages, a controlled input is reconciled before the next keystroke; a DOM-free `run/` fixture drives the TEA loop through `ssr`; the empty mounted page's bytes, dev and `--release`, into `bench/size.mjs` (W11's first half) |
+| **MJ9** | **End to end against Solid 2** | research 29's benchmark app in beni markup, compiled by beni | — | research 29's harness with **Solid 2.0.0-rc.9 re-run in the same batch**; the per-operation script medians of R1's table above, beaten per operation and allowed 20 % over the hand-written P2; research 29's static-heavy page; **a helper-heavy page** (research 36 question 3), which decides MD18; the row written idiomatically as `rowClass model row` (MD31); size against Solid 2's 22 163 brotli. Never a geometric mean |
+| later | hydration (an `ssr`/`dom` pairing); `ref` as an element handle delivered in a message (question 6, W44); portals; spread of known attributes and a tag chosen at run time (MD10); more direct consumers (MD18, if MJ9 says so); P3's selector recognition, rung 4 (research 29 §7.2, after X3); `sync` handlers that call `preventDefault` themselves, `Browser.flush` and after-render capabilities, once effects land (W34, MD36); typed content categories; the first gated feature of interface 1.1, with `markup_feature_unsupported` (MD32) | | | |
 
-**Order and why.** J1–J4 are the front end and checker and need no platform code beyond J3's
-vocabulary. **J5 before J6**, deliberately, as research 36 §7 argued: `ssr` exercises the whole front
-end, the interface and the vocabulary seam with a runtime of forty lines, and gives rule 3 its `run/`
-coverage before any browser exists — and building the interface against the *simpler* lowering first
-is what keeps it from being `dom`'s API wearing a hat. B0 is needed from J6's `browser/` tests on and
-can land any time before. J9 is last because it measures what J5–J8 built.
+**Order and why.** MJ1–MJ4 are the front end and checker and need no platform code beyond MJ3's
+vocabulary. **MJ5 before MJ6**, deliberately, as research 36 §7 argued: `ssr` exercises the whole
+front end, the interface and the vocabulary seam with a runtime of sixty lines, and gives rule 3 its
+`run/` coverage before any browser exists — and building the interface against the *simpler* lowering
+first is what keeps it from being `dom`'s API wearing a hat. B0 is needed from MJ6's `browser/` tests
+on and can land any time before. MJ9 is last because it measures what MJ5–MJ8 built.
 
-**Total**: about 4 700–6 400 lines of Zig and ~450 of JavaScript, research 36's estimate plus the
-interface and layering it did not have.
+**Is MJ1 fully specified?** Yes, after revision 3.1: every byte the lexer can meet in each of its
+modes has a token or a stated error — the three stray bytes in text, a stray byte in a tag, a spread
+after whitespace, `...` elsewhere, and a comment that swallows a hole's `}`, which the lexer lexes as
+it lexes any comment and the parser explains (`frontend.md` §9.1). Its measurement no longer depends
+on `bench/corpus/` building markup (`frontend.md` §9.3).
+
+**Total**: about 5 350–7 350 lines of Zig and ~530 of JavaScript, research 36's estimate plus the
+interface, the layering, markup's BIR and the review's additions, which it did not have.
