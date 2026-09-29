@@ -1,0 +1,4 @@
+# The count changes: one card is called, and its tag is not.
+click #count
+# Only the record and the local function see the other field.
+click #other

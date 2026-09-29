@@ -1,0 +1,74 @@
+-- load
+console.log: local: 0
+console.log: counted: 0
+console.log: tag: "counted"
+console.log: fixed: 7
+console.log: tag: "fixed"
+console.log: boxed: 0
+<body>
+  <main>
+    <button id="count">"count"</button>
+    <button id="other">"other"</button>
+    <section>
+      <i>"counted"</i>
+      <b>"0"</b>
+    </section>
+    <!---->
+    <section>
+      <i>"fixed"</i>
+      <b>"7"</b>
+    </section>
+    <!---->
+    <p>"0"</p>
+    <!---->
+    <em>"0"</em>
+    <!---->
+  </main>
+</body>
+-- click #count
+console.log: local: 0
+console.log: counted: 1
+console.log: boxed: 0
+<body>
+  <main>
+    <button id="count">"count"</button>
+    <button id="other">"other"</button>
+    <section>
+      <i>"counted"</i>
+      <b>"1"</b>
+    </section>
+    <!---->
+    <section>
+      <i>"fixed"</i>
+      <b>"7"</b>
+    </section>
+    <!---->
+    <p>"0"</p>
+    <!---->
+    <em>"0"</em>
+    <!---->
+  </main>
+</body>
+-- click #other
+console.log: local: 1
+console.log: boxed: 1
+<body>
+  <main>
+    <button id="count">"count"</button>
+    <button id="other">"other"</button>
+    <section>
+      <i>"counted"</i>
+      <b>"1"</b>
+    </section>
+    <!---->
+    <section>
+      <i>"fixed"</i>
+      <b>"7"</b>
+    </section>
+    <!---->
+    <p>"1"</p>
+    <!---->
+    <em>"1"</em>
+    <!---->
+  </main>
+</body>

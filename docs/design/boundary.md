@@ -946,7 +946,8 @@ pub const Node = struct {
 pub const Element   = struct { row: ElementRow, items: Range, children: Range };
 pub const Fragment  = struct { children: Range };
 pub const Text      = struct { text: Strings.Index };            // trimmed and decoded: the page's text
-pub const Hole      = struct { value: Value.Index, kind: HoleKind };
+pub const Hole      = struct { value: Value.Index, kind: HoleKind, call: ?Call = null };  // call: 1.1
+pub const Call      = struct { callee: Value.Index, args: Value.Range };               // 1.1
 pub const HoleKind  = enum(u8) { text_string, text_number, text_char, text_bool, html, maybe_html, list_html, _ };
 pub const Component = struct { props: Range, spread: ?Value.Index, children: ?Value.Index };
 pub const For = struct {
@@ -1114,7 +1115,8 @@ from needing the representation.
 - **Change what a program means.** A lowering chooses representation and never semantics: it renders
   every node, every value and every event the tree describes, gives the two lists and the
   character-decoded text the meaning `language.md` §11 states, and skips only what `language.md`
-  §11.11 allows (a component whose props are all identical, a row or `Show` body whose inputs are). It
+  §11.11 allows (a component whose props are all identical, a helper call in a hole whose arguments
+  are — *amended 2026-09-29*, `language.md` §11.6 — a row or `Show` body whose inputs are). It
   reports no diagnostic but §9.4.7's.
 
 #### 9.4.5 The runtime's well-known exports
@@ -1171,6 +1173,18 @@ dated, as the section is amended. Version **1.0** is this section as written on 
    the program is refused rather than rendered wrong. Every feature of 1.0 is available to every
    lowering, so the code cannot arise until 1.1 gates its first feature; it is appended to
    `language.md` §10's catalogue then, with its first fixture.
+
+**Version 1.1** (*amended 2026-09-29*; additive and gated on nothing, so `Tree.requires` stays 1.0
+and a lowering written against 1.0 is handed the same tree and stays correct): **`Hole.call`**, set
+on an `html` hole whose expression is a saturated call of a top-level function — of any module, not
+a constructor nor a markup primitive — that passes no evidence (`language.md` §11.6). `callee` is the function, a value
+that evaluates nothing and **may be asked for anywhere in the module, a hoisted kind included**;
+`args` are values of the root, evaluated with it in §6's order. The hole's own `value` is the call
+made of those two, spelled where it is asked for — so the call is made where the lowering reads the
+value, after the root's other values, which is `language.md` §6's row for it — and a lowering that
+ignores `call` still renders the hole faithfully. A lowering that reads `call` may make the call
+only when an argument is not `===` the one it was given last render (§9.4.4). `ssr` ignores it;
+`dom` targets 1.1 (`backend.md` §15.3–§15.4).
 
 #### 9.4.7 Diagnostics
 

@@ -6206,6 +6206,7 @@ const Lowerer = struct {
             .vocabulary = mk.vocabulary,
             .interner = l.interner.global,
             .live = live.items,
+            .interfaces = l.in.interfaces,
         }) orelse return;
         const st = try l.scratch.create(MarkupState);
         st.* = .{
@@ -6347,6 +6348,12 @@ const Lowerer = struct {
             },
             .string => |bytes| return l.stringNode(bytes, p),
             .true => return l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
+            .callee => |inst| return l.reference(inst),
+            .call => |c| {
+                const args = try l.scratch.alloc(Node.Index, c.args.len);
+                for (args, 0..) |*a, k| a.* = try l.markupValue(c.args.at(@intCast(k)));
+                return l.call(try l.markupValue(@enumFromInt(c.callee)), args, p);
+            },
         }
     }
 

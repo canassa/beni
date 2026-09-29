@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.0: what the compiler hands a platform's markup lowering, and everything
+//! 1.1: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -19,8 +19,13 @@
 const std = @import("std");
 
 /// The version of the interface this module declares (§9.4.6). Version 1.0
-/// is `boundary.md` §9.4 as written on 2026-09-29.
-pub const version: Version = .{ .major = 1, .minor = 0 };
+/// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`.
+pub const version: Version = .{ .major = 1, .minor = 1 };
+
+/// The newest version whose gated feature a tree can use. No minor version
+/// has gated one yet, so every tree requires 1.0 and every lowering of
+/// major version 1 is handed it.
+pub const gated: Version = .{ .major = 1, .minor = 0 };
 
 pub const Version = struct {
     major: u16,
@@ -237,7 +242,21 @@ pub const Element = struct { row: ElementRow, items: Range, children: Range };
 pub const Fragment = struct { children: Range };
 /// Trimmed and decoded: the text the page shows.
 pub const Text = struct { text: Strings.Index };
-pub const Hole = struct { value: Value.Index, kind: HoleKind };
+pub const Hole = struct {
+    value: Value.Index,
+    kind: HoleKind,
+    /// 1.1: set on an `html` hole whose value is a saturated call of a
+    /// top-level function that passes no evidence (language.md §11.6). The
+    /// hole's `value` is the call made of these, so a lowering that ignores
+    /// this renders the hole as before.
+    call: ?Call = null,
+};
+
+/// A helper call in a hole: `callee` evaluates nothing and may be asked for
+/// anywhere in the module, a hoisted kind included; `args` are values of
+/// the root. A lowering may make the call only when an argument is not
+/// `===` the one it was given last render (§9.4.4).
+pub const Call = struct { callee: Value.Index, args: Value.Range };
 pub const HoleKind = enum(u8) { text_string, text_number, text_char, text_bool, html, maybe_html, list_html, _ };
 
 pub const Component = struct {

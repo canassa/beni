@@ -7,13 +7,16 @@
 //   node micro.mjs [--pages=5] [--samples=20] [--messages=100] [--out=out/micro.json]
 //                  [--subjects=a,b] [--taskset=8-15]
 //
+// `out/extra-micro.json`, when present, adds subjects (an array of the same
+// objects): a copy of an earlier build, say, measured in the same batch.
+//
 // On each fresh page: the mount time the page recorded, the first message
 // alone, 300 warm-up messages, then `samples` runs of `messages` messages,
 // each a click on `#bump` and the runtime's flush, so a render that waits
 // for a microtask is inside the window. At 1x and 4x CPU throttling, and
 // again with a forced layout after every message.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadavg } from "node:os";
 import { launch } from "./lib/cdp.mjs";
@@ -35,6 +38,8 @@ const all = [
     { name: `beni-${v}-release`, kind: "beni-micro", dir: `micro-${v}-rel` },
   ]),
 ];
+const extra = join(root, "out/extra-micro.json");
+if (existsSync(extra)) all.push(...JSON.parse(readFileSync(extra, "utf8")));
 const wanted = arg("subjects", null)?.split(",") ?? null;
 const subjects = wanted === null ? all : all.filter((s) => wanted.includes(s.name));
 

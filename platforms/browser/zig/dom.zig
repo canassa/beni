@@ -46,7 +46,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 0 },
+    .targets = .{ .major = 1, .minor = 1 },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -141,6 +141,9 @@ const Op = struct {
         style: struct { t: u32, name: []const u8, value: u32 },
         event: struct { t: u32, item: m.Item, index: u32, handler: u32, context: bool },
         html: struct { at: Place, kind: m.HoleKind, value: u32 },
+        /// A helper call in an `html` hole (`Hole.call`): made only when an
+        /// argument is not the one kept (language.md §11.6).
+        helper: struct { at: Place, callee: m.Value.Index, args: []const u32 },
         component: struct { at: Place, props: []const u32, children: ?u32, thunk: u32 },
         for_: struct { at: Place, mode: m.For.Mode, each: u32, key: ?u32, row: u32, inputs: ?u32 },
         show: struct { at: Place, when: u32, key: ?u32, fallback: ?u32, body: u32, inputs: []const u32 },
@@ -150,6 +153,7 @@ const Op = struct {
         return switch (op.what) {
             .text => |x| x.at,
             .html => |x| x.at,
+            .helper => |x| x.at,
             .component => |x| x.at,
             .for_ => |x| x.at,
             .show => |x| x.at,
@@ -160,7 +164,7 @@ const Op = struct {
     /// Whether the op owns a slot of the runtime's.
     fn slotted(op: Op) bool {
         return switch (op.what) {
-            .html, .component, .for_, .show => true,
+            .html, .helper, .component, .for_, .show => true,
             else => false,
         };
     }
@@ -760,6 +764,7 @@ const Gen = struct {
             const at = switch (op.what) {
                 .text => |*x| &x.at,
                 .html => |*x| &x.at,
+                .helper => |*x| &x.at,
                 .component => |*x| &x.at,
                 .for_ => |*x| &x.at,
                 .show => |*x| &x.at,
@@ -961,6 +966,11 @@ const Gen = struct {
         const what: Op.What = switch (g.tree.kind(n)) {
             .hole => blk: {
                 const h = g.tree.hole(n);
+                if (h.kind == .html) if (h.call) |call| {
+                    const args = try a_.alloc(u32, call.args.len);
+                    for (args, 0..) |*x, k| x.* = try b.operand(a_, .{ .value = call.args.at(@intCast(k)) });
+                    break :blk .{ .helper = .{ .at = at, .callee = call.callee, .args = args } };
+                };
                 const value = try b.operand(a_, .{ .value = h.value });
                 break :blk switch (h.kind) {
                     .text_string, .text_number, .text_char, .text_bool => .{ .text = .{ .at = at, .value = value } },
@@ -1186,6 +1196,10 @@ const Gen = struct {
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.handler) });
             },
             .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.ident(f.slots[k].?), x.value)),
+            .helper => |x| {
+                for (x.args, 0..) |p, j| try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
+                try js.expression(f.block, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.helperCall(b, f, x.callee, x.args) }));
+            },
             .component => |x| {
                 for (x.props, 0..) |p, j| try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
                 if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = try g.read(b, f, ch) });
@@ -1249,6 +1263,19 @@ const Gen = struct {
                     try g.guarded(b, f, x.handler, k, try g.node(f, x.t), .{ .property = try g.print("$${s}", .{g.tree.string(facts.dom_name)}) });
                 },
                 .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.fieldOf(f, "c{d}", .{k}), x.value)),
+                .helper => |x| {
+                    // A component's skip, for a plain function: the call is
+                    // made only when an argument changed (§11.6).
+                    var changed: ?m.Expr = null;
+                    const then = try js.block();
+                    for (x.args, 0..) |p, j| {
+                        const test_ = try js.binary(.strict_ne, try g.read(b, f, p), try g.fieldOf(f, "a{d}_{d}", .{ k, j }));
+                        changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
+                        try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
+                    }
+                    try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args) }));
+                    if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
+                },
                 .component => |x| {
                     if (x.props.len == 0 and x.children == null) continue;
                     var changed: ?m.Expr = null;
@@ -1372,6 +1399,13 @@ const Gen = struct {
             return g.jsb().call(try g.read(b, f, thunk), args);
         }
         return g.cx.componentCall(n, if (children) |ch| try g.read(b, f, ch) else null);
+    }
+
+    /// A helper's call: its callee named where it is, its arguments read.
+    fn helperCall(g: *Gen, b: *const Body, f: *Fn, callee: m.Value.Index, args: []const u32) m.Error!m.Expr {
+        const values = try g.a().alloc(m.Expr, args.len);
+        for (values, args) |*v, p| v.* = try g.read(b, f, p);
+        return g.cx.call(try g.cx.value(callee), values);
     }
 
     fn forCall(g: *Gen, b: *const Body, f: *Fn, mode: m.For.Mode, s: m.Expr, each: u32, key: ?u32, row: u32, inputs: ?u32) m.Error!m.Expr {

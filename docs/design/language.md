@@ -748,9 +748,10 @@ observable today; effects will make them observable in what a program *does*.
 | a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8) |
 | top-level constants | each before its own first use, at module load |
 | a top-level value with a `where` clause and no parameters | **its initialiser runs once per evidence, at the first use that needs it** (2026-09-26). It takes its evidence as hidden arguments (`static-dispatch-spike.md` §8.1), so it cannot run at load; the emitter keeps the value the last evidence gave, and a read or call with the same evidence reuses it (`static-dispatch-spike.md` A.85 *as amended 2026-09-26*). The memo is ONE slot keyed on the IDENTITY of every evidence argument, so what "the same evidence" means is what the emitter builds: a primitive's evidence, a context-free nominal type's derived function and a `where`-free method are module-level names, and a use whose evidence arguments are all such names runs it once, like the same value without the `where`, only at its first use rather than at load. Evidence built AT the use — a structural type (`List Int`, a record, a tuple) or a nominal type whose derived context is not empty — is a fresh closure at each read, so such a use computes again at each read, as before; so does one instantiation read from two modules, each with its own evidence names. A use with other evidence computes again, and evicts the slot. Hoisting closed evidence to module level, which would make it once per instantiation, is recorded, not done (narrowed 2026-09-26). A body that is itself a reference to a constrained function (`h = maxOf`) computes nothing and is called straight through. `run/EvidenceFunctionBodyPerCall.beni`, `run/EvidenceThunkOncePerEvidence.beni`. *Until 2026-09-26 it ran at EACH read or call.* |
-| *markup (the next five rows were added on 2026-09-29 with §11; §11.11 says what a render may skip)* | |
+| *markup (the next six rows were added on 2026-09-29 with §11, the helper call the same day; §11.11 says what a render may skip)* | |
 | an element or fragment | **its attributes and events, then its children, in source order**, attributes and events interleaved as written, each once; a hole inside a child element is reached when that element is. A constant attribute or a text run evaluates nothing (§11.5) |
 | a component | its props in source order, the spread first where there is one, `children` where the children are written; then the call, **unless it is skipped** (§11.8) |
+| a call of a top-level function in an `Html msg` hole, `{f a b}` | *added 2026-09-29 with §11.6's helper skip:* the callee and the arguments, left to right, with the markup; then the call, with the platform's render, **unless it is skipped** (§11.6) — as a component's is, after the markup's other values |
 | `For` | its attributes in source order; then the row function once per row, first row first, **except for rows that are skipped** (§11.9) |
 | `Show` | its attributes in source order; then, on `Just v`, the key function once and the body once, **unless the body is skipped** (§11.18) |
 | an event handler | the handler *value* is evaluated with the markup; calling a function handler, or an `Html.map` function, happens when the event fires, never during a render |
@@ -1327,6 +1328,24 @@ the language (`plans/browser-decisions.md`, *What is forced*). **The keyed `Show
 owner's answer), because it says something `if` and `case` cannot: remount when a value's identity
 changes (§11.18).
 
+**A helper call in an `Html msg` hole may be skipped** (*amended 2026-09-29*, decided by the
+project's manager on the owner's delegation; research 39 §6.3 and §7 question 1). A hole whose
+expression is a saturated call of a **top-level function** — of this module or another; never a
+local function, which could capture something its arguments do not show, never a constructor, and
+never a markup primitive (§11.13), whose value is the runtime's own —
+gets §11.8's component rule applied to a plain function: when every argument is identical (`===`,
+not `==`) to the one the same hole was given last render, the platform may keep what the hole shows
+instead of calling the function again, because a beni function given the same arguments returns the
+same value. That is what lets a view be written the way Elm programmers write one — a section, its
+heading and each item a function returning markup — without every render rebuilding and patching
+all of it: research 39 §6 measured such a page at 30 µs a message against 7 µs for the same helpers
+behind components. The callee and the arguments are evaluated with the markup, in §6's order; the
+call is made with the platform's render, after the markup's other values, as a component's is (§6,
+*Evaluation order*). **A call that passes evidence is never skipped** (`static-dispatch-spike.md`
+§8.2): what it computes depends on more than its written arguments. What defeats the skip is what
+defeats a component's: an argument built during the render — a record literal, a message, a list —
+is a new value each time. §11.11 says what a skip means for evaluation.
+
 ### 11.7 Events
 
 An event attribute — `onClick`, `onInput`, whatever the vocabulary declares with `pub event` — takes
@@ -1498,14 +1517,17 @@ of one child is that child.
 
 ### 11.11 Evaluation, and what a render may skip
 
-§6's *Evaluation order* table has five rows for markup (an element or fragment, a component, `For`,
+§6's *Evaluation order* table has six rows for markup (an element or fragment, a component, a helper call in a hole, `For`,
 `Show`, an event handler), written there with the rest; they follow from its existing ones.
 
 **A skipped component, row or `Show` body is not evaluated.** That is the one place markup relaxes
 §6's "an expression is evaluated exactly once, when control reaches it": a render may evaluate a
 component body, a row function or a `Show` body zero times or once. Nothing a program computes can
 tell, because every beni expression is pure (§6, *What an optimiser may assume*); `Debug.log` in a
-component body can, and logs only for the calls that happen. **A row's inputs are read before the
+component body can, and logs only for the calls that happen. *Amended 2026-09-29:* **a skipped
+helper call in a hole (§11.6) is not made either** — its arguments are evaluated, its body is not —
+so a `Debug.log` in the helper's body logs only for the calls that happen, as in a component's.
+**A row's inputs are read before the
 row is reached** — `model.selected`, read so the skip can compare it — and that is not an evaluation
 a program can observe either: a field read of a record cannot fail and computes nothing. **When
 effects land, a hole, prop, row or `Show` body whose expression is `impure` is never skipped**

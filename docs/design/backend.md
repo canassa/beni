@@ -3216,6 +3216,7 @@ written in source order, attributes and events interleaved (`language.md` §11.5
 | `maybe_html` | a slot: `childMaybe(slot, cx.maybe(v))` — a block or `null` | the same |
 | `list_html` | a slot: `childList(slot, v)` | the same |
 | component | the call, then a slot | skipped when every prop `===` its last value (`language.md` §11.8); otherwise the call, then `childHtml` |
+| `html` whose value is a helper call, `Hole.call` (*amended 2026-09-29*, §15.4) | the arguments kept in the instance; the call, then a slot | skipped when every argument `===` its last value (`language.md` §11.6); otherwise the call, then `childHtml` |
 | `For`, `Show` | §15.5 | §15.5 |
 
 A constant attribute on an element costs nothing at run time; Solid's instrumented mount of 1 000
@@ -3308,6 +3309,19 @@ counts `markup_roots`, `markup_block_roots` and `markup_row_roots`, so the share
 on the general path is a number (W29's rule-7 mitigation), and `markup_row_whole_inputs`, the rows
 whose inputs hold a whole local (`language.md` §11.9), so the rows that re-run on every change to
 that local are a number too.
+
+*Amended 2026-09-29: a helper call in a hole is not made when its arguments are the same*
+(`language.md` §11.6; research 39 §6.3, the cheaper of its two options). The helper-heavy page did
+pay — 30 µs a message against the inline page's 4.3 and the component page's 7.0 — because each of
+its 750 helper calls built a block every render and every block was patched. Interface 1.1 marks an
+`Html msg` hole whose expression is a call of a top-level function that passes no evidence
+(`boundary.md` §9.4.2, `Hole.call`): its callee, which may be named anywhere in the module, and its
+arguments, which are values of the root. `dom` compiles such a hole as it compiles a component —
+the arguments kept in the instance, and the call made, then placed with `childHtml`, only at mount
+or when an argument is not `===` the one kept — so a helper whose arguments did not change costs a
+comparison per argument and builds nothing, and neither do the helpers it would have called. The
+block is still built when the call is made; inlining a helper's markup into its caller's template
+(research 39 §6.3, option 2) stays later work.
 
 ### 15.5 `For` and `Show` in the `dom` lowering
 

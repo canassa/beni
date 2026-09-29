@@ -37,6 +37,9 @@ pub const Input = struct {
     interner: *const InternPool.Global,
     /// The declarations that survive, in declaration order.
     live: []const u32,
+    /// Every module's interface, indexed by module: whether an imported
+    /// value a hole calls is a markup primitive.
+    interfaces: []const Interface = &.{},
 };
 
 /// What one value slot stands for.
@@ -53,6 +56,12 @@ pub const Value = union(enum) {
     /// A prop with no instruction: a quoted value's text, or a bare name.
     string: []const u8,
     true,
+    /// A reference to the top-level function a hole calls (`Hole.call`):
+    /// spelled wherever it is asked for, and evaluates nothing.
+    callee: Inst.Index,
+    /// That hole's call, made of its callee's slot and its arguments' —
+    /// instruction slots of the root — where it is asked for.
+    call: struct { callee: u32, args: m.Value.Range },
 };
 
 /// What the compiler needs to place a row: the lambda, what `lowering`
@@ -133,7 +142,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
                 .attributes = b.attribute_facts.items,
                 .events = b.event_facts.items,
             },
-            .requires = m.version,
+            .requires = m.gated,
         },
         .root_insts = b.root_insts.items,
         .node_tokens = b.node_tokens.items,
@@ -349,6 +358,20 @@ const Builder = struct {
             .hole => {
                 const h = bir_.extraData(at, Bir.MarkupHole);
                 const kind: m.HoleKind = if (b.rowOf(@intFromEnum(at))) |r| @enumFromInt(r.detail) else .html;
+                if (kind == .html) if (b.helperCallee(h.value)) |callee| {
+                    // The arguments are the root's values, evaluated where
+                    // the call's would have been; the call is made where
+                    // the lowering asks for the hole's value (§11.6).
+                    const d = bir_.instData(h.value);
+                    const args = bir_.extraSlice(bir_.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                    const args_start: u32 = @intCast(b.values.items.len);
+                    for (args) |arg| _ = try b.value(.{ .inst = arg });
+                    const range: m.Value.Range = .{ .start = args_start, .len = @intCast(args.len) };
+                    const callee_value = try b.value(.{ .callee = callee });
+                    const call = try b.value(.{ .call = .{ .callee = @intFromEnum(callee_value), .args = range } });
+                    try b.holes.append(b.arena, .{ .value = call, .kind = kind, .call = .{ .callee = callee_value, .args = range } });
+                    return b.addNode(.hole, b.holes.items.len - 1, h.token);
+                };
                 try b.holes.append(b.arena, .{ .value = try b.value(.{ .inst = h.value }), .kind = kind });
                 return b.addNode(.hole, b.holes.items.len - 1, h.token);
             },
@@ -413,6 +436,37 @@ const Builder = struct {
                 return b.addNode(.show, b.shows.items.len - 1, f.token);
             },
         }
+    }
+
+    /// The callee of a hole's value when it is a helper call a platform may
+    /// skip (language.md §11.6): a call of a top-level function — of any
+    /// module, not a constructor, not a markup primitive — whose site passes
+    /// no evidence. A local function could capture what its arguments do
+    /// not show, and evidence is an argument no identity test sees.
+    fn helperCallee(b: *const Builder, inst: Inst.Index) ?Inst.Index {
+        const bir_ = b.bir();
+        if (bir_.instTag(inst) != .call) return null;
+        const callee: Inst.Index = @enumFromInt(bir_.instData(inst).lhs);
+        const d = bir_.instData(callee);
+        switch (bir_.instTag(callee)) {
+            .top => {
+                if (d.lhs >= bir_.decls.len) return null;
+                const decl = bir_.decls[d.lhs];
+                if (!decl.kind.isValue() or decl.kind == .vocab_markup) return null;
+            },
+            .ext_value => {
+                if (d.lhs >= b.in.interfaces.len) return null;
+                const iface = &b.in.interfaces[d.lhs];
+                if (d.rhs >= iface.values.len or iface.values[d.rhs].is_markup_primitive) return null;
+            },
+            else => return null,
+        }
+        for ([_]Inst.Index{ inst, callee }) |at| {
+            if (b.in.dispatch.siteOf(at)) |site| {
+                if (b.in.dispatch.argsAt(site.evidence).len != 0) return null;
+            }
+        }
+        return callee;
     }
 
     /// A `For`'s row or a `Show`'s body: its function a value of the
