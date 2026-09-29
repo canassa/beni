@@ -58,6 +58,7 @@ const Walk = @import("Walk.zig");
 const Tree = @import("constrain/Tree.zig");
 const Schemes = @import("Schemes.zig");
 const EnvFile = @import("Env.zig");
+const Retained = @import("Retained.zig");
 
 const Var = TypeStore.Var;
 const Symbol = InternPool.Symbol;
@@ -671,9 +672,10 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
     const bir = s.cx.bir;
     const scratch = s.cx.scratch;
     if (members.len > 1) try undeterminedInGroup(s, members);
-    // The roots some member's scheme reaches.
-    var promoted: std.AutoHashMapUnmanaged(Var, void) = .empty;
-    defer promoted.deinit(scratch);
+    // The roots some member's scheme reaches: a column of the worker's,
+    // emptied by one increment (`Retained.Boundary`).
+    const promoted = &s.retained.boundary.promoted;
+    promoted.clear();
     var reqs: std.ArrayList(Evidence.Requirement) = .empty;
     defer reqs.deinit(scratch);
     for (members) |m| {
@@ -685,7 +687,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
         if (reqs.items.len == 0) continue;
         s.report.at(m);
         if (reqs.items.len > max_inferred_constraints) {
-            try cap(s, m, reqs.items, &promoted);
+            try cap(s, m, reqs.items, promoted);
             continue;
         }
         // The declaration's requirement list, for P9's table (§12.1).
@@ -696,7 +698,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
         }
         s.resolver.decl_requirements[m] = .{ .start = first, .len = @intCast(reqs.items.len) };
         for (reqs.items) |r| {
-            try promoted.put(scratch, r.root, {});
+            try promoted.put(s.cx.gpa, r.root, {});
             const id = s.evidence.slotAt(r.position).asWanted() orelse {
                 _ = try s.expect(false, d.body.unwrap().?, "a promoted requirement is paired with no wanted (checker-v2.md §4.2)");
                 continue;
@@ -759,7 +761,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
 /// Over the cap (§6.4, §10.11): report, and generalise the declaration with
 /// no requirements — every quantified variable loses its set, so the scheme
 /// published has no `where` and the next link of a chain starts from zero.
-fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.AutoHashMapUnmanaged(Var, void)) Error!void {
+fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *Retained.VarSet) Error!void {
     const st = s.store();
     const bir = s.cx.bir;
     const d = bir.decls[decl];
@@ -772,7 +774,7 @@ fn cap(s: *Solve, decl: u32, reqs: []const Evidence.Requirement, promoted: *std.
             receivers[named] = r.root;
             named += 1;
         }
-        try promoted.put(s.cx.scratch, r.root, {});
+        try promoted.put(s.cx.gpa, r.root, {});
         const id = s.evidence.slotAt(r.position).asWanted() orelse {
             _ = try s.expect(false, d.body.unwrap().?, "a requirement over the cap is paired with no wanted (checker-v2.md §4.2)");
             continue;
@@ -834,28 +836,30 @@ pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
         try young.append(scratch, v);
     }
     if (young.items.len == 0) return;
-    // What the frame's headers reach, by the walk §12.1's order reads.
-    var by_function: std.AutoHashMapUnmanaged(Var, void) = .empty;
-    defer by_function.deinit(scratch);
-    var by_value: std.AutoHashMapUnmanaged(Var, void) = .empty;
-    defer by_value.deinit(scratch);
+    // What the frame's headers reach, by the walk §12.1's order reads: the
+    // worker's columns (`Retained.Boundary`).
+    const sets = &s.retained.boundary;
+    const by_function = &sets.by_function;
+    const by_value = &sets.by_value;
+    by_function.clear();
+    by_value.clear();
     var reached: std.ArrayList(Var) = .empty;
     defer reached.deinit(scratch);
     for (binders) |i| {
         const b = s.tree.binders.items[i];
         if (!b.header) continue;
         const into = switch (letBinding(s, b)) {
-            .function => &by_function,
-            .value => &by_value,
+            .function => by_function,
+            .value => by_value,
             .annotated => continue,
         };
         reached.clearRetainingCapacity();
         try Schemes.quantifierOrder(st, s.cx.interner, b.v, &reached, scratch);
-        for (reached.items) |r| try into.put(scratch, st.find(r), {});
+        for (reached.items) |r| try into.put(gpa, st.find(r), {});
     }
     // The decision per young root, before anything is lowered.
-    var held: std.AutoArrayHashMapUnmanaged(Var, EnvFile.Monomorphic.Why) = .empty;
-    defer held.deinit(scratch);
+    const held = &sets.held;
+    held.clear();
     for (young.items) |v| {
         const why: EnvFile.Monomorphic.Why = if (by_value.contains(v))
             .value
@@ -865,7 +869,7 @@ pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
             .dot_call
         else
             continue;
-        try held.put(scratch, v, why);
+        try held.put(gpa, v, why);
     }
     // Over the cap (spike §10.11), a function binding is held whole rather
     // than refused: a `let` annotation cannot carry the `where` clause that
@@ -890,7 +894,7 @@ pub fn holdLet(s: *Solve, rank: u32, binders: []const u32) Error!void {
             const root = st.find(r);
             if (root != r or st.rank(root) < rank or held.contains(root)) continue;
             if (st.content(root) != .flex or Walk.constraints(st.flagsOf(root)).count(st) == 0) continue;
-            try held.put(scratch, root, .cap);
+            try held.put(gpa, root, .cap);
         }
     }
     // In `young`'s order, so the store and the hint list are the same in
@@ -933,11 +937,12 @@ fn onlyDotCalls(s: *Solve, v: Var) bool {
 pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
     const st = s.store();
     const scratch = s.cx.scratch;
-    var own: std.AutoHashMapUnmanaged(Var, void) = .empty;
-    defer own.deinit(scratch);
-    for (s.resolver.wanters.items) |v| try own.put(scratch, st.find(v), {});
-    var listed: std.AutoHashMapUnmanaged(Var, void) = .empty;
-    defer listed.deinit(scratch);
+    // The worker's columns (`Retained.Boundary`).
+    const own = &s.retained.boundary.own;
+    const listed = &s.retained.boundary.listed;
+    own.clear();
+    listed.clear();
+    for (s.resolver.wanters.items) |v| try own.put(s.cx.gpa, st.find(v), {});
     var all: std.ArrayList(Evidence.Requirement) = .empty;
     defer all.deinit(scratch);
     var reqs: std.ArrayList(Evidence.Requirement) = .empty;
@@ -952,7 +957,7 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
             if (own.contains(st.find(r.root))) try reqs.append(scratch, r);
         }
         if (reqs.items.len == 0) continue;
-        for (reqs.items) |r| try listed.put(scratch, st.find(r.root), {});
+        for (reqs.items) |r| try listed.put(s.cx.gpa, st.find(r.root), {});
         const first: u32 = @intCast(s.resolver.requirement_rows.items.len);
         for (reqs.items) |r| {
             try s.resolver.requirement_rows.append(s.cx.gpa, .{ .quantified = r.quantified, .var_name = st.flagsOf(r.root).name, .method = r.method });

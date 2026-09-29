@@ -28,6 +28,8 @@ const Obligations = @import("Obligations.zig");
 const Walk = @import("Walk.zig");
 const Generalize = @import("Generalize.zig");
 const Tree = @import("constrain/Tree.zig");
+const EnvFile = @import("Env.zig");
+const stamped = @import("../stamped.zig");
 
 const Retained = @This();
 
@@ -45,6 +47,30 @@ frames: std.ArrayList(Generalize.Frame) = .empty,
 captures: std.ArrayList(Generalize.Capture) = .empty,
 stacks: Walk.Stacks = .{},
 obligations: Obligations = .{},
+/// Resolution's variable sets at a boundary (`Resolve.close`,
+/// `holdLet`, `closeLet`): columns over the store's variables, emptied by
+/// one increment each time a boundary starts one, whatever the module.
+boundary: Boundary = .{},
+
+pub const VarSet = stamped.Column(Var, void);
+
+pub const Boundary = struct {
+    promoted: VarSet = .{},
+    by_function: VarSet = .{},
+    by_value: VarSet = .{},
+    held: stamped.Column(Var, EnvFile.Monomorphic.Why) = .{},
+    own: VarSet = .{},
+    listed: VarSet = .{},
+
+    fn deinit(b: *Boundary, gpa: Allocator) void {
+        b.promoted.deinit(gpa);
+        b.by_function.deinit(gpa);
+        b.by_value.deinit(gpa);
+        b.held.deinit(gpa);
+        b.own.deinit(gpa);
+        b.listed.deinit(gpa);
+    }
+};
 
 pub const Level = struct {
     tree: Tree.Tree = .{},
@@ -84,6 +110,7 @@ pub fn deinit(r: *Retained, gpa: Allocator) void {
     r.captures.deinit(gpa);
     r.stacks.deinit(gpa);
     r.obligations.deinit(gpa);
+    r.boundary.deinit(gpa);
     r.* = undefined;
 }
 

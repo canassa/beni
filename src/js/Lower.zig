@@ -55,6 +55,7 @@ const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
+const stamped = @import("../stamped.zig");
 const Types = @import("../check/Types.zig");
 
 const Inst = Bir.Inst;
@@ -384,24 +385,6 @@ const evidence_spill = 20;
 /// closure evaluates nothing, so the binding moves nothing (`onlyClosures`).
 const lambda_spill = 128;
 
-/// A map keyed by a node or term index, hashed by one multiplication: the
-/// default hash of a `u32` runs Wyhash over its bytes, and a derived body
-/// asks these per call it makes. Membership and lookup only; nothing
-/// iterates them, so the hash decides no order.
-fn IndexMap(comptime V: type) type {
-    return std.HashMapUnmanaged(u32, V, IndexContext, std.hash_map.default_max_load_percentage);
-}
-
-const IndexContext = struct {
-    pub fn hash(_: IndexContext, key: u32) u64 {
-        return @as(u64, key) *% 0x9E37_79B9_7F4A_7C15;
-    }
-
-    pub fn eql(_: IndexContext, a: u32, b: u32) bool {
-        return a == b;
-    }
-};
-
 const Lowerer = struct {
     gpa: Allocator,
     scratch: Allocator,
@@ -489,8 +472,10 @@ const Lowerer = struct {
     /// Per term, whether every derived term at or below it has a body
     /// (`derivedBodiesExist`), judged once, bottom-up.
     bodies_ok: []const bool = &.{},
-    /// The shared terms already bound in `bound_out`, by term index.
-    bound: IndexMap(JsIr.NameIndex) = .empty,
+    /// The shared terms already bound in `bound_out`, by term index: a
+    /// column over the table's terms, emptied by one increment when the
+    /// statement list changes.
+    bound: stamped.Column(u32, JsIr.NameIndex) = .{},
     bound_out: ?*StmtList = null,
     /// `slotName`'s answers by slot, interned once: a wide constructor
     /// asks for each of its slots per use and per derived position.
@@ -2663,7 +2648,7 @@ const Lowerer = struct {
     fn sharedIn(l: *Lowerer, t: Dispatch.TermIndex, into: *StmtList) bool {
         if (t.int() >= l.shared.len or !l.shared[t.int()]) return false;
         if (l.bound_out != into) {
-            l.bound.clearRetainingCapacity();
+            l.bound.clear();
             l.bound_out = into;
         }
         return true;
@@ -6798,7 +6783,7 @@ test "a derived function with no body is a table bug in value position, either k
     l.shared = &.{};
     l.shape_ok = &.{};
     l.bodies_ok = &.{};
-    l.bound = .empty;
+    l.bound = .{};
     l.bound_out = null;
     l.in.interfaces = &.{};
     l.in.module = @enumFromInt(0);

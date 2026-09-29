@@ -234,9 +234,9 @@ callees: std.ArrayList(Callee) = .empty,
 /// per requirement:
 /// a range of `args`. P6 reads it as it stands.
 inst_evidence: std.ArrayList(InstEvidence) = .empty,
-/// Per annotated declaration with a `where` clause, its givens: a run of
-/// `givens`.
-given_ranges: std.AutoHashMapUnmanaged(u32, Range) = .empty,
+/// Per declaration, its givens: a run of `givens`, empty for one with no
+/// `where` clause, and absent past the last declaration that has one.
+given_ranges: std.ArrayList(Range) = .empty,
 
 /// §9.5's class flag: per concrete receiver root, the methods a
 /// rejection has already reported there. `Unify` moves a root's flags to
@@ -426,12 +426,14 @@ pub fn registerGivens(
         });
         try e.setSlot(gpa, r.position, .given(index));
     }
-    try e.given_ranges.put(gpa, decl, .{ .start = first, .len = @intCast(list.items.len) });
+    if (decl >= e.given_ranges.items.len) try e.given_ranges.appendNTimes(gpa, .{ .start = 0, .len = 0 }, decl + 1 - e.given_ranges.items.len);
+    e.given_ranges.items[decl] = .{ .start = first, .len = @intCast(list.items.len) };
 }
 
 /// The givens declaration `decl`'s rigid reading registered.
 pub fn givensOf(e: *const Evidence, decl: u32) []const Given {
-    const r = e.given_ranges.get(decl) orelse return &.{};
+    if (decl >= e.given_ranges.items.len) return &.{};
+    const r = e.given_ranges.items[decl];
     return e.givens.items[r.start..][0..r.len];
 }
 

@@ -22,10 +22,12 @@
 //! map on every measurement Zig and Roc made (frontend.md §3.6). The three
 //! top-level namespaces are `AutoHashMapUnmanaged(Symbol, …)`: a symbol is
 //! a SPARSE key here (a file mentions a few hundred of a worker's tens of
-//! thousands of symbols), so a hash map is the right structure and the
-//! house rule against maps keyed by dense ids does not apply; a per-file
-//! array indexed by symbol would cost a memset proportional to the
-//! worker's whole interner per file. Prelude membership is not a lookup at
+//! thousands of symbols), so a hash map is the right structure here, and it
+//! is on the dense-id lint's list (`src/rules_test.zig`) with why. A column
+//! per worker indexed by symbol and stamped per file, which costs no memset,
+//! was built and measured: fewer instructions, but more page faults than it
+//! saved time, since it touches a slot for every symbol the worker ever
+//! declared a name with. Prelude membership is not a lookup at
 //! all: `InternPool.Local.init` fixes the prelude names at their
 //! `WellKnown` indices (`prelude.zig`).
 //!
