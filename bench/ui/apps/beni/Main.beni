@@ -1,0 +1,210 @@
+-- js-framework-benchmark's keyed table, written as an ordinary beni page on
+-- `browser-tea`: one immutable model, a pure `update`, a `view` in markup.
+-- Nothing in it is written for speed. The row reads the selection through
+-- `rowClass model row`, the way a helper would be written by anyone, so
+-- the row's input is the whole model and every message re-checks every
+-- row's holes. Labels come from a seeded generator in the model, because a
+-- sandbox has no effects to ask the page for randomness.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    selected : Maybe Int
+    nextId : Int
+    seed : Int
+
+
+type Msg
+    = Run
+    | RunLots
+    | Add
+    | Update
+    | Clear
+    | SwapRows
+    | Select Int
+    | Remove Int
+
+
+adjectives : List String
+adjectives =
+    [ "pretty", "large", "big", "small", "tall", "short", "long", "handsome", "plain", "quaint"
+    , "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd", "unsightly"
+    , "adorable", "important", "inexpensive", "cheap", "expensive", "fancy"
+    ]
+
+
+colours : List String
+colours =
+    [ "red", "yellow", "blue", "green", "pink", "brown", "purple", "brown", "white", "black"
+    , "orange"
+    ]
+
+
+nouns : List String
+nouns =
+    [ "table", "chair", "house", "bbq", "desk", "car", "pony", "cookie", "sandwich", "burger"
+    , "pizza", "mouse", "keyboard"
+    ]
+
+
+-- The Park-Miller generator: every product stays below 2^53, so an `Int`
+-- holds it exactly.
+next : Int -> Int
+next seed =
+    modBy (seed * 16807) 2147483647
+
+
+pick : List String, Int, Int -> String
+pick words count seed =
+    List.drop words (modBy seed count) |> List.head |> Maybe.withDefault ""
+
+
+-- `count` rows with ids from `id` up, and the seed after them.
+build : Int, Int, Int -> ( List Row, Int )
+build count id seed =
+    buildFrom (id + count - 1) id seed []
+
+
+buildFrom : Int, Int, Int, List Row -> ( List Row, Int )
+buildFrom id first seed rows =
+    if id < first then
+        ( rows, seed )
+
+    else
+        let
+            a =
+                next seed
+
+            c =
+                next a
+
+            n =
+                next c
+
+            label =
+                "${pick adjectives 25 a} ${pick colours 11 c} ${pick nouns 13 n}"
+        in
+        buildFrom (id - 1) first n ({ id = id, label = label } :: rows)
+
+
+replace : Model, Int -> Model
+replace model count =
+    let
+        ( rows, seed ) =
+            build count model.nextId model.seed
+    in
+    { model | rows = rows, nextId = model.nextId + count, seed = seed }
+
+
+at : List Row, Int -> Maybe Row
+at rows index =
+    List.drop rows index |> List.head
+
+
+swapRows : List Row -> List Row
+swapRows rows =
+    case ( at rows 1, at rows 998 ) of
+        ( Just a, Just b ) ->
+            List.indexedMap rows (\i row -> if i == 1 then b else if i == 998 then a else row)
+
+        _ ->
+            rows
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Run ->
+            replace model 1000
+
+        RunLots ->
+            replace model 10000
+
+        Add ->
+            let
+                ( rows, seed ) =
+                    build 1000 model.nextId model.seed
+            in
+            { model | rows = model.rows ++ rows, nextId = model.nextId + 1000, seed = seed }
+
+        Update ->
+            { model | rows = List.indexedMap model.rows (\i row -> if modBy i 10 == 0 then { row | label = row.label ++ " !!!" } else row) }
+
+        Clear ->
+            { model | rows = [] }
+
+        SwapRows ->
+            { model | rows = swapRows model.rows }
+
+        Select id ->
+            { model | selected = Just id }
+
+        Remove id ->
+            { model | rows = List.filter model.rows (\row -> row.id /= id) }
+
+
+rowClass : Model, Row -> String
+rowClass model row =
+    if model.selected == Just row.id then
+        "danger"
+
+    else
+        ""
+
+
+button : String, String, Msg -> Html Msg
+button id label msg =
+    <div class="col-sm-6 smallpad">
+        <button type="button" class="btn btn-primary btn-block" id={id} onClick={msg}>{label}</button>
+    </div>
+
+
+view : Model -> Html Msg
+view model =
+    <div class="container">
+        <div class="jumbotron">
+            <div class="row">
+                <div class="col-md-6"><h1>beni keyed</h1></div>
+                <div class="col-md-6">
+                    <div class="row">
+                        {button "run" "Create 1,000 rows" Run}
+                        {button "runlots" "Create 10,000 rows" RunLots}
+                        {button "add" "Append 1,000 rows" Add}
+                        {button "update" "Update every 10th row" Update}
+                        {button "clear" "Clear" Clear}
+                        {button "swaprows" "Swap Rows" SwapRows}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <table class="table table-hover table-striped test-data">
+            <tbody>
+                <For each={model.rows} keyed={.id}>
+                    {\row ->
+                        <tr class={rowClass model row}>
+                            <td class="col-md-1">{row.id}</td>
+                            <td class="col-md-4"><a onClick={Select row.id}>{row.label}</a></td>
+                            <td class="col-md-1">
+                                <a onClick={Remove row.id}><span class="glyphicon glyphicon-remove" aria-hidden="true" /></a>
+                            </td>
+                            <td class="col-md-6" />
+                        </tr>
+                    }
+                </For>
+            </tbody>
+        </table>
+        <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true" />
+    </div>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox { init = { rows = [], selected = Nothing, nextId = 1, seed = 42 }, update = update, view = view }
