@@ -1727,7 +1727,7 @@ new, and keeps every entry typed. **A list written in place is compiled away**: 
 list literal of pair literals whose names are literal strings,
 `class={[ ( "row", True ), ( "danger", row.id == sel ) ]}`, each entry is its own value, a constant
 entry costs nothing at run time and a dynamic one is one guarded toggle — Solid's compile-time split
-of an object literal (`shared/attr_plan.rs:686-900`, `dom/set_attr.rs:80-115`). Any other list goes
+of an object literal (`shared/attr_plan.rs:587-895`, `dom/set_attr.rs:52-115`). Any other list goes
 through the runtime's diff, a port of Solid's `className` and `style` helpers
 (`backend.md` §15.3). Both agree on what the element ends up with.
 

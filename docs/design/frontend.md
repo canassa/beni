@@ -628,9 +628,14 @@ it does today, as an error. Whether a spread is allowed
 where it stands is lowering's (`spread_on_element`, `spread_not_first`, §9.7), not the lexer's.
 
 **A comment in a hole runs to the end of the line**, as every comment does (`language.md` §2.3), `}`
-included. So `{-- note}` leaves the hole open; the lexer records, on the hole's stack entry, that a
-comment consumed the rest of the line the hole opened on, and the parser's `unclosed_delimiter` for
-that hole then says so and shows the two-line spelling (§9.5).
+included. So `{-- note}` leaves the hole open, and the lexer does nothing special about it: the
+comment goes into the `comments` array like any other (`language.md` §2.3), and when the parser
+reports the hole's `unclosed_delimiter` it finds there a comment beginning on the `{`'s line and says
+so, showing the two-line spelling (§9.5).
+
+**Any other byte in `tag` or `close` mode** — a `<`, a digit, a stray `)` — is an `invalid` token with
+`unexpected_token`, and lexing continues in the same mode, so the parser's recovery for an opening
+tag whose `>` never comes (§9.5) sees one bad token and not a cascade.
 
 **Column 1 ends every markup mode.** In `tag`, `children`, `close`, or a `hole` that has markup
 below it, a newline followed by a non-space byte at column 1 pops the stack back to its bottom
