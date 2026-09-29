@@ -989,6 +989,7 @@ unkeyed_for  raw_markup_attribute
 markup_restructured  unknown_markup_lowering
 unknown_form_attribute  missing_form_attribute  markup_type_in_foreign
 untyped_event_attribute
+invalid_attribute_name
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1017,6 +1018,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `unknown_output_record` | the backend again | `unknown_output_record`, appended on 2026-09-28, again never inserted. `--out` holds a `_manifest.txt` that is not beni's record — its first line is not `beni-manifest 1`, or a line is not `<16 hex digits> <path>` — and the build would otherwise overwrite it ([`backend.md`](backend.md) §2, *The output directory holds what the last build wrote*). Reported against that file, before the first byte is written, and nothing is written. *Amended 2026-09-29:* the same code refuses a symbolic link on the way to any path the build writes in `--out` — the manifest, an output, or a directory it writes into — which beni never makes and would otherwise write through, named the same way |
 | the seven before the last | markup | twenty codes appended on 2026-09-29 with the markup specification, again never inserted, on the first six of these lines; §11.17 says which phase reports each. *Revised the same day by the specification review, before anything was built:* three were renamed because `Show` shares them with `For` (`invalid_for_children` → `invalid_form_children`, `invalid_for_keyed` → `invalid_keyed`, `for_key_not_primitive` → `key_not_primitive`); the warning `html_entity_in_text` was withdrawn with the rule it enforced, because text now decodes character references (§11.4); and the seventh line was appended — `unknown_form_attribute` and `missing_form_attribute` for a built-in form's own attributes (§11.9, §11.18), and `markup_type_in_foreign` for a `foreign` that would build or read one lowering's representation of markup under another (`boundary.md` §9.3). Two are `warning`s, on by default for the root package only — `unkeyed_for` and `raw_markup_attribute` — and each names the escape that silences it. `markup_restructured` is the one code a platform's markup lowering reports rather than the compiler (`boundary.md` §9.4.7), and `unknown_markup_lowering` is a manifest's (`boundary.md` §9.2) |
 | `untyped_event_attribute` | markup again | appended on 2026-09-29, when markup was typed, again never inserted: the owner's refusal of a quoted attribute name beginning with `on`, in any case (§11.5). `"onclick"={text}` would write an event handler the page runs as script, the one route besides `raw` by which a `view` could inject one, so it is an error rather than a warning — a guarantee (rule 7), with the typed event attribute as the escape. Reported at the quoted name, and its hint names the events the element accepts whose name is the quoted one in another case |
+| the last line | markup again | appended on 2026-09-29, again never inserted, with the owner's decision to close the escape's other script sinks (§11.5). `invalid_attribute_name` is lowering's: a quoted name holding whitespace, a quote, `=`, `/`, `>` or a control character, or empty, which a page would end early and follow with an attribute the vocabulary never sees (`"x onclick"`) |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -1264,6 +1266,12 @@ the source spells, so a character an escape produces never begins one (`"\u{26}a
 characters `&amp;`), and nothing an interpolation yields is decoded. Whitespace is **not** collapsed in
 an attribute value, as in Solid. `class="btn ${size}"` is the idiom this form buys. A `{"…"}` value
 is an ordinary expression and decodes nothing, which is the way to write a literal reference.
+
+**The escape's other script sinks are closed** (*amended 2026-09-29*, the owner's decision; Elm's
+rules, research 24 §6.3). A quoted name is an attribute name and nothing more: one that holds
+whitespace, a quote, `=`, `/`, `>` or a control character, or is empty, is
+`invalid_attribute_name` — a page would end the name there and read what follows as another
+attribute, so `"x onclick"` would write an event handler.
 
 **Each attribute may be written once** (`duplicate_attribute`). *Amended 2026-09-29:* on an
 element, names are compared as HTML compares them, ASCII case folded, so `title` and `"TITLE"`
@@ -1649,7 +1657,7 @@ browser platform's mount and after-render design; `ref` (research 36 question 6,
 
 Appended to §10's catalogue, never inserted (§10). Syntax: `unclosed_element`,
 `mismatched_closing_tag`, `element_as_argument` (the parser's, `frontend.md` §9.5). Lowering:
-`duplicate_attribute`, `spread_on_element`, `spread_not_first`, `invalid_form_children`,
+`duplicate_attribute`, `invalid_attribute_name`, `spread_on_element`, `spread_not_first`, `invalid_form_children`,
 `unknown_form_attribute`, `missing_form_attribute`, `invalid_keyed` and `vocabulary_outside_platform`.
 The checker's ([`checker-v2.md`](checker-v2.md) §25.9): `no_markup_vocabulary`, `unknown_element`,
 `unknown_attribute`, `child_not_renderable`, `void_element_with_children`, `key_not_primitive`,

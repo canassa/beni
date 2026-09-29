@@ -3228,11 +3228,40 @@ fn markupItem(l: *Lower, attr: NodeIndex) Allocator.Error!Bir.MarkupItem {
         try l.stringText(name_node, &text);
         item.kind = .escape;
         item.name = try l.addSymbol(try l.interner.getOrPut(l.gpa, text.items));
+        if (attributeNameFault(text.items)) |fault| {
+            const token = l.tree.nodeMainToken(attr);
+            try l.diagnostics.append(l.gpa, .{
+                .code = .invalid_attribute_name,
+                .start = l.starts[token],
+                .end = l.tokenEnd(l.stringEnd(token)),
+                .markup = fault,
+            });
+        }
     } else {
         item.name = try l.addSymbol(l.tokenSymbol(a.name));
     }
     try l.itemValue(&item, a.value, a.brace != null);
     return item;
+}
+
+/// Why the decoded text of a quoted attribute name cannot be one, or null
+/// (language.md §11.5): a page ends a name at whitespace, a quote, `=`, `/`
+/// or `>`, and what follows begins another attribute; a control character
+/// has no place in one; and an empty name names nothing.
+fn attributeNameFault(name: []const u8) ?Diagnostics.Item.Markup {
+    if (name.len == 0) return .name_empty;
+    for (name, 0..) |c, i| switch (c) {
+        ' ', '\t', '\n', '\r', 0x0C => return .name_space,
+        '"', '\'' => return .name_quote,
+        '=' => return .name_equals,
+        '/' => return .name_slash,
+        '>' => return .name_gt,
+        0x00...0x08, 0x0B, 0x0E...0x1F, 0x7F => return .name_control,
+        // U+0080 to U+009F, the C1 controls.
+        0xC2 => if (i + 1 < name.len and name[i + 1] >= 0x80 and name[i + 1] <= 0x9F) return .name_control,
+        else => {},
+    };
+    return null;
 }
 
 /// An item's value: a constant, the instruction computing it, or both

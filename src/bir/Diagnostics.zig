@@ -72,6 +72,14 @@ pub const Item = struct {
         keyed_false_on_show,
         /// `unknown_module_alias`: the module of a component's tag.
         component,
+        /// `invalid_attribute_name`: what the quoted name holds.
+        name_empty,
+        name_space,
+        name_quote,
+        name_equals,
+        name_slash,
+        name_gt,
+        name_control,
     };
 };
 
@@ -433,6 +441,25 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`keyed={{True}}` keeps a row by its item's identity, and `keyed={{False}}` (on `<For>`)
                 \\by its position.
             , .{ text, other });
+        },
+        .invalid_attribute_name => {
+            try w.print("`{s}` cannot be an attribute's name: it {s}.", .{ text, switch (item.markup) {
+                .name_empty => "is empty",
+                .name_space => "holds whitespace",
+                .name_quote => "holds a quote",
+                .name_equals => "holds `=`",
+                .name_slash => "holds `/`",
+                .name_gt => "holds `>`",
+                else => "holds a control character",
+            } });
+            try w.writeAll(
+                \\
+                \\
+                \\A page ends an attribute's name at whitespace, a quote, `=`, `/` or `>`, and
+                \\what follows begins another attribute, which the vocabulary never sees:
+                \\`"x onclick"` would write an event handler. A quoted name may hold any other
+                \\character but a control character.
+            );
         },
         .vocabulary_outside_platform => try w.writeAll(
             \\This vocabulary declaration is outside a platform package.

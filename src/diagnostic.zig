@@ -303,6 +303,10 @@ pub const Code = enum {
     /// Appended the day markup was typed: a quoted attribute name beginning
     /// with `on`, which a page would run as script (`language.md` §11.5).
     untyped_event_attribute,
+    /// Appended with the other script sinks' refusals: a quoted attribute
+    /// name holding a character that would end it in a page
+    /// (`language.md` §11.5).
+    invalid_attribute_name,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -453,6 +457,7 @@ pub fn title(code: Code) []const u8 {
         .missing_form_attribute => "MISSING ATTRIBUTE",
         .markup_type_in_foreign => "MARKUP TYPE IN FOREIGN",
         .untyped_event_attribute => "UNTYPED EVENT ATTRIBUTE",
+        .invalid_attribute_name => "INVALID ATTRIBUTE NAME",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

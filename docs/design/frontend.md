@@ -1039,7 +1039,7 @@ longest-match, numeric and windows-1252 vectors of `htmlize` 1.1.0's `src/unesca
 tests, ported as hermetic tests of the decoder, plus `run/` fixtures through `ssr` for text and for an
 attribute.
 
-**Lowering's diagnostics**: `duplicate_attribute`; `spread_on_element`, `spread_not_first`;
+**Lowering's diagnostics**: `duplicate_attribute`; `invalid_attribute_name` (*added 2026-09-29*); `spread_on_element`, `spread_not_first`;
 `invalid_form_children` (a `For` or `Show` whose children are not one hole); `unknown_form_attribute`
 (an attribute `For` or `Show` does not take, with "did you mean" over the ones it does) and
 `missing_form_attribute` (`each` for `For`, `when` and `keyed` for `Show`); `invalid_keyed`, read
