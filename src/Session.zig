@@ -73,6 +73,7 @@ const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
+const platform_chain = @import("platform.zig");
 const Manifest = @import("js/Manifest.zig");
 const artifact_bytes = @import("frontend/artifact_bytes.zig");
 
@@ -93,16 +94,10 @@ graph: Graph = .empty,
 /// The app package's manifest said `"platform": true`, so the app's own
 /// modules may write `foreign` (boundary.md §2).
 app_is_platform: bool = false,
-/// Where the resolved platform package's files came from: the store's path
-/// prefix for it, and its manifest bytes. Empty when `--platform` was not
-/// given, or when it named a platform that does not exist — `platform_error`
-/// says which.
-platform_root: []const u8 = &.{},
-platform_manifest: []const u8 = &.{},
-/// `--platform` named something that is neither an embedded platform nor a
-/// readable directory. Kept rather than reported here, because the command
-/// owns the message.
-platform_error: bool = false,
+/// Per file, the chain index of a platform file's package
+/// (`platform.Chain`); 0 for every other file. Filled after enumeration.
+/// Owned.
+file_layers: []u8 = &.{},
 /// The interfaces and cross-module diagnostics of the last run.
 resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
@@ -203,6 +198,10 @@ pub const Options = struct {
     /// directory. Null means no platform, which is what `check` and `fmt`
     /// run with.
     platform: ?[]const u8 = null,
+    /// The chain `platform` selects, already read by the command
+    /// (`platform.resolveChain`): every package of it is enumerated. Null
+    /// exactly when `platform` is.
+    chain: ?*const platform_chain.Chain = null,
     /// Where to read `beni.json` from for the APP package. A manifest that
     /// says `"platform": true` makes the app's own modules privileged
     /// (boundary.md §2), which is how someone writes a platform package of
@@ -472,6 +471,7 @@ pub fn deinit(session: *Session) void {
     for (session.workers) |*worker| worker.deinit(gpa);
     gpa.free(session.workers);
     gpa.free(session.file_keys);
+    gpa.free(session.file_layers);
     gpa.free(session.iface_hashes);
     gpa.free(session.digests);
     gpa.free(session.compare_keys);
@@ -519,6 +519,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         };
     }
     try session.store.finish(gpa);
+    try session.assignLayers();
     try session.fitWorkers(session.frontendWorkers());
     try session.artifacts.resize(gpa, session.store.count());
     // Sized before any worker starts, and written only by the worker that
@@ -688,32 +689,51 @@ fn fitWorkers(session: *Session, keep_wanted: u32) Allocator.Error!void {
 /// way core is — an embedded copy costs no I/O, a directory is walked —
 /// and given `Package.platform`, which is what puts it in `Graph.lookup`'s
 /// search path and what makes `foreign` legal inside it.
+///
+/// Every package of the chain is enumerated (`boundary.md` §9.1), each a
+/// platform package: `foreign` and vocabulary declarations are legal in all
+/// of them, and which of their modules a module may import is the graph's
+/// question (`Graph.Platforms`).
 fn enumeratePlatform(session: *Session) RunError!void {
-    const requested = session.options.platform orelse return;
+    const chain = session.options.chain orelse return;
     const gpa = session.gpa;
-    for (platform_packages.platforms) |platform| {
-        if (!std.mem.eql(u8, platform.name, requested)) continue;
-        session.platform_root = platform.root;
-        session.platform_manifest = platform.manifest;
-        var buffer: [std.fs.max_path_bytes]u8 = undefined;
-        for (platform.files) |f| {
-            const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ platform.root, f.rel }) catch return error.OutOfMemory;
-            try session.store.addEmbedded(gpa, p, @intCast(platform.root.len + 1), .platform, f.source);
+    for (chain.layers) |layer| {
+        if (layer.embedded) |platform| {
+            var buffer: [std.fs.max_path_bytes]u8 = undefined;
+            for (platform.files) |f| {
+                const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ platform.root, f.rel }) catch return error.OutOfMemory;
+                try session.store.addEmbedded(gpa, p, @intCast(platform.root.len + 1), .platform, f.source);
+            }
+            continue;
         }
-        return;
+        // A directory: `--platform=./my-platform` is how someone uses one
+        // they wrote, which is the whole point of making privilege a role
+        // rather than an author list (§2). Its manifest has been read, so a
+        // failure here is an I/O failure like any input's.
+        session.store.addPath(gpa, session.io, layer.root, layer.root, .platform) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                session.io_failure = .{ .path = layer.root, .err = err };
+                return error.InputPath;
+            },
+        };
     }
-    // Not a name in the box: a directory, then. `--platform=./my-platform`
-    // is how someone uses one they wrote, which is the whole point of
-    // making privilege a role rather than an author list (§2).
-    const dir = std.mem.trimEnd(u8, requested, "/");
-    session.store.addPath(gpa, session.io, dir, dir, .platform) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => {
-            session.platform_error = true;
-            return;
-        },
-    };
-    session.platform_root = dir;
+}
+
+/// `file_layers`, once the store is numbered.
+fn assignLayers(session: *Session) Allocator.Error!void {
+    const gpa = session.gpa;
+    gpa.free(session.file_layers);
+    session.file_layers = &.{};
+    session.file_layers = try gpa.alloc(u8, session.store.count());
+    @memset(session.file_layers, 0);
+    const chain = session.options.chain orelse return;
+    if (chain.layers.len < 2) return;
+    for (session.file_layers, 0..) |*slot, i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        if (session.store.package(file) != .platform) continue;
+        slot.* = @intCast(chain.layerOfPath(session.store.path(file)) orelse 0);
+    }
 }
 
 /// Read the app package's `beni.json`, if the command asked for one. A
@@ -1327,7 +1347,7 @@ fn resolveSerial(session: *Session) RunError!void {
 
     const graph_token = session.profile.begin();
     session.graph.deinit(gpa);
-    session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner);
+    session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner, try session.graphPlatforms(worker.arena.allocator()));
     session.profile.end(0, graph_token, .graph, Profile.Event.no_file, 0);
     session.profile.addCounter(.modules, session.graph.count());
     session.profile.addCounter(.edges, session.graph.edgeCount());
@@ -1340,6 +1360,19 @@ fn resolveSerial(session: *Session) RunError!void {
     session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile);
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
     try session.reportResolveDiagnostics();
+}
+
+/// What the graph needs of the platform chain (`Graph.Platforms`), in
+/// `scratch`.
+fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!Graph.Platforms {
+    const chain = session.options.chain orelse return .{ .file_layers = session.file_layers };
+    const sees = try scratch.alloc(u64, chain.layers.len);
+    var reexports: std.ArrayList(Graph.Platforms.Reexport) = .empty;
+    for (chain.layers, sees, 0..) |layer, *s, i| {
+        s.* = layer.sees;
+        for (layer.manifest.reexports) |name| try reexports.append(scratch, .{ .module = name, .layer = @intCast(i) });
+    }
+    return .{ .file_layers = session.file_layers, .sees = sees, .reexports = reexports.items };
 }
 
 /// One remap table per worker, `local symbol → global symbol`, with every
@@ -1643,10 +1676,10 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
             try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });
         }
     }
-    for (platform_packages.platforms) |p| {
-        if (!std.mem.eql(u8, p.root, session.platform_root)) continue;
+    if (session.options.chain) |chain| for (chain.layers) |layer| {
+        const p = layer.embedded orelse continue;
         for (p.assets) |asset| try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });
-    }
+    };
 
     session.keys.deinit(gpa);
     session.keys = try Key.build(
@@ -1836,13 +1869,34 @@ fn reportGraphDiagnostics(session: *Session) RunError!void {
             },
             else => {
                 cx.name = session.moduleNameOfImport(item.file, item.token);
-                if (item.code == .unknown_module) cx.platform = session.platformOffering(cx.name);
+                if (item.code == .unknown_module) {
+                    cx.platform = session.platformOffering(cx.name);
+                    session.hiddenByChain(item.file, cx.name, &cx);
+                }
             },
         }
         try ResolveDiagnostics.message(item.code, cx, &message.writer);
         const start, const end = session.tokenSpan(item.file, item.token);
         try session.workers[0].report(session, item.file, item.code, start, end, message.written());
     }
+}
+
+/// When the module `name` that `file` failed to import exists in the platform
+/// chain and the chain hides it from `file` (`boundary.md` §9.1), fill in
+/// which platform has it and, for a platform importer, which platform that
+/// is: the message then names the key that would expose it.
+fn hiddenByChain(session: *const Session, file: SourceStore.Index, name: []const u8, cx: *ResolveDiagnostics.Context) void {
+    const chain = session.options.chain orelse return;
+    const symbol = session.interner.find(name) orelse return;
+    const graph = &session.graph;
+    const from: Graph.Index = for (0..graph.count()) |i| {
+        const m: Graph.Index = @enumFromInt(i);
+        if (graph.moduleFile(m) == file) break m;
+    } else return;
+    const target = graph.hiddenPlatformModule(from, symbol) orelse return;
+    const layers = graph.modules.items(.layer);
+    cx.hidden_in = chain.layers[layers[target.int()]].name;
+    if (graph.modulePackage(from) == .platform) cx.importer_platform = chain.layers[layers[from.int()]].name;
 }
 
 /// The module path an import token spells, for `unknown_module`. Taken

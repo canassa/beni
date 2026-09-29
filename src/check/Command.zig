@@ -68,6 +68,22 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // wave and `run` renders as it always has.
     options.defer_render = check.platform != null;
 
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // The platform chain, read before any source is, exactly as `build`
+    // reads it (`boundary.md` §9.1).
+    var chain_failure: ?platform.Failure = null;
+    const chain: ?platform.Chain = if (check.platform) |requested|
+        platform.resolveChain(arena, io, requested, &chain_failure) catch |err| switch (err) {
+            error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+            error.Failed => return platform.report(stderr, chain_failure.?),
+        }
+    else
+        null;
+    if (chain) |*c| options.chain = c;
+
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
 
@@ -78,7 +94,6 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         },
         else => |e| return fail(stderr, "beni: {t}", .{e}),
     };
-    if (session.platform_error) return platform.reportUnknown(stderr, check.platform.?);
     // Before the exit-code branch below, so a project with errors still
     // reports the hashes of the modules that do have an interface: the
     // firewall's question is "did this module's public face move?", and a
@@ -114,17 +129,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     }
     const requested = check.platform orelse return 0;
 
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-
-    // The platform's own manifest is read even though nothing here uses its
-    // `program` or `runtime`: `--platform=<dir>` naming something that is not
-    // a platform package is the same exit-2 failure for `check` as for
-    // `build`, and finding that out only at build time is the asymmetry this
-    // flag exists to remove.
-    const loaded = platform.load(arena, io, &session) catch |err|
-        return platform.report(stderr, requested, &session, err);
+    // The chain's output shape, which `check` needs for the checks of the
+    // platform's own declarations and never for `main`: a platform that
+    // declares no `program` is checked like any other.
+    const loaded = platform.load(arena, &session, &chain.?, false) catch |err|
+        return platform.reportLoad(stderr, requested, err);
 
     const items = Emit.checkContract(gpa, arena, &session, .{
         .out_dir = &.{}, // nothing is written; the field is `run`'s

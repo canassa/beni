@@ -92,3 +92,4 @@ iface_test.test.a build whose evidence crosses modules is byte-identical through
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 7314d3330a1698c141904ee51dbfbaa2f9635cc659e419db99baa29f232f5516
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 b7ddf00789fd8b20da06c431a61ab372911c69250228a439cfe0e148a6481b2e
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 ba334019a92173fb9745d1b5099928015537c7c2f46fe21a1e3b911c5713ab3c
+platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 424697ea0d2fc30cdf58aa2890fe4ab0b1fad9ceac2d269f00fac56914c7b412

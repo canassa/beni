@@ -1,0 +1,7 @@
+--! A module of the base platform that no platform re-exports: the top
+--! platform's modules may import it, a program may not.
+
+
+pub loud : String -> String
+loud line =
+    "${line}!"

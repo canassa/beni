@@ -154,6 +154,20 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
     options.keep_type_stores = dump.stage == .types;
+    // The chain is read before any source, as `check` and `build` read it
+    // (platform.zig): a `--platform` that names nothing is the same exit 2
+    // and the same line.
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var chain_failure: ?beni.platform.Failure = null;
+    const chain: ?beni.platform.Chain = if (options.platform) |requested|
+        beni.platform.resolveChain(arena_state.allocator(), io, requested, &chain_failure) catch |err| switch (err) {
+            error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+            error.Failed => return beni.platform.report(stderr, chain_failure.?),
+        }
+    else
+        null;
+    if (chain) |*c| options.chain = c;
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
     const phases: Session.Phases = switch (dump.stage) {
@@ -169,10 +183,6 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         .summary => |s| s,
         .exit => |code| return code,
     };
-    // A `--platform` that named nothing is a usage failure, not a dump with
-    // a missing package: the same exit 2 and the same line `check` and
-    // `build` print (platform.zig).
-    if (session.platform_error) return beni.platform.reportUnknown(stderr, dump.platform.?);
     // `--stage=graph` is about the PROJECT and not about one file: it
     // takes whatever path the other stages take and prints the whole
     // module graph, so it never looks a dump target up.

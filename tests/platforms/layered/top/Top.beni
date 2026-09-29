@@ -1,0 +1,15 @@
+--! A platform layered on another (`docs/design/boundary.md` §9.1). Its
+--! manifest declares no output key: `program` and `runtime` are `base`'s,
+--! inherited because the chain is read top first and the first package to
+--! declare a key gives it. It re-exports `Base`, so a program built for it
+--! imports `Base.Program` by its own name; `base`'s `Hidden` it does not
+--! re-export, so no program can import that.
+
+import Base
+import Hidden
+
+
+--| A program that writes `line`, shouted.
+pub shout : String -> Base.Program
+shout line =
+    Base.say (Hidden.loud line)

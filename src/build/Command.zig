@@ -61,6 +61,22 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     defer if (cache) |*c| c.close();
     if (cache) |*c| options.cache = c;
 
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // The platform chain, before any source is read: a manifest failure is
+    // an exit-2 line and nothing else (`boundary.md` §9.1).
+    var chain_failure: ?platform.Failure = null;
+    const chain = platform.resolveChain(arena, io, build.platform, &chain_failure) catch |err| switch (err) {
+        error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
+        error.Failed => return platform.report(stderr, chain_failure.?),
+    };
+    // A chain that declares no `program` is only depended on (§9.1): it
+    // builds a library and never a program.
+    if (!build.library and chain.first("program") == null) return platform.reportNoProgram(stderr, build.platform);
+    options.chain = &chain;
+
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
 
@@ -71,18 +87,13 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         },
         else => |e| return fail(stderr, "beni: {t}", .{e}),
     };
-    if (session.platform_error) return platform.reportUnknown(stderr, build.platform);
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
         return 1;
     }
 
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-
-    const loaded = platform.load(arena, io, &session) catch |err|
-        return platform.report(stderr, build.platform, &session, err);
+    const loaded = platform.load(arena, &session, &chain, !build.library) catch |err|
+        return platform.reportLoad(stderr, build.platform, err);
 
     const emit_token = session.profile.begin();
     var result = emitOnBigStack(gpa, arena, &session, .{

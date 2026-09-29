@@ -8,7 +8,7 @@
 //! is what lets anyone ship a Bun platform, a Deno platform or a Workers
 //! platform without a compiler change (§5.1).
 //!
-//! The build reads exactly five keys, and a package manifest will be a superset
+//! The build reads the keys below, and a package manifest will be a superset
 //! rather than a replacement:
 //!
 //! ```json
@@ -31,6 +31,17 @@
 //!   leading `_`, trailing `.mjs` — because a key that could name
 //!   `main.mjs` would hand a platform author the collision with the module
 //!   `Main` that rule exists to make unreachable.
+//! - `platforms` — the platforms this one depends on (`boundary.md` §9.1),
+//!   each a name `--platform` would accept or a path relative to this
+//!   package's root. Their modules are enumerated with this one's.
+//! - `reexports` — modules of those dependencies that a program built for
+//!   this platform may import (§9.1). No other module of a dependency is
+//!   visible to the program.
+//! - `markup` — the four fields of §9.2, each optional and each inherited on
+//!   its own down the chain: `vocabulary` (the module holding the vocabulary
+//!   declarations), `type` (the module-qualified markup type), `lowering` (a
+//!   markup lowering this binary has) and `runtime` (the JavaScript file that
+//!   implements it).
 //!
 //! An unknown key is ignored rather than rejected: a manifest is a forward
 //! compatibility surface, and packages will add to it.
@@ -55,6 +66,17 @@ name: ?[]const u8 = null,
 program: ?[]const u8 = null,
 runtime: ?[]const u8 = null,
 entry: ?[]const u8 = null,
+platforms: []const []const u8 = &.{},
+reexports: []const []const u8 = &.{},
+markup: Markup = .{},
+
+/// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
+pub const Markup = struct {
+    vocabulary: ?[]const u8 = null,
+    type: ?[]const u8 = null,
+    lowering: ?[]const u8 = null,
+    runtime: ?[]const u8 = null,
+};
 
 pub const ParseError = error{
     /// Not JSON, or not a JSON object.
@@ -69,6 +91,9 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         program: ?[]const u8 = null,
         runtime: ?[]const u8 = null,
         entry: ?[]const u8 = null,
+        platforms: ?[]const []const u8 = null,
+        reexports: ?[]const []const u8 = null,
+        markup: ?Markup = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
         .ignore_unknown_fields = true,
@@ -83,6 +108,9 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .program = parsed.program,
         .runtime = parsed.runtime,
         .entry = parsed.entry,
+        .platforms = parsed.platforms orelse &.{},
+        .reexports = parsed.reexports orelse &.{},
+        .markup = parsed.markup orelse .{},
     };
 }
 
@@ -128,6 +156,23 @@ test "a manifest may name the entry file" {
         \\{ "platform": true, "name": "web", "program": "Web.Program", "runtime": "runtime.js", "entry": "_index.mjs" }
     );
     try testing.expectEqualStrings("_index.mjs", m.entry.?);
+}
+
+test "a platform layered on another, with a markup key" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "web", "platforms": ["html", "../base"], "reexports": ["Html"],
+        \\  "markup": { "lowering": "dom", "runtime": "runtime.js", "later": 1 } }
+    );
+    try testing.expectEqual(@as(usize, 2), m.platforms.len);
+    try testing.expectEqualStrings("../base", m.platforms[1]);
+    try testing.expectEqualStrings("Html", m.reexports[0]);
+    try testing.expectEqualStrings("dom", m.markup.lowering.?);
+    try testing.expectEqual(@as(?[]const u8, null), m.markup.vocabulary);
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "platform": true, "platforms": "html" }
+    ));
 }
 
 test "an ordinary package, and forward compatibility" {

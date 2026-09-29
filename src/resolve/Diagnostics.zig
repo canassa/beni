@@ -36,6 +36,11 @@ pub const Context = struct {
     /// a platform given as a directory is unknown until it is named, so a
     /// missing `Html` gets the plain message and no guess.
     platform: []const u8 = "",
+    /// `unknown_module`: the platform of the chain that HAS the module, when
+    /// the chain hides it from the importer (`boundary.md` §9.1), and the
+    /// importer's own platform when it is a platform module. Empty otherwise.
+    hidden_in: []const u8 = "",
+    importer_platform: []const u8 = "",
     /// Visible constructor members for `unknown_schema_member`.
     available: []const []const u8 = &.{},
     schema_location: []const u8 = "",
@@ -74,6 +79,22 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             }
         },
         .unknown_module => {
+            if (cx.hidden_in.len != 0 and cx.importer_platform.len != 0) return w.print(
+                \\`{s}` is a module of the platform `{s}`, which `{s}` does not depend on.
+                \\
+                \\A platform's modules may import the modules of the platforms it lists in its
+                \\manifest's `"platforms"`, directly or through them, and no others
+                \\(`docs/design/boundary.md` §9.1).
+            , .{ cx.name, cx.hidden_in, cx.importer_platform });
+            if (cx.hidden_in.len != 0) return w.print(
+                \\`{s}` is a module of the platform `{s}`, which this build's platform depends
+                \\on, but no platform above it lists `{s}` in `"reexports"`, so a program cannot
+                \\import it.
+                \\
+                \\A program may import the modules of the platform it is built for, and a module
+                \\of a platform below it only when a platform on the way lists that module in its
+                \\manifest's `"reexports"` (`docs/design/boundary.md` §9.1).
+            , .{ cx.name, cx.hidden_in, cx.name });
             try w.print(
                 \\I cannot find a module named `{s}`.
                 \\

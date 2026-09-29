@@ -109,10 +109,42 @@ rows: []Row,
 /// Owned. The members named by every `import_cycle` item, in cycle order,
 /// back to back; an item's `cycle_start..cycle_end` slices this.
 cycle_members: []const Index,
+/// Owned. Per chain index, the layers whose modules that layer's modules may
+/// import, as a bit set (`Platforms.sees`). Empty with no platform chain.
+sees: []const u64 = &.{},
+
+/// What the platform chain says about which module may import which
+/// (`boundary.md` §9.1). Every platform package of the chain shares
+/// `Package.platform`, and module names are unique across all of them, so
+/// the chain index is a column beside the package rather than a package of
+/// its own.
+pub const Platforms = struct {
+    /// Per FILE, the chain index of a platform file's package.
+    file_layers: []const u8 = &.{},
+    /// Per chain index, the layers its modules may import: itself and every
+    /// platform it depends on, transitively.
+    sees: []const u64 = &.{},
+    /// The `"reexports"` of every package of the chain.
+    reexports: []const Reexport = &.{},
+
+    pub const Reexport = struct {
+        /// The module name as the manifest spells it.
+        module: []const u8,
+        /// The chain index of the package that lists it.
+        layer: u8,
+    };
+};
 
 pub const Module = struct {
     file: SourceStore.Index,
     package: Package,
+    /// For a platform module, the chain index of its package
+    /// (`Platforms`); 0 otherwise.
+    layer: u8 = 0,
+    /// Whether a module of the ROOT package may import this one: every
+    /// module but a dependency platform's that no platform re-exports
+    /// (`boundary.md` §9.1).
+    app_visible: bool = true,
     /// The module's name, interned: `Json.Decode` for
     /// `src/Json/Decode.beni`.
     name: Symbol,
@@ -167,6 +199,7 @@ pub fn deinit(g: *Graph, gpa: Allocator) void {
     gpa.free(g.cycle_members);
     gpa.free(g.name_rows);
     gpa.free(g.rows);
+    gpa.free(g.sees);
     g.* = undefined;
 }
 
@@ -237,10 +270,53 @@ pub fn lookup(g: *const Graph, from: Package, name: Symbol) ?Index {
     return moduleOrNull(row.visible[@intFromEnum(from)]);
 }
 
-/// `lookup`'s precedence over one row's `exact` answers.
-fn visibleFrom(exact: [package_count]u32, from: Package) u32 {
+/// Resolve `name` as seen from module `from`: `lookup`, then the platform
+/// chain's visibility (`boundary.md` §9.1). A platform module may import the
+/// modules of the platforms its own depends on and no other platform's; a
+/// module that fails that test is not there for it, and the name falls
+/// through to core as it would had the platform not declared it.
+///
+/// What a ROOT-package module may see of the chain is already in
+/// `Row.visible` (`app_visible`), so the extra test is paid only by a
+/// platform module that names another platform's.
+pub fn lookupFrom(g: *const Graph, from: Index, name: Symbol) ?Index {
+    const packages = g.modules.items(.package);
+    const pkg = packages[from.int()];
+    const target = g.lookup(pkg, name) orelse return null;
+    if (pkg != .platform or packages[target.int()] != .platform) return target;
+    if (g.platformSees(from, target)) return target;
+    const row = g.rowOf(name) orelse return null;
+    return moduleOrNull(row.exact[@intFromEnum(Package.core)]);
+}
+
+/// Whether platform module `from`'s package may import platform module
+/// `target`'s (§9.1): it is the same package, or one it depends on.
+pub fn platformSees(g: *const Graph, from: Index, target: Index) bool {
+    const layers = g.modules.items(.layer);
+    const l = layers[from.int()];
+    if (l >= g.sees.len) return true;
+    return g.sees[l] & (@as(u64, 1) << @intCast(layers[target.int()])) != 0;
+}
+
+/// A platform module that `from` could not import because the chain hides it
+/// from `from` (§9.1), for `unknown_module`'s message; null when no platform
+/// module has the name, or `from` may import it.
+pub fn hiddenPlatformModule(g: *const Graph, from: Index, name: Symbol) ?Index {
+    const row = g.rowOf(name) orelse return null;
+    const target = moduleOrNull(row.exact[@intFromEnum(Package.platform)]) orelse return null;
+    return switch (g.modulePackage(from)) {
+        .app => if (row.exact[@intFromEnum(Package.app)] != no_module or g.modules.items(.app_visible)[target.int()]) null else target,
+        .platform => if (g.platformSees(from, target)) null else target,
+        .core => null,
+    };
+}
+
+/// `lookup`'s precedence over one row's `exact` answers. `app_sees` is
+/// whether a root-package module may see the row's platform module.
+fn visibleFrom(exact: [package_count]u32, from: Package, app_sees: bool) u32 {
     if (exact[@intFromEnum(from)] != no_module) return exact[@intFromEnum(from)];
-    if (from != .platform and exact[@intFromEnum(Package.platform)] != no_module) return exact[@intFromEnum(Package.platform)];
+    const hidden = from == .app and !app_sees;
+    if (from != .platform and !hidden and exact[@intFromEnum(Package.platform)] != no_module) return exact[@intFromEnum(Package.platform)];
     if (from != .core and exact[@intFromEnum(Package.core)] != no_module) return exact[@intFromEnum(Package.core)];
     return no_module;
 }
@@ -266,9 +342,11 @@ pub fn build(
     store: *const SourceStore,
     artifacts: *const Artifacts,
     interner: *InternPool.Global,
+    platforms: Platforms,
 ) Allocator.Error!Graph {
     var g: Graph = .empty;
     errdefer g.deinit(gpa);
+    g.sees = try gpa.dupe(u64, platforms.sees);
     var modules: std.MultiArrayList(Module) = .empty;
     errdefer modules.deinit(gpa);
 
@@ -288,9 +366,13 @@ pub fn build(
         if (!store.modulePathValid(file)) continue;
         const name = try interner.getOrPut(gpa, store.moduleName(file));
         name_limit = @max(name_limit, @intFromEnum(name) + 1);
+        const package = store.package(file);
+        const layer: u8 = if (package == .platform and file.int() < platforms.file_layers.len) platforms.file_layers[file.int()] else 0;
         try modules.append(gpa, .{
             .file = file,
-            .package = store.package(file),
+            .package = package,
+            .layer = layer,
+            .app_visible = package != .platform or layer == 0 or reexported(platforms, store.moduleName(file), layer),
             .name = name,
             .poisoned = false,
             .deps_start = 0,
@@ -322,7 +404,9 @@ pub fn build(
         }
     }
     for (rows.items) |*row| {
-        for (&row.visible, 0..) |*v, from| v.* = visibleFrom(row.exact, @enumFromInt(from));
+        const platform_module = row.exact[@intFromEnum(Package.platform)];
+        const app_sees = platform_module == no_module or modules.items(.app_visible)[platform_module];
+        for (&row.visible, 0..) |*v, from| v.* = visibleFrom(row.exact, @enumFromInt(from), app_sees);
     }
     g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
@@ -334,7 +418,6 @@ pub fn build(
     //    and its dependencies so far — are STAMPS (`i + 1`) in arrays
     //    indexed by name row and by module, not scans of a list: a module
     //    importing n modules would be n² here.
-    const packages = g.modules.items(.package);
     const used_stamp = try scratch.alloc(u32, g.rows.len);
     @memset(used_stamp, 0);
     const dep_stamp = try scratch.alloc(u32, g.modules.len);
@@ -354,7 +437,7 @@ pub fn build(
                 const row = g.rowIndex(module_name) orelse continue;
                 if (used_stamp[row] != stamp) continue;
             }
-            const target = g.lookup(packages[i], module_name) orelse {
+            const target = g.lookupFrom(index, module_name) orelse {
                 // The prelude names modules the compiler guarantees; a
                 // missing one means core itself is missing or broken, and
                 // that is not the importer's fault to report here. The
@@ -400,6 +483,18 @@ pub fn build(
     g.diagnostics = try diagnostics.toOwnedSlice(gpa);
     g.cycle_members = try cycle_members.toOwnedSlice(gpa);
     return g;
+}
+
+/// Whether some package of the chain lists the module `name` of chain index
+/// `layer` in its `"reexports"` and may import it itself (`boundary.md`
+/// §9.1): a re-export names a module the listing platform can import, so the
+/// listing package sits on the module's path to the top.
+fn reexported(p: Platforms, name: []const u8, layer: u8) bool {
+    for (p.reexports) |r| {
+        if (!std.mem.eql(u8, r.module, name)) continue;
+        if (r.layer < p.sees.len and p.sees[r.layer] & (@as(u64, 1) << @intCast(layer)) != 0) return true;
+    }
+    return false;
 }
 
 /// Stamp, in `used` (indexed by name row), the module names a file

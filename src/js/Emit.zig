@@ -110,21 +110,37 @@ pub const Item = struct {
     at: ?Session.At = null,
 };
 
-/// What a platform package tells the emitter (boundary.md §5.2).
+/// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
+/// output key taken from the first package of the chain that declares it.
 pub const Platform = struct {
     /// Module-qualified name of the opaque `Program` type `main` must have.
-    program: []const u8,
-    /// The runtime file, relative to the platform package root, whose `run`
-    /// export is handed `main`'s value.
-    runtime: []const u8,
+    /// Null for a chain that declares none, which only a library builds for.
+    program: ?[]const u8 = null,
+    /// The runtime file, relative to `runtime_root`, whose `run` export is
+    /// handed `main`'s value. Null as `program` is.
+    runtime: ?[]const u8 = null,
+    /// The root of the package that declares `runtime`, and the directory of
+    /// the output tree its files go to.
+    runtime_root: []const u8 = "",
+    runtime_dir: []const u8 = platform_dir,
     /// The entry file's name in the output tree (`boundary.md` §5.2's
     /// `"entry"`), already defaulted to `default_entry_file` by
-    /// `platform.finish`. Checked by `checkEntryFileName` before anything
+    /// `platform.load`. Checked by `checkEntryFileName` before anything
     /// is built: it is data a platform author writes, and §2's rule 1 has
     /// to hold for a declared name exactly as it does for the default.
     entry: []const u8 = default_entry_file,
-    /// The platform package's root, as paths in the `SourceStore` spell it.
+    /// The root of the package whose manifest declared `entry`, or the top
+    /// platform's when none did: where a fault in the name is reported.
+    entry_root: []const u8 = "",
+    /// The selected (top) platform package's root, as paths in the
+    /// `SourceStore` spell it.
     root: []const u8,
+    /// Per package of the chain, the output directory of its modules,
+    /// siblings and runtime (`platform.Layer.out_dir`).
+    layer_dirs: []const []const u8 = &.{platform_dir},
+    /// Per file, the chain index of a platform file's package
+    /// (`Session.file_layers`); empty when every platform file is the top's.
+    file_layers: []const u8 = &.{},
 };
 
 /// The entry file a platform gets when its manifest does not name one
@@ -941,8 +957,8 @@ const Emitter = struct {
         );
         const actual = e.typeName(b, annotation);
         if (actual) |t| {
-            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program)) and
-                std.mem.eql(u8, t.name, shortName(e.options.platform.program))) return;
+            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program orelse "")) and
+                std.mem.eql(u8, t.name, shortName(e.options.platform.program orelse ""))) return;
         }
         try e.report(
             .main_not_program,
@@ -1042,7 +1058,7 @@ const Emitter = struct {
     /// then the manifest's own module-qualified spelling, which is always
     /// readable.
     fn writtenProgramName(e: *Emitter, scope: ?Graph.Index) ![]const u8 {
-        const qualified = e.options.platform.program;
+        const qualified = e.options.platform.program orelse "";
         const at = scope orelse e.firstAppModule() orelse return qualified;
         return e.writtenTypeName(at, .{
             .module = platformModule(qualified),
@@ -1435,13 +1451,15 @@ const Emitter = struct {
             try e.produce(out, bytes, sibling_source);
         }
         // The platform's runtime (§5.2). It is not a sibling of any module,
-        // so nothing above would have copied it.
+        // so nothing above would have copied it. A chain with none is one
+        // only a library builds for, and a library has no entry to run it.
+        const runtime = e.options.platform.runtime orelse return;
         const runtime_source = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{
-            e.options.platform.root,
-            e.options.platform.runtime,
+            e.options.platform.runtime_root,
+            runtime,
         });
         const bytes = e.readAsset(runtime_source) orelse {
-            const manifest_path = try e.manifestPath();
+            const manifest_path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.runtime_root, Manifest.file_name });
             try e.reportInFile(
                 .foreign_sibling_missing,
                 .{ .path = manifest_path },
@@ -1503,10 +1521,11 @@ const Emitter = struct {
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
     }
 
-    /// `<platform root>/beni.json`, the file a fault in the platform's own
-    /// declaration is reported against (`boundary.md` §5.2).
+    /// `<platform root>/beni.json` of the package that declared the entry
+    /// file, the file a fault in that declaration is reported against
+    /// (`boundary.md` §5.2).
     fn manifestPath(e: *Emitter) ![]const u8 {
-        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name });
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.entry_root, Manifest.file_name });
     }
 
     /// The short name `--release` gave the entry declaration, or null when
@@ -1535,7 +1554,7 @@ const Emitter = struct {
         const prefix: []const u8 = switch (e.session.store.package(file)) {
             .app => "",
             .core => core_dir,
-            .platform => platform_dir,
+            .platform => e.platformDir(file),
         };
         const name = e.session.store.moduleName(file);
         var out: std.ArrayList(u8) = .empty;
@@ -1570,8 +1589,19 @@ const Emitter = struct {
     /// the same extension — and that is also what keeps a platform whose
     /// runtime is called `Node.js` from overwriting the module `Node`.
     fn runtimeOutputPath(e: *Emitter) ![]const u8 {
-        const base = std.fs.path.basename(e.options.platform.runtime);
-        return std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ platform_dir, stripExtension(base, ".js"), foreign_extension });
+        const base = std.fs.path.basename(e.options.platform.runtime orelse "");
+        return std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.options.platform.runtime_dir, stripExtension(base, ".js"), foreign_extension });
+    }
+
+    /// The output directory of a platform file: the top platform's modules
+    /// go to `_platform/`, a dependency's to `_platform/_<name>/`
+    /// (`boundary.md` §9.1), so a one-platform build's tree does not move.
+    fn platformDir(e: *Emitter, file: SourceStore.Index) []const u8 {
+        const layers = e.options.platform.file_layers;
+        const dirs = e.options.platform.layer_dirs;
+        if (file.int() >= layers.len) return platform_dir;
+        const layer = layers[file.int()];
+        return if (layer < dirs.len) dirs[layer] else platform_dir;
     }
 
     /// The bytes of an asset: the embedded copy when the compiler carries
