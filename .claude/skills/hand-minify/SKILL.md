@@ -97,6 +97,10 @@ microsecond on a hot path, and less than any work added at load. So:
   that adds a branch or a parameter, a different loop shape, a changed object
   shape) is timed on its hot path before it is kept, and dropped if it is slower
   beyond noise — whatever it saves.
+- **"Slower" means a real, reproducible slowdown, not noise** (the owner). A
+  difference inside run-to-run noise, overlapping ranges, or one lucky batch is
+  not a slowdown and never a reason to refuse bytes; re-run before concluding.
+  Refuse only what is consistently and measurably slower across repeated runs.
 
 Every smaller-but-different algorithm is timed on its hot path before it is kept,
 or kept out and flagged. Research 40 §4.4 rejected −36 bytes because the first
