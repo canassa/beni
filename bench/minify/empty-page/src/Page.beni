@@ -1,0 +1,12 @@
+import Browser
+import Html exposing (Html)
+
+
+view : {} -> Html {}
+view _ =
+    <></>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = {}, update = \_ m -> m, view = view }

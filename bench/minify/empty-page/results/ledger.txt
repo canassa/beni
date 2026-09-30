@@ -1,0 +1,27 @@
+step                   raw   gz    br   Δraw  Δgz  Δbr 
+00-baseline            2262  1106  978                 
+01-child-put           2219  1089  961   -43  -17   -17
+02-concise-ends        2175  1078  955   -44  -11    -6
+03-const-let           2103  1062  945   -72  -16   -10
+04-kind-params         2097  1056  943    -6   -6    -2
+05-emitted-newlines    2090  1050  930    -7   -6   -13
+06-block-newlines      2087  1048  928    -3   -2    -2
+07-record-fields       2062  1033  918   -25  -15   -10
+08-template-flags      1843   949  841  -219  -84   -77
+09-no-hosted-mount     1802   923  820   -41  -26   -21
+10-mount-at-body       1692   877  777  -110  -46   -43
+11-slot-fields         1611   844  754   -81  -33   -23
+12-kind-args           1598   836  749   -13   -8    -5
+13-one-view            1338   746  674  -260  -90   -75
+14-render-noop         1326   744  672   -12   -2    -2
+15-instance-ends       1135   672  602  -191  -72   -70
+16-unread-keys         1088   656  591   -47  -16   -11
+17-dead-model          1050   631  563   -38  -25   -28
+18-inline-once          867   535  451  -183  -96  -112
+19-scalar-slot          709   455  382  -158  -80   -69
+20-dead-record          577   380  308  -132  -75   -74
+21-template-once        510   346  276   -67  -34   -32
+22-comment-node         457   312  255   -53  -34   -21
+23-one-program          357   263  211  -100  -49   -44
+24-nothing-observable   285   215  163   -72  -48   -48
+25-append-child         279   212  157    -6   -3    -6

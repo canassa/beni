@@ -1,0 +1,22 @@
+steps/00-baseline.mjs: no `$$root`: caught
+steps/00-baseline.mjs: `!==undefined` → `===undefined`: caught
+steps/00-baseline.mjs: message: `already holds`: caught
+steps/00-baseline.mjs: message: `no element`: caught
+steps/00-baseline.mjs: `===null` → `!==null` on the mount node: caught
+steps/00-baseline.mjs: mount before the body's children: caught
+steps/00-baseline.mjs: no flush export: caught
+steps/00-baseline.mjs: template `<!>` → `<p>`: caught
+steps/25-append-child.mjs: no `$$root`: caught
+steps/25-append-child.mjs: `!==undefined` → `===undefined`: caught
+steps/25-append-child.mjs: message: `already holds`: caught
+steps/25-append-child.mjs: message: `"null"`: caught
+steps/25-append-child.mjs: `===null` → `!==null`: caught
+steps/25-append-child.mjs: comment text: caught
+steps/25-append-child.mjs: prepend: caught
+steps/25-append-child.mjs: no flush export: caught
+corpus: childHtml forgets its instance: caught (28 fixtures fail)
+corpus: head of an instance slot: its marker for its instance: caught (3 fixtures fail)
+corpus: head of a list slot: the marker for its first row: GAP (no corpus page reaches it)
+corpus: head reads the list's last row: GAP (no corpus page reaches it)
+corpus: tail of a slot with a marker: its instance's end: GAP (no corpus page reaches it)
+corpus: tail of a slot with no marker: the first row's end: GAP (no corpus page reaches it)

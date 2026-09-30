@@ -1,0 +1,923 @@
+// The browser platform's one runtime file (docs/design/backend.md §15.3–
+// §15.5, §15.11): the program runtime and the `dom` lowering's markup
+// runtime at once, so a delegated listener can hand a message to the
+// program that owns the node it fired on (boundary.md §9.2).
+//
+// Parts are ported from dom-expressions' client runtime (MIT, © Ryan
+// Carniato; references/dom-expressions/packages/runtime/src): `template`
+// from client.js `template`, the class and style diffs from `className`
+// and `style`, the delegated listener from `eventHandler`, and
+// `reconcile` from reconcile.js (udomdiff) with its slot ownership tags
+// removed, since every node here has one owning slot.
+//
+// **Markup is a block**, `{ t, v }`: `t` a kind `{ m(v, cx), p(inst, v) }`,
+// which the compiler makes per source site, and `v` the values the kind
+// writes. `m` mounts an instance, `p` patches one with new values. An
+// instance owns a contiguous run of sibling nodes, from its first to its
+// last: `s` and `e` when those are nodes of its template, else the slot
+// `q` its run begins or ends with.
+//
+// A **slot** is where markup is placed: a parent (or null, when the
+// marker's parent is the parent) and a marker to insert before (or null,
+// to append). What it holds is an instance `i`, a list of instances `u`,
+// or both for a `For` showing its fallback.
+//
+// A `List` is read as every sibling reads one — by backend.md §4's
+// protocol, `Elements` below — and a tuple as `{ a, b }`.
+//
+// The page is reached through `globalThis`, a capability of this file
+// alone: the code the compiler emits touches only the nodes this file
+// hands it.
+
+// ---- Instances and their nodes ---------------------------------------
+
+const first = (i) => (i.s !== null ? i.s : head(i.q));
+const last = (i) => (i.e !== null ? i.e : tail(i.q));
+
+// A slot's first and last node: what it holds, or its marker when it
+// holds nothing.
+const head = (s) => {
+  if (s.u !== null && s.u.length !== 0) return first(s.u[0]);
+  return s.i !== null ? first(s.i) : s.m;
+};
+const tail = (s) => {
+  if (s.m !== null) return s.m;
+  if (s.u !== null && s.u.length !== 0) return last(s.u[s.u.length - 1]);
+  return last(s.i);
+};
+
+// Move an instance's nodes before `before` in `parent`, in order.
+const put = (parent, i, before) => {
+  const end = last(i);
+  let n = first(i);
+  for (;;) {
+    const next = n.nextSibling;
+    parent.insertBefore(n, before);
+    if (n === end) return;
+    n = next;
+  }
+};
+
+// Take an instance's nodes out of the page.
+const drop = (i) => {
+  const end = last(i);
+  let n = first(i);
+  for (;;) {
+    const next = n.nextSibling;
+    n.remove();
+    if (n === end) return;
+    n = next;
+  }
+};
+
+// Put `i` where `old` is, and take `old` out.
+const swap = (old, i) => {
+  const f = first(old);
+  put(f.parentNode, i, f);
+  drop(old);
+};
+
+// ---- Templates ---------------------------------------------------------
+
+// `(html, flags)`: a cloner that parses `html` on its first call and clones
+// the result after that. Flag 1: import rather than clone, so a custom
+// element is upgraded; 2: the markup is wrapped in its namespace's root
+// element, which is taken off; 4: the template is several nodes, and the
+// cloner returns them in a fragment.
+export const template = (html, flags) => {
+  let node = null;
+  return () => {
+    if (node === null) {
+      const document = globalThis.document;
+      const t = document.createElement("template");
+      t.innerHTML = html;
+      node = t.content;
+      if (flags & 2) node = node.firstChild;
+      if (flags & 4) {
+        if (flags & 2) {
+          const f = document.createDocumentFragment();
+          while (node.firstChild !== null) f.appendChild(node.firstChild);
+          node = f;
+        }
+      } else node = node.firstChild;
+    }
+    return flags & 1 ? globalThis.document.importNode(node, true) : node.cloneNode(true);
+  };
+};
+
+// ---- Slots -------------------------------------------------------------
+
+// `(parent, marker, cx)`: a slot, and the mount context what it holds is
+// mounted with.
+export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null, z: null, d: false });
+
+const parentOf = (s) => (s.p !== null ? s.p : s.m.parentNode);
+
+// A block mounted on its own: an instance that remembers its kind and the
+// block it shows.
+const unit = (b, cx) => {
+  const i = b.t.m(b.v, cx);
+  i.t = b.t;
+  i.b = b;
+  return i;
+};
+
+// `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
+// instance in its place. The instance now shown.
+const patch = (i, b, cx) => {
+  if (b === i.b) return i;
+  if (b.t === i.t) {
+    b.t.p(i, b.v);
+    i.b = b;
+    return i;
+  }
+  const n = unit(b, cx);
+  swap(i, n);
+  return n;
+};
+
+// Put a new instance in the slot, in place of what it held.
+const place = (s, i) => {
+  if (s.i !== null) swap(s.i, i);
+  else put(parentOf(s), i, s.m);
+  s.i = i;
+};
+
+// `(slot, block)`: an `Html` hole.
+export const childHtml = (s, b) => {
+  if (s.i === null) place(s, unit(b, s.cx));
+  else s.i = patch(s.i, b, s.cx);
+};
+
+// `(slot, block or null)`: a `Maybe Html` hole; null empties the slot.
+export const childMaybe = (s, b) => {
+  if (b !== null) childHtml(s, b);
+  else if (s.i !== null) {
+    drop(s.i);
+    s.i = null;
+  }
+};
+
+// A list's elements, by backend.md §4's protocol: the array itself, or a
+// view's or a trie's plain copy (made once per list and cached). Read, never
+// written.
+const Elements = (list) => (Array.isArray(list) ? list : list.$plain());
+
+// `(slot, list)`: a `List Html` hole, its blocks matched by position.
+export const childList = (s, list) => {
+  if (list === s.b) return;
+  s.b = list;
+  const u = s.u ?? (s.u = []);
+  const a = Elements(list);
+  let k = 0;
+  for (; k < a.length; k++) {
+    if (k < u.length) u[k] = patch(u[k], a[k], s.cx);
+    else {
+      const i = unit(a[k], s.cx);
+      put(parentOf(s), i, s.m);
+      u.push(i);
+    }
+  }
+  while (u.length > k) drop(u.pop());
+};
+
+// ---- Lists and conditionals (backend.md §15.5) ---------------------------
+
+// A row is `{ m, p, i, f }` for a row compiled in place — `m(item,
+// position, cx)` mounts an instance, `p(inst, item, position)` patches one
+// — or `{ b, i, f }` for any other row, `b(item, position)` its block. `i`
+// says whether the row reads its position; `f` is the fallback's block or
+// null. The row's inputs are an array compared by identity, or null.
+
+// A row with `w` mounts through its patch (backend.md §15.5): `m` clones
+// and walks, and `p`, meeting nothing written yet, writes every value — so
+// the code an edit runs is the code every mount ran, as a Solid effect's is.
+const mountRow = (row, item, position, cx) => {
+  let i;
+  if (row.b !== undefined) i = unit(row.b(item, position), cx);
+  else {
+    i = row.m(item, position, cx);
+    if (row.w === true) row.p(i, item, position);
+  }
+  i.x = item;
+  i.y = position;
+  i.k = null;
+  i.n = null;
+  i.kv = 0;
+  i.kc = null;
+  i.kt = null;
+  return i;
+};
+
+// The row patched with its item; a new instance when a block row's kind
+// changed.
+const patchRow = (row, i, item, position, cx) => {
+  if (row.b === undefined) {
+    row.p(i, item, position);
+    return i;
+  }
+  const n = patch(i, row.b(item, position), cx);
+  if (n !== i) {
+    n.k = i.k;
+    n.n = null;
+    n.kv = 0;
+    n.kc = i.kc;
+    n.kt = null;
+  }
+  return n;
+};
+
+const sameInputs = (a, b) => {
+  if (a === b) return true;
+  if (a === null || b === null || a.length !== b.length) return false;
+  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false;
+  return true;
+};
+
+// Every input but the `g`th, a keyed list's selector, as last time.
+const sameInputsBut = (a, b, g) => {
+  if (a === b) return true;
+  if (a === null || b === null || a.length !== b.length) return false;
+  for (let k = 0; k < a.length; k++) if (k !== g && a[k] !== b[k]) return false;
+  return true;
+};
+
+// What no key is: both of a render's probes when its selection did not
+// change, so no row is patched for it.
+const none = {};
+
+// The rows whose key is `key` — its first row and the chain of rows that
+// share it — patched with the item and position they show.
+const reselect = (s, row, key) => {
+  // `!= null`: the map answers undefined for no row, and a chain ends in null.
+  for (let i = s.x.get(key); i != null; i = i.n) row.p(i, i.x, i.y);
+};
+
+// A `For`'s fallback: shown while the list is empty.
+const fallback = (s, empty, f) => {
+  if (empty && f !== null) {
+    if (s.i === null) place(s, unit(f, s.cx));
+    else s.i = patch(s.i, f, s.cx);
+  } else if (s.i !== null) {
+    drop(s.i);
+    s.i = null;
+  }
+};
+
+// A detached run of nodes that moves back into the list later.
+let parked = null;
+const park = (i) => {
+  const f = first(i);
+  if (f === last(i)) f.remove();
+  else put(parked ?? (parked = globalThis.document.createDocumentFragment()), i, null);
+};
+
+// The rows `a` were become the rows `b`, moving as few as it can: udomdiff
+// over instances rather than nodes, each instance a run of siblings. Only
+// `a[start, aLength)` and `b[start, bLength)` differ: the rows before
+// `start` are in place and the same in both, and so are the rows after the
+// ranges, which begin at `after` (the node after the list when there are
+// none).
+const reconcile = (parent, a, b, start, aLength, bLength, after) => {
+  let aEnd = aLength;
+  let bEnd = bLength;
+  let aStart = start;
+  let bStart = start;
+  // Not `map`: a `--release` build keeps an export whose name is mentioned
+  // anywhere in the file, and `map` is `Html.map`'s (research 41 §5.4).
+  let indices = null;
+  while (aStart < aEnd || bStart < bEnd) {
+    if (a[aStart] === b[bStart]) {
+      aStart++;
+      bStart++;
+      continue;
+    }
+    while (aEnd > aStart && bEnd > bStart && a[aEnd - 1] === b[bEnd - 1]) {
+      aEnd--;
+      bEnd--;
+    }
+    if (aEnd === aStart) {
+      const node = bEnd < bLength ? (bStart !== 0 ? last(b[bStart - 1]).nextSibling : first(b[bEnd])) : after;
+      while (bStart < bEnd) put(parent, b[bStart++], node);
+    } else if (bEnd === bStart) {
+      while (aStart < aEnd) {
+        if (indices === null || !indices.has(a[aStart])) drop(a[aStart]);
+        aStart++;
+      }
+    } else if (a[aStart] === b[bEnd - 1] && b[bStart] === a[aEnd - 1]) {
+      const node = last(a[--aEnd]).nextSibling;
+      put(parent, b[bStart++], last(a[aStart++]).nextSibling);
+      put(parent, b[--bEnd], node);
+      a[aEnd] = b[bEnd];
+    } else {
+      if (indices === null) {
+        indices = new Map();
+        for (let i = bStart; i < bEnd; i++) indices.set(b[i], i);
+      }
+      const index = indices.get(a[aStart]);
+      if (index !== undefined) {
+        if (bStart < index && index < bEnd) {
+          let i = aStart;
+          let sequence = 1;
+          while (++i < aEnd && i < bEnd) {
+            const t = indices.get(a[i]);
+            if (t === undefined || t !== index + sequence) break;
+            sequence++;
+          }
+          if (sequence > index - bStart) {
+            const node = first(a[aStart]);
+            while (bStart < index) put(parent, b[bStart++], node);
+          } else {
+            const old = a[aStart++];
+            put(parent, b[bStart++], first(old));
+            park(old);
+          }
+        } else aStart++;
+      } else drop(a[aStart++]);
+    }
+  }
+};
+
+// Each render of a keyed list that runs its rows has a stamp of its own.
+let stamps = 0;
+
+// The keyed list when last render's keys were distinct, matched as Solid's
+// `mapArray` and dom-expressions' `reconcileArrays` match a list: the rows
+// whose keys are where they were at the start, then at the end, then a
+// pair of rows at the two ends that changed places, again until none does.
+// Only what is left between them is looked up in the key map, so a
+// selection, a label edit, a remove, an append and a swap of two rows
+// touch the map for the rows they add or remove and no others. An item
+// identical to its row's last item has that row's key, so its key is not
+// asked for. No row past the start is patched or moved until every key is
+// known to be distinct: false, having patched only the rows at the start
+// (which do not move) and mounted rows for new keys, when two items share
+// a key; `forKeyed` then goes through the whole list, where a row already
+// patched is by then as last time and a row mounted is its key's first.
+const trimmed = (s, items, keyOf, row, same, was, now) => {
+  const old = s.u;
+  const m = old.length;
+  // A list that was empty or is: the full pass mounts it in one walk
+  // or empties the parent at once.
+  if (m === 0 || items.length === 0) return false;
+  const stamp = ++stamps;
+  const a = Elements(items);
+  let p = 0;
+  for (; p < a.length && p < m; p++) {
+    let i = old[p];
+    const item = a[p];
+    if (i.x !== item) {
+      if (i.k !== (keyOf === null ? item : keyOf(item))) break;
+    } else if (same && i.k !== was && i.k !== now) {
+      i.kv = stamp;
+      continue;
+    }
+    const n = patchRow(row, i, item, p, s.cx);
+    if (n !== i) {
+      old[p] = n;
+      s.x.set(n.k, n);
+      n.y = p;
+      i = n;
+    }
+    i.x = item;
+    i.kv = stamp;
+  }
+  if (p === m && p === a.length) return true;
+  // The rest of the items, each key asked for once and only if needed.
+  const xs = a.slice(p);
+  const n = p + xs.length;
+  const ks = new Array(xs.length);
+  const keyAt = (b) => {
+    const k = ks[b - p];
+    if (k !== undefined) return k;
+    const item = xs[b - p];
+    return (ks[b - p] = keyOf === null ? item : keyOf(item));
+  };
+  // Row `i` shows item `b`: the same item, or failing that the same key.
+  const hit = (i, b) => i.x === xs[b - p] || i.k === keyAt(b);
+  const next = new Array(n);
+  for (let b = 0; b < p; b++) next[b] = old[b];
+  let aStart = p;
+  let aEnd = m;
+  let bStart = p;
+  let bEnd = n;
+  // The end, written out: it is most of a remove.
+  while (aStart < aEnd && bStart < bEnd) {
+    const i = old[aEnd - 1];
+    if (i.x !== xs[bEnd - 1 - p] && i.k !== keyAt(bEnd - 1)) break;
+    i.kv = stamp;
+    next[--bEnd] = i;
+    aEnd--;
+  }
+  const aOuter = aEnd;
+  const bOuter = bEnd;
+  let crossed = false;
+  while (aEnd - aStart > 1 && bEnd - bStart > 1 && hit(old[aStart], bEnd - 1) && hit(old[aEnd - 1], bStart)) {
+    crossed = true;
+    const i = old[aStart++];
+    const j = old[--aEnd];
+    i.kv = stamp;
+    j.kv = stamp;
+    next[--bEnd] = i;
+    next[bStart++] = j;
+    while (aStart < aEnd && bStart < bEnd) {
+      const k = old[aStart];
+      if (k.x !== xs[bStart - p] && k.k !== keyAt(bStart)) break;
+      k.kv = stamp;
+      next[bStart++] = k;
+      aStart++;
+    }
+    while (aStart < aEnd && bStart < bEnd && hit(old[aEnd - 1], bEnd - 1)) {
+      const k = old[--aEnd];
+      k.kv = stamp;
+      next[--bEnd] = k;
+    }
+  }
+  // What is left: its keys looked up, a new key's row mounted (and marked
+  // with the stamp's negation), a key found twice handing over. A row
+  // mounted here that the full pass is handed is its key's first row.
+  const byKey = s.x;
+  let kept = 0;
+  for (let b = bStart; b < bEnd; b++) {
+    const key = keyAt(b);
+    const h = byKey.get(key);
+    if (h === undefined) {
+      const i = mountRow(row, xs[b - p], b, s.cx);
+      i.k = key;
+      i.kv = -stamp;
+      byKey.set(key, i);
+      next[b] = i;
+    } else if (h.kv === stamp || h.kv === -stamp) return false;
+    else {
+      h.kv = stamp;
+      kept++;
+      next[b] = h;
+    }
+  }
+  for (let b = p; b < n; b++) {
+    const item = xs[b - p];
+    let i = next[b];
+    if (i.kv === -stamp) i.kv = stamp;
+    else if (!same || i.x !== item || (row.i && i.y !== b) || i.k === was || i.k === now) {
+      const r = patchRow(row, i, item, b, s.cx);
+      if (r !== i) {
+        old[i.y] = r;
+        r.kv = stamp;
+        byKey.set(r.k, r);
+        next[b] = r;
+        i = r;
+      }
+    }
+    i.x = item;
+    i.y = b;
+  }
+  for (let a = aStart; a < aEnd; a++) if (old[a].kv !== stamp) byKey.delete(old[a].k);
+  // No row kept, and the rows all the parent holds: a replacement. The
+  // parent is emptied at once, as a clear is, rather than a thousand rows
+  // removed one by one — which is what Solid's `reconcileArrays` does —
+  // and the new rows go in after.
+  if (kept === 0 && !crossed && p === 0 && aOuter === m && bOuter === n) {
+    const parent = parentOf(s);
+    if (parent.firstChild === first(old[0]) && parent.lastChild === last(old[m - 1])) {
+      parent.textContent = "";
+      for (const i of next) put(parent, i, null);
+      s.u = next;
+      return true;
+    }
+  }
+  if (crossed || aStart < aEnd || bStart < bEnd) {
+    const after = bOuter < n ? first(next[bOuter]) : last(old[m - 1]).nextSibling;
+    reconcile(parentOf(s), old, next, p, aOuter, bOuter, after);
+    if (parked !== null) parked = null;
+  }
+  s.u = next;
+  return true;
+};
+
+// `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
+// key by the item itself. A row keeps its nodes while its key is in the
+// list; items that share a key are matched by their rank among them, so
+// every item renders once. A row whose item, position (when it reads it)
+// and inputs are all as last time is not run at all, and the rows move
+// only when the order of keys changed. `s.d` says last render's keys were
+// distinct, which is what lets `trimmed` run.
+//
+// **The key map `s.x` is kept from render to render**: it maps a key to the
+// first row that has it, and the rows after it that share it are a chain,
+// in list order, through `n`. A render stamps each row it keeps (`kv`), so
+// a surviving row costs one lookup and a few field writes, and the rows
+// left unstamped are dropped from the map afterwards. The chain is rebuilt
+// as the render goes: a key's first item takes the first row of its old
+// chain, its `k`th item the old chain's `k`th row — `kc` is where the old
+// chain is up to, `kt` the new chain's last row, both kept on the first —
+// and a key with more items than rows mounts the rest, with fewer leaves
+// the rest unstamped.
+//
+// **A selector** (backend.md §15.5): a row compiled in place may name one
+// input, `row.g`, that its body reads only to compare with the row's own
+// key, and carry `row.z`, that input's probe — the one key the comparison
+// can hold for, or a value no key is. A row whose item and other inputs
+// are as last time is then patched only when its key is the old probe or
+// the new one; when that is all that changed, those rows are found in the
+// key map, and no other row is visited.
+export const forKeyed = (s, items, keyOf, row, inputs) => {
+  const g = row.g;
+  let same;
+  let was = none;
+  let now = none;
+  if (g === undefined) same = s.b !== null && sameInputs(s.y, inputs);
+  else {
+    same = s.b !== null && sameInputsBut(s.y, inputs, g);
+    if (s.b !== null && s.z !== row.z) {
+      was = s.z;
+      now = row.z;
+    }
+    s.z = row.z;
+  }
+  if (items === s.b && same) {
+    if (was !== now) {
+      s.y = inputs;
+      reselect(s, row, was);
+      reselect(s, row, now);
+    }
+  } else {
+    s.b = items;
+    s.y = inputs;
+    if (s.d && trimmed(s, items, keyOf, row, same, was, now)) {
+      fallback(s, items.length === 0, row.f);
+      return;
+    }
+    const stamp = ++stamps;
+    let distinct = true;
+    const old = s.u ?? [];
+    const byKey = s.x ?? (s.x = new Map());
+    const next = [];
+    let moved = false;
+    const a = Elements(items);
+    for (let position = 0; position < a.length; position++) {
+      const item = a[position];
+      const key = keyOf === null ? item : keyOf(item);
+      const h = byKey.get(key);
+      // The key's first item in this render: the chain starts again.
+      const first = h === undefined || h.kv !== stamp;
+      let i;
+      if (h === undefined) i = undefined;
+      else if (first) {
+        i = h;
+        h.kc = h.n;
+      } else {
+        distinct = false;
+        i = h.kc ?? undefined;
+        if (i !== undefined) h.kc = i.n;
+      }
+      if (i !== undefined) {
+        if (!same || i.x !== item || (row.i && i.y !== position) || i.k === was || i.k === now) {
+          const y = i.y;
+          const n = patchRow(row, i, item, position, s.cx);
+          if (n !== i) {
+            old[y] = n;
+            if (first) byKey.set(key, n);
+            i = n;
+          }
+        }
+        if (!moved && old[position] !== i) moved = true;
+      } else {
+        i = mountRow(row, item, position, s.cx);
+        i.k = key;
+        if (first) byKey.set(key, i);
+        moved = true;
+      }
+      i.kv = stamp;
+      i.x = item;
+      i.y = position;
+      if (i.n !== null) i.n = null;
+      if (first) {
+        i.kt = i;
+      } else {
+        h.kt.n = i;
+        h.kt = i;
+      }
+      next.push(i);
+    }
+    if (next.length !== old.length) moved = true;
+    for (const o of old) if (o.kv !== stamp && byKey.get(o.k) === o) byKey.delete(o.k);
+    if (moved) {
+      const parent = parentOf(s);
+      if (old.length === 0) {
+        // Each row straight into the page, as Solid's `appendNodes` puts
+        // them: a fragment first moved every node twice.
+        const before = s.i !== null ? first(s.i) : s.m;
+        for (const i of next) put(parent, i, before);
+      } else if (next.length === 0 && parent.firstChild === first(old[0]) && parent.lastChild === last(old[old.length - 1])) {
+        // The rows are all the parent holds: empty it at once, as Solid
+        // does, rather than remove a thousand rows one by one.
+        parent.textContent = "";
+      } else reconcile(parent, old, next, 0, old.length, next.length, last(old[old.length - 1]).nextSibling);
+      if (parked !== null) parked = null;
+    }
+    s.u = next;
+    s.d = distinct;
+  }
+  fallback(s, items.length === 0, row.f);
+};
+
+// `(slot, items, row, inputs)`: the list matched by position; row `k`
+// shows item `k`, and rows past the end are removed.
+export const forPosition = (s, items, row, inputs) => {
+  const same = s.b !== null && sameInputs(s.y, inputs);
+  if (!(items === s.b && same)) {
+    s.b = items;
+    s.y = inputs;
+    const u = s.u ?? (s.u = []);
+    const a = Elements(items);
+    let k = 0;
+    for (; k < a.length; k++) {
+      const item = a[k];
+      if (k < u.length) {
+        const i = u[k];
+        if (!same || i.x !== item) {
+          u[k] = patchRow(row, i, item, k, s.cx);
+          u[k].x = item;
+        }
+      } else {
+        const i = mountRow(row, item, k, s.cx);
+        put(parentOf(s), i, s.i !== null ? first(s.i) : s.m);
+        u.push(i);
+      }
+    }
+    while (u.length > k) drop(u.pop());
+  }
+  fallback(s, items.length === 0, row.f);
+};
+
+// `(slot, key, block)`: a keyed `Show` showing its body. A new key, or a
+// slot that showed the fallback, remounts; the same key patches.
+export const show = (s, key, b) => {
+  if (s.i !== null && s.y !== true && s.x === key) s.i = patch(s.i, b, s.cx);
+  else place(s, unit(b, s.cx));
+  s.x = key;
+  s.y = false;
+};
+
+// `(slot, fallback or null)`: a keyed `Show` on `Nothing`.
+export const hide = (s, f) => {
+  if (f === null) {
+    if (s.i !== null) {
+      drop(s.i);
+      s.i = null;
+    }
+  } else if (s.y === true && s.i !== null) s.i = patch(s.i, f, s.cx);
+  else place(s, unit(f, s.cx));
+  s.x = null;
+  s.y = true;
+};
+
+// ---- Attributes (backend.md §15.3, §15.6) --------------------------------
+
+// `(el, name, value)`: the attribute, or none when `value` is null.
+export const attr = (el, name, value) => {
+  if (value === null) el.removeAttribute(name);
+  else el.setAttribute(name, value);
+};
+
+// `(el, namespace, name, value)`: an attribute of a namespace (`xlink:href`).
+export const attrNS = (el, namespace, name, value) => {
+  if (value === null) el.removeAttributeNS(namespace, name.slice(name.indexOf(":") + 1));
+  else el.setAttributeNS(namespace, name, value);
+};
+
+// The names whose flag is `True`, a name holding whitespace being several.
+const classSet = (list) => {
+  const names = new Set();
+  const a = Elements(list);
+  for (let k = 0; k < a.length; k++) {
+    if (!a[k].b) continue;
+    for (const name of a[k].a.split(/[\t\n\f\r ]+/)) if (name !== "") names.add(name);
+  }
+  return names;
+};
+
+// `(el, list, previous)`: the element has exactly the classes the list
+// names; what only the previous list held is removed.
+export const classes = (el, list, previous) => {
+  const next = classSet(list);
+  const old = previous === null ? null : classSet(previous);
+  if (old !== null) for (const name of old) if (!next.has(name)) el.classList.remove(name);
+  for (const name of next) if (old === null || !old.has(name)) el.classList.add(name);
+};
+
+// Each property's last value.
+const styleMap = (list) => {
+  const values = new Map();
+  const a = Elements(list);
+  for (let k = 0; k < a.length; k++) values.set(a[k].a, a[k].b);
+  return values;
+};
+
+// `(el, list, previous)`: each property set to its last value in the list,
+// an empty value removing it; a property only the previous list set is
+// removed.
+export const styles = (el, list, previous) => {
+  const next = styleMap(list);
+  const old = previous === null ? null : styleMap(previous);
+  const style = el.style;
+  if (old !== null) for (const name of old.keys()) if (!next.has(name)) style.removeProperty(name);
+  for (const [name, value] of next) if (old === null || old.get(name) !== value) style.setProperty(name, value);
+};
+
+// Elm's rule: a URL whose scheme is `javascript:`, or `data:text/html`,
+// with any whitespace or control character where a browser ignores one,
+// runs script, so it is written as nothing.
+const scriptUrl =
+  /^[\s\x00-\x20]*(j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:|d\s*a\s*t\s*a\s*:\s*t\s*e\s*x\s*t\s*\/\s*h\s*t\s*m\s*l\s*[,;])/i;
+export const safeUrl = (url) => (scriptUrl.test(url) ? "" : url);
+
+// `(el, markup)`: the `raw` escape hatch, markup text written unescaped.
+export const rawHtml = (el, markup) => {
+  el.innerHTML = markup;
+};
+
+// `(parent, marker, value)`: a text hole's node, inserted before the marker
+// (or last, for none).
+export const insertText = (parent, marker, value) => parent.insertBefore(globalThis.document.createTextNode(value), marker);
+
+// ---- Events (backend.md §15.3) -------------------------------------------
+
+// An event node holds its handler as `$$<name>`, a payload extractor as
+// `$$<name>X` when the handler takes a payload, its declaration's
+// `preventDefault` (1) and `stopPropagation` (2) as `$$<name>F`, and the
+// mount context of the `Html.map`s it is inside as `$$cx`. A program's
+// mount node holds its `send` as `$$root`.
+
+// The payload of an event whose handler takes the event itself.
+export const identity = (event) => event;
+
+// Send the message `node`'s handler makes of `event` to the program whose
+// mount node is nearest above it, through every `Html.map` it is inside,
+// innermost first. The search starts at the node's parent: a program
+// renders only inside its mount node, so a mount node's own handler is
+// the program's around it.
+const fire = (node, event, key, flags) => {
+  if (flags & 1) event.preventDefault();
+  const x = node[`${key}X`];
+  let msg = x === undefined ? node[key] : node[key](x(event));
+  // `!= null`: a node outside every `Html.map` has no `$$cx`, and the
+  // outermost context's `up` is null.
+  for (let c = node.$$cx; c != null; c = c.up) msg = c.f(msg);
+  let root = node.parentNode;
+  while (root !== null && root.$$root === undefined) root = root.parentNode;
+  if (root !== null) root.$$root(msg);
+  if (flags & 2) event.stopPropagation();
+};
+
+// The one listener per delegated event name: from the target up, every
+// node with a handler for the event, until one stops it. An event inside
+// a program mounted in another's markup goes on into the outer one, as
+// the DOM's own bubbling does, and each handler's message goes to the
+// program that rendered it.
+const delegated = (event) => {
+  const key = `$$${event.type}`;
+  for (let node = event.target; node !== null; node = node.parentNode) {
+    if (node[key] !== undefined && !node.disabled) {
+      const flags = node[`${key}F`] ?? 0;
+      fire(node, event, key, flags);
+      if (flags & 2) return;
+    }
+  }
+};
+
+const registered = new Set();
+
+// `(names)`: listen for each delegated event name once.
+export const delegate = (names) => {
+  for (const name of names) {
+    if (registered.has(name)) continue;
+    registered.add(name);
+    globalThis.document.addEventListener(name, delegated);
+  }
+};
+
+// `(data)`: the program's start data — the delegated names of every
+// module the build wrote.
+export const start = (data) => {
+  if (data.delegate !== undefined) delegate(data.delegate);
+};
+
+// `(el, name, flags)`: a listener of the element's own for an event that
+// is not delegated; it reads the handler the node holds when it fires.
+export const listen = (el, name, flags) => {
+  const key = `$$${name}`;
+  el.addEventListener(name, (event) => {
+    if (el[key] !== undefined) fire(el, event, key, flags);
+  });
+};
+
+// ---- The markup primitives (language.md §11.13) ----------------------------
+
+const textKind = {
+  m: (v) => {
+    const n = globalThis.document.createTextNode(v);
+    return { s: n, q: null, e: n, d: v };
+  },
+  p: (i, v) => {
+    if (v !== i.d) {
+      i.d = v;
+      i.s.data = v;
+    }
+  },
+};
+
+// `Html.text`: the text, as a text hole shows it.
+export const text = (s) => ({ t: textKind, v: s });
+
+// A map's instance is its markup's, mounted with a context that sends
+// through `f` and then through the contexts it was mounted in. A new `f`
+// is written into the context, so no handler inside changes.
+const mapKind = {
+  m: (v, cx) => {
+    const c = { f: v[1], up: cx };
+    const h = slot(null, null, c);
+    h.i = unit(v[0], c);
+    return { s: null, q: h, e: null, c };
+  },
+  p: (i, v) => {
+    i.c.f = v[1];
+    i.q.i = patch(i.q.i, v[0], i.c);
+  },
+};
+
+// `Html.map`: the same markup, its messages passed through `f`.
+export const map = (html, f) => ({ t: mapKind, v: [html, f] });
+
+// ---- The program and its render loop (backend.md §15.11) -----------------
+//
+// Only what every page needs is here: the render queue, one microtask
+// flush, the mount and its `send`. A hosted program's dispatcher, the
+// after-render phase, `flush`'s guards and the waits on the phase are
+// `Browser.js`'s, reached through the mount `Browser.hosted` makes, so a
+// page that mounts none ships none of them: nothing this file always
+// keeps names them (research 40 §8, rule 2).
+
+// Programs with a render queued, rendered by one microtask flush.
+let queued = [];
+let scheduled = false;
+// The after-render phase, once a hosted program has mounted: `Browser.js`
+// sets it, and every flush ends with it.
+let phase = null;
+
+// Render every program a message is waiting on, then run the after-render
+// phase. A message sent while this runs queues the next flush.
+export const flush = () => {
+  scheduled = false;
+  const renders = queued;
+  queued = [];
+  for (const render of renders) render();
+  phase?.();
+};
+
+// `(program)`: start every program the value holds (`Browser.js`: an array
+// of `{ a, n, h }`), in order, so one may mount at an element an earlier
+// one rendered. A mount node that is missing, or that holds a program
+// already, is a fault of the page, thrown before that program renders
+// anything.
+export const run = (program) => {
+  const document = globalThis.document;
+  for (const m of program) {
+    const root = m.n === null ? document.body : document.getElementById(m.n);
+    // (One line, so that compaction keeps no line break before `throw`.)
+    if (root === null || root.$$root !== undefined) throw new Error(root === null ? `no element has the id "${m.n}" to mount a program at` : `${m.n === null ? "the page's body" : `the element "${m.n}"`} already holds a program`);
+    // A hosted mount (`Browser.hosted`) is handed `flush` and a function
+    // that makes its argument the after-render phase and answers whether a
+    // flush is queued, and returns the record to mount.
+    mount(m.h ? m.h(root, flush, (f) => (phase = f, scheduled)) : m.a, root);
+  }
+};
+
+// Render `view init` after the children of `root`, and mark `root` with
+// the program's `send`, which puts every message through `update`: the
+// model is rendered on the next flush, however many messages arrive
+// before it. The render and its flush are queued before `update` runs, so
+// work `update` starts runs after that flush.
+const mount = (program, root) => {
+  const s = slot(root, null, null);
+  let model = program.init;
+  let waiting = false;
+  const render = () => {
+    waiting = false;
+    childHtml(s, program.view(model));
+  };
+  root.$$root = (msg) => {
+    if (!waiting) {
+      waiting = true;
+      queued.push(render);
+      if (!scheduled) {
+        scheduled = true;
+        queueMicrotask(() => {
+          if (scheduled) flush();
+        });
+      }
+    }
+    model = program.update(msg, model);
+  };
+  childHtml(s, program.view(model));
+};

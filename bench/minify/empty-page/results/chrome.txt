@@ -1,0 +1,17 @@
+corpus in Chrome, final runtime and every generic rewrite: 28/28
+load transcript in Chrome, 00-baseline.mjs vs 25-append-child.mjs: equal
+0
+-- load
+<body>
+  <!---->
+</body>
+
+tools/timing.mjs in Chrome:
+first: !==null ?:                  median 12.90 ms  (min 11.70)
+first: ??                          median 13.20 ms  (min 12.30)
+parentOf: !==null ?:               median 8.80 ms  (min 8.30)
+parentOf: ??                       median 9.90 ms  (min 9.10)
+childHtml first mount: place       median 5.50 ms  (min 2.70)
+childHtml first mount: put         median 4.40 ms  (min 2.60)
+marker: template clone             median 16.90 ms  (min 13.10)
+marker: createComment              median 13.50 ms  (min 11.30)

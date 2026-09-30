@@ -1,0 +1,1 @@
+let Z=false;let N=()=>{Z=false};let S=globalThis.document.body;if(S===null||S.$$root!==undefined)throw new Error(S===null?'no element has the id "null" to mount a program at':"the page's body already holds a program");S.$$root=ca=>{if(!Z){Z=true;queueMicrotask(()=>{if(Z)N()})}};S.insertBefore(globalThis.document.createComment(""),null);export{N as flush};
