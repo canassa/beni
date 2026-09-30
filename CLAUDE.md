@@ -178,8 +178,10 @@ array, an O(1) view for a pattern's `rest`, or a 32-way trie with a claimable he
 (E1tp), so `length` and indexed reads are O(1) or near it, and `List.push` and `[ x, ...xs ]` are
 amortised O(1) at either end. Every reader outside `core/List.js` uses three facts — `length`,
 `Array.isArray`, `$plain()`; `++` on lists calls `List.append`. Contract: `backend.md` §4 *Lists
-are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-arrays.md`, whose
-slices 3–5 (scalar views, markup identity, bytes) are still to come.
+are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-arrays.md`. Since
+2026-10-02 a loop that walks its list with `[ x, ...rest ]` reads it by an offset into its base
+array (scalar views, `backend.md` §8), and `core/List`'s own loops read and write their arrays in
+place; slices 4–5 (markup identity, bytes) are still to come.
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`

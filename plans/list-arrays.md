@@ -373,6 +373,59 @@ on E1t) expected at or below the cons list; `pairwise` and merge sort; `bench/si
 the merge sort of sorted input first of all, which research 46 §11.5 item 3 found at about 2× E1t
 for a header per tail of a trie; scalar views are expected to remove that.
 
+**As built, 2026-10-02 (with the flip's two regressions, speed and size).** Scalar views landed
+with the re-consing rule for a scalar slot; the warning was withdrawn with O1 and is not built;
+the literal folding is moot. What was built, each reversible (`backend.md` §4 and §8 have the
+contract text):
+
+- **Scalar views** as §8 specifies, with its departures: not in a suspendable body, not for a
+  slot some `case` matches with an item after the spread, the entry test by length, and `Reach`
+  keeping `base` and `offset` for every declaration with a list pattern.
+- **R5 for scalar slots only**: `[ b, ...rest ]` after matching `[ a, b, ...rest ]` is the offset
+  `rest - 1`, passed back or built there; so `pairwise` and `merge` are index loops, and a re-cons
+  built at the entry offset is the list the walk was given (`run/ListScalarView`'s identity lines,
+  `copied` for three of four forms without it). Outside a scalar view the runtime's re-cons stands;
+  `run/ListReconsIdentity` is not written.
+- **`List.beni`'s loops read and write in place** (`backend.md` §4's amendment of 2026-10-02):
+  `at`, `put`, `identical`, `kept`, `half` and `List.length` are written as the JavaScript they
+  compute (`src/js/Operator.zig`), each loop reads `base`/`offset` once, and `add` is withdrawn.
+  `concat` is `foreign`; `concatMap` is `concat (map xs func)`; `filter` builds nothing until the
+  first rejected element and then copies the prefix into a builder of `n - 1`; `map3`–`map5` are
+  loops of their own.
+- **`core/List.js` rewritten for bytes**: one buffer claim (`Claim`, which also shares a tail
+  that already holds the value), one path copy (`SetIn` gone: a set copies the leaf and puts it),
+  `Right`/`Left` for a full buffer, `Drop` with no special case, the flatten a single loop into
+  an array made its size (`Chunks` gone; as fast as `concat.apply`), `base`/`offset` exported
+  directly, a trie tested by its tree field. `From` stays level-by-level: built a leaf at a time
+  it was 3–4.5× slower.
+- **`Reach` gives `close` only to a declaration that can build**: a `cons` whose tail is a call,
+  a `let` or a `case`, so a program that prepends onto what it holds ships no `close`.
+
+*Measured 2026-10-02* (Node 24.19, Ryzen 9 5950X; the flip's figures are the "before").
+**`bench/list/run.mjs`**, µs per call against the cons core, at 1 000 / 10 000 / 100 000: `map`
+0.54 / 0.50 / 0.8–1.9×, `map2` 0.60 / 0.56 / 0.85×, `map3` 0.54 / 0.48 / 0.87×, `map5` 0.50 /
+0.46 / 0.72×, `filterMap` 1.05 / 0.88 / 1.8×, `concat` 0.41 / 0.37 / 0.66×, `concatMap` 1.18 /
+1.24 / 0.82×, `foldl` 0.58 / 0.56 / 1.05×, `member` 0.58 / 0.52 / 0.57×, `partition` 0.69 /
+0.56 / 0.78×. Still above 1.5×: `filter` 1.36 / 1.36 / 1.6–2.4× and `filterMap` and `map` at 100
+000, which move by 2× with the order the harness runs them in (map 0.81× run alone): an array of
+100 000 is a large-object allocation where cons cells are young-generation ones; and `[ x, ...xs ]`
+onto an unwritten plain list, by design. In isolation with the callback not inlined (the regime
+a real call site is in) `filter` at 10 000 is the cons list's time (75 µs against 71–77).
+**`bench/arrays`**, the four candidates, four workers (`results/scalar-table-4.md`): Elm-style
+`filter`, `map` and `takeWhile` written recursively 0.95×, 0.65× and 0.72× the cons list (4.4–5.4×
+before), `sum` 0.65× (8.7×), `pairwise` 0.85× (2.5×), merge sort 2.1× (3.6–4.7×); every Elm-style
+row but `render only`, `append two` and `add to front` is below E1tp's. Left above 1.5× the cons list: the
+accumulator-and-`reverse` rows (1.8–2.4×, a trie header per prepend), `paths sharing tails` (5×),
+merge sort (2.1×). **Size** (release, brotli): the `bench/ui` table app 6 289 → 6 177 (5 032
+before the flip), the whole `List` surface (`lists/surface/E1`) 4 164 → 4 051 by
+`sz.sh`'s method (the flip's 4 037 is the same build by another count), `bench/size.mjs`'s
+release total 348 655 → 334 532 over 312 programs (median 0, p10 −138, the largest cut −299,
+the largest growth +32), the TEA `element` page 1 845 → 1 739; development output grew 0.9 %
+(the loops' `base`/`offset` parameters). **`bench/ui`**, n = 4, script medians against Solid 1:
+faster on seven of nine (0.79–0.97×), slower on create 1 000 (1.04×) and create after 1 000
+(1.08×), as the flip was (1.03×, 1.06×) — the list work in those is under 20 µs of 5 ms; faster
+than Solid 2 on all nine.
+
 ### Slice 4 — markup
 
 **Scope.** `backend.md` §15.5 *`For` over arrays*: `same` for views on every identity check of
