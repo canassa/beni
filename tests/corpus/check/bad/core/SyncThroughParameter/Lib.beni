@@ -1,0 +1,11 @@
+import Plat
+
+
+pub onType : (Int -> String) -> Int
+onType f =
+    Plat.onEvent (\n -> f (n + 1))
+
+
+pub load : Int -> String
+load n =
+    Plat.get n

@@ -1,0 +1,48 @@
+-- check/bad (core): `sync_boundary` at a `sync` parameter of a `foreign`
+-- (transparent-effects-proposal.md §15.2 item 1, §15.4). Each refusal
+-- points at the argument and names the calls that make it suspend, within
+-- this module: a lambda that calls the primitive (19:14); an own
+-- declaration whose body calls it through a `let` function (33:13); a
+-- declaration that hands `List.map` a function that calls it (43:13); and a
+-- record field, where the region is the field's value (48:32).
+pub foreign suspends get : Int -> String
+
+
+pub foreign pure onEvent : sync (Int -> String) -> Int
+
+
+pub foreign pure program : { init : Int, view : sync (Int -> String) } -> Int
+
+
+direct : Int
+direct =
+    onEvent (\n -> get n)
+
+
+load : Int -> String
+load n =
+    let
+        fetch k =
+            get k
+    in
+    fetch n
+
+
+viaLoad : Int
+viaLoad =
+    onEvent load
+
+
+each : Int -> String
+each n =
+    String.concat (List.map [ n ] (\x -> get x))
+
+
+viaMap : Int
+viaMap =
+    onEvent each
+
+
+viaField : Int
+viaField =
+    program { init = 0, view = load }

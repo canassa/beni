@@ -164,7 +164,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     // And effect inference learns the copy's origin, while the memo holds it.
     if (in.record_owner) |owner| {
         in.record_owner = null;
-        if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..]);
+        if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..], @intFromEnum(in.origin));
     }
     const result = store.copy(root).unwrap().?;
     for (in.copied.items[start..]) |r| store.setCopy(r, .none);
@@ -411,7 +411,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     try in.wantImported(mark, v);
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
-    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@intFromEnum(scheme)], v, in.quantified.items);
+    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@intFromEnum(scheme)], v, in.quantified.items, @intFromEnum(in.origin));
     return v;
 }
 

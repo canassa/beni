@@ -1,0 +1,12 @@
+-- check/bad (core): a demand carried through a beni function's parameter
+-- and across a module boundary (transparent-effects-proposal.md §15.3,
+-- §15.4). `Plat` declares the primitive and the `sync` parameter; `Lib`'s
+-- `onType` hands its parameter to it inside a lambda, so its summary says
+-- the parameter is `sync` with nothing written; `Main` passes suspending
+-- functions to `Lib.onType` and is refused there. The chain stops at the
+-- first imported value (decision 7a): `Lib.load` suspends because `Lib`'s
+-- record says so, and nothing of `Lib`'s body is named.
+pub foreign suspends get : Int -> String
+
+
+pub foreign pure onEvent : sync (Int -> String) -> Int

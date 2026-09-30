@@ -314,6 +314,13 @@ pub const Code = enum {
     /// (transparent-effects-proposal.md §14.1).
     foreign_effect_missing,
     unknown_foreign_effect,
+    /// Appended with the `sync` step (transparent-effects-proposal.md §15):
+    /// a `sync` that marks no function the platform receives, a function
+    /// that may suspend handed where one must not, and a declaration that
+    /// is a boundary itself (`main`, a type's `eq` or `compare`) that may.
+    misplaced_sync,
+    sync_boundary,
+    must_not_suspend,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -468,6 +475,9 @@ pub fn title(code: Code) []const u8 {
         .untyped_srcdoc_attribute => "UNTYPED SRCDOC ATTRIBUTE",
         .foreign_effect_missing => "FOREIGN WITHOUT EFFECT",
         .unknown_foreign_effect => "UNKNOWN FOREIGN EFFECT",
+        .misplaced_sync => "MISPLACED SYNC",
+        .sync_boundary => "SUSPENDING CALLBACK",
+        .must_not_suspend => "MUST NOT SUSPEND",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

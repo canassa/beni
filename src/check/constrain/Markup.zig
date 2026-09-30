@@ -248,6 +248,10 @@ const Walker = struct {
         }
         const payload = try w.rowType(row) orelse try g.fresh(.err);
         try w.obligation(.handler, it.value.unwrap() orelse w.inst, &.{ handler, payload, w.m }, @intFromEnum(at));
+        // The page calls a handler's function form while it dispatches the
+        // event: `sync` (checker-v2.md §25.6, transparent-effects-proposal.md
+        // §15.2 item 4). The value form carries no class, and demands nothing.
+        if (g.cx.effects) |e| if (it.value.unwrap()) |v| try e.demand(.{ .v = handler, .kind = .handler, .site = @intFromEnum(v) });
     }
 
     /// A component is typed exactly as the call it means (§25.5): the
@@ -271,7 +275,7 @@ const Walker = struct {
 
         const callee = try g.freshFlex();
         // Rendering the component calls it (transparent-effects-proposal.md §14.3 rule 1).
-        try g.called(callee);
+        try g.called(callee, c.callee);
         try w.expr(c.callee, callee, .{ .tag = .general });
         const argument: Var = if (c.spread.unwrap()) |spread| blk: {
             // Record update over the spread value (§6.5): the base must
@@ -350,7 +354,10 @@ const Walker = struct {
         if (f.keyed.unwrap()) |keyed| switch (f.mode) {
             .key_function => {
                 const k = try g.freshFlex();
-                try w.expr(keyed, try g.func(&.{a}, k), formCategory(.keyed));
+                const key_function = try g.func(&.{a}, k);
+                try w.expr(keyed, key_function, formCategory(.keyed));
+                // Called by the page while it renders: `sync` (§25.6).
+                if (g.cx.effects) |e| try e.demand(.{ .v = key_function, .kind = .key, .site = @intFromEnum(keyed) });
                 try w.obligation(.key, keyed, &.{k}, @intFromEnum(at));
             },
             // A mode, not a value: the literal is the prelude's `Bool`.
@@ -381,10 +388,14 @@ const Walker = struct {
                 else
                     try g.func(&.{a}, try w.html());
                 try w.expr(r.function, wanted, category);
+                if (g.cx.effects) |e| try e.demand(.{ .v = wanted, .kind = .row, .site = @intFromEnum(r.function) });
             },
             .function => {
                 const f = try g.freshFlex();
                 try w.expr(r.function, f, .{ .tag = .general });
+                // A row function is called by the page while it renders: `sync`
+                // (§25.6), whichever shape it has.
+                if (g.cx.effects) |e| try e.demand(.{ .v = f, .kind = .row, .site = @intFromEnum(r.function) });
                 try w.obligation(.row, r.function, &.{ f, a, w.m }, @intFromEnum(at) | if (is_for) Obligations.markup_flag else 0);
             },
         }

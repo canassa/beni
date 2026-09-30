@@ -1,0 +1,23 @@
+-- check/bad (core): `misplaced_sync` (transparent-effects-proposal.md
+-- §15.2 item 1), lowering's, at the word. `sync` marks a function type
+-- written out that the platform receives: not a type that is not one
+-- (12:24), nor a function the platform hands back — its result (15:31) or
+-- a parameter of a parameter (18:27). The declaration is read without the
+-- mark. Outside a `foreign` signature `sync` is an ordinary type variable,
+-- so `wrap` means what it always meant.
+type alias Handler =
+    Int -> Int
+
+
+pub foreign pure one : sync (Handler) -> Int
+
+
+pub foreign pure two : Int -> sync (Int -> Int)
+
+
+pub foreign pure three : (sync (Int -> Int) -> Int) -> Int
+
+
+wrap : sync -> List sync
+wrap x =
+    [ x ]

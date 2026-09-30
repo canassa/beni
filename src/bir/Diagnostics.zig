@@ -80,6 +80,11 @@ pub const Item = struct {
         name_slash,
         name_gt,
         name_control,
+        /// `misplaced_sync`: what the word marks (transparent-effects-proposal.md
+        /// §15.2) — a type that is not a function type written out, or a
+        /// function the declaration hands back rather than receives.
+        sync_not_function,
+        sync_handed_back,
     };
 };
 
@@ -143,6 +148,21 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\Each field of a record is set once. Remove one of the two.
         , .{text}),
+        .misplaced_sync => if (item.markup == .sync_handed_back) try w.writeAll(
+            \\This `sync` marks a function the platform hands back to beni, not one it receives.
+            \\
+            \\`sync` says that the platform calls a function synchronously, so the function
+            \\must never suspend. That is a promise about a function the platform is GIVEN:
+            \\a parameter of the declaration, or something inside one. A function it returns,
+            \\or passes to a callback of its own, is the platform's, and its declared rung
+            \\already says what calling it may do. Remove the `sync`.
+        ) else try w.writeAll(
+            \\`sync` marks a function type, and this is not one written out.
+            \\
+            \\Write the function type itself inside the parentheses, as in
+            \\`sync (String -> msg)`: the mark belongs to that one arrow. An alias of a
+            \\function type is not enough, because the mark must be where the arrow is.
+        ),
         .foreign_outside_platform => try w.writeAll(
             \\This `foreign` declaration is outside a platform package.
             \\

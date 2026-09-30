@@ -608,6 +608,12 @@ const Measurer = struct {
             .type_unit, .unit, .pat_unit => m.set(n, 2, main, main + 1),
             .placeholder => m.set(n, 1, main, main),
             .type_paren, .paren, .pat_paren => try m.wrapped(n, tree.operand(n)),
+            // `sync ` and the parenthesised type (transparent-effects-proposal.md §15.2).
+            .type_sync => {
+                const inner = tree.operand(n);
+                try m.measure(inner);
+                m.set(n, m.w(inner) +| 5, main, m.last(inner));
+            },
             .type_tuple, .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
             .type_record => {
                 if (m.tags[main] == .l_brace) {
@@ -2698,6 +2704,11 @@ const Printer = struct {
                 try p.tok(main + 1);
             },
             .type_paren => try p.wrapped(n, .type, indent),
+            .type_sync => {
+                try p.tok(main);
+                try p.space();
+                try p.node(tree.operand(n), .type, indent);
+            },
             .type_tuple => try p.collection(n, tree.children(n), .type, indent),
             .type_record => try p.collection(n, tree.children(n), .type_field, indent),
             .type_record_ext => {

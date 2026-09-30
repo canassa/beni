@@ -2,7 +2,8 @@
 -- attribute and event is a row of its own table, sorted by name text and then
 -- by `on` set — the two `value` attributes are one name on disjoint elements —
 -- with its facts, its `on` names sorted, and an attribute's or event's type.
--- A markup primitive is a value flagged `markup`, with its scheme. Run with
+-- A markup primitive is a value flagged `markup`, with its scheme, whose
+-- function parameter is `sync` (transparent-effects-proposal.md §15.2). Run with
 -- `--core`, by the `core/` directory, so the declarations are legal.
 pub foreign type Html msg
 

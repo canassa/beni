@@ -19,6 +19,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../../bir/Bir.zig");
+const InternPool = @import("../../InternPool.zig");
 const TypeStore = @import("../TypeStore.zig");
 const Scc = @import("../Scc.zig");
 const Types = @import("../Types.zig");
@@ -26,6 +27,7 @@ const Context = @import("../Context.zig");
 const Tree = @import("Tree.zig");
 const Expr = @import("Expr.zig");
 const Pattern = @import("Pattern.zig");
+const Effects = @import("../Effects.zig");
 
 const Generator = Tree.Generator;
 const Constraint = Tree.Constraint;
@@ -232,9 +234,21 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
     // rule 1): the declaration's own arrow, or, for a value with no
     // parameters, its evaluation class.
     const outer = g.ambient;
-    defer g.ambient = outer;
+    const outer_site = g.ambient_site;
+    g.ambient_site = Effects.none;
+    defer {
+        g.ambient = outer;
+        g.ambient_site = outer_site;
+    }
     if (params.len == 0) {
         g.ambient = if (g.cx.effects) |e| try e.evalNode(@intFromEnum(g.decl)) else null;
+        // `main` is evaluated once, when the program starts, outside any
+        // fiber: its evaluation is a `sync` boundary
+        // (transparent-effects-proposal.md §15.2 item 5), for the `main` of
+        // a module of the root package, where a build looks for it.
+        if (g.cx.effects) |e| if (bir.symbol(d.name) == InternPool.WellKnown.main.symbol() and g.cx.graph.modulePackage(g.cx.module) == .app) {
+            try e.demand(.{ .v = g.ambient.?, .kind = .main, .site = @intFromEnum(d.inst_start), .decl = @intFromEnum(g.decl) });
+        };
         return Expr.expr(g, body, target, category);
     }
     const param_vars = try g.cx.scratch.alloc(Var, params.len);
@@ -411,8 +425,13 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
             // The body's calls join this definition's own arrow (§14.3 rule 1).
             const outer = g.ambient;
+            const outer_site = g.ambient_site;
             g.ambient = arrow;
-            defer g.ambient = outer;
+            g.ambient_site = @intFromEnum(m);
+            defer {
+                g.ambient = outer;
+                g.ambient_site = outer_site;
+            }
             // A `?` in the body returns from this definition (§8.6).
             try g.targets.append(g.gpa, .{ .inst = m, .result = result });
             defer _ = g.targets.pop();

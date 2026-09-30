@@ -1,0 +1,41 @@
+(module
+  (foreign_value pub pure onInput
+    (type_fn
+      (type_sync
+        (type_paren
+          (type_fn
+            (type_con String)
+            (type_var msg))))
+      (type_con Attribute
+        (type_var msg))))
+  (foreign_value pub pure program
+    (type_fn
+      (type_record
+        (record_type_field update
+          (type_sync
+            (type_paren
+              (type_fn
+                (type_var msg)
+                (type_var model)
+                (type_var model)))))
+        (record_type_field init
+          (type_var model)))
+      (type_con Program)))
+  (foreign_value pub pure handlers
+    (type_fn
+      (type_con List
+        (type_paren
+          (type_sync
+            (type_paren
+              (type_fn
+                (type_con Event)
+                (type_var msg))))))
+      (type_con Attribute
+        (type_var msg))))
+  (annotation pair
+    (type_con Pair
+      (type_var sync)
+      (type_paren
+        (type_con Int))))
+  (definition pair
+    (ident pair)))

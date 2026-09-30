@@ -1,0 +1,74 @@
+-- check/good (core): the neighbours the `sync` check must let through
+-- (transparent-effects-proposal.md §15.1–§15.3). A pure or merely
+-- `impure` callback at a `sync` parameter (`plain`, `logged`: only
+-- `suspends` is refused); a suspending thunk built but not called inside
+-- one (`later`); a suspending function at a parameter the platform did not
+-- mark (`spawned`); and an `eq` that is impure. `onType` hands its
+-- parameter to the `sync` one, so its summary says the parameter is `sync`
+-- (`!sync` in the interface) with nothing written, and `relay`, which
+-- passes a parameter on to `onType`, says it again.
+pub foreign suspends get : Int -> String
+
+
+pub foreign impure log : String -> ()
+
+
+pub foreign pure onEvent : sync (Int -> String) -> Int
+
+
+pub foreign impure spawn : (() -> String) -> Int
+
+
+pub onType : (Int -> String) -> Int
+onType f =
+    onEvent (\n -> f n)
+
+
+pub relay : (Int -> String) -> Int
+relay g =
+    onType g
+
+
+pub plain : Int
+plain =
+    onType String.fromInt
+
+
+pub logged : Int
+logged =
+    onEvent
+        (\n ->
+            let
+                () = log "event"
+            in
+            String.fromInt n
+        )
+
+
+pub later : Int
+later =
+    onEvent
+        (\n ->
+            let
+                fetch =
+                    \() -> get n
+            in
+            "later"
+        )
+
+
+pub spawned : Int
+spawned =
+    spawn (\() -> get 1)
+
+
+pub type Key
+    = Key Int
+
+
+pub eq : Key, Key -> Bool
+eq (Key a) (Key b) =
+    let
+        () = log "compared"
+    in
+    a == b

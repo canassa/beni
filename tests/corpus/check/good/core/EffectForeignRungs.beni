@@ -7,7 +7,8 @@
 -- handed to the host (`later`'s callback) is independent of the call, so
 -- `schedule` is impure and not `!suspends` although its callback suspends.
 -- `where` evidence joins the call (`compareAll`), which the interface shows
--- as the evidence's class `e1`.
+-- as the evidence's class `e1`, and `sync`: the sibling calls it from
+-- JavaScript (§15.2 item 2).
 pub foreign pure double : Int -> Int
 
 

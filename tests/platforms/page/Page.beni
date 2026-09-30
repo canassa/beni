@@ -45,11 +45,11 @@ pub foreign pure onClick : msg -> Attribute msg
 
 
 --| Send the message made from the control's value on every `input` event.
-pub foreign pure onInput : (String -> msg) -> Attribute msg
+pub foreign pure onInput : sync (String -> msg) -> Attribute msg
 
 
 --| Send the message made from the key's name on every `keydown` event.
-pub foreign pure onKeyDown : (String -> msg) -> Attribute msg
+pub foreign pure onKeyDown : sync (String -> msg) -> Attribute msg
 
 
 --| A page that renders `view` once and never changes.
@@ -58,4 +58,7 @@ pub foreign pure show : Node msg -> Program
 
 --| A page with a model: `init` is rendered first, and every message a
 --| handler sends goes through `update` before the next render.
-pub foreign pure sandbox : { init : model, update : msg, model -> model, view : model -> Node msg } -> Program
+--| `update` and `view` are `sync`: neither may suspend.
+pub foreign pure sandbox :
+    { init : model, update : sync (msg, model -> model), view : sync (model -> Node msg) }
+    -> Program

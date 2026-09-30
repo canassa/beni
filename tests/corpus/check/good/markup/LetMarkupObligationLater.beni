@@ -4,7 +4,7 @@
 -- `input`'s markup sends what `g` returns, so its type is
 -- `(String -> a) -> ( Html a, a )`, not `(String -> a) -> ( Html b, c )`.
 -- `ordering_test.zig` checks the same `let` with its two bindings the other
--- way round.
+-- way round. The parameter is a handler, so it is `sync` (§15.2 item 4).
 import Html exposing (Html)
 
 

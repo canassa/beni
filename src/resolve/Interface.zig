@@ -203,7 +203,15 @@ pub const Scheme = struct {
 pub const EffectBlock = struct {
     words: []const u32,
 
-    pub const Class = struct { rung: u32, deps: []const u32 };
+    /// A class word is `rung | sync << 8` (transparent-effects-proposal.md
+    /// §15.5): the rung, and whether a use must not let the class suspend.
+    pub const Class = struct { rung: u32, sync: bool, deps: []const u32 };
+
+    pub const sync_bit: u32 = 1 << 8;
+
+    fn validWord(word: u32) bool {
+        return word & ~(sync_bit | 0xff) == 0 and word & 0xff <= 2;
+    }
     pub const Site = struct { class: u32, root: u32, steps: []const u32 };
 
     pub fn classCount(b: EffectBlock) u32 {
@@ -217,7 +225,7 @@ pub const EffectBlock = struct {
         var k: u32 = 0;
         while (true) : (k += 1) {
             const deps = b.words[at + 1];
-            if (k == i) return .{ .rung = b.words[at], .deps = b.words[at + 2 ..][0..deps] };
+            if (k == i) return .{ .rung = b.words[at] & 0xff, .sync = b.words[at] & sync_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
             at += 2 + deps;
         }
     }
@@ -259,7 +267,8 @@ pub const EffectBlock = struct {
     }
 
     /// The block's length in words, or null when it leaves `words` or is
-    /// malformed: a class out of range, or a step of an unknown kind. What
+    /// malformed: a class word with a bit it may not have, a class out of
+    /// range, or a step of an unknown kind. What
     /// `iface_bytes` validates a record read from disk with.
     pub fn measure(words: []const u32) ?u32 {
         if (words.len == 0) return null;
@@ -267,6 +276,7 @@ pub const EffectBlock = struct {
         var at: u64 = 1;
         for (0..classes) |_| {
             if (at + 2 > words.len) return null;
+            if (!validWord(words[@intCast(at)])) return null;
             const deps = words[@intCast(at + 1)];
             if (at + 2 + deps > words.len) return null;
             for (words[@intCast(at + 2)..][0..deps]) |d| if (d >= classes) return null;

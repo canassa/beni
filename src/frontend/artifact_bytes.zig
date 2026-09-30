@@ -85,7 +85,11 @@ pub const magic = "BENIFE\x00\x00";
 /// 9 (2026-09-30): a declaration row carries the rung a `foreign` value
 /// declares (`Bir.Decl.rung`, transparent-effects-proposal.md §14.1), and
 /// the parser has two codes for a missing or unknown one.
-pub const format_version: u32 = 9;
+/// 10 (2026-09-30): a `type_fn`'s `main_token` is the word `sync` when a
+/// `foreign` signature marks it (transparent-effects-proposal.md §15.2,
+/// §15.5), a new AST node carries the mark, and lowering has a code for a
+/// misplaced one.
+pub const format_version: u32 = 10;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

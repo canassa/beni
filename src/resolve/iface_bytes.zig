@@ -82,7 +82,9 @@ pub const magic = "BENIIFC\x00";
 /// `events` (§25.8).
 /// 9: a scheme row grows 12 → 16 bytes: the `extra` offset of its effect
 /// block, or `no_terms` (transparent-effects-proposal.md §14.6).
-pub const format_version: u32 = 9;
+/// 10: a class word of an effect block carries a demand in bit 8, `rung |
+/// sync << 8` (§15.5).
+pub const format_version: u32 = 10;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

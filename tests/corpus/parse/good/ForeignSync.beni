@@ -1,0 +1,18 @@
+-- The `sync` mark in a `foreign` value's signature (transparent-effects-
+-- proposal.md §15.2): a contextual word before a parenthesised type, which
+-- the tree keeps as a `type_sync` around it — in a parameter, in a record
+-- field of one, and in a type argument. Outside a `foreign` signature the
+-- same spelling is a type variable applied to nothing and a parenthesised
+-- type, as it always was: `Pair sync (Int)` is two arguments.
+pub foreign pure onInput : sync (String -> msg) -> Attribute msg
+
+
+pub foreign pure program : { update : sync (msg, model -> model), init : model } -> Program
+
+
+pub foreign pure handlers : List (sync (Event -> msg)) -> Attribute msg
+
+
+pair : Pair sync (Int)
+pair =
+    pair

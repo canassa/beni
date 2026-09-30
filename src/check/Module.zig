@@ -64,6 +64,7 @@ const Vocab = @import("Vocab.zig");
 const Markup = @import("Markup.zig");
 const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
+const Sync = @import("Sync.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -174,13 +175,25 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportMarkup(&report, bir, in.graph);
 
     // P2: every annotated value's scheme, before any body is checked.
+    var syncs: std.ArrayList(Var) = .empty;
+    defer syncs.deinit(scratch);
     for (bir.decls, 0..) |d, i| {
         if (!d.kind.isValue()) continue;
         const annotation = d.annotation.unwrap() orelse continue;
         var b = cx.builder(.flex, TypeStore.generalized);
         defer b.deinit();
+        // A `foreign`'s `sync`-marked function types (transparent-effects-
+        // proposal.md §15.2 item 1), which only its own signature can hold.
+        syncs.clearRetainingCapacity();
+        if (d.kind == .foreign_value) {
+            b.syncs = &syncs;
+            b.sync_bir = bir;
+            b.sync_tags = in.artifacts.spans(file).tags;
+        }
         const reading_start = store.count();
         decl_scheme[i] = (try cx.readAnnotation(&b, annotation, @intCast(i))).toOptional();
+        b.syncs = null;
+        for (syncs.items) |v| try effects.foreignSync(@intCast(i), v);
         // The `where` clause is read with the SAME builder, so a variable a
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.
@@ -233,6 +246,8 @@ pub fn check(in: Input) Error!Check.Counters {
     // A `pub eq`/`compare` written for a type of this module that no use can
     // call is said here, used or not.
     try Instances.ownSignatures(&solver);
+    // And each such method is a `sync` boundary (§15.2 item 6).
+    try Instances.demandWellKnown(&solver);
     // A record a deferred wanted refused, as P4 left it (checker.md §8.7).
     try report.renderLate();
     const p4_ns: u64 = if (in.profile) |p| p.since(p4_token.?) else 0;
@@ -257,6 +272,9 @@ pub fn check(in: Input) Error!Check.Counters {
     // edges: the summaries now (§14.4), before P6 and P8 read them.
     const effects_token = if (in.profile) |p| p.begin() else null;
     try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
+    // The `sync` check (transparent-effects-proposal.md §15.4), in a module
+    // with no error so far: a poisoned type says nothing about a bit.
+    if (!quiet and report.errors == 0) try Sync.check(&effects, .{ .cx = &cx, .report = &report, .decl_scheme = decl_scheme });
     if (in.profile) |p| p.end(in.tid, effects_token.?, .effects, file.int(), 0);
     const p6_token = if (in.profile) |p| p.begin() else null;
     const p6 = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);

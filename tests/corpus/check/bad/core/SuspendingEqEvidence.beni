@@ -1,0 +1,30 @@
+-- check/bad (core): a type's `eq` and `compare` must not suspend
+-- (transparent-effects-proposal.md §15.2 item 6, the owner's decision of
+-- 2026-09-30). `List.eq` walks a list in a JavaScript loop that calls the
+-- element's `eq` as evidence, where a suspension would be read as `False`
+-- and `[ x ] == [ y ]` would answer `True` for any two values, at exit 0.
+-- So a `pub eq` or `pub compare` written for a type of its module is
+-- refused at its own name when it may suspend: `eq` (19:1) through a call
+-- of the primitive, `compare` (24:1) through `eq`. The `==` on two lists
+-- of them (30:8) is not refused a second time: its chain runs through
+-- `eq`, whose own refusal already says it.
+pub foreign suspends lookup : String -> Int
+
+
+pub type Remote
+    = Remote String
+
+
+pub eq : Remote, Remote -> Bool
+eq (Remote a) (Remote b) =
+    lookup a == lookup b
+
+
+pub compare : Remote, Remote -> Order
+compare x y =
+    if eq x y then EQ else LT
+
+
+same : List Remote, List Remote -> Bool
+same xs ys =
+    xs == ys

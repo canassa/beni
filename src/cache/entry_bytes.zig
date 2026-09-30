@@ -63,7 +63,9 @@ pub const magic = "BENICAC\x00";
 /// `url` bit.
 /// 7: the embedded interface became `iface_bytes` format 9, a scheme's
 /// effect block (transparent-effects-proposal.md §14.6).
-pub const format_version: u32 = 7;
+/// 8: the embedded interface became `iface_bytes` format 10, a class's
+/// `sync` bit (§15.5).
+pub const format_version: u32 = 8;
 
 /// The four sections, in this order and no other.
 pub const Section = enum(u32) {

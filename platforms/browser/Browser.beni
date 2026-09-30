@@ -18,7 +18,11 @@ pub foreign type Program
 --| A page with a model: `init` is rendered first, and every message a
 --| handler sends goes through `update` before the next render. It mounts
 --| at `document.body` unless `mountAt` gives it another node.
-pub foreign pure program : { init : model, update : msg, model -> model, view : model -> Html msg } -> Program
+--| `update` and `view` are `sync`: the page calls them while it handles an
+--| event or renders, so neither may suspend.
+pub foreign pure program :
+    { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) }
+    -> Program
 
 
 --| The same program, mounted at the element whose `id` is the string

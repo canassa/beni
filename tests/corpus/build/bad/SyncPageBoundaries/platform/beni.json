@@ -1,0 +1,1 @@
+{ "platform": true, "name": "net", "platforms": ["browser"], "reexports": ["Browser", "Html"] }

@@ -1,0 +1,51 @@
+-- `sync_boundary` at the page's own boundaries (transparent-effects-
+-- proposal.md §15.2 items 1, 3 and 4; checker-v2.md §25.6). The page calls
+-- each of these synchronously, from an event or a render, where a
+-- suspension would come back in place of a message or of markup: the
+-- `update` `Browser.program` declares `sync` (49:20), an event handler in
+-- its function form (37:25), a `For`'s row function (39:53) and the
+-- function `Html.map` passes each message through (41:43). The `view`
+-- that holds them does not suspend itself: a handler and a row are only
+-- built there, and the page calls them later.
+import Browser
+import Html exposing (Html)
+import Net
+
+
+type Msg
+    = Typed String
+    | Saved String
+
+
+type alias Model =
+    { draft : String, keys : List String }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Typed s ->
+            { model | draft = s }
+
+        Saved key ->
+            { model | draft = Net.load key }
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <input onInput={\s -> Typed (Net.load s)} />
+        <ul>
+            <For each={model.keys} keyed={\k -> k}>{\k -> <li>{Net.load k}</li>}</For>
+        </ul>
+        {Html.map (<p>{model.draft}</p>) (\m -> Saved (Net.load "last"))}
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = { draft = "", keys = [] }
+        , update = update
+        , view = view
+        }

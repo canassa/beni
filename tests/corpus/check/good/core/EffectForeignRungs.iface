@@ -1,6 +1,6 @@
 module EffectForeignRungs
   value both : Int -> Int !suspends
-  foreign value compareAll : List a, List a -> Bool !e1 where a.eq : a, a -> Bool !e1
+  foreign value compareAll : List a, List a -> Bool !e1 where a.eq : a, a -> Bool !(e1 | sync)
   foreign value double : Int -> Int
   value fetch : Int -> Int !suspends
   foreign value get : Int -> Int !suspends

@@ -1,0 +1,14 @@
+module SyncPermitted
+  type Key
+    Key/1
+  value eq : Key, Key -> Bool !impure
+  foreign value get : Int -> String !suspends
+  value later : Int
+  foreign value log : String -> () !impure
+  value logged : Int
+  foreign value onEvent : (Int -> String !sync) -> Int
+  value onType : (Int -> String !sync) -> Int
+  value plain : Int
+  value relay : (Int -> String !sync) -> Int
+  foreign value spawn : (() -> String) -> Int !impure
+  value spawned : Int

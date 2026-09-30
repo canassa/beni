@@ -159,6 +159,10 @@ in_layout_field: bool = false,
 /// True while a `where` constraint's type is being parsed: the comma rule
 /// of §2.3 takes one more token of lookahead there.
 in_where: bool = false,
+/// True while a `foreign` value's signature is being parsed: the one
+/// place `sync (…)` marks a function type (transparent-effects-proposal.md
+/// §15.2). Everywhere else `sync` is an ordinary type variable.
+in_foreign_signature: bool = false,
 
 /// Deeper nesting than this reports `nesting_too_deep` instead of
 /// recursing: one level per bracket, block form, right-associative operator
@@ -1437,7 +1441,9 @@ fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index
         .placeholder => |node| return node,
     };
     _ = try p.expectToken(.colon);
+    p.in_foreign_signature = true;
     const type_expr = try p.parseTopType();
+    p.in_foreign_signature = false;
     const clause = try p.parseWhere();
     header.where_start = clause.start;
     header.where_end = clause.end;
@@ -1680,6 +1686,11 @@ fn isRung(text: []const u8) bool {
     return std.mem.eql(u8, text, "pure") or std.mem.eql(u8, text, "impure") or std.mem.eql(u8, text, "suspends");
 }
 
+/// True when token `t` is the contextual word `sync`.
+fn isSyncToken(p: *const Parse, t: TokenIndex) bool {
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "sync");
+}
+
 fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
     return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "equatable");
 }
@@ -1725,7 +1736,13 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.type_expr);
     defer p.context = saved_context;
     switch (p.peek()) {
-        .lower_ident => return p.typeVar(p.next(), .none),
+        // `sync (…)` in a `foreign` value's signature: a contextual word,
+        // like the rung, and only there (transparent-effects-proposal.md
+        // §15.2). What it may mark is lowering's to decide.
+        .lower_ident => if (p.in_foreign_signature and p.peekAt(1) == .l_paren and p.isSyncToken(p.tok_i)) {
+            const word = p.next();
+            return p.unary(.type_sync, word, try p.parseTypeAtom());
+        } else return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
         .l_paren => {
             // Inside brackets the `where` comma rule of §2.3 does not
@@ -3898,7 +3915,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try testing.expect(r.base < token_count);
             try checkIndices(tree, r.fields);
         },
-        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
         .type_fn => {
             const f = tree.fullTypeFn(n);
             try testing.expect(f.params.len >= 1);

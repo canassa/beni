@@ -174,6 +174,11 @@ forward: []const Symbol = &.{},
 
 /// The token every instruction appended right now is stamped with.
 cur_token: TokenIndex = 0,
+/// True while `lowerType` is inside a parameter of the arrow it started
+/// from (an odd number of parameter positions deep): a function type there
+/// is one the declaration RECEIVES, the only kind `sync` may mark
+/// (transparent-effects-proposal.md §15.2).
+receives: bool = false,
 cur_decl: u32 = 0,
 /// While lowering a `via` Atom, lexical locals resolve normally and every
 /// nonlocal name stays as an unresolved schema-expression leaf for resolution.
@@ -1965,13 +1970,36 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const fn_type = l.tree.fullTypeFn(node);
             const mark = l.scratchMark();
             defer l.shrinkScratch(mark);
+            // A parameter is a position the declaration receives, and a
+            // parameter of a parameter one it hands back.
+            const outer = l.receives;
+            l.receives = !outer;
             for (fn_type.params) |param| try l.pushScratch(try l.lowerType(param));
+            l.receives = outer;
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
             const result = try l.lowerType(fn_type.result);
             return l.addInstAt(main_token, .type_fn, @intFromEnum(range), result.int());
         },
         .type_unit => return l.addInst(.type_unit, 0, 0),
         .type_paren => return l.lowerType(l.tree.operand(node)),
+        // `sync (…)`: the function type inside, whose `main_token` becomes
+        // the word `sync` — the mark, in the BIR, costs no column
+        // (transparent-effects-proposal.md §15.2, §15.5). A mark on anything
+        // but a function type written out, or on one the declaration hands
+        // back, is `misplaced_sync` and is dropped.
+        .type_sync => {
+            const inner = try l.lowerType(l.tree.operand(node));
+            const reading: Diagnostics.Item.Markup = if (l.insts.items(.tag)[inner.int()] != .type_fn)
+                .sync_not_function
+            else if (!l.receives)
+                .sync_handed_back
+            else {
+                l.insts.items(.main_token)[inner.int()] = main_token;
+                return inner;
+            };
+            try l.diagnostics.append(l.gpa, .{ .code = .misplaced_sync, .start = l.starts[main_token], .end = l.tokenEnd(main_token), .markup = reading });
+            return inner;
+        },
         .type_tuple => {
             const mark = l.scratchMark();
             defer l.shrinkScratch(mark);

@@ -1437,6 +1437,78 @@ test "a body edit that flips an effect bit crosses the firewall, and the warm im
     try expectMoved("a flipped effect bit", hashes_before, hashes_after, &.{ "app:App", "app:Lib" });
 }
 
+test "a dependency that comes to suspend makes its importer's sync error appear warm, and go again" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `App` hands `Lib.name` to a `sync` parameter (transparent-effects-
+    // proposal.md §15.2 item 1). An annotated body edit makes `name` call
+    // the primitive that suspends, so only `Lib`'s effect block moves
+    // (§15.5): `App` must be re-checked from its cache and refused there,
+    // exactly as a cold run refuses it; and the edit undone, accepted again.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Plat.beni",
+        \\pub foreign suspends get : Int -> String
+        \\
+        \\
+        \\pub foreign pure onEvent : sync (Int -> String) -> Int
+        \\
+    );
+    const pure_lib =
+        \\pub name : Int -> String
+        \\name n =
+        \\    String.fromInt n
+        \\
+    ;
+    try w.write("src/Lib.beni", pure_lib);
+    try w.write("src/App.beni",
+        \\import Lib
+        \\import Plat
+        \\
+        \\
+        \\pub wired : Int
+        \\wired =
+        \\    Plat.onEvent Lib.name
+        \\
+    );
+    const args = [_][]const u8{ "check", "--core", "--jobs=1", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const cold = try runCounted(&w, arena, &args, "sync-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Lib.beni",
+        \\import Plat
+        \\
+        \\
+        \\pub name : Int -> String
+        \\name n =
+        \\    Plat.get n
+        \\
+    );
+    const warm = try runCounted(&w, arena, &args, "sync-warm.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--core", "--jobs=1", "--diagnostics=json", "--no-cache", "src" }, "sync-plain.json");
+    try w.write("src/Lib.beni", pure_lib);
+    const back = try runCounted(&w, arena, &args, "sync-back.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), warm.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stderr, warm.result.stderr);
+    try testing.expect(std.mem.indexOf(u8, warm.result.stderr, "\"code\":\"sync_boundary\"") != null);
+    try testing.expect(std.mem.indexOf(u8, warm.result.stderr, "`Lib.name` suspends.") != null);
+    // Both re-checked: the edited module and the importer its record moved.
+    try testing.expectEqual(@as(u64, 2), warm.counters.checked);
+    try testing.expectEqual(@as(u8, 0), back.result.exit_code);
+    try testing.expect(std.mem.indexOf(u8, back.result.stderr, "sync_boundary") == null);
+}
+
 test "a private schema conversion body stops at the interface firewall" {
     // The conversion is private, so its body is in no record: `Models` is
     // re-checked and `Consumer` is not.

@@ -1,0 +1,8 @@
+--! A test platform with one primitive that may park its fiber.
+pub foreign type Program
+
+
+pub foreign pure say : String -> Program
+
+
+pub foreign suspends fetch : String -> String

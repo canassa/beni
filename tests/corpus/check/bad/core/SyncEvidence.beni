@@ -1,0 +1,47 @@
+-- check/bad (core): evidence that would suspend where it must not
+-- (transparent-effects-proposal.md §15.2 items 2 and 6, §15.3). A
+-- `foreign`'s `where` evidence is called by its sibling, from JavaScript,
+-- so `countWhere`'s `probe` is `sync` with nothing written, and `Item`'s
+-- `probe` suspends: refused at the use that hands it over. And a type's
+-- `eq` that suspends only through the function a value holds is not
+-- refused at `eq` — it suspends for no value of its own — but its summary
+-- demands that the held function not suspend, so the `==` on a `Check`
+-- holding one is refused at the value.
+pub foreign suspends get : Int -> Bool
+
+
+pub foreign pure countWhere : List a -> Int
+    where a.probe : a -> Bool
+
+
+pub type Item
+    = Item Int
+
+
+pub probe : Item -> Bool
+probe (Item n) =
+    get n
+
+
+count : Int
+count =
+    countWhere [ Item 1 ]
+
+
+pub type Check
+    = Check (Int -> Bool)
+
+
+pub eq : Check, Check -> Bool
+eq (Check f) (Check g) =
+    f 0 == g 0
+
+
+same : Bool
+same =
+    Check (\n -> get n) == Check (\n -> n > 0)
+
+
+fine : Bool
+fine =
+    Check (\n -> n < 0) == Check (\n -> n > 0)

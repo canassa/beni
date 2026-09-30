@@ -260,7 +260,7 @@ fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected
     params[0] = recv;
     @memcpy(params[1..], arg_vars);
     const method_type = try g.func(params, expected);
-    try g.called(method_type);
+    try g.called(method_type, inst);
     const payload = try g.addExtra(Tree.Method{
         .name = bir.symbol(m.name),
         .receiver = recv,
@@ -301,7 +301,7 @@ fn wellKnownCall(
         else => try g.primitive(wk.order),
     };
     const method_type = try g.func(&.{ operand, operand }, method_result);
-    try g.called(method_type);
+    try g.called(method_type, inst);
     const name = (origin.method() orelse InternPool.WellKnown.eq).symbol();
     const payload = try g.addExtra(Tree.Method{
         .name = name,
@@ -348,7 +348,7 @@ fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expect
     for (arg_vars) |*v| v.* = try g.freshFlex();
     // No receiver: the method's type is `arg₁, …, argₙ -> result` (§4.2).
     const method_type = try g.func(arg_vars, expected);
-    try g.called(method_type);
+    try g.called(method_type, inst);
     const payload = try g.addExtra(Tree.Method{
         .name = bir.symbol(t.name),
         .receiver = rigid,
@@ -373,7 +373,7 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     const bir = g.cx.bir;
     const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
     const callee = try g.freshFlex();
-    try g.called(callee);
+    try g.called(callee, inst);
     const arg_vars = try g.cx.scratch.alloc(Var, args.len);
     defer g.cx.scratch.free(arg_vars);
     for (arg_vars) |*v| v.* = try g.freshFlex();
@@ -433,8 +433,13 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     // The body's calls join the lambda's own arrow, never the enclosing
     // function's (§14.3 rule 1): passing a lambda along calls nothing.
     const outer = g.ambient;
+    const outer_site = g.ambient_site;
     g.ambient = arrow;
-    defer g.ambient = outer;
+    g.ambient_site = @intFromEnum(inst);
+    defer {
+        g.ambient = outer;
+        g.ambient_site = outer_site;
+    }
     try parts.append(g.cx.scratch, try expr(g, @enumFromInt(data.rhs), result, .{ .tag = .general }));
     // Elm's placement: the lambda's own header, checked before anything
     // outside it meets the lambda's type (§6.3).

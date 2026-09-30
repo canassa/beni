@@ -30,6 +30,7 @@ const Context = @import("../Context.zig");
 const Generalize = @import("../Generalize.zig");
 const Evidence = @import("../Evidence.zig");
 const Groups = @import("../Groups.zig");
+const Effects = @import("../Effects.zig");
 const Parse = @import("../../parse/Parse.zig");
 
 pub const Var = TypeStore.Var;
@@ -317,14 +318,19 @@ pub const Generator = struct {
     /// generated, or a top-level value's evaluation class. Null where
     /// nothing calls (a schema's conversions are typed, never run here).
     ambient: ?Var = null,
+    /// The lambda or `let` definition whose arrow `ambient` is, or
+    /// `Effects.none` for the declaration's own: what the `sync` chain names
+    /// a call's caller by (transparent-effects-proposal.md §15.4).
+    ambient_site: u32 = Effects.none,
 
     pub const Target = struct { inst: Bir.Inst.Index, result: Var };
 
-    /// Record `callee ⊑ ambient` for a call generated now (§14.3 rule 1).
-    pub fn called(g: *Generator, callee: Var) Error!void {
+    /// Record `callee ⊑ ambient` for a call generated now (§14.3 rule 1),
+    /// made by instruction `site`.
+    pub fn called(g: *Generator, callee: Var, site: Bir.Inst.Index) Error!void {
         const ambient = g.ambient orelse return;
         const effects = g.cx.effects orelse return;
-        try effects.call(callee, ambient);
+        try effects.call(callee, ambient, .{ .call = @intFromEnum(site), .ambient = g.ambient_site });
     }
 
     pub const max_depth = Parse.max_depth + 104;

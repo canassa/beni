@@ -351,7 +351,7 @@ fn plainImported(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entr
     if (s.cx.effects) |e| {
         const iface = s.cx.iface(entry.module);
         const index = iface.values[@intFromEnum(value)].scheme;
-        if (index != .none) try e.applyPlain(iface, iface.scheme(index), w.method_type, sub_types);
+        if (index != .none) try e.applyPlain(iface, iface.scheme(index), w.method_type, sub_types, @intFromEnum(w.origin));
     }
     // Readied as the binding of each quantifier would ready it, in order.
     for (made.items) |sub| {
@@ -568,6 +568,30 @@ fn sayMethodSignature(s: *Solve, decl: u32, t: Types.TypeId, copy: Var) Error!vo
 
 /// The type an own `eq`/`compare` is WRITTEN for: the head of its
 /// first parameter, when that is a type this module declares.
+/// Every `pub eq` and `pub compare` of this module that is a method of one
+/// of its types — the ones `ownSignatures` weighs — is a `sync` boundary:
+/// `==` and `<` never suspend (transparent-effects-proposal.md §15.2 item 6,
+/// the owner's decision of 2026-09-30).
+pub fn demandWellKnown(s: *Solve) Error!void {
+    const cx = s.cx;
+    const e = cx.effects orelse return;
+    for ([_]Symbol{ InternPool.WellKnown.eq.symbol(), InternPool.WellKnown.compare.symbol() }) |method| {
+        const decl = s.ownValue(method) orelse continue;
+        const d = cx.bir.decls[decl];
+        if (!d.is_pub or decl >= s.decl_scheme.len or d.kind != .value) continue;
+        const scheme = s.decl_scheme[decl].unwrap() orelse continue;
+        const t = writtenFor(s, scheme) orelse continue;
+        try e.demand(.{
+            .v = scheme,
+            .kind = .method,
+            .site = @intFromEnum(d.inst_start),
+            .decl = decl,
+            .field = @intFromEnum(cx.types.entry(t).name),
+            .method = @intFromEnum(method),
+        });
+    }
+}
+
 fn writtenFor(s: *Solve, scheme: Var) ?Types.TypeId {
     const st = s.store();
     const f = Walk.function(st, scheme) orelse return null;
@@ -1140,7 +1164,7 @@ fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     // The call is the field's: what it may do reaches the dot-call's own
     // arrow, which the generator joined into the caller
     // (transparent-effects-proposal.md §14.3 rule 1).
-    if (s.cx.effects) |e| try e.call(callee, w.method_type);
+    if (s.cx.effects) |e| try e.call(callee, w.method_type, .{});
     var pairs = [_]TypeStore.Field{.{ .name = w.method, .value = callee }};
     const range = try st.addFields(&pairs);
     const ext = try s.fresh(.{ .flex = .{} });

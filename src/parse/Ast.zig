@@ -263,6 +263,10 @@ pub const Node = struct {
         /// `x : Int` inside a record type. `main_token` is the field name;
         /// `lhs` is the type.
         record_type_field,
+        /// `sync ( Type )` in a `foreign` value's signature
+        /// (transparent-effects-proposal.md §15.2). `main_token` is the
+        /// word `sync`; `lhs` is the parenthesised type after it.
+        type_sync,
         /// `k.compare : k, k -> Order`, one constraint of a `where` clause
         /// (static-dispatch-spike.md §2.1). `main_token` is the constrained
         /// variable's lower identifier; the method name is the abutting
@@ -1454,13 +1458,13 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
     };
 }
 
-/// The single child of the one-operand tags: `type_paren`, `record_type_field`,
+/// The single child of the one-operand tags: `type_paren`, `type_sync`, `record_type_field`,
 /// `interp`, `negate`, `paren`, `field`, `field_access`, `tuple_index`,
 /// `question`, `let_annotation`, `pat_paren`, and schema wrappers/modifiers, and
 /// the markup `{…}` forms.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
+        .type_paren, .type_sync, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via, .markup_spread, .markup_hole => {},
         else => unreachable, // not a one-operand node
     }
     return @enumFromInt(tree.nodeData(node).lhs);
