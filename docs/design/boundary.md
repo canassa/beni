@@ -376,6 +376,12 @@ name and a write an assignment — the shape hand-written JavaScript uses for th
 means, and why a closure is not an escape, is `backend.md` §4's *A `Js.Ref` that does not escape is
 a `let`*; the program cannot tell the two shapes apart.
 
+**A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
+is not written*). A release build writes no result for a function whose result is `()`, so a
+function a platform receives through `Js.from` — an event handler, a render callback — returns
+`undefined` where a development build returns `null`. A platform's JavaScript never reads what such
+a function returns; a `()` it is handed, and a `()` it returns, may be either.
+
 ## 5. `main`, and what a platform provides
 
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per

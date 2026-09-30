@@ -1,0 +1,36 @@
+-- A function whose result is `()` writes no result under `--release`
+-- (`backend.md` §4, *A `()` result is not written*), so the `()` it returns
+-- is `undefined` there and `null` in a development build. Nothing can tell
+-- them apart: `==` on `()`, a `()` in a `Maybe` and in a list, and
+-- `Debug.toString` print the same in both builds.
+import Node exposing (Program)
+
+
+note : Int -> ()
+note n =
+    let
+        _ =
+            Debug.log n "note"
+    in
+    ()
+
+
+main : Program
+main =
+    let
+        u =
+            note 1
+
+        m =
+            Just (note 2)
+
+        xs =
+            [ note 3, u ]
+    in
+    Node.printLines
+        [ Debug.toString u
+        , Debug.toString m
+        , Debug.toString xs
+        , if u == () then "equal" else "different"
+        , String.fromInt (List.length xs)
+        ]

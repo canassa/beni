@@ -1,0 +1,59 @@
+-- emit: a function whose result is `()` writes no result under `--release`
+-- (`backend.md` §4, *A `()` result is not written*). `place`, a `pub`
+-- function annotated `-> ()`, ends in its last statement; `each`'s loop
+-- exits with `return;`; the handler `watch` stores on a node — a lambda
+-- whose every tail is a `Js.write` or a call of a `-> ()` declaration —
+-- ends without `return null;`, and so does the local function `tick`.
+-- `count` returns an `Int` and keeps its `return`.
+import Js
+
+
+pub place : Js.Value, Js.Value -> ()
+place s i =
+    let
+        _ =
+            if Js.isNull (Js.get s "i") then
+                Js.set s "first" i
+
+            else
+                Js.set s "prev" (Js.get s "i")
+    in
+    Js.set s "i" i
+
+
+pub each : Js.Value, Int -> ()
+each fs k =
+    if k == Js.to (Js.get fs "length") then
+        ()
+
+    else
+        let
+            _ =
+                Js.apply (Js.at fs k) []
+        in
+        each fs (k + 1)
+
+
+pub watch : Js.Value, Js.Value -> ()
+watch node s =
+    let
+        seen =
+            Js.ref 0
+
+        tick n =
+            if n > 3 then
+                ()
+
+            else
+                place s (Js.from n)
+    in
+    Js.set node "$$send" (Js.from (\msg -> let _ = tick (Js.read seen) in Js.write seen (Js.to msg)))
+
+
+pub count : Js.Value -> Int
+count fs =
+    if Js.isNull fs then
+        0
+
+    else
+        Js.to (Js.get fs "length")

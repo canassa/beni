@@ -2325,6 +2325,7 @@ const Emitter = struct {
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
                 .inline_once = e.options.release,
+                .unit_results = e.options.release,
             });
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;

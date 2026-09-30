@@ -204,6 +204,9 @@ pub const Input = struct {
     /// written at that place (`backend.md` §9, *A function called once is
     /// written where it is called*).
     inline_once: bool = false,
+    /// `--release`: a function whose result is `()` writes no result
+    /// (`backend.md` §4, *A `()` result is not written*).
+    unit_results: bool = false,
 };
 
 pub const Markup = struct {
@@ -1330,7 +1333,7 @@ const Lowerer = struct {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
-                if (variant == .direct and l.unobserved[index]) try l.unobserved_arrows.append(l.scratch, arrow);
+                if (variant == .direct and (l.unobserved[index] or l.unitResult(index, own_suspends))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, p);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
@@ -1344,7 +1347,7 @@ const Lowerer = struct {
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p, l.functionSuspends(body));
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
-                if (variant == .direct and l.unobserved[index]) try l.unobserved_arrows.append(l.scratch, arrow);
+                if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, p);
             },
             .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), p),
@@ -3672,9 +3675,11 @@ const Lowerer = struct {
                 // a `view` of `List.map`s twenty deep would be refused.
                 const height = l.expr_height;
                 l.expr_height = 0;
-                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs), l.functionSuspends(inst));
+                const suspends = l.functionSuspends(inst);
+                const record = try l.functionOf(0, .none, params, @enumFromInt(d.rhs), suspends);
                 const body = l.expr_height;
                 const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                if (l.in.unit_results and !suspends and l.unitValued(@enumFromInt(d.rhs))) try l.unobserved_arrows.append(l.scratch, arrow);
                 if (body < lambda_spill) {
                     l.expr_height = @max(height, body);
                     return arrow;
@@ -7114,6 +7119,7 @@ const Lowerer = struct {
                                 l.functionSuspends(value_inst),
                             );
                             const lambda = try l.add(.arrow, lambda_p, @intFromEnum(lambda_record), Node.Data.unused);
+                            if (l.in.unit_results and !l.functionSuspends(value_inst) and l.unitValued(@enumFromInt(ld.rhs))) try l.unobserved_arrows.append(l.scratch, lambda);
                             try l.constDecl(out, n, lambda, p);
                             continue;
                         }
@@ -7140,7 +7146,11 @@ const Lowerer = struct {
                     // contained; excluding it would leave the language's
                     // most natural loop idiom overflowing.
                     const record = try l.functionOrLoop(n, self, evidence, ev_let, params, @enumFromInt(d.rhs), p, l.functionSuspends(def));
-                    try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
+                    const func = try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record));
+                    // A `function` whose result is `()` is listed like an
+                    // arrow: the printer reads the list for both.
+                    if (l.in.unit_results and !l.functionSuspends(def) and l.unitValued(@enumFromInt(d.rhs))) try l.unobserved_arrows.append(l.scratch, func);
+                    try out.append(l.scratch, func);
                 },
                 .let_pattern => {
                     // `let _ = e` is `e` as a statement (§4, *A discarded
@@ -7765,6 +7775,68 @@ const Lowerer = struct {
     /// The declaration `inst` calls when it is a call of one of this
     /// module's declarations, which is what a discarded or tail position
     /// can make unread.
+    /// `--release`: whether declaration `index`'s result is `()` by its
+    /// annotation — `…, … -> ()` — so its function need write no result
+    /// (`backend.md` §4, *A `()` result is not written*). Not for a body
+    /// that may suspend, whose value the fiber runtime reads, nor for one
+    /// with a second body.
+    fn unitResult(l: *Lowerer, index: u32, suspends: bool) bool {
+        if (!l.in.unit_results or suspends) return false;
+        if (index >= l.bir.decls.len) return false;
+        if (l.in.dispatch.effectDecl(index).twin) return false;
+        const ty = l.bir.decls[index].annotation.unwrap() orelse return false;
+        if (l.bir.instTag(ty) != .type_fn) return false;
+        return l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) == .type_unit;
+    }
+
+    /// Whether every value `inst` can end in is `()`: each of its tails
+    /// (`pushTails`) is the literal `()`, a call of a declaration of this
+    /// module whose annotation's result is `()`, or a `Js.write`, `Js.set`
+    /// or `Js.throw`. Anything else — a call this module cannot see the
+    /// type of — says no.
+    fn unitValued(l: *Lowerer, inst: Inst.Index) bool {
+        var stack: [64]Inst.Index = undefined;
+        var len: usize = 1;
+        stack[0] = inst;
+        while (len > 0) {
+            len -= 1;
+            const at = stack[len];
+            const d = l.bir.instData(at);
+            switch (l.bir.instTag(at)) {
+                .unit => {},
+                .let => {
+                    stack[len] = @enumFromInt(d.rhs);
+                    len += 1;
+                },
+                .case => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) return false;
+                    if (len == stack.len) return false;
+                    stack[len] = @enumFromInt(l.bir.instData(branch).rhs);
+                    len += 1;
+                },
+                .call => {
+                    const callee: Inst.Index = @enumFromInt(d.lhs);
+                    switch (l.bir.instTag(callee)) {
+                        .top => {
+                            const index = l.bir.instData(callee).lhs;
+                            if (index >= l.bir.decls.len) return false;
+                            const ty = l.bir.decls[index].annotation.unwrap() orelse return false;
+                            if (l.bir.instTag(ty) != .type_fn) return false;
+                            if (l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) != .type_unit) return false;
+                        },
+                        .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
+                            .write, .set, .throw => {},
+                            else => return false,
+                        },
+                        else => return false,
+                    }
+                },
+                else => return false,
+            }
+        }
+        return true;
+    }
+
     fn tailCallee(l: *Lowerer, inst: Inst.Index) ?u32 {
         if (l.bir.instTag(inst) != .call) return null;
         const callee: Inst.Index = @enumFromInt(l.bir.instData(inst).lhs);

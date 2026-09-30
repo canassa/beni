@@ -16,7 +16,9 @@ const showList = (list, seen) => {
 const show = (value, seen) => {
   if (typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (value === null) return "()";
+  // `()` is `null`, or `undefined` where a function whose result is `()`
+  // wrote none (backend.md §4, *A `()` result is not written*).
+  if (value === null || value === undefined) return "()";
   if (typeof value !== "object") return String(value);
   if (seen.has(value)) return "<cycle>";
   seen.add(value);
@@ -27,7 +29,7 @@ const show = (value, seen) => {
     if (Array.isArray(value) || typeof value.$plain === "function") return showList(value, seen);
     const keys = Object.keys(value);
     if (typeof value.$ === "string") {
-      const args = keys.filter((k) => k !== "$" && value[k] !== null).map((k) => show(value[k], seen));
+      const args = keys.filter((k) => k !== "$" && value[k] != null).map((k) => show(value[k], seen));
       return args.length === 0 ? value.$ : `${value.$} ${args.join(" ")}`;
     }
     // Elm prints the empty record as `{}`, not `{  }`.

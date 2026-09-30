@@ -426,7 +426,7 @@ piece of the representation that is written down in two places.
 
 Two more rows the table did not state and the backend needed: a **`Char`** is a one-scalar JavaScript string
 (§4 says strings are native and core's API exposes code points; a `Char` is the one-character case
-of that), and **`()`** is `null`. Neither is contentious; both are recorded because the table did
+of that), and **`()`** is `null` (under `--release`, `null` or `undefined`: *A `()` result is not written*). Neither is contentious; both are recorded because the table did
 not say.
 
 **Lists and strings are the two representation questions §14 left open.** The backend ships cons cells and
@@ -1641,6 +1641,32 @@ an arm that only reads leaving nothing — `let _ = if c then (let … in Js.wri
 `if (c) { …; r = x; }`, the hand-written runtime's own shape. A tree that needs a `$c$<d>` block
 keeps it and its `break`s. A `case` whose branches may suspend is unchanged, since its join needs
 the value. `emit/core/JsRef` and `emit/release/core/JsRef` pin it.
+
+### A `()` result is not written
+
+*Added 2026-10-02 (`plans/browser-decisions.md` R47-3; the owner's list for the runtime's port).*
+**Under `--release`, a function whose result is `()` writes no result**: the printer treats it as
+*A result nothing reads* treats a function nobody reads — at its end `return e;` is `e;` (or
+nothing when `e` only reads), anywhere else `return null;` is `return;` — whoever its callers are,
+in this module or not. This amends the representation row above (*`()` is `null`*): **a `()` is
+`null` or `undefined`**, and nothing may tell them apart — no pattern tests a `()` (its one
+constructor always matches, §7), a derived `eq`/`compare` of `()` reads nothing, and `Debug`'s
+printer shows both as `()`. A JavaScript caller handed such a function through `Js.from` or a
+lowering reads `undefined` where a development build returns `null`; the hand-written runtimes
+discard what they call (`$$root(msg)`), and `boundary.md` §4.2 says a platform may not read it.
+
+**Which functions.** `Lower.unitResult`: a top-level declaration whose annotation is a function
+type with the result `()`, and `Lower.unitValued`: a lambda, a `let`-bound lambda or a local
+function whose every tail (a `let`'s body, a `case`'s branches) is the literal `()`, a call of a
+declaration of the module annotated `… -> ()`, or a `Js.write`, `Js.set` or `Js.throw` — asked of
+`Bir`, which is what the lowering has; a tail that is a call of another module's function says no,
+since the lowering cannot see its annotation. Never a function that may suspend (the fiber
+runtime reads its result) nor one with a second body. A development build is unchanged.
+
+**Measured** (2026-10-02): `emit/release/split/EmptyPage` 946 → 933 brotli (the raw bytes fall 74;
+the brotli page moves with what it can no longer share, `return G(…)` against `G(…)`). Fixture:
+`emit/release/core/UnitResults` (a `pub` function ending in a `Js.set`, a loop's `return;`, a
+handler stored on a node, a local function, and an `Int` function that keeps its `return`).
 
 ### A `Js.Ref` that does not escape is a `let`
 

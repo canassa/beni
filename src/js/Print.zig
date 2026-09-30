@@ -663,7 +663,8 @@ const Printer = struct {
                 try p.params(f);
                 try p.tok(" {\n", "{");
                 const saved = p.discarding;
-                p.discarding = false;
+                p.discarding = std.mem.indexOfScalar(Index, p.unobserved, node) != null;
+                if (p.discarding) try p.markTails(f.body(), .return_stmt, &p.tail_returns);
                 try p.statements(f.body(), level + 1);
                 p.discarding = saved;
                 try p.indent(level);
