@@ -135,6 +135,9 @@ read one declaration graph (§9.1 of the design doc) and **both eliminate agains
 and a release build ship the same set of declarations and differ in how those are named, laid out
 and grouped into files. Nothing is built twice. §5.3 of `boundary.md` makes a build a pair of entry
 point and platform, so a project with a client and a server runs `build` twice.
+*Amended 2026-09-30:* until §10's chunks exist, a release APPLICATION is one file, the entry file,
+holding every module, sibling and runtime of the program in one module scope (§9, *One scope-hoisted
+file under `--release`*); a release `--library` build keeps one `.mjs` per module.
 
 **Elimination is not behind a flag**, and §9 gives the reason: eager derivation makes it the
 difference between an empty program shipping 70 kB and shipping 2 kB, and a development build that
@@ -1077,7 +1080,8 @@ trace is readable; each module's sibling JavaScript beside it as `<Module>.forei
 platform's runtime as `_platform/<name>.foreign.mjs` (§2, *The output tree does not depend on the
 file system's case sensitivity*, for why the reserved directories begin with `_`). Release: chunks (§10), every surviving declaration emitted into its chunk with a
 short name, and the cross-chunk bindings synthesised by the assigner — and with one entry point and
-no `lazy`, that is one file.
+no `lazy`, that is one file. *Amended 2026-09-30: that one file is built — §9, *One scope-hoisted
+file under `--release`*, with the siblings and runtimes in it too.*
 
 A platform declares its output shape (`boundary.md` §5.2) — what the artifact looks like and how
 `main` is invoked. The emitter is parameterised by it.
@@ -3126,6 +3130,130 @@ each file byte for byte. Tests: `Minify.zig`'s A2/A3 unit tests (every refusal, 
 cases, an assigned `const` each way), `build_test`'s pinned release bytes of the `hand` platform,
 and `run/SiblingFunctionParams`, a `function f(a, b)` helper renamed and run.
 
+### One scope-hoisted file under `--release`
+
+*Added 2026-09-30 (research 41 §5.1, and its addendum §8).* **A `--release` build of an
+application writes one file**: the entry file (`_main.mjs`, or the platform's `"entry"`), holding
+every emitted module, core, the derived-comparison engine, every sibling, the markup runtime and the
+program runtime in one module scope, with no `import` or `export` between them. It is §5's own
+sentence — "with one entry point and no `lazy`, that is one file" — reached before §10's colouring,
+and it is §10's one-entry case: a chunk is one such file (*What §10 gets from this* below). A
+development build and a `--library` build are unchanged, byte for byte: one `.mjs` per module, the
+hand-written files beside them. (`--library` keeps its layout because its exports ARE its surface,
+§9's *Roots*: a hoisted library needs an export list of the one file, which is §10's.) Measured on
+the benchmark app, **5 467 → 5 196 brotli** (11 files → 1; Solid 1's bundle is 4 356).
+
+**The order is ES module evaluation order, exactly.** The files the multi-file layout would write
+and their `import` statements form a DAG: an emitted module imports its sibling, the engine, the
+markup runtime and other emitted modules; a hand-written file imports only bare specifiers (§2's
+rule against a sibling importing a file). ES evaluates that graph depth first from the entry file,
+each file after everything it imports, each import in statement order, each file once — post-order.
+The one file is that post-order: each piece's body with its `import`s and `export`s removed, then
+the entry file's own statements (`start(…)`, `run(main)`). The order is read from the lowered
+modules' `import` statements, which are printed in body order, so it is the multi-file build's by
+construction, not by argument — which matters, because not every top-level initialiser is inert: a
+`Debug.log` in a top-level value runs when the module is evaluated (`--allow-debug`'s corpus pass
+observes it), and so does anything a hand-written file keeps as a root. Any other topological order
+is not good enough: `run/HoistEvaluationOrder` has `Main` name `Zed` before `Alpha`, both importing
+`Mid`, and logs `Mid`, `Zed`, `Alpha`, `Main`; walking imports in the other order is still
+topological and prints `Alpha` first (it was, red, before the order was read this way).
+
+**Names: one namespace, §9 item 2's table.** Every top-level name of the one scope is an ordinal of
+the whole-program table, which a multi-file release build already fills; the `import`/`export`
+pairs between emitted modules simply disappear, because both ends were one `Name` and so one
+spelling. What is new is the hand-written files' top-level bindings, which join the table:
+
+- **Numbering.** The emitted modules' names first — module by module in the one file's order, each
+  in print order, as a multi-file build numbers them — then each hand-written file's top-level
+  bindings, file by file in that order, each file in source order. A binding an emitted module
+  imports is spelled as the name the module imports it as (`add` in `Basics.js` IS `Basics$add`'s
+  short name), and the whole file renames every occurrence of it to that spelling; a binding nothing
+  imports is keyed `$hoist$<file>` and takes the next ordinal. *Measured, research 41 §8: numbering
+  every piece in place was 5 264 brotli on the app, emitted names first 5 226, and each file in its
+  own order rather than A2's most-used-first 5 196; most-used-first across the whole program, 5 247.*
+- **Capture.** Renaming is sound for the reason A2 is (research 40 §7): a file's renaming must be
+  injective onto spellings nothing else in the file keeps. So a top-level binding's ordinal may not
+  spell any identifier the file writes and does not rename (A2's `taken`: keys, fixed words, globals,
+  the names of its `import`s); `Rename.Globals.internAvoiding` skips such an ordinal for that name
+  only, and hands it to the next name without the constraint. The file's other names are renamed by
+  A2 as before, avoiding its top-level spellings too.
+- **Free names.** No ordinal of the table may spell a name some hoisted file may read without binding
+  it — an identifier bound nowhere in the file, or a host global of A2's fixed list, not a property
+  after `.` or `?.`, and not a key `x:` after `{` or `,` — nor a name a hand-written file keeps as
+  written or a host `import` binds (`Rename.Globals.skip`). An emitted file reads no global but
+  `undefined`, which the alphabet never spells (§9 item 2).
+- **What stays as written.** A top-level binding A2 may never rename (it also stands where a property
+  name can, or is a fixed word) keeps its spelling in the one scope; it must then be unique there and
+  no other file's free name, and a module that imports it under a short name reads it through
+  `let <short>=<binding>;` after the file — a copy, allowed only when the file assigns the binding
+  nowhere (by name, A3's rule), since an `import` is a live binding. A second name importing the
+  same export is the same alias. Otherwise the file keeps its own module (below).
+- **Generated locals** need nothing new: a declaration's locals skip exactly the globals it mentions
+  (§9 item 2), and a hand-written file's top-level bindings are mentioned only through the names
+  emitted code imports them as.
+
+**Host imports.** A hand-written file's `import` of a `node:` built-in moves to the top of the one
+file, once per distinct statement text; a built-in's evaluation is not observable to the program, so
+evaluating it first moves nothing anyone can see. Of two files binding one name from different
+statements, the later keeps a module of its own, and so does a file whose `import` binds a name
+another file reads freely. Any other bare specifier — a package, which may do anything when
+evaluated — keeps its file in a module of its own.
+
+**What keeps a module of its own, and what keeps the multi-file layout.** A hand-written file is
+*declined* — written as the multi-file layout writes it and imported by the one file with
+`import{export as short}from"./path";` — when `Minify.Hoisted.declines` says so: it mentions `eval`,
+`with` or `class` (A2 renames nothing there), a top-level declaration destructures a pattern (names
+the units do not list), it mentions `import` outside a top-level `import` statement (`import.meta`
+and `import()` mean the file they are in), it imports a module other than a `node:` built-in, or one
+of the name rules above cannot hold. A declined file is evaluated before the whole of the one file
+rather than where it stood, which is invisible only when evaluating it does nothing: every surviving
+unit but an `import` must be inert (§9's elimination roots) and every `import` a `node:` built-in.
+**When a declined file is not, or when a hand-written file cannot be read exactly at all** (the
+tokenizer or elimination refuses it), **the build keeps the multi-file layout**, whole — the release
+build of before this section, byte for byte. A refusal costs bytes, never order. No file in `core/`
+or `platforms/` is declined, and a unit test holds that for every one that ships in the box and for
+the engine.
+
+**The entry file's calls and the runtime's `flush`.** `start(…)` and `run(main)` are written by the
+names the runtime's bindings have in the one scope (`run` and `start` as written when the runtime is
+declined, imported as `import{run,start}from…` — the form `tests/browser/driver.mjs` looks for).
+Nothing else is exported, with one exception: the program runtime's `flush` (§15.11), when its
+render loop kept it, is exported from the one file under its own name — it is the page's to call
+and not the program's, and a test harness or an embedding page reaches it through the module the
+page loads, which is now this one (`tests/browser/driver.mjs` falls back to the entry file itself
+when it imports no runtime; `bench/ui/lib/serve.mjs`'s micro pages time the one file's evaluation).
+This amends §9 item 2's closed list: in a hoisted build `run` in the entry file and the `imported`
+half of a sibling specifier are no longer spelled at all, and a hand-written file's top-level names
+ARE renamed.
+
+**What §10 gets from this.** The linker (`Emit.planHoist`, `numberHoisted`, `linkHoisted`) takes the
+pieces it joins as a list in evaluation order, and a chunk of §10 is one such list: the colouring
+decides which pieces (declarations, once §10's assembly splits modules) a chunk holds, the order
+within it is still the evaluation order restricted to them, the names are already whole-program, and
+a cross-chunk binding is an `import`/`export` pair the linker writes for a name that crosses — the
+same one a declined file gets today. §10's *Where everything else goes* rows for siblings and the
+runtime are amended accordingly: they join the chunk that uses them.
+
+**Determinism.** The order is a function of the lowered modules' `import` statements, and the names
+of the table filled serially in that order; the hand-written files are read on the calling thread
+after lowering. `--jobs=1` and `--jobs=8` write the same bytes (`build_test`'s byte-identical builds
+include release applications).
+
+**Tests.** `emit/release/app/HoistOrder` (a golden of the whole one file: a four-module program, core
+siblings and the `node` runtime); `run/HoistEvaluationOrder` (cross-module top-level `Debug.log`, red
+under a merely topological order); `build_test`'s pinned one file of the `hand` platform, a declined
+sibling imported by the one file, a declined sibling that is not inert keeping the multi-file layout,
+and an export kept as written reached through an alias; `external_platform_test`'s toy runtime with
+`start` and `run`; `Minify.zig`'s unit tests for `hoistable` and `printHoisted` and the fuzz sweep
+with `printHoisted` in it. Every `run/` and `browser/` fixture's release pass is now a one-file build
+and prints its development golden, under Node, happy-dom and (`zig build test-browser`) Chrome.
+
+**Measured** (research 41 §8): the benchmark app 15 372 / 5 467 → **14 484 / 5 196** raw / brotli,
+1.26× Solid 1 → **1.19×**; the floor 525 / 279 → **313 / 203**; the empty page 3 267 / 1 296 →
+**2 922 / 1 206** (`browser`) and 3 361 / 1 320 → **2 941 / 1 217** (`browser-tea`); every
+program's release build summed (`bench/size.mjs`'s `release_gross`, 276 programs) 864 313 / 257 479
+→ **699 082 / 206 309**, −19.9 % brotli.
+
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with
@@ -3229,6 +3357,7 @@ point that prints a given list of statements into a caller's buffer; it prints `
 | an eta-expanded evidence closure | the chunk of the declaration whose site built it | not a node; *"an eta-expansion is built from a site's targets, and the targets are the edges"* (§9) |
 | a `*.foreign.mjs` sibling | **its own file, unchunked**, at today's path; every chunk using one of its exports imports it | a sibling is copied whole and never parsed (`boundary.md` §4). ESM evaluates a module once, so duplicate imports cost specifiers and nothing else. Measured cost of not folding siblings into the bundle: 1 215 brotli bytes on `run/Dictionaries`, where the seven siblings are **54% of compressed output** — left on the table deliberately, because separating two siblings' scopes needs a JavaScript parser |
 | `_platform/runtime.foreign.mjs` | its own file, imported by the main chunk | *"copied whole, so it needs no root of its own"* (§9) |
+| *(amended 2026-09-30)* a sibling, the markup and program runtimes, the derived engine | **in the chunk whose pieces import them**, their top-level names in the whole-program table, unless one must keep a module of its own | the two rows above are superseded for the one-chunk case built in §9, *One scope-hoisted file under `--release`*: a lexical pass renames a hand-written file's top-level names without a parser, so separating two siblings' scopes no longer needs one; a file it declines keeps its own file, as those rows say |
 | a `--library` build | **one chunk** | a library's callers are not in the build, so there is no entry set to colour by; §9 already measures that elimination barely shrinks a library |
 
 ### Determinism, M4 and M5
