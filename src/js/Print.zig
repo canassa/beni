@@ -116,6 +116,11 @@ pub const Options = struct {
     /// what they return at their end is written as a statement or not at
     /// all, and a `return null` anywhere else in them as `return`.
     unobserved: []const Index = &.{},
+    /// `--release`: `globalThis.x` is written `x` for a host global of
+    /// `Rename.bare_globals` not in `bare_blocked` (`backend.md` §9,
+    /// *Compact statements*, item 8).
+    bare_globals: bool = false,
+    bare_blocked: []const []const u8 = &.{},
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -139,6 +144,8 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .imported = options.imported,
         .recursion_limit = options.recursion_limit,
         .unobserved = options.unobserved,
+        .bare_globals = options.bare_globals,
+        .bare_blocked = options.bare_blocked,
         .spelled = scratch,
         .spellings = spellings,
     };
@@ -342,6 +349,12 @@ const Printer = struct {
     /// The next statement printed is an unbraced `if` or `else` body
     /// (`compactIf`): an `if` there keeps its `else` and splices nothing.
     single: bool = false,
+    /// How many pieces the joiner held right after the last statement's
+    /// `;` (`terminate`), or 0.
+    semicolon: usize = 0,
+    /// `Options.bare_globals` and `Options.bare_blocked`.
+    bare_globals: bool = false,
+    bare_blocked: []const []const u8 = &.{},
 
     // ---- Bytes out ---------------------------------------------------------
 
@@ -409,6 +422,35 @@ const Printer = struct {
     /// next to each other and a dev build cannot drift.
     fn tok(p: *Printer, dev: []const u8, release: []const u8) Allocator.Error!void {
         try p.push(if (p.compact) release else dev);
+    }
+
+    /// The `;` that ends a statement, remembered: `closeBlock` takes it back
+    /// when the block ends right after it.
+    fn terminate(p: *Printer) Allocator.Error!void {
+        try p.push(";");
+        p.semicolon = p.joiner.pieces.items.len;
+    }
+
+    /// A block's `}`. Under `--release` the `;` of the statement it ends
+    /// goes (`backend.md` §9, *Compact statements*): a `}` ends a statement
+    /// as well as a `;` does, so `{a=1;return}` is `{a=1;return}` without
+    /// the last one.
+    fn closeBlock(p: *Printer) Allocator.Error!void {
+        if (p.compact and p.semicolon == p.joiner.pieces.items.len and p.semicolon != 0) {
+            const last = p.joiner.pieces.pop().?;
+            p.joiner.length -= last.len;
+            p.last = p.lastByte();
+        }
+        p.semicolon = 0;
+        try p.push("}");
+    }
+
+    /// The last byte the joiner holds, or 0.
+    fn lastByte(p: *Printer) u8 {
+        const piece = p.joiner.pieces.getLastOrNull() orelse return 0;
+        if (piece.len == 0) return 0;
+        if (piece.borrowed) |ptr| return ptr[piece.len - 1];
+        return p.joiner.scratch.items[piece.offset + piece.len - 1];
     }
 
     /// End a statement. A development build breaks the line after every one;
@@ -567,7 +609,7 @@ const Printer = struct {
             written += 1;
             last = i;
         }
-        try p.push(";");
+        try p.terminate();
         try p.endLine(level);
         return last;
     }
@@ -642,7 +684,7 @@ const Printer = struct {
                 try p.name(@enumFromInt(d.lhs), .binding);
                 try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             .let_decl => {
@@ -652,7 +694,7 @@ const Printer = struct {
                     try p.tok(" = ", "=");
                     try p.expression(value, 0, level);
                 }
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             .func_decl, .gen_decl => {
@@ -668,14 +710,14 @@ const Printer = struct {
                 try p.statements(f.body(), level + 1);
                 p.discarding = saved;
                 try p.indent(level);
-                try p.push("}");
+                try p.closeBlock();
                 try p.endLine(level);
             },
             .assign_stmt => {
                 try p.statementExpression(@enumFromInt(d.lhs), level);
                 try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             .return_stmt => {
@@ -684,13 +726,14 @@ const Printer = struct {
                 // as a statement; elsewhere, `return` alone for `null`.
                 if (p.discarding) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
                     if (p.isTailReturn(node)) {
-                        try p.statementExpression(value, level);
-                        try p.push(";");
+                        try p.discardedValue(value, level);
+                        try p.terminate();
                         try p.endLine(level);
                         return;
                     }
                     if (p.ir.tag(p.resolve(value)) == .null_lit) {
-                        try p.push("return;");
+                        try p.push("return");
+                        try p.terminate();
                         try p.endLine(level);
                         return;
                     }
@@ -700,7 +743,7 @@ const Printer = struct {
                     try p.tok(" ", "");
                     try p.expression(value, 0, level);
                 }
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             .if_stmt => {
@@ -714,7 +757,7 @@ const Printer = struct {
                 const else_live = p.anyLive(branches.elseBody());
                 if (!then_live and !else_live) {
                     try p.statementExpression(test_expr, level);
-                    try p.push(";");
+                    try p.terminate();
                     try p.endLine(level);
                     return;
                 }
@@ -742,13 +785,13 @@ const Printer = struct {
                 try p.statements(then_body, level + 1);
                 try p.indent(level);
                 if (else_body == null) {
-                    try p.push("}");
+                    try p.closeBlock();
                     try p.endLine(level);
                 } else {
                     try p.tok("} else {\n", "}else{");
                     try p.statements(else_body.?, level + 1);
                     try p.indent(level);
-                    try p.push("}");
+                    try p.closeBlock();
                     try p.endLine(level);
                 }
             },
@@ -761,7 +804,7 @@ const Printer = struct {
                 try p.markLoopTail(p.ir.subRange(@enumFromInt(d.rhs)));
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
                 try p.indent(level);
-                try p.push("}");
+                try p.closeBlock();
                 try p.endLine(level);
             },
             .break_stmt, .continue_stmt => {
@@ -770,7 +813,7 @@ const Printer = struct {
                     try p.tok(" ", "");
                     try p.name(@enumFromInt(d.lhs), .binding);
                 }
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             .switch_stmt => {
@@ -781,7 +824,7 @@ const Printer = struct {
                     try p.statement(c, level + 1);
                 }
                 try p.indent(level);
-                try p.push("}");
+                try p.closeBlock();
                 try p.endLine(level);
             },
             .switch_case => {
@@ -802,18 +845,18 @@ const Printer = struct {
                 try p.tok("{\n", "{");
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
                 try p.indent(level);
-                try p.push("}");
+                try p.closeBlock();
                 try p.endLine(level);
             },
             .expr_stmt => {
-                try p.statementExpression(@enumFromInt(d.lhs), level);
-                try p.push(";");
+                try p.discardedValue(@enumFromInt(d.lhs), level);
+                try p.terminate();
                 try p.endLine(level);
             },
             .throw_stmt => {
                 try p.tok("throw ", "throw");
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
             // An expression where a statement belongs is a builder bug, not
@@ -824,7 +867,7 @@ const Printer = struct {
             // readable bytes instead of as a panic.
             else => {
                 try p.statementExpression(node, level);
-                try p.push(";");
+                try p.terminate();
                 try p.endLine(level);
             },
         }
@@ -887,7 +930,7 @@ const Printer = struct {
         }
         try p.push("{");
         try p.statements(range, level + 1);
-        try p.push("}");
+        try p.closeBlock();
     }
 
     /// Whether control never leaves `range`'s end, as printed: its last
@@ -920,6 +963,19 @@ const Printer = struct {
                 .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(@enumFromInt(p.ir.data(node).lhs))) return false,
                 else => {},
             }
+        }
+        return true;
+    }
+
+    /// Whether `node` is `globalThis.x` for a host global written bare.
+    fn bareGlobal(p: *Printer, node: Index) bool {
+        if (!p.bare_globals) return false;
+        if (p.ir.tag(@enumFromInt(p.ir.data(node).lhs)) != .global_this) return false;
+        const key: JsIr.NameIndex = @enumFromInt(p.ir.data(node).rhs);
+        const text = p.names.text(p.ir.name(key).base);
+        if (!Rename.isBareGlobal(text)) return false;
+        for (p.bare_blocked) |b| {
+            if (std.mem.eql(u8, b, text)) return false;
         }
         return true;
     }
@@ -1237,6 +1293,7 @@ const Printer = struct {
                 try p.push(")");
             },
             .member => {
+                if (p.bareGlobal(node)) return p.name(@enumFromInt(d.rhs), .fixed);
                 // A numeric literal needs a bracket before `.` (`1.a` is a
                 // syntax error), and so does an arrow or a conditional.
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
@@ -1366,6 +1423,10 @@ const Printer = struct {
                 return .expr(@enumFromInt(d.lhs), prec_call);
             },
             .member => {
+                if (p.bareGlobal(node)) {
+                    try p.name(@enumFromInt(d.rhs), .fixed);
+                    return null;
+                }
                 // object `.` key. A numeric literal needs a bracket before
                 // `.` (`1.a` is a syntax error), and so does an arrow or a
                 // conditional.
@@ -1472,9 +1533,21 @@ const Printer = struct {
         // concisely should print concisely however it got that way. For a dev
         // build the plan is empty and this is the length of the slice.
         if (p.onlyLive(f.body())) |only| {
-            if (p.ir.tag(only) == .return_stmt) {
+            if (p.ir.tag(only) == .return_stmt) concise: {
                 if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(only).lhs)).unwrap()) |value| {
                     const resolved = p.resolve(value);
+                    // A conditional nothing reads is an `if` in a block
+                    // (`discardedValue`), the shape hand-written JavaScript
+                    // has, `()=>{if(c)f()}`: no longer than `()=>c?f():null`.
+                    if (p.compact and p.discarding and p.ir.tag(resolved) == .cond) {
+                        // An optional call stays concise: `(a)=>a?.()`.
+                        if (try p.optionalCall(resolved, level, false)) {
+                            _ = try p.optionalCall(resolved, level, true);
+                            return;
+                        }
+                        const c = p.ir.extraData(@enumFromInt(p.ir.data(resolved).rhs), JsIr.Cond);
+                        if (p.inertValue(c.alternate) or p.inertValue(c.consequent)) break :concise;
+                    }
                     if (p.ir.tag(resolved) == .object) {
                         try p.push("(");
                         try p.raw(resolved, level);
@@ -1499,7 +1572,7 @@ const Printer = struct {
         try p.tok("{\n", "{");
         try p.statements(f.body(), level + 1);
         try p.indent(level);
-        try p.push("}");
+        try p.closeBlock();
     }
 
     fn isTailReturn(p: *Printer, node: Index) bool {
@@ -1561,6 +1634,92 @@ const Printer = struct {
     /// token would be the `{` of an object literal, which JavaScript reads
     /// as a block. JsIr has no function EXPRESSION node, so the
     /// other statement-position hazard, a leading `function`, cannot arise.
+    /// A value nothing reads, as a statement: an expression statement, or
+    /// the end of a function whose result nothing reads. Under `--release`
+    /// (`backend.md` §9, *Compact statements*, items 5 and 8) an optional
+    /// call — `x == null ? null : x(a)` — is `x?.(a)`, and a conditional one
+    /// of whose branches only reads is an `if`: `if(c)f()` for
+    /// `c?f():null`. Otherwise the expression as it is.
+    fn discardedValue(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        if (p.compact) {
+            const n = p.resolve(node);
+            if (p.ir.tag(n) == .cond) {
+                if (try p.optionalCall(n, level, true)) return;
+                const c = p.ir.extraData(@enumFromInt(p.ir.data(n).rhs), JsIr.Cond);
+                const test_expr: Index = @enumFromInt(p.ir.data(n).lhs);
+                if (p.inertValue(c.alternate)) {
+                    try p.push("if(");
+                    try p.expression(test_expr, 0, level);
+                    try p.push(")");
+                    return p.discardedValue(c.consequent, level);
+                }
+                if (p.inertValue(c.consequent)) {
+                    try p.push("if(");
+                    try p.negatedTest(test_expr, level);
+                    try p.push(")");
+                    return p.discardedValue(c.alternate, level);
+                }
+            }
+        }
+        return p.statementExpression(node, level);
+    }
+
+    /// Whether evaluating `node` does nothing at all: a literal or a name.
+    fn inertValue(p: *Printer, node: Index) bool {
+        return switch (p.ir.tag(p.resolve(node))) {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+            else => false,
+        };
+    }
+
+    /// `x == null ? <literal> : x(a)` (or `x.m(a)`), and the same tested
+    /// with `!(x == null)`, printed as `x?.(a)` (`x?.m(a)`) where its value
+    /// is discarded: `?.` evaluates the call exactly when `x` is neither
+    /// `null` nor `undefined`, which is what `==` tests. False, printing
+    /// nothing, for any other conditional.
+    fn optionalCall(p: *Printer, cond: Index, level: u32, write: bool) Allocator.Error!bool {
+        const c = p.ir.extraData(@enumFromInt(p.ir.data(cond).rhs), JsIr.Cond);
+        var test_expr = p.resolve(@enumFromInt(p.ir.data(cond).lhs));
+        var skip = c.consequent;
+        var call = p.resolve(c.alternate);
+        if (p.ir.tag(test_expr) == .unary and @as(JsIr.UnaryOp, @enumFromInt(p.ir.data(test_expr).rhs)) == .not) {
+            test_expr = p.resolve(@enumFromInt(p.ir.data(test_expr).lhs));
+            skip = c.alternate;
+            call = p.resolve(c.consequent);
+        }
+        if (!p.inertValue(skip) or p.ir.tag(p.resolve(skip)) == .ident) return false;
+        if (p.ir.tag(test_expr) != .binary or @as(JsIr.BinaryOp, @enumFromInt(p.ir.data(test_expr).rhs)) != .loose_eq) return false;
+        const b = p.ir.extraData(@enumFromInt(p.ir.data(test_expr).lhs), JsIr.Binary);
+        const l = p.resolve(b.left);
+        const r = p.resolve(b.right);
+        const subject = if (p.ir.tag(r) == .null_lit) l else if (p.ir.tag(l) == .null_lit) r else return false;
+        if (p.ir.tag(subject) != .ident) return false;
+        const x: JsIr.NameIndex = @enumFromInt(p.ir.data(subject).lhs);
+        if (p.ir.tag(call) != .call) return false;
+        const callee = p.resolve(@enumFromInt(p.ir.data(call).lhs));
+        var method: ?JsIr.NameIndex = null;
+        const base = switch (p.ir.tag(callee)) {
+            .ident => callee,
+            .member => blk: {
+                method = @enumFromInt(p.ir.data(callee).rhs);
+                break :blk p.resolve(@enumFromInt(p.ir.data(callee).lhs));
+            },
+            else => return false,
+        };
+        if (p.ir.tag(base) != .ident or @as(JsIr.NameIndex, @enumFromInt(p.ir.data(base).lhs)) != x) return false;
+        if (!write) return true;
+        try p.name(x, .binding);
+        try p.push("?.");
+        if (method) |m| try p.name(m, .fixed);
+        try p.push("(");
+        for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(p.ir.data(call).rhs)), Index), 0..) |arg, i| {
+            if (i != 0) try p.push(",");
+            try p.expression(arg, prec_arrow, level);
+        }
+        try p.push(")");
+        return true;
+    }
+
     fn statementExpression(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         if (p.startsWithBrace(node, 0)) {
             try p.push("(");
@@ -2328,7 +2487,7 @@ test "compact: every keyword keeps exactly the space that separates it from what
     // `continue L` — all of them identifier-character adjacencies, all of
     // them handled by one guard rather than by seven call sites.
     try expectCompact(
-        \\const f=(a)=>{switch(a){case 1:{throw a;}default:{break L;}}},
+        \\const f=(a)=>{switch(a){case 1:{throw a}default:{break L}}},
         \\g=(a)=>typeof a;
         \\
     , struct {
@@ -2383,7 +2542,7 @@ test "compact: a run of consts joins, and a newline lands after every top-level 
     // immediately after a `;` or a `,`, so ASI is never in a position to stand
     // in for a semicolon — which is why every semicolon stays.
     try expectCompact(
-        \\const f=(a)=>{const b=1,c=2;return b;},
+        \\const f=(a)=>{const b=1,c=2;return b},
         \\g=2;
         \\
     , struct {
@@ -2400,7 +2559,7 @@ test "compact: a run of consts joins, and a newline lands after every top-level 
 test "compact: a labelled loop, an if/else chain and an assignment" {
     // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\const f=(a)=>{L:for(;;){if(!a)return a;a=1;}};
+        \\const f=(a)=>{L:for(;;){if(!a)return a;a=1}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {

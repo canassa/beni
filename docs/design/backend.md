@@ -4799,6 +4799,27 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `(x & k) !== 0` is `x & k` and `(x & k) === 0` is `!(x & k)`: a bitwise operator's value is an
    integer and never `NaN`, so it is truthy exactly when it is not zero. A comparison node referred
    to from anywhere else keeps its `Bool`. Fixture: `emit/release/core/FlagTests`.
+2. **No result where the result is `()`**: §4's *A `()` result is not written*, with its fixture
+   `emit/release/core/UnitResults`.
+5. **An optional call** (`Print.optionalCall`). Where its value is discarded — an expression
+   statement, the end of a function whose result nothing reads, or such a function's concise
+   body — `x == null ? <literal> : x(a)` is `x?.(a)`, and `x.m(a)` in its place is `x?.m(a)`
+   (tested either way round, and through `!`). `?.` calls exactly when `x` is neither `null` nor
+   `undefined`, which is what `==` tests; `===` does not, so a platform writes the test with
+   `Js.isNullish`. Fixture: `emit/release/core/StatementShapes`.
+8. **A host global is its bare name, and a conditional nothing reads is an `if`.**
+   `globalThis.x` is `x` for a host global of `Rename.bare_globals` (`document`, `queueMicrotask`,
+   `Error`, …): no ordinal of either namespace ever spells one (`Rename.reserved`), and a
+   scope-hoisted build keeps `globalThis.` for one a hand-written file binds at its top level as
+   written or through a host `import` (`Emit.bareBlocked`; `import process from "node:process"`
+   binds `process`, which is therefore not on the list). A conditional whose value is discarded
+   and one of whose branches is a literal or a name is an `if` (`Print.discardedValue`):
+   `if(c)f()` for `c?f():null`, and a concise body so shaped is a block, `()=>{if(g)j()}`, which is
+   no longer. Fixture: `emit/release/core/StatementShapes`.
+
+And under all of them: **a block's last statement has no `;`** (`Print.closeBlock`) — a `}` ends
+a statement as a `;` does. Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916
+for the rest.
 
 ## 10. Chunking
 

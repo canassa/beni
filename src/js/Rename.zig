@@ -100,6 +100,40 @@ fn reserved(ordinal: u32) bool {
     for ([_][]const u8{ "undefined", "NaN", "Infinity" }) |global| {
         if (std.mem.eql(u8, global, text)) return true;
     }
+    // A host global a release build writes by its bare name (`bare_globals`)
+    // is never a binding's spelling, so no name in any scope shadows it.
+    return isBareGlobal(text);
+}
+
+/// The host globals a release build writes without `globalThis.`
+/// (`backend.md` §9, *Compact statements*, item 8): `Js.global "document"`
+/// is `document`. None is ever an ordinal's spelling (`reserved`), and a
+/// scope-hoisted build writes one bare only when no hand-written file binds
+/// it as written (`Emit.bareBlocked`).
+pub const bare_globals = [_][]const u8{
+    "AbortController",    "Array",                "Boolean",               "CustomEvent",
+    "Date",               "DocumentFragment",     "Element",               "Error",
+    "Event",              "HTMLElement",          "Intl",                  "JSON",
+    "Map",                "Math",                 "Node",                  "Number",
+    "Object",             "Promise",              "RangeError",            "Reflect",
+    "Set",                "String",               "Symbol",                "Text",
+    "TypeError",          "URL",                  "URLSearchParams",       "WeakMap",
+    "WeakSet",            "cancelAnimationFrame", "clearInterval",         "clearTimeout",
+    "console",            "crypto",               "decodeURIComponent",    "document",
+    "encodeURIComponent", "fetch",                "getComputedStyle",      "history",
+    "isFinite",           "isNaN",                "localStorage",          "location",
+    "matchMedia",         "navigator",            "parseFloat",            "parseInt",
+    "performance",        "queueMicrotask",       "requestAnimationFrame", "sessionStorage",
+    "setInterval",        "setTimeout",           "structuredClone",       "window",
+};
+
+pub fn isBareGlobal(text: []const u8) bool {
+    // Every ordinal below 3 510 spells one or two characters: the common
+    // case asks nothing more.
+    if (text.len < 3) return false;
+    for (bare_globals) |g| {
+        if (std.mem.eql(u8, g, text)) return true;
+    }
     return false;
 }
 

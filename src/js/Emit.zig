@@ -437,6 +437,9 @@ const Emitter = struct {
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
+    /// The host globals a hoisted hand-written file binds as written, which
+    /// emitted code may not then write bare (`bareBlocked`).
+    bare_blocked: []const []const u8 = &.{},
     /// The markup runtime's exports the modules written import, in
     /// module order and with repeats: what `--release` cuts the runtime file
     /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
@@ -2205,6 +2208,7 @@ const Emitter = struct {
                 if (!e.options.library) try e.markImported(slots, todo.items, entry);
             }
             e.hoisted = hoist != null;
+            if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
             try e.pool.run(todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
         }
 
@@ -2405,6 +2409,8 @@ const Emitter = struct {
                 .compact = true,
                 .imported = if (e.options.library or e.hoisted) null else &e.imported,
                 .hoisted = e.hoisted,
+                .bare_globals = true,
+                .bare_blocked = e.bare_blocked,
             });
             slot.rename_failure = renamer.failure;
         }
@@ -2813,6 +2819,26 @@ const Emitter = struct {
             .start = start,
             .skip = skip,
         };
+    }
+
+    /// The bare host globals (`Rename.bare_globals`) some file joining the
+    /// one scope binds at its top level as written — a declaration A2 may
+    /// not rename, or what a host `import` binds (`import process from
+    /// "node:process"`). Emitted code writes those as `globalThis.x`, since
+    /// its bare name would be that binding. A renamed binding is an ordinal,
+    /// and no ordinal spells a bare global.
+    fn bareBlocked(e: *Emitter, h: *const Hoist) ![]const []const u8 {
+        var out: std.ArrayList([]const u8) = .empty;
+        for (h.files) |f| {
+            if (f.declined) continue;
+            for (f.read.tops) |top| {
+                if (!top.renamable and Rename.isBareGlobal(top.name)) try out.append(e.scratch, top.name);
+            }
+            for (f.read.imports) |imp| for (imp.names) |n| {
+                if (Rename.isBareGlobal(n)) try out.append(e.scratch, n);
+            };
+        }
+        return out.items;
     }
 
     /// Put the names hoisted file `f` holds as written into `owner`, or say

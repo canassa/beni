@@ -1,5 +1,5 @@
 import{a,b}from"./_core/String.mjs";
-const c=(a,b,d)=>{let e=b.first;const f=b.last;for(;;){const g=e.nextSibling;a.insertBefore(e,d);if(e===f)return;e=g;}},
+const c=(a,b,d)=>{let e=b.first;const f=b.last;for(;;){const g=e.nextSibling;a.insertBefore(e,d);if(e===f)return;e=g}},
 d=(c,e)=>a(b(c*2+1),e),
 e=(b,c)=>c?a(b,"!"):b,
 f=(a)=>a===0?"none":"some",

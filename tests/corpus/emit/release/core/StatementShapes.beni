@@ -1,0 +1,45 @@
+-- emit: statement shapes under `--release` (`backend.md` §9, *Compact
+-- statements*). A host global is its bare name, `document` and
+-- `queueMicrotask` (item 8); a conditional whose value nothing reads and
+-- one of whose branches only reads is an `if`, `()=>{if(c)f()}` (item 8);
+-- a call guarded by `Js.isNullish` whose value nothing reads is an
+-- optional call, `h?.()` (item 5); and no block's last statement keeps
+-- its `;`.
+import Js
+
+
+later : Js.Ref Bool -> ()
+later scheduled =
+    Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from (\() -> if Js.read scheduled then tick () else ()) ])
+
+
+tick : () -> ()
+tick () =
+    Js.set (Js.global "document") "title" (Js.from "tick")
+
+
+pub start : () -> ()
+start () =
+    let
+        scheduled =
+            Js.ref True
+    in
+    later scheduled
+
+
+pub runPhase : Js.Value -> ()
+runPhase phase =
+    if Js.isNullish phase then
+        ()
+
+    else
+        Js.to (Js.apply phase [])
+
+
+pub notify : Js.Value -> ()
+notify target =
+    if Js.isNullish target then
+        ()
+
+    else
+        Js.to (Js.call target "dispatch" [ Js.from 1 ])

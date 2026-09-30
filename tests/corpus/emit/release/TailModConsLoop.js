@@ -1,8 +1,8 @@
 import{a,b,c}from"./_core/List.mjs";
 import{d}from"./_platform/Node.mjs";
-const e=(c,d)=>{const f=a(c);c=b(c);const g=[];for(;;){if(f.length===c)return g;const h=f[c],i=c+1;g.push(d(h));c=i;}},
-f=(c)=>{const d=a(c);c=b(c);const e=[];for(;;){if(d.length===c)return e;const g=d[c],h=c+1;e.push(g);e.push(g);c=h;}},
-g=(c,d)=>{const e=a(c);c=b(c);const f=[];for(;;){if(e.length===c)return f;const h=e[c],i=c+1;if(d(h)){f.push(h);c=i;}else c=i;}},
+const e=(c,d)=>{const f=a(c);c=b(c);const g=[];for(;;){if(f.length===c)return g;const h=f[c],i=c+1;g.push(d(h));c=i}},
+f=(c)=>{const d=a(c);c=b(c);const e=[];for(;;){if(d.length===c)return e;const g=d[c],h=c+1;e.push(g);e.push(g);c=h}},
+g=(c,d)=>{const e=a(c);c=b(c);const f=[];for(;;){if(e.length===c)return f;const h=e[c],i=c+1;if(d(h)){f.push(h);c=i}else c=i}},
 h=(a,b)=>c(a,b),
 i=d([]);
 export{i,e,f,g,h};
