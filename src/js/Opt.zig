@@ -5,15 +5,17 @@
 //! `Reach` decided which declarations exist; this decides what is left inside
 //! one. Two rules, one walk:
 //!
-//!   - **Zero uses: the binding goes WHOLE**, initialiser included, whatever
-//!     the initialiser is. `language.md` §6's *What an optimiser may assume*
-//!     is the licence in so many words — "a binding whose value is never used
-//!     may be dropped whole, everything inside it included, a `Debug.log`
-//!     among it" — so the pass asks nothing about the right-hand side and a
-//!     call of a `foreign` is droppable. The alternative, a "does the
-//!     initialiser call a `foreign`?" test, would pin `Node.done` in every
-//!     platform module and is the `sideEffects: false` guesswork §9's purity
-//!     paragraph exists to replace.
+//!   - **Zero uses: the binding goes WHOLE**, initialiser included — unless
+//!     lowering listed it in `keep`. `language.md` §6's *What an optimiser
+//!     may assume* is the licence: a binding nothing reads may be dropped
+//!     whole when evaluating it has no effect. Since 2026-09-30 that is
+//!     asked of the checker, not guessed: `Lower` lists every binding whose
+//!     right-hand side reaches a call the checker answered `impure` (or
+//!     `suspends`, which implies it) — `Debug.log` among them — and this pass
+//!     asks nothing more about any right-hand side. A call of a `foreign
+//!     pure` is still droppable, so `Node.done` pins nothing; the
+//!     alternative, a "does the initialiser call a `foreign`?" test, is the
+//!     `sideEffects: false` guesswork §9's purity paragraph exists to replace.
 //!   - **Exactly one use: the binding is inlined**, under §9's five
 //!     conditions, which `inlinable` and `findUse` below implement one for
 //!     one. The wider licence — any initialiser, use on the very next
@@ -116,14 +118,22 @@ pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
     return runKeeping(arena, ir, &.{});
 }
 
-/// `run`, keeping the bindings `keep` names whatever their uses: a
-/// `let _ = <an impure call>` is written for its effect
-/// (transparent-effects-proposal.md §16.3).
+/// `run`, keeping the bindings `keep` names whatever their uses: each is a
+/// `let` whose right-hand side may be impure or may suspend, evaluated for
+/// its effect whether or not anything reads it (`backend.md` §9 item 1, as
+/// amended 2026-09-30).
 pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index) Allocator.Error!Plan {
     if (ir.nodes.len == 0) return .none;
 
+    const kept = try arena.alloc(u32, (ir.nodes.len + 31) / 32);
+    @memset(kept, 0);
+    for (keep) |node| {
+        const i = node.int();
+        if (i < ir.nodes.len) kept[i / 32] |= @as(u32, 1) << @intCast(i % 32);
+    }
+
     var o: Opt = .{
-        .keep = keep,
+        .kept = kept,
         .ir = ir,
         .arena = arena,
         .uses = try arena.alloc(u32, ir.names.len),
@@ -147,9 +157,10 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index) Alloca
 
 const Opt = struct {
     ir: *const JsIr,
-    /// Bindings never dropped for want of a use (`runKeeping`). A handful per
-    /// module at most, so a linear look.
-    keep: []const Index = &.{},
+    /// One bit per node: a binding never dropped for want of a use
+    /// (`runKeeping`). A bitset rather than the list, because a module may
+    /// hold one per effectful `let`.
+    kept: []const u32,
     /// Where `stack` grows. The plan's own arena: nothing here is freed early.
     arena: Allocator,
     /// The explicit stack every expression walk shares: each walk
@@ -399,7 +410,8 @@ const Opt = struct {
             if (o.ir.name(n).module != .none) continue;
 
             if (o.readOf(idx, "uses") == 0) {
-                if (std.mem.indexOfScalar(Index, o.keep, stmt) == null) o.drop(stmt);
+                const at = stmt.int();
+                if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) == 0) o.drop(stmt);
                 continue;
             }
             if (t != .const_decl) continue;

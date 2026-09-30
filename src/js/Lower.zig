@@ -1641,49 +1641,72 @@ const Lowerer = struct {
         return tag;
     }
 
-    /// Whether `let <pattern> = <value>` is written for its effect: a pattern
-    /// that binds nothing, over a call that is impure whatever it is called
-    /// with.
-    fn keptForEffect(l: *Lowerer, pattern: Inst.Index, value: Inst.Index) bool {
-        switch (l.bir.instTag(pattern)) {
-            .pat_wild, .pat_unit => {},
-            else => return false,
-        }
-        return switch (l.bir.instTag(value)) {
-            .call, .method_call, .type_dispatch => l.in.dispatch.effectAt(value).impure,
-            else => false,
-        };
+    /// Whether evaluating `value`, a `let` binding's right-hand side, may
+    /// have an effect: a call under it, outside any function it makes, whose
+    /// callee may be impure or may suspend — always, or when the enclosing
+    /// declaration is used with something that is (§16.2's `impure` answer).
+    /// The release optimiser keeps such a binding however few read it
+    /// (`language.md` §6, *What an optimiser may assume*; `backend.md` §9
+    /// item 1, as amended 2026-09-30), whatever its pattern binds.
+    fn mayHaveEffect(l: *Lowerer, value: Inst.Index) bool {
+        return l.reaches(value, .effect);
     }
 
     /// Whether a branch of `case` `inst` may suspend here.
     fn branchesYield(l: *Lowerer, inst: Inst.Index) bool {
-        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index)) |branch| {
-            if (l.bir.instTag(branch) != .branch) continue;
-            if (l.yields(@enumFromInt(l.bir.instData(branch).rhs))) return true;
-        }
-        return false;
+        return l.branchesReach(inst, .suspension);
     }
 
     /// Whether evaluating `inst` may suspend the function being lowered: a
     /// call under it that may, outside any function it makes.
     fn yields(l: *Lowerer, inst: Inst.Index) bool {
+        return l.reaches(inst, .suspension);
+    }
+
+    /// What `reaches` looks for at a call.
+    const Probe = enum {
+        /// A call that may suspend in the body being lowered.
+        suspension,
+        /// A call that may be impure or suspend in some use of the body.
+        effect,
+    };
+
+    fn callHits(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        const site = l.in.dispatch.effectAt(inst);
+        return switch (probe) {
+            .suspension => l.suspendsHere(site.own),
+            .effect => site.impure or site.own != .no,
+        };
+    }
+
+    fn branchesReach(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(inst).rhs)), Inst.Index)) |branch| {
+            if (l.bir.instTag(branch) != .branch) continue;
+            if (l.reaches(@enumFromInt(l.bir.instData(branch).rhs), probe)) return true;
+        }
+        return false;
+    }
+
+    /// Whether evaluating `inst` reaches a call `probe` hits, outside any
+    /// function it makes.
+    fn reaches(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .call => {
-                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
-                if (l.yields(@enumFromInt(d.lhs))) return true;
-                return l.anyYields(l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index));
+                if (l.callHits(inst, probe)) return true;
+                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
+                return l.anyReaches(l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), probe);
             },
             .method_call => {
-                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
-                if (l.yields(@enumFromInt(d.lhs))) return true;
+                if (l.callHits(inst, probe)) return true;
+                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
                 const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
-                return l.anyYields(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index));
+                return l.anyReaches(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe);
             },
             .type_dispatch => {
-                if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return true;
+                if (l.callHits(inst, probe)) return true;
                 const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
-                return l.anyYields(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index));
+                return l.anyReaches(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe);
             },
             .let => {
                 for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index)) |def| {
@@ -1692,35 +1715,40 @@ const Lowerer = struct {
                         .let_def => {
                             const payload = l.bir.extraData(@enumFromInt(dd.lhs), Bir.LetDef);
                             if (payload.params_end != payload.params_start) continue;
-                            if (l.yields(@enumFromInt(dd.rhs))) return true;
+                            if (l.reaches(@enumFromInt(dd.rhs), probe)) return true;
                         },
-                        .let_pattern => if (l.yields(@enumFromInt(dd.rhs))) return true,
+                        .let_pattern => if (l.reaches(@enumFromInt(dd.rhs), probe)) return true,
                         else => {},
                     }
                 }
-                return l.yields(@enumFromInt(d.rhs));
+                return l.reaches(@enumFromInt(d.rhs), probe);
             },
             .case => {
-                if (l.yields(@enumFromInt(d.lhs))) return true;
-                return l.branchesYield(inst);
+                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
+                return l.branchesReach(inst, probe);
             },
-            .@"try", .field_access, .tuple_index => return l.yields(@enumFromInt(d.lhs)),
-            .tuple, .list, .interp => return l.anyYields(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)),
+            .@"try", .field_access, .tuple_index => return l.reaches(@enumFromInt(d.lhs), probe),
+            .tuple, .list, .interp => return l.anyReaches(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe),
             .record => {
-                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.yields(f.value)) return true;
+                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
                 return false;
             },
             .record_update => {
-                if (l.yields(@enumFromInt(d.lhs))) return true;
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field)) |f| if (l.yields(f.value)) return true;
+                if (l.reaches(@enumFromInt(d.lhs), probe)) return true;
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
                 return false;
             },
+            // Markup is not walked. For a suspension the answer stays no, as
+            // it always was: a hole whose lowering would nest a suspension
+            // point is refused (§16.3). For an effect it is yes, which costs
+            // a release build only the binding of a view nothing reads.
+            .markup => return probe == .effect,
             else => return false,
         }
     }
 
-    fn anyYields(l: *Lowerer, insts: []const Inst.Index) bool {
-        for (insts) |inst| if (l.yields(inst)) return true;
+    fn anyReaches(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe) bool {
+        for (insts) |inst| if (l.reaches(inst, probe)) return true;
         return false;
     }
 
@@ -6018,6 +6046,9 @@ const Lowerer = struct {
                         }
                         const value = try l.expr(out, value_inst);
                         try l.constDecl(out, n, value, p);
+                        // Read by nothing or not, a binding that may have an
+                        // effect is evaluated: the release optimiser keeps it.
+                        if (l.mayHaveEffect(value_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                         continue;
                     }
                     // A `let_def` with parameters is already its own hoisted
@@ -6031,10 +6062,11 @@ const Lowerer = struct {
                     const value = try l.expr(out, @enumFromInt(d.rhs));
                     const before = out.items.len;
                     const subject = try l.bindSubject(out, value, p);
-                    // `let _ = <an impure call>` is written for its effect: the
-                    // release optimiser keeps it (transparent-effects-proposal.md
-                    // §16.3).
-                    if (out.items.len == before + 1 and l.keptForEffect(@enumFromInt(d.lhs), @enumFromInt(d.rhs))) {
+                    // `let _ = <an impure call>` is written for its effect, and a
+                    // pattern whose names nothing reads evaluates its right-hand
+                    // side all the same: the release optimiser keeps the subject
+                    // (transparent-effects-proposal.md §16.5).
+                    if (out.items.len == before + 1 and l.mayHaveEffect(@enumFromInt(d.rhs))) {
                         try l.effect_keep.append(l.scratch, out.items[before]);
                     }
                     try l.bindings(out, @enumFromInt(d.lhs), subject);

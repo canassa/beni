@@ -16,8 +16,9 @@ there is no "it at least ran" pass.
 
 **Every fixture is built and run TWICE**, once as a development build and
 once with `--release`, against the same `.expected` — unless it carries a
-`.release-expected`, which `ReleaseDeadDebug` alone does (`backend.md` §9's
-*Testing*). The release pass also carries the hidden, test-only
+`.release-expected`, which no fixture does since 2026-09-30: `ReleaseDeadDebug`
+was the one, until the release optimiser stopped dropping a binding that
+may be impure (`backend.md` §9 item 1). The release pass also carries the hidden, test-only
 **`--allow-debug`**, uniformly: since 2026-09-19 a `--release` build that
 reaches `Debug` is refused (§9's *`Debug` is refused, not pinned*), and
 `Debug.log` is this directory's only instrument for observing evaluation

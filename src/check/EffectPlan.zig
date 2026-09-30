@@ -80,6 +80,9 @@ const Plan = struct {
     choice_nodes: std.ArrayList(u32) = .empty,
     /// Per declaration: it has a sensitive class.
     twin: []bool,
+    /// Per node: the declaration one of whose `sync` scheme classes reaches
+    /// it, + 1 (`taint`).
+    tainted: []u32,
 };
 
 pub fn build(e: *Effects, in: Input) Error!Result {
@@ -97,7 +100,9 @@ pub fn build(e: *Effects, in: Input) Error!Result {
         .fns = try scratch.alloc(std.ArrayList([2]u32), decls),
         .choices = try scratch.alloc(std.ArrayList(Choice), decls),
         .twin = try scratch.alloc(bool, decls),
+        .tainted = try scratch.alloc(u32, n),
     };
+    @memset(p.tainted, 0);
     @memset(p.seen, 0);
     @memset(p.poly, 0);
     @memset(p.relevant, 0);
@@ -355,9 +360,13 @@ fn answers(p: *Plan) Error!Result {
         if (decl.kind != .value or decl.body == .none) continue;
         const tag = d + 1;
         try sensitivityFinal(p, d);
+        try taint(p, d);
         for (p.calls[d].items) |c| {
             const a = answer(p, c[1], tag);
-            const impure = level(p, c[1]) != .pure;
+            // "May be impure": already, or once the declaration is used with
+            // something that is — a `poly` callee, or one a `sync` class
+            // reaches, which is never `poly` because it cannot suspend.
+            const impure = level(p, c[1]) != .pure or a != .no or p.tainted[c[1]] == tag;
             if (a != .no or impure) try sites.append(gpa, .{ .inst = @enumFromInt(c[0]), .own = a, .impure = impure });
         }
         for (p.fns[d].items) |f| {
@@ -449,5 +458,39 @@ fn sensitivityFinal(p: *Plan, d: u32) Error!void {
         const c = s.classes.items[summary.start + i];
         if (!c.sensitive) continue;
         _ = try reach(p, s.find(c.node), tag);
+    }
+}
+
+/// Mark, `d + 1`, every node a pure `sync` scheme class of `d` reaches. Such
+/// a class cannot suspend, so it is never sensitive and a call it reaches is
+/// never `poly`; but it may still be impure at a use, and so may that call
+/// — which the release optimiser must know (`backend.md` §9 item 1). Only
+/// `sync` classes are walked: any other pure class that reaches a call has
+/// made it `poly` already. They are few, so this is cheap.
+fn taint(p: *Plan, d: u32) Error!void {
+    const s = &p.e.solved;
+    const classes = s.classesOf(d);
+    if (classes.len == 0) return;
+    const tag = d + 1;
+    const root = rootOf(p, d);
+    const summary = s.summaries[d];
+    for (0..classes.len) |i| {
+        const c = s.classes.items[summary.start + i];
+        if (!c.sync) continue;
+        const start = s.find(c.node);
+        if (root != null and start == root.?) continue;
+        if (level(p, start) != .pure or p.tainted[start] == tag) continue;
+        p.stack.clearRetainingCapacity();
+        try p.stack.append(p.in.scratch, start);
+        p.tainted[start] = tag;
+        while (p.stack.pop()) |x| {
+            var at = s.head.items[x];
+            while (at != none) : (at = s.next.items[at]) {
+                const y = s.find(s.to.items[at]);
+                if (p.tainted[y] == tag) continue;
+                p.tainted[y] = tag;
+                try p.stack.append(p.in.scratch, y);
+            }
+        }
     }
 }

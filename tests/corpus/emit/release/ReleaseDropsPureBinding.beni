@@ -1,0 +1,25 @@
+-- emit/release: `backend.md` §9 item 1's zero-use rule after its
+-- 2026-09-30 amendment — a binding nothing reads is dropped whole when its
+-- right-hand side is pure, and kept, evaluated for its effect, when it may
+-- be impure or may suspend (`language.md` §6, *What an optimiser may
+-- assume*). Running a program shows the kept half (`run/ReleaseKeepsNamed*`);
+-- only the bytes can show the dropped half, so it is goldened here.
+--
+-- In `keep`, nothing reads `quiet`, `measured` or `started`:
+--
+--   - `quiet` is arithmetic and `measured` a chain of pure calls: both are
+--     GONE from the golden, initialiser and all;
+--   - `started` calls `Task.spawn`, a `foreign impure`: its `const` stays,
+--     name and all, although nothing reads it.
+import String
+import Task
+
+
+pub keep : Int -> Int
+keep n =
+    let
+        quiet = n * 1000
+        measured = String.length (String.fromInt n)
+        started = Task.spawn (\() -> n)
+    in
+    n

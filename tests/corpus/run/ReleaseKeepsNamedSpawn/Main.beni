@@ -1,0 +1,36 @@
+-- run: a `let` binding nothing reads is kept by `--release` when its
+-- right-hand side may have an effect (`language.md` §6, *What an optimiser
+-- may assume*; `backend.md` §9 item 1, as amended 2026-09-30).
+--
+-- `unread` is never read, and neither is `inList`, whose spawn sits inside a
+-- list literal rather than at the top of the right-hand side. The fibers
+-- they start are the point of writing them: each child prints a line, and
+-- the parent sleeps so that both run before the scope ends. Until
+-- 2026-09-30 the release optimiser dropped a named unread binding whole,
+-- initialiser and all, so the release build started neither child and
+-- printed only the last line, while the development build printed all
+-- three. Both builds must print the same three lines.
+import Io
+import Node exposing (Program)
+import Say
+import Task
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                ended =
+                    Task.scope
+                        (\s ->
+                            let
+                                unread = Task.spawnIn s (\() -> Say.say "spawned child ran")
+                                inList = [ Task.spawnIn s (\() -> Say.say "child in a list ran") ]
+                                _ = Io.sleep 1
+                            in
+                            "scope ended"
+                        )
+            in
+            Node.print ended
+        )

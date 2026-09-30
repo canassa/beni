@@ -47,8 +47,9 @@ pub foreign type Resume a
 
 --| Used by the code the compiler emits for a function that may suspend, and
 --| by nothing else: `andThen value next` is `next value`. Calling it by hand
---| is allowed and does exactly that.
-pub foreign pure andThen : a, sync (a -> b) -> b
+--| is allowed and does exactly that — which is why it is `impure`: it calls
+--| `next` during the call, and `next` may be.
+pub foreign impure andThen : a, sync (a -> b) -> b
 
 
 --| Used by the code the compiler emits, and by nothing else: always `False`

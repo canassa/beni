@@ -1,0 +1,85 @@
+-- run: a `let` binding nothing reads is kept by `--release` when its
+-- right-hand side may be impure (`language.md` §6, *What an optimiser may
+-- assume*; `backend.md` §9 item 1, as amended 2026-09-30).
+--
+-- Every name below is read by nothing, and every binding but `quiet`
+-- evaluates a call of the platform's `foreign impure` `Say.say`:
+--
+--   - `direct` calls it;
+--   - `nested` calls it inside an argument of a pure call;
+--   - `branch` calls it in one branch of an `if`;
+--   - `( left, right )` calls it inside the tuple a pattern takes apart;
+--   - `viaHelper` calls `announce`, a beni function the checker infers
+--     impure because its body calls `say`;
+--   - `viaCallback` calls the parameter `f` of `applyTo`, whose effect is
+--     unknown inside `applyTo`: it is impure only because `main` passes
+--     `Say.say`, and `applyTo` has one body for every caller;
+--   - `viaSync` is the same through a parameter that also flows into a
+--     `sync` position (`Task.andThen`'s callback), which may not suspend
+--     and so gets no second body, but may still be impure; and the `_`
+--     beside it is kept because `Task.andThen` calls `k` during the call
+--     and is therefore `foreign impure` since 2026-09-30 (it was `pure`,
+--     and the release build dropped it);
+--   - `quiet` is pure, and a release build may still drop it
+--     (`emit/release/ReleaseDropsPureBinding` shows one gone).
+--
+-- Until 2026-09-30 the release optimiser dropped every one of them, so the
+-- release build printed only what `let _ =` and the last line print. Both
+-- builds must print the same lines.
+import Node exposing (Program)
+import Say
+import String
+import Task
+
+
+announce : String -> Int
+announce text =
+    let
+        _ = Say.say text
+    in
+    String.length text
+
+
+applyTo : (String -> ()), String -> Int
+applyTo f text =
+    let
+        viaCallback = f ("callback " ++ text)
+    in
+    String.length text
+
+
+applySync : (String -> ()), String -> Int
+applySync k text =
+    let
+        viaSync = k ("sync " ++ text)
+        _ = Task.andThen ("then " ++ text) k
+    in
+    String.length text
+
+
+unitText : () -> String
+unitText _ =
+    ""
+
+
+report : Int -> Int
+report n =
+    let
+        direct = Say.say "direct"
+        nested = String.length (String.fromInt (n + 1) ++ unitText (Say.say "nested"))
+        branch =
+            if n > 0 then
+                Say.say "branch"
+
+            else
+                ()
+        ( left, right ) = ( Say.say "tuple", n )
+        viaHelper = announce "helper"
+        quiet = n * 1000
+    in
+    n
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (report 2 + applyTo Say.say "passed" + applySync Say.say "passed") ]

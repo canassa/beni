@@ -286,8 +286,11 @@ pub const EffectSite = struct {
     inst: Bir.Inst.Index,
     own: Suspend = .no,
     body: Suspend = .no,
-    /// A call whose callee is `impure` or worse whatever it is called with:
-    /// `let _ = <it>` is kept by the release optimiser (§16.3).
+    /// A call whose callee may be `impure` or worse: always, or when the
+    /// enclosing declaration is used with something that is (a `poly`
+    /// callee, or one a `sync` scheme class reaches). A `let` whose
+    /// right-hand side reaches one is kept by the release optimiser however
+    /// few read it (§16.5, `backend.md` §9 item 1, amended 2026-09-30).
     impure: bool = false,
 };
 

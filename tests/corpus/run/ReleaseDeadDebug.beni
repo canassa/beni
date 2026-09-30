@@ -1,40 +1,26 @@
--- run: `backend.md` §9 item 1's zero-use rule, which is the half that is
--- about correctness rather than bytes — and the one fixture in the corpus
--- whose dev and release output legitimately DIFFER.
+-- run: `backend.md` §9 item 1's zero-use rule, the half that is about
+-- correctness rather than bytes, as amended on 2026-09-30.
 --
--- §9 item 1: "a binding whose value is never used may be dropped whole,
--- everything inside it included, a `Debug.log` among it". `language.md` §6's
--- *What an optimiser may assume* is the licence in so many words, and
--- `Debug.log` is the one thing in the language that can see it being spent.
---
--- Three `Debug.log`s in `report`, in written order:
+-- Three `Debug.log`s in `report`, through `log`, which the checker infers
+-- `impure` because `Debug.log` is `foreign impure`:
 --
 --   1. `first` is read, so it survives and prints;
---   2. `ignored` is read by NOTHING. A release build drops the binding whole
---      and the line does not appear. A dev build keeps it — elimination is
---      declaration-granular and does not look inside a body (§9's
---      reachability walk), so `local dead bindings` is release-only and dev
---      still prints it;
---   3. `second` is read, so it survives and prints AFTER the first: the
---      surviving order did not move, which is the other half of the claim.
+--   2. `ignored` is read by NOTHING. Until 2026-09-30 a release build
+--      dropped the binding whole and its line did not appear, which made
+--      this the one fixture whose two builds printed different things (it
+--      carried a `.release-expected`). The release optimiser now keeps an
+--      unread binding whose right-hand side may be impure, `Debug.log`
+--      included (`language.md` §6, *What an optimiser may assume*), so both
+--      builds print it;
+--   3. `second` is read, so it survives and prints AFTER the first two: the
+--      surviving order did not move.
 --
--- Hence `ReleaseDeadDebug.expected` and `ReleaseDeadDebug.release-expected`.
--- That pair is the whole of the difference between the two builds across the
--- corpus, and it is deliberate rather than tolerated: §9 asks for the drop by
--- name, and a `.release-expected` is how a fixture says so out loud instead
--- of a harness quietly accepting two answers everywhere.
---
--- **What it pins narrowed on 2026-09-19, and the fixture stays.** A
--- `--release` build that reaches `Debug` is now REFUSED (§9's *`Debug` is
--- refused, not pinned*), so nobody can build this program in release; the
--- corpus's release pass gets there through the hidden, test-only
--- `--allow-debug`. So the claim is exactly: *under the test-only flag, a
--- dead binding's `Debug.log` is dropped and a surviving one is not, and the
--- surviving order does not move*. That is item 1's zero-use rule, still the
--- only thing in the compiler that can be SEEN, and it is now a harness-only
--- fact rather than a difference a user can build. The user-facing invariant
--- is the stronger one: a release build behaves exactly as the development
--- build does, because a build like this one is refused.
+-- The corpus's release pass reaches `Debug` only through the hidden,
+-- test-only `--allow-debug` (§9's *`Debug` is refused, not pinned*); a user's
+-- `--release` build of this program is refused. What that flag exposes is
+-- now the same program the development build runs. A pure binding nothing
+-- reads is still dropped, which only bytes can show:
+-- `emit/release/ReleaseDropsPureBinding`.
 --
 -- `dropped` is the third kind and belongs to `run/DceDebugLog`: a whole
 -- declaration nothing reaches, deleted by the reachability walk in BOTH
