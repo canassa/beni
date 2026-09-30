@@ -352,3 +352,53 @@ Both were built on top of research 39 §12's selector, which had put the app at 
   the six `p` guards went with the fields. Pinned by `emit/dom/DomHelpers` and
   `emit/dom/DomComponents`; `browser/dom/NullaryHelperSkip` shows the same calls made as before.
 - The app is **5 328** brotli against Solid 1's 4 382 in the same `anatomy.mjs` run (1.22×).
+
+## 9. Addendum, 2026-09-30: §5.1 built
+
+*Measured before §8's two changes were merged; the two sets of savings were not measured together.*
+
+§5.1 is built: a `--release` application is one scope-hoisted file (`backend.md` §9, *One
+scope-hoisted file under `--release`*, the contract). Every hand-written file of the tree joins the
+one scope — the `browser` runtime, core's siblings, the `node` runtime and the derived-comparison
+engine all do — and none is copied as a module of its own.
+
+| | files | raw | **brotli 11** | ÷ Solid 1 |
+|---|--:|--:|--:|--:|
+| beni `--release`, after §3 | 11 | 15 372 | 5 467 | 1.26 |
+| **beni `--release`, one scope-hoisted file** | **1** | **14 484** | **5 196** | **1.19** |
+| … and through Rollup (its constant folding and tree shaking inside functions) | 1 | 14 191 | 5 115 | 1.17 |
+| … and through terser, a bound | 1 | 12 663 | 4 715 | 1.08 |
+| Solid 1.9.15 | 1 | 11 513 | 4 356 | 1.00 |
+
+§5.1's 5 164 was Rollup over the multi-file tree, which includes what Rollup does besides hoisting:
+over the one file it still finds 81 bytes, all of it constant folding and dead branches inside
+functions (the runtime's `template` called with constant flags), which is a minifier's `compress`
+and not scope hoisting. Hoisting alone, the one file is at or below what Rollup's concatenation of
+the old tree would be.
+
+**How the one scope's names are numbered** decides most of the result, because the emitted code and
+the runtime compete for the one-character names. Each row is the benchmark app's brotli:
+
+| numbering | brotli |
+|---|--:|
+| every piece in evaluation order, a hand-written file's top-level names most-used first (A2's order) | 5 264 |
+| the same, each file's names in source order | 5 287 |
+| emitted names first, then hand-written files' names most-used first | 5 226 |
+| **emitted names first, then hand-written files' names in source order** (built) | **5 196** |
+| every top-level name of the program most-used first | 5 247 |
+
+Emission order beats frequency again, as §9 item 2 measured for emitted code alone.
+
+**Everything else**, `bench/size.mjs`, raw / brotli, release: the floor 525 / 279 → **313 / 203**;
+the empty page 3 267 / 1 296 → **2 922 / 1 206** (`browser`) and 3 361 / 1 320 → **2 941 / 1 217**
+(`browser-tea`); every program's release build summed, over the same 276 programs, 864 313 /
+257 479 → **699 082 / 206 309** (−19.9 % brotli).
+
+**A correction to §4.** Its note that two `run/` fixtures, `UndeterminedCompareSlot` and
+`WideTypeArityEq`, fail to build under `bench/size.mjs` understated it: every `run/` fixture that is
+a directory — forty of them — failed, because the script built a project's `Main.beni` alone under
+the corpus root, where its own modules cannot be found; the script, not the compiler. It now builds
+the directory as its own source root, with its `platform/` when it has one
+(`bench_test`'s *builds a program in a subdirectory as a project*), and exits 0. The totals above
+are over all 276 programs, both columns measured with the fixed script; §4's 229-program totals are
+not comparable with them.
