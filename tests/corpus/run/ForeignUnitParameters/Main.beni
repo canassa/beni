@@ -1,0 +1,25 @@
+-- A `foreign`'s sibling may leave out a trailing run of `()` parameters
+-- (`boundary.md` §4, check 4, as amended 2026-10-02): the build accepts
+-- `tick = () => …` for `() -> Int` and `double = (n) => …` for
+-- `Int, () -> Int`, and still passes `null` for every `()`, which `next` and
+-- `one` read back. `build/bad/ForeignArityUnitNotLast` is the `()` that may
+-- not go.
+import Node
+import Units
+
+
+main : Node.Program
+main =
+    let
+        first =
+            Units.tick ()
+
+        second =
+            Units.tick ()
+    in
+    Node.printLines
+        [ String.fromInt (first + second)
+        , String.fromInt (Units.double 21 ())
+        , String.fromInt (Units.next 1 () ())
+        , String.fromInt (Units.one ())
+        ]

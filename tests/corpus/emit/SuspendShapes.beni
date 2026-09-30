@@ -10,7 +10,8 @@
 --     suspend, so what follows it is one `const $k = ($t) => …` written in
 --     front of the tree, and each leaf returns `$k(value)`.
 --   - `total`: a tail-call loop. The fast path stays in the loop — `const`,
---     `Task$isWaiting`, then the rest of the iteration and `continue` — and
+--     `Task$isWaiting`, then the rest of the iteration, which ends the body
+--     and so writes no `continue` (§8, *In place, when nothing captures*) — and
 --     the slow path's arrow is a copy whose `continue` became a call of the
 --     function with its slots.
 --   - `fetchAll`: a loop that BUILDS (`backend.md` §8, *Tail calls modulo

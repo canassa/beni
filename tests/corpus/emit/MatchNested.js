@@ -1,6 +1,5 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
 import { String$fromInt } from "./_core/String.mjs";
-import { Basics$add } from "./_core/Basics.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const MatchNested$Colour$$order = { Red: 0, Blue: 1 };
 const MatchNested$Inner$$order = { Leaf: 0, Pair: 1 };
@@ -15,7 +14,7 @@ const MatchNested$Inner$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(MatchNested$Inner$$compare$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
     }
@@ -35,7 +34,7 @@ const MatchNested$Inner$$compare = ($x, $y, $d = 0) => {
 };
 function* MatchNested$Inner$$compare$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return MatchNested$Inner$$order[$x.$] < MatchNested$Inner$$order[$y.$] ? "LT" : "GT";
     }
@@ -60,7 +59,7 @@ const MatchNested$Inner$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(MatchNested$Inner$$eq$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }
@@ -79,7 +78,7 @@ const MatchNested$Inner$$eq = ($x, $y, $d = 0) => {
 };
 function* MatchNested$Inner$$eq$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }
@@ -146,7 +145,7 @@ const MatchNested$nested = (i$1) => {
       if (i$1.b.$ === "Leaf") {
         const a$2 = i$1.a.a;
         const b$3 = i$1.b.a;
-        return `two leaves ${String$fromInt(Basics$add(a$2, b$3))}`;
+        return `two leaves ${String$fromInt(a$2 + b$3)}`;
       } else {
         const a$4 = i$1.a.a;
         return `left leaf ${String$fromInt(a$4)}`;

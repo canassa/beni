@@ -2,11 +2,13 @@
 -- cannot observe — a program is right whether it loops or overflows at a
 -- depth the fixture never reaches.
 --
--- The golden pins all five claims of §8's table row: the labelled
--- `while (true)`, the `$in$<i>` slots in the parameter list, the prologue
--- `const` that re-binds each one to its ordinary name, the labelled
--- `continue`, and one LOOP-INVARIANT parameter — `step`, which every
--- self-call passes itself — keeping its own name with neither slot nor copy.
+-- `countUp` makes no function in its body, so since 2026-10-02 its loop
+-- reassigns its parameters in place (§8, *In place, when nothing
+-- captures*): a `for (;;)` with no label, the parameters as the loop's
+-- variables, no prologue and no `continue` at the end of the body, and one
+-- LOOP-INVARIANT parameter — `step`, which every self-call passes itself —
+-- assigned nothing. `TailCallInPlace` pins the shape with the copies (the
+-- `$in$<i>` slots and the prologue `const`s) beside this one.
 --
 -- `plain` is the control: no tail self-call, so its emitted shape is
 -- unchanged, byte for byte.

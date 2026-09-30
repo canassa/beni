@@ -1,0 +1,52 @@
+-- What the operators `backend.md` §4's *Arithmetic is an operator* writes in
+-- place of a call compute: exactly what the call computed. The claims a wrong
+-- operator would break:
+--
+--   `^` is right-associative, and `**` is too: `2 ^ 3 ^ 2` is 512, and the
+--   bracketed `(2 ^ 3) ^ 2` is 64
+--   `negate` is `0 - n` and not `-n`: `1 / negate 0` is `Infinity`, where
+--   `1 / -0` would be `-Infinity`
+--   a negation raised to a power is bracketed (`(0 - 2) ** 3`, since
+--   `-2 ** 3` is a JavaScript syntax error)
+--   `Int32.add` still wraps, `Int32.shiftRightZero` still answers signed,
+--   and `toUnsignedInt` is `>>> 0`
+--   `//`, `modBy` and `remainderBy` still answer 0 for a zero divisor
+import Int32
+import Node exposing (Program)
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    let
+        top =
+            Int32.fromInt 2147483647
+
+        minus8 =
+            Int32.fromInt (-8)
+    in
+    Node.printLines
+        [ String.fromInt (7 + 3 * 2 - (7 - 3))
+        , String.fromInt (2 ^ 3 ^ 2)
+        , String.fromInt ((2 ^ 3) ^ 2)
+        , String.fromInt (negate 2 ^ 3)
+        , String.fromInt ((-2) ^ 2)
+        , String.fromFloat (1 / negate 0)
+        , String.fromFloat (7 / 2 - 0.5)
+        , show (Basics.lt 1 2 && not (Basics.ge 1 2))
+        , String.fromInt (Int32.toInt (Int32.add top (Int32.fromInt 1)))
+        , String.fromInt (Int32.toInt (Int32.sub (Int32.fromInt (-2147483648)) (Int32.fromInt 1)))
+        , String.fromInt (Int32.toInt (Int32.shiftRightZero minus8 1))
+        , String.fromInt (Int32.toUnsignedInt minus8)
+        , String.fromInt (Int32.toInt (Int32.xor (Int32.and minus8 (Int32.fromInt 12)) (Int32.or (Int32.shiftLeft (Int32.fromInt 1) 31) (Int32.shiftRight minus8 2))))
+        , String.fromInt (Int32.toInt (Int32.fromInt 4294967297))
+        , String.fromInt (7 // 0 + modBy 7 0 + remainderBy 7 0)
+        ]

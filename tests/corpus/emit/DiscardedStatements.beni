@@ -1,0 +1,78 @@
+-- emit: `docs/design/backend.md` §4, *A discarded value is a statement* and
+-- *A result nothing reads*.
+--
+-- `let _ = e` is `e;`, with no `const $t`: `say "a"` is `DiscardedStatements$say("a");`.
+-- A discarded `if` is an `if` statement whose arms are discarded in turn —
+-- `if (c) { say("b"); }`, and `if (!c)` when only the `else` arm does
+-- anything. A discarded value that only reads writes nothing at all.
+--
+-- `say` and `twice` are private and every call of them is discarded — or,
+-- for `say "c"`, in the tail of `twice`, whose own result is discarded — so
+-- neither writes what it returns: `say` ends with its `Debug.log`, not a
+-- `return null`, and `twice` ends with `say("c");`. `kept` is `pub`, and a
+-- module that imports it may read its `null`, so it keeps its `return`.
+--
+-- `pureDiscard`'s discards call nothing impure: a development build still
+-- evaluates them, as statements (`--release` drops them whole).
+import Node exposing (Program)
+
+
+say : String -> ()
+say s =
+    let
+        _ =
+            Debug.log s "say"
+    in
+    ()
+
+
+twice : Bool -> ()
+twice c =
+    let
+        _ =
+            say "a"
+
+        _ =
+            if c then
+                say "b"
+
+            else
+                ()
+
+        _ =
+            if c then
+                ()
+
+            else
+                say "d"
+
+        _ =
+            c
+    in
+    say "c"
+
+
+pub kept : Bool -> ()
+kept c =
+    let
+        _ =
+            twice c
+    in
+    ()
+
+
+pub pureDiscard : Int -> Int
+pureDiscard n =
+    let
+        _ =
+            String.fromInt n
+
+        _ =
+            n * 2
+    in
+    n
+
+
+main : Program
+main =
+    Node.printLines []

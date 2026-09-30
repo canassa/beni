@@ -468,6 +468,19 @@ const Emitter = struct {
         /// that is not one binds to a VALUE, so `() => …` is wrong for it
         /// even though both sides count zero parameters.
         is_function: bool,
+        /// How many of the annotation's parameters, counted from the last,
+        /// are written `()`. The export may leave them out (`boundary.md`
+        /// §4, check 4, as amended 2026-10-02): every call passes `null`
+        /// for one, which a function that does not take it ignores.
+        unit_tail: u32 = 0,
+
+        /// Whether a function export of `written` parameters takes what
+        /// the declaration promises: all of them, or all but some of its
+        /// trailing `()` ones.
+        fn takes(d: Declared, written: u32) bool {
+            const expected = d.evidence + (d.params orelse return true);
+            return written <= expected and expected - written <= d.unit_tail;
+        }
 
         /// Whether the export has to be written as a function: a function
         /// type, or a `where` clause, which gives even a non-function one
@@ -726,6 +739,7 @@ const Emitter = struct {
                     .evidence = use.evidence,
                     .params = if (d.annotation == .none) null else use.arity,
                     .is_function = use.arity != 0,
+                    .unit_tail = unitTail(b, d.annotation, use.arity),
                 });
             }
             if (declared.items.len == 0) continue;
@@ -871,7 +885,7 @@ const Emitter = struct {
         // done before `positionIn`, which reads the file from its start and
         // would make checking a sibling quadratic in its exports.
         const agrees = if (!entry.wantsFunction()) arity == .opaque_value else switch (arity) {
-            .function => |written| written == expected,
+            .function => |written| entry.takes(written),
             else => false,
         };
         if (agrees) return;
@@ -899,7 +913,7 @@ const Emitter = struct {
         }
         switch (arity) {
             .function => |written| {
-                if (written == expected) return;
+                if (entry.takes(written)) return;
                 try e.report(
                     .foreign_arity_mismatch,
                     file,
@@ -968,6 +982,21 @@ const Emitter = struct {
     /// declaration with a `where` clause has hidden leading parameters and
     /// nothing in its own text shows them, so the split is spelled out;
     /// one without needs only the rule.
+    /// How many of a `foreign`'s `arity` parameters, counted from the last,
+    /// its annotation writes as `()` — read off the annotation as written,
+    /// so a `()` behind an alias does not count and its parameter must be
+    /// taken.
+    fn unitTail(b: *const Bir, annotation: Bir.Inst.OptionalIndex, arity: u32) u32 {
+        const ty = annotation.unwrap() orelse return 0;
+        if (b.instTag(ty) != .type_fn) return 0;
+        const params = b.extraSlice(b.subRange(@enumFromInt(b.instData(ty).lhs)), Bir.Inst.Index);
+        if (params.len != arity) return 0;
+        var n: u32 = 0;
+        var i = params.len;
+        while (i != 0 and b.instTag(params[i - 1]) == .type_unit) : (i -= 1) n += 1;
+        return n;
+    }
+
     fn arityRule(e: *Emitter, entry: Declared) ![]const u8 {
         if (entry.evidence == 0) return
         \\A sibling export takes exactly the parameters its `foreign` declaration promises
@@ -1935,6 +1964,9 @@ const Emitter = struct {
         /// both in the lowering worker's `kept` arena.
         plan: Opt.Plan = .none,
         met: []const JsIr.NameIndex = &.{},
+        /// `--release` only: `Lower.Result.unobserved`, in the worker's
+        /// `kept` arena, which outlives the lowering's scratch.
+        unobserved: []const JsIr.Node.Index = &.{},
         /// The module's bytes, gpa-owned until `produceOwned` takes them.
         text: ?[]u8 = null,
         rename_failure: ?Rename.Failure = null,
@@ -1995,7 +2027,7 @@ const Emitter = struct {
             };
             slot.start = start;
             if (!e.options.release) {
-                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{});
+                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{ .unobserved = lowered.unobserved });
                 // Nothing after this reads the tree or the overlay: the bytes
                 // are what is left of the module.
                 lowered.deinit(e.gpa);
@@ -2007,13 +2039,14 @@ const Emitter = struct {
             // §9's release optimiser, between `Lower.lower` and
             // `Print.print`: item 1 plans, item 2 names, the printer spends
             // both.
-            const plan = try Opt.runKeeping(scratch, &lowered.ir, lowered.effect_keep);
+            const plan = try Opt.runKeeping(scratch, &lowered.ir, lowered.effect_keep, lowered.pure_discards);
             const kept = w.kept.allocator();
             slot.plan = .{
                 .dropped = try kept.dupe(u32, plan.dropped),
                 .inlined = try kept.dupe(JsIr.Node.OptionalIndex, plan.inlined),
             };
             slot.met = try kept.dupe(JsIr.NameIndex, try Rename.collectGlobals(scratch, &lowered.ir, &slot.plan));
+            slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
         }
 
         /// `--release`'s second step: short names and compact bytes, once
@@ -2029,6 +2062,7 @@ const Emitter = struct {
             var renamer = try Rename.begin(scratch, &lowered.ir, &e.globals);
             slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{
                 .plan = &slot.plan,
+                .unobserved = slot.unobserved,
                 .rename = &renamer,
                 .compact = true,
                 .imported = if (e.options.library or e.hoisted) null else &e.imported,

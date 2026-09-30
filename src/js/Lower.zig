@@ -61,6 +61,7 @@ const Types = @import("../check/Types.zig");
 const MarkupTree = @import("MarkupTree.zig");
 const Suspend = @import("Suspend.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
+const Operator = @import("Operator.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -102,6 +103,13 @@ pub const Result = struct {
     /// (`let _ = <an impure call>`, transparent-effects-proposal.md §16.3),
     /// in the caller's scratch arena.
     effect_keep: []const Node.Index = &.{},
+    /// Statements the release optimiser drops: those of a `let _ = e`
+    /// whose `e` cannot have an effect (`Lowerer.discard`).
+    pure_discards: []const Node.Index = &.{},
+    /// The arrows of declarations whose result nothing reads
+    /// (`Lowerer.findUnobserved`): the printer leaves out what they return
+    /// (`backend.md` §4, *A result nothing reads*).
+    unobserved: []const Node.Index = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -243,6 +251,7 @@ pub fn lower(
     errdefer for (l.diagnostics.items) |d| gpa.free(d.message);
     try l.readTable();
     try l.findDeadArms();
+    try l.findUnobserved();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -290,6 +299,8 @@ pub fn lower(
         .markup_exports = l.markup_exports.items,
         .start = if (l.mk) |st| st.start.items else &.{},
         .effect_keep = l.effect_keep.items,
+        .pure_discards = l.pure_discards.items,
+        .unobserved = l.unobserved_arrows.items,
     };
 }
 
@@ -594,6 +605,14 @@ const Lowerer = struct {
     /// The bindings of `let _ = <an impure call>` the release optimiser must
     /// not drop, though nothing reads them (§16.3).
     effect_keep: std.ArrayList(Node.Index) = .empty,
+    /// The statements of a `let _ = e` whose `e` cannot have an effect
+    /// (`discard`): evaluated by a development build, dropped by the
+    /// release optimiser.
+    pure_discards: std.ArrayList(Node.Index) = .empty,
+    /// Per declaration: whether nothing reads what a call of it returns
+    /// (`findUnobserved`).
+    unobserved: []bool = &.{},
+    unobserved_arrows: std.ArrayList(Node.Index) = .empty,
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -1222,7 +1241,9 @@ const Lowerer = struct {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
-                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
+                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                if (variant == .direct and l.unobserved[index]) try l.unobserved_arrows.append(l.scratch, arrow);
+                try l.constDecl(out, n, arrow, p);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
             // parameterless declaration inherits its name, because `f x = e`
@@ -1234,7 +1255,9 @@ const Lowerer = struct {
                 const ld = l.bir.instData(body);
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @enumFromInt(ld.rhs), p, l.functionSuspends(body));
-                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
+                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                if (variant == .direct and l.unobserved[index]) try l.unobserved_arrows.append(l.scratch, arrow);
+                try l.constDecl(out, n, arrow, p);
             },
             .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), p),
             // `($m…) => value`, its value kept per evidence.
@@ -1550,7 +1573,7 @@ const Lowerer = struct {
         // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
-        for (params) |param| {
+        for (params[0..l.writtenParams(params)]) |param| {
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
             // own and a destructuring statement at the top of the body.
@@ -1577,6 +1600,47 @@ const Lowerer = struct {
         try l.tailStmts(&stmts, body, null);
         const split = try l.splitSuspensions(stmts.items, null, .closure);
         return l.funcRecord(names.items, split);
+    }
+
+    /// How many trailing arguments of a call of `callee` are a `()` literal
+    /// in the position of a parameter the callee's JavaScript does not hold
+    /// (`writtenParams`), and so need not be passed. Known for a declaration
+    /// of this module defined with its parameters; any other callee is
+    /// passed every argument, which is always right, `null` being ignored.
+    fn unwrittenArgs(l: *Lowerer, callee: Inst.Index, args: []const Inst.Index) usize {
+        if (l.bir.instTag(callee) != .top) return 0;
+        const index = l.bir.instData(callee).lhs;
+        if (index >= l.bir.decls.len) return 0;
+        const d = l.bir.decls[index];
+        // A `foreign`'s sibling is written by hand, and reads what it reads.
+        if (d.kind != .value) return 0;
+        const params: []const Inst.Index = switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+            .params => l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index),
+            .lambda => blk: {
+                const body = d.body.unwrap() orelse return 0;
+                break :blk l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(body).lhs)), Inst.Index);
+            },
+            else => return 0,
+        };
+        if (params.len != args.len) return 0;
+        var n: usize = 0;
+        var i = args.len;
+        while (i > l.writtenParams(params)) : (i -= 1) {
+            if (l.bir.instTag(args[i - 1]) != .unit) break;
+            n += 1;
+        }
+        return n;
+    }
+
+    /// How many of `params` the JavaScript parameter list holds: all but a
+    /// trailing run of `()` patterns (`backend.md` §6, *A parameter of type
+    /// `()`*). Such a parameter binds nothing and its argument is `null`, so
+    /// `f () = …` is `() => …`, and every caller still passing `null` is
+    /// passing an argument JavaScript ignores.
+    fn writtenParams(l: *Lowerer, params: []const Inst.Index) usize {
+        var n = params.len;
+        while (n != 0 and l.bir.instTag(params[n - 1]) == .pat_unit) n -= 1;
+        return n;
     }
 
     // ---- The suspendable form (transparent-effects-proposal.md §16) -----
@@ -1917,6 +1981,21 @@ const Lowerer = struct {
         /// `builds`.
         root: JsIr.NameIndex = .none,
         last: JsIr.NameIndex = .none,
+        /// What the jumps wrote that `functionOrLoop` rewrites when the loop
+        /// reassigns its parameters in place (§8, *In place, when nothing
+        /// captures*).
+        jumps: *Jumps,
+        /// Whether the body may turn out to make no function, so that the
+        /// jumps are written ready to reassign the parameters in place
+        /// (`mayGoInPlace`). Only a hint: `functionOrLoop` decides on the
+        /// JavaScript, and a jump written ready is right either way.
+        ready: bool = false,
+
+        const Jumps = struct {
+            /// The `ident` each assignment writes, and the slot it is.
+            targets: std.ArrayList(struct { node: Node.Index, slot: u32 }) = .empty,
+            continues: std.ArrayList(Node.Index) = .empty,
+        };
 
         /// Which reference, syntactically, names this function.
         const Self = union(enum) {
@@ -1932,6 +2011,10 @@ const Lowerer = struct {
             /// The local a `pat_var` pattern binds, else `no_local`.
             local: u32 = no_local,
             carried: bool = false,
+            /// A trailing `()` parameter, which the JavaScript parameter list
+            /// does not hold (`writtenParams`): its argument is evaluated
+            /// and never stored.
+            unwritten: bool = false,
             /// The name in the JavaScript parameter list: `$in$<i>` when
             /// carried, the ordinary name when not.
             param: JsIr.NameIndex = .none,
@@ -1965,8 +2048,9 @@ const Lowerer = struct {
     ) !JsIr.ExtraIndex {
         const slots = try l.scratch.alloc(Loop.Slot, @as(usize, evidence) + params.len);
         for (slots[0..evidence]) |*slot| slot.* = .{};
-        for (params, slots[evidence..]) |param, *slot| {
-            slot.* = .{ .pattern = param.toOptional() };
+        const written = l.writtenParams(params);
+        for (params, slots[evidence..], 0..) |param, *slot, i| {
+            slot.* = .{ .pattern = param.toOptional(), .unwritten = i >= written };
             if (l.bir.instTag(param) == .pat_var) {
                 slot.local = l.bir.instData(param).lhs;
             } else {
@@ -1979,8 +2063,10 @@ const Lowerer = struct {
                 slot.carried = true;
             }
         }
-        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots };
+        var jumps: Loop.Jumps = .{};
+        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots, .jumps = &jumps };
         if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body, suspendable);
+        loop.ready = l.mayGoInPlace(params, body);
 
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
@@ -1992,6 +2078,7 @@ const Lowerer = struct {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         for (slots, 0..) |*slot, i| {
             const index: u32 = @intCast(i);
+            if (slot.unwritten) continue;
             slot.body = if (index < evidence)
                 try l.evidenceNameOf(ev_let, @intCast(index))
             else if (slot.local != Loop.no_local)
@@ -2004,17 +2091,20 @@ const Lowerer = struct {
             try names.append(l.scratch, slot.param);
         }
 
-        var loop_body: StmtList = .empty;
         // The prologue. One `const` per carried slot rather than one
         // comma-separated declaration: joining them is §9 item 5's variable
-        // joining, a printer decision and not lowering's.
+        // joining, a printer decision and not lowering's. Written only when
+        // the loop keeps its copies (below).
+        var prologue: StmtList = .empty;
         for (slots) |slot| {
             if (!slot.carried or slot.body == .none) continue;
-            try l.constDecl(&loop_body, slot.body, try l.ident(slot.param, p), p);
+            try l.constDecl(&prologue, slot.body, try l.ident(slot.param, p), p);
         }
+        var loop_body: StmtList = .empty;
         // A parameter whose pattern is not a bare variable destructures
         // INSIDE the loop, because it reads this iteration's value (§8).
         for (slots[evidence..]) |slot| {
+            if (slot.unwritten) continue;
             const pattern = slot.pattern.unwrap().?;
             switch (l.bir.instTag(pattern)) {
                 .pat_var, .pat_wild => {},
@@ -2045,15 +2135,74 @@ const Lowerer = struct {
             reentry.tail = try l.name(.{ .module = .none, .base = try l.slotName(1), .tag = JsIr.Name.no_tag });
             reentry.built = try l.fixedName("$built");
         }
-        const split = try l.splitSuspensions(loop_body.items, reentry, .loop);
+        // **In place, when nothing captures** (§8): a body that makes no
+        // function cannot hold a closure over this iteration's parameters,
+        // so the jumps may write the parameters themselves and the prologue
+        // copies go. The test is on the JavaScript just built, which is
+        // exactly the set of functions the body makes — a lambda, a `let`
+        // function, a placeholder, an eta-expansion of evidence alike. A
+        // loop with a suspension point keeps its copies: its re-entry
+        // passes the slots. The label goes too unless a loop is nested.
+        const held = try l.b.holds(l.scratch, loop_body.items, .none);
+        const in_place = loop.ready and l.markers == 0 and !held.closure;
+        var statements: StmtList = .empty;
+        // A `continue` reaches the innermost loop of its own function, and
+        // a body with no loop of its own leaves only this one: the label is
+        // needed by nothing but a suspension's re-entry (§16.3).
+        var loop_label = label;
+        const datas = l.b.nodes.items(.data);
+        if (l.markers == 0 and !held.loop) {
+            loop_label = .none;
+            for (jumps.continues.items) |c| datas[c.int()].lhs = @intFromEnum(loop_label);
+        }
+        if (in_place) {
+            const tags = l.b.nodes.items(.tag);
+            for (jumps.targets.items) |t| {
+                const slot = slots[t.slot];
+                if (slot.body == .none) continue;
+                std.debug.assert(tags[t.node.int()] == .ident);
+                datas[t.node.int()].lhs = @intFromEnum(slot.body);
+            }
+            names.clearRetainingCapacity();
+            for (slots) |slot| {
+                if (slot.unwritten) continue;
+                try names.append(l.scratch, if (slot.carried and slot.body != .none) slot.body else slot.param);
+            }
+            try statements.appendSlice(l.scratch, loop_body.items);
+        } else {
+            try statements.appendSlice(l.scratch, prologue.items);
+            try statements.appendSlice(l.scratch, try l.splitSuspensions(loop_body.items, reentry, .loop));
+        }
 
-        const range = try l.b.addRange(split);
+        const range = try l.b.addRange(statements.items);
         const record = try l.b.addRecord(range);
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
-        const while_node = try l.add(.while_true, p, @intFromEnum(label), @intFromEnum(record));
+        const while_node = try l.add(.while_true, p, @intFromEnum(loop_label), @intFromEnum(record));
         if (loop.builds) return l.funcRecord(names.items, &.{ before[0], before[1], while_node });
         return l.funcRecord(names.items, &.{while_node});
+    }
+
+    /// Whether no `lambda` and no `let` function lies among the instructions
+    /// from the first parameter's to the body's: a function the body makes
+    /// is one of those, and `Bir` writes a function's instructions after its
+    /// parameters and before its body's root. A hint (`Loop.ready`): what it
+    /// misses — an eta-expansion of evidence, a constructor used as a value —
+    /// the walk over the JavaScript catches, and what it sees outside the
+    /// body costs the jumps their order and nothing else.
+    fn mayGoInPlace(l: *Lowerer, params: []const Inst.Index, body: Inst.Index) bool {
+        const start = if (params.len != 0) @min(@intFromEnum(params[0]), @intFromEnum(body)) else @intFromEnum(body);
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        for (tags[start .. @intFromEnum(body) + 1], data[start .. @intFromEnum(body) + 1]) |tag, d| switch (tag) {
+            .lambda => return false,
+            .let_def => {
+                const payload = l.bir.extraData(@enumFromInt(d.lhs), Bir.LetDef);
+                if (payload.params_end != payload.params_start) return false;
+            },
+            else => {},
+        };
+        return true;
     }
 
     /// A name the loop writes with no counter, like `$in$<i>` (§8): input
@@ -2257,6 +2406,10 @@ const Lowerer = struct {
             else => {},
         }
         const value = try l.expr(out, inst);
+        // `Js.throw` in tail position ends the block itself: its value is
+        // the `undefined` no `return` can reach (research 47 §6 item 2).
+        if (out.items.len != 0 and l.b.nodes.items(.tag)[out.items[out.items.len - 1].int()] == .throw_stmt and
+            l.b.nodes.items(.tag)[value.int()] == .undefined_lit) return;
         try l.tailReturn(out, value, loop, l.pos(inst));
     }
 
@@ -2316,13 +2469,119 @@ const Lowerer = struct {
         l.region = inst;
         const evidence = try l.evidenceArguments(l.rootsOf(inst), p);
         const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
-        for (loop.slots, 0..) |slot, i| {
+        const values = try l.scratch.alloc(Node.Index, loop.slots.len);
+        for (loop.slots, values, 0..) |slot, *value, i| {
             if (!slot.carried) continue;
-            const value = if (i < evidence.len) evidence[i] else written[i - evidence.len];
-            const target = try l.ident(slot.param, p);
-            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+            value.* = if (i < evidence.len) evidence[i] else written[i - evidence.len];
         }
-        try out.append(l.scratch, try l.add(.continue_stmt, p, @intFromEnum(loop.label), Node.Data.unused));
+        if (loop.ready) try l.jumpInPlace(out, loop, values, p) else {
+            // The copies stay, and the assignments read nothing they write:
+            // parameter order, no temporary (§8's original shape).
+            for (loop.slots, values, 0..) |slot, value, i| {
+                if (!slot.carried) continue;
+                if (slot.unwritten) {
+                    try l.discardValue(out, value, p);
+                    continue;
+                }
+                try l.jumpAssign(out, loop, @intCast(i), value, p);
+            }
+        }
+        const jump = try l.add(.continue_stmt, p, @intFromEnum(loop.label), Node.Data.unused);
+        try loop.jumps.continues.append(l.scratch, jump);
+        try out.append(l.scratch, jump);
+    }
+
+    /// A jump's assignments written ready to reassign the parameters in
+    /// place (`Loop.ready`).
+    fn jumpInPlace(l: *Lowerer, out: *StmtList, loop: *const Loop, values: []const Node.Index, p: u32) !void {
+        // The assignments may become writes of the parameters themselves
+        // (`functionOrLoop`, §8 *In place, when nothing captures*). Then a
+        // value that reads a parameter an EARLIER assignment rebinds would
+        // read the new one, so that earlier value goes through a temporary
+        // and its assignment moves after the rest. Every value is still
+        // evaluated in parameter order, and every parameter is read before
+        // it is rebound. With the copies kept, the temporary is harmless.
+        //
+        // When no value makes a call, evaluating one before another is not
+        // observable, so the assignments are ordered instead: each parameter
+        // is rebound once no value still to come reads it, and only a cycle
+        // (`f b a`) takes a temporary. `count (n - 1) (acc + n)` is
+        // `acc = acc + n; n = n - 1;`.
+        const n_slots = loop.slots.len;
+        // `reads[m * n_slots + i]`: whether value `m` reads parameter `i`.
+        const reads = try l.scratch.alloc(bool, n_slots * n_slots);
+        @memset(reads, false);
+        var movable = true;
+        for (loop.slots, values, 0..) |slot, value, m| {
+            if (!slot.carried) continue;
+            if ((try l.b.holds(l.scratch, &.{value}, .none)).call) movable = false;
+            for (loop.slots, 0..) |other, i| {
+                if (i == m or !other.carried or other.body == .none) continue;
+                reads[m * n_slots + i] = (try l.b.holds(l.scratch, &.{value}, other.body)).reads;
+            }
+        }
+        const deferred = try l.scratch.alloc(?JsIr.NameIndex, n_slots);
+        @memset(deferred, null);
+        const done = try l.scratch.alloc(bool, n_slots);
+        for (loop.slots, done) |slot, *x| x.* = !slot.carried;
+        // Whether a value not yet evaluated, other than `i`'s own, reads `i`.
+        const Pending = struct {
+            fn readBy(r: []const bool, finished: []const bool, n: usize, i: usize) bool {
+                for (finished, 0..) |f, m| if (!f and m != i and r[m * n + i]) return true;
+                return false;
+            }
+        };
+        var left: usize = 0;
+        for (done) |x| left += @intFromBool(!x);
+        while (left != 0) : (left -= 1) {
+            // The first slot, in parameter order, that may go now: any, in
+            // order, when a value may call; otherwise one nothing pending
+            // reads, or failing that — a cycle — the first, through a
+            // temporary.
+            var pick: usize = 0;
+            var free = false;
+            for (done, 0..) |x, i| {
+                if (x) continue;
+                if (!movable) {
+                    pick = i;
+                    free = !Pending.readBy(reads, done, n_slots, i);
+                    break;
+                }
+                if (!Pending.readBy(reads, done, n_slots, i)) {
+                    pick = i;
+                    free = true;
+                    break;
+                }
+            } else {
+                for (done, 0..) |x, i| if (!x) {
+                    pick = i;
+                    break;
+                };
+            }
+            done[pick] = true;
+            if (loop.slots[pick].unwritten) {
+                try l.discardValue(out, values[pick], p);
+                continue;
+            }
+            if (free) {
+                try l.jumpAssign(out, loop, @intCast(pick), values[pick], p);
+                continue;
+            }
+            const t = try l.fresh(l.well.temp);
+            try l.constDecl(out, t, values[pick], p);
+            deferred[pick] = t;
+        }
+        for (deferred, 0..) |temp, i| {
+            const t = temp orelse continue;
+            try l.jumpAssign(out, loop, @intCast(i), try l.ident(t, p), p);
+        }
+    }
+
+    /// `slot = value;` in a jump, the target recorded for `functionOrLoop`.
+    fn jumpAssign(l: *Lowerer, out: *StmtList, loop: *const Loop, slot: u32, value: Node.Index, p: u32) !void {
+        const target = try l.ident(loop.slots[slot].param, p);
+        try loop.jumps.targets.append(l.scratch, .{ .node = target, .slot = slot });
+        try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
     }
 
     // ---- Names and references ---------------------------------------------
@@ -5923,6 +6182,12 @@ const Lowerer = struct {
             return l.jsIntrinsicCall(out, which, arg_insts, p);
         }
 
+        // Arithmetic, `not` and `Int32`'s bit operations are the JavaScript
+        // operators they compute (§4, *Arithmetic is an operator*).
+        if (l.operatorOf(callee_inst)) |which| {
+            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorCall(out, which, arg_insts, p);
+        }
+
         // A constructor is an object literal and never a call (§4); the
         // checker has already refused any application of one that is not
         // saturated, so `args` is exactly its field list.
@@ -5949,7 +6214,9 @@ const Lowerer = struct {
         // building them after the sequence changes no evaluation order.
         const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@enumFromInt(d.rhs)));
         const callee = values[0];
-        const written = values[1..];
+        // A trailing `()` the callee does not take is not passed (§6, *A
+        // parameter of type `()`*): `f ()` is `f()`.
+        const written = values[1 .. values.len - l.unwrittenArgs(callee_inst, arg_insts)];
         l.region = inst;
         // The evidence takes the body its callee takes (§16.2).
         const saved_choice = l.term_choice;
@@ -6062,6 +6329,51 @@ const Lowerer = struct {
                 const range = try l.b.addRange(rest);
                 break :blk l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
             },
+        };
+    }
+
+    /// The core function `inst` names that is written as an operator, or null
+    /// (`Operator`).
+    fn operatorOf(l: *Lowerer, inst: Inst.Index) ?Operator.Which {
+        return Operator.of(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.interner);
+    }
+
+    /// A saturated call of an `Operator` as the JavaScript it computes. The
+    /// operands are evaluated once each, in written order (`orderedExprs`),
+    /// which is the order the call evaluated them in.
+    fn operatorCall(l: *Lowerer, out: *StmtList, which: Operator.Which, args: []const Inst.Index, p: u32) !Node.Index {
+        const v = try l.orderedExprs(out, args, false);
+        const zero = struct {
+            fn node(lw: *Lowerer, at: u32) !Node.Index {
+                return lw.numberNode("0", at);
+            }
+        };
+        return switch (which) {
+            .add => l.binary(.add, v[0], v[1], p),
+            .sub => l.binary(.sub, v[0], v[1], p),
+            .mul => l.binary(.mul, v[0], v[1], p),
+            .fdiv => l.binary(.div, v[0], v[1], p),
+            .pow => l.binary(.pow, v[0], v[1], p),
+            .lt => l.binary(.lt, v[0], v[1], p),
+            .gt => l.binary(.gt, v[0], v[1], p),
+            .le => l.binary(.le, v[0], v[1], p),
+            .ge => l.binary(.ge, v[0], v[1], p),
+            .not => l.unary(.not, v[0], p),
+            // `callExpr` wrote these as a short circuit before asking.
+            .@"and" => l.binary(.logical_and, v[0], v[1], p),
+            .@"or" => l.binary(.logical_or, v[0], v[1], p),
+            .negate => l.binary(.sub, try zero.node(l, p), v[0], p),
+            .int32_fromInt => l.binary(.bit_or, v[0], try zero.node(l, p), p),
+            .int32_toInt => v[0],
+            .int32_toUnsignedInt => l.binary(.shr, v[0], try zero.node(l, p), p),
+            .int32_add => l.binary(.bit_or, try l.binary(.add, v[0], v[1], p), try zero.node(l, p), p),
+            .int32_sub => l.binary(.bit_or, try l.binary(.sub, v[0], v[1], p), try zero.node(l, p), p),
+            .int32_and => l.binary(.bit_and, v[0], v[1], p),
+            .int32_or => l.binary(.bit_or, v[0], v[1], p),
+            .int32_xor => l.binary(.bit_xor, v[0], v[1], p),
+            .int32_shiftLeft => l.binary(.shl, v[0], v[1], p),
+            .int32_shiftRight => l.binary(.sar, v[0], v[1], p),
+            .int32_shiftRightZero => l.binary(.bit_or, try l.binary(.shr, v[0], v[1], p), try zero.node(l, p), p),
         };
     }
 
@@ -6264,6 +6576,12 @@ const Lowerer = struct {
                     try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
                 },
                 .let_pattern => {
+                    // `let _ = e` is `e` as a statement (§4, *A discarded
+                    // value is a statement*).
+                    if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) {
+                        try l.discard(out, @enumFromInt(d.rhs), p);
+                        continue;
+                    }
                     const value = try l.expr(out, @enumFromInt(d.rhs));
                     const before = out.items.len;
                     const subject = try l.bindSubject(out, value, p);
@@ -6279,6 +6597,173 @@ const Lowerer = struct {
                 else => {},
             }
         }
+    }
+
+    /// Which declarations' results nothing can read (`backend.md` §4, *A
+    /// result nothing reads*): a function of this module that is not `pub`,
+    /// so no other module names it, that no dispatch answer names — a
+    /// private `eq` is still the method `==` calls inside its module — that
+    /// has no second body and takes no evidence, and whose every reference
+    /// is the callee of a
+    /// call in DISCARDED position: the right-hand side of a `let _ =`, a
+    /// branch of a `case` or the body of a `let` in one — or in TAIL
+    /// position of a declaration whose own result nothing reads, since what
+    /// it returns goes where that result goes. A reference anywhere else, a
+    /// value passed or returned, counts as a read. The second rule is a
+    /// greatest fixpoint: every candidate starts unread, and one read
+    /// anywhere takes it out, and with it what its tail positions call.
+    fn findUnobserved(l: *Lowerer) !void {
+        const decls = l.bir.decls;
+        l.unobserved = try l.scratch.alloc(bool, decls.len);
+        const all = try l.scratch.alloc(u32, decls.len);
+        const discarded = try l.scratch.alloc(u32, decls.len);
+        @memset(all, 0);
+        @memset(discarded, 0);
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        var stack: std.ArrayList(Inst.Index) = .empty;
+        for (tags, data) |tag, d| switch (tag) {
+            .top => if (d.lhs < decls.len) {
+                all[d.lhs] += 1;
+            },
+            .let_pattern => if (l.bir.instTag(@enumFromInt(d.lhs)) == .pat_wild) try stack.append(l.scratch, @enumFromInt(d.rhs)),
+            else => {},
+        };
+        while (stack.pop()) |inst| {
+            if (l.tailCallee(inst)) |callee| {
+                discarded[callee] += 1;
+                continue;
+            }
+            try l.pushTails(&stack, inst);
+        }
+        // The calls each declaration makes in its own tail positions.
+        const Tail = struct { from: u32, to: u32 };
+        var tails: std.ArrayList(Tail) = .empty;
+        for (decls, 0..) |d, i| {
+            if (d.kind != .value) continue;
+            const body = d.body.unwrap() orelse continue;
+            const start: Inst.Index = switch (Convention.definitionOf(l.in.dispatch, l.bir, @intCast(i))) {
+                .params => body,
+                .lambda => @enumFromInt(l.bir.instData(body).rhs),
+                else => continue,
+            };
+            try stack.append(l.scratch, start);
+            while (stack.pop()) |inst| {
+                if (l.tailCallee(inst)) |callee| {
+                    try tails.append(l.scratch, .{ .from = @intCast(i), .to = callee });
+                    continue;
+                }
+                try l.pushTails(&stack, inst);
+            }
+        }
+        const dispatched = try l.scratch.alloc(bool, decls.len);
+        @memset(dispatched, false);
+        for (l.in.dispatch.terms) |t| switch (t) {
+            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
+                dispatched[@intFromEnum(u.decl)] = true;
+            },
+            else => {},
+        };
+        // What the module exports — its interface, and the entry point the
+        // build calls — is read by somebody this module cannot see.
+        for (l.bir.interface) |decl_index| {
+            if (decl_index.int() < decls.len) dispatched[decl_index.int()] = true;
+        }
+        if (l.in.entry_decl) |index| if (index < decls.len) {
+            dispatched[index] = true;
+        };
+        for (decls, 0..) |d, i| {
+            const index: u32 = @intCast(i);
+            l.unobserved[i] = d.kind == .value and !d.is_pub and !dispatched[i] and
+                !l.in.dispatch.effectDecl(index).twin and l.in.dispatch.effectDecl(index).own == .no and
+                Convention.ofDecl(l.in.dispatch, l.bir, index).evidence == 0 and
+                switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+                    .params, .lambda => true,
+                    else => false,
+                };
+        }
+        const reached = try l.scratch.alloc(u32, decls.len);
+        var changed = true;
+        while (changed) {
+            changed = false;
+            @memcpy(reached, discarded);
+            for (tails.items) |t| {
+                if (l.unobserved[t.from]) reached[t.to] += 1;
+            }
+            for (l.unobserved, reached, all) |*u, r, a| {
+                if (u.* and r != a) {
+                    u.* = false;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    /// The declaration `inst` calls when it is a call of one of this
+    /// module's declarations, which is what a discarded or tail position
+    /// can make unread.
+    fn tailCallee(l: *Lowerer, inst: Inst.Index) ?u32 {
+        if (l.bir.instTag(inst) != .call) return null;
+        const callee: Inst.Index = @enumFromInt(l.bir.instData(inst).lhs);
+        if (l.bir.instTag(callee) != .top) return null;
+        const index = l.bir.instData(callee).lhs;
+        return if (index < l.bir.decls.len) index else null;
+    }
+
+    /// The positions under `inst` whose value is `inst`'s: a `let`'s body
+    /// and each branch of a `case`.
+    fn pushTails(l: *Lowerer, stack: *std.ArrayList(Inst.Index), inst: Inst.Index) !void {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => try stack.append(l.scratch, @enumFromInt(d.rhs)),
+            .case => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                if (l.bir.instTag(branch) == .branch) try stack.append(l.scratch, @enumFromInt(l.bir.instData(branch).rhs));
+            },
+            else => {},
+        }
+    }
+
+    /// `let _ = inst`: evaluated for its effect and nothing else, so
+    /// written as statements with no binding (`backend.md` §4, *A discarded
+    /// value is a statement*). A right-hand side that cannot have an effect
+    /// is still evaluated in a development build, exactly as its `const` was,
+    /// and its statements are listed for the release optimiser, which drops
+    /// them as it dropped the `const` (`language.md` §6).
+    fn discard(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) !void {
+        const value = try l.expr(out, inst);
+        const before = out.items.len;
+        try l.discardValue(out, value, p);
+        if (l.mayHaveEffect(inst)) return;
+        try l.pure_discards.appendSlice(l.scratch, out.items[before..]);
+    }
+
+    /// The statements that evaluate `value` and throw its result away:
+    /// nothing for a read (a name, a literal, a field of one), an `if`
+    /// statement for a conditional, whose arms are discarded in turn, and
+    /// the expression statement `value;` for anything else.
+    fn discardValue(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) Allocator.Error!void {
+        if (l.isRead(value)) return;
+        if (l.b.nodes.items(.tag)[value.int()] != .cond) {
+            return out.append(l.scratch, try l.add(.expr_stmt, p, value.int(), Node.Data.unused));
+        }
+        const d = l.b.nodes.items(.data)[value.int()];
+        const arms = l.b.extra.items[d.rhs..][0..2];
+        const test_expr: Node.Index = @enumFromInt(d.lhs);
+        var then: StmtList = .empty;
+        try l.discardValue(&then, @enumFromInt(arms[0]), p);
+        var otherwise: StmtList = .empty;
+        try l.discardValue(&otherwise, @enumFromInt(arms[1]), p);
+        if (then.items.len == 0 and otherwise.items.len == 0) return l.discardValue(out, test_expr, p);
+        if (then.items.len == 0) return l.ifStatement(out, try l.negate(test_expr, p), otherwise.items, p);
+        const then_range = try l.b.addRange(then.items);
+        const else_range = try l.b.addRange(otherwise.items);
+        const record = try l.b.addRecord(JsIr.If{
+            .then_start = then_range.start,
+            .then_end = then_range.end,
+            .else_start = else_range.start,
+            .else_end = else_range.end,
+        });
+        try out.append(l.scratch, try l.add(.if_stmt, p, test_expr.int(), @intFromEnum(record)));
     }
 
     /// Bind a value to a name unless it is already something that can be
@@ -8080,9 +8565,8 @@ fn expectJs(expected: []const u8, source: [:0]const u8) !void {
 
 test "a top-level constant and a top-level function" {
     try expectJs(
-        \\import { Basics$add } from "./Basics.mjs";
         \\const M$one = 1;
-        \\const M$plus = (a$1, b$2) => Basics$add(a$1, b$2);
+        \\const M$plus = (a$1, b$2) => a$1 + b$2;
         \\export { M$one, M$plus };
         \\
     ,
@@ -8104,8 +8588,7 @@ test "every call is a direct n-ary call and a function value is the binding itse
     // the one argument a call leaves open is written `_` — which is a
     // lambda by the time the backend sees it (`language.md` §6.7).
     try expectJs(
-        \\import { Basics$add } from "./Basics.mjs";
-        \\const M$plus = (a$1, b$2) => Basics$add(a$1, b$2);
+        \\const M$plus = (a$1, b$2) => a$1 + b$2;
         \\const M$six = M$plus(2, 4);
         \\const M$addTwo = ($p$1) => M$plus(2, $p$1);
         \\const M$asValue = M$plus;
@@ -8301,11 +8784,10 @@ test "a record's keys are sorted, and a list is cons cells" {
 
 test "let bindings become const, and a let binding with parameters becomes a hoisted function" {
     try expectJs(
-        \\import { Basics$mul, Basics$add } from "./Basics.mjs";
         \\const M$f = (n$1) => {
-        \\  const doubled$2 = Basics$mul(n$1, 2);
+        \\  const doubled$2 = n$1 * 2;
         \\  function step$3(x$4) {
-        \\    return Basics$add(x$4, doubled$2);
+        \\    return x$4 + doubled$2;
         \\  }
         \\  return step$3(1);
         \\};
@@ -8328,10 +8810,9 @@ test "let bindings become const, and a let binding with parameters becomes a hoi
 
 test "a lambda is an n-ary function expression, of exactly its parameters" {
     try expectJs(
-        \\import { Basics$add, Basics$mul } from "./Basics.mjs";
         \\const M$apply = (f$1, x$2) => f$1(x$2);
-        \\const M$answer = M$apply((a$1) => Basics$add(a$1, 1), 1);
-        \\const M$twice = M$apply((b$1) => Basics$mul(b$1, 2), 21);
+        \\const M$answer = M$apply((a$1) => a$1 + 1, 1);
+        \\const M$twice = M$apply((b$1) => b$1 * 2, 21);
         \\export { M$apply, M$answer, M$twice };
         \\
     ,
@@ -8379,31 +8860,31 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
     //
     // The corpus proves the ANSWER (`run/TailCallLetFunction.beni`); what is
     // here is the shape claim that no `run/` fixture can separate from it.
+    // Both bodies make a function — `inner`, and the lambda inside it — so
+    // both keep §8's copies (*In place, when nothing captures*); neither
+    // needs a label, since each `continue` reaches its own function's loop.
     try expectJs(
-        \\import { Basics$sub, Basics$add } from "./Basics.mjs";
         \\const M$outer = ($in$0, $in$1) => {
-        \\  M$outer: while (true) {
+        \\  for (;;) {
         \\    const n$1 = $in$0;
         \\    const acc$2 = $in$1;
         \\    if (n$1 < 1) {
         \\      return acc$2;
         \\    } else {
         \\      function inner$3($in$0, $in$1) {
-        \\        inner$3: while (true) {
+        \\        for (;;) {
         \\          const i$4 = $in$0;
         \\          const total$5 = $in$1;
         \\          if (i$4 < 1) {
         \\            return total$5;
         \\          } else {
-        \\            $in$0 = Basics$sub(i$4, 1);
-        \\            $in$1 = Basics$add(total$5, 1);
-        \\            continue inner$3;
+        \\            $in$0 = i$4 - 1;
+        \\            $in$1 = ((x$6) => x$6 + i$4)(total$5);
         \\          }
         \\        }
         \\      }
-        \\      $in$0 = Basics$sub(n$1, 1);
+        \\      $in$0 = n$1 - 1;
         \\      $in$1 = inner$3(3, acc$2);
-        \\      continue M$outer;
         \\    }
         \\  }
         \\};
@@ -8422,7 +8903,7 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\                    total
         \\
         \\                else
-        \\                    inner (i - 1) (total + 1)
+        \\                    inner (i - 1) ((\x -> x + i) total)
         \\        in
         \\        outer (n - 1) (inner 3 acc)
         \\

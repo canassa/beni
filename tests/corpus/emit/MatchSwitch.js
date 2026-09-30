@@ -1,4 +1,3 @@
-import { Basics$mul } from "./_core/Basics.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const MatchSwitch$Colour$$order = { Red: 0, Green: 1, Blue: 2 };
 const MatchSwitch$Size$$order = { Small: 0, Medium: 1, Large: 2 };
@@ -61,12 +60,12 @@ const MatchSwitch$measure = (size$1) => {
     case "Medium":
       {
         const n$3 = size$1.a;
-        return Basics$mul(n$3, 2);
+        return n$3 * 2;
       }
     default:
       {
         const n$4 = size$1.a;
-        return Basics$mul(n$4, 3);
+        return n$4 * 3;
       }
   }
 };

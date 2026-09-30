@@ -802,7 +802,7 @@ test "modules import each other through ESM, and the program runs" {
         \\areaOf shape =
         \\    case shape of
         \\        Square side ->
-        \\            side * side
+        \\            abs (side * side)
         \\
     );
     try w.write("src/Main.beni",
@@ -2941,7 +2941,7 @@ test "a release application is one file with no import or export; --library keep
     try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";\n"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
     try testing.expect(std.mem.indexOf(u8, one, "export") == null);
-    try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), "\nexport{f,c};\n"));
+    try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), "\nexport{e,c};\n"));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │

@@ -1,11 +1,10 @@
 import { Io$sleep } from "./_platform/Io.mjs";
-import { Basics$add, Basics$mul, Basics$sub } from "./_core/Basics.mjs";
 import { Task$andThen, Task$isWaiting } from "./_core/Task.mjs";
-const SuspendShapes$fetch = (n$1) => Task$andThen(Io$sleep(n$1), ($t$1) => Basics$add(n$1, 1));
+const SuspendShapes$fetch = (n$1) => Task$andThen(Io$sleep(n$1), ($t$1) => n$1 + 1);
 const SuspendShapes$pick = (n$1) => {
   const $k$2 = ($t$3) => {
     const m$2 = $t$3;
-    return Basics$mul(m$2, 2);
+    return m$2 * 2;
   };
   if (n$1 > 0) {
     return Task$andThen(SuspendShapes$fetch(n$1), ($t$4) => $k$2($t$4));
@@ -14,7 +13,7 @@ const SuspendShapes$pick = (n$1) => {
   }
 };
 const SuspendShapes$total = ($in$0, $in$1) => {
-  SuspendShapes$total: while (true) {
+  SuspendShapes$total: for (;;) {
     const xs$1 = $in$0;
     const acc$2 = $in$1;
     if (xs$1.$ === 0) {
@@ -26,20 +25,19 @@ const SuspendShapes$total = ($in$0, $in$1) => {
       if (Task$isWaiting($t$5)) {
         return Task$andThen($t$5, ($t$5) => {
           $in$0 = rest$4;
-          $in$1 = Basics$add(acc$2, $t$5);
+          $in$1 = acc$2 + $t$5;
           return SuspendShapes$total($in$0, $in$1);
         });
       }
       $in$0 = rest$4;
-      $in$1 = Basics$add(acc$2, $t$5);
-      continue SuspendShapes$total;
+      $in$1 = acc$2 + $t$5;
     }
   }
 };
 const SuspendShapes$fetchAll = ($in$0) => {
   const $root = { $: 1, a: null, b: null };
   let $last = $root;
-  SuspendShapes$fetchAll: while (true) {
+  SuspendShapes$fetchAll: for (;;) {
     const xs$1 = $in$0;
     if (xs$1.$ === 0) {
       $last.b = { $: 0, a: null, b: null };
@@ -62,12 +60,11 @@ const SuspendShapes$fetchAll = ($in$0) => {
       $last.b = { $: 1, a: $t$6, b: null };
       $last = $last.b;
       $in$0 = rest$3;
-      continue SuspendShapes$fetchAll;
     }
   }
 };
 const SuspendShapes$twice = (f$1, x$2) => f$1(f$1(x$2));
 const SuspendShapes$twice$s = (f$1, x$2) => Task$andThen(f$1(x$2), ($t$7) => f$1($t$7));
-const SuspendShapes$both = (n$1) => Task$andThen(SuspendShapes$twice$s(SuspendShapes$fetch, n$1), ($t$9) => Basics$add($t$9, SuspendShapes$twice((k$2) => Basics$add(k$2, 1), n$1)));
-const SuspendShapes$plain = (n$1) => n$1 <= 0 ? 0 : Basics$add(n$1, SuspendShapes$plain(Basics$sub(n$1, 1)));
+const SuspendShapes$both = (n$1) => Task$andThen(SuspendShapes$twice$s(SuspendShapes$fetch, n$1), ($t$9) => $t$9 + SuspendShapes$twice((k$2) => k$2 + 1, n$1));
+const SuspendShapes$plain = (n$1) => n$1 <= 0 ? 0 : n$1 + SuspendShapes$plain(n$1 - 1);
 export { SuspendShapes$fetch, SuspendShapes$pick, SuspendShapes$total, SuspendShapes$fetchAll, SuspendShapes$both, SuspendShapes$plain };

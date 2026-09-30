@@ -102,6 +102,7 @@ const SourceStore = @import("../SourceStore.zig");
 const Types = @import("../check/Types.zig");
 const CtorEq = @import("CtorEq.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
+const Operator = @import("Operator.zig");
 
 const Reach = @This();
 
@@ -645,7 +646,7 @@ pub const Builder = struct {
         // A `Js` intrinsic written in place — a call's callee, or a
         // constant — is JavaScript and not a reference (research 47), so
         // its instruction adds no edge and the sibling is not imported.
-        const in_place = try b.jsInPlace(bir);
+        const in_place = try b.jsInPlace(bir, m);
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -729,15 +730,22 @@ pub const Builder = struct {
     /// Per instruction of `bir`, whether it is a `Js` intrinsic `Lower`
     /// writes in place (`JsIntrinsic`): the callee of a `call`, or `null`
     /// and `undefined` wherever they stand. Empty without an interner.
-    fn jsInPlace(b: *Builder, bir: *const Bir) Allocator.Error![]const bool {
+    fn jsInPlace(b: *Builder, bir: *const Bir, m: Graph.Index) Allocator.Error![]const bool {
         const interner = b.in.interner orelse return &.{};
         const tags = bir.insts.items(.tag);
         const data = bir.insts.items(.data);
         const marks = try b.scratch.alloc(bool, bir.insts.len);
         @memset(marks, false);
         for (tags, data, 0..) |tag, d, i| switch (tag) {
-            .call => if (d.lhs < marks.len and JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
-                marks[d.lhs] = true;
+            .call => if (d.lhs < marks.len) {
+                if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
+                    marks[d.lhs] = true;
+                } else if (Operator.of(b.in.graph, b.in.interfaces, bir, m, @enumFromInt(d.lhs), interner)) |which| {
+                    // An operator is written in place when the call passes
+                    // its arity (`Lower.callExpr`), which a saturated call
+                    // always does.
+                    if (bir.subRange(@enumFromInt(d.rhs)).len() == which.arity()) marks[d.lhs] = true;
+                }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(i), interner)) |which| {
                 if (which == .null or which == .undefined) marks[i] = true;

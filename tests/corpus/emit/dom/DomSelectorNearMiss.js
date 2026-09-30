@@ -1,7 +1,6 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
 import { template as $markup$template, slot as $markup$slot, forKeyed as $markup$forKeyed, forPosition as $markup$forPosition } from "./_platform/runtime.foreign.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
-import { Basics$add } from "./_core/Basics.mjs";
 const DomSelectorNearMiss$t202 = $markup$template("<div><!><!><!><!><!><!>", 0);
 const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
   const r$19 = DomSelectorNearMiss$t202();
@@ -142,7 +141,7 @@ const DomSelectorNearMiss$table = (model$1) => {
     const w$91 = r$90.firstChild;
     return { s: r$90, q: null, e: r$90, w0: r$90, w1: w$91, a0: undefined, a1: undefined, x: undefined };
   }, p: (i$92, item$93, position$94) => {
-    const $t$95 = DomSelectorNearMiss$isOn(model$1.selected, Basics$add(item$93.id, 1));
+    const $t$95 = DomSelectorNearMiss$isOn(model$1.selected, item$93.id + 1);
     if ($t$95 !== i$92.a0) {
       i$92.w0.setAttribute("class", $t$95);
       i$92.a0 = $t$95;

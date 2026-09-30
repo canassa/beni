@@ -1,8 +1,7 @@
-import{a,b,c}from"./_core/Basics.mjs";
-import{d}from"./_platform/Node.mjs";
-const e=(c)=>{const d=a(c,2),f=a(d,3),g=a(f,4);return b(b(d,f),g);},
-f=(b)=>b>0?a(b,2):c(b,1),
-g=(a,d)=>{g:while(true){const e=a,f=d;if(e<=0){return f;}else{a=c(e,1);d=b(f,e);continue g;}}},
-h=(b)=>({count:b,label:a(b,2)}),
-i=d({$:0,a:null,b:null});
-export{i,e,f,g,h};
+import{a}from"./_platform/Node.mjs";
+const b=(a)=>{const c=a*2,d=c*3,e=d*4;return c+d+e;},
+c=(a)=>a>0?a*2:a-1,
+d=(a,b)=>{for(;;){if(a<=0){return b;}else{b=b+a;a=a-1;}}},
+e=(a)=>({count:a,label:a*2}),
+f=a({$:0,a:null,b:null});
+export{f,b,c,d,e};

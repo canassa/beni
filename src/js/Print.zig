@@ -112,6 +112,10 @@ pub const Options = struct {
     /// printed, because every name they carry is already one binding of the
     /// one scope. Everything else prints exactly as it would.
     hoisted: bool = false,
+    /// The arrows whose result nothing reads (`Lower.Result.unobserved`):
+    /// what they return at their end is written as a statement or not at
+    /// all, and a `return null` anywhere else in them as `return`.
+    unobserved: []const Index = &.{},
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -134,6 +138,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .compact = options.compact,
         .imported = options.imported,
         .recursion_limit = options.recursion_limit,
+        .unobserved = options.unobserved,
         .spelled = scratch,
         .spellings = spellings,
     };
@@ -252,7 +257,10 @@ const spaces = " " ** 64;
 const prec_primary: u8 = 20;
 /// A call, a member access and an index are all left-binding postfix forms.
 const prec_call: u8 = 18;
-const prec_unary: u8 = 14;
+/// One above `**` (14): a unary operand may not be an exponentiation
+/// unbracketed, `-(a ** b)`, and `**`'s left operand binds tighter still
+/// (`JsIr.BinaryOp.leftPrecedence`).
+const prec_unary: u8 = 15;
 const prec_cond: u8 = 3;
 const prec_arrow: u8 = 2;
 
@@ -319,6 +327,18 @@ const Printer = struct {
     /// (`spelling`), and where those texts live until the joiner blits.
     spellings: []?Spelling,
     spelled: Allocator,
+    /// The `continue`s that end a loop body (`markLoopTail`), which say
+    /// nothing the end of the body does not: skipped, like a dropped
+    /// statement. In `spelled`.
+    elided: std.ArrayList(Index) = .empty,
+    /// `Options.unobserved`.
+    unobserved: []const Index = &.{},
+    /// Whether the function being printed is one of `unobserved` — its own
+    /// body, not a function nested in it.
+    discarding: bool = false,
+    /// The `return`s such a function ends with (`markTails`), written as
+    /// what they evaluate and nothing else.
+    tail_returns: std.ArrayList(Index) = .empty,
 
     // ---- Bytes out ---------------------------------------------------------
 
@@ -469,7 +489,7 @@ const Printer = struct {
             // §9 item 1: a binding nothing reads, or one whose single use
             // reads its initialiser instead. Skipped before the indentation,
             // so the line goes whole.
-            if (p.plan.isDropped(list[i])) continue;
+            if (p.skipped(list[i])) continue;
             // §9 item 5: a maximal run of adjacent `const_decl`s at one level
             // joins into `const a=1,b=2;`. It reorders nothing — the run keeps
             // its order and a comma declaration evaluates left to right, which
@@ -634,7 +654,10 @@ const Printer = struct {
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
                 try p.params(f);
                 try p.tok(" {\n", "{");
+                const saved = p.discarding;
+                p.discarding = false;
                 try p.statements(f.body(), level + 1);
+                p.discarding = saved;
                 try p.indent(level);
                 try p.push("}");
                 try p.endLine(level);
@@ -647,6 +670,22 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .return_stmt => {
+                // A function whose result nothing reads (§4, *A result
+                // nothing reads*): at its end, what the `return` evaluates
+                // as a statement; elsewhere, `return` alone for `null`.
+                if (p.discarding) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
+                    if (p.isTailReturn(node)) {
+                        try p.statementExpression(value, level);
+                        try p.push(";");
+                        try p.endLine(level);
+                        return;
+                    }
+                    if (p.ir.tag(p.resolve(value)) == .null_lit) {
+                        try p.push("return;");
+                        try p.endLine(level);
+                        return;
+                    }
+                };
                 try p.push("return");
                 if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
                     try p.tok(" ", "");
@@ -657,15 +696,30 @@ const Printer = struct {
             },
             .if_stmt => {
                 const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                const test_expr: Index = @enumFromInt(d.lhs);
+                // An arm left with nothing to print (a `continue` that ends
+                // a loop body, a tail `return` of a result nothing reads, a
+                // dropped binding) is not written: `if (c) {} else { x; }` is
+                // `if (!c) { x; }`, and an `if` with neither is its test.
+                const then_live = p.anyLive(branches.thenBody());
+                const else_live = p.anyLive(branches.elseBody());
+                if (!then_live and !else_live) {
+                    try p.statementExpression(test_expr, level);
+                    try p.push(";");
+                    try p.endLine(level);
+                    return;
+                }
+                const then_body = if (then_live) branches.thenBody() else branches.elseBody();
+                const else_body: ?JsIr.SubRange = if (then_live and else_live) branches.elseBody() else null;
                 try p.tok("if (", "if(");
-                try p.expression(@enumFromInt(d.lhs), 0, level);
+                if (then_live) try p.expression(test_expr, 0, level) else try p.negatedTest(test_expr, level);
                 // Compact printing drops the braces of a lone `return`,
                 // `continue`, `break`, `throw` or expression statement with no
                 // `else`: `if(c)return a;`. Never a declaration
                 // (not a legal `if` body) and never an `if` (a dangling
                 // `else` would change owner).
-                if (p.compact and branches.elseBody().len() == 0) {
-                    if (p.onlyLive(branches.thenBody())) |only| switch (p.ir.tag(only)) {
+                if (p.compact and else_body == null) {
+                    if (p.onlyLive(then_body)) |only| switch (p.ir.tag(only)) {
                         .return_stmt, .continue_stmt, .break_stmt, .throw_stmt, .expr_stmt, .assign_stmt => {
                             try p.push(")");
                             try p.statement(only, level);
@@ -675,14 +729,14 @@ const Printer = struct {
                     };
                 }
                 try p.tok(") {\n", "){");
-                try p.statements(branches.thenBody(), level + 1);
+                try p.statements(then_body, level + 1);
                 try p.indent(level);
-                if (branches.elseBody().len() == 0) {
+                if (else_body == null) {
                     try p.push("}");
                     try p.endLine(level);
                 } else {
                     try p.tok("} else {\n", "}else{");
-                    try p.statements(branches.elseBody(), level + 1);
+                    try p.statements(else_body.?, level + 1);
                     try p.indent(level);
                     try p.push("}");
                     try p.endLine(level);
@@ -693,7 +747,8 @@ const Printer = struct {
                     try p.name(@enumFromInt(d.lhs), .binding);
                     try p.tok(": ", ":");
                 }
-                try p.tok("while (true) {\n", "while(true){");
+                try p.tok("for (;;) {\n", "for(;;){");
+                try p.markLoopTail(p.ir.subRange(@enumFromInt(d.rhs)));
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
                 try p.indent(level);
                 try p.push("}");
@@ -957,14 +1012,14 @@ const Printer = struct {
                 },
                 .chunk => try p.templateChunk(p.ir.bytes(@enumFromInt(w.value))),
                 .binary_rest => {
-                    // ` op ` right, at `prec + 1`: every operator here is
-                    // left-associative, so `a - (b - c)` keeps its brackets.
+                    // ` op ` right, at `rightPrecedence`: one above the operator
+                    // for all but `**`, so `a - (b - c)` keeps its brackets.
                     const d = p.ir.data(@enumFromInt(w.value));
                     const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
                     try p.tok(" ", "");
                     try p.push(op.text());
                     try p.tok(" ", "");
-                    next = .expr(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).right, op.precedence() + 1);
+                    next = .expr(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).right, op.rightPrecedence());
                 },
                 .member_rest => {
                     try p.push(".");
@@ -1121,7 +1176,7 @@ const Printer = struct {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
                 try p.paramsOf(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
-                try p.arrowBody(f, level);
+                try p.arrowBody(node, f, level);
             },
             .cond => {
                 const c = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
@@ -1134,17 +1189,17 @@ const Printer = struct {
             .binary => {
                 const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
                 const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                const prec = op.precedence();
-                try p.expression(b.left, prec, level);
+                try p.expression(b.left, op.leftPrecedence(), level);
                 try p.tok(" ", "");
                 try p.push(op.text());
                 // The space after the operator is the `a - -1` case, and it is
                 // the guard in `push` that decides it: `-` then `-` merges into
                 // a decrement, `-` then anything else does not.
                 try p.tok(" ", "");
-                // Right operand at `prec + 1`: every operator here is
-                // left-associative, so `a - (b - c)` must keep its brackets.
-                try p.expression(b.right, prec + 1, level);
+                // Right operand one above the operator for a left-associative
+                // one, so `a - (b - c)` keeps its brackets; `**` is the one
+                // right-associative operator (`rightPrecedence`).
+                try p.expression(b.right, op.rightPrecedence(), level);
             },
             .unary => {
                 const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
@@ -1262,7 +1317,7 @@ const Printer = struct {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
                 try p.paramsOf(f, d.rhs == Node.arrow_depth);
                 try p.tok(" => ", "=>");
-                try p.arrowBody(f, level);
+                try p.arrowBody(node, f, level);
             },
             .cond => {
                 // test ` ? ` consequent ` : ` alternate
@@ -1273,13 +1328,13 @@ const Printer = struct {
                 // left ` ` op ` ` right. The space after the operator is the
                 // `a - -1` case, and it is the guard in `push` that decides
                 // it: `-` then `-` merges into a decrement, `-` then anything
-                // else does not. The right operand is at `prec + 1`: every
-                // operator here is left-associative, so `a - (b - c)` must
-                // keep its brackets.
+                // else does not. The right operand is at `rightPrecedence`, one
+                // above the operator for all but the right-associative `**`, so
+                // `a - (b - c)` keeps its brackets.
                 const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
                 const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
                 try p.later(.rest(.binary_rest, node));
-                return .expr(b.left, op.precedence());
+                return .expr(b.left, op.leftPrecedence());
             },
             .unary => {
                 // `typeof ` carries its own trailing space; in compact mode
@@ -1301,7 +1356,10 @@ const Printer = struct {
     /// `(a) => expr` when the body is one `return`, else a braced block.
     /// An object literal returned concisely has to be bracketed, or the
     /// brace reads as the block.
-    fn arrowBody(p: *Printer, f: JsIr.Func, level: u32) Allocator.Error!void {
+    fn arrowBody(p: *Printer, node: Index, f: JsIr.Func, level: u32) Allocator.Error!void {
+        const saved = p.discarding;
+        defer p.discarding = saved;
+        p.discarding = std.mem.indexOfScalar(Index, p.unobserved, node) != null;
         // The LIVE statements: §9 item 1 can leave a body that was a prologue
         // and a `return` holding only the `return`, and a body that prints
         // concisely should print concisely however it got that way. For a dev
@@ -1330,10 +1388,26 @@ const Printer = struct {
                 }
             }
         }
+        if (p.discarding) try p.markTails(f.body(), .return_stmt, &p.tail_returns);
         try p.tok("{\n", "{");
         try p.statements(f.body(), level + 1);
         try p.indent(level);
         try p.push("}");
+    }
+
+    fn isTailReturn(p: *Printer, node: Index) bool {
+        return std.mem.indexOfScalar(Index, p.tail_returns.items, node) != null;
+    }
+
+    /// Whether evaluating `node` does nothing but read: a name, a literal,
+    /// or a field of one.
+    fn readsOnly(p: *Printer, node: Index) bool {
+        var n = p.resolve(node);
+        while (true) switch (p.ir.tag(n)) {
+            .member => n = p.resolve(@enumFromInt(p.ir.data(n).lhs)),
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return true,
+            else => return false,
+        };
     }
 
     /// Whether `node`, printed at `min_prec`, begins with the `{` of an
@@ -1365,7 +1439,7 @@ const Printer = struct {
                 .binary => {
                     const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
                     n = p.resolve(p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary).left);
-                    prec = op.precedence();
+                    prec = op.leftPrecedence();
                 },
                 .cond => {
                     n = p.resolve(@enumFromInt(d.lhs));
@@ -1393,10 +1467,106 @@ const Printer = struct {
     /// The one statement of `range` that survives §9 item 1, or null when it
     /// holds none or more than one. For a dev build the plan is empty, so this
     /// is "the slice has exactly one element".
+    /// Mark the `continue`s a loop body ends with — its last live
+    /// statement, and through an `if`'s two arms and a block the last of
+    /// theirs — to be skipped (`backend.md` §8, *In place, when nothing
+    /// captures*): control reaching the end of the body goes round again
+    /// anyway. A `switch` case is not followed, because falling off its end
+    /// runs the next case; nor a nested loop, whose own end is not this
+    /// one's. Any `continue` found here is this loop's, since the walk
+    /// never enters another.
+    fn markLoopTail(p: *Printer, body: JsIr.SubRange) Allocator.Error!void {
+        return p.markTails(body, .continue_stmt, &p.elided);
+    }
+
+    /// The statements of kind `tag` that a run of statements ends with,
+    /// through the two arms of an `if` and the body of a block, into `into`.
+    fn markTails(p: *Printer, body: JsIr.SubRange, tag: Node.Tag, into: *std.ArrayList(Index)) Allocator.Error!void {
+        var range = body;
+        var pending: std.ArrayList(JsIr.SubRange) = .empty;
+        defer pending.deinit(p.spelled);
+        while (true) {
+            var last: ?Index = null;
+            for (p.ir.extraSlice(range, Index)) |node| {
+                if (!p.plan.isDropped(node)) last = node;
+            }
+            if (last) |node| {
+                const d = p.ir.data(node);
+                if (p.ir.tag(node) == tag) try into.append(p.spelled, node);
+                switch (p.ir.tag(node)) {
+                    .if_stmt => {
+                        const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                        try pending.append(p.spelled, branches.thenBody());
+                        try pending.append(p.spelled, branches.elseBody());
+                    },
+                    .block_stmt => try pending.append(p.spelled, p.ir.subRange(@enumFromInt(d.rhs))),
+                    else => {},
+                }
+            }
+            range = pending.pop() orelse return;
+        }
+    }
+
+    /// Whether `node` prints nothing: a binding §9 item 1 dropped, a
+    /// `continue` that ends a loop body (`markLoopTail`), or, in a function
+    /// whose result nothing reads, a tail `return` of a value that only
+    /// reads (§4, *A result nothing reads*).
+    fn skipped(p: *Printer, node: Index) bool {
+        if (p.plan.isDropped(node)) return true;
+        switch (p.ir.tag(node)) {
+            .continue_stmt => return std.mem.indexOfScalar(Index, p.elided.items, node) != null,
+            .return_stmt => {
+                if (!p.discarding or !p.isTailReturn(node)) return false;
+                const value = @as(Node.OptionalIndex, @enumFromInt(p.ir.data(node).lhs)).unwrap() orelse return true;
+                return p.readsOnly(value);
+            },
+            else => return false,
+        }
+    }
+
+    fn anyLive(p: *Printer, range: JsIr.SubRange) bool {
+        for (p.ir.extraSlice(range, Index)) |node| {
+            if (!p.skipped(node)) return true;
+        }
+        return false;
+    }
+
+    /// `!(test)`, written without the `!` where the test says it more
+    /// shortly: `a !== b` for `a === b` and the other way round, and `x`
+    /// for `!x` — the same truth in an `if`, which reads nothing else.
+    fn negatedTest(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        const n = p.resolve(node);
+        const d = p.ir.data(n);
+        switch (p.ir.tag(n)) {
+            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not) {
+                return p.expression(@enumFromInt(d.lhs), 0, level);
+            },
+            .binary => {
+                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                const flipped: ?JsIr.BinaryOp = switch (op) {
+                    .strict_eq => .strict_ne,
+                    .strict_ne => .strict_eq,
+                    else => null,
+                };
+                if (flipped) |f| {
+                    const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
+                    try p.expression(b.left, f.leftPrecedence(), level);
+                    try p.tok(" ", "");
+                    try p.push(f.text());
+                    try p.tok(" ", "");
+                    return p.expression(b.right, f.rightPrecedence(), level);
+                }
+            },
+            else => {},
+        }
+        try p.push("!");
+        try p.expression(n, prec_unary, level);
+    }
+
     fn onlyLive(p: *Printer, range: JsIr.SubRange) ?Index {
         var found: ?Index = null;
         for (p.ir.extraSlice(range, Index)) |node| {
-            if (p.plan.isDropped(node)) continue;
+            if (p.skipped(node)) continue;
             if (found != null) return null;
             found = node;
         }
@@ -1693,13 +1863,16 @@ test "a local whose text is a JavaScript reserved word is escaped; a property ke
 }
 
 test "if, labelled while, break, continue, switch and throw" {
+    // The `if` is not the loop body's last statement, so its `continue` is
+    // printed (`markLoopTail`).
     try expectPrinted(
-        \\loop: while (true) {
+        \\loop: for (;;) {
         \\  if (a) {
         \\    continue loop;
         \\  } else {
         \\    break;
         \\  }
+        \\  g;
         \\}
         \\switch (t) {
         \\  case 1:
@@ -1723,7 +1896,8 @@ test "if, labelled while, break, continue, switch and throw" {
                 .else_end = else_body.end,
             });
             const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @intFromEnum(branches));
-            const loop_body = try f.b.addRange(&.{if_stmt});
+            const after = try f.node(.expr_stmt, (try f.ident("g")).int(), 0);
+            const loop_body = try f.b.addRange(&.{ if_stmt, after });
             const loop_record = try f.b.addRecord(loop_body);
             try out.append(gpa, try f.node(.while_true, @intFromEnum(label), @intFromEnum(loop_record)));
 
@@ -1779,7 +1953,7 @@ test "objects, arrays, spreads, calls, member access and indexing" {
     }.go);
 }
 
-test "precedence decides the brackets, and every binary operator is left-associative" {
+test "precedence decides the brackets, and every binary operator but `**` is left-associative" {
     try expectPrinted(
         \\const a = 1 + 2 * 3;
         \\const b = (1 + 2) * 3;
@@ -1808,6 +1982,33 @@ test "precedence decides the brackets, and every binary operator is left-associa
 
             try f.constDecl(out, "g", try f.node(.unary, plus.int(), @intFromEnum(JsIr.UnaryOp.neg)));
             try f.constDecl(out, "h", try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.not)));
+        }
+    }.go);
+}
+
+test "`**` is right-associative, takes no unary left operand, and is no unary operand itself" {
+    // `-a ** b` and `-(a) ** b` are syntax errors in JavaScript, not a
+    // precedence question, so `**` brackets on rules of its own
+    // (`JsIr.BinaryOp.leftPrecedence`, `rightPrecedence`, `prec_unary`).
+    try expectPrinted(
+        \\const a = 2 ** 3 ** 2;
+        \\const b = (2 ** 3) ** 2;
+        \\const c = (-a) ** 2;
+        \\const d = -(a ** 2);
+        \\const e = a ** -a;
+        \\const g = 2 * 3 ** 2;
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const two = try f.number("2");
+            const three = try f.number("3");
+            const neg = try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            try f.constDecl(out, "a", try f.binary(.pow, two, try f.binary(.pow, three, two)));
+            try f.constDecl(out, "b", try f.binary(.pow, try f.binary(.pow, two, three), two));
+            try f.constDecl(out, "c", try f.binary(.pow, neg, two));
+            try f.constDecl(out, "d", try f.node(.unary, (try f.binary(.pow, try f.ident("a"), two)).int(), @intFromEnum(JsIr.UnaryOp.neg)));
+            try f.constDecl(out, "e", try f.binary(.pow, try f.ident("a"), neg));
+            try f.constDecl(out, "g", try f.binary(.mul, two, try f.binary(.pow, three, two)));
         }
     }.go);
 }
@@ -2090,8 +2291,9 @@ test "compact: a run of consts joins, and a newline lands after every top-level 
 }
 
 test "compact: a labelled loop, an if/else chain and an assignment" {
+    // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\const f=(a)=>{L:while(true){if(a){a=1;continue L;}else{return a;}}};
+        \\const f=(a)=>{L:for(;;){if(a){a=1;}else{return a;}}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {

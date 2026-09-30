@@ -1,0 +1,56 @@
+-- emit: `docs/design/backend.md` §8, *In place, when nothing captures*,
+-- beside the shape it replaces.
+--
+-- `sum` makes no function in its body, so its loop writes its parameters
+-- in place: no `$in$<i>` slots, no prologue `const`, a `for (;;)` with no
+-- label, no `continue` at the end of the body, and the assignments ORDERED
+-- so that `acc + n` reads `n` before `n - 1` rebinds it, with no temporary.
+-- `swap` is a cycle, and its first argument goes through one temporary.
+-- `logged` has an argument that makes a call, so its arguments run in
+-- parameter order and the one a later argument reads is held.
+--
+-- `closures` conses a closure over `n` each iteration, so it keeps §8's
+-- copies: the `$in$<i>` slots, the prologue `const`s every iteration's
+-- closure captures, and the labelled loop.
+import Node exposing (Program)
+
+
+pub sum : Int, Int -> Int
+sum n acc =
+    if n <= 0 then
+        acc
+
+    else
+        sum (n - 1) (acc + n)
+
+
+pub swap : Int, Int, Int -> Int
+swap a b n =
+    if n <= 0 then
+        a - b
+
+    else
+        swap b a (n - 1)
+
+
+pub logged : Int, Int -> Int
+logged a b =
+    if a <= 0 then
+        b
+
+    else
+        logged (a - 1) (String.length (String.fromInt a) + b)
+
+
+pub closures : Int, List (Int -> Int) -> List (Int -> Int)
+closures n acc =
+    if n <= 0 then
+        acc
+
+    else
+        closures (n - 1) [ \x -> x + n, ...acc ]
+
+
+main : Program
+main =
+    Node.printLines []

@@ -1,0 +1,75 @@
+-- emit: `docs/design/backend.md` §4, *Arithmetic is an operator*. A call of
+-- `Basics.add`, `sub`, `mul`, `fdiv`, `pow`, `not`, `negate` and the
+-- comparisons called by name is the JavaScript operator it computes, and so
+-- are `Int32`'s wrapping additions, bitwise operations and shifts: no call,
+-- and no import of `_core/Basics.mjs` or `_core/Int32.mjs` for them.
+--
+-- The brackets are the claims running cannot see: `**` is right-associative
+-- (`power`'s `a ** b ** c` has none, `powerLeft`'s `(a ** b) ** c` has one),
+-- and `negate` is `0 - n`, never `-n`, which is another number at zero.
+--
+-- `divide`, `modulo` and `remainder` stay calls: `//`, `modBy` and
+-- `remainderBy` answer 0 for a zero divisor, which no operator does. So does
+-- `Int32.mul`, which is `Math.imul`.
+import Int32 exposing (Int32)
+import Node exposing (Program)
+
+
+pub arithmetic : Int, Int -> Int
+arithmetic a b =
+    a + b * 2 - (a - b)
+
+
+pub floats : Float, Float -> Float
+floats x y =
+    x / y + negate x
+
+
+pub power : Int, Int, Int -> Int
+power a b c =
+    a ^ b ^ c
+
+
+pub powerLeft : Int, Int, Int -> Int
+powerLeft a b c =
+    (a ^ b) ^ c
+
+
+pub powerOfNegation : Int, Int -> Int
+powerOfNegation a b =
+    negate a ^ b
+
+
+pub byName : Int, Int -> Bool
+byName a b =
+    Basics.lt a b && Basics.ge a b
+
+
+pub notBoth : Bool, Bool -> Bool
+notBoth a b =
+    not (a && b) || not a
+
+
+pub divide : Int, Int -> Int
+divide a b =
+    a // b + modBy b a + remainderBy b a
+
+
+pub wrap : Int32, Int32 -> Int
+wrap a b =
+    Int32.toInt (Int32.add (Int32.sub a b) (Int32.fromInt 1))
+
+
+pub bits : Int32, Int32 -> Int32
+bits a b =
+    Int32.xor (Int32.and a b) (Int32.or (Int32.shiftLeft a 3) (Int32.shiftRightZero b 2))
+
+
+pub product : Int32, Int32 -> Int
+product a b =
+    Int32.toUnsignedInt (Int32.mul (Int32.shiftRight a 1) b)
+
+
+main : Program
+main =
+    Node.printLines []

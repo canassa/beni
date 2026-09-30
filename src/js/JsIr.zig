@@ -264,21 +264,53 @@ pub const BinaryOp = enum(u8) {
     /// `==`, which only the `Js.isNullish` intrinsic writes, and only
     /// against `null` (research 47).
     loose_eq,
+    /// `**`, which `Basics.pow` is (`backend.md` §4, *Arithmetic is an
+    /// operator*). Right-associative, and its left operand may not be a
+    /// unary expression — `-a ** b` is a syntax error — so it brackets
+    /// unlike every other operator here (`leftPrecedence`).
+    pow,
+    /// `^`, `<<`, `>>` and `>>>`: `Int32`'s bitwise operations, written in
+    /// place (`backend.md` §4).
+    bit_xor,
+    shl,
+    sar,
+    shr,
 
     /// JavaScript's precedence, higher binds tighter. The printer
     /// parenthesises on it rather than carrying `paren` nodes, so the IR
     /// holds structure and the bytes hold syntax.
     pub fn precedence(op: BinaryOp) u8 {
         return switch (op) {
+            .pow => 14,
             .mul, .div, .rem => 13,
             .add, .sub => 12,
+            .shl, .sar, .shr => 11,
             .lt, .le, .gt, .ge => 10,
             .strict_eq, .strict_ne, .loose_eq => 9,
-            .bit_and => 7,
+            .bit_and => 8,
+            .bit_xor => 7,
             .bit_or => 6,
             .logical_and => 5,
             .logical_or => 4,
         };
+    }
+
+    /// The least precedence the LEFT operand may have unbracketed. Every
+    /// operator but `**` is left-associative, so its left operand may be of
+    /// its own precedence. `**` is right-associative and refuses a unary
+    /// left operand outright, so its left operand must bind tighter than a
+    /// unary expression (the printer's `prec_unary`, 15): `(-a) ** b`,
+    /// `(a ** b) ** c`.
+    pub fn leftPrecedence(op: BinaryOp) u8 {
+        return if (op == .pow) 16 else op.precedence();
+    }
+
+    /// The least precedence the RIGHT operand may have unbracketed: one
+    /// above the operator's own for a left-associative operator, so
+    /// `a - (b - c)` keeps its brackets; the operator's own for `**`, so
+    /// `a ** b ** c` is `a ** (b ** c)` with none.
+    pub fn rightPrecedence(op: BinaryOp) u8 {
+        return if (op == .pow) op.precedence() else op.precedence() + 1;
     }
 
     pub fn text(op: BinaryOp) []const u8 {
@@ -299,6 +331,11 @@ pub const BinaryOp = enum(u8) {
             .bit_or => "|",
             .bit_and => "&",
             .loose_eq => "==",
+            .pow => "**",
+            .bit_xor => "^",
+            .shl => "<<",
+            .sar => ">>",
+            .shr => ">>>",
         };
     }
 };
@@ -1227,6 +1264,90 @@ pub const Builder = struct {
             }
         }
         return most;
+    }
+
+    /// What a run of statements and expressions built so far holds, walked
+    /// through every nested statement and expression of the one function
+    /// they belong to.
+    pub const Holds = struct {
+        /// A function made here: an arrow, or a `function` declaration.
+        closure: bool = false,
+        /// A loop.
+        loop: bool = false,
+        /// A call, which may have an effect, or `yield`, which suspends.
+        call: bool = false,
+        /// A read of the name asked about.
+        reads: bool = false,
+    };
+
+    /// `Holds` for `roots`, which may be statements or expressions; `read`
+    /// is the name `reads` asks about, or `.none`. Iterative, over a stack
+    /// of its own: a body is as deep as the longest chain the lowering
+    /// built.
+    pub fn holds(b: *const Builder, gpa: Allocator, roots: []const Node.Index, read: NameIndex) Allocator.Error!Holds {
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(gpa);
+        const tags = b.nodes.items(.tag);
+        const datas = b.nodes.items(.data);
+        var out: Holds = .{};
+        for (roots) |root| try stack.append(gpa, root.int());
+        while (stack.pop()) |at| {
+            if (at >= tags.len) continue;
+            const d = datas[at];
+            switch (tags[at]) {
+                .ident => if (read != .none and d.lhs == read.int()) {
+                    out.reads = true;
+                },
+                .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                .const_decl, .property => try stack.append(gpa, d.rhs),
+                .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
+                .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(gpa, v.int()),
+                .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(gpa, v.int()),
+                .unary => {
+                    if (@as(UnaryOp, @enumFromInt(d.rhs)) == .yield) out.call = true;
+                    try stack.append(gpa, d.lhs);
+                },
+                .expr_stmt, .throw_stmt, .member, .spread_property => try stack.append(gpa, d.lhs),
+                // A function made here is reported; what its body holds is
+                // another function's, and not walked.
+                .func_decl, .gen_decl, .arrow => out.closure = true,
+                .if_stmt => {
+                    const branches = b.record(d.rhs, If);
+                    try stack.append(gpa, d.lhs);
+                    try stack.appendSlice(gpa, b.rangeWords(branches.thenBody()));
+                    try stack.appendSlice(gpa, b.rangeWords(branches.elseBody()));
+                },
+                .while_true => {
+                    out.loop = true;
+                    try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
+                },
+                .switch_stmt => {
+                    try stack.append(gpa, d.lhs);
+                    try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
+                },
+                .switch_case => {
+                    if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(gpa, t.int());
+                    try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
+                },
+                .block_stmt => try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange))),
+                .template, .object, .array => try stack.appendSlice(gpa, b.rangeWords(inlineRange(d))),
+                .call => {
+                    out.call = true;
+                    try stack.append(gpa, d.lhs);
+                    try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
+                },
+                .cond => {
+                    const c = b.record(d.rhs, Cond);
+                    try stack.appendSlice(gpa, &.{ d.lhs, c.consequent.int(), c.alternate.int() });
+                },
+                .binary => {
+                    const pair = b.record(d.lhs, Binary);
+                    try stack.appendSlice(gpa, &.{ pair.left.int(), pair.right.int() });
+                },
+            }
+        }
+        return out;
     }
 
     /// A braced run of statements below `at`: `weight` further down, and

@@ -43,7 +43,7 @@ const DerivedEqNominal$Tree$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedEqNominal$Tree$$compare$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
     }
@@ -67,7 +67,7 @@ const DerivedEqNominal$Tree$$compare = ($x, $y, $d = 0) => {
 };
 function* DerivedEqNominal$Tree$$compare$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return DerivedEqNominal$Tree$$order[$x.$] < DerivedEqNominal$Tree$$order[$y.$] ? "LT" : "GT";
     }
@@ -96,7 +96,7 @@ const DerivedEqNominal$Tree$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedEqNominal$Tree$$eq$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }
@@ -118,7 +118,7 @@ const DerivedEqNominal$Tree$$eq = ($x, $y, $d = 0) => {
 };
 function* DerivedEqNominal$Tree$$eq$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }

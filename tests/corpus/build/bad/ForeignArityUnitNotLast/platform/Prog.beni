@@ -1,0 +1,8 @@
+-- `foreign_arity_mismatch` (boundary.md §4, check 4, as amended 2026-10-02):
+-- a sibling may leave out a TRAILING run of `()` parameters, and only that.
+-- `say`'s `()` comes before a written parameter, so the one-parameter export
+-- would receive the `null` where the string belongs.
+pub foreign type Program
+
+
+pub foreign pure say : (), String -> Program

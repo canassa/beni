@@ -1,10 +1,9 @@
 import { List$cons } from "./_core/List.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
-const TailModConsLoop$mapRec = ($in$0, f$2) => {
+const TailModConsLoop$mapRec = (xs$1, f$2) => {
   const $root = { $: 1, a: null, b: null };
   let $last = $root;
-  TailModConsLoop$mapRec: while (true) {
-    const xs$1 = $in$0;
+  for (;;) {
     if (xs$1.$ === 0) {
       $last.b = { $: 0, a: null, b: null };
       return $root.b;
@@ -13,16 +12,14 @@ const TailModConsLoop$mapRec = ($in$0, f$2) => {
       const rest$4 = xs$1.b;
       $last.b = { $: 1, a: f$2(x$3), b: null };
       $last = $last.b;
-      $in$0 = rest$4;
-      continue TailModConsLoop$mapRec;
+      xs$1 = rest$4;
     }
   }
 };
-const TailModConsLoop$twice = ($in$0) => {
+const TailModConsLoop$twice = (xs$1) => {
   const $root = { $: 1, a: null, b: null };
   let $last = $root;
-  TailModConsLoop$twice: while (true) {
-    const xs$1 = $in$0;
+  for (;;) {
     if (xs$1.$ === 0) {
       $last.b = { $: 0, a: null, b: null };
       return $root.b;
@@ -33,16 +30,14 @@ const TailModConsLoop$twice = ($in$0) => {
       $last = $last.b;
       $last.b = { $: 1, a: x$2, b: null };
       $last = $last.b;
-      $in$0 = rest$3;
-      continue TailModConsLoop$twice;
+      xs$1 = rest$3;
     }
   }
 };
-const TailModConsLoop$filterRec = ($in$0, keep$2) => {
+const TailModConsLoop$filterRec = (xs$1, keep$2) => {
   const $root = { $: 1, a: null, b: null };
   let $last = $root;
-  TailModConsLoop$filterRec: while (true) {
-    const xs$1 = $in$0;
+  for (;;) {
     if (xs$1.$ === 0) {
       $last.b = { $: 0, a: null, b: null };
       return $root.b;
@@ -52,11 +47,9 @@ const TailModConsLoop$filterRec = ($in$0, keep$2) => {
       if (keep$2(x$3)) {
         $last.b = { $: 1, a: x$3, b: null };
         $last = $last.b;
-        $in$0 = rest$4;
-        continue TailModConsLoop$filterRec;
+        xs$1 = rest$4;
       } else {
-        $in$0 = rest$4;
-        continue TailModConsLoop$filterRec;
+        xs$1 = rest$4;
       }
     }
   }

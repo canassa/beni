@@ -88,7 +88,7 @@ const DerivedCompareNominal$Tree$$compare = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedCompareNominal$Tree$$compare$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
     }
@@ -108,7 +108,7 @@ const DerivedCompareNominal$Tree$$compare = ($x, $y, $d = 0) => {
 };
 function* DerivedCompareNominal$Tree$$compare$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return DerivedCompareNominal$Tree$$order[$x.$] < DerivedCompareNominal$Tree$$order[$y.$] ? "LT" : "GT";
     }
@@ -133,7 +133,7 @@ const DerivedCompareNominal$Tree$$eq = ($x, $y, $d = 0) => {
   if ($d > 400) {
     return _derived$deep(DerivedCompareNominal$Tree$$eq$$steps($x, $y), $d);
   }
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }
@@ -152,7 +152,7 @@ const DerivedCompareNominal$Tree$$eq = ($x, $y, $d = 0) => {
 };
 function* DerivedCompareNominal$Tree$$eq$$steps($x, $y) {
   let $e;
-  while (true) {
+  for (;;) {
     if ($x.$ !== $y.$) {
       return false;
     }

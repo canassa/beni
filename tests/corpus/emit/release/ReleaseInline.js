@@ -1,10 +1,9 @@
-import{a,b}from"./_core/Basics.mjs";
-import{c}from"./_platform/Node.mjs";
-const d=(a,b)=>{const c=a.a<b.a?"LT":a.a>b.a?"GT":"EQ";if(c!=="EQ")return c;return a.b<b.b?"LT":a.b>b.b?"GT":"EQ";},
-e=(a,b)=>a.a===b.a&&a.b===b.b,
-f=(b)=>a(b.a,b.b),
-g=(a)=>({$:"Pair",a:a.b,b:a.a}),
-h=(a)=>{const c=a.a;return b(c,c);},
-i=(b)=>{const c=f(b);return a(c,1);},
-j=c({$:0,a:null,b:null});
-export{d,e,j,f,g,h,i};
+import{a}from"./_platform/Node.mjs";
+const b=(a,c)=>{const d=a.a<c.a?"LT":a.a>c.a?"GT":"EQ";if(d!=="EQ")return d;return a.b<c.b?"LT":a.b>c.b?"GT":"EQ";},
+c=(a,b)=>a.a===b.a&&a.b===b.b,
+d=(a)=>a.a+a.b,
+e=(a)=>({$:"Pair",a:a.b,b:a.a}),
+f=(a)=>{const b=a.a;return b*b;},
+g=(a)=>{const b=d(a);return b+1;},
+h=a({$:0,a:null,b:null});
+export{b,c,h,d,e,f,g};

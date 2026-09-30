@@ -115,14 +115,17 @@ const scan_limit: usize = 64;
 /// per declaration, by a stamp rather than a `@memset`, so the reset is O(1)
 /// and the pass stays linear in the module.
 pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
-    return runKeeping(arena, ir, &.{});
+    return runKeeping(arena, ir, &.{}, &.{});
 }
 
 /// `run`, keeping the bindings `keep` names whatever their uses: each is a
 /// `let` whose right-hand side may be impure or may suspend, evaluated for
 /// its effect whether or not anything reads it (`backend.md` §9 item 1, as
-/// amended 2026-09-30).
-pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index) Allocator.Error!Plan {
+/// amended 2026-09-30). `discarded` are the statements of a `let _ = e` whose
+/// `e` cannot have an effect, which `Lower` wrote as statements with no
+/// binding (`backend.md` §4, *A discarded value is a statement*): dropped
+/// whole, as their `const` was when there was one.
+pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discarded: []const Index) Allocator.Error!Plan {
     if (ir.nodes.len == 0) return .none;
 
     const kept = try arena.alloc(u32, (ir.nodes.len + 31) / 32);
@@ -146,6 +149,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index) Alloca
     @memset(o.stamp, 0);
     @memset(o.dropped, 0);
     @memset(o.inlined, .none);
+    for (discarded) |node| if (node.int() < ir.nodes.len) o.drop(node);
 
     for (ir.extraSlice(ir.body, Index)) |top| {
         o.current += 1;

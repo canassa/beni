@@ -1,11 +1,10 @@
 import{a}from"./_platform/Io.mjs";
-import{b,c,d}from"./_core/Basics.mjs";
-import{e,f}from"./_core/Task.mjs";
-const g=(c)=>e(a(c),(d)=>b(c,1)),
-h=(a)=>{const b=(d)=>c(d,2);if(a>0){return e(g(a),(i)=>b(i));}else{return b(0);}},
-i=(a,c)=>{i:while(true){const d=a,h=c;if(d.$===0){return h;}else{const k=d.b,l=g(d.a);if(f(l))return e(l,(l)=>{a=k;c=b(h,l);return i(a,c);});a=k;c=b(h,l);continue i;}}},
-j=(a,b)=>a(a(b)),
-k=(a,b)=>e(a(b),(c)=>a(c)),
-l=(a)=>e(k(g,a),(c)=>b(c,j((d)=>b(d,1),a))),
-m=(a)=>a<=0?0:b(a,m(d(a,1)));
-export{g,h,i,l,m};
+import{b,c}from"./_core/Task.mjs";
+const d=(c)=>b(a(c),(e)=>c+1),
+e=(a)=>{const c=(f)=>f*2;if(a>0){return b(d(a),(h)=>c(h));}else{return c(0);}},
+f=(a,e)=>{f:for(;;){const g=a,h=e;if(g.$===0){return h;}else{const j=g.b,k=d(g.a);if(c(k))return b(k,(k)=>{a=j;e=h+k;return f(a,e);});a=j;e=h+k;}}},
+g=(a,b)=>a(a(b)),
+h=(a,c)=>b(a(c),(d)=>a(d)),
+i=(a)=>b(h(d,a),(c)=>c+g((e)=>e+1,a)),
+j=(a)=>a<=0?0:a+j(a-1);
+export{d,e,f,i,j};

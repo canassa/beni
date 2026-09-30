@@ -1,0 +1,68 @@
+-- run: a tail-call loop that reassigns its parameters in place
+-- (`docs/design/backend.md` §8, *In place, when nothing captures*) still
+-- evaluates every argument against this iteration's parameters, and the ones
+-- that make a call in parameter order:
+--
+--   `walk`     both arguments make a call (`Debug.log` shows their order) and
+--              each reads the parameter the other rebinds, so the first goes
+--              through a temporary
+--   `rotate`   no argument makes a call, so the assignments are ORDERED, and
+--              the three-way cycle takes one temporary
+--   `pairs`    a destructured parameter reads this iteration's pair
+--   `ticks`    a trailing `()` parameter (§6, *A parameter of type `()`*) is
+--              not a parameter of the loop, and its argument still runs, in
+--              its turn between the others
+import Node exposing (Program)
+
+
+note : String, Int -> Int
+note label n =
+    Debug.log n label
+
+
+walk : Int, Int, Int -> String
+walk a b n =
+    if n <= 0 then
+        "${String.fromInt a},${String.fromInt b}"
+
+    else
+        walk (note "a" (b + 1)) (note "b" (a * 10)) (n - 1)
+
+
+rotate : Int, Int, Int, Int -> String
+rotate a b c n =
+    if n <= 0 then
+        "${String.fromInt a},${String.fromInt b},${String.fromInt c}"
+
+    else
+        rotate b c a (n - 1)
+
+
+pairs : ( Int, Int ), Int, Int -> Int
+pairs ( x, y ) acc n =
+    if n <= 0 then
+        acc + x * 100 + y
+
+    else
+        pairs ( y, x + 1 ) (acc + x) (n - 1)
+
+
+ticks : Int, Int, () -> Int
+ticks n acc () =
+    if n <= 0 then
+        acc
+
+    else
+        ticks (note "n" (n - 1)) (acc + n) (Debug.log () "tick")
+
+
+main : Program
+main =
+    Node.printLines
+        [ walk 1 2 2
+        , rotate 1 2 3 1
+        , rotate 1 2 3 2
+        , rotate 1 2 3 100000
+        , String.fromInt (pairs ( 1, 2 ) 0 3)
+        , String.fromInt (ticks 2 0 ())
+        ]

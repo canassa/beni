@@ -1,5 +1,4 @@
 import { String$fromInt, String$append } from "./_core/String.mjs";
-import { Basics$add } from "./_core/Basics.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const MatchSharedLeaf$Flag$$order = { On: 0, Off: 1 };
 const MatchSharedLeaf$Flag$$compare = ($x, $y) => {
@@ -28,7 +27,7 @@ const MatchSharedLeaf$verdict = (x$1, y$2, flag$3) => {
   }
   const a$6 = x$1;
   const b$7 = y$2;
-  return `sum ${String$fromInt(Basics$add(a$6, b$7))}`;
+  return `sum ${String$fromInt(a$6 + b$7)}`;
 };
 const MatchSharedLeaf$report = (x$1, y$2, flag$3) => {
   let $t$1;
@@ -54,7 +53,7 @@ const MatchSharedLeaf$report = (x$1, y$2, flag$3) => {
     }
     const a$6 = x$1;
     const b$7 = y$2;
-    $t$1 = `sum ${String$fromInt(Basics$add(a$6, b$7))}`;
+    $t$1 = `sum ${String$fromInt(a$6 + b$7)}`;
   }
   return String$append("> ", $t$1);
 };
