@@ -1,0 +1,57 @@
+-- Every body belongs to the program's scope, never to the body whose
+-- message started it (boundary.md §9.8.4). The "sender" body sends
+-- `Kick` and then waits; `Kick`'s command starts the "worker" body. A
+-- second click restarts the sender — cancelling it where it waits — and
+-- the worker, which its message started, still runs to its end.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Kick
+
+
+update : Msg, () -> ( (), Cmd Msg )
+update msg () =
+    case msg of
+        Go ->
+            ( (), Cmd.keyed "sender" Cmd.Restart sender )
+
+        Kick ->
+            ( (), Cmd.keyed "worker" Cmd.Concurrent worker )
+
+
+sender : Cmd.Send Msg -> ()
+sender send =
+    let
+        _ = send Kick
+    in
+    Time.sleep (Time.millis 1000)
+
+
+worker : Cmd.Send Msg -> ()
+worker _ =
+    let
+        _ = Debug.log () "worker starts"
+        _ = Time.sleep (Time.millis 100)
+    in
+    Debug.log () "worker ends"
+
+
+view : () -> Html Msg
+view () =
+    <button id="go" onClick={Go}>go</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( (), Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

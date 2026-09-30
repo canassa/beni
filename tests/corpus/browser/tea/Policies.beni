@@ -1,0 +1,57 @@
+-- `Ignore`, `Queue` and `Concurrent` (boundary.md §9.8.2). Each button
+-- starts a keyed body under its own key with its own policy; a body logs
+-- when it starts and when it ends, 100 ms later. Two clicks in one task:
+--
+--   - `Ignore`: the second body is dropped while the first runs; once it
+--     has ended, a third click starts again;
+--   - `Queue`: the second starts when the first ends;
+--   - `Concurrent`: both run at once, and `Cmd.cancel` cancels both.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Run String Cmd.Policy
+    | Stop String
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        Run key policy ->
+            ( n + 1, Cmd.keyed key policy (work "${key} ${String.fromInt (n + 1)}" _) )
+
+        Stop key ->
+            ( n, Cmd.cancel key )
+
+
+work : String, Cmd.Send Msg -> ()
+work name _ =
+    let
+        _ = Debug.log () "start ${name}"
+        _ = Time.sleep (Time.millis 100)
+    in
+    Debug.log () "end ${name}"
+
+
+view : Int -> Html Msg
+view _ =
+    <main>
+        <button id="ignore" onClick={Run "ignore" Cmd.Ignore}>ignore</button>
+        <button id="queue" onClick={Run "queue" Cmd.Queue}>queue</button>
+        <button id="concurrent" onClick={Run "concurrent" Cmd.Concurrent}>concurrent</button>
+        <button id="stop" onClick={Stop "concurrent"}>stop</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

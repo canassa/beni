@@ -1,0 +1,32 @@
+-- load
+console.log: acquire: ()
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <ol></ol>
+  </main>
+</body>
+-- advance 100
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <ol>
+      <li>"a 1"</li>
+      <li>"child 1"</li>
+    </ol>
+  </main>
+</body>
+-- click #rename
+(the DOM did not change)
+-- advance 100
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <ol>
+      <li>"a 1"</li>
+      <li>"child 1"</li>
+      <li>"a' 2"</li>
+      <li>"child 2"</li>
+    </ol>
+  </main>
+</body>

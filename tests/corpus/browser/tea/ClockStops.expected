@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "last tick at "
+      "0"
+    </p>
+  </main>
+</body>
+-- advance 250
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "last tick at "
+      "200"
+    </p>
+  </main>
+</body>
+-- click #toggle
+(the DOM did not change)
+-- advance 1000
+(the DOM did not change)
+-- click #toggle
+(the DOM did not change)
+-- advance 150
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <p>
+      "last tick at "
+      "1350"
+    </p>
+  </main>
+</body>

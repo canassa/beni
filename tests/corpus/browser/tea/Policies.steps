@@ -1,0 +1,14 @@
+# Ignore: the second click's body is dropped.
+click #ignore 2
+advance 100
+# The key is free again.
+click #ignore
+advance 100
+# Queue: the second starts when the first ends.
+click #queue 2
+advance 100
+advance 100
+# Concurrent: both at once; stop cancels both, and neither ends.
+click #concurrent 2
+click #stop
+advance 100

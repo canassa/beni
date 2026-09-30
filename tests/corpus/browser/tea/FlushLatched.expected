@@ -1,0 +1,18 @@
+-- load
+console.log: render: 0
+<body>
+  <main>
+    <button id="fiber">"fiber"</button>
+    <button id="update">"update"</button>
+  </main>
+</body>
+-- click #fiber
+console.log: render: 0
+console.log: sent: ()
+console.log: render: 1
+console.log: flushed: ()
+(the DOM did not change)
+-- click #update
+console.log: update flushed: ()
+console.log: render: 2
+(the DOM did not change)

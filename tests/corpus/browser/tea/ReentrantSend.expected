@@ -1,0 +1,35 @@
+-- load
+console.log: render: 0
+console.log: render: 0
+<body>
+  <main>
+    <button id="twice">"twice"</button>
+    <button id="after">"after"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #twice
+console.log: twice begins: ()
+console.log: twice ends: ()
+console.log: echo: 1
+console.log: render: 1
+<body>
+  <main>
+    <button id="twice">"twice"</button>
+    <button id="after">"after"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #after
+console.log: render: 1
+console.log: after-render sends: ()
+console.log: echo: 3
+console.log: after-render ends: ()
+console.log: render: 3
+<body>
+  <main>
+    <button id="twice">"twice"</button>
+    <button id="after">"after"</button>
+    <p>"3"</p>
+  </main>
+</body>

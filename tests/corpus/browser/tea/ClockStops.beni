@@ -1,0 +1,53 @@
+-- A clock subscription that stops when the model stops asking for it
+-- (boundary.md §9.8.5). `Time.every` ticks every 100 ms while `on`; the
+-- button turns it off, the set loses its key, and the fiber is cancelled
+-- in its sleep, so no tick arrives however far the clock moves. Turned
+-- back on, a new timer starts from that moment.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Tick Time.Posix
+    | Toggle
+
+
+type alias Model =
+    on : Bool
+    last : Int
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Tick t ->
+            ( { model | last = Time.toMillis t }, Cmd.none )
+
+        Toggle ->
+            ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.on then Time.every (Time.millis 100) Tick else Sub.none
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p>last tick at {model.last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { on = True, last = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

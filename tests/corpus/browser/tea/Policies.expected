@@ -1,0 +1,42 @@
+-- load
+<body>
+  <main>
+    <button id="ignore">"ignore"</button>
+    <button id="queue">"queue"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="stop">"stop"</button>
+  </main>
+</body>
+-- click #ignore 2
+(the step's task ended)
+console.log: start ignore 1: ()
+(the DOM did not change)
+-- advance 100
+console.log: end ignore 1: ()
+(the DOM did not change)
+-- click #ignore
+console.log: start ignore 3: ()
+(the DOM did not change)
+-- advance 100
+console.log: end ignore 3: ()
+(the DOM did not change)
+-- click #queue 2
+(the step's task ended)
+console.log: start queue 4: ()
+(the DOM did not change)
+-- advance 100
+console.log: end queue 4: ()
+console.log: start queue 5: ()
+(the DOM did not change)
+-- advance 100
+console.log: end queue 5: ()
+(the DOM did not change)
+-- click #concurrent 2
+(the step's task ended)
+console.log: start concurrent 6: ()
+console.log: start concurrent 7: ()
+(the DOM did not change)
+-- click #stop
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

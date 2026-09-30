@@ -2,5 +2,5 @@
   "platform": true,
   "name": "browser-tea",
   "platforms": ["browser"],
-  "reexports": ["Html", "Browser"]
+  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time"]
 }

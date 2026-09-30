@@ -1,0 +1,59 @@
+-- Keys match by value, however their `compare` was built (boundary.md
+-- §9.8.3). The key is a tuple, `( "row", id )`, whose evidence the
+-- emitter builds afresh at each call, and a record `{ row = id }`; under
+-- `Restart` each second click must cancel the body the first started — a
+-- key compared by its evidence's identity would match nothing and let
+-- both finish. The body logs its release, with how it ended.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Msg
+    = ByTuple Int
+    | ByRecord Int
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        ByTuple id ->
+            ( n + 1, Cmd.keyed ( "row", id ) Cmd.Restart (work "tuple ${String.fromInt (n + 1)}" _) )
+
+        ByRecord id ->
+            ( n + 1, Cmd.keyed { row = id } Cmd.Restart (work "record ${String.fromInt (n + 1)}" _) )
+
+
+work : String, Cmd.Send Msg -> ()
+work name _ =
+    Task.bracket
+        (\() -> ())
+        (\_ exit ->
+            case exit of
+                Done _ ->
+                    Debug.log () "${name} done"
+
+                Cancelled ->
+                    Debug.log () "${name} cancelled")
+        (\_ -> Time.sleep (Time.millis 100))
+
+
+view : Int -> Html Msg
+view _ =
+    <main>
+        <button id="tuple" onClick={ByTuple 7}>tuple</button>
+        <button id="record" onClick={ByRecord 7}>record</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

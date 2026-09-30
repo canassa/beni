@@ -1,0 +1,74 @@
+-- load
+<body>
+  <main>
+    <input id="q" .value="">
+    <ul></ul>
+  </main>
+</body>
+-- input #q "a"
+console.log: start a: ()
+<body>
+  <main>
+    <input id="q" .value="a">
+    <ul></ul>
+  </main>
+</body>
+-- advance 100
+(the DOM did not change)
+-- input #q "ab"
+console.log: release a: ()
+console.log: start ab: ()
+<body>
+  <main>
+    <input id="q" .value="ab">
+    <ul></ul>
+  </main>
+</body>
+-- advance 250
+console.log: request: "ab"
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- input #q "abc"
+<body>
+  <main>
+    <input id="q" .value="abc">
+    <ul></ul>
+  </main>
+</body>
+-- advance 400
+console.log: release ab: ()
+console.log: start abc: ()
+console.log: request: "abc"
+console.log: got: "abc"
+console.log: release abc: ()
+<body>
+  <main>
+    <input id="q" .value="abc">
+    <ul>
+      <li>"abc!"</li>
+    </ul>
+  </main>
+</body>
+-- input #q "x"
+console.log: start x: ()
+<body>
+  <main>
+    <input id="q" .value="x">
+    <ul>
+      <li>"abc!"</li>
+    </ul>
+  </main>
+</body>
+-- input #q ""
+console.log: release x: ()
+<body>
+  <main>
+    <input id="q" .value="">
+    <ul>
+      <li>"abc!"</li>
+    </ul>
+  </main>
+</body>
+-- advance 400
+(the DOM did not change)

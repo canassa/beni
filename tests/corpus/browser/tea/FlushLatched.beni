@@ -1,0 +1,64 @@
+-- `Browser.flush` (boundary.md §9.8.6). From a fiber it renders at once:
+-- the body sends, flushes, and "render 1" is logged between its two
+-- lines. Inside `update` it does nothing more than the flush already
+-- queued — no render of a half-handled message — so "render 2" comes
+-- after `update` has returned, once.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = FromFiber
+    | FromUpdate
+    | Bump
+
+
+update : Msg, Int -> ( Int, Cmd Msg )
+update msg n =
+    case msg of
+        FromFiber ->
+            ( n, Cmd.perform flushing )
+
+        FromUpdate ->
+            let
+                _ = Browser.flush ()
+                _ = Debug.log () "update flushed"
+            in
+            ( n + 1, Cmd.none )
+
+        Bump ->
+            ( n + 1, Cmd.none )
+
+
+flushing : Cmd.Send Msg -> ()
+flushing send =
+    let
+        _ = send Bump
+        _ = Debug.log () "sent"
+        _ = Browser.flush ()
+    in
+    Debug.log () "flushed"
+
+
+view : Int -> Html Msg
+view n =
+    let
+        _ = Debug.log n "render"
+    in
+    <main>
+        <button id="fiber" onClick={FromFiber}>fiber</button>
+        <button id="update" onClick={FromUpdate}>update</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

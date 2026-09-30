@@ -1,0 +1,94 @@
+-- A debounced search with `Cmd.keyed Search Cmd.Restart` (boundary.md
+-- §9.8.2, §9.8.4). The body sleeps 250 ms, then calls the fake service's
+-- `search`, which takes 100 ms, and sends its answer — both where
+-- cancellation cannot reach, like an answer already on its way, so the
+-- `send` of a cancelled body is really called.
+--
+--   - "a" then "ab" 100 ms apart: the first body is cancelled in its
+--     sleep, so only "ab" is ever requested (the first debounce).
+--   - "abc" while "ab"'s request is in flight: the request runs to its end,
+--     but the body's `send` was closed when `update` returned the Restart,
+--     so its `Got "ab"` never reaches `update` — and the new body starts
+--     only after the old one's cleanup: "release ab" before "start abc".
+--   - clearing the box cancels by key: nothing more is requested.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type alias Api =
+    search : String -> List String
+
+
+type Msg
+    = Typed String
+    | Got String (List String)
+
+
+type Key
+    = Search
+
+
+type alias Model =
+    query : String
+    results : List String
+
+
+fakeApi : Api
+fakeApi =
+    { search = \q ->
+        let
+            _ = Debug.log q "request"
+            _ = Time.sleep (Time.millis 100)
+        in
+        [ q ++ "!" ]
+    }
+
+
+update : Api, Msg, Model -> ( Model, Cmd Msg )
+update api msg model =
+    case msg of
+        Typed "" ->
+            ( { model | query = "" }, Cmd.cancel Search )
+
+        Typed q ->
+            ( { model | query = q }, Cmd.keyed Search Cmd.Restart (search api q _) )
+
+        Got q hits ->
+            let
+                _ = Debug.log q "got"
+            in
+            ( { model | results = hits }, Cmd.none )
+
+
+search : Api, String, Cmd.Send Msg -> ()
+search api q send =
+    Task.bracket
+        (\() -> Debug.log () "start ${q}")
+        (\_ _ -> Debug.log () "release ${q}")
+        (\_ ->
+            let
+                _ = Time.sleep (Time.millis 250)
+            in
+            Task.uninterruptible (\() -> send (Got q (api.search q))))
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <input id="q" value={model.query} onInput={Typed} />
+        <ul><For each={model.results} keyed={False}>{\s -> <li>{s}</li>}</For></ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { query = "", results = [] }, Cmd.none )
+        , update = \msg model -> update fakeApi msg model
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

@@ -1,0 +1,78 @@
+-- The dispatch order (boundary.md §9.8.4). A body hands `update` its own
+-- `send` in a message, and the model keeps it.
+--
+--   - "twice": `update` sends through the kept `send` while it runs. The
+--     message is queued and applied when this `update` returns — "echo 1"
+--     after "twice ends", never inside it — and both are rendered by one
+--     flush.
+--   - "after": after-render work sends. No dispatch is running, so
+--     `update` runs at once, and its render is the next flush's: "render"
+--     is logged twice for the one click.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Captured (Cmd.Send Msg)
+    | Twice
+    | After
+    | Echo Int
+
+
+type alias Model =
+    send : Maybe (Cmd.Send Msg)
+    echoes : Int
+
+
+update : Msg, Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        Captured send ->
+            ( { model | send = Just send }, Cmd.none )
+
+        Twice ->
+            let
+                _ = Debug.log () "twice begins"
+                _ = Maybe.withDefault (Maybe.map model.send (\send -> send (Echo 1))) ()
+                _ = Debug.log () "twice ends"
+            in
+            ( model, Cmd.none )
+
+        After ->
+            ( model, Cmd.afterRender afterWork )
+
+        Echo n ->
+            ( { model | echoes = Debug.log (model.echoes + n) "echo" }, Cmd.none )
+
+
+afterWork : Cmd.Send Msg -> ()
+afterWork send =
+    let
+        _ = Debug.log () "after-render sends"
+        _ = send (Echo 2)
+    in
+    Debug.log () "after-render ends"
+
+
+view : Model -> Html Msg
+view model =
+    let
+        _ = Debug.log model.echoes "render"
+    in
+    <main>
+        <button id="twice" onClick={Twice}>twice</button>
+        <button id="after" onClick={After}>after</button>
+        <p>{model.echoes}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = ( { send = Nothing, echoes = 0 }, Cmd.perform (\send -> send (Captured send)) )
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }
