@@ -243,6 +243,27 @@ const TPush = (a, v) => {
   if (c < 32) return Mk(a.length + 1, a.h, a.hc, a.T, Claim(a.t, c, v));
   return Mk(a.length + 1, a.h, a.hc, Right(a.T, a.t), [v]);
 };
+// Trie a with the m elements b[o] … b[o + m - 1] at the end, m > 0: what m
+// pushes make, with one header and not m. The tail is claimed as `Claim`
+// claims it — written in place only by the version that owns its end,
+// copied otherwise — and filled; each full tail moves into the tree as a
+// leaf, and the next one is a slice of b.
+const Pushed = (a, b, o, m) => {
+  const c = a.length - a.hc - a.T.tc;
+  const end = o + m;
+  let T = a.T;
+  let t = a.t;
+  let i = o;
+  if (c < 32) {
+    if (t.length !== c) t = t.slice(0, c);
+    while (t.length < 32 && i < end) t.push(b[i++]);
+  }
+  for (; i < end; i += 32) {
+    T = Right(T, t);
+    t = b.slice(i, i + 32 < end ? i + 32 : end);
+  }
+  return Mk(a.length + m, a.h, a.hc, T, t);
+};
 // Trie a with v at the front: the head claimed, the tail claim mirrored; a
 // full head moves into the tree as a leaf, reversed back into order, and v
 // starts a new one.
@@ -317,18 +338,22 @@ export const cons = (h, t) => {
   return c;
 };
 
-// `[ ...xs, ...ys ]`: xs when ys is empty, ys when xs is; each element of ys
-// pushed onto xs when xs is a trie, or is Wide long while ys is not, so that
-// `[ ...xs, x ]` costs what `push` does; otherwise a fresh concatenation,
-// by the engine's own `concat`, which is 1.2–3× faster than a loop.
+// `[ ...xs, ...ys ]`: xs when ys is empty, ys when xs is. A fresh
+// concatenation, by the engine's own `concat` (1.2–3× faster than a loop),
+// when ys is at least as long as a trie xs — the copy is then within twice
+// what any append writes, and the result is plain, which a `For` reads
+// without a copy — or when xs is plain and short or ys is Wide long.
+// Otherwise ys is pushed onto xs (made a trie first when it is not) a leaf
+// at a time, so that `[ ...xs, x ]` costs what `push` does, and appending
+// 1 000 costs a header, not 1 000 (the table benchmark's append, measured
+// 2026-09-30: 0.32 ms of its first click).
 export const append = (xs, ys) => {
-  if (ys.length === 0) return xs;
-  if (xs.length === 0) return ys;
-  if (!IsTrie(xs) && (xs.length < Wide || ys.length >= Wide)) return (IsA(xs) ? xs : xs.$plain()).concat(IsA(ys) ? ys : ys.$plain());
-  const b = base(ys);
-  const o = offset(ys);
-  for (let i = 0; i < ys.length; i++) xs = push(xs, b[o + i]);
-  return xs;
+  const n = xs.length;
+  const m = ys.length;
+  if (m === 0) return xs;
+  if (n === 0) return ys;
+  if (IsTrie(xs) ? m >= n : n < Wide || m >= Wide) return (IsA(xs) ? xs : xs.$plain()).concat(IsA(ys) ? ys : ys.$plain());
+  return Pushed(IsTrie(xs) ? xs : From(base(xs), offset(xs)), base(ys), offset(ys), m);
 };
 
 // Element i replaced; xs itself out of range or when it is already v. A
