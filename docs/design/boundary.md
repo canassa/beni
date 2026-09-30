@@ -125,6 +125,19 @@ test it. The rung describes the declaration's own arrow and its `where` evidence
 passed to the sibling is independent of the call until the `sync` step makes such a parameter
 `sync` (P2 §14.3 rule 6).
 
+*Amended 2026-09-30, the `sync` step* ([`transparent-effects-proposal.md`](transparent-effects-proposal.md)
+§15). **A `foreign` that receives a beni function the sibling may call synchronously — during the
+call, or later from an event, a render or any other host callback — declares that function type
+`sync`**: `pub foreign pure onInput : sync (String -> msg) -> Attribute msg`, and inside a record
+`{ view : sync (model -> Html msg), … }`. The checker then refuses, at the caller, any function that
+may suspend there (`sync_boundary`), and carries the demand through every beni function the value
+passes through. A function type the sibling only stores for the fiber runtime to run — a spawned
+thunk, a finaliser — is left unmarked (report 43 §9.6). A `foreign`'s `where` evidence is `sync`
+with nothing written, because the sibling calls it from JavaScript during the call. Like the rung
+and the arity check 4 counts, the mark is a promise about the sibling; no check reads the
+JavaScript to test it. `sync` anywhere else in the signature — around a type that is not a function
+written out, or on a function the platform hands back — is `misplaced_sync`.
+
 Four checks run at build time, and all four are things Elm does not do:
 
 1. **The type must be one of exactly two shapes.** Either (a) a total pure function over
@@ -442,7 +455,10 @@ Two platforms ship with the compiler:
 ### 5.4 The Elm Architecture's command type, and cancelling one
 
 `transparent-effects-proposal.md` settles the language side: `update` and `view` are `sync`, so
-neither may perform, and everything a program performs lives in a thunk handed to the runtime. What
+neither may perform, and everything a program performs lives in a thunk handed to the runtime.
+*Given a mechanism 2026-09-30* (P2 §15): `Browser.program` declares its `update` and `view` fields
+`sync` (§4), `main`'s evaluation is `sync`, and the checker refuses a suspending one at the record
+field that hands it over. What
 that thunk is wrapped in is this package's business, and none of it needs a language feature.
 
 ```elm

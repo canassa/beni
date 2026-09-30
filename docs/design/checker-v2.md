@@ -5344,3 +5344,28 @@ section says only where it sits in this checker.
   its summary and unified with the wanted's type.
 - **Versions** (§14.3): `iface_bytes.format_version` 8 → 9, `entry_bytes.format_version` 6 → 7,
   the frontend artifact 8 → 9.
+
+## 27. Amendment of 2026-09-30: the `sync` check
+
+The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15; this
+section says only where it sits in this checker.
+
+- **Demands are recorded where their sites are.** P2 reads a `foreign`'s annotation and notes each
+  `sync`-marked function type it builds; the generator notes a markup handler's, row function's and
+  key function's type (§25.6) and `main`'s evaluation class; a call edge records the call it came
+  from and, for a lambda or a local function, the instruction whose body it is, so the chain can
+  name it. `Instantiate.copy`, `Instantiate.imported` and `Instances.plainImported` record the
+  use's instruction (`Instantiate.origin`, or the wanted's) beside the copy they report, so a
+  demand a summary carries is attributed to the use.
+- **`Effects.run` solves the demands with the rungs.** A summary class is `sync` when its
+  declaration's graph carries it to a demand (§15.3), computed in the same forward pass that
+  computes a class's dependencies; applying a summary — `applyRecord`, `applyImported`,
+  `applyPlain` — demands the use's copy of each `sync` class. `eq`/`compare` demands are the
+  declarations `Instances.ownSignatures` already considers, handed to the run.
+- **The check is `Sync.check`** (`check/Sync.zig`), after the run and before P6, in a module with
+  no error so far; it reports through `Report.emitText`, attributed to no declaration, so a
+  refusal never sets the failure bits P7 and P8 read. It builds the reverse graph, the copies'
+  classes and the chain's ends only when a demand failed. What the dumps print moved to
+  `check/EffectsView.zig`, to keep `Effects.zig` under §19.1's 1 500 lines.
+- **Versions** (§15.5): `iface_bytes.format_version` 9 → 10, `entry_bytes.format_version` 7 → 8,
+  the frontend artifact 9 → 10.

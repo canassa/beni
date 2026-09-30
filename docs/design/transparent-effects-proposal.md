@@ -48,7 +48,8 @@ the runtime spike builds `spawn`/`join`/`scope`/`bracket` and the adoption all f
 both bits are inferred and only `suspends` is used in v1 (§11 Q6); `main : Program` stays with a
 `sync` body; a well-known `eq`/`compare` must not suspend; the `sync` chain stops at one hop per
 module; and library traversals get source order (§5), landing with the pending decision on
-whether `List` becomes an array-backed sequence. The first slice, inference, is §14.
+whether `List` becomes an array-backed sequence. The first slice, inference, is §14; the second,
+the `sync` check, is §15.
 
 **What it assumes, already decided elsewhere.** No automatic currying, `_` placeholder, pipe-first
 `|>`, n-ary types `Int, Int -> Int`, and a rest-of-block bind `let x <- e` (`fast-compiler.md`
@@ -230,6 +231,9 @@ Seed)` is a hash and is `pure`; what is `impure` is obtaining the first `Seed`. 
 unaffected, but as written a reader concludes a deterministic PRNG step cannot be memoised.
 
 ### 3.2 `sync` — optional, and postponed
+
+*Superseded 2026-09-30 by §15, which specifies `sync` in the type position of a `foreign` and at
+the language's own boundaries; the declaration modifier below is not built.*
 
 **Status: not part of v1. Deferred, and nothing else in this document depends on it.** It is
 written up here because the requirement it serves is real and the design should not be re-derived
@@ -920,6 +924,10 @@ chain that crosses a module boundary needs a **witness in the interface** — `c
 wrote (plan §2.1). Both are specified in
 [`plans/effects-plan.md`](../../plans/effects-plan.md) §2.5.
 
+**Specified 2026-09-30 in §15.4**: `must_not_suspend` is `main`'s and a well-known `eq`/`compare`'s,
+`sync_boundary` every argument position, and the chain stops at one hop per module (decision 7a).
+`flag_monomorphised` is not built.
+
 The chain in `must_not_suspend` is the whole diagnostic budget of the boundary check, and it is
 what replaces the marker: the compiler knows the path and prints it, rather than asking the author
 to have written a character at every link. Note that this is the one place the argument for
@@ -1399,4 +1407,154 @@ diagnostics never do, so no message's text moves:
   generated; today `build` refuses a schema, and a published schema member has no block.
 - **Markup's host-called functions** — a handler, a `For` row, a `Show` body, an `Html.map`
   function — are the host's to call and independent of the element, as rule 6's parameters are;
-  checker-v2.md §25.6 makes each one `sync` in the next slice.
+  checker-v2.md §25.6 makes each one `sync` in the next slice. *Done 2026-09-30: §15.2.*
+
+---
+
+## 15. The `sync` step, as specified (2026-09-30)
+
+**Status: normative** for the second slice of [`plans/effects-plan.md`](../../plans/effects-plan.md)
+§4, decided by the owner on 2026-09-30 (decision 1: `sync` ships in the first cut). It is the first
+reader of §14's bits: the checker refuses a function that may suspend wherever the program demands
+one that does not. Still no lowering and no runtime: **no emitted byte and no run hash changes**.
+Where this section and §3.2 or §8 disagree, this section is the later position; §3.2's declaration
+modifier (`sync f = …`) is not built — the boundaries below are the platform's and the language's,
+and a user who wants one of their own passes the function to a `sync` position.
+
+### 15.1 What is refused, and what is not
+
+**"May suspend", never "must"** (report 43 §9.5). A class whose rung is `suspends` — because it
+calls something that can park its fiber, even rarely — is refused at a boundary. There is no
+run-time check shaped like Effect's `runSync`, which fails only when a fiber *actually* parked and
+so passes when a cache hits and crashes when it misses.
+
+A **demand** says of one class, "this must not suspend". It is not a rung and not a type: nothing
+is added to `TypeStore` or `unify`, and a `sync` function unifies with an ordinary one (§3.2's
+sentence, withdrawn on 2026-09-18 for the type position, is true of the representation: the demand
+rides beside unification, as §14.2's classes do). `impure` is never refused; the optimiser that
+reads it does not exist yet.
+
+### 15.2 Where a demand comes from
+
+Six places, each a boundary where a beni function is called by something that cannot wait for it:
+
+1. **A `sync` parameter of a `foreign`.** A platform writes `sync` before a function type the
+   sibling may call synchronously — W8 of [`plans/browser-decisions.md`](../../plans/browser-decisions.md):
+   a `foreign` that receives a beni function the sibling may invoke declares it `sync`:
+
+   ```
+   TypeAtom := … | 'sync' '(' Type ')'     -- a function type, in a `foreign` value's signature only
+   ```
+
+   ```elm
+   pub foreign pure onInput : sync (String -> msg) -> Attribute msg
+   pub foreign pure program : { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) } -> Program
+   ```
+
+   The word is **contextual**, like the rung: it is the marker only in a `foreign` value's
+   signature, directly before `(`, and an ordinary identifier (a type variable) everywhere else.
+   It marks the one function type written inside the parentheses — a record field's, a list
+   element's, a parameter's — and nothing nested inside it. It must mark a **function type written
+   out**, and one the platform **receives**: an argument position of the declaration's own arrow,
+   at any depth inside it, but not a parameter of a parameter (a function the platform itself hands
+   back to beni). Anything else is `misplaced_sync`, reported by lowering at the word; the
+   declaration is otherwise read without the mark. Like the rung, it is a promise the platform
+   author makes about the sibling; `boundary.md` §4's checks do not read the JavaScript to test it.
+2. **A `foreign`'s `where` evidence.** §14.3 rule 6 already says the sibling calls its evidence
+   during the call; it calls it from JavaScript, synchronously — `core/List.js`'s `eq` loop is the
+   case (plan §2.1). So every `where` type of a `foreign` is `sync`, with nothing written.
+3. **A markup primitive's function parameters.** `Html.map`'s `a -> b` is called by the page at
+   dispatch (checker-v2.md §25.6). Every function type in an argument position of a `markup`
+   primitive's signature is `sync`, with nothing written.
+4. **Markup's host-called functions** (checker-v2.md §25.6): a handler in its function form, a
+   `For`'s or `Show`'s row function and a `keyed` function are called by the page from an event or
+   a render, so each is `sync` where it is written.
+5. **`main`** (decision 5a): `main : Program` stays, and its evaluation class (§14.3 rule 1) is
+   `sync` — `main` is evaluated once, when the program starts, outside any fiber. This is the
+   top-level value named `main` in a module of the root package, where a build looks for it
+   (`boundary.md` §5); `check` needs no platform to say so.
+6. **A well-known `eq` or `compare`** (decision 6a, plan §2.1): a `pub eq` or `pub compare` that is
+   a method of a type its module declares — one `==` or `<` would call — is `sync`. `core/List.js`
+   calls `eq` and `compare` from JavaScript loops and derived comparisons are single-bodied, so
+   `==` and `<` never suspend. A `where a.eq` of an ordinary declaration needs nothing: whatever
+   answers it is a type's `eq` (checked here), a derived one (pure, over answers checked here) or a
+   primitive.
+
+### 15.3 How a demand travels
+
+A demand flows **against** §14.3's edges: if `c` must not suspend and `d ⊑ c`, then `d` must not
+either. Within a declaration nothing more is needed — the check (§15.4) reads the solved rungs. A
+declaration's **summary** carries it to other declarations and modules:
+
+- A class of a summary is **`sync`** when, in its declaration's graph, it reaches a demand and does
+  not itself suspend. So `onType f = Page.onInput f` publishes
+  `onType : (String -> msg !sync) -> Attribute msg`, and so does anything built on it: `Tea.sandbox`
+  inherits `Browser.program`'s demands with nothing written.
+- **A class that already suspends publishes no demand.** Its declaration is where the error is
+  (§15.4); a use repeating it would say the same thing twice.
+- **The declaration's own root class publishes no demand.** A use gets a fresh copy of it whose
+  rung is the summary's, so the copy can only come to suspend through the classes it depends on —
+  which publish their own demands — or by being unified with some other function, which is that
+  other function's class and not this declaration's. (`eq`'s own demand, §15.2 item 6, is checked
+  at `eq`.)
+- **A use instantiating a summary** (§14.3 rule 3) puts a demand on its copy of every `sync`
+  class, attributed to the use: the reference, or the `==`/`<`/dot-call whose method it is.
+
+### 15.4 The check
+
+After §14.4's solve, in a module that has no error so far (a poisoned type says nothing about a
+bit): every demand whose class reached `suspends` is an error, **one per class**, at its site. The
+errors are reported in region order. A `sync_boundary` whose chain runs through a declaration
+refused as `must_not_suspend` is not reported: `[ x ] == [ y ]` on a type whose `eq` suspends is
+that `eq`'s error, said once at `eq`. Two codes (§8's table):
+
+| Code | Demands | Region |
+|---|---|---|
+| `sync_boundary` | §15.2 items 1–4, and every demand a use instantiated (§15.3) | the argument that must not suspend — for a record literal, the field's value — when the use is the callee of a call and the demand is at a parameter of its arrow; otherwise the use itself. Markup: the handler, row function or key function |
+| `must_not_suspend` | §15.2 items 5 and 6 | the declaration's name |
+
+**The message names the boundary, then the chain.** The chain is decision 7a's: **one hop per
+module**, read off this module's own graph and never an artifact. From the class that must not
+suspend it follows the calls that carry `suspends` into it — through own declarations' bodies, and
+through the functions a call was handed — to the first value that suspends by itself: an **imported
+value**, which suspends because its module's record says so, or an own `foreign suspends`. It names
+declarations, not lines — the checker holds the module's instructions, not its line table — so a
+chain reads *"`main` calls `load`, and `load` calls `Net.get`, which suspends."* and a function
+handed along reads *"`load` calls `List.map` with a function that calls `Net.get`, which suspends."*
+
+```
+-- SUSPENDING CALLBACK ---------------------------------------- Main.beni:14:18
+
+This function must not suspend: `Page.onInput` hands it to the platform, which
+calls it synchronously.
+
+But it may suspend: it calls `Net.get`, which suspends.
+
+Hint: a function called synchronously cannot wait for anything. Do the work that
+suspends before handing this function over, and pass it what that work produced.
+
+14|    Page.onInput (\s -> Net.get s)
+                    ^
+```
+
+### 15.5 The interface
+
+Interface format 9 → 10: **a class word of §14.6's block carries the demand in bit 8** — `rung |
+sync << 8`; any other bit set is a malformed record. A `sync` class is worth writing (§14.6) like
+one with a rung. `entry_bytes` 7 → 8 embeds the record; the frontend artifact 9 → 10, because a
+`type_fn` instruction's `main_token` is now the `sync` word when the type is marked (the BIR's
+representation of the mark, which costs no column). The block is hashed with the record, so a
+dependency whose demand appears or disappears moves its hash and its dependents are re-checked, and
+a dependency whose rung flips re-checks the importer that hands its value to a `sync` position.
+
+**The dumps** print a `sync` class's demand last in its suffix: `(String -> msg !sync)`,
+`!(impure | sync)`, `!(e1 | sync)`.
+
+### 15.6 What this step does not do
+
+- **No lowering and no runtime**: a program that passes the check emits what it emitted before.
+- **Top-level values other than `main`** are evaluated at import, as `main` is, and are not yet
+  demanded: whether a top-level constant may perform is the owner's question, open.
+- **The chain across modules** stops at the first import (decision 7a); a full chain needs the
+  side artifact decision 7 declined.
+- **§3.2's `sync f = …`**, a user-written root, and **`flag_monomorphised`** (§4.3) are not built.
