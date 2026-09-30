@@ -1,0 +1,10 @@
+-- check/bad: `js_outside_platform` at 5:8. Core's `Js` writes JavaScript
+-- with the checks off (research 47), so a module of an ordinary package may
+-- not import it, as it may not write `foreign`; the import is refused where
+-- it is written, whatever the module goes on to use.
+import Js
+
+
+pub same : Js.Value, Js.Value -> Bool
+same a b =
+    Js.same a b

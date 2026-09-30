@@ -321,6 +321,9 @@ pub const Code = enum {
     misplaced_sync,
     sync_boundary,
     must_not_suspend,
+    /// A spike (research 47): `import Js` in a module that is neither
+    /// core's nor a platform package's.
+    js_outside_platform,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -478,6 +481,7 @@ pub fn title(code: Code) []const u8 {
         .misplaced_sync => "MISPLACED SYNC",
         .sync_boundary => "SUSPENDING CALLBACK",
         .must_not_suspend => "MUST NOT SUSPEND",
+        .js_outside_platform => "JS OUTSIDE PLATFORM",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

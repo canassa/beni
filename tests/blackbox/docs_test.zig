@@ -171,6 +171,9 @@ fn coreModules(arena: std.mem.Allocator) ![]const []const u8 {
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        // `Js` has no examples, and a program may not import it
+        // (`js_outside_platform`, research 47).
+        if (std.mem.eql(u8, entry.name, "Js.beni")) continue;
         try out.append(arena, try arena.dupe(u8, entry.name[0 .. entry.name.len - ".beni".len]));
     }
     std.mem.sort([]const u8, out.items, {}, struct {

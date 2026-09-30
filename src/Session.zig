@@ -1373,7 +1373,8 @@ fn resolveModules(session: *Session) RunError!void {
 /// What the graph needs of the platform chain (`Graph.Platforms`), in
 /// `scratch`.
 fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!Graph.Platforms {
-    const chain = session.options.chain orelse return .{ .file_layers = session.file_layers };
+    const privileged = session.options.core or session.app_is_platform;
+    const chain = session.options.chain orelse return .{ .file_layers = session.file_layers, .app_privileged = privileged };
     const sees = try scratch.alloc(u64, chain.layers.len);
     var reexports: std.ArrayList(Graph.Platforms.Reexport) = .empty;
     const lowerings = try scratch.alloc(?[]const u8, chain.layers.len);
@@ -1390,6 +1391,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,
         .lowerings = lowerings,
+        .app_privileged = privileged,
     };
 }
 

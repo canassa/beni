@@ -1,0 +1,28 @@
+-- A platform module may import core's `Js` (research 47), and what it writes
+-- through it runs: a property counted up by a tail-recursive loop, a method
+-- called with a list literal spread into its arguments, a property read by
+-- index, the null and identity tests, `&`, and an argument that writes a
+-- property evaluated after the one written before it that reads it.
+import Node
+import Probe
+
+
+show : Bool -> String
+show b =
+    if b then
+        "true"
+
+    else
+        "false"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Probe.countTo 5)
+        , Probe.joined
+        , Probe.dashed
+        , String.join (List.map Probe.tests show) " "
+        , String.fromInt Probe.bits
+        , Probe.readThenWrite
+        ]

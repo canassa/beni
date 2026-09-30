@@ -194,6 +194,9 @@ pub const Node = struct {
         false_lit,
         null_lit,
         undefined_lit,
+        /// `globalThis`, which only the `Js.global` intrinsic writes (research
+        /// 47). A literal and not an `ident`, so no pass renames it.
+        global_this,
         /// `f(a, b)`. `lhs` callee, `rhs` extra `SubRange` of arguments.
         call,
         /// `obj.name`. `lhs` object, `rhs` a `NameIndex`.
@@ -256,6 +259,11 @@ pub const BinaryOp = enum(u8) {
     logical_or,
     /// `|`, which `Int32` needs (`x | 0`).
     bit_or,
+    /// `&`, the `Js.bitAnd` intrinsic (research 47).
+    bit_and,
+    /// `==`, which only the `Js.isNullish` intrinsic writes, and only
+    /// against `null` (research 47).
+    loose_eq,
 
     /// JavaScript's precedence, higher binds tighter. The printer
     /// parenthesises on it rather than carrying `paren` nodes, so the IR
@@ -265,7 +273,8 @@ pub const BinaryOp = enum(u8) {
             .mul, .div, .rem => 13,
             .add, .sub => 12,
             .lt, .le, .gt, .ge => 10,
-            .strict_eq, .strict_ne => 9,
+            .strict_eq, .strict_ne, .loose_eq => 9,
+            .bit_and => 7,
             .bit_or => 6,
             .logical_and => 5,
             .logical_or => 4,
@@ -288,6 +297,8 @@ pub const BinaryOp = enum(u8) {
             .logical_and => "&&",
             .logical_or => "||",
             .bit_or => "|",
+            .bit_and => "&",
+            .loose_eq => "==",
         };
     }
 };
@@ -583,7 +594,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
+        .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
     }
 }
@@ -771,7 +782,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
-        .true_lit, .false_lit, .null_lit, .undefined_lit => {},
+        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
         .call => {
             try ir.verifyChild(@enumFromInt(d.lhs), .expression);
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .expression);
@@ -1156,7 +1167,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit => {},
+                .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {

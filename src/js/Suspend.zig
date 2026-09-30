@@ -585,7 +585,7 @@ pub const Pass = struct {
         const t = p.tag(n);
         const at = p.posOf(n);
         switch (t) {
-            .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
+            .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
             .const_decl => {
                 const copy = try p.add(t, at, d.lhs, (try p.clone(@enumFromInt(d.rhs))).int());
                 if (p.keep) |keep| if (std.mem.indexOfScalar(Node.Index, keep.items, n) != null) try keep.append(p.scratch, copy);

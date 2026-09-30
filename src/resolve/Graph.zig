@@ -164,6 +164,9 @@ pub const Platforms = struct {
     reexports: []const Reexport = &.{},
     /// Whether the run has a platform at all.
     chain: bool = false,
+    /// Whether the ROOT package may write `foreign` — `--core`, or a
+    /// manifest that says `"platform": true` — and so import `Js`.
+    app_privileged: bool = false,
     /// The chain's `"markup".vocabulary` and `"markup".type` (§9.2), as the
     /// manifests spell them; null where no package declares one.
     vocabulary: ?[]const u8 = null,
@@ -499,6 +502,15 @@ pub fn build(
                 }
                 continue;
             };
+            // Core's `Js` is JavaScript with the checks off (research 47):
+            // only core and a platform package may import it, as only they
+            // may write `foreign` (`boundary.md` §2).
+            if (!imp.prelude and g.modules.items(.package)[i] == .app and !platforms.app_privileged and
+                g.modules.items(.package)[target.int()] == .core and
+                std.mem.eql(u8, interner.slice(g.modules.items(.name)[target.int()]), "Js"))
+            {
+                try diagnostics.append(gpa, .{ .code = .js_outside_platform, .file = file, .token = imp.name_token });
+            }
             // A module's references to ITSELF add no edge and are never a
             // cycle (checker.md §4.3): every operator inside `Basics`
             // produces one.

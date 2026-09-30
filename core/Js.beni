@@ -1,0 +1,84 @@
+--! JavaScript itself, for the code that runs beside the compiled program:
+--! a platform's runtime written in beni rather than in a sibling
+--! (`docs/design/research/47-js-intrinsics-spike.md`, a spike).
+--!
+--! **Only a platform package or core may import this module.** Anywhere
+--! else `import Js` is `js_outside_platform`: nothing here is checked, and
+--! the wall that fences `foreign` fences this too (`boundary.md` §2, §4).
+--!
+--! **A call is compiled to the JavaScript it names and nothing else**: no
+--! function is called, no value is wrapped. `get o "f"` is `o.f`,
+--! `set o "f" v` is the statement `o.f = v`, `same a b` is `a === b` and
+--! `call o "m" [a, b]` is `o.m(a, b)`. The declarations below are `foreign`
+--! so that the checker types every use; `Js.js` holds the same operations
+--! as functions, for the one use no call site covers — a declaration
+--! passed as a value — and for check 2, which counts them.
+--!
+--! A property name is never renamed, and neither is a global.
+
+--| Any JavaScript value, opaque to beni: `from` makes one of any beni
+--| value and `to` reads one back, and neither checks anything.
+pub foreign type Value
+
+
+--| `null`.
+pub foreign pure null : Value
+
+
+--| `undefined`.
+pub foreign pure undefined : Value
+
+
+--| The value itself, seen as a JavaScript value. Compiled to nothing.
+pub foreign pure from : a -> Value
+
+
+--| The JavaScript value read back as whatever the caller says it is.
+--| Compiled to nothing, and unchecked: the caller answers for the type.
+pub foreign pure to : Value -> a
+
+
+--| `a === b`.
+pub foreign pure same : a, a -> Bool
+
+
+--| `v === null`.
+pub foreign pure isNull : Value -> Bool
+
+
+--| `v === undefined`.
+pub foreign pure isUndefined : Value -> Bool
+
+
+--| `v == null`: null or undefined.
+pub foreign pure isNullish : Value -> Bool
+
+
+--| `a & b`.
+pub foreign pure bitAnd : Int, Int -> Int
+
+
+--| `globalThis.name`.
+pub foreign impure global : String -> Value
+
+
+--| `o.name`, or `o[name]` when the name is not a literal identifier.
+pub foreign impure get : Value, String -> Value
+
+
+--| `o.name = v`, a statement.
+pub foreign impure set : Value, String, Value -> ()
+
+
+--| `o.name(a, b)`: the arguments are written as a list literal, one
+--| JavaScript argument per element.
+pub foreign impure call : Value, String, List Value -> Value
+
+
+--| `f(a, b)`: the arguments are written as a list literal.
+pub foreign impure apply : Value, List Value -> Value
+
+
+--| `[a, b]`: a new JavaScript array, its elements written as a list
+--| literal.
+pub foreign impure array : List Value -> Value

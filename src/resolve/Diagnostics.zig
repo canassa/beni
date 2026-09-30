@@ -106,6 +106,16 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             , .{ cx.name, cx.name });
             try platformHint(cx, w);
         },
+        .js_outside_platform => try w.print(
+            \\Only a platform package or core may import `{s}`.
+            \\
+            \\`Js` is JavaScript written from beni with the type checker's guarantees
+            \\switched off: `Js.get o "f"` is `o.f`, and nothing checks that `o` has an `f`.
+            \\It is fenced as `foreign` is (`docs/design/boundary.md` §2), so that a program
+            \\keeps every guarantee beni makes. Use what the platform exposes instead, or
+            \\write the code in a platform package — a package whose `beni.json` says
+            \\`"platform": true`.
+        , .{cx.name}),
         .duplicate_module => try w.print(
             \\Two files claim the module name `{s}`.
             \\

@@ -60,6 +60,7 @@ const stamped = @import("../stamped.zig");
 const Types = @import("../check/Types.zig");
 const MarkupTree = @import("MarkupTree.zig");
 const Suspend = @import("Suspend.zig");
+const JsIntrinsic = @import("JsIntrinsic.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -2750,7 +2751,7 @@ const Lowerer = struct {
     /// reason.
     fn isAtom(l: *Lowerer, value: Node.Index) bool {
         return switch (l.b.nodes.items(.tag)[value.int()]) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => true,
             else => false,
         };
     }
@@ -3191,6 +3192,12 @@ const Lowerer = struct {
     /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
+        if (l.jsIntrinsicOf(inst)) |which| switch (which) {
+            .null => return l.nullNode(p),
+            .undefined => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // A function passed as a value is the sibling's (`core/Js.js`).
+            else => {},
+        };
         if (l.ctorRepOf(inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
             const arity = l.ctorArity(inst);
@@ -5889,6 +5896,12 @@ const Lowerer = struct {
             }
         }
 
+        // A `Js` intrinsic is the JavaScript it names, written in place,
+        // with no call and no import (research 47).
+        if (l.jsIntrinsicOf(callee_inst)) |which| {
+            return l.jsIntrinsicCall(out, which, arg_insts, p);
+        }
+
         // A constructor is an object literal and never a call (§4); the
         // checker has already refused any application of one that is not
         // saturated, so `args` is exactly its field list.
@@ -5940,6 +5953,101 @@ const Lowerer = struct {
     /// lowered IS core's `Basics`. Keyed on the core package and on the
     /// well-known symbols, never on the spelling, so a user's own `and` is
     /// an ordinary function.
+    /// The `Js` intrinsic `inst` names, or null (research 47).
+    fn jsIntrinsicOf(l: *Lowerer, inst: Inst.Index) ?JsIntrinsic.Which {
+        return JsIntrinsic.of(l.in.graph, l.in.interfaces, l.bir, inst, l.interner);
+    }
+
+    /// A saturated call of a `Js` intrinsic, as the JavaScript it names.
+    /// Every operand is evaluated once, in written order (`orderedExprs`);
+    /// a property name written as a literal identifier is `.name`, any
+    /// other `[name]`; a list literal of arguments is spread into the call.
+    fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
+        const W = JsIntrinsic.Which;
+        // Where the property name is, and where the list literal is.
+        const name_at: ?usize = switch (which) {
+            .global => 0,
+            .get, .set, .call => 1,
+            else => null,
+        };
+        const list_at: ?usize = switch (which) {
+            .call => 2,
+            .apply => 1,
+            .array => 0,
+            else => null,
+        };
+        // The operands, flattened: a literal name contributes nothing, a
+        // list literal its elements.
+        var insts: std.ArrayList(Inst.Index) = .empty;
+        var literal_name: ?[]const u8 = null;
+        var list_start: usize = 0;
+        var list_len: usize = 0;
+        for (args, 0..) |arg, i| {
+            if (name_at != null and name_at.? == i and l.bir.instTag(arg) == .string and isIdentifier(l.bir.bytes(arg))) {
+                literal_name = l.bir.bytes(arg);
+                continue;
+            }
+            if (list_at != null and list_at.? == i) {
+                if (l.bir.instTag(arg) != .list) {
+                    try l.report(.internal, arg, "`Js.{s}` takes its arguments as a list literal, `[ a, b ]`, which it spreads into the JavaScript call.", .{@tagName(which)});
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const elements = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(arg)), Inst.Index);
+                list_start = insts.items.len;
+                list_len = elements.len;
+                try insts.appendSlice(l.scratch, elements);
+                continue;
+            }
+            try insts.append(l.scratch, arg);
+        }
+        const v = try l.orderedExprs(out, insts.items, false);
+        const rest = v[list_start..][0..list_len];
+        // The property read `name_at` names, on `target`: `v[k]` is the
+        // name when it was not a literal.
+        const Prop = struct {
+            fn of(lw: *Lowerer, target: Node.Index, literal: ?[]const u8, computed: Node.Index, at: u32) !Node.Index {
+                if (literal) |bytes| return lw.member(target, try lw.interner.getOrPut(lw.gpa, bytes), at);
+                return lw.add(.index_get, at, target.int(), computed.int());
+            }
+        };
+        const named = literal_name != null;
+        return switch (which) {
+            W.null => l.nullNode(p),
+            W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.from, W.to => v[0],
+            W.same => l.binary(.strict_eq, v[0], v[1], p),
+            W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
+            W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
+            W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),
+            W.bitAnd => l.binary(.bit_and, v[0], v[1], p),
+            W.global => blk: {
+                const this = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                break :blk Prop.of(l, this, literal_name, if (named) this else v[0], p);
+            },
+            W.get => Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p),
+            W.set => blk: {
+                const target = try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), v[v.len - 1].int()));
+                break :blk l.nullNode(p);
+            },
+            W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
+            W.apply => l.call(v[0], rest, p),
+            W.array => blk: {
+                const range = try l.b.addRange(rest);
+                break :blk l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+            },
+        };
+    }
+
+    fn isIdentifier(bytes: []const u8) bool {
+        if (bytes.len == 0) return false;
+        for (bytes, 0..) |c, i| {
+            const ok = std.ascii.isAlphabetic(c) or c == '_' or c == '$' or (i != 0 and std.ascii.isDigit(c));
+            if (!ok) return false;
+        }
+        return true;
+    }
+
     fn logicalOp(l: *Lowerer, inst: Inst.Index) ?JsIr.BinaryOp {
         const d = l.bir.instData(inst);
         const base: Symbol = switch (l.bir.instTag(inst)) {

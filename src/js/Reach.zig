@@ -101,6 +101,7 @@ const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Types = @import("../check/Types.zig");
 const CtorEq = @import("CtorEq.zig");
+const JsIntrinsic = @import("JsIntrinsic.zig");
 
 const Reach = @This();
 
@@ -636,6 +637,11 @@ pub const Builder = struct {
         } else null;
         const filter: ?Edges.SiteFilter = if (ctor_eq) |*context| .{ .context = context, .skip = skipInPlace } else null;
 
+        // A `Js` intrinsic written in place — a call's callee, or a
+        // constant — is JavaScript and not a reference (research 47), so
+        // its instruction adds no edge and the sibling is not imported.
+        const in_place = try b.jsInPlace(bir);
+
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
         var twin_extra: std.ArrayList(TwinEdge) = .empty;
@@ -662,6 +668,7 @@ pub const Builder = struct {
                 // A leg-1 row has no position. The `.top` instruction made
                 // with it is guarded where it stands, so the row adds an
                 // edge only when no instruction names its target.
+                if (position != Edges.no_position and position < in_place.len and in_place[position]) continue;
                 const chain = if (position == Edges.no_position) blk: {
                     if (edge == .top and guards.namesTop(edge.top)) continue;
                     break :blk 0;
@@ -711,6 +718,27 @@ pub const Builder = struct {
             .chains = guards.chains.items,
             .chain_ctors = guards.chain_ctors.items,
         };
+    }
+
+    /// Per instruction of `bir`, whether it is a `Js` intrinsic `Lower`
+    /// writes in place (`JsIntrinsic`): the callee of a `call`, or `null`
+    /// and `undefined` wherever they stand. Empty without an interner.
+    fn jsInPlace(b: *Builder, bir: *const Bir) Allocator.Error![]const bool {
+        const interner = b.in.interner orelse return &.{};
+        const tags = bir.insts.items(.tag);
+        const data = bir.insts.items(.data);
+        const marks = try b.scratch.alloc(bool, bir.insts.len);
+        @memset(marks, false);
+        for (tags, data, 0..) |tag, d, i| switch (tag) {
+            .call => if (d.lhs < marks.len and JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(d.lhs), interner) != null) {
+                marks[d.lhs] = true;
+            },
+            .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @enumFromInt(i), interner)) |which| {
+                if (which == .null or which == .undefined) marks[i] = true;
+            },
+            else => {},
+        };
+        return marks;
     }
 
     /// An edge only a declaration's suspendable body has.

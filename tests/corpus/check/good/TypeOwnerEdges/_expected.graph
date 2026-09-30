@@ -12,6 +12,9 @@ core:Dict -> core:Basics
 core:Dict -> core:List
 core:Dict -> core:Maybe
 core:Int32 -> core:Basics
+core:Js -> core:Basics
+core:Js -> core:List
+core:Js -> core:String
 core:List -> core:Basics
 core:List -> core:Maybe
 core:Result -> core:Maybe

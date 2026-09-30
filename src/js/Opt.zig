@@ -475,7 +475,7 @@ const Opt = struct {
             const d = o.ir.data(n);
             switch (o.ir.tag(n)) {
                 .ident => return @enumFromInt(d.lhs),
-                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return .none,
+                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => return .none,
                 .member => n = @enumFromInt(d.lhs),
                 else => return null,
             }

@@ -1064,6 +1064,7 @@ const Printer = struct {
             .false_lit => try p.push("false"),
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
+            .global_this => try p.push("globalThis"),
             .call => {
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
                 try p.push("(");
@@ -1196,6 +1197,7 @@ const Printer = struct {
             .false_lit => try p.push("false"),
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
+            .global_this => try p.push("globalThis"),
             .call => {
                 // callee, then `call_rest`
                 try p.later(.rest(.call_rest, node));
