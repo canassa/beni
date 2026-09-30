@@ -2538,6 +2538,10 @@ const Emitter = struct {
             .escaping = escaping.items,
             .entry = entry_call,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
+            .insert_before = if (props.get("insertBefore")) |id| .{
+                .insert_before = id,
+                .append_child = try e.session.interner.getOrPut(e.gpa, "appendChild"),
+            } else null,
         });
         var k: usize = 0;
         for (todo) |i| {

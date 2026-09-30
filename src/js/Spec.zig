@@ -110,6 +110,10 @@ pub const Input = struct {
     /// (backend.md §9, *The entry's call is a call*): fact 3 reads it as a
     /// call, facts 1 and 2 and `prune` as names that escape.
     entry: ?Entry = null,
+    /// The property-name id of `insertBefore` and the pooled symbol of
+    /// `appendChild`, when the program names the first: slice 4's
+    /// `appendChild` rewrite.
+    insert_before: ?struct { insert_before: u32, append_child: JsIr.Symbol } = null,
     /// A symbol of the session's pool, the text of every name slice 5
     /// invents (each told apart by its disambiguator). `.none` turns
     /// slice 5 off.
@@ -1589,6 +1593,7 @@ const Spec = struct {
                 // Fact 3: a key no reachable read reaches goes from its
                 // literal, when its value does nothing.
                 .object => _ = try s.dropKeys(m, node),
+                .call => try s.appendChild(m, node),
                 else => {},
             }
             // What this reports is whether the program SHRANK in a way the
@@ -1803,6 +1808,45 @@ const Spec = struct {
             m.ir.body = .{ .start = @enumFromInt(start), .end = @enumFromInt(end) };
         }
         return true;
+    }
+
+    /// `x.insertBefore(n, r)` whose reference `r` is `null` — a literal, or
+    /// a name the facts say is — on a host value `x` (one the program did
+    /// not allocate: a DOM node, by fact 5's host contract) is
+    /// `x.appendChild(n)`: the DOM defines appending as inserting before
+    /// `null`, and both return `n`. `r` is not evaluated, which a literal
+    /// or a name cannot notice.
+    fn appendChild(s: *Spec, m: *Mod, node: Index) Allocator.Error!void {
+        const ids = s.in.insert_before orelse return;
+        if (!s.pts.ok) return;
+        const ir = m.ir;
+        const d = ir.data(node);
+        const callee: Index = @enumFromInt(d.lhs);
+        if (ir.tag(callee) != .member) return;
+        if (s.pts.propId(m.index, @enumFromInt(ir.data(callee).rhs)) != ids.insert_before) return;
+        const args = ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index);
+        if (args.len != 2) return;
+        const r = args[1];
+        switch (ir.tag(r)) {
+            .null_lit, .ident => {},
+            else => return,
+        }
+        const v = m.memo[r.int()];
+        if (v.state != .lit or s.litOf(v).kind != .null_lit) return;
+        const receiver = s.pts.vals[m.index][ir.data(callee).lhs];
+        if (receiver.sites.len != 0 or receiver.prim) return;
+        // The module's name for `appendChild` (every plain name is in the
+        // session's pool by now), made when it has none; the callee is
+        // rewritten in place, so no node is added while the facts' tables
+        // are sized.
+        const want: JsIr.Name = .{ .module = .none, .base = ids.append_child, .tag = JsIr.Name.no_tag };
+        const name: NameIndex = for (m.names.items, 0..) |x, i| {
+            if (x.eql(want)) break @enumFromInt(@as(u32, @intCast(i)));
+        } else try m.addName(s.gpa, want);
+        m.setData(callee, ir.data(callee).lhs, name.int());
+        const start = try m.append(s.gpa, &.{args[0].int()});
+        const record = try m.append(s.gpa, &.{ start, start + 1 });
+        m.setData(node, d.lhs, record);
     }
 
     /// Drop from object literal `node` every key fact 3 says no reachable

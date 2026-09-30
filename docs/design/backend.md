@@ -4933,7 +4933,15 @@ string it makes — when that prints no longer, and a number only when its spell
 JavaScript writes it back — so a mount record's `n`, always `null`, makes the error message
 `"no element has the id \"null\" …"`. And *Compact statements*' flag test (item 3) counts a
 comparison's uses over the nodes the module still writes: a conditional lowering wrote as an `if`
-no longer makes `fire`'s `(flags & 1) !== 0` look shared.
+no longer makes `fire`'s `(flags & 1) !== 0` look shared. *Amended 2026-10-02 (ledger step 25)*: and
+`x.insertBefore(n, r)` whose reference `r` is `null` — a literal, or a name the facts make one — on
+a host value `x`, one the program did not allocate, is `x.appendChild(n)` (`Spec.appendChild`): the
+DOM defines appending as inserting before `null`, both return `n`, and `r` cannot notice it is not
+evaluated. It rests on fact 5's host contract. It fires where fact 1 makes a reference `null` for
+good — `insertText`'s on a page whose text holes all end their element (`dom/Keyed`: `(a,b)=>
+a.appendChild(document.createTextNode(b))`) — but not yet in `put`, whose reference is `null` from
+`place` and a node from `swap` until fact 6 takes `swap` off the page. Fixture:
+`emit/release/app/SpecNodes`; the `browser/` pages' release pass is the differential.
 
 Every fold stays exact or is not made: a read replaced by a literal is one whose object cannot be
 `null`, `undefined` or a primitive; a comparison replaced by its value reads nothing that could

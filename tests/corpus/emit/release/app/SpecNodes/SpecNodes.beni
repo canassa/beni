@@ -5,6 +5,7 @@
 --   * `first` and `last` read `i.s` and `i.e`, which every instance writes
 --     with a node-making host call's result or an object literal: never
 --     `null`, so each is its read alone and the `q` fallback goes;
+--   * `append` inserts before `null` on a host value: `appendChild`;
 --   * `patch (view 1) (view 2)` compares the one module-level `block` with
 --     itself: `true`, so it says "same" with no test; `fresh` compares a
 --     block it makes with `view 3`, two objects that are never the same
