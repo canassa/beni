@@ -741,7 +741,8 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 |---|---|---|---|
 | `cons(h, t)` | `pub` (`::` desugars to it, `language.md` §6) | a fresh plain array `[h, …t]`. *E1tp:* the list `h` then `t` by *The claimable head*'s table: plain only onto fewer than 32 elements; `t`'s wider view, or its backing array, on a runtime re-cons | O(n). *E1tp:* amortised O(1) onto the newest version, at most 31 copied onto an older one, O(n) once per plain list converted |
 | `append(xs, ys)` | `pub`; *added 2026-10-01 (E1tp)*: `List.append`, what `[ ...xs, … ]` lowers to (`language.md` §6.8), becomes `foreign` | `xs` when `ys` is empty and `ys` when `xs` is; when `xs` is a trie, or has 32 elements or more while `ys` has fewer than 32, each element of `ys` **pushed** onto `xs` (a plain `xs` converted first, as `push` converts it); otherwise a fresh plain concatenation | O(m) amortised when it pushes — so `[ ...xs, x ]` costs what `push xs x` does — and O(n + m) otherwise |
-| `length(xs)` | `pub` | `xs.length` | O(1) |
+| `length(xs)` | `pub` | `xs.length`; *amended 2026-10-02:* a call is written in place as `xs.length` (*`List.beni`'s loops read and write in place*, below) | O(1) |
+| `concat(ls)` | `pub`; *added 2026-10-02*: `List.concat` becomes `foreign` | the one non-empty list itself, `[]` when none is, otherwise a fresh plain array made its final size | O(total) |
 | `set(xs, i, v)` | `pub` | the list with element `i` replaced; `xs` itself when `i` is out of range or `v` is `===` the element there | a copy ≤ 256, else O(log₃₂ n) after one conversion |
 | `push(xs, v)` | `pub` | the list with `v` added at the end | a copy < 32, else amortised O(1): one header, at most a 31-element tail copy when this version was pushed onto before, and a path copy every 32nd push |
 | `pop(xs)` | `pub` | the list without its last element; `xs` when empty | a copy ≤ 256, else O(1) sharing the tail, O(log₃₂ n) every 32nd |
@@ -753,6 +754,7 @@ exports, each a `foreign` of `List.beni`, are the runtime every other part of th
 | `view(xs, k)` | core-private; the emitter imports it | the list without its first `k` elements, `0 ≤ k ≤ length`: `xs` when `k = 0`, `[]` when `k = length`, otherwise a view (of a view's backing array, or of a trie's cached plain copy). *E1tp:* of a trie, the trie without its first `k` elements (*Removing a prefix*, above), never a view | O(1), after at most one conversion of a trie per header. *E1tp:* O(1) and at most 31 copied, never a flatten |
 | `base(xs)`, `offset(xs)` | core-private; the emitter imports them | the plain array `xs` is a suffix of, and where in it `xs` starts: `(xs, 0)` for plain, `(b, o)` for a view, `(p, 0)` for a trie | O(1) after that conversion |
 | `builder(n)`, `add(b, x)`, `done(b)` | core-private, for `List.beni` alone | invariant 5's builder: `[]`, `b.push(x); return b`, `b`. `n` is a size hint the implementation may ignore | O(1) amortised |
+| `at(a, i)`, `put(b, i, x)` | core-private, for `List.beni` alone; *added 2026-10-02* | `a[i]` of an array `base` returned, and `b[i] = x; return b` into a builder; the code generator writes both in place (*`List.beni`'s loops read and write in place*, below), and `add` is withdrawn: no loop grows a builder | O(1) |
 
 `core/Basics.js`'s `append` — what `++` lowers to — keeps its string half and gets a new list half,
 written against the protocol and not the forms: `ys.length === 0 ? xs : xs.length === 0 ? ys :
@@ -769,6 +771,25 @@ reads it.
 suspends parks the loop (`language.md` §6.8, *Callbacks*). `eq` and `compare` stay `foreign` with a
 `where` clause as they are today; their evidence is `sync` without being written
 (`boundary.md` §4, the `sync` step), because a well-known `eq` or `compare` cannot suspend.
+
+*Amended 2026-10-02:* **`List.beni`'s loops read and write in place.** A loop over `unsafeGet`
+and `put` calls two functions every element, and every loop of a program calls the same two, so
+their property accesses see every array a program has and go megamorphic: `map2` at 1 000
+elements was 3.5× the cons list's. So a loop takes its list's `base` and `offset` once and reads
+element `i` as `at a (o + i)`, and the code generator writes the core-private `at`, `put`,
+`identical`, `kept` and `half` as the JavaScript they compute — `a[i]`, the statement `b[i] = x;`
+then `b`, `x === y`, `s ? o : b`, `n >>> 1` — exactly as it writes `Basics.add` as `+`
+(*Arithmetic is an operator*), keyed on the core package, the `List` module and the name. Each
+loop then has property accesses of its own, as each cons walk had. `put`'s builder is bound to a
+name first when it is not one, since it is read twice; the store runs where the call ran, after
+its operands. `List.length xs`, in any module, is `xs.length` by the same rule: every form
+answers it (*What a reader of a list may rely on*). The exports stay in `core/List.js`, what a
+value of one would be, and `Reach` drops the edge a written-in-place call would add, so a program
+ships none of the six. A trie's `base`
+is its plain copy, made once per header (invariant 1's cache), where `unsafeGet` descended per
+element. `concat` takes no function and so becomes `foreign`: one JavaScript loop copies every
+list into an array made its final size, where a beni loop paid a call per list, and `concatMap`
+is `concat (map xs func)`.
 
 **The emitter's imports of the core-private exports.** `unsafeGet`, `view`, `base` and `offset` are
 not `pub`: a program that could call `unsafeGet` out of range would read `undefined` as a value of
