@@ -1084,7 +1084,10 @@ const Printer = struct {
             // else, since no other position asks for more than `prec_unary`.
             // Nothing in a dev build reaches it; §9 item 1 can, by inlining a
             // literal into the object position of a member access.
-            .number => prec_call - 1,
+            // A negative literal — one whole-program specialisation folded
+            // (§9) — is a unary minus as far as the grammar goes: `-8 ** 2`
+            // is a syntax error, `(-8) ** 2` is not.
+            .number => if (std.mem.startsWith(u8, p.ir.bytes(node), "-")) prec_unary else prec_call - 1,
             else => prec_primary,
         };
     }

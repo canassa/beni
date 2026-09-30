@@ -4610,8 +4610,8 @@ call, and the four that are not taken in), `emit/release/split/EmptyPage`, `run/
 
 ### Whole-program specialisation
 
-*Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; nothing below is built
-yet.* A runtime written in beni is compiled WITH the program (`boundary.md` §9.2's runtime module),
+*Added 2026-10-02 (research 47 §6 item 8), specified ahead of the build; what is built, and where
+the build departs from the text, is the *As built* note at the end of this section.* A runtime written in beni is compiled WITH the program (`boundary.md` §9.2's runtime module),
 so the compiler sees every call of every runtime function the page makes — which no copied JavaScript
 file allows (*Hand-written JavaScript under `--release`* cuts whole exports, never a branch). The
 empty page never passes `template` a flag, never mounts a hosted program, never holds a list; this
@@ -4691,6 +4691,46 @@ rewrites — the hosted mount, the list half of `first`/`last`, a slot's fields.
 `emit/release/split/` golden per fact, a `run/` pair per fact where a host object or a hand-written
 file must defeat it (a DOM node's own `h`, an object passed to a sibling), and every `run/` and
 `browser/` program's release pass as the differential.
+
+**As built — slice 1** (2026-10-02, `src/js/Spec.zig`, called from `Emit.specialise`). Facts 1 and
+2, folding and parameter dropping, for every `--release` application with an entry, user code and
+`core/` included. Where it departs from the text above:
+
+- **It rewrites the lowered `JsIr` in place instead of handing the printer a plan.** Folding makes
+  literals no module's IR holds and parameter lists shorter than any node's, and both printers
+  (the recursive and the work-stack one) would each have to spend every kind of edit. A patch keeps
+  every node index — a node's tag and operands change, and new argument lists, parameter lists and
+  statement lists are appended to `extra` — so the tables lowering hands the optimiser
+  (`effect_keep`, `pure_discards`, `unobserved`, `mutable`) stay valid, and `Opt` then plans over
+  the specialised program as over any other. `Opt` and `Rename.collectGlobals` therefore moved out
+  of the lowering task into a task of their own (`Task.optimise`) that runs after the pass. Nothing
+  reads the unspecialised IR.
+- **The iteration is optimistic** (SCCP's): a parameter no call has reached is ⊥, an expression
+  reading a ⊥ is ⊥, and a round's facts are swept to their fixpoint (at most 24 sweeps; a round
+  that does not converge rewrites nothing, since stopping short would be unsound). A ⊥ at the
+  fixpoint is a function no live code calls, and nothing is rewritten from it. Rounds of
+  facts-then-rewrite repeat, at most 4, while a round changes anything: round 2 is where a
+  module-level constant folded in round 1 (`c = b * 3` to `21`) reaches its readers.
+- **A literal replaces a name only where it cannot grow the file**: when it prints in at most 5
+  bytes (`0`, `true`, `null`, `"ab"`) or the name is read once. A parameter is dropped exactly when
+  its every read is replaced, so a long string passed to a parameter read twice keeps the
+  parameter (its value still folds the expressions it decides).
+- **A module-level constant's value is its initialiser only when that is a literal node**; a local
+  `let` or `const` takes its initialiser's folded value. A constant is read before its declaration
+  only in a program that would throw on the read (a dead zone), so substituting it cannot change a
+  program that runs.
+- **A folded `if` is spliced into its list** only when no name its arm declares is declared twice
+  in the declaration (the compiler's positional names `$in$<i>`, `$m$k` can repeat); otherwise the
+  arm stays a block. A negative folded number prints bracketed where a unary would (`(-3)**2`).
+
+Measured: `emit/release/split/EmptyPage` **1 043 → 957** brotli (the hand-written runtime's page
+is 980) — `template`'s flags and html folded into `parse`, a slot's constant marker and context;
+the `bench/ui` app 6 289 → 6 269; `bench/size.mjs`'s release total 346 292 → 344 386.
+Fixtures: `emit/release/app/SpecConstants` (user code: a loop's constant bound, an identity left
+by a constant factor, a whole `if` folded by a constant argument and a constant module value),
+`run/SpecializeArguments` (two different constants, a function also passed as a value, a
+parameter a loop reassigns, `&&`/`||` decided by a constant with a logging right side, `(-3)^2`, a
+quoted string), `external_platform_test`'s one file.
 
 ## 10. Chunking
 

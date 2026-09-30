@@ -87,6 +87,7 @@ const Rename = @import("Rename.zig");
 const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
+const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
 const Minify = @import("Minify.zig");
 const Manifest = @import("Manifest.zig");
@@ -2186,6 +2187,10 @@ const Emitter = struct {
 
         var hoist: ?Hoist = null;
         if (e.options.release) {
+            // §9's *Whole-program specialisation*: an application's modules,
+            // all at once, before the per-module optimiser plans any.
+            if (!e.options.library and lowered_clean) if (entry) |at| try e.specialise(slots, todo.items, at);
+            try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
             // is written as one file, and its names are numbered in that
@@ -2271,6 +2276,11 @@ const Emitter = struct {
         /// `--release` only: `Lower.Result.unobserved`, in the worker's
         /// `kept` arena, which outlives the lowering's scratch.
         unobserved: []const JsIr.Node.Index = &.{},
+        /// `--release` only: `Lower.Result`'s `effect_keep`,
+        /// `pure_discards` and `mutable`, likewise.
+        effect_keep: []const JsIr.Node.Index = &.{},
+        pure_discards: []const JsIr.Node.Index = &.{},
+        mutable: []const JsIr.NameIndex = &.{},
         /// The module's bytes, gpa-owned until `produceOwned` takes them.
         text: ?[]u8 = null,
         rename_failure: ?Rename.Failure = null,
@@ -2344,17 +2354,34 @@ const Emitter = struct {
                 slot.overlay = .init(&e.session.interner);
                 return;
             }
-            // §9's release optimiser, between `Lower.lower` and
-            // `Print.print`: item 1 plans, item 2 names, the printer spends
-            // both.
-            const plan = try Opt.runKeeping(scratch, &lowered.ir, lowered.effect_keep, lowered.pure_discards, lowered.mutable);
+            // What the release optimiser needs of the lowering, kept past
+            // this item's scratch: whole-program specialisation runs first,
+            // on every module at once (§9, *Whole-program specialisation*),
+            // and `optimise` after it.
+            const kept = w.kept.allocator();
+            slot.effect_keep = try kept.dupe(JsIr.Node.Index, lowered.effect_keep);
+            slot.pure_discards = try kept.dupe(JsIr.Node.Index, lowered.pure_discards);
+            slot.mutable = try kept.dupe(JsIr.NameIndex, lowered.mutable);
+            slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+        }
+
+        /// `--release`: §9's release optimiser, between `Lower.lower` and
+        /// `Print.print` — item 1 plans, item 2 names, the printer spends
+        /// both.
+        fn optimise(t: Task, w: *Worker, i: u32) Allocator.Error!void {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const lowered = &(slot.lowered orelse return);
+            if (lowered.diagnostics.len != 0) return;
+            const scratch = w.module.allocator();
+            const plan = try Opt.runKeeping(scratch, &lowered.ir, slot.effect_keep, slot.pure_discards, slot.mutable);
             const kept = w.kept.allocator();
             slot.plan = .{
                 .dropped = try kept.dupe(u32, plan.dropped),
                 .inlined = try kept.dupe(JsIr.Node.OptionalIndex, plan.inlined),
             };
             slot.met = try kept.dupe(JsIr.NameIndex, try Rename.collectGlobals(scratch, &lowered.ir, &slot.plan));
-            slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+            _ = e;
         }
 
         /// `--release`'s second step: short names and compact bytes, once
@@ -2379,6 +2406,60 @@ const Emitter = struct {
             slot.rename_failure = renamer.failure;
         }
     };
+
+    /// `backend.md` §9, *Whole-program specialisation*: every lowered module
+    /// of an application, rewritten to what the program's own calls make of
+    /// it (`Spec`). On the calling thread, in module order: the facts are
+    /// whole-program. A whole-program name is identified by its text, so each
+    /// is moved into the session's pool first, as `numberModule` does.
+    fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: Entry) !void {
+        var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
+        var modules: std.ArrayList(Spec.Module) = .empty;
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            const global = try e.scratch.alloc(u32, ir.names.len);
+            for (global, 0..) |*g, n| {
+                g.* = Spec.none;
+                if (ir.names[n].module == .none) continue;
+                const name = try e.poolName(slot, @enumFromInt(@as(u32, @intCast(n))));
+                const gop = try ids.getOrPut(e.scratch, Rename.Globals.key(name));
+                if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
+                g.* = gop.value_ptr.*;
+            }
+            try modules.append(e.scratch, .{ .ir = ir, .global = global });
+        }
+        // What files the pass cannot see read or call: the entry file's
+        // `main`, `run`, `start` and `flush`, and what the markup runtime
+        // imports from the runtime module (`markImported`'s list).
+        var escaping: std.ArrayList(u32) = .empty;
+        if (e.runtime_module) |module| {
+            var names: std.ArrayList([]const u8) = .empty;
+            try names.appendSlice(e.scratch, e.program_uses);
+            for ([_][]const u8{ "run", "start", "flush" }) |w| {
+                if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
+            }
+            for (names.items) |n| {
+                if (ids.get(Rename.Globals.key(try e.moduleName(module, n)))) |g| try escaping.append(e.scratch, g);
+            }
+        }
+        const b = e.bir(entry.module);
+        if (entry.decl.int() < b.decls.len) {
+            const main: JsIr.Name = .{
+                .module = e.graph().moduleName(entry.module).toOptional(),
+                .base = b.symbol(b.decls[entry.decl.int()].name),
+                .tag = JsIr.Name.no_tag,
+            };
+            if (ids.get(Rename.Globals.key(main))) |g| try escaping.append(e.scratch, g);
+        }
+        try Spec.run(e.gpa, e.scratch, .{
+            .modules = modules.items,
+            .globals = ids.count(),
+            .escaping = escaping.items,
+        });
+    }
 
     /// §9 item 2's whole-program namespace, numbered serially and in module
     /// order from each module's names in print order — the order a serial

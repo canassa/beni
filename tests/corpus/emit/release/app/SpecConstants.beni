@@ -1,0 +1,45 @@
+-- emit: whole-program specialisation of user code (`backend.md` §9,
+-- *Whole-program specialisation*, facts 1 and 2). Every call of `pad`
+-- passes `6`, so `width` is substituted and dropped, from `pad` and from
+-- both calls, and the loop tests `>=6`; every call of `scale` passes `1`,
+-- so `factor == 1` folds and `scale` is the identity; `clamp` is called
+-- with `9` only, and `limit` is a constant nothing assigns, so its whole
+-- `if` folds to `6`.
+import Node exposing (Program)
+
+
+limit : Int
+limit =
+    3
+
+
+pad : Int, String -> String
+pad width s =
+    if String.length s >= width then
+        s
+
+    else
+        pad width (s ++ ".")
+
+
+scale : Int, Int -> Int
+scale factor n =
+    if factor == 1 then
+        n
+
+    else
+        n * factor
+
+
+clamp : Int -> Int
+clamp n =
+    if n > limit * 2 then
+        limit * 2
+
+    else
+        n
+
+
+main : Program
+main =
+    Node.printLines [ pad 6 "ab", pad 6 "abcdefgh", String.fromInt (scale 1 5), String.fromInt (scale 1 7), String.fromInt (clamp 9) ]

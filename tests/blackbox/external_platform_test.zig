@@ -123,9 +123,9 @@ test "a release application calls the runtime's start and run inside its one fil
         \\import process from"node:process";
         \\let g=[];let h=a=>{g=a.tag};let i=c=>{process.stdout.write(`${c.html.t}\ntags: ${g.join(" ")}\n`)};let b=d=>`"${d}"`;
         \\let a=html=>({html});
-        \\function c(a,b){return a+"["+b+"]";}
-        \\const d=(a)=>({t:c("p","\"Hi \""+" "+b(a))}),
-        \\e=a(d("you"));
+        \\function c(a){return"p["+a+"]";}
+        \\const d=()=>({t:c("\"Hi \" "+b("you"))}),
+        \\e=a(d());
         \\h({"tag":["p"]});
         \\i(e);
         \\

@@ -1,0 +1,74 @@
+-- Whole-program specialisation (`backend.md` §9) substitutes a parameter
+-- that every call passes the same literal, drops it, and folds what that
+-- makes constant. Each function here is one the rule must get exactly
+-- right, and the release build prints what the development build prints:
+-- a function called with two different constants, one also passed as a
+-- value (every parameter unknown), one whose parameter a loop reassigns,
+-- a fold whose left side decides `&&` and `||` while the right side logs,
+-- a negative literal folded into `^`, a string with quotes folded into a
+-- concatenation, and a constant module-level value compared with a
+-- constant argument.
+import Node exposing (Program)
+
+
+limit : Int
+limit =
+    4
+
+
+twice : Int, Int -> Int
+twice k n =
+    k * n
+
+
+offset : Int, Int -> Int
+offset by n =
+    n + by
+
+
+countUp : Int, Int -> Int
+countUp step n =
+    if n >= 10 then
+        n
+
+    else
+        countUp step (n + step)
+
+
+guarded : Bool, Int -> Bool
+guarded on n =
+    on && Debug.log n "and-right" > 0
+
+
+either : Bool, Int -> Bool
+either off n =
+    off || Debug.log n "or-right" > 0
+
+
+square : Int -> Int
+square b =
+    b ^ 2
+
+
+quoted : String, String -> String
+quoted q s =
+    q ++ s ++ q
+
+
+over : Int -> Bool
+over n =
+    n > limit
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (twice 2 5 + twice 3 5)
+        , String.fromInt (offset 1 1 + List.sum (List.map [ 1, 2 ] (offset 1 _)))
+        , String.fromInt (countUp 3 0)
+        , if guarded True 1 then "yes" else "no"
+        , if either False 2 then "yes" else "no"
+        , String.fromInt (square (-3))
+        , quoted "\"" "hi"
+        , if over 5 then "over" else "under"
+        ]
