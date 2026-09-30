@@ -220,6 +220,38 @@ file was the largest cause on the app (773 bytes, research 41 §0.2): every
 scope-hoisted file under `--release`*. By hand, in a golfed file: merge files,
 inline tiny modules.
 
+### Tier 2b — optimiser techniques (Closure/terser territory; need analysis)
+
+What an optimising minifier does with a parser, scopes, types or the whole
+program. All are in bounds for an exploration; each needs the analysis in the last
+column to be automatic. Price each alone; most are small on well-written source
+(terser's whole `compress` bought 7–28 on a written-to-the-rules file, research 40
+A6/A7) but large on generated code, where the emitter leaves them behind.
+
+| technique | before → after | when it wins / loses (brotli) | speed | beni today / needs |
+|---|---|---|---|---|
+| **inline a function called once** | `let f=a=>a.x+1;g(f(y))` → `g(y.x+1)` | wins: the definition and the call go; loses when the inlined body appears where a copy would have matched | neutral (V8 inlines hot small calls anyway) | built: `Opt.zig`, local and top-level single-use, only where it cannot grow output |
+| **inline a small function called many times** | `let h=a=>a.m;…h(p)…h(q)` → `…p.m…q.m` | wins when the body is shorter than `h(`+`)` and repeats; loses when it duplicates distinct text | neutral if tiny; **time it** if it grows a hot function past V8's inlining budget | not built; needs a size model per call site |
+| **outline (the reverse): extract a repeated fragment into a helper** | two copies of a 40-byte block → one helper + two calls | usually **loses** under brotli: the second copy was already nearly free (§2) | a call on a hot path: time it | never automatic; a source rule only when it also removes a divergence |
+| **inline a named constant** | `const L=32;…i<L…s>>>5&L-1` → `…i<32…s>>>5&31` | wins when the literal is as short as the name, or read once; a long literal read many times loses | free | built for literals that cannot grow output (`Spec.zig`) |
+| **constant folding / propagation** | `k=4;if(k&2)…` → `if(0)…` → gone | wins always when it removes text | free or faster | built: specialisation folds constants, `let`s and constant arguments |
+| **dead-branch elimination** | `if(DEV){…}` with `DEV` false → gone | wins always | free | built: folded branches, `case` arms on constructors nothing builds, reachability rerun |
+| **drop an unused parameter** | `f=(a,b)=>a*2` called `f(x,y)` → `f=a=>a*2`, `f(x)` | wins; also removes argument text at every call | free | built for constant arguments; unused-but-varying arguments not yet (needs every call site in view) |
+| **specialise a function per call pattern** | `t(html,0)` everywhere → `t(html)` with the flag branches gone | wins when one pattern dominates; loses when two copies are needed | faster (fewer branches) | built for "every site passes the same constant"; cloning per pattern not built |
+| **drop never-read / never-written fields** | `{a:1,b:null,c:null}` where `b`,`c` unread → `{a:1}` | wins; also shrinks every literal of that shape | faster (smaller objects); **keep shapes monomorphic** | built: allocation-site analysis (`Spec.zig`) |
+| **property renaming (mangling)** | `s.parent`, `s.marker` → `s.p`, `s.m` | wins on long, frequent names; nothing on one-letter names | free | not built; needs type-directed renaming (`backend.md` §9 item 4) — by hand only when every reader and writer is in view |
+| **object → variables (scalar replacement, Closure's property collapsing)** | `let st={q:[],on:!1};st.q.push(f);if(!st.on)…` → `let q=[],on=!1;q.push(f);if(!on)…` | wins: `st.` goes from every access, and short locals rename | faster (no object, no loads) | not built; needs escape analysis — `Js.Ref` is the beni-side form |
+| **`if` → `&&`/`\|\|`/ternary; `return` merging** | `if(c)f();` → `c&&f();` ; `if(c)return a;return b` → `return c?a:b` | either sign; measure each (the table app lost 16 on one form while the corpus won 370) | free | built partly in `Print.zig` (compact `if`, joined returns) |
+| **boolean and comparison simplification** | `!(a===b)` → `a!==b`; `x===!0` → `x` when boolean; `(b&2)!==0` → `b&2` in a test | small wins | free | built: `Print.zig` (negations, flag tests) |
+| **common-subexpression hoisting** | `a.b.c.x+a.b.c.y` → `let t=a.b.c;t.x+t.y` | usually **loses**: the repeat was cheap, the binding is new text | slightly faster on a hot path — time it if kept for speed | never for size |
+| **merge adjacent declarations / assignments** | `let a=1;let b=2` → `let a=1,b=2`; `x=x+e` → `x+=e` | wins in generated code; can break per-statement elimination in hand-written files | free | built in `Print.zig` for generated code |
+| **cross-function code motion / module concatenation** | a helper moved next to its only caller, files merged | wins via locality (§2: nearer copies are cheaper) and fewer imports | free | built: one scope-hoisted file; order search by hand only |
+| **tail/loop reshaping** | recursion → `for(;;)`, label and copies dropped | wins | faster | built: `backend.md` §8 in-place loops |
+
+Anything here that `Print.zig`, `Opt.zig` or `Spec.zig` does not do yet is the
+finding a pass should end with: the before/after, the brotli delta, the speed
+check, and the analysis the compiler would need.
+
 ### Tier 3 — spelling (0–30 bytes each, often noise)
 
 These are the classic golf tricks. Under brotli most are worth ≤ the noise floor
