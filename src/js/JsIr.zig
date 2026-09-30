@@ -148,6 +148,10 @@ pub const Node = struct {
         /// `label: while (true) { … }` — the tail-call loop of §8. `lhs` is a `NameIndex` (the label, or `.none`), `rhs`
         /// is extra `SubRange` of statements.
         while_true,
+        /// `for (const x of e) { … }`, which only the `Js.each` intrinsic
+        /// writes. `lhs` is the loop variable's `NameIndex`, `rhs` extra
+        /// `ForOf`.
+        for_of,
         /// `break label;` / `continue label;`. `lhs` is a `NameIndex` or
         /// `.none`.
         break_stmt,
@@ -468,6 +472,17 @@ pub const If = struct {
     }
 };
 
+/// Payload of `for_of`: what it iterates, and the body statements.
+pub const ForOf = struct {
+    iterable: Node.Index,
+    body_start: ExtraIndex,
+    body_end: ExtraIndex,
+
+    pub fn body(f: ForOf) SubRange {
+        return .{ .start = f.body_start, .end = f.body_end };
+    }
+};
+
 /// Payload of `cond`.
 pub const Cond = struct {
     consequent: Node.Index,
@@ -635,7 +650,7 @@ pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
         .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => {},
-        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
+        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
     }
 }
 
@@ -790,6 +805,12 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         .while_true => {
             try ir.verifyName(@enumFromInt(d.lhs), true);
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
+        },
+        .for_of => {
+            try ir.verifyName(@enumFromInt(d.lhs), false);
+            const f = try ir.verifyExtra(@enumFromInt(d.rhs), ForOf);
+            try ir.verifyChild(f.iterable, .expression);
+            try ir.verifyRange(f.body(), .statement);
         },
         .break_stmt, .continue_stmt => try ir.verifyName(@enumFromInt(d.lhs), true),
         .switch_stmt => {
@@ -1226,6 +1247,11 @@ pub const Builder = struct {
                     try b.pushBlock(&stack, gpa, at, branches.elseBody(), w.if_stmt, 0);
                 },
                 .while_true => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), w.loop, 0),
+                .for_of => {
+                    const f = b.record(d.rhs, ForOf);
+                    try Push.one(&stack, gpa, at, f.iterable.int(), w.statement, 0);
+                    try b.pushBlock(&stack, gpa, at, f.body(), w.loop, 1);
+                },
                 .switch_stmt => {
                     try Push.one(&stack, gpa, at, d.lhs, w.switch_stmt, 0);
                     try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.switch_stmt, 0);
@@ -1324,6 +1350,12 @@ pub const Builder = struct {
                 .while_true => {
                     out.loop = true;
                     try stack.appendSlice(gpa, b.rangeWords(b.record(d.rhs, SubRange)));
+                },
+                .for_of => {
+                    out.loop = true;
+                    const f = b.record(d.rhs, ForOf);
+                    try stack.append(gpa, f.iterable.int());
+                    try stack.appendSlice(gpa, b.rangeWords(f.body()));
                 },
                 .switch_stmt => {
                     try stack.append(gpa, d.lhs);

@@ -90,6 +90,12 @@ pub foreign impure construct : Value, List Value -> Value
 pub foreign impure array : List Value -> Value
 
 
+--| `for (const x of xs) f(x)`: `f` for each element of an iterable, in
+--| order. Written with a lambda, `Js.each xs (\x -> …)`, the lambda's body
+--| is the loop's body.
+pub foreign impure each : Value, (Value -> ()) -> ()
+
+
 --| `o[k]`: an element of an array, or of anything indexed by number.
 pub foreign impure at : Value, Int -> Value
 

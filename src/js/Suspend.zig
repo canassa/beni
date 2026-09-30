@@ -526,6 +526,10 @@ pub const Pass = struct {
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
                 .block_stmt, .while_true => try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs))),
+                .for_of => {
+                    try stack.append(p.scratch, @enumFromInt(p.word(d.rhs)));
+                    try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs + 1)));
+                },
                 .call, .new_call => {
                     try stack.append(p.scratch, @enumFromInt(d.lhs));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
@@ -628,6 +632,12 @@ pub const Pass = struct {
             .block_stmt, .while_true => {
                 const body = try p.cloneRange(p.rangeAt(d.rhs));
                 return p.add(t, at, d.lhs, @intFromEnum(try p.b.addRecord(body)));
+            },
+            .for_of => {
+                const iterable = try p.clone(@enumFromInt(p.word(d.rhs)));
+                const body = try p.cloneRange(p.rangeAt(d.rhs + 1));
+                const record = try p.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = body.start, .body_end = body.end });
+                return p.add(t, at, d.lhs, @intFromEnum(record));
             },
             .call, .new_call => {
                 const callee = try p.clone(@enumFromInt(d.lhs));

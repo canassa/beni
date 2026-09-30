@@ -6767,6 +6767,47 @@ const Lowerer = struct {
     /// Every operand is evaluated once, in written order (`orderedExprs`);
     /// a property name written as a literal identifier is `.name`, any
     /// other `[name]`; a list literal of arguments is spread into the call.
+    /// `Js.each xs f` (`boundary.md` §4.2): `for (const x of xs) …`, the
+    /// statement, its value `()`. With a lambda of one parameter that cannot
+    /// suspend, the lambda's body, discarded, is the loop's body and its
+    /// parameter the loop variable — `for(const f of fs)f()`; with any other
+    /// function, the loop calls it, `for(const x of xs)g(x)`. `xs` is
+    /// evaluated first, then `f`, then the loop runs, as the call would.
+    fn eachLoop(l: *Lowerer, out: *StmtList, xs: Inst.Index, f: Inst.Index, p: u32) !Node.Index {
+        if (l.bir.instTag(f) == .lambda and !l.functionSuspends(f)) {
+            const ld = l.bir.instData(f);
+            const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
+            if (params.len == 1) {
+                const iterable = try l.expr(out, xs);
+                var body: StmtList = .empty;
+                const param = params[0];
+                const n = switch (l.bir.instTag(param)) {
+                    .pat_var => try l.localName(l.bir.instData(param).lhs),
+                    .pat_wild => try l.fresh(l.well.param),
+                    else => blk: {
+                        const bound = try l.fresh(l.well.param);
+                        try l.bindings(&body, param, try l.ident(bound, l.pos(param)));
+                        break :blk bound;
+                    },
+                };
+                try l.discard(&body, @enumFromInt(ld.rhs), p);
+                return l.forOf(out, n, iterable, body.items, p);
+            }
+        }
+        const v = try l.orderedExprs(out, &.{ xs, f }, false);
+        const n = try l.fresh(l.well.param);
+        const applied = try l.call(v[1], &.{try l.ident(n, p)}, p);
+        const stmt = try l.add(.expr_stmt, p, applied.int(), Node.Data.unused);
+        return l.forOf(out, n, v[0], &.{stmt}, p);
+    }
+
+    fn forOf(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, iterable: Node.Index, body: []const Node.Index, p: u32) !Node.Index {
+        const range = try l.b.addRange(body);
+        const record = try l.b.addRecord(JsIr.ForOf{ .iterable = iterable, .body_start = range.start, .body_end = range.end });
+        try out.append(l.scratch, try l.add(.for_of, p, @intFromEnum(n), @intFromEnum(record)));
+        return l.nullNode(p);
+    }
+
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
@@ -6786,6 +6827,7 @@ const Lowerer = struct {
             try l.report(.internal, args[0], "a `Js.Ref` written as a `let` was lowered as something other than its name.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
+        if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -6854,6 +6896,8 @@ const Lowerer = struct {
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
+            // A saturated `each` is `eachLoop`, above.
+            W.each => l.nullNode(p),
             W.construct => blk: {
                 const range = try l.b.addRange(rest);
                 const record = try l.b.addRecord(range);
@@ -7830,7 +7874,7 @@ const Lowerer = struct {
                             if (l.bir.instTag(@enumFromInt(l.bir.instData(ty).rhs)) != .type_unit) return false;
                         },
                         .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
-                            .write, .set, .throw => {},
+                            .write, .set, .throw, .each => {},
                             else => return false,
                         },
                         else => return false,
@@ -7885,6 +7929,17 @@ const Lowerer = struct {
             if (!l.mayHaveEffect(at)) try l.pure_discards.appendSlice(l.scratch, out.items[before..]);
             return;
         }
+        // A call of a function written in place whose value nothing reads:
+        // its body, discarded in turn (`backend.md` §9, *A function called
+        // once is written where it is called*) — statements or not, since
+        // no value has to come out of them.
+        if (l.bir.instTag(at) == .call) if (l.inlineTarget(at)) |index| {
+            if (!l.inline_loops[index] and l.atomArguments(at)) {
+                const saved = try l.enterInline(out, at, index);
+                defer l.leaveInline(saved);
+                return l.discard(out, l.bodyOf(index), p);
+            }
+        };
         const value = try l.expr(out, at);
         const before = out.items.len;
         try l.discardValue(out, value, p);

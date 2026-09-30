@@ -376,6 +376,10 @@ name and a write an assignment — the shape hand-written JavaScript uses for th
 means, and why a closure is not an escape, is `backend.md` §4's *A `Js.Ref` that does not escape is
 a `let`*; the program cannot tell the two shapes apart.
 
+**`each : Value, (Value -> ()) -> ()`** (impure, 2026-10-02) is `for (const x of xs) f(x)`: `f`
+for each element of an iterable, in order, through its iterator (`backend.md` §9, *Compact
+statements*, item 4). Written with a lambda, the lambda's body is the loop's body.
+
 **`construct : Value, List Value -> Value`** (impure, 2026-10-02) is `new c(a, b)`, its arguments a
 list literal as `apply`'s are: what a constructor that must be called with `new` needs (`Map`,
 `URL`), and the shape hand-written JavaScript gives an error, `throw new Error(m)`.

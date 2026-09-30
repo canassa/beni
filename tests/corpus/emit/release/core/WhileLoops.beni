@@ -1,10 +1,12 @@
 -- emit: a loop whose first statement leaves it is a `while` under
 -- `--release` (`backend.md` §9, *Compact statements*, item 6): `gather`'s
--- loop is `while(a.firstChild!==null)b.appendChild(a.firstChild)` and
--- `each`'s `while(b!==a.length){…}`, their exits at the end of a function
--- that returns nothing written as nothing; `find`'s exit returns a value,
--- written after the loop. `k = k + 1` is `k+=1`. `settle`'s exit is not its
--- first statement, so it stays `for(;;)`.
+-- loop is `while(a.firstChild!==null)b.appendChild(a.firstChild)`, its exit
+-- at the end of a function that returns nothing written as nothing. Only
+-- such a loop, and only with one statement left: `each` (two statements)
+-- and `find` (whose exit returns a value after the loop) stay `for(;;)`,
+-- since measured on the release corpus the wider rule cost 415 brotli bytes
+-- against the `for(;;){if(` every other loop shares. `k = k + 1` is
+-- `k+=1`. `settle`'s exit is not its first statement.
 import Js
 
 

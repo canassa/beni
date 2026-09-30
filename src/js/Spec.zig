@@ -486,6 +486,12 @@ const Spec = struct {
                 s.declare(m, @enumFromInt(d.lhs));
                 try s.countList(m, ir.subRange(@enumFromInt(d.rhs)));
             },
+            .for_of => {
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                s.declare(m, @enumFromInt(d.lhs));
+                try s.countExpr(m, f.iterable);
+                try s.countList(m, f.body());
+            },
             .break_stmt, .continue_stmt => {},
             .switch_stmt => {
                 try s.countExpr(m, @enumFromInt(d.lhs));
@@ -580,6 +586,11 @@ const Spec = struct {
                 try s.evalList(m, mi, branches.elseBody());
             },
             .while_true, .block_stmt => try s.evalList(m, mi, ir.subRange(@enumFromInt(d.rhs))),
+            .for_of => {
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                _ = try s.eval(m, mi, f.iterable);
+                try s.evalList(m, mi, f.body());
+            },
             .switch_stmt => {
                 _ = try s.eval(m, mi, @enumFromInt(d.lhs));
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try s.evalStmt(m, mi, c);
@@ -1219,6 +1230,11 @@ const Spec = struct {
                 if (ir.tag(stmt) == .switch_case) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(s.arena, t);
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |b| try stack.append(s.arena, b);
             },
+            .for_of => {
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                try stack.append(s.arena, f.iterable);
+                for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+            },
             .switch_stmt => {
                 try stack.append(s.arena, @enumFromInt(d.lhs));
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try stack.append(s.arena, c);
@@ -1381,6 +1397,12 @@ const Spec = struct {
                 };
                 if (try s.foldList(m, d.rhs, ir.subRange(@enumFromInt(d.rhs)), depth + 1)) any = true;
             },
+            .for_of => {
+                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                if (try s.foldExprLists(m, f.iterable, depth)) any = true;
+                // The body's range is the record's second and third words.
+                if (try s.foldList(m, d.rhs + 1, m.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).body(), depth + 1)) any = true;
+            },
             .switch_stmt => {
                 if (try s.foldExprLists(m, @enumFromInt(d.lhs), depth)) any = true;
                 const cases = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
@@ -1506,6 +1528,7 @@ fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(
         .assign_stmt => try out.appendSlice(gpa, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
         .return_stmt, .switch_case => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try out.append(gpa, v),
         .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => try out.append(gpa, @enumFromInt(d.lhs)),
+        .for_of => try out.append(gpa, ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).iterable),
         .import_stmt, .export_stmt, .func_decl, .gen_decl, .while_true, .break_stmt, .continue_stmt, .block_stmt => {},
         else => try ir.pushOperands(gpa, out, node),
     }

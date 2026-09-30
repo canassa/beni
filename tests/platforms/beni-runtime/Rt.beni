@@ -328,7 +328,7 @@ flush () =
             Js.write queued (Js.array [])
 
         _ =
-            each renders 0
+            Js.each renders (\render -> Js.to (Js.apply render []))
     in
     if Js.isNullish (Js.read phase) then
         ()
@@ -337,39 +337,10 @@ flush () =
         Js.to (Js.apply (Js.read phase) [])
 
 
-each : V, Int -> ()
-each fs k =
-    if k == Js.to (Js.get fs "length") then
-        ()
-
-    else
-        let
-            _ =
-                Js.apply (Js.at fs k) []
-        in
-        each fs (k + 1)
-
-
 -- `(program)`: start every program the array holds, in order.
 pub run : V -> ()
 run program =
-    runFrom program 0
-
-
-runFrom : V, Int -> ()
-runFrom program k =
-    if k == Js.to (Js.get program "length") then
-        ()
-
-    else
-        let
-            m =
-                Js.at program k
-
-            _ =
-                startOne m
-        in
-        runFrom program (k + 1)
+    Js.each program (\m -> startOne m)
 
 
 startOne : V -> ()

@@ -450,6 +450,12 @@ pub const Module = struct {
                 try m.see(@enumFromInt(d.lhs), mentioned);
                 try m.collectList(m.ir.subRange(@enumFromInt(d.rhs)), mentioned);
             },
+            .for_of => {
+                const f = m.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                try m.see(@enumFromInt(d.lhs), mentioned);
+                try m.collectExpr(f.iterable, mentioned);
+                try m.collectList(f.body(), mentioned);
+            },
             .break_stmt, .continue_stmt => try m.see(@enumFromInt(d.lhs), mentioned),
             .switch_stmt => {
                 try m.collectExpr(@enumFromInt(d.lhs), mentioned);

@@ -1,0 +1,30 @@
+-- emit: `Js.each` is a `for…of` (`boundary.md` §4.2; `backend.md` §9,
+-- *Compact statements*, item 4). With a lambda, the lambda's body is the
+-- loop's body and its parameter the loop variable: `flush`'s render queue
+-- is `for(const b of a)b()`, and `run` writes `start`, called from that one
+-- place, in its loop. With a function passed as a value the loop calls it.
+import Js
+
+
+pub flush : Js.Value -> ()
+flush queue =
+    Js.each queue (\render -> Js.to (Js.apply render []))
+
+
+start : Js.Value -> ()
+start m =
+    let
+        root =
+            Js.get m "root"
+    in
+    Js.set root "started" (Js.from True)
+
+
+pub run : Js.Value -> ()
+run programs =
+    Js.each programs (\m -> start m)
+
+
+pub notify : Js.Value, (Js.Value -> ()) -> ()
+notify xs f =
+    Js.each xs f

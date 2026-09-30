@@ -15,16 +15,14 @@ G=(a,b)=>{if(a.i===null)F(a,D(b,a.cx));else a.i=E(a.i,b,a.cx)};
 let e=[];
 let f=false;
 let g=null;
-const h=(a,b)=>{while(b!==a.length){a[b]();b+=1}},
-i=()=>{f=false;const a=e;e=[];h(a,0);g?.()},
-j=(a,b)=>{const c=B(b);let d=a.init;let g=false;const h=()=>{g=false;G(c,a.view(d))};b.$$root=(k)=>{if(!g){g=true;e.push(h);if(!f){f=true;queueMicrotask(()=>{if(f)i()})}}d=a.update(k,d)};G(c,a.view(d))},
-k=(a)=>{const b=document,c=a.n===null?b.body:b.getElementById(a.n);if(c===null||c.$$root!==undefined){const d=a.n;throw new Error(c===null?`no element has the id "${d}" to mount a program at`:a.n===null?"the page's body already holds a program":`the element "${d}" already holds a program`)}a.h===undefined?j(a.a,c):j(a.h(c,i,(e)=>{g=e;return f}),c)},
-m=(a)=>{let b=0;while(b!==a.length){const c=a[b];k(c);b+=1}};
+const h=()=>{f=false;const a=e;e=[];for(const b of a)b();g?.()},
+i=(a,b)=>{const c=B(b);let d=a.init;let g=false;const j=()=>{g=false;G(c,a.view(d))};b.$$root=(k)=>{if(!g){g=true;e.push(j);if(!f){f=true;queueMicrotask(()=>{if(f)h()})}}d=a.update(k,d)};G(c,a.view(d))},
+j=(a)=>{for(const b of a){const c=document,d=b.n===null?c.body:c.getElementById(b.n);if(d===null||d.$$root!==undefined){const e=b.n;throw new Error(d===null?`no element has the id "${e}" to mount a program at`:b.n===null?"the page's body already holds a program":`the element "${e}" already holds a program`)}if(b.h===undefined)i(b.a,d);else i(b.h(d,h,(k)=>{g=k;return f}),d)}};
 let o=b=>[{a:b,n:null}];
-const n=d(),
-p={m:(a,b)=>{const c=n();return{s:c,q:null,e:c}},p:(d,e)=>{}},
-q={t:p,v:null},
-r=(a)=>q,
-s=o({init:{},update:(a,b)=>b,view:r});
-m(s);
-export{i as flush};
+const k=d(),
+m={m:(a,b)=>{const c=k();return{s:c,q:null,e:c}},p:(d,e)=>{}},
+n={t:m,v:null},
+p=(a)=>n,
+q=o({init:{},update:(a,b)=>b,view:p});
+j(q);
+export{h as flush};

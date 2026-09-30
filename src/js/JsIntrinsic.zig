@@ -32,6 +32,7 @@ pub const Which = enum {
     call,
     apply,
     construct,
+    each,
     array,
     at,
     throw,

@@ -311,6 +311,15 @@ const Opt = struct {
                 try o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
             },
             .break_stmt, .continue_stmt => o.use(@enumFromInt(d.lhs)),
+            // The loop variable is bound per iteration, like a parameter.
+            .for_of => {
+                const n: NameIndex = @enumFromInt(d.lhs);
+                o.use(n);
+                if (n.unwrap()) |i| if (i < o.binds.len) o.bind(i);
+                const f = o.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                try o.countExpr(f.iterable);
+                try o.countStmts(f.body());
+            },
             .switch_stmt => {
                 try o.countExpr(@enumFromInt(d.lhs));
                 for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try o.countStmt(c);
@@ -407,6 +416,11 @@ const Opt = struct {
                 try o.planList(branches.elseBody());
             },
             .while_true, .block_stmt => try o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
+            .for_of => {
+                const f = o.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                try o.planExpr(f.iterable);
+                try o.planList(f.body());
+            },
             .switch_stmt => {
                 try o.planExpr(@enumFromInt(d.lhs));
                 for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try o.planStmt(c);
@@ -588,6 +602,7 @@ const Opt = struct {
             .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| o.exprUses(v, n) else 0,
             .assign_stmt => (try o.exprUses(@enumFromInt(d.lhs), n)) + (try o.exprUses(@enumFromInt(d.rhs), n)),
             .if_stmt, .switch_stmt => o.exprUses(@enumFromInt(d.lhs), n),
+            .for_of => o.exprUses(o.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf).iterable, n),
             .expr_stmt, .throw_stmt => o.exprUses(@enumFromInt(d.lhs), n),
             else => 0,
         };

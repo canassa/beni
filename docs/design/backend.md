@@ -4817,14 +4817,27 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `if(c)f()` for `c?f():null`, and a concise body so shaped is a block, `()=>{if(g)j()}`, which is
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
+4. **A for-each is a `for…of`.** `Js.each xs f` (`boundary.md` §4.2) is the statement
+   `for (const x of xs) …` (JsIr's `for_of`): with a lambda of one parameter that cannot suspend,
+   the lambda's body, discarded, is the loop's body and its parameter the loop variable —
+   `for(const b of a)b()` — and with any other function the loop calls it. Recognising the
+   index-loop shape instead was rejected: `for…of` asks the iterator protocol, which an array-like
+   without `Symbol.iterator` does not have, so the rewrite is exact only where the program says it
+   iterates. And **a function called once in a discarded position is written there**: the one
+   call of a function of the module, its arguments atoms, whose value nothing reads (a `let _ =`, a
+   discarded lambda body) is its body discarded in turn (`Lower.discard`), statements or not —
+   the extension of *A function called once …* that puts the port's `startOne` in `run`'s loop.
+   Fixture: `emit/release/core/ForEach`.
 6. **A loop whose first statement leaves it is a `while`** (`Print.whileLoop`): an unlabelled
-   `for(;;){if(c)<exit>;…}`, `<exit>` a `break` or a `return`, is `while(!c){…}` with the `return`
-   written after it — or not at all where the loop ends a function and the `return` says nothing
-   its end does not. The rest of the loop may hold no `break` of its own, which in a `while` would
-   skip that `return`. Fixture: `emit/release/core/WhileLoops`, whose `gather` is research 47's
-   fragment loop, `while(a.firstChild!==null)b.appendChild(a.firstChild)`. The runtime port's
-   `template` is one function because `Rt.beni` now writes the parse in the cloner, as the
-   hand-written runtime does (its cell rewritten step by step), not because of a compiler rule.
+   `for(;;){if(c)<exit>;S}`, `<exit>` a `break` or a `return` that says nothing the end of the
+   function does not (the loop ends the function; no value, or one it does not write), and `S`
+   one statement, is `while(!c)S`. *Measured*: the wider rule — any `S`, the `return x` written
+   after the loop — cost the release corpus 415 brotli bytes (raw −401) against the `for(;;){if(`
+   every other loop shares, so it is this narrow. `S` may hold no `break` of its own. Fixture:
+   `emit/release/core/WhileLoops`, whose `gather` is research 47's fragment loop,
+   `while(a.firstChild!==null)b.appendChild(a.firstChild)`. The runtime port's `template` is one
+   function because `Rt.beni` now writes the parse in the cloner, as the hand-written runtime does
+   (its cell rewritten step by step), not because of a compiler rule.
 7. **`new`, and an `else if` chain as a value.** `Js.construct c [ … ]` is `new c(…)`
    (`boundary.md` §4.2; JsIr's `new_call`), so an error is `throw new Error(…)`. Under `--release`
    a `case` whose value is wanted may have a nested `case` for an arm and still be a conditional
@@ -4848,7 +4861,7 @@ And under all of them:
 Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916 for items 5 and 8; with the
 port's `Rt.beni` rewritten for items 5–8 (`isNullish` for the phase, the parse in the cloner, one
 guarded `throw new Error`), items 6 and 7 and the shapes above, **884**, against the hand-written
-runtime's 978.
+runtime's 978; with `Js.each` for its two index loops and `startOne` written in `run`'s loop, **855**.
 
 ## 10. Chunking
 
