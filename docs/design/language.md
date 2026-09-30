@@ -45,6 +45,9 @@ promise that a record update keeps the identity of every field it does not name 
 day, not built: `List` is array-backed and is beni's only sequence type. The syntax is Elm's; an
 `x :: rest` pattern is an O(1) view, `x :: xs` as an expression copies, and a list grows at its end
 with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the representation.
+*Amended 2026-10-01, the owner (W35, E1tp):* a list's trie has a claimable head as well as a
+claimable tail, so `[ x, ...xs ]` is amortised O(1) like `List.push` and no longer a copy; it
+grows at either end.
 
 **Brackets and a spread, and no `::`.** Decided by the owner on 2026-10-01 (W35's second
 amendment), specified and built the same day on today's cons cells: `::` leaves the language, as an
@@ -79,7 +82,7 @@ the text of §6.8 and `backend.md` written before it still says `x :: rest`, rea
 | `f >> g`, `f << g` composition | removed; name the argument | §6.5 |
 | `andThen` pyramids in a `let` | `let x <- f a` binds the rest of the block | §3, §6.7 |
 | `div [ class "a" ] [ text name ]` | `<div class="a">{name}</div>`, typed against a platform's vocabulary; an untouched record field keeps its identity | §11 |
-| `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*) | §6.8 |
+| `List` is a cons list, `Array` a separate type | `List` is the one sequence type, array-backed: O(1) `length`, indexed `get`/`set`, `push` at the end; `x :: rest` patterns are O(1) views, `x :: xs` as an expression is a copy (*2026-10-01, specified, not built*; *amended the same day, E1tp:* `[ x, ...xs ]` is amortised O(1), not a copy) | §6.8 |
 | `x :: xs`, `x :: rest ->`, `(::)` | `[ x, ...xs ]`, `[ x, ...rest ] ->`, `List.cons`; and what Elm cannot write, `[ ...xs, x ]`, `[ ...a, ...b ]`, `[ ...init, last ] ->`, `[ first, ...middle, last ] ->` (*2026-10-01, built*) | §6.8 |
 
 Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
@@ -897,27 +900,39 @@ syntax*, below); the costs are the array's, after the flip.
 |---|---|---|
 | `[]`, `[ a, b, c ]` | a list of those elements, evaluated left to right | O(length) |
 | `case xs of [] -> …` | `xs` is empty | O(1) |
-| `[ x, ...rest ] ->`, `[ a, b, ...rest ] ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies |
+| `[ x, ...rest ] ->`, `[ a, b, ...rest ] ->` | `xs` has at least one (two) elements; `x` (and `b`) are the first ones, `rest` is the list after them — a **view** of `xs`, not a copy | O(1) — a match never copies (*E1tp:* on a list that has been written to, `rest` shares its structure and copies at most 31 elements once every 32 steps of a walk) |
 | `[ ...init, last ] ->` | `xs` has at least one element; `last` is the last one, `init` a view of the ones before it | O(1) |
 | `[ x, y ] ->` | `xs` has exactly two elements | O(1) |
-| `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | **O(length of `xs`)** — a copy |
-| `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | O(length of `xs`) — `List.push xs x` is the amortised O(1) way |
-| `xs ++ ys`, `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | O(length of both) |
+| `[ x, ...xs ]` as an expression | a **new list**: `x`, then every element of `xs` | *Amended 2026-10-01 (E1tp):* **amortised O(1)**, as `List.push` is at the other end; at most 31 elements copied when `xs` was prepended onto before; O(length of `xs`) once when `xs` is a list of 32 or more nothing has written to (it is converted, and everything built from it after is cheap). *Was, under E1t:* O(length of `xs`), a copy |
+| `[ ...xs, x ]` as an expression | a new list: every element of `xs`, then `x` | *Amended 2026-10-01 (E1tp):* what `List.push xs x` costs — amortised O(1). *Was:* O(length of `xs`) |
+| `[ ...xs, ...ys ]` | a new list: the elements of `xs`, then those of `ys`; `xs` itself when `ys` is empty and `ys` itself when `xs` is | *Amended 2026-10-01 (E1tp):* O(length of `ys`) when `xs` has been written to, or has 32 elements or more while `ys` has fewer — each of `ys` is pushed — and O(length of both) otherwise |
+| `xs ++ ys` | the same list as `[ ...xs, ...ys ]` | O(length of both), always: `++` is `Basics.append`, which serves strings too and cannot reach the list's representation (`backend.md` §4) |
 
-**`[ x, ...xs ]` is legal, and it copies.** It is the right thing to write once — a TEA `update`
-that puts a new row first pays one copy per message, which the render walk dwarfs. It is the wrong
-thing to write in a loop: prepending onto an accumulator is O(n) per step and O(n²) in all, where
-the cons list was O(1). **A list grows at its end**: `List.push acc x`, amortised O(1), keeps the
-order the elements arrived in, so the `List.reverse` that Elm code writes after a prepending loop is
-not needed. Two places where a leading spread does not copy, because the compiler sees what it
-means:
+**`[ x, ...xs ]` is cheap.** *Amended 2026-10-01, the owner (W35, E1tp). Under E1t this paragraph
+read "`[ x, ...xs ]` is legal, and it copies" and told programs not to prepend in a loop.* A list
+that has been written to is a trie with a **claimable head** as well as a claimable tail
+(`backend.md` §4, *The claimable head: E1tp*), so prepending onto the list the last prepend
+returned — an accumulator, a stack, the list a recursion hands back — is amortised O(1), as
+`List.push` is at the other end. Prepending onto an *older* version, one that something else was
+already prepended onto, copies at most 31 elements, never the list; prepending onto a list of 32 or
+more that nothing has written to converts it once, O(n). So Elm's `x :: acc` then `List.reverse`,
+`foldr` building a list, a persistent stack and a TEA list that gains rows at the top are all
+linear, and **no way of building a list by prepending is quadratic**. It is a constant factor slower
+than Elm's cons list (3–7× on research 46 §11's Elm-style scenarios), and `List.push acc x` — which
+keeps the order the elements arrived in, so no `List.reverse` is needed, and hands back a list that
+reads at O(1) — stays the fastest way to build and the one to teach. Two places where a leading
+spread costs nothing at all, because the compiler sees what it means:
 
 - **A function's result `[ f x, ...go rest ]`**, where `go` is the function itself, is compiled to a
   loop that builds the result front to back, O(1) per element and no stack (`backend.md` §8, *Tail
   calls modulo cons, onto an array*). Elm-shaped `map`, `filter` and `takeWhile` written by hand
-  stay linear and stack-safe.
+  stay linear and stack-safe. *Amended 2026-10-01 (E1tp):* without the loop they would now be
+  linear too, but a stack frame per element, which overflows at about 100 000 — so the loop stays,
+  and it is what makes them **stack-safe**.
 - **Re-consing what a pattern matched**, `[ h, ...t ]` right after matching `[ h, ...t ]`, is the
-  list that was matched (`backend.md` §7, *List patterns over arrays*).
+  list that was matched (`backend.md` §7, *List patterns over arrays*). *Amended 2026-10-01
+  (E1tp):* the runtime also makes it O(1) on its own; the compiler's rule adds that the result is
+  the very list matched.
 
 (A third, "`e :: [ … ]` onto a literal is one literal", has nothing left to say: `[ e, … ]` is
 written as the one literal it always was.) *The warning `prepend_in_loop` proposed here was
@@ -1013,12 +1028,12 @@ array. *n* is the length of the list read or copied, *k* the number of items wri
 | Form | Cons cells (today) | Arrays (after the flip) |
 |---|---|---|
 | `[ a, b ]` | O(k): k cells | O(k): one array literal |
-| `[ x, ...xs ]`, `[ a, b, ...xs ]` | O(k): the cells share `xs` | O(n + k): a copy, except a cons step (`backend.md` §8) and a re-cons (§7) |
-| `[ ...xs, x ]` | O(n): `xs` is copied | O(n): a fresh array (`List.push` is amortised O(1)) |
-| `[ ...a, ...b ]`, `[ ...a, x, ...b ]` | O(length of `a`); `b` is shared | O(length of both) |
+| `[ x, ...xs ]`, `[ a, b, ...xs ]` | O(k): the cells share `xs` | O(n + k): a copy, except a cons step (`backend.md` §8) and a re-cons (§7). *Amended 2026-10-01 (E1tp):* amortised O(k) onto the newest version of `xs`; at most 31 elements copied onto an older one; O(n) once to convert an unwritten `xs` of 32 or more; O(n + k) only below 32, where n is small |
+| `[ ...xs, x ]` | O(n): `xs` is copied | O(n): a fresh array (`List.push` is amortised O(1)). *Amended 2026-10-01 (E1tp):* `List.push`'s cost — a copy below 32, otherwise amortised O(1) after at most one conversion |
+| `[ ...a, ...b ]`, `[ ...a, x, ...b ]` | O(length of `a`); `b` is shared | O(length of both). *Amended 2026-10-01 (E1tp):* `[ ...a, ...b ]` is O(length of `b`) when `a` is a trie, or has 32 elements or more while `b` has fewer (each of `b` is pushed), and O(length of both) otherwise; `[ ...a, x, ...b ]` is the sum of its two calls, `List.append a (List.cons x b)` |
 | `[ ...xs ]` | O(1): `xs` | O(1): `xs` |
 | pattern `[]`, `[ a, b ]` | O(k) tag reads | O(1): one length test |
-| pattern `[ x, ...rest ]`, `[ x, ..._ ]` | O(k); `rest` is the shared tail | O(1); `rest` a view |
+| pattern `[ x, ...rest ]`, `[ x, ..._ ]` | O(k); `rest` is the shared tail | O(1); `rest` a view. *Amended 2026-10-01 (E1tp):* of a trie, `rest` is a trie sharing its tree, with a copy of at most 31 elements once every 32 steps |
 | pattern `[ ...init, last ]`, `[ first, ...middle, last ]` | O(n): the length is counted and the last elements found by a walk, and `init`/`middle` is a copy of n − k elements | O(1): a length test and indexed reads; `init`/`middle` a view |
 
 The O(n) row is the one place where the new syntax says something the cons list could only do by
@@ -1032,7 +1047,8 @@ the indexed operations Elm keeps in `Array`, plus `pop`, `insertAt`, `removeAt` 
 UI needs and Elm makes its users write badly (research 38 §12.3). `n` is the length of the list
 argument, `k` the length of the result. **"Near O(1)"** is O(log₃₂ n) — at most four steps below a
 million elements — and is what an indexed read costs on a list that has been written to with
-`set`, `push`, `pop` or `swap` above their thresholds; on any other list it is O(1).
+`set`, `push`, `pop` or `swap` above their thresholds; on any other list it is O(1). *Amended
+2026-10-01 (E1tp):* or by prepending onto a list of 32 or more, and on the tail of such a list.
 
 | Function | Cost | What is guaranteed beyond Elm's meaning |
 |---|---|---|
@@ -1040,14 +1056,14 @@ million elements — and is what an indexed read costs on a list that has been w
 | `initialize : Int, (Int -> a) -> List a` | O(k) | *new*; the callback in index order |
 | `length`, `isEmpty` | **O(1)** | `length` was O(n) |
 | `head`, `last`, `get : List a, Int -> Maybe a` | near O(1) | `last` and `get` *new*; `get` is `Nothing` out of range |
-| `tail`, `drop` | O(1) | a view of the list, sharing its elements (it keeps the whole list alive, as a substring may) |
+| `tail`, `drop` | O(1) | a view of the list, sharing its elements (it keeps the whole list alive, as a substring may). *Amended 2026-10-01 (E1tp):* of a list that has been written to, the same list without its first elements, sharing its structure — O(1) and a copy of at most 31 elements — and prepending onto it is as cheap as onto the list itself |
 | `take`, `slice : List a, Int, Int -> List a` | O(k) | `slice` *new*, Elm's `Array.slice`: a negative index counts from the end; the list itself when the result is all of it |
 | `set : List a, Int, a -> List a`, `update : List a, Int, (a -> a) -> List a` | a copy up to 256 elements; above, near O(1) after one O(n) conversion per list | *new*; out of range, the list unchanged |
 | `push : List a, a -> List a` | a copy below 32 elements; above, amortised O(1) after one O(n) conversion per list | *new*; the end is where a list grows. Pushing twice onto one version (after an undo) copies at most 31 elements, never the list |
 | `pop : List a -> List a` | as `set` | *new*; the last element removed; `[]` unchanged |
 | `swap : List a, Int, Int -> List a` | two `set`s | *new*; out of range, unchanged |
 | `insertAt : List a, Int, a -> List a`, `removeAt : List a, Int -> List a` | O(n) | *new*; `insertAt` at `length` appends; out of range, unchanged |
-| `cons` (`[ x, ...xs ]`), `append` (`++`, `[ ...xs, ...ys ]`), `concat`, `concatMap`, `intersperse` | O(total) | |
+| `cons` (`[ x, ...xs ]`), `append` (`++`, `[ ...xs, ...ys ]`), `concat`, `concatMap`, `intersperse` | O(total) | *Amended 2026-10-01 (E1tp):* `cons` is amortised O(1) and `append` pushes when it can, as the syntax tables above say; `++` stays O(total) |
 | `map`, `indexedMap`, `filter`, `filterMap`, `map2`–`map5`, `partition`, `unzip` | O(n) | the result is fresh and reads at O(1) |
 | `foldl`, `foldr`, `any`, `all`, `member`, `sum`, `product`, `maximum`, `minimum` | O(n) | `foldr` walks backwards and allocates nothing (it was `reverse` then `foldl`) |
 | `reverse` | O(n) | |
@@ -1069,6 +1085,7 @@ proposed as a guarantee (`plans/list-arrays.md` §1, O4).*
 `foldr`, which calls it on the last first (`checker.md` Appendix B), and each is written in beni over
 a first-order `foreign` sibling, so **a callback may suspend** (`transparent-effects-proposal.md`
 §16): the loop parks with it and resumes where it stopped. The `foreign` half is `cons`, `length`,
+`append` (*added 2026-10-01, E1tp*: it must reach the trie to push),
 the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and `eq` and `compare`, whose
 `where` evidence is called from JavaScript and is `sync` (`boundary.md` §4); nothing that takes a
 function is `foreign`.
@@ -1836,7 +1853,11 @@ check treats them as one (`backend.md` §4, *Identity*, and §15.5's `same`). Ev
 holds unchanged for a list — a list that is not rebuilt is the same object, an untouched field
 holding one keeps it, and the operations `backend.md` §4 lists return their input itself when their
 result would equal it. *This narrows W27's wording for one case and is the owner's to confirm
-(`plans/list-arrays.md` §1, O3).*
+(`plans/list-arrays.md` §1, O3).* *Amended 2026-10-01 (E1tp):* on a list that has been written to,
+a pattern's tail is not a view but a smaller header over the same structure; the promise holds for
+it wherever the match shares that structure, and does not hold for the tail that goes past the
+list's claimable head — each match copies a new head there, so two such tails are equal and not one
+value (`backend.md` §4, *Identity*). The first tail of a list built by `List.push` is of that kind.
 
 **A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
 nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an

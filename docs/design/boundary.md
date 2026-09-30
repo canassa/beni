@@ -267,6 +267,14 @@ keeps one it will later write, and never names a view's or a trie's fields: thos
 `core/List.js`, and a platform that reached into them would break the next time the representation
 is tuned.
 
+*Amended 2026-10-01 (W35, E1tp).* The representation was tuned before it was built: a trie now has a
+claimable head and a radix offset as well as a claimable tail (`backend.md` §4, *The claimable head:
+E1tp*). **Nothing in this subsection changes.** A trie header still answers `length` as a data field
+and `$plain()` in element order — the head's reversal and the offset are accounted for inside it — so
+a sibling that follows the idiom reads a trie with a head exactly as it read one without. The two
+in-place writes, head and tail, are `core/List.js`'s alone; a sibling that wrote a list it was given
+would now corrupt versions at either end.
+
 **What a sibling returns.** A `List` result is either **a fresh plain array that nothing else holds
 and that the sibling never touches again** — `s.split(sep)`, `Array.from(s)`, an array it built — or
 **a `List` it was given**, unchanged. An array the *host* owns is never returned as it is: a DOM
