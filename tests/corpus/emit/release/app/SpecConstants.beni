@@ -1,10 +1,12 @@
 -- emit: whole-program specialisation of user code (`backend.md` §9,
--- *Whole-program specialisation*, facts 1 and 2). Every call of `pad`
+-- *Whole-program specialisation*). Facts 1 and 2: every call of `pad`
 -- passes `6`, so `width` is substituted and dropped, from `pad` and from
 -- both calls, and the loop tests `>=6`; every call of `scale` passes `1`,
 -- so `factor == 1` folds and `scale` is the identity; `clamp` is called
 -- with `9` only, and `limit` is a constant nothing assigns, so its whole
--- `if` folds to `6`.
+-- `if` folds to `6`. Slice 2: nothing reads `limit` after that, so it is
+-- not written; and `shout` is only ever called with `False`, so the arm
+-- that calls `String.toUpper` goes, and with it the sibling's `toUpper`.
 import Node exposing (Program)
 
 
@@ -40,6 +42,15 @@ clamp n =
         n
 
 
+shout : Bool, String -> String
+shout loud s =
+    if loud then
+        String.toUpper s
+
+    else
+        s
+
+
 main : Program
 main =
-    Node.printLines [ pad 6 "ab", pad 6 "abcdefgh", String.fromInt (scale 1 5), String.fromInt (scale 1 7), String.fromInt (clamp 9) ]
+    Node.printLines [ pad 6 "ab", pad 6 "abcdefgh", String.fromInt (scale 1 5), String.fromInt (scale 1 7), String.fromInt (clamp 9), shout False "quiet" ]

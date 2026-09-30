@@ -9,7 +9,9 @@
 -- the entry's `run` call. No `import` or `export` joins them. The emitted
 -- modules' names are numbered first, in that order, and the hand-written
 -- files' top-level bindings after them, each spelled as the name its
--- importer gives it where it has one.
+-- importer gives it where it has one. `Mid`'s value is a call and not a
+-- literal, so that whole-program specialisation (§9) leaves the three
+-- modules' values in place for their order to show.
 import Alpha
 import Node exposing (Program)
 import String

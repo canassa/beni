@@ -4732,6 +4732,21 @@ by a constant factor, a whole `if` folded by a constant argument and a constant 
 parameter a loop reassigns, `&&`/`||` decided by a constant with a logging right side, `(-3)^2`, a
 quoted string), `external_platform_test`'s one file.
 
+**As built — slice 2** (2026-10-02, `Spec.prune`). After each round's rewrite, reachability again,
+over the `JsIr` of every module: the roots are every top-level statement but a declaration whose
+initialiser is *inert* — a function, a literal, a name, or an object, array or template of those;
+a call, a property read (a getter), an operator (`valueOf`) or a spread may do something, and such
+a declaration stays whether or not it is read, as `Reach` keeps it — and `Input.escaping`. A
+declaration no root reaches is not written; an `import` specifier whose name nothing live reads
+goes, and so does an `export` of a declaration that went. The `import` statement itself stays,
+empty when every specifier went, because it is an edge of the evaluation order `planHoist` reads.
+Cutting the hand-written units needs nothing new: `planHoist` builds each file's `keep` from the
+specifiers that are left, and `Minify` cuts to it. The next round's facts then see fewer calls and
+assignments. Measured: the `bench/ui` app 6 269 → 6 237, `bench/size.mjs`'s release total 344 386 → 337 506; `EmptyPage` unchanged (nothing on it is
+only reached from a folded branch until slice 3). Fixture: `emit/release/app/SpecConstants`'s
+`limit` and `String.toUpper`; `emit/release/app/HoistOrder`'s `Mid` now reads `String.length` so
+that its three values are not folded away.
+
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with

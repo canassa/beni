@@ -94,7 +94,12 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!void {
     var round: u32 = 0;
     while (round < max_rounds) : (round += 1) {
         if (!try s.analyse()) break;
-        if (!try s.rewrite()) break;
+        const rewrote = try s.rewrite();
+        // Slice 2: what no longer has a reference goes, and with it the
+        // calls and assignments it made, which the next round's facts no
+        // longer see.
+        const pruned = try s.prune();
+        if (!rewrote and !pruned) break;
     }
     try s.finish();
 }
@@ -925,6 +930,146 @@ const Spec = struct {
     /// Drop the arguments of the dropped parameters from every call `m`
     /// reaches. Each call node once, whatever reaches it twice; a new
     /// argument list for each, so a list two nodes share is never cut twice.
+    // ---- Slice 2: reachability again, over the specialised program ----------
+
+    /// Drop every top-level declaration nothing live refers to any more,
+    /// when evaluating it could do nothing, and every `import` and `export`
+    /// of a name that went or that nothing reads. True when anything went.
+    ///
+    /// The roots are every other top-level statement — a declaration whose
+    /// initialiser may do something when evaluated is kept whether or not it
+    /// is read, as `Reach` keeps it — and the names `Input.escaping` lists.
+    fn prune(s: *Spec) Allocator.Error!bool {
+        const referenced = try s.arena.alloc(bool, s.in.globals);
+        @memset(referenced, false);
+        const live = try s.arena.alloc(bool, s.in.globals);
+        @memset(live, false);
+        var work: std.ArrayList(u32) = .empty;
+        for (s.in.escaping) |g| if (g < referenced.len) {
+            referenced[g] = true;
+            try work.append(s.arena, g);
+        };
+        for (s.mods) |*m| {
+            for (m.ir.extraSlice(m.ir.body, Index)) |stmt| {
+                switch (m.ir.tag(stmt)) {
+                    .import_stmt, .export_stmt => continue,
+                    else => {},
+                }
+                if (s.candidate(m, stmt) != null) continue;
+                try s.references(m, stmt, referenced, &work);
+            }
+        }
+        while (work.pop()) |g| {
+            const decl = s.decl[g] orelse continue;
+            if (live[g]) continue;
+            live[g] = true;
+            const m = &s.mods[decl.module];
+            try s.references(m, decl.stmt, referenced, &work);
+        }
+
+        var any = false;
+        for (s.mods) |*m| {
+            var kept: std.ArrayList(u32) = .empty;
+            var dropped = false;
+            const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (body) |stmt| {
+                if (s.candidate(m, stmt)) |g| if (!live[g]) {
+                    dropped = true;
+                    continue;
+                };
+                const d = m.ir.data(stmt);
+                switch (m.ir.tag(stmt)) {
+                    .import_stmt => {
+                        const at = d.lhs;
+                        const imp = m.ir.extraData(@enumFromInt(at), JsIr.Import);
+                        const specs = m.ir.extraSlice(imp.specs(), JsIr.Specifier);
+                        var out: std.ArrayList(u32) = .empty;
+                        for (specs) |spec| {
+                            if (m.globalOf(spec.local)) |g| if (!referenced[g]) continue;
+                            try out.appendSlice(s.arena, &.{ @intFromEnum(spec.imported), @intFromEnum(spec.local) });
+                        }
+                        if (out.items.len != specs.len * JsIr.Specifier.words) {
+                            const start = try m.append(s.gpa, out.items);
+                            m.extra.items[at + 2] = start;
+                            m.extra.items[at + 3] = start + @as(u32, @intCast(out.items.len));
+                            any = true;
+                        }
+                    },
+                    .export_stmt => {
+                        const names = m.ir.extraSlice(JsIr.inlineRange(d), NameIndex);
+                        var out: std.ArrayList(u32) = .empty;
+                        for (names) |n| {
+                            if (m.globalOf(n)) |g| if (s.decl[g] != null and !live[g]) continue;
+                            try out.append(s.arena, @intFromEnum(n));
+                        }
+                        if (out.items.len != names.len) {
+                            const start = try m.append(s.gpa, out.items);
+                            m.setData(stmt, start, start + @as(u32, @intCast(out.items.len)));
+                            any = true;
+                        }
+                    },
+                    else => {},
+                }
+                try kept.append(s.arena, @intFromEnum(stmt));
+            }
+            if (!dropped) continue;
+            const start = try m.append(s.gpa, kept.items);
+            m.ir.body = .{ .start = @enumFromInt(start), .end = @enumFromInt(start + @as(u32, @intCast(kept.items.len))) };
+            any = true;
+        }
+        return any;
+    }
+
+    /// The whole-program name of a top-level declaration that may go when
+    /// nothing reads it: its one declaration, of a function or of a value
+    /// whose evaluation can do nothing. Null for every other statement.
+    fn candidate(s: *Spec, m: *Mod, stmt: Index) ?u32 {
+        const ir = m.ir;
+        const d = ir.data(stmt);
+        const value: ?Index = switch (ir.tag(stmt)) {
+            .const_decl => @enumFromInt(d.rhs),
+            .let_decl => @as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap(),
+            .func_decl, .gen_decl => null,
+            else => return null,
+        };
+        const g = m.globalOf(@enumFromInt(d.lhs)) orelse return null;
+        const decl = s.decl[g] orelse return null;
+        if (decl.stmt != stmt or &s.mods[decl.module] != m) return null;
+        if (value) |v| if (!inert(ir, v)) return null;
+        return g;
+    }
+
+    /// Every whole-program name `stmt` mentions — read, called or assigned —
+    /// marked referenced and queued.
+    fn references(s: *Spec, m: *Mod, stmt: Index, referenced: []bool, work: *std.ArrayList(u32)) Allocator.Error!void {
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        try stack.append(s.arena, stmt);
+        while (JsIr.popOperand(&stack)) |node| {
+            const ir = m.ir;
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .ident => if (m.globalOf(@enumFromInt(d.lhs))) |g| if (!referenced[g]) {
+                    referenced[g] = true;
+                    try work.append(s.arena, g);
+                },
+                .arrow => {
+                    const f = ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
+                    for (ir.extraSlice(f.body(), Index)) |b| try stack.append(s.arena, b);
+                },
+                .assign_stmt => {
+                    try stack.append(s.arena, @enumFromInt(d.lhs));
+                    try stack.append(s.arena, @enumFromInt(d.rhs));
+                },
+                .import_stmt, .export_stmt => {},
+                else => if (ir.tag(node).isStatement())
+                    try s.pushStmtExprs(m, node, &stack)
+                else
+                    try ir.pushOperands(s.arena, &stack, node),
+            }
+        }
+    }
+
     fn rewriteCalls(s: *Spec, m: *Mod, drop: []const bool) Allocator.Error!void {
         var seen: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
         var stack: std.ArrayList(Index) = .empty;
@@ -1269,6 +1414,39 @@ const Spec = struct {
         return any;
     }
 };
+
+/// Whether evaluating `root` can do nothing but make a value: a function, a
+/// literal, a name, or an object, array or template of those. Anything
+/// else — a call, a property read (a getter), an operator (`valueOf`), a
+/// spread — may, and a declaration it initialises is kept.
+fn inert(ir: *const JsIr, root: Index) bool {
+    var stack: [64]Index = undefined;
+    var len: usize = 1;
+    stack[0] = root;
+    var budget: u32 = 4096;
+    while (len > 0) {
+        len -= 1;
+        const node = stack[len];
+        if (budget == 0) return false;
+        budget -= 1;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .arrow, .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => {},
+            .property => {
+                if (len == stack.len) return false;
+                stack[len] = @enumFromInt(d.rhs);
+                len += 1;
+            },
+            .object, .array, .template => for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {
+                if (len == stack.len) return false;
+                stack[len] = child;
+                len += 1;
+            },
+            else => return false,
+        }
+    }
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // Numbers: exact or nothing
