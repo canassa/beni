@@ -20,10 +20,13 @@ need a Chromium: `nix develop .#browser` puts one on `PATH`, or set `CHROME`.
 ### The default run: `node all.mjs`
 
 With no arguments, `all.mjs` builds and tests if it has not, then runs **one
-quick round in Node**: every candidate, the list scenarios at 10 000 elements,
-the single operations at 1 000, §15's array scenarios up to 10 000, 100 ms of
-warm-up per cell, 8 workers. **Measured: 4 min 19 s of wall time (258 s) on the
-16-core Ryzen 9 5950X, at a load average of about 10 from other work.** Results
+quick round in Node**: every candidate (the 16 of report 46 §1.2 and §11, E1tp
+included; not the three checks `adaptive1024`, `adaptive-min` and `cons-raw`,
+which `bench` runs), the list scenarios at 10 000 elements, the single
+operations at 1 000, §15's array scenarios up to 10 000, 100 ms of warm-up per
+cell, 8 workers. **It must stay under 5 minutes. Measured on 2026-09-30: 3 min
+11 s of wall time (191 s) on the 16-core Ryzen 9 5950X, at a load average of
+about 9.** (With the three checks and without E1tp it was 4 min 19 s.) Results
 go to `results/all-quick-node.jsonl`; `node all.mjs tables quick` renders them.
 
 ### The full sweep (opt-in): `FULL=1`
@@ -38,6 +41,7 @@ node all.mjs stack              # stack safety at 100 000, default stack -> resu
 node all.mjs size               # brotli bytes of each candidate's surface -> results/all-size.json
 node all.mjs tables node        # report 46's tables -> results/all-tables-node.md
 node all.mjs tables chrome      # the same from the Chrome results
+node all.mjs tables-e1tp        # report 46 §11: E1tp against E1t, cons and the best other
 ```
 
 `FULL=1` means the list scenarios at 1 000 / 10 000 / 100 000, the single
@@ -58,6 +62,7 @@ Report 46 ran one full Node round and most of a second; Chrome, `mem` and
 | `FULL` | unset | `1`: the full sweep above |
 | `WARM_MS` | 300 (quick: 100) | warm-up per cell (every cell starts in a fresh process) |
 | `HARD_MS` | 45000 (quick: 10000) | a cell running longer is killed and recorded as `> 45 s` |
+| `RESULTS` | per mode | the results file `bench`, `chrome`, `tables` and `tables-e1tp` write or read (report 46 §11: `results/e1tp-node.jsonl`) |
 | `SHORT_MS`, `PREDICT_S` | 8000 (quick: 3000), 3 | a cell that could pass `PREDICT_S` a call at the next size (quadratic growth assumed) runs there under `SHORT_MS` |
 
 **The three programs**, each compiled once and byte-identical for every
@@ -78,7 +83,8 @@ representation; `seq/surface.js` turns one into every sibling the three programs
 import, and derives what a candidate leaves out the same way for everyone.
 `native` (a mutable array, the ceiling, not persistent), `nativecow`, `cow`,
 `trie`, `hybrid1024`, `adaptive256` (ports from `ports/`), `E1` and `E1t`
-(`ports/first.js`, `ports/first-tail.js`), `cons` (today's `List`),
+(`ports/first.js`, `ports/first-tail.js`), `E1tp` (E1t with cheap prepend,
+`ports/first-tail-prepend.js`, report 46 §11), `cons` (today's `List`),
 `immutable`, `funkia`, `mori`, `mutative`, `immer`, `elm` (Elm's `Array`,
 `seq/elm/elm-raw.js` is `elm make --optimize` output of `seq/elm/src/Main.elm`).
 Two more run on `arr` only, as a check: `adaptive1024` and `adaptive-min`
@@ -100,6 +106,7 @@ and every record carries its round, core and load average.
 | `scenarios.mjs` | 38 §15–§17 | the array scenarios over the §15 candidates |
 | `lists.mjs` | 38 §16–§17 | the list scenarios over A, B, C, D, E1, E1t |
 | `lists/claim-test.mjs` | 38 §17 | the persistence test of E1t's claimable tail |
+| `lists/claim-prepend-test.mjs` | 46 §11 | the persistence test of E1tp's claimable head and tail, prepends and appends mixed on shared versions |
 | `min/measure.mjs` | 40 | the adaptive sibling under brotli |
 | `rc/rc.mjs`, `rc/lists.mjs`, `rc/chrome.mjs` | 42 | reference counts and static in-place writes |
 

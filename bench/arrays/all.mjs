@@ -1,7 +1,7 @@
 // Every sequence candidate on every scenario, in one batch (research/46). The one entry point of
 // bench/arrays; README.md lists the modes and what each one writes.
 //
-//   node all.mjs                       the quick default run: one round, a few sizes, ~4 minutes
+//   node all.mjs                       the quick default run: one round, a few sizes, ~3 minutes
 //   FULL=1 node all.mjs <mode>         the full sweep of report 46 (every size, 300 ms warm-up)
 //   node all.mjs build                 compile the three programs with ../../zig-out/bin/beni
 //   node all.mjs test                  the differential test: every candidate, every scenario
@@ -9,6 +9,7 @@
 //   node all.mjs chrome [rounds]       the same bundles in headless Chrome ($CHROME), one page each
 //   node all.mjs mem | stack | size    memory, stack safety at 100 000, brotli bytes
 //   node all.mjs tables [engine]       the report's tables from results/
+//   node all.mjs tables-e1tp           research/46 §11: E1tp against E1t, cons and the best other
 //
 // Three compiled programs, each byte-identical for every candidate; only the sibling differs:
 //
@@ -49,6 +50,8 @@ export const CANDS = {
   adaptive256: { core: 'adaptive', define: { ADA_T: '256' } },
   E1: { core: 'e1', define: { ADA_T: '256' }, full: true },
   E1t: { core: 'e1t', full: true },
+  // E1t plus a claimable head and a radix offset: cheap `x :: xs` (research/46 §11)
+  E1tp: { core: 'e1tp', full: true },
   cons: { core: 'cons', idiom: 'elm', full: true },
   immutable: { core: 'immutable', label: 'Immutable.js' },
   funkia: { core: 'funkia' },
@@ -443,7 +446,7 @@ async function modeBench(engine) {
   const cands = pick(Object.keys(CANDS));
   const L = await labels();
   const cores = await pickCores(+(process.env.WORKERS ?? 6));
-  const file = `results/all-${FULL_RUN ? '' : 'quick-'}${engine}.jsonl`;
+  const file = process.env.RESULTS ?? `results/all-${FULL_RUN ? '' : 'quick-'}${engine}.jsonl`;
   fs.mkdirSync('results', { recursive: true });
   const sink = (l) => fs.appendFileSync(file, JSON.stringify(l) + '\n');
   for (const ch of chains(cands, L)) await bundleOnce(ch.cand, ch.prog); // bundle before any timing
@@ -653,7 +656,7 @@ function tableFor(C, group, styleOf, cands, title, rowsOrder) {
 
 function modeTables() {
   const engine = process.argv[3] ?? 'chrome';
-  const rows = load(`results/all-${engine === 'quick' ? 'quick-node' : engine}.jsonl`);
+  const rows = load(process.env.RESULTS ?? `results/all-${engine === 'quick' ? 'quick-node' : engine}.jsonl`);
   const C = cells(rows);
   const cands = pick(MAIN);
   const L = JSON.parse(fs.readFileSync(path.join(OUT, 'labels.json'), 'utf8'));
@@ -715,6 +718,52 @@ function modeTables() {
   console.log(txt);
 }
 
+// research/46 §11: E1tp against E1t, the cons list and the best of every other candidate in the
+// results file, one table per kind of code. Each cell is the median of its rounds' medians; bold is
+// the fastest of the four columns, every other cell its ratio to that one
+function modeTablesE1tp() {
+  const file = process.env.RESULTS ?? 'results/e1tp-node.jsonl';
+  const C = cells(load(file));
+  const L = JSON.parse(fs.readFileSync(path.join(OUT, 'labels.json'), 'utf8'));
+  const others = [...new Set([...C.keys()].map((k) => k.split('|')[0]))].filter((c) => !['E1tp', 'E1t', 'cons', 'native'].includes(c));
+  const num = (x) => (typeof x === 'object' && x ? x.med : Infinity);
+  const show = (x) => (x === undefined ? '—' : typeof x === 'string' ? x : fmt(x.med) + (x.S === 0 ? '¹' : x.iqr > 0.2 ? '²' : '') + (x.rounds === 1 ? '³' : '') + (x.load > 16 ? '⁴' : ''));
+  const sizes = { list: [1000, 10000, 100000], ops: [8, 1000, 100000] }; // a size not in the file is left out
+  const out = [];
+  const counts = [];
+  const table = (title, group, styles, rows) => {
+    out.push(`**${title}**`, '', `| op | n | E1tp (${styles.E1tp}) | E1t (${styles.E1t}) | cons (${styles.cons}) | best other (${styles.rest}) |`, '|---|--:|--:|--:|--:|--:|');
+    const tally = { E1tp: [0, 0, 0], E1t: [0, 0, 0], cons: [0, 0, 0], rows: 0 };
+    for (const [op, n] of rows) {
+      const get = (c, st) => C.get(`${c}|${group}|${st}|${op}|${n}`);
+      const v = [get('E1tp', styles.E1tp), get('E1t', styles.E1t), get('cons', styles.cons)];
+      let bo = null, bv;
+      for (const c of others) { const x = get(c, styles.rest); if (typeof x === 'object' && (!bo || x.med < bv.med)) { bo = c; bv = x; } }
+      v.push(bv);
+      if (v.every((x) => x === undefined)) continue;
+      const best = Math.min(...v.map(num));
+      tally.rows++;
+      ['E1tp', 'E1t', 'cons'].forEach((c, i) => { const r = num(v[i]) / best; if (r <= 1.5) tally[c][0]++; if (r > 3) tally[c][1]++; if (r > 10) tally[c][2]++; });
+      const txt = v.map((x, i) => (x === undefined || typeof x === 'string' ? show(x) : num(x) === best ? `**${show(x)}**` : `${show(x)} (${ratio(x.med / best)})`));
+      if (bo) txt[3] = `${txt[3]} ${label(bo)}`;
+      out.push(`| ${op} | ${(+n).toLocaleString('en')} | ${txt.join(' | ')} |`);
+    }
+    counts.push(`| ${title.replace(/:.*/, '')} | ${tally.rows} | ${['E1tp', 'E1t', 'cons'].map((c) => tally[c].join(' / ')).join(' | ')} |`);
+    out.push('');
+  };
+  const byOp = (group) => L[group].flatMap((op) => sizes[group].map((n) => [op, n]));
+  const arrRows = (() => { const m = new Map(); for (const [, op, n] of L.arr) { if (!m.has(op)) m.set(op, []); m.get(op).push(n); } return [...m].flatMap(([op, ns]) => ns.sort((a, b) => a - b).map((n) => [op, n])); })();
+  out.push(`# E1tp, ${file}`, '', `Median of the rounds' medians per call; **bold** is the fastest of the four columns, every other cell its ratio to it. "best other": the fastest persistent candidate in the file other than these three, named. ¹ one cold call. ² IQR over 20 % of the median. ³ one round. ⁴ load over 16. > 8 s / > 45 s killed; skip: failed at the size before; SO stack overflow.`, '');
+  table('A. The list scenarios, Elm-style code', 'list', { E1tp: 'elm', E1t: 'elm', cons: 'elm', rest: 'elm' }, byOp('list'));
+  table('B. The list scenarios, array-first code (cons on its own Elm-style code)', 'list', { E1tp: 'first', E1t: 'first', cons: 'elm', rest: 'first' }, byOp('list'));
+  table('C. The single operations, array-first (cons on its own Elm-style code)', 'ops', { E1tp: 'first', E1t: 'first', cons: 'elm', rest: 'first' }, byOp('ops'));
+  table("D. §15's array scenarios (indexed code)", 'arr', { E1tp: 'index', E1t: 'index', cons: 'index', rest: 'index' }, arrRows);
+  out.push('**Rows within 1.5× of the row\'s best / over 3× / over 10×**', '', '| table | rows | E1tp | E1t | cons |', '|---|--:|--:|--:|--:|', ...counts, '');
+  const txt = out.join('\n');
+  fs.writeFileSync(file.replace(/\.jsonl$/, '-tables.md'), txt);
+  console.log(txt);
+}
+
 // ---------------------------------------------------------------------------------------------
 
 if (mode === undefined) {
@@ -722,10 +771,13 @@ if (mode === undefined) {
   const t0 = Date.now();
   if (!fs.existsSync(path.join(OUT, 'first'))) build();
   if (!fs.existsSync(path.join(OUT, 'needs-persistence.json'))) await modeTest();
-  fs.rmSync('results/all-quick-node.jsonl', { force: true });
+  fs.rmSync(process.env.RESULTS ?? 'results/all-quick-node.jsonl', { force: true });
   process.env.WORKERS ??= '8';
+  // the candidates, not the three checks (adaptive1024, adaptive-min, cons-raw): `node all.mjs
+  // bench` runs those, and the quick run stays under 5 minutes with E1tp in it
+  process.env.CANDS ??= MAIN.join(',');
   await modeBench('node');
-  console.log(`quick run: ${((Date.now() - t0) / 1000).toFixed(0)} s; results/all-quick-node.jsonl (node all.mjs tables quick)`);
+  console.log(`quick run: ${((Date.now() - t0) / 1000).toFixed(0)} s; ${process.env.RESULTS ?? "results/all-quick-node.jsonl (node all.mjs tables quick)"}`);
 } else if (mode === 'build') build();
 else if (mode === 'test') await modeTest();
 else if (mode === 'bench') await modeBench('node');
@@ -734,4 +786,5 @@ else if (mode === 'mem') await modeMem();
 else if (mode === 'stack') await modeStack();
 else if (mode === 'size') await modeSize();
 else if (mode === 'tables') modeTables();
-else console.log('usage: node all.mjs build | test | bench [rounds] | chrome [rounds] | mem | stack | size | tables [node|chrome]   (README.md)');
+else if (mode === 'tables-e1tp') modeTablesE1tp();
+else console.log('usage: node all.mjs build | test | bench [rounds] | chrome [rounds] | mem | stack | size | tables [node|chrome] | tables-e1tp   (README.md)');

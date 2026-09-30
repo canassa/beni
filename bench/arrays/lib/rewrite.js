@@ -64,6 +64,15 @@ export function rewriteDecl(src) {
     s = s.slice(0, k) + `$cons(${s.slice(h0, h1)}, ${s.slice(t0, t1)})` + s.slice(t1 + 2);
   }
   if (s.includes('reduceRight')) throw new Error('a list literal longer than the cons limit: not handled');
+  // a call tested without being bound (`case drop list n of [] -> …`: `List$drop(l, n).$ === 0`)
+  for (let k = s.indexOf(').$ === '); k >= 0; k = s.indexOf(').$ === ')) {
+    let d = 0, i = k;
+    for (; i >= 0; i--) { if (s[i] === ')') d++; else if (s[i] === '(' && --d === 0) break; }
+    let c = i;
+    while (c > 0 && /[\w$]/.test(s[c - 1])) c--;
+    const bit = s[k + ').$ === '.length];
+    s = s.slice(0, c) + `${bit === '0' ? '$isNil' : '$isCons'}(${s.slice(c, k + 1)})` + s.slice(k + ').$ === 0'.length);
+  }
   const subjects = new Set();
   for (const m of s.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.\$ === [01]\b/g)) subjects.add(m[1]);
   s = s.replace(/(?<![\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)( === [01]\b)?/g, (all, ch, test) => {

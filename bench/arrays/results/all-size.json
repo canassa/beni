@@ -105,6 +105,19 @@
    }
   },
   {
+   "cand": "E1tp",
+   "sibling": {
+    "min": 7475,
+    "gzip": 2822,
+    "brotli": 2653
+   },
+   "whole": {
+    "min": 11521,
+    "gzip": 4224,
+    "brotli": 3897
+   }
+  },
+  {
    "cand": "cons",
    "sibling": {
     "min": 3766,
@@ -197,9 +210,9 @@
   }
  ],
  "two": {
-  "min": 9731,
-  "gzip": 3470,
-  "brotli": 3189
+  "min": 11623,
+  "gzip": 3669,
+  "brotli": 3363
  },
  "arraySibling": {
   "adaptive-min": {
