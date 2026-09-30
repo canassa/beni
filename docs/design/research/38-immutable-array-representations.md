@@ -11,7 +11,10 @@ beni should ship. Two further questions the owner added on 2026-09-29 are answer
 `List` itself be array-backed, as Roc's is?) and §10 (typed arrays, as a reference for a future
 numeric or `Bytes` type). A later one, whether one sequence type could replace both `List` and
 `Array`, is §16; the same question on programs written array-first, with `push` at the end
-instead of `::` and `reverse`, is §17.
+instead of `::` and `reverse`, is §17. **Every candidate of this report on every scenario of
+§3, §15, §16 and §17, in one batch, in Chrome and Node, is
+[research 46](46-every-sequence-candidate-on-every-scenario.md)**: where the two disagree, 46 is the
+later measurement and covers more.
 
 **Method in one paragraph.** Every candidate is a real published build or a real compiler's output,
 driven through one uniform adapter, one process (or one fresh headless-Chrome instance) per

@@ -1,0 +1,974 @@
+# Every sequence candidate on every scenario, in one batch
+
+**Status:** research, 2026-09-30. Not normative. It answers the owner's complaint about
+[research 38](38-immutable-array-representations.md): its candidates were compared piecemeal (§3,
+§14 and §15 each against a different subset; E1t of §17 only against A), the plain-array,
+copy-on-write, trie, hybrid and library candidates never ran the list scenarios, and E1t never ran
+next to them. Here **one harness runs every candidate on every scenario of research 38 §3, §15, §16
+and §17**, each candidate behind the same beni-facing API, the compiled programs byte-identical
+across candidates except the swapped sibling. Harness: `bench/arrays/all.mjs`, documented in
+`bench/arrays/README.md`. **Read §0, then §9.**
+
+**What this is not.** The owner stopped the batch after one complete Node round and most of a
+second (§1.4). There is **no Chrome pass, no memory pass and no stack pass** in this report; §1.4
+says what exists and what each table rests on, and every conclusion is stated with that in mind.
+
+---
+
+## 0. Findings
+
+Counts are over the master tables (§3–§5), each candidate on the code written for it; "within
+1.5×" means within 1.5× of the fastest persistent candidate in that row.
+
+1. **On list code written for it, E1t is the only array candidate in the cons list's class.** Of the
+   90 rows of the list table (30 scenarios × 3 sizes), the cons list is within 1.5× of the best in
+   67 and more than 10× the best in 6; **E1t in 48 and 5**; E1 in 33 and 18; funkia 8 and 16;
+   adaptive256 14 and 15; trie 9 and 12; cow 23 and 34; native CoW 14 and 34; Mutative 18 and 35;
+   Immer 16 and 30; Elm's Array 1 and 19; Immutable.js 0 and 55; mori 0 and 41. The cons list's
+   bad rows are `acc ++ [x]` (quadratic: 1 230× at 10 000) and `xs ++ ys`; E1t's are the
+   persistent stack and kept paths (4–17×) and the bare `x :: rest` walk (≈ 10×). Every
+   copy-on-write candidate (cow, native CoW, Immer, Mutative) copies on each `push`, so building a
+   list is quadratic for them: 10–10 000× the best at 10 000–100 000, or over the 8 s watchdog.
+2. **On the array scenarios (§15), the trie-shaped candidates win and no library is close.** Within
+   1.5× of the best in the 73 rows: **E1t 49**, trie 40, hybrid1024 37, E1 36, Mutative 34 (it is
+   cow), adaptive256 32, cow 31, native CoW 33; funkia 13, Immer 23, Immutable.js 7, Elm's Array 6,
+   mori 5, cons 2. The copy-on-write family is 10–200 000× the best on every large write (grid
+   ticks, building by `push`, histogram, history: 7.7 MB for 101 versions against 180 KB); no
+   trie-shaped candidate is.
+3. **On the single operations, the shape is research 38 §3's.** Plain arrays win reads and bulk
+   operations, tries win writes on large sequences, funkia alone has O(log n) `slice`, `concat`,
+   `insert` and `remove`. Among the persistent candidates E1t is the best in 12 of 69 rows and
+   within 3× in 49, the most of any; the cons list (on its own Elm-style code, where `get` is
+   `drop` + `head`) is within 3× in 30 and over 10× in 34.
+4. **The other style is not a way out for anyone** (§4.2, §5.2). Elm-style code on arrays is much
+   better than research 38 §16 measured, because beni now emits tail calls modulo cons, which the
+   rewrite lowers to a builder: `f x :: go rest` runs at 1.4–2.4× the best on E1 and E1t. But `x ::
+   acc` then `reverse`, and every accumulator in a fold, still copy per step on an array.
+   Array-first code on the cons list is quadratic wherever it indexes: the array-first core's
+   `foldl` is a loop over `unsafeGet`, which walks cells.
+5. **Bytes** (§7). The one array-first type over E1t is **3 468 bytes** brotli for its whole
+   surface; today's two types (cons `List` + adaptive `Array`) are **3 189**; funkia 6 770, Immer
+   5 814, Mutative 8 661, Elm's Array 11 150 (a whole compiled program), Immutable.js 18 852, mori
+   33 535.
+6. **Checks.** Every persistent candidate agrees with the reference on every check of the
+   differential test (§2). Research 40's hand-minified sibling and the rewrite of the list syntax
+   both come out with no consistent direction against what they replace, within this batch's noise
+   (§8).
+
+---
+
+## 1. Method
+
+### 1.1 One API, three programs, one sibling per candidate
+
+Each candidate is a module of primitives over its own representation (`bench/arrays/seq/*.js`).
+`seq/surface.js` turns one into **every** `foreign` sibling that three compiled programs import,
+and derives whatever a candidate does not provide the same way for everyone, so a difference between
+two columns is a difference between their primitives. The three programs are compiled once by this
+repository's `beni` (built from `master`, development build) and are byte-identical for every
+candidate:
+
+| program | sources | core | style |
+|---|---|---|---|
+| `arr` | research 38 §15's six scenarios | `core/` + `scenarios/Array.beni` | indexed code (the only style they exist in) |
+| `elm` | §16's list scenarios + `ops/elm/Ops.beni` | today's `core/List` | **Elm-style**: `::`, accumulators, `reverse` |
+| `first` | §17's list scenarios + `ops/first/Ops.beni` | §17's array-first `core/List`, plus `insertAt`, `removeAt`, `swap` | **array-first**: `push` at the end |
+
+`elm` and `first` have their list syntax rewritten into calls (`lib/rewrite.js`, research 38
+§16.2), extended for what beni emits since 2026-09-30: **tail calls modulo cons** (`backend.md` §8)
+fill a destination cell by cell, which the rewrite turns into three builder calls. The cons list
+runs the rewritten program too, and §8.2 compares that with beni's own output.
+
+**Which code each cell ran.** Each list and single-operation cell runs twice per candidate: on the
+code written for its representation — **the master tables (§4.1, §5.1): Elm-style for the cons
+list, array-first for everything else** — and on the other style (§4.2, §5.2). Every table has a
+*style* row naming the program each column ran. §15's scenarios exist only as indexed code; the
+cons list runs them through a cons-cell `Array` sibling whose `get` walks. Today's two-type design
+runs them on `Array`, which is the adaptive256 column, not on the cons list.
+
+### 1.2 The candidates
+
+| candidate | what | `x :: rest` |
+|---|---|---|
+| native mut | a JS array written in place: the ceiling, **not persistent** | view |
+| native CoW | ES2023 `with`, `toSpliced`, `toSorted`, spread | view |
+| cow | research 38 §1's port (`ports/cow.js`) | view |
+| trie | §1's 32-way trie with a tail (`ports/trie.js`) | view |
+| hybrid1024 | §12: plain ≤ 1 024 elements, trie above | view |
+| adaptive256 | §15: plain until the first write to one above 256 | view |
+| E1 | §17: adaptive256 + views + a core-private builder (`ports/first.js`) | its own view |
+| E1t | §17: E1 with a claimable tail, push threshold 32 (`ports/first-tail.js`) | its own view |
+| cons | today's `List`: cons cells, `core/List.js`, tail calls modulo cons | the cell |
+| Immutable.js 5.1.9 | `List` | `shift` |
+| funkia `list` 2.0.19 | RRB tree | `tail` |
+| mori 0.3.2 | ClojureScript's `PersistentVector` | `subvec` |
+| Mutative 1.3.0 | research 38 §14's "fast": production build, `mark`, no freeze | view |
+| Immer 11.1.18 | production build, auto-freeze on | view |
+| Elm Array | elm/core 1.0.5 through `elm make --optimize` 0.19.2 | view |
+
+The view is research 38 §16's `V {b, o, length}` over the candidate's own value. **There is no
+"E1t-min"**: research 40 minified the adaptive `Array` sibling at T = 1 024, not E1t, so its file
+runs on the array scenarios against adaptive1024 (§8.1). **Reference counts** (research 42) were
+not wired: its R0, R1 and R2 are hand transformations of compiled modules, not siblings; research
+42 §0.2 has them against adaptive.
+
+`native` writes in place, so a cell that reads a version it has already overwritten cannot be
+measured honestly. Those cells are **skipped and marked n/p**: §15's "first" cells, the history, the
+edited interop array and the sort; the list cells whose differential check fails under it (`append
+two`, `add to front, first`, `paths sharing tails, all kept`); and the single operations'
+`…, first` writes. Its other writes are measured in place, as research 38 §3 did.
+
+### 1.3 Timing
+
+One pinned process per cell, so that no candidate's figure depends on which other cells ran before
+it (which differs between candidates, because the cells that fail differ). The timing loop is
+research 38's (`lib/measure.js`): 300 ms of warm-up, 7 samples of at least 10 ms, the median; a
+call over 3 s is timed once, cold (¹). A cell that would exceed 3 s a call at the next size if it
+grew quadratically runs there under an 8 s watchdog, any other under 45 s; a killed cell reads
+`> 8 s` or `> 45 s`, and a failed one is `skip` at the larger sizes. Each round visits the cells in a
+new order on 8 of the machine's 16 physical cores (Ryzen 9 5950X), each picked idle when the round
+began, one worker pinned to each.
+
+### 1.4 What was run, and the load
+
+**Node 24.19 only.** Round 1 is complete (6 232 cell records); round 2 covered 4 431 before the
+owner stopped the batch. A cell is the median of its rounds, and **³ marks a cell with one round**.
+The machine was shared: **the load average ran 5–35 on 32 threads** during the batch (other
+sessions' builds); it is recorded per cell, and **⁴ marks a cell whose median round ran above 16**.
+Within a run, the median cell's IQR is 8.7 % of its median (90th percentile 70 %); between rounds, a
+cell's medians differ by 18 % at the median and 48 % at the 90th percentile. **Nothing in §0 or §9
+rests on a ratio under 2×**, and a cell marked ⁴ should be read as ±50 %. Node's copies of large
+arrays are GC-bound (research 38 §4.4), so every copy-on-write figure at 100 000 overstates what a
+browser pays.
+
+Not run, by the owner's instruction: the Chrome pass (`node all.mjs chrome`), the memory pass
+(`mem`) and the stack pass (`stack`); the harness has all three. What stands in for them here: the
+history scenario's retained-memory rows (§3), the stack overflows inside the timed batch (Node with
+`--stack-size=4000`, marked SO), and research 38 §17.5's default-stack result for A, E1 and E1t
+(A overflows in six list shapes at 100 000; E1 and E1t in none — tail calls modulo cons have since
+removed five of A's six).
+
+### 1.5 The default run
+
+`node all.mjs` with no arguments is a quick run: one round, list scenarios at 10 000, single
+operations at 1 000, §15's scenarios up to 10 000 elements, 100 ms of warm-up, 8 workers. **Measured
+on this machine: 4 min 19 s of wall time (258 s) for all 17 candidates** (at a load average of about 10). `FULL=1` is
+this report's sweep, about 22 minutes a round on 8 cores. The README lists every mode.
+
+---
+
+## 2. The differential test (`node all.mjs test`)
+
+Every candidate runs every scenario at small and boundary sizes against a reference: cow for §15's
+scenarios, the cons list for both list programs (the array-first programs' orders are compared as
+sets where research 38 §17 made them differ). **Every persistent candidate agrees on every check**:
+298 on `arr`; 354 on `elm` and 354 on `first` — each list cell at 0 to 1 000 elements twice, a TEA
+model through 400 messages, inputs unchanged afterwards, and the single operations at 1 to 1 025
+elements including every old version after new writes. `native` differs where it writes in place,
+which is how its n/p list cells were found. The rewritten cons list agrees with beni's own output
+on all 354. **Identity of no-op writes** (research 38 §7) is reported, not compared: the ports,
+Immutable.js, funkia, Immer and Mutative return the input for `set` of the same value and `swap i
+i`; native CoW, mori and Elm's Array do not; and on the Elm-style programs nobody does, because an
+Elm-style `set` is `take ++ v :: drop`. Output: `bench/arrays/results/all-test.txt`.
+
+---
+
+## 3–5. The master tables
+
+Below, unedited, is `node all.mjs tables node` (also `bench/arrays/results/all-tables-node.md`):
+**§3** the array scenarios; **§4** the list scenarios, 4.1 on each candidate's own style and 4.2 on
+the other; **§5** the single operations, 5.1 and 5.2 likewise; then the two checks of §8. Every cell
+is absolute time per call (`get`: per read); **bold** is the fastest persistent candidate in its
+row, and every other cell carries its ratio to that one.
+
+Median of the rounds' medians per call; **bold** is the fastest persistent candidate in the row and every other cell's ratio is to it (native mut writes in place and is never bold). ¹ one cold call (over the 3 s cap). ² within-run IQR over 20 % of the median. ³ one round only. ⁴ the median round ran at a load average over 16 (32 threads). SO stack overflow; OOM heap exhausted (Node) or renderer crashed (Chrome); > 8 s / > 45 s killed after that long on one call; skip not run because it failed at the size before; n/p needs persistence (native only); — not applicable.
+
+### 3. The array scenarios (research 38 §15)
+
+**§15's array scenarios (one style: indexed code over the Array API)**
+
+| scenario / op | n | native mut | native CoW | cow | trie | hybrid1024 | adaptive256 | E1 | E1t | cons | Immutable.js | funkia | mori | Mutative | Immer | Elm Array |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| *style* | | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* | *index* |
+| table/update one/first | 1,000 | n/p | 7.16 µs (1.08×) | 8.28 µs (1.25×) | **6.64 µs³** | 7.81 µs (1.18×) | 30.5 µs⁴ (4.6×) | 7.57 µs⁴ (1.14×) | 10.6 µs (1.60×) | 22.7 µs³ (3.4×) | 35.2 µs³ (5.3×) | 18.4 µs (2.8×) | 39.6 µs (6.0×) | 8.83 µs³⁴ (1.33×) | 113 µs (17×) | 37.1 µs³ (5.6×) |
+| table/update one/first | 10,000 | n/p | 83.3 µs (1.29×) | 81.4 µs² (1.26×) | 71.1 µs³ (1.10×) | 90.6 µs (1.41×) | 272 µs⁴ (4.2×) | 102 µs (1.58×) | 106 µs (1.65×) | 200 µs³ (3.1×) | 485 µs³ (7.5×) | 310 µs (4.8×) | 372 µs (5.8×) | **64.3 µs³⁴** | 1.19 ms (19×) | 391 µs³ (6.1×) |
+| table/update one/steady | 1,000 | 6.08 µs²³ (1.35×) | 10.2 µs (2.3×) | 9.45 µs (2.1×) | **4.52 µs²³** | 8.25 µs (1.83×) | 9.16 µs³ (2.0×) | 10.5 µs (2.3×) | 9.00 µs² (2.0×) | 22.5 µs (5.0×) | 27.5 µs²³⁴ (6.1×) | 27.2 µs (6.0×) | 41.4 µs (9.2×) | 11.6 µs²³ (2.6×) | 218 µs (48×) | 45.1 µs (10×) |
+| table/update one/steady | 10,000 | 60.4 µs³ (1.15×) | 89.9 µs (1.71×) | 95.4 µs (1.81×) | **52.7 µs³** | 107 µs (2.0×) | 91.9 µs³ (1.74×) | 131 µs (2.5×) | 109 µs (2.1×) | 385 µs² (7.3×) | 371 µs³⁴ (7.0×) | 322 µs⁴ (6.1×) | 407 µs (7.7×) | 87.4 µs²³ (1.66×) | 2.26 ms (43×) | 418 µs (7.9×) |
+| table/update every 10th/first | 1,000 | n/p | 98.9 µs (2.2×) | 61.3 µs³ (1.36×) | 59.1 µs (1.31×) | 51.2 µs (1.13×) | 53.9 µs (1.19×) | **45.2 µs³** | 53.3 µs⁴ (1.18×) | 1.54 ms (34×) | 390 µs²⁴ (8.6×) | 121 µs (2.7×) | 139 µs⁴ (3.1×) | 61.8 µs (1.37×) | 140 µs² (3.1×) | 127 µs (2.8×) |
+| table/update every 10th/first | 10,000 | n/p | 782 µs² (1.72×) | **455 µs²³** | 759 µs² (1.67×) | 686 µs (1.51×) | 540 µs² (1.19×) | 494 µs³ (1.09×) | 469 µs⁴ (1.03×) | 155 ms (342×) | 13.8 ms²⁴ (30×) | 1.21 ms² (2.7×) | 1.40 ms²⁴ (3.1×) | 500 µs² (1.10×) | 844 µs² (1.86×) | 1.46 ms² (3.2×) |
+| table/update every 10th/steady | 1,000 | 65.2 µs² (1.27×) | 69.3 µs²³ (1.35×) | 67.1 µs² (1.31×) | 83.0 µs² (1.62×) | 83.4 µs (1.62×) | 78.3 µs²³ (1.52×) | 61.5 µs² (1.20×) | 72.7 µs (1.41×) | 2.20 ms⁴ (43×) | 198 µs²⁴ (3.9×) | 101 µs²⁴ (2.0×) | 275 µs²³ (5.4×) | **51.4 µs³** | 74.3 µs² (1.45×) | 108 µs³ (2.1×) |
+| table/update every 10th/steady | 10,000 | 582 µs² (1.19×) | 687 µs³ (1.40×) | 618 µs² (1.26×) | 493 µs² (1.01×) | **490 µs²⁴** | 609 µs²³ (1.24×) | 595 µs² (1.21×) | 539 µs² (1.10×) | 198 ms⁴ (403×) | 3.62 ms²⁴ (7.4×) | 1.27 ms² (2.6×) | 1.20 ms²³ (2.4×) | 841 µs²³ (1.72×) | 728 µs² (1.48×) | 1.30 ms²³ (2.7×) |
+| table/swap/first | 1,000 | n/p | 12.8 µs (1.79×) | 9.03 µs³ (1.27×) | 7.13 µs⁴ (1.00×) | **7.12 µs³** | 9.16 µs (1.29×) | 11.8 µs (1.66×) | 11.2 µs³ (1.57×) | 37.3 µs (5.2×) | 28.3 µs⁴ (4.0×) | 33.6 µs (4.7×) | 41.4 µs (5.8×) | 9.11 µs³ (1.28×) | 314 µs³⁴ (44×) | 37.8 µs³ (5.3×) |
+| table/swap/first | 10,000 | n/p | 139 µs (2.2×) | 88.9 µs³ (1.42×) | 71.9 µs⁴ (1.15×) | 93.7 µs³ (1.50×) | 105 µs (1.68×) | 103 µs (1.65×) | 113 µs³ (1.80×) | 469 µs² (7.5×) | 474 µs (7.6×) | 330 µs (5.3×) | 459 µs (7.3×) | **62.6 µs²³** | 3.21 ms³⁴ (51×) | 358 µs³ (5.7×) |
+| table/swap/steady | 1,000 | 6.49 µs² (0.85×) | 9.11 µs³ (1.19×) | 8.94 µs²⁴ (1.17×) | 10.2 µs⁴ (1.34×) | **7.62 µs²³** | 8.00 µs³ (1.05×) | 7.99 µs (1.05×) | 8.36 µs⁴ (1.10×) | 29.4 µs³ (3.9×) | 41.7 µs (5.5×) | 26.3 µs (3.5×) | 29.9 µs (3.9×) | 10.8 µs³ (1.41×) | 420 µs³ (55×) | 39.4 µs³ (5.2×) |
+| table/swap/steady | 10,000 | 61.0 µs (0.91×) | 84.8 µs²³ (1.26×) | 80.2 µs (1.20×) | 101 µs⁴ (1.51×) | **67.1 µs³** | 79.9 µs³ (1.19×) | 81.0 µs (1.21×) | 89.7 µs⁴ (1.34×) | 343 µs³ (5.1×) | 656 µs (9.8×) | 252 µs (3.7×) | 320 µs (4.8×) | 68.4 µs³ (1.02×) | 4.00 ms³ (60×) | 460 µs³ (6.8×) |
+| table/remove one/first | 1,000 | n/p | 43.4 µs²⁴ (1.73×) | 28.9 µs³ (1.15×) | 44.8 µs (1.79×) | 40.0 µs (1.59×) | 30.9 µs (1.23×) | 31.8 µs (1.27×) | 34.9 µs (1.39×) | 1.44 ms (57×) | 488 µs⁴ (19×) | 110 µs (4.4×) | 140 µs⁴ (5.6×) | **25.1 µs²³** | 40.3 µs (1.61×) | 92.8 µs (3.7×) |
+| table/remove one/first | 10,000 | n/p | 513 µs⁴ (1.59×) | 370 µs²³ (1.14×) | 667 µs (2.1×) | 605 µs (1.87×) | 524 µs (1.62×) | 486 µs (1.50×) | 470 µs (1.46×) | 187 ms (578×) | 5.92 ms²⁴ (18×) | 2.14 ms² (6.6×) | 1.61 ms²⁴ (5.0×) | **323 µs³** | 549 µs (1.70×) | 942 µs (2.9×) |
+| table/remove one + add one/steady | 1,000 | 60.2 µs⁴ (1.33×) | 53.4 µs (1.18×) | 54.4 µs (1.21×) | 61.3 µs³ (1.36×) | 56.8 µs (1.26×) | 73.4 µs (1.63×) | **45.2 µs²³** | 56.2 µs³ (1.24×) | 1.21 ms³ (27×) | 162 µs³⁴ (3.6×) | 83.2 µs (1.84×) | 187 µs (4.1×) | 193 µs²⁴ (4.3×) | 164 µs (3.6×) | 152 µs² (3.4×) |
+| table/remove one + add one/steady | 10,000 | 630 µs⁴ (1.51×) | 458 µs (1.10×) | 593 µs (1.42×) | 503 µs³ (1.21×) | 716 µs (1.72×) | 558 µs² (1.34×) | **417 µs³** | 553 µs²³ (1.33×) | 106 ms³ (254×) | 5.18 ms³⁴ (12×) | 1.08 ms (2.6×) | 2.30 ms² (5.5×) | 1.16 ms⁴ (2.8×) | 1.48 ms (3.6×) | 1.12 ms² (2.7×) |
+| table/append 1000/first | 1,000 | n/p | 94.2 µs (1.37×) | **68.7 µs³** | 240 µs²³⁴ (3.5×) | 89.1 µs³ (1.30×) | 79.4 µs²⁴ (1.16×) | 83.6 µs²³⁴ (1.22×) | 78.8 µs² (1.15×) | 122 µs³ (1.78×) | 539 µs⁴ (7.8×) | 168 µs² (2.4×) | 231 µs (3.4×) | 100 µs² (1.46×) | 95.5 µs (1.39×) | 134 µs²³ (2.0×) |
+| table/append 1000/first | 10,000 | n/p | 141 µs (1.13×) | 159 µs²³ (1.28×) | 446 µs³⁴ (3.6×) | 165 µs³ (1.33×) | 140 µs² (1.12×) | 141 µs²³⁴ (1.13×) | **124 µs** | 409 µs³ (3.3×) | 945 µs⁴ (7.6×) | 280 µs (2.3×) | 756 µs² (6.1×) | 257 µs² (2.1×) | 168 µs (1.35×) | 888 µs²³ (7.1×) |
+| table/select/steady | 1,000 | 5.66 µs (1.38×) | 6.17 µs²³⁴ (1.51×) | 13.3 µs (3.3×) | 5.84 µs³⁴ (1.43×) | 5.29 µs² (1.29×) | 5.20 µs² (1.27×) | 7.16 µs³ (1.75×) | 5.94 µs² (1.45×) | 14.0 µs² (3.4×) | 36.2 µs (8.9×) | 45.1 µs (11×) | 33.6 µs (8.2×) | **4.09 µs³** | 5.52 µs (1.35×) | 43.5 µs (11×) |
+| table/select/steady | 10,000 | 57.4 µs (1.14×) | 59.3 µs³⁴ (1.18×) | 86.8 µs (1.73×) | 72.6 µs³⁴ (1.45×) | 72.3 µs (1.44×) | 54.1 µs (1.08×) | 70.2 µs³ (1.40×) | 54.4 µs (1.08×) | 139 µs² (2.8×) | 458 µs (9.1×) | 304 µs² (6.1×) | 417 µs (8.3×) | **50.1 µs²³** | 58.8 µs (1.17×) | 438 µs (8.7×) |
+| decoded/decode | 10,000 | 9.06 ms (1.32×) | 8.67 ms (1.26×) | **6.88 ms³⁴** | 8.57 ms (1.25×) | 7.54 ms³ (1.10×) | 21.4 ms⁴ (3.1×) | 8.64 ms³ (1.26×) | 9.31 ms (1.35×) | 6.98 ms (1.01×) | 10.2 ms (1.48×) | 9.49 ms³ (1.38×) | 8.90 ms (1.29×) | 7.40 ms (1.08×) | 12.5 ms²⁴ (1.81×) | 25.5 ms³⁴ (3.7×) |
+| decoded/decode | 100,000 | 102 ms² (1.56×) | 74.1 ms² (1.13×) | 68.9 ms²³⁴ (1.06×) | 74.9 ms² (1.15×) | 84.4 ms³ (1.29×) | 108 ms²⁴ (1.65×) | **65.3 ms²³** | 87.6 ms² (1.34×) | 104 ms² (1.59×) | 93.9 ms² (1.44×) | 95.9 ms²³ (1.47×) | 86.9 ms² (1.33×) | 89.8 ms² (1.38×) | 103 ms⁴ (1.57×) | 268 ms²³⁴ (4.1×) |
+| decoded/count (foldl) | 10,000 | 98.5 µs (2.1×) | 80.1 µs⁴ (1.69×) | 114 µs (2.4×) | 203 µs³ (4.3×) | 120 µs³ (2.5×) | 74.8 µs³ (1.58×) | 191 µs³⁴ (4.0×) | **47.3 µs³** | 187 ms⁴ (3,952×) | 295 µs (6.2×) | 271 µs³ (5.7×) | 386 µs³ (8.2×) | 87.3 µs³ (1.85×) | 97.3 µs (2.1×) | 331 µs (7.0×) |
+| decoded/count (foldl) | 100,000 | 1.11 ms (1.54×) | 1.05 ms (1.46×) | 1.09 ms (1.53×) | 2.49 ms³ (3.5×) | 1.60 ms³ (2.2×) | 808 µs³ (1.13×) | 2.09 ms³⁴ (2.9×) | **717 µs³** | > 8 s | 4.63 ms (6.5×) | 3.16 ms³ (4.4×) | 4.35 ms³ (6.1×) | 980 µs³ (1.37×) | 1.14 ms (1.59×) | 3.28 ms (4.6×) |
+| decoded/total (foldl) | 10,000 | 168 µs (1.50×) | 167 µs (1.49×) | 160 µs (1.43×) | 247 µs (2.2×) | 268 µs (2.4×) | 134 µs (1.20×) | **112 µs³** | 141 µs (1.26×) | 227 ms⁴ (2,029×) | 408 µs (3.6×) | 284 µs (2.5×) | 408 µs (3.6×) | 127 µs (1.14×) | 130 µs (1.17×) | 381 µs⁴ (3.4×) |
+| decoded/total (foldl) | 100,000 | 1.74 ms (1.36×) | **1.27 ms** | 1.59 ms (1.25×) | 2.48 ms (1.94×) | 3.58 ms (2.8×) | 1.66 ms (1.30×) | 1.31 ms³ (1.03×) | 1.43 ms (1.12×) | > 8 s | 4.12 ms (3.2×) | 3.42 ms (2.7×) | 4.25 ms (3.3×) | 1.54 ms (1.21×) | 1.58 ms (1.24×) | 4.04 ms (3.2×) |
+| decoded/filter | 10,000 | 414 µs (3.9×) | 271 µs (2.6×) | 236 µs (2.2×) | 332 µs⁴ (3.1×) | 384 µs⁴ (3.6×) | 254 µs³ (2.4×) | **106 µs³** | 177 µs² (1.67×) | 169 ms²³ (1,602×) | 484 µs³ (4.6×) | 367 µs⁴ (3.5×) | 628 µs (5.9×) | 228 µs³ (2.2×) | 226 µs (2.1×) | 471 µs (4.5×) |
+| decoded/filter | 100,000 | 1.49 ms (1.44×) | 1.47 ms (1.42×) | 1.54 ms (1.49×) | 3.03 ms (2.9×) | 3.15 ms⁴ (3.1×) | 1.54 ms³ (1.49×) | **1.03 ms³** | 1.07 ms (1.03×) | > 8 s | 4.57 ms³ (4.4×) | 3.18 ms²⁴ (3.1×) | 5.88 ms (5.7×) | 1.42 ms³ (1.37×) | 1.32 ms (1.28×) | 5.29 ms (5.1×) |
+| decoded/sort + slice 20 | 10,000 | n/p | 5.35 ms⁴ (1.06×) | 5.46 ms (1.08×) | 6.54 ms⁴ (1.29×) | 5.60 ms³ (1.11×) | 5.27 ms (1.04×) | **5.07 ms** | 5.22 ms (1.03×) | 16.6 ms⁴ (3.3×) | 8.18 ms (1.61×) | 5.64 ms³⁴ (1.11×) | 11.8 ms (2.3×) | 15.3 ms³ (3.0×) | 73.2 ms² (14×) | 6.41 ms³ (1.27×) |
+| decoded/sort + slice 20 | 100,000 | n/p | **70.8 ms⁴** | 76.7 ms (1.08×) | 97.9 ms⁴ (1.38×) | 75.0 ms³ (1.06×) | 75.4 ms (1.06×) | 88.3 ms (1.25×) | 76.5 ms⁴ (1.08×) | 308 ms²⁴ (4.3×) | 169 ms² (2.4×) | 79.3 ms²³⁴ (1.12×) | 178 ms (2.5×) | 226 ms³ (3.2×) | 1.29 s⁴ (18×) | 88.7 ms³ (1.25×) |
+| decoded/1000 binary searches | 10,000 | 590 µs²⁴ (1.93×) | 492 µs³ (1.61×) | 509 µs (1.66×) | 769 µs (2.5×) | 539 µs³ (1.76×) | 621 µs² (2.0×) | 324 µs³⁴ (1.06×) | 545 µs²³ (1.78×) | 745 ms (2,434×) | 789 µs³ (2.6×) | 837 µs³ (2.7×) | 3.93 ms (13×) | **306 µs³** | 453 µs (1.48×) | 718 µs (2.3×) |
+| decoded/1000 binary searches | 100,000 | 823 µs⁴ (1.76×) | 683 µs²³ (1.46×) | 745 µs (1.59×) | 1.23 ms (2.6×) | 962 µs³ (2.1×) | 857 µs (1.83×) | 587 µs³⁴ (1.25×) | 904 µs³ (1.93×) | 6.57 s¹³ (14,040×) | 1.41 ms³ (3.0×) | 1.54 ms³ (3.3×) | 7.35 ms⁴ (16×) | **468 µs³** | 757 µs (1.62×) | 1.42 ms (3.0×) |
+| decoded/page of 50 by get | 10,000 | 1.38 µs²³ (1.73×) | 8.13 µs⁴ (10×) | 1.70 µs² (2.1×) | 1.02 µs² (1.27×) | 1.41 µs²³ (1.77×) | 1.28 µs² (1.61×) | 1.37 µs² (1.72×) | **798 ns²** | 2.87 ms (3,597×) | 2.89 µs³⁴ (3.6×) | 1.54 µs² (1.93×) | 3.58 µs (4.5×) | 1.04 µs²³ (1.30×) | 1.41 µs²⁴ (1.76×) | 1.73 µs²³⁴ (2.2×) |
+| decoded/page of 50 by get | 100,000 | 1.29 µs²³ (1.52×) | 3.69 µs²⁴ (4.4×) | 1.69 µs² (2.0×) | 1.01 µs² (1.19×) | 1.36 µs²³ (1.61×) | 1.36 µs² (1.61×) | 1.05 µs² (1.24×) | **846 ns²** | 22.1 ms (26,155×) | 1.91 µs³⁴ (2.3×) | 1.67 µs² (2.0×) | 3.92 µs (4.6×) | 1.15 µs²³ (1.36×) | 1.63 µs²⁴ (1.93×) | 1.93 µs³⁴ (2.3×) |
+| grid/make | 10,000 | 166 µs² (2.6×) | 210 µs² (3.3×) | 209 µs² (3.3×) | 149 µs² (2.4×) | 173 µs² (2.7×) | 127 µs (2.0×) | 285 µs² (4.5×) | 169 µs² (2.7×) | **63.4 µs²** | 572 µs³ (9.0×) | 234 µs² (3.7×) | 801 µs²³⁴ (13×) | 128 µs²³ (2.0×) | 141 µs² (2.2×) | 556 µs² (8.8×) |
+| grid/make | 1,000,000 | 92.0 ms (1.42×) | 79.2 ms² (1.22×) | 80.6 ms² (1.25×) | 99.7 ms² (1.54×) | 137 ms² (2.1×) | **64.7 ms²** | 131 ms (2.0×) | 72.0 ms (1.11×) | 179 ms² (2.8×) | 206 ms³ (3.2×) | 147 ms (2.3×) | 244 ms²³⁴ (3.8×) | 69.9 ms³ (1.08×) | 72.3 ms (1.12×) | 167 ms² (2.6×) |
+| grid/tick k=1/first | 10,000 | n/p | 9.79 µs (21×) | 11.2 µs³ (25×) | 503 ns² (1.10×) | **456 ns³** | 31.7 µs² (70×) | 18.9 µs³ (41×) | 15.7 µs³⁴ (34×) | 390 µs (854×) | 832 ns (1.82×) | 889 ns (1.95×) | 1.33 µs (2.9×) | 14.5 µs² (32×) | 1.03 ms (2,260×) | 2.88 µs (6.3×) |
+| grid/tick k=1/first | 1,000,000 | n/p | 14.8 ms² (22,750×) | 6.92 ms³ (10,666×) | **649 ns²⁴** | 689 ns²³ (1.06×) | 2.48 ms² (3,815×) | 2.31 ms²³ (3,562×) | 2.50 ms²³⁴ (3,846×) | 56.7 ms (87,408×) | 1.13 µs² (1.74×) | 1.27 µs (2.0×) | 1.40 µs (2.2×) | 8.34 ms² (12,848×) | 104 ms (160,604×) | 3.16 µs (4.9×) |
+| grid/tick k=1/steady | 10,000 | 502 ns² (1.00×) | 10.4 µs (21×) | 10.9 µs (22×) | 582 ns²³ (1.16×) | **502 ns²** | 832 ns² (1.66×) | 865 ns²⁴ (1.72×) | 523 ns²³ (1.04×) | 362 µs (721×) | 2.49 µs²³ (5.0×) | 1.02 µs (2.0×) | 873 ns³ (1.74×) | 14.1 µs³ (28×) | 1.42 ms³⁴ (2,827×) | 2.56 µs² (5.1×) |
+| grid/tick k=1/steady | 1,000,000 | 503 ns² (0.78×) | 8.25 ms² (12,798×) | 9.35 ms² (14,496×) | 651 ns²³ (1.01×) | 684 ns² (1.06×) | 1.10 µs² (1.71×) | 2.21 µs²⁴ (3.4×) | **645 ns²³** | 50.0 ms (77,590×) | 1.12 µs³ (1.74×) | 1.34 µs (2.1×) | 949 ns³ (1.47×) | 7.52 ms³ (11,656×) | 127 ms³⁴ (196,495×) | 2.32 µs² (3.6×) |
+| grid/tick k=100/first | 10,000 | n/p | 1.01 ms (19×) | 949 µs³ (18×) | 61.0 µs³⁴ (1.17×) | **52.2 µs** | 66.3 µs (1.27×) | 57.0 µs (1.09×) | 71.8 µs (1.38×) | 50.2 ms (961×) | 108 µs (2.1×) | 83.1 µs (1.59×) | 113 µs³ (2.2×) | 1.75 ms²³ (34×) | 144 ms (2,757×) | 301 µs⁴ (5.8×) |
+| grid/tick k=100/first | 1,000,000 | n/p | 923 ms (13,031×) | 985 ms³ (13,914×) | 160 µs³⁴ (2.3×) | **70.8 µs** | 2.31 ms² (33×) | 5.79 ms² (82×) | 2.70 ms² (38×) | > 8 s | 151 µs (2.1×) | 127 µs (1.79×) | 161 µs³ (2.3×) | 673 ms³ (9,508×) | > 8 s | 376 µs² (5.3×) |
+| grid/tick k=100/steady | 10,000 | 26.0 µs (0.52×) | 1.12 ms³ (22×) | 975 µs (20×) | 53.1 µs (1.06×) | **50.0 µs** | 54.6 µs³ (1.09×) | 63.0 µs (1.26×) | 57.5 µs (1.15×) | 43.9 ms (878×) | 124 µs² (2.5×) | 73.7 µs³⁴ (1.47×) | 119 µs (2.4×) | 1.14 ms (23×) | 190 ms³ (3,805×) | 245 µs³ (4.9×) |
+| grid/tick k=100/steady | 1,000,000 | 32.0 µs (0.50×) | 1.03 s³ (16,031×) | 991 ms (15,429×) | 98.5 µs (1.53×) | **64.3 µs** | 78.2 µs²³ (1.22×) | 180 µs² (2.8×) | 196 µs² (3.0×) | > 8 s | 125 µs (1.94×) | 123 µs³⁴ (1.91×) | 162 µs (2.5×) | 878 ms (13,670×) | > 8 s | 441 µs³ (6.9×) |
+| grid/life step | 10,000 | 3.25 ms (2.3×) | **1.42 ms³** | 2.88 ms (2.0×) | 4.30 ms²⁴ (3.0×) | 2.81 ms (2.0×) | 2.58 ms (1.82×) | 2.05 ms³ (1.45×) | 2.39 ms⁴ (1.68×) | 15.2 s (10,662×) | 9.05 ms (6.4×) | 4.36 ms² (3.1×) | 8.67 ms⁴ (6.1×) | 2.37 ms⁴ (1.67×) | 2.08 ms³⁴ (1.47×) | 6.30 ms (4.4×) |
+| grid/life step | 1,000,000 | 602 ms (2.5×) | **237 ms³** | 624 ms⁴ (2.6×) | 667 ms⁴ (2.8×) | 574 ms⁴ (2.4×) | 519 ms (2.2×) | 491 ms³ (2.1×) | 490 ms⁴ (2.1×) | > 8 s | 1.00 s (4.2×) | 781 ms (3.3×) | 967 ms (4.1×) | 444 ms² (1.88×) | 273 ms³⁴ (1.15×) | 841 ms (3.6×) |
+| build/collect by push | 1,000 | 80.5 µs⁴ (1.69×) | 1.39 ms (29×) | 683 µs (14×) | 132 µs²³⁴ (2.8×) | 793 µs² (17×) | 170 µs³ (3.6×) | 151 µs (3.2×) | **47.7 µs³** | 5.53 ms (116×) | 160 µs³ (3.4×) | 50.2 µs (1.05×) | 129 µs (2.7×) | 5.56 ms (117×) | 105 ms (2,195×) | 90.4 µs (1.90×) |
+| build/collect by push | 100,000 | 19.7 ms⁴ (1.31×) | > 8 s | > 8 s | 25.4 ms²³⁴ (1.69×) | 39.5 ms² (2.6×) | 30.5 ms²³ (2.0×) | **15.1 ms** | 15.6 ms²³ (1.04×) | > 8 s | 39.4 ms²³ (2.6×) | 23.1 ms² (1.54×) | 41.0 ms² (2.7×) | > 8 s | > 8 s | 23.6 ms² (1.57×) |
+| build/histogram of 100 000 | 1,000 | 2.94 ms³ (0.26×) | 116 ms (10×) | 110 ms (9.6×) | 15.3 ms (1.34×) | 77.5 ms³ (6.8×) | 14.4 ms (1.27×) | 14.0 ms (1.23×) | **11.4 ms** | 1.01 s (89×) | 27.5 ms⁴ (2.4×) | 39.6 ms³ (3.5×) | 84.9 ms⁴ (7.4×) | 359 ms (31×) | 15.5 s¹ (1,362×) | 22.8 ms³ (2.0×) |
+| build/histogram of 100 000 | 100,000 | 7.84 ms²³ (0.19×) | > 8 s | > 8 s | 45.3 ms² (1.12×) | **40.6 ms²³** | 52.6 ms²⁴ (1.30×) | 50.7 ms² (1.25×) | 49.3 ms² (1.21×) | > 8 s | 102 ms⁴ (2.5×) | 127 ms³ (3.1×) | 132 ms⁴ (3.3×) | > 8 s | > 8 s | 68.5 ms³ (1.69×) |
+| build/coin-change table | 1,000 | 106 µs³ (0.78×) | 2.01 ms³⁴ (15×) | 835 µs⁴ (6.2×) | **135 µs³** | 719 µs (5.3×) | 243 µs (1.80×) | 353 µs²⁴ (2.6×) | 139 µs (1.03×) | 16.9 ms (125×) | 507 µs²³ (3.8×) | 145 µs³ (1.08×) | 482 µs⁴ (3.6×) | 5.16 ms³ (38×) | 99.0 ms (734×) | 206 µs²³ (1.53×) |
+| build/coin-change table | 100,000 | 10.9 ms³ (0.66×) | > 8 s | > 8 s | 17.6 ms²³ (1.07×) | 22.1 ms² (1.34×) | 24.6 ms (1.49×) | 53.8 ms²⁴ (3.3×) | **16.5 ms** | > 8 s | 63.4 ms²³ (3.8×) | 18.9 ms²³ (1.14×) | 150 ms²⁴ (9.1×) | > 8 s | > 8 s | 26.0 ms²³ (1.57×) |
+| history/edit/first | 10,000 | n/p | 10.9 µs² (32×) | 11.5 µs (34×) | **336 ns²** | 510 ns² (1.52×) | 19.9 µs (59×) | 24.2 µs (72×) | 21.0 µs (62×) | 50.0 µs (149×) | 828 ns² (2.5×) | 598 ns²³ (1.78×) | 850 ns² (2.5×) | 11.3 µs² (34×) | 942 µs (2,803×) | 483 ns² (1.44×) |
+| history/edit/steady | 10,000 | n/p | 16.3 µs² (9.0×) | 31.4 µs²³⁴ (17×) | 3.22 µs² (1.77×) | **1.82 µs²** | 1.87 µs²⁴ (1.03×) | 4.41 µs² (2.4×) | 2.38 µs²³ (1.31×) | 203 µs² (112×) | 1.88 µs² (1.03×) | 2.15 µs² (1.18×) | 2.05 µs²³ (1.13×) | 23.0 µs² (13×) | 1.42 ms⁴ (779×) | 2.42 µs² (1.33×) |
+| history/undo 100 | 10,000 | n/p | 57.6 µs² (1.36×) | **42.4 µs** | 84.5 µs (2.0×) | 59.6 µs (1.41×) | 103 µs (2.4×) | 80.3 µs³⁴ (1.90×) | 103 µs (2.4×) | 375 ms (8,841×) | 241 µs (5.7×) | 118 µs³⁴ (2.8×) | 324 µs³ (7.6×) | 62.2 µs (1.47×) | 122 µs (2.9×) | 367 µs (8.7×) |
+| interop/toJs/mapped | 10,000 | 63 ns²³⁴ (3.4×) | 60 ns² (3.2×) | 47 ns² (2.5×) | 65.8 µs³⁴ (3,516×) | 28.0 µs³⁴ (1,495×) | 61 ns³ (3.2×) | 23 ns²³ (1.22×) | **19 ns³** | > 45 s | 461 µs (24,618×) | 184 µs (9,824×) | 346 µs (18,487×) | 39 ns²⁴ (2.1×) | 35 ns² (1.89×) | 331 µs³ (17,712×) |
+| interop/toJs/mapped | 100,000 | 38 ns²³⁴ (2.5×) | 50 ns² (3.3×) | 52 ns² (3.5×) | 2.87 ms²³⁴ (189,868×) | 959 µs³ (63,483×) | 54 ns³ (3.6×) | 34 ns²³ (2.3×) | **15 ns²³** | skip | 12.9 ms⁴ (857,616×) | 3.16 ms⁴ (209,536×) | 5.67 ms (375,364×) | 37 ns² (2.5×) | 29 ns² (1.89×) | 5.04 ms³ (333,841×) |
+| interop/JSON.stringify/mapped | 10,000 | 2.50 ms³ (1.62×) | 2.81 ms (1.82×) | 1.78 ms³ (1.16×) | **1.54 ms³** | 2.39 ms³ (1.55×) | 2.59 ms (1.67×) | 2.67 ms (1.73×) | 2.43 ms³ (1.58×) | > 45 s | 1.92 ms³ (1.24×) | 2.97 ms (1.92×) | 3.15 ms⁴ (2.0×) | 2.24 ms (1.45×) | 2.76 ms (1.79×) | 3.16 ms (2.0×) |
+| interop/JSON.stringify/mapped | 100,000 | 26.3 ms³ (1.54×) | 30.4 ms (1.79×) | 25.9 ms³ (1.52×) | **17.0 ms³** | 25.9 ms³ (1.52×) | 25.7 ms (1.51×) | 30.5 ms (1.79×) | 24.3 ms³ (1.43×) | skip | 20.0 ms³ (1.17×) | 32.9 ms (1.93×) | 32.8 ms⁴ (1.92×) | 27.0 ms (1.59×) | 27.2 ms (1.60×) | 36.4 ms (2.1×) |
+| interop/Math.max/mapped | 10,000 | 91.4 µs (1.31×) | 85.2 µs³ (1.22×) | 83.2 µs (1.20×) | 113 µs⁴ (1.63×) | 119 µs (1.72×) | **69.5 µs³⁴** | 88.4 µs (1.27×) | 93.1 µs (1.34×) | > 45 s | 519 µs³ (7.5×) | 284 µs (4.1×) | 538 µs⁴ (7.7×) | 71.9 µs⁴ (1.03×) | 71.2 µs (1.02×) | 459 µs³ (6.6×) |
+| interop/Math.max/mapped | 100,000 | 559 µs (1.15×) | **484 µs³** | 3.40 ms (7.0×) | 1.60 ms⁴ (3.3×) | 5.62 ms (12×) | 1.18 ms³⁴ (2.4×) | 1.43 ms (3.0×) | 627 µs (1.30×) | skip | 11.9 ms³ (25×) | 4.70 ms⁴ (9.7×) | 9.44 ms⁴ (20×) | 1.43 ms⁴ (3.0×) | 1.58 ms (3.3×) | 6.32 ms³ (13×) |
+| interop/html list/mapped | 10,000 | 1.87 ms³ (1.48×) | 1.73 ms (1.37×) | 4.37 ms²³ (3.5×) | 1.87 ms (1.48×) | 1.75 ms (1.38×) | 2.18 ms (1.72×) | 2.02 ms (1.60×) | 1.91 ms (1.51×) | > 45 s | 2.73 ms (2.2×) | 2.07 ms (1.64×) | 2.41 ms (1.90×) | 1.68 ms (1.33×) | **1.27 ms³** | 2.21 ms (1.75×) |
+| interop/html list/mapped | 100,000 | 34.0 ms²³ (1.31×) | 40.8 ms² (1.57×) | 69.7 ms³⁴ (2.7×) | 35.6 ms² (1.37×) | 31.2 ms² (1.20×) | 26.6 ms² (1.02×) | 44.3 ms² (1.70×) | 36.3 ms² (1.40×) | skip | 50.3 ms (1.93×) | 39.2 ms² (1.51×) | 44.6 ms² (1.72×) | 30.9 ms⁴ (1.19×) | **26.0 ms²³** | 61.8 ms² (2.4×) |
+| interop/toJs/edited | 10,000 | n/p | **20 ns²³** | 42 ns² (2.1×) | 32.6 µs (1,621×) | 31.8 µs³ (1,579×) | 31.6 µs³ (1,571×) | 33.2 µs (1,650×) | 34.9 µs (1,733×) | > 45 s | 648 µs (32,180×) | 237 µs (11,763×) | 439 µs (21,792×) | 54 ns (2.7×) | 37 ns² (1.86×) | 393 µs³ (19,489×) |
+| interop/toJs/edited | 100,000 | n/p | 35 ns²³ (1.53×) | 49 ns² (2.1×) | 1.15 ms² (49,655×) | 1.36 ms³ (58,758×) | 1.14 ms³ (49,094×) | 1.00 ms (43,356×) | 1.16 ms (50,000×) | skip | 12.5 ms (540,121×) | 2.84 ms (122,476×) | 6.25 ms (269,758×) | 44 ns² (1.91×) | **23 ns²⁴** | 5.29 ms³ (228,257×) |
+| interop/JSON.stringify/edited | 10,000 | n/p | **1.97 ms³** | 2.80 ms (1.43×) | 2.08 ms (1.06×) | 2.48 ms³ (1.26×) | 3.40 ms⁴ (1.73×) | 6.78 ms⁴ (3.4×) | 2.20 ms (1.12×) | > 45 s | 7.14 ms⁴ (3.6×) | 2.92 ms (1.48×) | 3.47 ms (1.76×) | 2.54 ms (1.29×) | 2.44 ms³ (1.24×) | 2.99 ms (1.52×) |
+| interop/JSON.stringify/edited | 100,000 | n/p | 26.7 ms³ (1.24×) | 29.3 ms (1.36×) | 29.8 ms (1.38×) | **21.6 ms³** | 66.5 ms⁴ (3.1×) | 72.3 ms²⁴ (3.4×) | 25.7 ms (1.19×) | skip | 83.6 ms⁴ (3.9×) | 32.4 ms (1.50×) | 35.7 ms (1.66×) | 31.4 ms (1.45×) | 29.2 ms³ (1.35×) | 33.2 ms (1.54×) |
+| interop/Math.max/edited | 10,000 | n/p | 88.5 µs (1.78×) | 226 µs⁴ (4.5×) | 114 µs³ (2.3×) | 97.3 µs (2.0×) | 324 µs²⁴ (6.5×) | 110 µs (2.2×) | 101 µs (2.0×) | > 45 s | 817 µs⁴ (16×) | 270 µs (5.4×) | 388 µs⁴ (7.8×) | 90.2 µs³ (1.81×) | **49.7 µs** | 447 µs (9.0×) |
+| interop/Math.max/edited | 100,000 | n/p | **498 µs** | 6.60 ms²⁴ (13×) | 3.43 ms³ (6.9×) | 3.27 ms² (6.6×) | 6.52 ms²⁴ (13×) | 1.66 ms (3.3×) | 1.83 ms (3.7×) | skip | 13.9 ms⁴ (28×) | 7.35 ms (15×) | 6.68 ms⁴ (13×) | 1.68 ms³ (3.4×) | 577 µs (1.16×) | 7.44 ms (15×) |
+| interop/html list/edited | 10,000 | n/p | 2.42 ms (1.44×) | 2.09 ms (1.24×) | 2.06 ms (1.22×) | 2.17 ms⁴ (1.29×) | **1.68 ms** | 1.84 ms⁴ (1.10×) | 1.90 ms²³ (1.13×) | > 45 s | 2.22 ms (1.32×) | 1.88 ms⁴ (1.12×) | 2.83 ms²³ (1.68×) | 2.31 ms (1.37×) | 2.61 ms² (1.55×) | 2.44 ms (1.45×) |
+| interop/html list/edited | 100,000 | n/p | 42.3 ms² (1.68×) | 39.9 ms² (1.59×) | 34.8 ms² (1.38×) | 37.1 ms²⁴ (1.48×) | 36.2 ms² (1.44×) | 41.8 ms²⁴ (1.66×) | **25.2 ms³** | skip | 48.5 ms (1.93×) | 35.1 ms²⁴ (1.40×) | 39.4 ms²³ (1.56×) | 40.6 ms² (1.61×) | 33.9 ms² (1.35×) | 43.5 ms² (1.73×) |
+| retained/one version | 10,000 | — | 84 KB (1.21×) | 82 KB (1.17×) | 97 KB (1.39×) | 99 KB (1.42×) | 82 KB (1.17×) | 82 KB (1.18×) | 82 KB (1.17×) | 475 KB (6.8×) | 218 KB (3.1×) | 152 KB (2.2×) | 108 KB (1.56×) | **70 KB** | 81 KB (1.16×) | 111 KB (1.59×) |
+| retained/101 versions | 10,000 | — | 7.7 MB (44×) | 7.7 MB (44×) | 182 KB (1.01×) | 180 KB (1.00×) | 180 KB (1.00×) | **180 KB** | 184 KB (1.02×) | 23.5 MB (134×) | 258 KB (1.44×) | 284 KB (1.58×) | 230 KB (1.28×) | 7.7 MB (44×) | 7.7 MB (44×) | 206 KB (1.14×) |
+
+### 4.1 The list scenarios, each candidate on its own style (master)
+
+**§16/§17's list scenarios, each candidate on the code written for it (cons: Elm-style; every other: array-first)**
+
+| op | n | native mut | native CoW | cow | trie | hybrid1024 | adaptive256 | E1 | E1t | cons | Immutable.js | funkia | mori | Mutative | Immer | Elm Array |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| *style* | | *first* | *first* | *first* | *first* | *first* | *first* | *first* | *first* | *elm* | *first* | *first* | *first* | *first* | *first* | *first* |
+| map, recursive | 1,000 | 45.4 µs (3.7×) | 1.08 ms (88×) | 663 µs² (54×) | 125 µs (10×) | 981 µs (80×) | 164 µs³ (13×) | 249 µs (20×) | 56.4 µs (4.6×) | **12.2 µs⁴** | 705 µs²⁴ (58×) | 134 µs⁴ (11×) | 348 µs (28×) | 5.73 ms (469×) | 98.9 ms³ (8,103×) | 147 µs (12×) |
+| map, recursive | 10,000 | 521 µs (4.7×) | 126 ms (1,129×) | 52.7 ms (473×) | 1.15 ms (10×) | 1.76 ms (16×) | 1.20 ms³ (11×) | 1.19 ms (11×) | 754 µs² (6.8×) | **111 µs⁴** | 8.93 ms (80×) | 1.82 ms²⁴ (16×) | 2.57 ms⁴ (23×) | 168 ms² (1,511×) | > 8 s | 1.40 ms (13×) |
+| map, recursive | 100,000 | 6.91 ms² (8.6×) | > 8 s | > 8 s | 19.1 ms² (24×) | 21.3 ms (26×) | 15.2 ms³ (19×) | 18.4 ms (23×) | 4.86 ms² (6.0×) | **806 µs²⁴** | 97.9 ms⁴ (121×) | 19.9 ms²⁴ (25×) | 37.4 ms² (46×) | > 8 s | skip | 19.4 ms² (24×) |
+| filter, recursive | 1,000 | 112 µs⁴ (9.1×) | 269 µs (22×) | 223 µs³ (18×) | 74.5 µs (6.1×) | 183 µs (15×) | 86.5 µs³ (7.0×) | 136 µs³ (11×) | 45.9 µs (3.7×) | **12.3 µs⁴** | 379 µs² (31×) | 161 µs² (13×) | 186 µs³ (15×) | 1.92 ms (156×) | 23.8 ms² (1,937×) | 88.9 µs³ (7.2×) |
+| filter, recursive | 10,000 | 546 µs²⁴ (1.62×) | 23.1 ms (69×) | 8.54 ms³ (25×) | 588 µs (1.74×) | 1.36 ms (4.0×) | 581 µs²³ (1.72×) | 667 µs²³ (2.0×) | 430 µs (1.28×) | **337 µs²⁴** | 5.13 ms (15×) | 1.26 ms (3.8×) | 1.83 ms³ (5.4×) | 43.0 ms (127×) | 1.90 s (5,624×) | 947 µs³ (2.8×) |
+| filter, recursive | 100,000 | 3.95 ms⁴ (4.3×) | 25.3 s¹⁴ (27,362×) | 8.64 s¹³ (9,346×) | 7.69 ms (8.3×) | 7.80 ms (8.4×) | 6.52 ms³ (7.0×) | 6.80 ms³ (7.4×) | 3.48 ms² (3.8×) | **925 µs²⁴** | 78.1 ms⁴ (84×) | 12.6 ms (14×) | 23.3 ms²³ (25×) | > 8 s | > 8 s | 11.2 ms²³ (12×) |
+| map, accumulator + reverse | 1,000 | 15.7 µs³ (1.14×) | 983 µs³ (72×) | 744 µs (54×) | 81.1 µs³ (5.9×) | 653 µs (48×) | 184 µs² (13×) | 158 µs⁴ (11×) | 34.5 µs⁴ (2.5×) | **13.7 µs** | 314 µs (23×) | 46.0 µs⁴ (3.4×) | 112 µs³ (8.2×) | 4.67 ms (340×) | 94.5 ms⁴ (6,885×) | 143 µs (10×) |
+| map, accumulator + reverse | 10,000 | 172 µs³ (1.07×) | 123 ms²³ (770×) | 57.4 ms (358×) | 1.01 ms²³ (6.3×) | 1.53 ms (9.5×) | 1.12 ms (7.0×) | 1.29 ms⁴ (8.0×) | 333 µs⁴ (2.1×) | **160 µs** | 5.72 ms² (36×) | 609 µs (3.8×) | 1.20 ms²³ (7.5×) | 164 ms (1,021×) | 6.36 s¹³⁴ (39,725×) | 1.55 ms² (9.7×) |
+| map, accumulator + reverse | 100,000 | 3.55 ms³ (2.4×) | > 8 s | > 8 s | 15.0 ms²³ (10×) | 15.4 ms (11×) | 15.7 ms (11×) | 17.7 ms² (12×) | 3.91 ms (2.7×) | **1.46 ms²** | 45.1 ms (31×) | 12.0 ms² (8.2×) | 13.0 ms³ (8.9×) | > 8 s | > 8 s | 20.1 ms² (14×) |
+| filter, accumulator + reverse | 1,000 | 18.4 µs (1.13×) | 482 µs⁴ (30×) | 168 µs (10×) | 59.8 µs (3.7×) | 154 µs³ (9.5×) | 154 µs⁴ (9.5×) | 115 µs² (7.1×) | **16.2 µs** | 22.9 µs²⁴ (1.41×) | 129 µs (8.0×) | 26.0 µs³⁴ (1.60×) | 98.1 µs (6.1×) | 1.81 ms (112×) | 19.3 ms³ (1,187×) | 80.0 µs (4.9×) |
+| filter, accumulator + reverse | 10,000 | 190 µs (1.29×) | 28.2 ms⁴ (191×) | 8.86 ms (60×) | 623 µs (4.2×) | 1.31 ms³ (8.9×) | 796 µs⁴ (5.4×) | 524 µs (3.6×) | 168 µs (1.14×) | **147 µs⁴** | 1.61 ms (11×) | 317 µs³⁴ (2.2×) | 843 µs (5.7×) | 38.9 ms (264×) | 1.66 s³ (11,250×) | 1.10 ms² (7.5×) |
+| filter, accumulator + reverse | 100,000 | 3.40 ms (1.35×) | 19.3 s¹⁴ (7,673×) | 7.81 s¹ (3,112×) | 7.38 ms² (2.9×) | 8.22 ms²³ (3.3×) | 8.65 ms²⁴ (3.4×) | 7.36 ms² (2.9×) | **2.51 ms²** | 6.35 ms²⁴ (2.5×) | 20.3 ms (8.1×) | 4.13 ms³⁴ (1.65×) | 10.4 ms (4.1×) | > 8 s | > 8 s | 13.0 ms² (5.2×) |
+| sum | 1,000 | 39.9 µs (12×) | 63.7 µs (20×) | 34.1 µs⁴ (11×) | 37.5 µs⁴ (12×) | 30.8 µs² (9.5×) | 27.5 µs³⁴ (8.5×) | 29.0 µs (9.0×) | 29.1 µs (9.0×) | **3.23 µs³** | 306 µs (95×) | 95.6 µs (30×) | 158 µs (49×) | 29.4 µs³ (9.1×) | 29.9 µs (9.3×) | 54.8 µs² (17×) |
+| sum | 10,000 | 354 µs (13×) | 330 µs (12×) | 368 µs⁴ (13×) | 402 µs⁴ (15×) | 399 µs (14×) | 199 µs³⁴ (7.2×) | 290 µs (11×) | 290 µs (11×) | **27.5 µs³** | 4.72 ms (171×) | 984 µs (36×) | 1.31 ms (48×) | 262 µs³ (9.5×) | 227 µs (8.2×) | 535 µs (19×) |
+| sum | 100,000 | 2.29 ms (6.1×) | 2.29 ms (6.1×) | 2.24 ms⁴ (6.0×) | 3.71 ms⁴ (10×) | 4.17 ms (11×) | 1.55 ms³⁴ (4.2×) | 2.23 ms (6.0×) | 1.87 ms (5.0×) | **372 µs³** | 54.7 ms (147×) | 9.24 ms (25×) | 14.5 ms (39×) | 1.90 ms³ (5.1×) | 1.95 ms (5.2×) | 5.02 ms (13×) |
+| sum, List.foldl | 1,000 | 10.5 µs (4.0×) | 9.06 µs⁴ (3.4×) | 9.11 µs (3.5×) | **2.64 µs²³** | 11.1 µs (4.2×) | 13.7 µs²⁴ (5.2×) | 3.46 µs²³ (1.31×) | 3.22 µs² (1.22×) | 3.24 µs (1.23×) | 30.0 µs (11×) | 22.6 µs³ (8.5×) | 34.5 µs (13×) | 8.51 µs (3.2×) | 9.38 µs (3.6×) | 20.9 µs³ (7.9×) |
+| sum, List.foldl | 10,000 | 144 µs (3.8×) | 134 µs (3.5×) | 134 µs (3.5×) | 106 µs³ (2.8×) | 252 µs (6.6×) | 153 µs⁴ (4.0×) | 142 µs³ (3.7×) | 157 µs⁴ (4.1×) | **38.2 µs** | 434 µs (11×) | 299 µs³ (7.8×) | 405 µs (11×) | 121 µs (3.2×) | 130 µs (3.4×) | 313 µs²³ (8.2×) |
+| sum, List.foldl | 100,000 | 1.50 ms (4.1×) | 1.43 ms (3.9×) | 1.46 ms (3.9×) | 1.33 ms³ (3.6×) | 2.69 ms (7.2×) | 2.00 ms⁴ (5.4×) | 1.32 ms³ (3.6×) | 1.45 ms⁴ (3.9×) | **371 µs** | 4.65 ms (13×) | 4.18 ms³ (11×) | 5.34 ms (14×) | 1.48 ms (4.0×) | 1.21 ms (3.3×) | 4.03 ms³ (11×) |
+| takeWhile (90 %) | 1,000 | 45.8 µs (6.4×) | 1.35 ms (188×) | 524 µs (73×) | 113 µs⁴ (16×) | 1.82 ms⁴ (253×) | 184 µs (26×) | 167 µs (23×) | 56.3 µs (7.8×) | **7.19 µs²³** | 662 µs³ (92×) | 142 µs (20×) | 196 µs (27×) | 3.79 ms (528×) | 97.0 ms (13,494×) | 119 µs (17×) |
+| takeWhile (90 %) | 10,000 | 377 µs (4.9×) | 110 ms (1,426×) | 45.0 ms (584×) | 1.05 ms⁴ (14×) | 6.66 ms²⁴ (86×) | 1.09 ms (14×) | 1.02 ms (13×) | 514 µs² (6.7×) | **77.0 µs³** | 8.43 ms³ (109×) | 1.10 ms² (14×) | 2.83 ms⁴ (37×) | 147 ms (1,902×) | 6.34 s¹³ (82,288×) | 1.41 ms (18×) |
+| takeWhile (90 %) | 100,000 | 5.12 ms² (5.3×) | > 8 s | > 8 s | 15.4 ms² (16×) | 85.0 ms²⁴ (88×) | 17.4 ms² (18×) | 16.4 ms² (17×) | 5.23 ms² (5.4×) | **962 µs²³** | 88.2 ms³ (92×) | 19.7 ms² (21×) | 23.0 ms²⁴ (24×) | > 8 s | skip | 16.1 ms² (17×) |
+| pairwise | 1,000 | 55.3 µs³⁴ (3.1×) | 1.71 ms² (95×) | 1.01 ms² (56×) | 137 µs³ (7.6×) | 1.20 ms² (66×) | 260 µs⁴ (14×) | 208 µs (11×) | 64.9 µs (3.6×) | **18.1 µs** | 624 µs (34×) | 167 µs (9.2×) | 388 µs⁴ (21×) | 5.50 ms³ (304×) | 128 ms³ (7,076×) | 133 µs (7.4×) |
+| pairwise | 10,000 | 569 µs³⁴ (2.6×) | 132 ms (612×) | 52.9 ms (246×) | 1.43 ms³ (6.7×) | 2.71 ms (13×) | 2.84 ms²⁴ (13×) | 1.58 ms² (7.3×) | 526 µs² (2.4×) | **215 µs** | 9.88 ms² (46×) | 2.38 ms² (11×) | 3.87 ms⁴ (18×) | 214 ms³ (994×) | > 8 s | 2.24 ms² (10×) |
+| pairwise | 100,000 | 5.13 ms²³⁴ (0.52×) | > 8 s | > 8 s | 20.9 ms²³ (2.1×) | 31.4 ms² (3.2×) | 25.3 ms²⁴ (2.6×) | 18.2 ms (1.85×) | **9.83 ms²** | 12.3 ms² (1.25×) | 114 ms² (12×) | 19.3 ms² (2.0×) | 43.6 ms⁴ (4.4×) | > 8 s | skip | 50.4 ms² (5.1×) |
+| merge sort | 1,000 | 1.54 ms (5.5×) | 4.69 ms² (17×) | 2.64 ms (9.3×) | 2.33 ms²³⁴ (8.2×) | 8.67 ms (31×) | 2.41 ms³ (8.5×) | 1.70 ms (6.0×) | 1.26 ms (4.5×) | **283 µs⁴** | 15.5 ms²³ (55×) | 2.27 ms⁴ (8.0×) | 5.75 ms⁴ (20×) | 44.7 ms³ (158×) | 630 ms²³⁴ (2,228×) | 1.77 ms (6.2×) |
+| merge sort | 10,000 | 18.7 ms (4.2×) | 270 ms (61×) | 128 ms (29×) | 31.2 ms²³⁴ (7.0×) | 110 ms² (25×) | 32.8 ms³ (7.3×) | 21.7 ms (4.9×) | 16.1 ms² (3.6×) | **4.46 ms⁴** | 165 ms²³ (37×) | 32.9 ms⁴ (7.4×) | 74.9 ms (17×) | 859 ms³ (193×) | > 8 s | 23.4 ms² (5.2×) |
+| merge sort | 100,000 | 240 ms (1.36×) | > 8 s | > 8 s | 319 ms³ (1.81×) | 1.15 s⁴ (6.5×) | 398 ms³ (2.3×) | 238 ms (1.35×) | **177 ms** | 371 ms²⁴ (2.1×) | 1.75 s³ (9.9×) | failed | 882 ms⁴ (5.0×) | > 8 s | skip | 299 ms (1.69×) |
+| merge sort, sorted input | 1,000 | 473 µs (2.6×) | 1.07 ms³ (5.9×) | 1.10 ms (6.1×) | 1.20 ms⁴ (6.6×) | 1.35 ms³ (7.5×) | 992 µs (5.5×) | 1.25 ms (6.9×) | 1.93 ms (11×) | **181 µs³⁴** | 5.41 ms (30×) | 2.39 ms (13×) | 3.51 ms (19×) | 17.5 ms (97×) | 68.8 ms (381×) | 949 µs³ (5.2×) |
+| merge sort, sorted input | 10,000 | 5.92 ms² (0.88×) | 67.5 ms²³ (10×) | 35.3 ms (5.2×) | 14.3 ms⁴ (2.1×) | 27.6 ms²³ (4.1×) | 13.1 ms²⁴ (1.94×) | 15.5 ms (2.3×) | 15.9 ms² (2.4×) | **6.73 ms²³⁴** | 72.3 ms (11×) | 31.6 ms² (4.7×) | 52.6 ms² (7.8×) | 283 ms (42×) | 4.93 s¹ (732×) | 15.0 ms³ (2.2×) |
+| merge sort, sorted input | 100,000 | 75.9 ms² (0.93×) | > 8 s | > 8 s | 181 ms (2.2×) | 341 ms³ (4.2×) | 160 ms (2.0×) | 196 ms² (2.4×) | 154 ms² (1.90×) | **81.4 ms²³⁴** | 1.00 s (12×) | failed | 524 ms (6.4×) | > 8 s | > 8 s | 180 ms³ (2.2×) |
+| foldr building a list | 1,000 | 24.6 µs (0.69×) | 1.50 ms²³ (42×) | 714 µs (20×) | 94.7 µs⁴ (2.7×) | 739 µs (21×) | 143 µs³ (4.0×) | 417 µs⁴ (12×) | 38.5 µs² (1.09×) | **35.4 µs²** | 320 µs⁴ (9.0×) | 61.9 µs (1.75×) | 471 µs³⁴ (13×) | 4.74 ms³ (134×) | 89.2 ms³ (2,516×) | 113 µs (3.2×) |
+| foldr building a list | 10,000 | 197 µs (0.69×) | 144 ms³ (506×) | 61.3 ms (216×) | 944 µs⁴ (3.3×) | 1.70 ms (6.0×) | 1.03 ms³ (3.6×) | 2.93 ms²⁴ (10×) | **284 µs** | 367 µs (1.29×) | 4.01 ms²⁴ (14×) | 775 µs² (2.7×) | 4.90 ms³⁴ (17×) | 199 ms³ (699×) | > 8 s | 1.16 ms⁴ (4.1×) |
+| foldr building a list | 100,000 | 4.09 ms² (1.39×) | > 8 s | > 8 s | 16.5 ms² (5.6×) | 17.6 ms (6.0×) | 14.0 ms³ (4.8×) | 35.1 ms²⁴ (12×) | **2.94 ms** | 4.53 ms² (1.54×) | 38.3 ms⁴ (13×) | 5.70 ms² (1.94×) | 56.2 ms²³⁴ (19×) | > 8 s | skip | 16.6 ms² (5.6×) |
+| foldr sum | 1,000 | 8.39 µs³ (3.7×) | 8.12 µs⁴ (3.6×) | 9.90 µs (4.4×) | 15.6 µs⁴ (7.0×) | 11.4 µs (5.1×) | 11.5 µs⁴ (5.2×) | 2.84 µs²³ (1.27×) | **2.24 µs²⁴** | 25.9 µs (12×) | 21.9 µs (9.8×) | 18.3 µs (8.2×) | 36.4 µs (16×) | 9.08 µs (4.1×) | 11.0 µs (4.9×) | 29.9 µs (13×) |
+| foldr sum | 10,000 | 122 µs³ (1.24×) | **98.6 µs** | 142 µs (1.44×) | 259 µs⁴ (2.6×) | 256 µs (2.6×) | 184 µs⁴ (1.87×) | 98.9 µs³ (1.00×) | 135 µs⁴ (1.37×) | 299 µs (3.0×) | 314 µs (3.2×) | 248 µs (2.5×) | 412 µs (4.2×) | 123 µs (1.25×) | 148 µs (1.50×) | 387 µs (3.9×) |
+| foldr sum | 100,000 | 1.15 ms³ (1.15×) | 1.12 ms⁴ (1.12×) | 1.21 ms (1.22×) | 3.52 ms⁴ (3.5×) | 2.95 ms (3.0×) | 1.85 ms⁴ (1.86×) | **995 µs³** | 2.17 ms²⁴ (2.2×) | 3.39 ms² (3.4×) | 3.49 ms (3.5×) | 3.42 ms (3.4×) | 5.19 ms (5.2×) | 1.40 ms (1.40×) | 1.37 ms (1.38×) | 4.42 ms (4.4×) |
+| range + sum | 1,000 | 8.44 µs (1.10×) | 11.5 µs³ (1.50×) | 9.66 µs (1.26×) | 20.3 µs (2.6×) | 8.00 µs (1.05×) | 7.75 µs⁴ (1.01×) | 8.70 µs³ (1.14×) | **7.65 µs²³** | 8.38 µs (1.10×) | 286 µs³⁴ (37×) | 36.9 µs³ (4.8×) | 91.4 µs⁴ (12×) | 9.57 µs (1.25×) | 9.67 µs² (1.26×) | 31.2 µs (4.1×) |
+| range + sum | 10,000 | 77.1 µs (1.15×) | 71.0 µs³ (1.06×) | 72.7 µs (1.08×) | 212 µs (3.2×) | 271 µs (4.0×) | 91.1 µs⁴ (1.36×) | 78.5 µs²³ (1.17×) | **67.0 µs³** | 87.2 µs (1.30×) | 1.94 ms²³⁴ (29×) | 363 µs²³ (5.4×) | 928 µs⁴ (14×) | 67.7 µs (1.01×) | 77.1 µs (1.15×) | 393 µs (5.9×) |
+| range + sum | 100,000 | 5.32 ms (5.2×) | 5.10 ms³ (5.0×) | 5.39 ms (5.3×) | 6.04 ms (5.9×) | 7.32 ms (7.2×) | 5.11 ms⁴ (5.0×) | 4.46 ms³ (4.4×) | 4.75 ms³ (4.6×) | **1.02 ms²** | 26.4 ms³⁴ (26×) | 11.7 ms³ (11×) | 13.3 ms⁴ (13×) | 4.78 ms (4.7×) | 6.16 ms (6.0×) | 7.72 ms² (7.5×) |
+| map2 (zip) | 1,000 | 21.2 µs (0.84×) | 26.4 µs (1.05×) | **25.2 µs³** | 55.4 µs²⁴ (2.2×) | 54.0 µs² (2.1×) | 31.6 µs (1.25×) | 36.9 µs (1.46×) | 32.9 µs (1.31×) | 36.8 µs⁴ (1.46×) | 142 µs⁴ (5.6×) | 75.1 µs³⁴ (3.0×) | 160 µs⁴ (6.4×) | 28.2 µs³ (1.12×) | 38.6 µs⁴ (1.53×) | 72.9 µs³ (2.9×) |
+| map2 (zip) | 10,000 | 373 µs²⁴ (1.13×) | 413 µs (1.25×) | 372 µs³ (1.12×) | 611 µs⁴ (1.84×) | 579 µs (1.75×) | 470 µs (1.42×) | 364 µs (1.10×) | 351 µs (1.06×) | 1.53 ms²⁴ (4.6×) | 2.66 ms²⁴ (8.0×) | 745 µs³⁴ (2.2×) | 1.80 ms² (5.4×) | **331 µs²³** | 458 µs⁴ (1.38×) | 1.49 ms²³ (4.5×) |
+| map2 (zip) | 100,000 | 4.51 ms (1.19×) | 8.30 ms² (2.2×) | 7.96 ms³ (2.1×) | 10.8 ms²⁴ (2.9×) | 13.2 ms (3.5×) | 5.31 ms² (1.40×) | 10.7 ms (2.8×) | 8.72 ms (2.3×) | 29.9 ms²⁴ (7.9×) | 25.2 ms²⁴ (6.6×) | 10.3 ms²³⁴ (2.7×) | 23.3 ms⁴ (6.1×) | **3.80 ms³** | 12.5 ms⁴ (3.3×) | 17.2 ms²³ (4.5×) |
+| concatMap | 1,000 | 219 µs (3.7×) | 259 µs³⁴ (4.4×) | 65.8 µs³ (1.12×) | 535 µs⁴ (9.1×) | 162 µs⁴ (2.8×) | 114 µs² (1.94×) | **58.6 µs** | 66.7 µs (1.14×) | 85.4 µs² (1.46×) | 1.11 ms³ (19×) | 148 µs (2.5×) | 1.62 ms³ (28×) | 5.22 ms⁴ (89×) | 6.66 ms⁴ (114×) | 307 µs² (5.2×) |
+| concatMap | 10,000 | 2.14 ms (3.0×) | 2.42 ms³⁴ (3.4×) | 814 µs³ (1.16×) | 5.04 ms²⁴ (7.2×) | 2.78 ms²⁴ (4.0×) | 1.90 ms² (2.7×) | 776 µs (1.10×) | 848 µs (1.21×) | **703 µs²** | 12.2 ms²³ (17×) | 1.88 ms (2.7×) | 14.4 ms²³ (21×) | 59.7 ms (85×) | 72.5 ms⁴ (103×) | 3.48 ms⁴ (4.9×) |
+| concatMap | 100,000 | 31.5 ms² (2.6×) | 44.3 ms²³⁴ (3.7×) | 17.0 ms²³ (1.41×) | 49.1 ms² (4.1×) | 22.6 ms⁴ (1.87×) | 20.2 ms² (1.68×) | **12.1 ms²** | 16.1 ms² (1.33×) | 12.1 ms² (1.00×) | 139 ms²³ (12×) | 26.7 ms² (2.2×) | 130 ms²³ (11×) | 705 ms⁴ (58×) | 715 ms⁴ (59×) | 54.4 ms²⁴ (4.5×) |
+| append in a loop, acc ++ [x] | 1,000 | 21.5 µs⁴ (0.58×) | 1.28 ms (34×) | 721 µs (19×) | 107 µs (2.9×) | 833 µs²⁴ (22×) | 357 µs⁴ (9.6×) | 167 µs³ (4.5×) | **37.2 µs** | 6.77 ms (182×) | 211 µs³⁴ (5.7×) | 58.9 µs²⁴ (1.58×) | 163 µs (4.4×) | 7.70 ms⁴ (207×) | 105 ms (2,828×) | 118 µs⁴ (3.2×) |
+| append in a loop, acc ++ [x] | 10,000 | 206 µs (0.36×) | 119 ms² (209×) | 65.8 ms (115×) | 1.18 ms (2.1×) | 3.22 ms⁴ (5.7×) | 1.53 ms²⁴ (2.7×) | 1.10 ms³ (1.94×) | **569 µs²** | 701 ms (1,230×) | 2.29 ms³⁴ (4.0×) | 677 µs²⁴ (1.19×) | 1.63 ms (2.9×) | 198 ms⁴ (348×) | 6.89 s¹³ (12,096×) | 1.42 ms (2.5×) |
+| append in a loop, acc ++ [x] | 100,000 | 4.39 ms² (0.36×) | > 8 s | > 8 s | 16.4 ms (1.33×) | 22.3 ms⁴ (1.81×) | 19.1 ms² (1.56×) | 16.0 ms²³ (1.31×) | **12.3 ms²** | > 8 s | 30.2 ms³⁴ (2.5×) | 13.1 ms²⁴ (1.06×) | 20.9 ms² (1.70×) | > 8 s | skip | 18.2 ms²⁴ (1.48×) |
+| append two | 1,000 | n/p | 2.25 µs²³ (1.84×) | 1.80 µs²³⁴ (1.47×) | 13.0 µs (11×) | 6.79 µs² (5.5×) | 2.29 µs²³ (1.87×) | 1.96 µs³⁴ (1.60×) | 1.74 µs (1.42×) | 15.0 µs² (12×) | 140 µs (114×) | **1.23 µs** | 25.9 µs²³ (21×) | 2.15 µs³ (1.76×) | 2.78 µs²³ (2.3×) | 8.35 µs (6.8×) |
+| append two | 10,000 | n/p | 202 µs³ (68×) | 189 µs³⁴ (64×) | 134 µs (45×) | 127 µs (43×) | 215 µs³ (73×) | 219 µs³⁴ (74×) | 207 µs (70×) | 147 µs (50×) | 1.90 ms (644×) | **2.96 µs²** | 250 µs³ (85×) | 190 µs³ (64×) | 249 µs³ (84×) | 83.2 µs (28×) |
+| append two | 100,000 | n/p | 1.47 ms³ (369×) | 1.47 ms²³⁴ (369×) | 2.40 ms² (603×) | 2.35 ms² (590×) | 2.00 ms²³ (503×) | 2.04 ms²³⁴ (512×) | 1.63 ms² (409×) | 8.91 ms² (2,242×) | 23.6 ms² (5,938×) | **3.97 µs** | 2.49 ms³ (627×) | 1.63 ms³ (409×) | 2.05 ms²³ (517×) | 1.17 ms² (295×) |
+| reverse | 1,000 | 10.1 µs⁴ (1.31×) | 13.3 µs (1.74×) | 11.9 µs (1.55×) | 19.1 µs (2.5×) | 11.8 µs³ (1.54×) | 15.5 µs⁴ (2.0×) | 10.9 µs³ (1.42×) | 9.31 µs (1.21×) | **7.69 µs** | 123 µs²⁴ (16×) | 46.5 µs (6.0×) | 73.3 µs (9.5×) | 13.8 µs⁴ (1.79×) | 8.43 µs³ (1.10×) | 64.5 µs³⁴ (8.4×) |
+| reverse | 10,000 | 139 µs⁴ (1.89×) | 132 µs (1.79×) | 129 µs (1.75×) | 198 µs (2.7×) | 215 µs³ (2.9×) | 127 µs⁴ (1.72×) | 75.6 µs³ (1.03×) | **73.5 µs** | 87.2 µs (1.19×) | 2.35 ms⁴ (32×) | 432 µs (5.9×) | 786 µs (11×) | 111 µs²⁴ (1.51×) | 74.1 µs³ (1.01×) | 484 µs²³⁴ (6.6×) |
+| reverse | 100,000 | 4.06 ms²⁴ (4.4×) | 4.05 ms² (4.4×) | 3.36 ms² (3.6×) | 5.14 ms² (5.5×) | 4.06 ms²³ (4.4×) | 4.15 ms²⁴ (4.5×) | 3.66 ms²³ (3.9×) | 4.06 ms² (4.4×) | **927 µs²** | 18.9 ms² (20×) | 7.59 ms (8.2×) | 11.6 ms (13×) | 4.63 ms²⁴ (5.0×) | 2.63 ms²³ (2.8×) | 7.86 ms²³⁴ (8.5×) |
+| List.map | 1,000 | 13.3 µs³ (1.08×) | 16.4 µs (1.34×) | 15.9 µs (1.29×) | 23.8 µs³ (1.93×) | 18.4 µs⁴ (1.50×) | 15.8 µs (1.28×) | 14.5 µs (1.18×) | **12.3 µs** | 51.0 µs (4.1×) | 125 µs² (10×) | 47.1 µs²⁴ (3.8×) | 90.3 µs³ (7.3×) | 17.3 µs (1.41×) | 17.6 µs (1.43×) | 53.8 µs⁴ (4.4×) |
+| List.map | 10,000 | 110 µs³ (1.01×) | 130 µs (1.19×) | 138 µs (1.27×) | 310 µs³ (2.9×) | 334 µs⁴ (3.1×) | 182 µs (1.68×) | 122 µs (1.12×) | **109 µs** | 1.09 ms² (10×) | 1.46 ms (13×) | 503 µs⁴ (4.6×) | 838 µs³ (7.7×) | 163 µs (1.51×) | 160 µs (1.47×) | 391 µs⁴ (3.6×) |
+| List.map | 100,000 | 3.19 ms²³ (1.07×) | 3.22 ms² (1.08×) | **2.98 ms²** | 5.28 ms²³ (1.77×) | 6.11 ms²⁴ (2.1×) | 4.12 ms² (1.38×) | 3.56 ms (1.20×) | 3.61 ms² (1.21×) | 5.76 ms² (1.93×) | 22.1 ms (7.4×) | 9.18 ms²⁴ (3.1×) | 10.7 ms³ (3.6×) | 4.28 ms² (1.44×) | 4.28 ms²⁴ (1.44×) | 6.91 ms²⁴ (2.3×) |
+| List.filter | 1,000 | 15.5 µs (1.09×) | 14.3 µs (1.00×) | 17.8 µs (1.25×) | 24.9 µs (1.75×) | 18.1 µs (1.27×) | 18.2 µs (1.28×) | 17.3 µs²⁴ (1.22×) | 34.6 µs⁴ (2.4×) | 27.9 µs³ (2.0×) | 91.4 µs (6.4×) | 39.7 µs (2.8×) | 73.3 µs⁴ (5.1×) | **14.2 µs** | 15.6 µs³ (1.10×) | 54.3 µs⁴ (3.8×) |
+| List.filter | 10,000 | 209 µs (1.04×) | **201 µs** | 203 µs (1.01×) | 313 µs (1.56×) | 332 µs (1.66×) | 232 µs (1.16×) | 252 µs⁴ (1.26×) | 840 µs²⁴ (4.2×) | 560 µs²³ (2.8×) | 1.12 ms (5.6×) | 529 µs (2.6×) | 897 µs⁴ (4.5×) | 207 µs (1.03×) | 236 µs³ (1.18×) | 654 µs²⁴ (3.3×) |
+| List.filter | 100,000 | 3.58 ms² (1.16×) | 4.15 ms² (1.35×) | 3.60 ms² (1.17×) | 5.83 ms² (1.89×) | 5.22 ms (1.70×) | 4.13 ms (1.34×) | 4.34 ms²⁴ (1.41×) | 6.52 ms²⁴ (2.1×) | **3.08 ms²³** | 12.8 ms² (4.2×) | 8.15 ms (2.7×) | 11.2 ms⁴ (3.6×) | 3.50 ms² (1.14×) | 4.25 ms²³ (1.38×) | 7.79 ms²⁴ (2.5×) |
+| x :: acc, then reverse | 1,000 | 24.5 µs³⁴ (0.91×) | 1.67 ms³ (62×) | 867 µs (32×) | 109 µs³ (4.0×) | 2.48 ms⁴ (92×) | 151 µs³ (5.6×) | 126 µs² (4.7×) | 28.5 µs³⁴ (1.06×) | **27.0 µs** | 264 µs (9.8×) | 57.2 µs⁴ (2.1×) | 282 µs (10×) | 4.68 ms (173×) | 103 ms³ (3,825×) | 135 µs (5.0×) |
+| x :: acc, then reverse | 10,000 | 178 µs³⁴ (0.73×) | 123 ms³ (503×) | 63.5 ms (259×) | 1.14 ms³ (4.6×) | 5.17 ms²⁴ (21×) | 1.19 ms³ (4.9×) | 982 µs² (4.0×) | **245 µs³⁴** | 254 µs² (1.04×) | 2.91 ms (12×) | 802 µs⁴ (3.3×) | 1.64 ms (6.7×) | 160 ms² (651×) | > 8 s | 1.60 ms (6.5×) |
+| x :: acc, then reverse | 100,000 | 3.79 ms³⁴ (1.02×) | > 8 s | > 8 s | 16.7 ms³ (4.5×) | 48.0 ms²⁴ (13×) | 18.2 ms²³ (4.9×) | 14.6 ms² (3.9×) | **3.70 ms³⁴** | 3.73 ms²⁴ (1.01×) | 41.1 ms (11×) | 11.3 ms²⁴ (3.1×) | 20.7 ms² (5.6×) | > 8 s | skip | 17.6 ms² (4.7×) |
+| into a record field | 1,000 | 45.2 µs² (1.06×) | 1.13 ms² (26×) | 566 µs³ (13×) | 110 µs (2.6×) | 689 µs (16×) | 210 µs (4.9×) | 164 µs³ (3.9×) | **42.6 µs** | 49.3 µs (1.16×) | 429 µs (10×) | 72.8 µs³ (1.71×) | 114 µs³ (2.7×) | 4.82 ms² (113×) | 113 ms³ (2,643×) | 144 µs (3.4×) |
+| into a record field | 10,000 | 393 µs (0.94×) | 114 ms (274×) | 64.3 ms³ (154×) | 1.74 ms² (4.2×) | 2.16 ms² (5.2×) | 1.48 ms (3.5×) | 1.16 ms³ (2.8×) | **418 µs⁴** | 503 µs (1.21×) | 4.80 ms (11×) | 657 µs²³ (1.57×) | 1.07 ms³ (2.6×) | 200 ms (479×) | > 8 s | 1.44 ms (3.4×) |
+| into a record field | 100,000 | 6.61 ms (1.54×) | > 8 s | > 8 s | 18.4 ms (4.3×) | 18.3 ms (4.3×) | 20.8 ms² (4.8×) | 20.8 ms²³ (4.8×) | **4.29 ms** | 5.28 ms (1.23×) | 46.9 ms (11×) | 8.88 ms²³ (2.1×) | 12.6 ms³ (2.9×) | > 8 s | skip | 19.4 ms² (4.5×) |
+| into a tuple (partition) | 1,000 | 30.4 µs (0.78×) | 807 µs (21×) | 472 µs (12×) | 130 µs³ (3.4×) | 548 µs (14×) | 256 µs³ (6.6×) | 248 µs²³⁴ (6.4×) | 41.0 µs³ (1.06×) | **38.7 µs³⁴** | 974 µs²⁴ (25×) | 58.3 µs² (1.51×) | 180 µs³ (4.7×) | 4.89 ms²³ (126×) | 59.9 ms (1,547×) | 136 µs (3.5×) |
+| into a tuple (partition) | 10,000 | 331 µs (0.77×) | 64.7 ms (150×) | 28.1 ms (65×) | 1.34 ms³ (3.1×) | 3.67 ms² (8.5×) | 1.35 ms³ (3.1×) | 1.40 ms³⁴ (3.2×) | 440 µs³ (1.02×) | **430 µs³⁴** | 12.0 ms²⁴ (28×) | 1.50 ms² (3.5×) | 1.90 ms³ (4.4×) | 102 ms³ (237×) | 4.83 s¹ (11,223×) | 1.65 ms (3.8×) |
+| into a tuple (partition) | 100,000 | 6.72 ms (1.72×) | > 8 s | 34.2 s¹⁴ (8,779×) | 20.5 ms³ (5.3×) | 23.3 ms² (6.0×) | 14.9 ms³ (3.8×) | 25.9 ms²³⁴ (6.7×) | 11.6 ms²³ (3.0×) | **3.90 ms³⁴** | 112 ms²⁴ (29×) | 9.82 ms² (2.5×) | 21.0 ms²³ (5.4×) | > 8 s | > 8 s | 29.8 ms² (7.6×) |
+| paths sharing tails, all kept | 1,000 | n/p | 4.60 ms² (233×) | 19.4 ms²³⁴ (983×) | 219 µs (11×) | 1.30 ms²³ (66×) | 505 µs²³⁴ (26×) | 432 µs² (22×) | 83.2 µs (4.2×) | **19.8 µs²³⁴** | 868 µs²³⁴ (44×) | 146 µs³ (7.4×) | 547 µs² (28×) | 19.1 ms² (965×) | 190 ms³ (9,626×) | 692 µs²⁴ (35×) |
+| paths sharing tails, all kept | 10,000 | n/p | 1.40 s (6,150×) | 1.38 s³⁴ (6,023×) | 3.40 ms² (15×) | 11.4 ms²³ (50×) | 16.8 ms²³⁴ (73×) | 13.3 ms² (58×) | 946 µs² (4.1×) | **228 µs³⁴** | 42.4 ms²³⁴ (186×) | 1.40 ms²³ (6.1×) | 7.80 ms² (34×) | 1.62 s⁴ (7,100×) | > 8 s | 17.0 ms²⁴ (75×) |
+| paths sharing tails, all kept | 100,000 | n/p | > 8 s | > 8 s | 122 ms² (75×) | 143 ms²³ (88×) | 161 ms²³⁴ (99×) | 139 ms² (86×) | 28.0 ms (17×) | **1.63 ms²³⁴** | 298 ms²³⁴ (183×) | 43.9 ms²³ (27×) | 107 ms² (65×) | > 8 s | skip | 391 ms²⁴ (240×) |
+| undo stack (3 edits, 1 undo) | 1,000 | 41.4 µs (1.72×) | 467 µs³ (19×) | 479 µs (20×) | 136 µs² (5.7×) | 962 µs³ (40×) | 222 µs (9.2×) | 224 µs (9.3×) | 91.7 µs (3.8×) | **24.0 µs²** | 454 µs³⁴ (19×) | 92.7 µs (3.9×) | 238 µs (9.9×) | 6.32 ms⁴ (263×) | 56.3 ms² (2,341×) | 187 µs (7.8×) |
+| undo stack (3 edits, 1 undo) | 10,000 | 408 µs² (1.55×) | 47.4 ms³ (181×) | 29.9 ms (114×) | 1.33 ms (5.1×) | 8.33 ms²³⁴ (32×) | 1.20 ms (4.6×) | 1.41 ms (5.4×) | 805 µs (3.1×) | **262 µs** | 4.43 ms²³⁴ (17×) | 907 µs² (3.5×) | 2.95 ms (11×) | 105 ms⁴ (400×) | 4.50 s¹ (17,170×) | 1.87 ms² (7.1×) |
+| undo stack (3 edits, 1 undo) | 100,000 | 7.53 ms² (3.3×) | > 8 s | 25.1 s¹ (11,105×) | 23.0 ms² (10×) | 37.9 ms²³⁴ (17×) | 18.4 ms² (8.1×) | 18.5 ms² (8.2×) | 21.4 ms² (9.4×) | **2.26 ms²** | 55.0 ms³⁴ (24×) | 16.8 ms (7.4×) | 35.0 ms² (15×) | > 8 s | > 8 s | 26.0 ms² (11×) |
+| add to front, first | 1,000 | n/p | 26.5 µs (1.52×) | 27.1 µs (1.56×) | 17.8 µs² (1.02×) | 48.7 µs³⁴ (2.8×) | 19.1 µs (1.10×) | 20.5 µs²⁴ (1.18×) | **17.4 µs** | 18.4 µs (1.06×) | 35.4 µs (2.0×) | 17.4 µs³ (1.00×) | 35.9 µs (2.1×) | 26.4 µs²³ (1.52×) | 203 µs⁴ (12×) | 39.2 µs (2.3×) |
+| add to front, first | 10,000 | n/p | 257 µs (1.57×) | 253 µs (1.54×) | 167 µs² (1.02×) | 197 µs²³⁴ (1.20×) | 184 µs (1.12×) | 199 µs (1.21×) | **164 µs** | 219 µs (1.33×) | 586 µs (3.6×) | 171 µs²³ (1.04×) | 348 µs (2.1×) | 235 µs³ (1.43×) | 1.93 ms⁴ (12×) | 366 µs (2.2×) |
+| add to front, first | 100,000 | n/p | 7.28 ms² (2.0×) | 4.59 ms² (1.29×) | 4.06 ms (1.14×) | 4.52 ms³⁴ (1.27×) | **3.55 ms²** | 3.86 ms⁴ (1.09×) | 3.75 ms (1.05×) | 4.74 ms (1.33×) | 8.41 ms (2.4×) | 4.18 ms³ (1.18×) | 6.20 ms (1.74×) | 5.83 ms²³ (1.64×) | 20.5 ms⁴ (5.8×) | 6.13 ms (1.72×) |
+| add + remove oldest, steady | 1,000 | 92.8 µs²³⁴ (2.1×) | 66.4 µs (1.48×) | 78.0 µs (1.74×) | 74.9 µs (1.67×) | 88.0 µs (2.0×) | 232 µs⁴ (5.2×) | 81.3 µs² (1.82×) | 61.4 µs²³ (1.37×) | **44.8 µs** | 245 µs⁴ (5.5×) | 110 µs⁴ (2.5×) | 173 µs (3.9×) | 81.5 µs (1.82×) | 207 µs (4.6×) | 119 µs (2.7×) |
+| add + remove oldest, steady | 10,000 | 658 µs²³⁴ (1.60×) | 714 µs (1.74×) | 631 µs (1.53×) | 613 µs (1.49×) | 764 µs (1.86×) | 1.68 ms⁴ (4.1×) | 700 µs² (1.70×) | 644 µs³ (1.57×) | **411 µs** | 3.03 ms⁴ (7.4×) | 975 µs⁴ (2.4×) | 1.47 ms (3.6×) | 696 µs² (1.69×) | 1.62 ms (3.9×) | 1.16 ms (2.8×) |
+| add + remove oldest, steady | 100,000 | 9.73 ms³⁴ (2.1×) | 10.8 ms (2.3×) | 6.93 ms (1.50×) | 9.22 ms (2.0×) | 10.7 ms (2.3×) | 24.9 ms⁴ (5.4×) | 7.76 ms (1.69×) | 7.32 ms³ (1.59×) | **4.61 ms** | 36.1 ms⁴ (7.8×) | 16.0 ms (3.5×) | 19.9 ms (4.3×) | 10.3 ms² (2.2×) | 21.2 ms (4.6×) | 13.5 ms (2.9×) |
+| toggle one, steady | 1,000 | 63.3 µs (1.66×) | 56.0 µs²³ (1.47×) | 57.5 µs³ (1.51×) | 60.1 µs (1.58×) | 55.9 µs³ (1.47×) | 64.4 µs (1.69×) | **38.1 µs** | 59.7 µs (1.57×) | 49.7 µs (1.31×) | 162 µs⁴ (4.3×) | 70.1 µs²³ (1.84×) | 377 µs²⁴ (9.9×) | 41.0 µs³ (1.08×) | 65.7 µs⁴ (1.73×) | 105 µs² (2.8×) |
+| toggle one, steady | 10,000 | 964 µs (2.7×) | 535 µs³ (1.52×) | 510 µs³ (1.45×) | 560 µs (1.59×) | 592 µs³ (1.68×) | 606 µs (1.72×) | **352 µs** | 510 µs (1.45×) | 389 µs (1.10×) | 2.11 ms⁴ (6.0×) | 719 µs³ (2.0×) | 3.83 ms²⁴ (11×) | 405 µs³ (1.15×) | 580 µs⁴ (1.65×) | 979 µs (2.8×) |
+| toggle one, steady | 100,000 | 7.38 ms (1.71×) | 7.23 ms³ (1.68×) | 5.03 ms²³ (1.17×) | 7.51 ms² (1.74×) | 7.92 ms³ (1.84×) | 6.45 ms (1.49×) | 5.17 ms (1.20×) | 6.39 ms⁴ (1.48×) | 4.82 ms² (1.12×) | 31.9 ms⁴ (7.4×) | 12.4 ms³ (2.9×) | 45.1 ms²⁴ (10×) | **4.31 ms³** | 8.54 ms⁴ (2.0×) | 17.0 ms (3.9×) |
+| remove one, first | 1,000 | 53.7 µs (1.41×) | 173 µs³⁴ (4.5×) | 56.8 µs (1.49×) | 51.5 µs³ (1.35×) | 58.2 µs³ (1.53×) | 160 µs⁴ (4.2×) | **38.1 µs** | 46.6 µs (1.22×) | 59.0 µs⁴ (1.55×) | 174 µs³ (4.6×) | 90.4 µs (2.4×) | 109 µs⁴ (2.9×) | 60.7 µs (1.59×) | 54.5 µs³ (1.43×) | 103 µs (2.7×) |
+| remove one, first | 10,000 | 542 µs (1.38×) | 1.57 ms³⁴ (4.0×) | 546 µs (1.39×) | 563 µs³ (1.43×) | 554 µs³ (1.41×) | 1.08 ms²⁴ (2.7×) | **394 µs** | 478 µs (1.21×) | 511 µs² (1.30×) | 2.30 ms³ (5.8×) | 1.06 ms (2.7×) | 1.18 ms⁴ (3.0×) | 623 µs (1.58×) | 523 µs³ (1.33×) | 961 µs (2.4×) |
+| remove one, first | 100,000 | 7.54 ms (1.16×) | 21.6 ms³⁴ (3.3×) | 7.32 ms (1.12×) | 8.06 ms²³ (1.24×) | 10.3 ms³ (1.58×) | 17.3 ms⁴ (2.6×) | 7.63 ms (1.17×) | 7.67 ms (1.18×) | 18.6 ms⁴ (2.8×) | 34.8 ms³ (5.3×) | 18.7 ms (2.9×) | 14.0 ms⁴ (2.1×) | 7.38 ms (1.13×) | **6.52 ms³** | 12.1 ms (1.85×) |
+| render only | 1,000 | 98.7 µs²³⁴ (13×) | 16.9 µs (2.2×) | 20.8 µs³ (2.8×) | 40.1 µs²⁴ (5.3×) | 22.9 µs (3.0×) | 19.5 µs (2.6×) | **7.54 µs** | 8.27 µs (1.10×) | 14.0 µs³ (1.86×) | 37.6 µs (5.0×) | 43.3 µs³⁴ (5.7×) | 27.3 µs⁴ (3.6×) | 16.8 µs (2.2×) | 15.7 µs³ (2.1×) | 27.9 µs³ (3.7×) |
+| render only | 10,000 | 567 µs³⁴ (6.5×) | 169 µs (1.93×) | 215 µs³ (2.5×) | 399 µs⁴ (4.6×) | 163 µs (1.86×) | 205 µs (2.3×) | 99.8 µs (1.14×) | **87.6 µs** | 144 µs³ (1.65×) | 579 µs (6.6×) | 468 µs²³⁴ (5.3×) | 767 µs⁴ (8.8×) | 182 µs (2.1×) | 154 µs³ (1.75×) | 330 µs³ (3.8×) |
+| render only | 100,000 | 3.66 ms³⁴ (4.3×) | 2.74 ms (3.2×) | 1.51 ms³ (1.78×) | 4.06 ms⁴ (4.8×) | 1.59 ms (1.88×) | 1.67 ms (2.0×) | 991 µs (1.17×) | 1.12 ms (1.32×) | **850 µs²³** | 7.15 ms (8.4×) | 4.33 ms³⁴ (5.1×) | 13.8 ms²⁴ (16×) | 1.19 ms (1.41×) | 1.34 ms³ (1.57×) | 2.74 ms³ (3.2×) |
+
+### 4.2 The list scenarios, each candidate on the other style
+
+**§16/§17's list scenarios, each candidate on the OTHER style (cons: array-first; every other: Elm-style)**
+
+| op | n | native mut | native CoW | cow | trie | hybrid1024 | adaptive256 | E1 | E1t | cons | Immutable.js | funkia | mori | Mutative | Immer | Elm Array |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| *style* | | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *first* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* |
+| map, recursive | 1,000 | 43.7 µs (2.0×) | 34.7 µs (1.59×) | 174 µs²⁴ (8.0×) | 56.5 µs⁴ (2.6×) | 40.5 µs (1.85×) | 40.4 µs (1.85×) | 25.8 µs (1.18×) | 26.9 µs (1.23×) | 4.41 ms (202×) | 497 µs⁴ (23×) | 116 µs (5.3×) | 177 µs³ (8.1×) | 32.7 µs (1.49×) | **21.9 µs³** | 65.3 µs²⁴ (3.0×) |
+| map, recursive | 10,000 | 438 µs² (2.3×) | 376 µs (1.93×) | 505 µs⁴ (2.6×) | 490 µs⁴ (2.5×) | 507 µs (2.6×) | 383 µs (2.0×) | 248 µs (1.27×) | 241 µs (1.24×) | 500 ms (2,568×) | 6.02 ms⁴ (31×) | 1.16 ms (6.0×) | 2.35 ms²³ (12×) | 289 µs² (1.48×) | **195 µs³** | 624 µs (3.2×) |
+| map, recursive | 100,000 | 7.11 ms² (2.3×) | 8.24 ms² (2.6×) | 21.3 ms²⁴ (6.7×) | 6.18 ms² (2.0×) | 12.4 ms² (3.9×) | 6.24 ms² (2.0×) | 6.38 ms² (2.0×) | 4.07 ms² (1.29×) | > 8 s | 80.0 ms⁴ (25×) | 12.6 ms (4.0×) | 21.3 ms³ (6.7×) | 5.90 ms (1.87×) | **3.15 ms³** | 16.0 ms² (5.1×) |
+| filter, recursive | 1,000 | 50.2 µs⁴ (2.0×) | 37.0 µs (1.51×) | 38.3 µs³ (1.56×) | 38.4 µs (1.56×) | 38.8 µs³ (1.58×) | 131 µs⁴ (5.3×) | 34.8 µs⁴ (1.42×) | 30.1 µs (1.23×) | 655 µs²³ (27×) | 297 µs (12×) | 121 µs (4.9×) | 198 µs (8.0×) | 35.8 µs³ (1.46×) | **24.6 µs** | 42.5 µs³⁴ (1.73×) |
+| filter, recursive | 10,000 | 404 µs⁴ (1.75×) | 305 µs (1.32×) | 262 µs³ (1.13×) | 376 µs (1.63×) | 476 µs³ (2.1×) | 575 µs⁴ (2.5×) | 310 µs⁴ (1.34×) | 264 µs (1.15×) | 92.2 ms³ (399×) | 4.05 ms (18×) | 1.11 ms (4.8×) | 1.64 ms (7.1×) | 315 µs³ (1.37×) | **231 µs⁴** | 436 µs³⁴ (1.89×) |
+| filter, recursive | 100,000 | 3.27 ms²⁴ (1.08×) | **3.03 ms** | 3.35 ms³ (1.10×) | 4.52 ms (1.49×) | 5.18 ms³ (1.71×) | 9.55 ms⁴ (3.1×) | 3.53 ms⁴ (1.16×) | 3.50 ms² (1.15×) | > 8 s | 51.4 ms (17×) | 13.6 ms² (4.5×) | 24.1 ms (7.9×) | 3.45 ms³ (1.14×) | 3.42 ms²⁴ (1.13×) | 5.49 ms²³⁴ (1.81×) |
+| map, accumulator + reverse | 1,000 | 766 µs⁴ (2.6×) | 7.92 ms² (27×) | 1.14 ms² (3.9×) | 8.77 ms (30×) | 6.08 ms (21×) | 6.38 ms (22×) | 1.25 ms (4.3×) | 1.73 ms (5.9×) | 7.38 ms² (25×) | 1.53 ms (5.2×) | **294 µs** | 20.6 ms³ (70×) | 1.42 s (4,850×) | 1.50 s³ (5,106×) | 16.1 ms²³⁴ (55×) |
+| map, accumulator + reverse | 10,000 | 42.3 ms⁴ (15×) | 705 ms² (252×) | 122 ms (43×) | 782 ms (279×) | 687 ms (245×) | 612 ms (219×) | 127 ms (45×) | 148 ms (53×) | 555 ms (198×) | 22.2 ms (7.9×) | **2.80 ms²** | 1.99 s³ (710×) | > 8 s | > 8 s | 865 ms²³⁴ (309×) |
+| map, accumulator + reverse | 100,000 | 5.22 s¹⁴ (143×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 239 ms² (6.6×) | **36.4 ms** | > 8 s | skip | skip | > 8 s |
+| filter, accumulator + reverse | 1,000 | 156 µs (0.80×) | 1.23 ms⁴ (6.3×) | 329 µs (1.68×) | 1.75 ms⁴ (8.9×) | 1.61 ms⁴ (8.2×) | 2.97 ms (15×) | 319 µs³ (1.63×) | 336 µs (1.71×) | 2.40 ms² (12×) | 755 µs (3.9×) | **196 µs** | 5.67 ms³ (29×) | 337 ms³⁴ (1,720×) | 881 ms²⁴ (4,493×) | 1.54 ms³ (7.9×) |
+| filter, accumulator + reverse | 10,000 | 4.51 ms (2.6×) | 128 ms (73×) | 18.3 ms (10×) | 155 ms⁴ (88×) | 171 ms⁴ (97×) | 298 ms (169×) | 17.4 ms³ (9.9×) | 18.7 ms (11×) | 185 ms (105×) | 10.2 ms (5.8×) | **1.76 ms** | 568 ms³ (322×) | > 8 s | > 8 s | 104 ms²³ (59×) |
+| filter, accumulator + reverse | 100,000 | 498 ms (22×) | > 8 s | 15.8 s¹ (709×) | > 8 s | > 8 s | > 8 s | 15.8 s¹³ (710×) | 18.9 s¹ (848×) | > 8 s | 102 ms (4.6×) | **22.3 ms²** | > 8 s | skip | skip | > 8 s |
+| sum | 1,000 | 41.5 µs (11×) | 23.4 µs³ (6.3×) | 28.9 µs⁴ (7.8×) | 34.0 µs³ (9.2×) | 27.5 µs (7.4×) | 34.0 µs³ (9.2×) | 25.2 µs³ (6.8×) | 25.9 µs³ (7.0×) | **3.72 µs** | 301 µs (81×) | 149 µs (40×) | 198 µs (53×) | 33.6 µs (9.1×) | 35.5 µs (9.6×) | 66.8 µs²³⁴ (18×) |
+| sum | 10,000 | 386 µs (8.1×) | 253 µs³ (5.3×) | 287 µs⁴ (6.0×) | 486 µs³ (10×) | 340 µs² (7.1×) | 331 µs³ (6.9×) | 274 µs³ (5.8×) | 255 µs³ (5.4×) | **47.7 µs** | 3.33 ms (70×) | 1.14 ms (24×) | 1.65 ms (35×) | 271 µs (5.7×) | 333 µs (7.0×) | 556 µs²³⁴ (12×) |
+| sum | 100,000 | 2.18 ms (6.6×) | 1.49 ms³ (4.5×) | 1.81 ms (5.5×) | 3.61 ms³ (11×) | 3.00 ms⁴ (9.1×) | 2.30 ms³ (7.0×) | 1.68 ms³ (5.1×) | 1.89 ms³ (5.7×) | **330 µs** | 35.5 ms (107×) | 10.4 ms (31×) | 18.2 ms (55×) | 1.94 ms (5.9×) | 2.35 ms (7.1×) | 6.21 ms³⁴ (19×) |
+| sum, List.foldl | 1,000 | 38.0 µs (1.55×) | 33.3 µs (1.36×) | 30.0 µs (1.22×) | 30.0 µs (1.22×) | 29.6 µs³ (1.21×) | 34.5 µs³ (1.41×) | 28.4 µs (1.16×) | 31.1 µs (1.27×) | 1.39 ms³ (57×) | 323 µs (13×) | 144 µs (5.9×) | 450 µs (18×) | 32.8 µs³ (1.34×) | **24.5 µs³⁴** | 54.8 µs (2.2×) |
+| sum, List.foldl | 10,000 | 324 µs (1.34×) | 272 µs (1.12×) | 246 µs (1.02×) | 252 µs (1.04×) | 353 µs³ (1.46×) | 307 µs³ (1.27×) | 247 µs (1.02×) | 284 µs (1.17×) | 138 ms³ (568×) | 3.94 ms (16×) | 1.13 ms (4.7×) | 3.81 ms (16×) | 282 µs³ (1.16×) | **242 µs³⁴** | 494 µs (2.0×) |
+| sum, List.foldl | 100,000 | 2.29 ms (1.43×) | 2.08 ms (1.30×) | 2.03 ms (1.27×) | 2.70 ms (1.69×) | 3.40 ms³ (2.1×) | 2.44 ms³ (1.53×) | 1.82 ms (1.14×) | 1.98 ms (1.24×) | > 8 s | 47.3 ms (30×) | 9.47 ms (5.9×) | 45.0 ms (28×) | 1.81 ms³ (1.14×) | **1.60 ms³⁴** | 6.03 ms (3.8×) |
+| takeWhile (90 %) | 1,000 | 45.0 µs (2.1×) | 23.8 µs (1.08×) | 28.7 µs (1.31×) | 35.7 µs (1.62×) | 51.1 µs² (2.3×) | 28.7 µs³ (1.31×) | 24.0 µs³ (1.09×) | **22.0 µs** | 3.93 ms (179×) | 261 µs³ (12×) | 88.9 µs³ (4.0×) | 171 µs (7.8×) | 22.9 µs³ (1.04×) | 31.6 µs (1.44×) | 53.5 µs (2.4×) |
+| takeWhile (90 %) | 10,000 | 398 µs² (1.84×) | 239 µs (1.10×) | 247 µs (1.14×) | 367 µs² (1.69×) | 662 µs² (3.1×) | 276 µs²³ (1.27×) | **217 µs³** | 240 µs (1.10×) | 389 ms² (1,793×) | 2.98 ms²³ (14×) | 834 µs³ (3.8×) | 1.55 ms² (7.2×) | 220 µs³ (1.01×) | 276 µs² (1.27×) | 682 µs² (3.1×) |
+| takeWhile (90 %) | 100,000 | 5.16 ms²⁴ (1.08×) | 6.39 ms² (1.34×) | 6.26 ms² (1.31×) | 9.69 ms² (2.0×) | 11.6 ms²⁴ (2.4×) | 5.42 ms²³ (1.14×) | 5.40 ms²³ (1.13×) | 5.40 ms² (1.13×) | > 8 s | 44.5 ms²³ (9.3×) | 11.7 ms³ (2.5×) | 19.4 ms (4.1×) | **4.77 ms²³** | 6.07 ms² (1.27×) | 13.4 ms² (2.8×) |
+| pairwise | 1,000 | 913 µs²⁴ (1.94×) | 3.16 ms³ (6.7×) | **471 µs³⁴** | 9.61 ms (20×) | 596 µs²⁴ (1.27×) | 543 µs³ (1.15×) | 1.03 ms²⁴ (2.2×) | 760 µs² (1.61×) | 5.07 ms³ (11×) | 2.06 ms²⁴ (4.4×) | 588 µs² (1.25×) | 44.3 ms² (94×) | 789 ms (1,676×) | 836 ms³ (1,775×) | 8.05 ms (17×) |
+| pairwise | 10,000 | 43.1 ms (5.0×) | 440 ms²³ (51×) | 43.1 ms³⁴ (5.0×) | 840 ms (98×) | 751 ms⁴ (87×) | 50.8 ms³ (5.9×) | 57.4 ms⁴ (6.7×) | 63.2 ms (7.3×) | 530 ms²³ (62×) | 25.9 ms² (3.0×) | **8.60 ms²** | 3.19 s¹ (371×) | > 8 s | > 8 s | 542 ms (63×) |
+| pairwise | 100,000 | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 274 ms (4.2×) | **65.7 ms²** | > 8 s | skip | skip | > 8 s |
+| merge sort | 1,000 | 2.43 ms⁴ (0.90×) | 9.25 ms³ (3.4×) | 3.46 ms (1.29×) | 47.7 ms²³⁴ (18×) | 4.67 ms⁴ (1.74×) | 6.09 ms (2.3×) | **2.69 ms⁴** | 3.28 ms⁴ (1.22×) | 10.2 ms (3.8×) | 16.0 ms² (5.9×) | 4.32 ms (1.61×) | 70.4 ms³ (26×) | 1.14 s³⁴ (423×) | 1.36 s³ (506×) | 21.0 ms² (7.8×) |
+| merge sort | 10,000 | 89.7 ms²⁴ (1.60×) | 785 ms³ (14×) | 125 ms (2.2×) | 3.47 s¹³⁴ (62×) | 853 ms (15×) | 427 ms (7.6×) | 164 ms⁴ (2.9×) | 172 ms⁴ (3.1×) | 933 ms (17×) | 246 ms² (4.4×) | **56.2 ms²** | 4.61 s¹³ (82×) | > 8 s | > 8 s | 1.16 s (21×) |
+| merge sort | 100,000 | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 3.16 s¹ (5.1×) | **620 ms** | > 8 s | skip | skip | > 8 s |
+| merge sort, sorted input | 1,000 | 1.96 ms (0.75×) | 8.12 ms³⁴ (3.1×) | 2.69 ms (1.03×) | 19.5 ms (7.5×) | 5.63 ms (2.2×) | 6.21 ms (2.4×) | 3.40 ms⁴ (1.30×) | **2.61 ms** | 3.97 ms (1.52×) | 19.6 ms² (7.5×) | 3.16 ms² (1.21×) | 65.9 ms (25×) | 1.39 s (531×) | 1.78 s (681×) | 19.4 ms² (7.4×) |
+| merge sort, sorted input | 10,000 | 77.8 ms (1.51×) | 768 ms³⁴ (15×) | 155 ms (3.0×) | 1.18 s (23×) | 1.18 s (23×) | 410 ms (8.0×) | 139 ms (2.7×) | 127 ms (2.5×) | 329 ms (6.4×) | 288 ms (5.6×) | **51.5 ms²** | 4.92 s¹ (96×) | > 8 s | > 8 s | 1.24 s (24×) |
+| merge sort, sorted input | 100,000 | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 4.00 s¹ (6.4×) | **624 ms** | > 8 s | skip | skip | > 8 s |
+| foldr building a list | 1,000 | 388 µs³ (1.21×) | 7.62 ms³ (24×) | 1.24 ms (3.9×) | 9.88 ms (31×) | 6.81 ms (21×) | 7.98 ms (25×) | 1.85 ms² (5.8×) | 1.31 ms (4.1×) | 7.64 ms⁴ (24×) | 1.74 ms (5.4×) | **319 µs⁴** | 28.9 ms (91×) | 3.83 s¹⁴ (12,018×) | 1.56 s (4,886×) | 6.57 ms³ (21×) |
+| foldr building a list | 10,000 | 24.4 ms³ (7.3×) | 683 ms³ (204×) | 113 ms² (34×) | 885 ms (265×) | 848 ms (254×) | 774 ms (232×) | 145 ms⁴ (43×) | 137 ms (41×) | 1.70 s⁴ (510×) | 22.6 ms (6.8×) | **3.34 ms⁴** | 2.66 s (797×) | > 8 s | > 8 s | 547 ms³ (164×) |
+| foldr building a list | 100,000 | 2.77 s³ (78×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 203 ms² (5.7×) | **35.7 ms** | > 8 s | skip | skip | > 8 s |
+| foldr sum | 1,000 | 187 µs (0.85×) | 2.91 ms (13×) | 718 µs³ (3.2×) | 4.39 ms (20×) | 3.39 ms (15×) | 3.30 ms (15×) | 648 µs³ (2.9×) | 777 µs (3.5×) | 1.47 ms (6.7×) | 1.40 ms⁴ (6.3×) | **221 µs** | 16.2 ms² (73×) | 775 ms⁴ (3,502×) | 656 ms³ (2,965×) | 4.12 ms² (19×) |
+| foldr sum | 10,000 | 12.0 ms² (3.9×) | 308 ms (100×) | 50.1 ms³ (16×) | 412 ms (134×) | 439 ms (143×) | 282 ms (92×) | 73.9 ms³ (24×) | 70.9 ms (23×) | 149 ms (49×) | 17.3 ms⁴ (5.6×) | **3.08 ms** | 1.75 s (567×) | > 8 s | > 8 s | 298 ms (97×) |
+| foldr sum | 100,000 | 1.35 s (47×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 601 ms⁴ (21×) | **29.0 ms** | > 8 s | skip | skip | > 8 s |
+| range + sum | 1,000 | 157 µs³ (0.44×) | 3.95 ms (11×) | 467 µs³⁴ (1.30×) | 5.02 ms (14×) | 3.07 ms³⁴ (8.6×) | 2.74 ms (7.6×) | 702 µs (2.0×) | 813 µs³ (2.3×) | 1.84 ms² (5.1×) | 890 µs³ (2.5×) | **358 µs²⁴** | 19.7 ms (55×) | 769 ms³ (2,146×) | 762 ms (2,125×) | 3.15 ms³⁴ (8.8×) |
+| range + sum | 10,000 | 9.97 ms³ (2.7×) | 350 ms (94×) | 53.5 ms³⁴ (14×) | 397 ms (106×) | 318 ms³⁴ (85×) | 285 ms (76×) | 70.5 ms (19×) | 64.2 ms³ (17×) | 163 ms (44×) | 11.2 ms²³ (3.0×) | **3.74 ms⁴** | 1.78 s (478×) | > 8 s | > 8 s | 244 ms³⁴ (65×) |
+| range + sum | 100,000 | 970 ms²³ (21×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 114 ms³ (2.5×) | **45.2 ms²⁴** | > 8 s | skip | skip | > 8 s |
+| map2 (zip) | 1,000 | 360 µs (0.89×) | 7.44 ms (18×) | 1.94 ms (4.8×) | 10.3 ms²³ (25×) | 21.3 ms²³⁴ (52×) | 8.39 ms² (21×) | 2.04 ms (5.0×) | 2.19 ms (5.4×) | 2.86 ms³ (7.0×) | 2.62 ms² (6.4×) | **407 µs** | 33.0 ms²⁴ (81×) | 1.52 s⁴ (3,732×) | 2.30 s³ (5,663×) | 12.1 ms² (30×) |
+| map2 (zip) | 10,000 | 28.8 ms (4.0×) | 669 ms (93×) | 123 ms (17×) | 928 ms³ (129×) | 1.24 s³⁴ (172×) | 684 ms (95×) | 136 ms (19×) | 156 ms² (22×) | 291 ms³ (40×) | 32.2 ms (4.5×) | **7.22 ms²** | 3.20 s (443×) | > 8 s | > 8 s | 690 ms (95×) |
+| map2 (zip) | 100,000 | 10.7 s¹ (187×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 342 ms² (6.0×) | **57.4 ms²** | > 8 s | skip | skip | > 8 s |
+| concatMap | 1,000 | 1.05 ms³ (0.75×) | 31.8 ms²³ (23×) | 22.9 ms² (16×) | 58.2 ms (42×) | 36.5 ms²³ (26×) | 29.8 ms²³ (21×) | 13.0 ms² (9.3×) | 6.08 ms (4.3×) | 1.73 ms³⁴ (1.24×) | 14.7 ms² (11×) | **1.40 ms²** | 144 ms (103×) | 8.63 s¹ (6,160×) | 7.23 s¹³ (5,158×) | 30.2 ms² (22×) |
+| concatMap | 10,000 | 64.8 ms³ (1.89×) | 4.19 s¹³ (122×) | 3.30 s¹⁴ (96×) | 7.29 s¹ (212×) | 6.67 s¹³ (194×) | 3.53 s¹³ (103×) | 2.21 s⁴ (64×) | 1.26 s (37×) | 196 ms³⁴ (5.7×) | 178 ms² (5.2×) | **34.3 ms²** | > 8 s | > 8 s | > 8 s | 2.16 s (63×) |
+| concatMap | 100,000 | 7.85 s¹³ (32×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 1.60 s (6.5×) | **244 ms** | skip | skip | skip | > 8 s |
+| append in a loop, acc ++ [x] | 1,000 | 74.0 µs (0.45×) | 971 µs (6.0×) | 689 µs³ (4.2×) | 282 µs³⁴ (1.73×) | 776 µs² (4.8×) | 895 µs⁴ (5.5×) | 2.36 ms²⁴ (14×) | 865 µs²⁴ (5.3×) | 6.80 ms³ (42×) | 1.36 ms (8.4×) | 422 µs³ (2.6×) | 1.38 ms (8.5×) | 450 µs³ (2.8×) | 958 µs² (5.9×) | **163 µs** |
+| append in a loop, acc ++ [x] | 10,000 | 721 µs (0.40×) | 64.9 ms (36×) | 68.9 ms³ (38×) | 2.50 ms²³⁴ (1.38×) | 3.73 ms (2.1×) | 64.8 ms⁴ (36×) | 339 ms⁴ (188×) | 57.4 ms⁴ (32×) | 647 ms³ (358×) | 16.3 ms (9.0×) | 6.64 ms²³ (3.7×) | 9.23 ms (5.1×) | 44.4 ms³ (25×) | 70.3 ms⁴ (39×) | **1.81 ms** |
+| append in a loop, acc ++ [x] | 100,000 | 5.80 ms² (0.27×) | > 8 s | > 8 s | 29.6 ms³⁴ (1.37×) | 39.7 ms (1.83×) | > 8 s | > 8 s | > 8 s | > 8 s | 158 ms (7.3×) | 42.2 ms³ (1.94×) | 120 ms (5.5×) | > 8 s | > 8 s | **21.7 ms** |
+| append two | 1,000 | n/p | 2.52 µs² (1.57×) | 3.15 µs⁴ (2.0×) | 14.3 µs³ (9.0×) | 6.89 µs² (4.3×) | 1.83 µs⁴ (1.14×) | 2.11 µs (1.32×) | 5.41 µs³⁴ (3.4×) | 16.4 µs (10×) | 186 µs (116×) | **1.60 µs³** | 40.1 µs (25×) | 1.69 µs² (1.05×) | 2.53 µs (1.58×) | 5.54 µs (3.5×) |
+| append two | 10,000 | n/p | 370 µs (96×) | 241 µs (62×) | 157 µs²³ (41×) | 142 µs (37×) | 228 µs (59×) | 240 µs (62×) | 462 µs²³⁴ (120×) | 145 µs (38×) | 1.47 ms (381×) | **3.85 µs²³** | 429 µs (111×) | 206 µs (54×) | 232 µs (60×) | 71.1 µs (18×) |
+| append two | 100,000 | n/p | 2.21 ms² (512×) | 1.85 ms² (428×) | 2.18 ms²³ (504×) | 2.09 ms² (484×) | 1.74 ms⁴ (401×) | 1.79 ms² (415×) | 3.19 ms²³⁴ (737×) | 10.3 ms² (2,378×) | 23.5 ms² (5,438×) | **4.32 µs²³** | 4.86 ms (1,125×) | 1.81 ms (419×) | 1.72 ms² (397×) | 1.01 ms² (233×) |
+| reverse | 1,000 | 147 µs (1.19×) | 3.68 ms (30×) | 620 µs² (5.0×) | 5.43 ms (44×) | 3.59 ms (29×) | 9.42 ms⁴ (76×) | 772 µs (6.3×) | 465 µs (3.8×) | 1.27 ms (10×) | 887 µs (7.2×) | **123 µs** | 16.0 ms (130×) | 897 ms (7,271×) | 868 ms⁴ (7,033×) | 4.23 ms (34×) |
+| reverse | 10,000 | 12.1 ms⁴ (9.1×) | 367 ms (277×) | 63.9 ms (48×) | 457 ms (344×) | 430 ms (324×) | 690 ms⁴ (520×) | 60.4 ms (46×) | 41.1 ms (31×) | 153 ms (115×) | 12.0 ms (9.1×) | **1.33 ms** | 1.63 s (1,231×) | > 8 s | > 8 s | 370 ms (279×) |
+| reverse | 100,000 | 1.22 s⁴ (79×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 127 ms (8.3×) | **15.4 ms²** | > 8 s | skip | skip | > 8 s |
+| List.map | 1,000 | 305 µs (1.00×) | 6.29 ms (21×) | 1.36 ms⁴ (4.5×) | 8.47 ms (28×) | 7.36 ms² (24×) | 7.04 ms³ (23×) | 1.29 ms (4.2×) | 1.52 ms (5.0×) | 1.67 ms⁴ (5.5×) | 1.81 ms (5.9×) | **306 µs** | 37.6 ms (123×) | 1.17 s³ (3,812×) | 1.42 s (4,656×) | 7.17 ms⁴ (23×) |
+| List.map | 10,000 | 20.8 ms (6.9×) | 718 ms (237×) | 158 ms (52×) | 704 ms (233×) | 762 ms (252×) | 792 ms³ (262×) | 118 ms (39×) | 124 ms (41×) | 219 ms⁴ (72×) | 23.7 ms (7.8×) | **3.02 ms²** | 3.15 s¹ (1,040×) | > 8 s | > 8 s | 681 ms⁴ (225×) |
+| List.map | 100,000 | 2.35 s (63×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 234 ms² (6.3×) | **37.1 ms** | > 8 s | skip | skip | > 8 s |
+| List.filter | 1,000 | 237 µs (0.93×) | 4.52 ms (18×) | 808 µs (3.2×) | 4.24 ms (17×) | 8.67 ms⁴ (34×) | 8.28 ms⁴ (32×) | 829 µs (3.2×) | 804 µs⁴ (3.1×) | 1.34 ms³ (5.2×) | 1.19 ms (4.6×) | **256 µs** | 16.1 ms (63×) | 746 ms (2,917×) | 702 ms (2,745×) | 4.55 ms (18×) |
+| List.filter | 10,000 | 11.0 ms (4.7×) | 371 ms²⁴ (159×) | 59.9 ms (26×) | 380 ms (163×) | 1.10 s⁴ (473×) | 469 ms⁴ (201×) | 48.0 ms (21×) | 66.1 ms⁴ (28×) | 142 ms³ (61×) | 16.1 ms (6.9×) | **2.33 ms** | 1.35 s (579×) | > 8 s | > 8 s | 307 ms² (132×) |
+| List.filter | 100,000 | 1.08 s (35×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 165 ms² (5.4×) | **30.7 ms** | > 8 s | skip | skip | > 8 s |
+| x :: acc, then reverse | 1,000 | 343 µs⁴ (1.50×) | 10.1 ms⁴ (44×) | 1.52 ms (6.6×) | 10.9 ms⁴ (48×) | 8.59 ms⁴ (38×) | 7.11 ms⁴ (31×) | 1.53 ms²⁴ (6.7×) | 1.41 ms³ (6.2×) | 6.23 ms (27×) | 1.83 ms (8.0×) | **228 µs** | 38.3 ms³ (168×) | 6.55 s¹⁴ (28,678×) | 1.28 s (5,626×) | 9.39 ms² (41×) |
+| x :: acc, then reverse | 10,000 | 23.8 ms⁴ (12×) | 760 ms⁴ (382×) | 161 ms² (81×) | 910 ms⁴ (458×) | 852 ms⁴ (429×) | 669 ms⁴ (337×) | 136 ms² (68×) | 130 ms³ (65×) | 558 ms (281×) | 21.2 ms (11×) | **1.99 ms** | 3.76 s¹³ (1,891×) | > 8 s | > 8 s | 642 ms (323×) |
+| x :: acc, then reverse | 100,000 | 3.01 s¹⁴ (114×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 216 ms² (8.2×) | **26.4 ms** | > 8 s | skip | skip | > 8 s |
+| into a record field | 1,000 | 397 µs⁴ (1.67×) | 5.41 ms²³ (23×) | 1.59 ms (6.7×) | 10.3 ms (43×) | 6.24 ms³ (26×) | 8.19 ms⁴ (34×) | 1.70 ms⁴ (7.1×) | 1.18 ms (4.9×) | 5.47 ms²³ (23×) | 1.93 ms⁴ (8.1×) | **238 µs³** | 39.0 ms⁴ (164×) | 1.53 s (6,444×) | 1.18 s³ (4,971×) | 7.08 ms (30×) |
+| into a record field | 10,000 | 27.6 ms⁴ (12×) | 612 ms³ (270×) | 122 ms (54×) | 812 ms (358×) | 699 ms³ (308×) | 845 ms⁴ (373×) | 146 ms⁴ (64×) | 117 ms (52×) | 536 ms³ (236×) | 24.9 ms⁴ (11×) | **2.27 ms³** | 3.78 s¹⁴ (1,666×) | > 8 s | > 8 s | 585 ms (258×) |
+| into a record field | 100,000 | 3.46 s¹⁴ (133×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 302 ms²⁴ (12×) | **26.0 ms³** | > 8 s | skip | skip | > 8 s |
+| into a tuple (partition) | 1,000 | 264 µs (0.83×) | 6.12 ms⁴ (19×) | 1.04 ms (3.3×) | 5.42 ms³⁴ (17×) | 5.96 ms (19×) | 5.70 ms² (18×) | 1.54 ms³⁴ (4.8×) | 1.25 ms (3.9×) | 4.40 ms⁴ (14×) | 1.21 ms³ (3.8×) | **318 µs** | 22.7 ms (71×) | 1.34 s³ (4,219×) | 1.34 s⁴ (4,200×) | 6.45 ms (20×) |
+| into a tuple (partition) | 10,000 | 15.2 ms (4.8×) | 587 ms⁴ (185×) | 85.8 ms (27×) | 518 ms³⁴ (163×) | 571 ms (180×) | 473 ms (149×) | 107 ms³⁴ (34×) | 99.3 ms (31×) | 431 ms⁴ (136×) | 13.9 ms²³ (4.4×) | **3.18 ms²** | 2.27 s (713×) | > 8 s | > 8 s | 489 ms (154×) |
+| into a tuple (partition) | 100,000 | 2.03 s (65×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 165 ms²³ (5.3×) | **31.3 ms** | > 8 s | skip | skip | > 8 s |
+| paths sharing tails, all kept | 1,000 | n/p | 15.2 ms²⁴ (58×) | 2.00 ms² (7.6×) | 41.1 ms²⁴ (157×) | 16.0 ms (61×) | 24.1 ms² (92×) | 5.79 ms²³⁴ (22×) | 12.9 ms² (49×) | 149 ms (568×) | 2.40 ms² (9.2×) | **262 µs** | 101 ms² (387×) | 2.03 s³ (7,760×) | 3.97 s¹ (15,153×) | 39.1 ms² (149×) |
+| paths sharing tails, all kept | 10,000 | n/p | 1.98 s (609×) | 802 ms (247×) | 3.04 s¹⁴ (936×) | 2.81 s (867×) | 1.95 s (602×) | 983 ms³⁴ (303×) | 919 ms (283×) | > 8 s | 59.1 ms² (18×) | **3.25 ms²** | 7.74 s¹ (2,386×) | > 8 s | > 8 s | 3.46 s¹ (1,065×) |
+| paths sharing tails, all kept | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | skip | 730 ms² (14×) | **53.8 ms²⁴** | > 8 s | skip | skip | > 8 s |
+| undo stack (3 edits, 1 undo) | 1,000 | 373 µs² (1.61×) | 31.2 ms⁴ (134×) | 817 µs (3.5×) | 7.08 ms³ (30×) | 3.15 ms³ (14×) | 3.45 ms³⁴ (15×) | 884 µs (3.8×) | 781 µs³ (3.4×) | 23.7 ms²⁴ (102×) | 1.33 ms³ (5.7×) | **233 µs** | 24.0 ms²³ (103×) | 980 ms (4,215×) | 2.56 s³⁴ (11,002×) | 6.98 ms⁴ (30×) |
+| undo stack (3 edits, 1 undo) | 10,000 | 25.7 ms (11×) | 1.43 s⁴ (590×) | 78.8 ms (32×) | 625 ms³ (257×) | 480 ms³ (197×) | 391 ms³⁴ (161×) | 65.2 ms (27×) | 65.6 ms³ (27×) | 1.37 s⁴ (562×) | 18.5 ms²³ (7.6×) | **2.43 ms⁴** | 2.44 s³ (1,005×) | > 8 s | > 8 s | 575 ms⁴ (237×) |
+| undo stack (3 edits, 1 undo) | 100,000 | 14.9 s¹ (551×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 196 ms³ (7.3×) | **26.9 ms²⁴** | > 8 s | skip | skip | > 8 s |
+| add to front, first | 1,000 | n/p | 159 µs⁴ (13×) | 30.6 µs (2.6×) | 28.3 µs⁴ (2.4×) | 30.6 µs (2.5×) | 30.4 µs (2.5×) | 13.9 µs (1.16×) | **12.0 µs** | 31.0 µs (2.6×) | 70.0 µs⁴ (5.8×) | 21.3 µs (1.78×) | 100 µs (8.4×) | 1.29 ms (108×) | 3.71 ms³ (309×) | 24.5 µs³ (2.0×) |
+| add to front, first | 10,000 | n/p | 737 µs⁴ (6.4×) | 244 µs (2.1×) | 327 µs⁴ (2.8×) | 242 µs (2.1×) | 294 µs (2.6×) | 122 µs (1.06×) | **115 µs²⁴** | 371 µs (3.2×) | 747 µs⁴ (6.5×) | 263 µs² (2.3×) | 1.49 ms²⁴ (13×) | > 45 s | > 45 s | 213 µs³ (1.86×) |
+| add to front, first | 100,000 | n/p | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | 9.37 ms² (2.1×) | 11.5 ms⁴ (2.6×) | **4.46 ms²** | > 45 s | skip | skip | > 45 s |
+| add + remove oldest, steady | 1,000 | 382 µs (0.34×) | 11.0 ms (9.8×) | 1.56 ms (1.39×) | 9.94 ms³ (8.9×) | 9.99 ms³ (8.9×) | 8.37 ms⁴ (7.5×) | **1.12 ms⁴** | 1.67 ms³⁴ (1.50×) | 1.51 ms (1.35×) | 1.80 ms² (1.61×) | 1.29 ms²⁴ (1.15×) | 48.3 ms³ (43×) | 1.33 s³⁴ (1,187×) | 2.61 s³ (2,335×) | 7.98 ms (7.1×) |
+| add + remove oldest, steady | 10,000 | 27.2 ms (2.8×) | 774 ms (80×) | 124 ms (13×) | 872 ms³ (90×) | 826 ms³ (85×) | 816 ms (84×) | 99.5 ms⁴ (10×) | 155 ms³⁴ (16×) | 154 ms² (16×) | 22.4 ms² (2.3×) | **9.66 ms²⁴** | > 8 s | > 8 s | > 8 s | 687 ms (71×) |
+| add + remove oldest, steady | 100,000 | 2.81 s (14×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 241 ms (1.24×) | **194 ms²⁴** | skip | skip | skip | > 8 s |
+| toggle one, steady | 1,000 | 418 µs (1.38×) | 10.1 ms (34×) | 1.21 ms³ (4.0×) | 7.79 ms² (26×) | 9.00 ms (30×) | 8.46 ms (28×) | 1.66 ms³ (5.5×) | 1.69 ms³⁴ (5.6×) | 1.38 ms (4.6×) | 5.38 ms² (18×) | **302 µs** | 49.6 ms³ (164×) | 1.84 s³ (6,099×) | 2.88 s (9,526×) | 7.21 ms⁴ (24×) |
+| toggle one, steady | 10,000 | 18.6 ms (6.3×) | 685 ms (233×) | 101 ms³ (34×) | 752 ms (256×) | 955 ms (325×) | 849 ms (289×) | 124 ms³ (42×) | 135 ms³⁴ (46×) | 136 ms (46×) | 61.8 ms² (21×) | **2.94 ms** | > 8 s | > 8 s | > 8 s | 644 ms⁴ (219×) |
+| toggle one, steady | 100,000 | 2.59 s (66×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 467 ms (12×) | **39.4 ms²** | skip | skip | skip | > 8 s |
+| remove one, first | 1,000 | 347 µs (1.12×) | 8.70 ms (28×) | 1.38 ms (4.4×) | 9.53 ms³ (31×) | 7.83 ms (25×) | 7.85 ms (25×) | 3.84 ms² (12×) | 1.60 ms³ (5.2×) | 3.05 ms (9.8×) | 1.56 ms (5.0×) | **310 µs⁴** | 44.3 ms (143×) | 2.34 s⁴ (7,556×) | 2.47 s (7,976×) | 8.70 ms² (28×) |
+| remove one, first | 10,000 | 24.4 ms (7.6×) | 738 ms (229×) | 131 ms (41×) | 848 ms³ (264×) | 842 ms (262×) | 675 ms (210×) | 171 ms (53×) | 124 ms³ (38×) | 108 ms (34×) | 21.0 ms² (6.5×) | **3.22 ms⁴** | > 8 s | > 8 s | > 8 s | 614 ms (191×) |
+| remove one, first | 100,000 | 2.76 s (74×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 231 ms² (6.2×) | **37.2 ms²⁴** | skip | skip | skip | > 8 s |
+| render only | 1,000 | 16.8 µs³ (2.7×) | 19.9 µs (3.2×) | 22.4 µs (3.6×) | 11.4 µs⁴ (1.83×) | 25.5 µs³ (4.1×) | 24.0 µs⁴ (3.9×) | 11.1 µs⁴ (1.78×) | **6.23 µs³⁴** | 17.7 µs⁴ (2.8×) | 47.7 µs (7.7×) | 11.8 µs³⁴ (1.89×) | 26.4 µs³ (4.2×) | 16.8 µs³ (2.7×) | 28.3 µs (4.5×) | 28.4 µs (4.6×) |
+| render only | 10,000 | 169 µs³ (2.5×) | 213 µs (3.2×) | 242 µs (3.6×) | 129 µs⁴ (1.92×) | 156 µs³ (2.3×) | 229 µs (3.4×) | 113 µs⁴ (1.67×) | **67.4 µs³⁴** | 175 µs⁴ (2.6×) | 671 µs (9.9×) | 116 µs³⁴ (1.71×) | 262 µs³ (3.9×) | > 45 s | > 45 s | 282 µs (4.2×) |
+| render only | 100,000 | 1.05 ms³ (0.96×) | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | > 45 s | **1.09 ms** | 8.00 ms (7.3×) | 1.64 ms³⁴ (1.50×) | > 45 s | skip | skip | > 45 s |
+
+### 5.1 The single operations, each candidate on its own style (master)
+
+**§3's single operations, each candidate on the code written for it (cons: Elm-style; every other: array-first)**
+
+| op | n | native mut | native CoW | cow | trie | hybrid1024 | adaptive256 | E1 | E1t | cons | Immutable.js | funkia | mori | Mutative | Immer | Elm Array |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| *style* | | *first* | *first* | *first* | *first* | *first* | *first* | *first* | *first* | *elm* | *first* | *first* | *first* | *first* | *first* | *first* |
+| get | 8 | 72 ns²⁴ (7.4×) | 24 ns⁴ (2.5×) | 19 ns (2.0×) | 16 ns⁴ (1.65×) | 19 ns (2.0×) | 22 ns⁴ (2.3×) | 12 ns (1.24×) | 12 ns (1.23×) | **9.7 ns³** | 11 ns (1.18×) | 13 ns (1.37×) | 51 ns (5.2×) | 14 ns³ (1.47×) | 17 ns³⁴ (1.73×) | 19 ns (2.0×) |
+| get | 1,000 | 79 ns²⁴ (6.8×) | 24 ns⁴ (2.1×) | 18 ns (1.54×) | 19 ns⁴ (1.59×) | 26 ns (2.3×) | 21 ns⁴ (1.79×) | 12 ns (1.04×) | **12 ns** | 3.71 µs³ (318×) | 23 ns (2.0×) | 21 ns (1.80×) | 44 ns (3.8×) | 14 ns³ (1.21×) | 19 ns³⁴ (1.61×) | 39 ns (3.4×) |
+| get | 100,000 | 136 ns⁴ (14×) | 24 ns⁴ (2.4×) | 18 ns (1.78×) | 28 ns⁴ (2.8×) | 31 ns (3.2×) | 23 ns (2.3×) | **9.9 ns⁴** | 11 ns (1.11×) | 130 µs³ (13,145×) | 57 ns (5.8×) | 38 ns (3.9×) | 88 ns (8.9×) | 15 ns³ (1.49×) | 17 ns³⁴ (1.76×) | 65 ns (6.5×) |
+| set, first | 8 | n/p | 183 ns (1.93×) | 177 ns²³ (1.87×) | 145 ns² (1.53×) | 132 ns² (1.40×) | 466 ns²⁴ (4.9×) | 146 ns²³ (1.55×) | 115 ns² (1.22×) | **95 ns²** | 228 ns² (2.4×) | 204 ns²⁴ (2.2×) | 247 ns⁴ (2.6×) | 2.39 µs (25×) | 27.3 µs²⁴ (288×) | 163 ns²³ (1.72×) |
+| set, first | 1,000 | n/p | 1.67 µs (6.4×) | 852 ns²³ (3.3×) | **260 ns²** | 1.05 µs² (4.0×) | 7.39 µs²⁴ (28×) | 2.34 µs²³ (9.0×) | 2.34 µs² (9.0×) | 27.3 µs² (105×) | 368 ns (1.42×) | 794 ns² (3.1×) | 412 ns²⁴ (1.58×) | 2.96 µs (11×) | 380 µs⁴ (1,461×) | 394 ns²³ (1.51×) |
+| set, first | 100,000 | n/p | 834 µs (1,904×) | 864 µs²³ (1,972×) | 531 ns² (1.21×) | **438 ns²** | 472 µs²⁴ (1,079×) | 373 µs²³ (850×) | 177 µs² (403×) | 4.49 ms² (10,260×) | 570 ns² (1.30×) | 1.08 µs² (2.5×) | 692 ns²⁴ (1.58×) | 822 µs² (1,876×) | 33.2 ms⁴ (75,753×) | 480 ns²³ (1.10×) |
+| set, threaded | 8 | 74 ns (0.89×) | 190 ns² (2.3×) | 156 ns² (1.88×) | 148 ns (1.78×) | 149 ns² (1.79×) | 112 ns²³ (1.35×) | 164 ns (2.0×) | 178 ns² (2.2×) | 98 ns² (1.19×) | 257 ns³ (3.1×) | **83 ns²³** | 298 ns² (3.6×) | 3.13 µs (38×) | 6.19 µs (75×) | 221 ns (2.7×) |
+| set, threaded | 1,000 | 64 ns² (0.45×) | 1.24 µs² (8.7×) | 827 ns² (5.8×) | 325 ns² (2.3×) | 658 ns² (4.6×) | **142 ns²³** | 204 ns² (1.44×) | 390 ns (2.8×) | 21.5 µs² (152×) | 188 ns²³ (1.33×) | 497 ns³ (3.5×) | 413 ns² (2.9×) | 2.88 µs² (20×) | 184 µs (1,300×) | 388 ns² (2.7×) |
+| set, threaded | 100,000 | 74 ns² (0.78×) | 856 µs² (9,076×) | 54.9 µs²⁴ (582×) | 129 ns² (1.37×) | 132 ns² (1.40×) | **94 ns²³** | 150 ns² (1.59×) | 231 ns² (2.4×) | 3.82 ms² (40,515×) | 163 ns²³ (1.73×) | 256 ns²³ (2.7×) | 900 ns² (9.5×) | 67.2 µs² (712×) | 21.0 ms (222,128×) | 1.99 µs² (21×) |
+| push, first | 8 | n/p | 260 ns² (2.5×) | 161 ns² (1.52×) | 195 ns (1.85×) | **106 ns²³** | 148 ns² (1.41×) | 133 ns²³ (1.26×) | 183 ns²⁴ (1.73×) | 351 ns² (3.3×) | 336 ns² (3.2×) | 238 ns² (2.3×) | 266 ns (2.5×) | 4.30 µs² (41×) | 7.28 µs⁴ (69×) | 163 ns² (1.55×) |
+| push, first | 1,000 | n/p | 2.83 µs (19×) | 1.34 µs² (9.0×) | **148 ns²** | 1.37 µs²³ (9.3×) | 2.35 µs² (16×) | 2.35 µs²³ (16×) | 8.54 µs²⁴ (58×) | 27.2 µs (184×) | 404 ns² (2.7×) | 187 ns² (1.26×) | 195 ns² (1.32×) | 5.31 µs² (36×) | 133 µs⁴ (896×) | 157 ns² (1.06×) |
+| push, first | 100,000 | n/p | 2.30 ms² (34,179×) | 851 µs (12,631×) | 242 ns²⁴ (3.6×) | 224 ns²³ (3.3×) | 186 µs² (2,763×) | 190 µs²³ (2,812×) | 465 µs²⁴ (6,898×) | 4.57 ms² (67,869×) | 692 ns² (10×) | 293 ns² (4.3×) | 753 ns² (11×) | 2.12 ms² (31,508×) | 14.9 ms (221,431×) | **67 ns²** |
+| push, threaded | 8 | 289 ns²⁴ (1.80×) | 299 ns² (1.86×) | 295 ns²⁴ (1.83×) | 221 ns²⁴ (1.37×) | 1.30 µs²⁴ (8.1×) | 247 ns²³ (1.53×) | 248 ns²⁴ (1.54×) | **161 ns²** | 252 ns² (1.57×) | 580 ns²³ (3.6×) | 230 ns²⁴ (1.43×) | 193 ns²³ (1.20×) | 5.00 µs² (31×) | 9.79 µs² (61×) | 283 ns²⁴ (1.76×) |
+| push, threaded | 1,000 | 201 ns²⁴ (1.40×) | 3.42 µs²⁴ (24×) | 2.06 µs²⁴ (14×) | 247 ns²⁴ (1.72×) | 1.67 µs²⁴ (12×) | 303 ns²³ (2.1×) | 304 ns²⁴ (2.1×) | **144 ns²** | 19.4 µs⁴ (135×) | 376 ns²³ (2.6×) | 286 ns²⁴ (2.0×) | 294 ns²³ (2.0×) | 10.6 µs (74×) | 434 µs (3,023×) | 267 ns²⁴ (1.86×) |
+| push, threaded | 100,000 | 207 ns²⁴ (0.98×) | 2.01 ms² (9,458×) | 942 µs⁴ (4,441×) | 292 ns²⁴ (1.38×) | 1.77 µs²⁴ (8.3×) | 333 ns²³ (1.57×) | 473 ns²⁴ (2.2×) | 371 ns² (1.75×) | 3.43 ms² (16,169×) | 306 ns²³ (1.44×) | **212 ns²⁴** | 252 ns²³ (1.19×) | 2.36 ms (11,140×) | 25.3 ms (119,180×) | 333 ns²⁴ (1.57×) |
+| pop, first | 8 | n/p | 96 ns (1.46×) | 126 ns³ (1.92×) | 149 ns² (2.3×) | 805 ns² (12×) | **66 ns²** | 129 ns²³ (2.0×) | 170 ns² (2.6×) | 1.31 µs²⁴ (20×) | 378 ns² (5.8×) | 218 ns (3.3×) | 310 ns²³⁴ (4.7×) | 3.16 µs³ (48×) | 6.38 µs³⁴ (97×) | 143 ns²³ (2.2×) |
+| pop, first | 1,000 | n/p | 2.38 µs (25×) | 465 ns²³ (4.9×) | 153 ns² (1.62×) | 2.45 µs² (26×) | 1.99 µs² (21×) | 1.90 µs²³ (20×) | 2.46 µs (26×) | 102 µs²⁴ (1,081×) | 353 ns² (3.7×) | 237 ns² (2.5×) | 267 ns²³⁴ (2.8×) | 4.24 µs³ (45×) | 139 µs³⁴ (1,471×) | **94 ns²³** |
+| pop, first | 100,000 | n/p | 760 µs² (5,906×) | 703 µs²³ (5,460×) | **129 ns²** | 608 ns² (4.7×) | 217 µs² (1,688×) | 217 µs²³ (1,685×) | 198 µs (1,535×) | 27.5 ms⁴ (213,986×) | 350 ns (2.7×) | 167 ns (1.30×) | 183 ns²³⁴ (1.42×) | 650 µs²³ (5,048×) | 12.3 ms³⁴ (95,260×) | 921 ns²³ (7.2×) |
+| pop, threaded | 8 | 85 ns² (0.81×) | 142 ns (1.35×) | 135 ns² (1.29×) | 118 ns² (1.12×) | **105 ns²³⁴** | 153 ns²³ (1.46×) | 168 ns² (1.60×) | 122 ns²³ (1.16×) | 237 ns (2.3×) | 380 ns² (3.6×) | 147 ns²³ (1.40×) | 265 ns² (2.5×) | 4.86 µs² (46×) | 6.56 µs (63×) | 286 ns² (2.7×) |
+| pop, threaded | 1,000 | 73 ns² (0.66×) | 503 ns² (4.6×) | 744 ns² (6.8×) | 156 ns² (1.42×) | 296 ns²³⁴ (2.7×) | 208 ns²³ (1.89×) | 220 ns (2.0×) | **110 ns²³** | 17.4 µs (158×) | 322 ns² (2.9×) | 198 ns²³ (1.80×) | 277 ns² (2.5×) | 6.65 µs (61×) | 169 µs² (1,535×) | 258 ns (2.3×) |
+| pop, threaded | 100,000 | 76 ns² (0.92×) | 722 µs (8,665×) | 743 µs² (8,915×) | 238 ns² (2.9×) | 84 ns²³⁴ (1.01×) | 240 ns²³ (2.9×) | 366 ns² (4.4×) | 195 ns²³ (2.3×) | 3.45 ms (41,448×) | 356 ns² (4.3×) | **83 ns²³** | 279 ns²³ (3.3×) | 820 µs (9,844×) | 22.6 ms (271,636×) | 252 ns (3.0×) |
+| slice | 8 | 133 ns³ (1.33×) | **100 ns²** | 370 ns²³⁴ (3.7×) | 463 ns²³ (4.6×) | 108 ns²³ (1.08×) | 123 ns² (1.23×) | 203 ns² (2.0×) | 121 ns (1.21×) | 269 ns (2.7×) | 379 ns (3.8×) | 190 ns (1.90×) | 178 ns²³ (1.78×) | 113 ns²³ (1.13×) | 108 ns²³ (1.07×) | 281 ns (2.8×) |
+| slice | 1,000 | 448 ns²³ (3.1×) | 446 ns² (3.1×) | 1.54 µs²³⁴ (11×) | 6.36 µs²³ (45×) | 457 ns²³ (3.2×) | 365 ns² (2.6×) | 468 ns² (3.3×) | 465 ns² (3.3×) | 11.6 µs (81×) | 836 ns² (5.9×) | 300 ns²⁴ (2.1×) | **143 ns²³** | 509 ns²³ (3.6×) | 420 ns²³ (2.9×) | 5.17 µs²⁴ (36×) |
+| slice | 100,000 | 564 µs³ (3,474×) | 359 µs (2,208×) | 857 µs²³⁴ (5,278×) | 1.86 ms³ (11,472×) | 1.94 ms³ (11,940×) | 379 µs² (2,336×) | 447 µs² (2,749×) | 421 µs² (2,595×) | 930 µs²⁴ (5,727×) | 1.71 µs² (11×) | 676 ns² (4.2×) | **162 ns²³** | 440 µs²³ (2,708×) | 328 µs²³ (2,020×) | 1.50 ms⁴ (9,236×) |
+| concat | 8 | 221 ns² (1.31×) | 394 ns²³ (2.3×) | 414 ns² (2.5×) | 295 ns (1.76×) | 414 ns² (2.5×) | 392 ns² (2.3×) | 369 ns²³ (2.2×) | 373 ns² (2.2×) | 326 ns² (1.94×) | 1.37 µs³ (8.1×) | 281 ns² (1.67×) | 656 ns² (3.9×) | 464 ns² (2.8×) | 399 ns² (2.4×) | **168 ns²³** |
+| concat | 1,000 | 7.09 µs² (4.2×) | 2.60 µs²³ (1.55×) | 2.13 µs (1.27×) | 11.1 µs (6.6×) | 8.25 µs² (4.9×) | 3.04 µs² (1.82×) | 1.79 µs³ (1.07×) | 2.35 µs (1.40×) | 20.5 µs (12×) | 146 µs³ (87×) | **1.68 µs** | 30.4 µs² (18×) | 2.17 µs² (1.30×) | 2.34 µs² (1.40×) | 6.15 µs³ (3.7×) |
+| concat | 100,000 | 3.45 ms (769×) | 2.34 ms²³ (521×) | 1.83 ms (407×) | 1.99 ms² (444×) | 6.45 ms² (1,436×) | 1.97 ms (438×) | 1.90 ms²³ (424×) | 1.88 ms² (419×) | 3.59 ms² (799×) | 13.5 ms²³ (3,004×) | **4.49 µs²** | 4.33 ms (964×) | 1.78 ms² (397×) | 2.04 ms² (455×) | 705 µs³ (157×) |
+| insert, first | 8 | n/p | 188 ns² (1.27×) | 252 ns² (1.71×) | 397 ns²³ (2.7×) | 233 ns²³ (1.58×) | **148 ns²³** | 630 ns² (4.3×) | 627 ns²⁴ (4.2×) | 413 ns² (2.8×) | 2.07 µs² (14×) | 493 ns²³ (3.3×) | 1.55 µs (11×) | 11.9 µs³ (81×) | 20.2 µs² (137×) | 420 ns²³ (2.8×) |
+| insert, first | 1,000 | n/p | **737 ns²** | 4.43 µs (6.0×) | 8.43 µs²³ (11×) | 5.13 µs³ (7.0×) | 3.38 µs³ (4.6×) | 6.75 µs² (9.2×) | 13.4 µs⁴ (18×) | 21.5 µs (29×) | 87.0 µs (118×) | 1.88 µs³ (2.6×) | 72.1 µs (98×) | 943 µs³ (1,279×) | 1.86 ms (2,529×) | 11.6 µs²³ (16×) |
+| insert, first | 100,000 | n/p | 726 µs² (163×) | 2.71 ms² (609×) | 2.40 ms²³ (541×) | 2.28 ms³ (514×) | 1.67 ms²³ (376×) | 2.69 ms² (607×) | 4.85 ms²⁴ (1,093×) | 2.86 ms² (644×) | 16.6 ms² (3,746×) | **4.44 µs³** | 8.93 ms (2,011×) | 106 ms³ (23,841×) | 260 ms (58,465×) | 4.33 ms³ (975×) |
+| insert, threaded | 8 | 130 ns²³ (0.70×) | 266 ns² (1.43×) | 221 ns² (1.18×) | 545 ns²³ (2.9×) | **187 ns²** | 396 ns² (2.1×) | 523 ns (2.8×) | 496 ns²³ (2.7×) | 372 ns² (2.0×) | 2.10 µs⁴ (11×) | 471 ns²³ (2.5×) | 3.55 µs²³ (19×) | 16.9 µs³ (90×) | 38.0 µs⁴ (203×) | 368 ns²³ (2.0×) |
+| insert, threaded | 1,000 | 1.21 µs²³ (0.79×) | **1.53 µs²** | 8.79 µs (5.8×) | 16.9 µs²³ (11×) | 11.5 µs (7.5×) | 7.70 µs (5.0×) | 7.63 µs² (5.0×) | 25.4 µs²³ (17×) | 17.4 µs (11×) | 99.7 µs²⁴ (65×) | 4.81 µs³ (3.2×) | 96.0 µs²³ (63×) | 1.36 ms³ (890×) | 3.77 ms⁴ (2,472×) | 14.5 µs²³ (9.5×) |
+| insert, threaded | 100,000 | 10.6 µs³ (1.85×) | 900 µs (158×) | 2.17 ms² (380×) | 3.23 ms²³ (566×) | 2.31 ms² (405×) | 2.08 ms² (365×) | 1.94 ms² (339×) | 6.78 ms²³ (1,188×) | 6.61 ms² (1,159×) | 18.1 ms² (3,181×) | **5.70 µs³** | 5.39 ms³ (945×) | 94.7 ms³ (16,604×) | 315 ms⁴ (55,164×) | 1.66 ms²³ (290×) |
+| remove, first | 8 | n/p | 230 ns² (1.27×) | 289 ns²⁴ (1.60×) | 1.18 µs²⁴ (6.6×) | **180 ns²** | 301 ns² (1.67×) | 416 ns² (2.3×) | 451 ns⁴ (2.5×) | 355 ns² (2.0×) | 1.95 µs² (11×) | 437 ns² (2.4×) | 1.17 µs (6.5×) | 7.16 µs³ (40×) | 12.8 µs²³⁴ (71×) | 342 ns² (1.90×) |
+| remove, first | 1,000 | n/p | **924 ns²** | 5.06 µs⁴ (5.5×) | 27.5 µs²⁴ (30×) | 5.52 µs⁴ (6.0×) | 5.81 µs (6.3×) | 2.26 µs² (2.4×) | 2.37 µs⁴ (2.6×) | 17.3 µs (19×) | 97.9 µs (106×) | 1.50 µs (1.62×) | 59.6 µs (65×) | 507 µs³ (549×) | 1.00 ms³⁴ (1,086×) | 9.57 µs (10×) |
+| remove, first | 100,000 | n/p | 709 µs² (161×) | 2.79 ms⁴ (633×) | 19.3 ms²⁴ (4,380×) | 1.43 ms²⁴ (324×) | 2.62 ms²⁴ (595×) | 1.75 ms (397×) | 1.95 ms²⁴ (443×) | 2.13 ms² (483×) | 10.4 ms² (2,361×) | **4.40 µs²** | 11.0 ms (2,491×) | 78.9 ms³ (17,909×) | 218 ms³⁴ (49,387×) | 3.51 ms² (798×) |
+| remove, threaded | 8 | 231 ns² (1.11×) | **208 ns²³** | 247 ns² (1.18×) | 400 ns (1.92×) | 769 ns³⁴ (3.7×) | 326 ns³ (1.56×) | 1.20 µs⁴ (5.8×) | 519 ns² (2.5×) | 373 ns² (1.79×) | 1.29 µs² (6.2×) | 491 ns²⁴ (2.4×) | 1.20 µs² (5.8×) | 8.78 µs (42×) | 10.9 µs³ (52×) | 486 ns² (2.3×) |
+| remove, threaded | 1,000 | 1.25 µs² (2.5×) | **510 ns²³** | 1.86 µs (3.6×) | 3.30 µs² (6.5×) | 6.25 µs²³⁴ (12×) | 2.79 µs³ (5.5×) | 6.45 µs²⁴ (13×) | 1.51 µs² (3.0×) | 10.3 µs² (20×) | 49.1 µs² (96×) | 2.54 µs⁴ (5.0×) | 27.6 µs² (54×) | 601 µs (1,177×) | 1.08 ms³ (2,120×) | 6.37 µs² (12×) |
+| remove, threaded | 100,000 | 125 µs (14×) | 724 µs²³ (79×) | 2.18 ms² (239×) | 1.47 ms (160×) | 1.81 ms²³⁴ (198×) | 2.73 ms³ (299×) | 3.47 ms²⁴ (380×) | 1.88 ms² (206×) | 3.83 ms² (420×) | 11.4 ms² (1,252×) | **9.13 µs²⁴** | 10.3 ms (1,126×) | 108 ms (11,806×) | 259 ms³ (28,354×) | 2.88 ms (315×) |
+| swap, first | 8 | n/p | 184 ns² (1.49×) | 161 ns²³ (1.30×) | 192 ns (1.55×) | 140 ns (1.13×) | **124 ns²** | 167 ns (1.35×) | 293 ns (2.4×) | 325 ns²⁴ (2.6×) | 320 ns³⁴ (2.6×) | 250 ns³ (2.0×) | 419 ns² (3.4×) | 5.77 µs⁴ (47×) | 9.96 µs (81×) | 321 ns (2.6×) |
+| swap, first | 1,000 | n/p | 2.46 µs (8.3×) | 890 ns²³ (3.0×) | **297 ns⁴** | 1.05 µs² (3.5×) | 2.58 µs² (8.7×) | 1.79 µs² (6.0×) | 3.13 µs² (11×) | 45.6 µs²⁴ (154×) | 491 ns²³⁴ (1.65×) | 477 ns²³ (1.61×) | 900 ns² (3.0×) | 9.35 µs⁴ (31×) | 207 µs (696×) | 445 ns² (1.50×) |
+| swap, first | 100,000 | n/p | 1.43 ms² (3,677×) | 818 µs²³ (2,103×) | 407 ns⁴ (1.04×) | **389 ns** | 181 µs⁴ (464×) | 197 µs² (506×) | 509 µs² (1,308×) | 6.89 ms²⁴ (17,716×) | 475 ns²³⁴ (1.22×) | 997 ns²³ (2.6×) | 1.50 µs² (3.8×) | 814 µs²⁴ (2,091×) | 21.4 ms (55,036×) | 2.44 µs²⁴ (6.3×) |
+| swap, threaded | 8 | 59 ns² (0.41×) | 249 ns²⁴ (1.73×) | **144 ns²** | 270 ns (1.87×) | 405 ns² (2.8×) | 287 ns² (2.0×) | 719 ns⁴ (5.0×) | 196 ns² (1.36×) | 386 ns²³⁴ (2.7×) | 572 ns² (4.0×) | 304 ns² (2.1×) | 438 ns (3.0×) | 4.28 µs³ (30×) | 10.3 µs (71×) | 409 ns³ (2.8×) |
+| swap, threaded | 1,000 | 59 ns² (0.26×) | 1.52 µs²⁴ (6.8×) | 1.30 µs² (5.8×) | 464 ns²⁴ (2.1×) | 1.93 µs² (8.6×) | 372 ns² (1.66×) | 1.01 µs²⁴ (4.5×) | **224 ns²** | 48.8 µs³⁴ (218×) | 534 ns² (2.4×) | 710 ns² (3.2×) | 709 ns² (3.2×) | 4.95 µs²³ (22×) | 260 µs⁴ (1,159×) | 384 ns²³ (1.71×) |
+| swap, threaded | 100,000 | 29 ns² (0.08×) | 1.64 ms (4,556×) | 934 µs² (2,599×) | 421 ns²⁴ (1.17×) | 2.03 µs (5.6×) | 469 ns² (1.30×) | 2.09 µs²⁴ (5.8×) | **360 ns²** | 5.68 ms³⁴ (15,814×) | 555 ns² (1.54×) | 1.21 µs² (3.4×) | 884 ns² (2.5×) | 728 µs²³ (2,024×) | 25.0 ms⁴ (69,624×) | 2.65 µs²³ (7.4×) |
+| map | 8 | 334 ns (2.5×) | 233 ns² (1.76×) | 248 ns² (1.87×) | 731 ns² (5.5×) | 224 ns²³ (1.69×) | 223 ns²³ (1.69×) | 148 ns²³ (1.12×) | **132 ns²** | 286 ns² (2.2×) | 400 ns² (3.0×) | 285 ns²³⁴ (2.2×) | 1.23 µs² (9.3×) | 310 ns²³ (2.3×) | 158 ns²³ (1.19×) | 378 ns³ (2.9×) |
+| map | 1,000 | 35.2 µs (2.9×) | 32.0 µs (2.6×) | 31.3 µs⁴ (2.6×) | 80.4 µs (6.6×) | 16.4 µs³ (1.34×) | 15.8 µs³ (1.29×) | 37.2 µs³ (3.0×) | 27.9 µs (2.3×) | 37.0 µs² (3.0×) | 108 µs (8.8×) | 49.6 µs³⁴ (4.0×) | 103 µs (8.4×) | 17.0 µs³ (1.39×) | **12.3 µs³** | 35.8 µs³ (2.9×) |
+| map | 100,000 | 3.91 ms (1.22×) | 5.07 ms (1.58×) | 3.87 ms² (1.21×) | 5.30 ms (1.65×) | 5.70 ms³ (1.78×) | 3.30 ms²³ (1.03×) | 4.01 ms³ (1.25×) | 6.17 ms² (1.93×) | 3.60 ms (1.12×) | 16.3 ms² (5.1×) | 6.91 ms³⁴ (2.2×) | 14.2 ms (4.4×) | 4.43 ms²³ (1.38×) | **3.20 ms³** | 6.27 ms²³ (2.0×) |
+| filter | 8 | 153 ns²³ (0.98×) | 283 ns³ (1.81×) | 218 ns² (1.39×) | 329 ns² (2.1×) | 209 ns² (1.34×) | 349 ns³ (2.2×) | **156 ns²** | 228 ns² (1.46×) | 251 ns²³ (1.61×) | 363 ns²³ (2.3×) | 433 ns² (2.8×) | 1.17 µs²³ (7.5×) | 276 ns (1.77×) | 359 ns²³ (2.3×) | 405 ns² (2.6×) |
+| filter | 1,000 | 8.98 µs³ (0.65×) | 15.3 µs³ (1.10×) | **13.9 µs** | 17.9 µs (1.29×) | 16.8 µs (1.21×) | 14.4 µs³ (1.03×) | 14.1 µs (1.02×) | 17.9 µs (1.29×) | 29.1 µs³ (2.1×) | 54.0 µs³ (3.9×) | 42.8 µs (3.1×) | 63.3 µs³ (4.6×) | 15.6 µs (1.12×) | 14.3 µs³ (1.03×) | 43.8 µs (3.1×) |
+| filter | 100,000 | 3.60 ms²³ (1.80×) | 2.32 ms³ (1.16×) | 2.08 ms (1.04×) | 3.49 ms² (1.75×) | 5.31 ms (2.7×) | 3.58 ms³ (1.79×) | 2.00 ms² (1.00×) | **1.99 ms** | 2.73 ms²³ (1.37×) | 11.4 ms³ (5.7×) | 6.76 ms (3.4×) | 7.70 ms³ (3.9×) | 2.49 ms (1.25×) | 3.38 ms³ (1.70×) | 8.06 ms² (4.0×) |
+| foldl | 8 | 150 ns² (4.4×) | 119 ns²⁴ (3.5×) | 131 ns²³ (3.8×) | 73 ns² (2.1×) | 100 ns²³ (2.9×) | 164 ns²³⁴ (4.8×) | 92 ns²³ (2.7×) | 105 ns² (3.1×) | 67 ns² (1.94×) | 114 ns² (3.3×) | **34 ns²³** | 318 ns² (9.3×) | 75 ns²³ (2.2×) | 142 ns² (4.2×) | 296 ns² (8.6×) |
+| foldl | 1,000 | 10.8 µs (4.2×) | 9.64 µs (3.8×) | 8.88 µs³ (3.5×) | 16.9 µs (6.6×) | 7.61 µs³ (3.0×) | 8.54 µs³⁴ (3.3×) | 2.69 µs²³ (1.05×) | **2.55 µs²** | 9.15 µs (3.6×) | 28.9 µs (11×) | 19.5 µs³ (7.6×) | 35.2 µs (14×) | 10.1 µs³ (3.9×) | 11.8 µs (4.6×) | 30.3 µs (12×) |
+| foldl | 100,000 | 1.60 ms (4.2×) | 1.14 ms (3.0×) | 963 µs³ (2.5×) | 3.08 ms (8.0×) | 1.90 ms³ (5.0×) | 1.03 ms³ (2.7×) | 1.13 ms³ (2.9×) | 1.04 ms (2.7×) | **384 µs** | 4.30 ms (11×) | 3.41 ms³ (8.9×) | 5.05 ms (13×) | 884 µs³ (2.3×) | 1.14 ms (3.0×) | 3.57 ms (9.3×) |
+| iterate | 8 | 377 ns² (3.7×) | 414 ns (4.1×) | **102 ns²** | 230 ns³ (2.3×) | 247 ns² (2.4×) | 226 ns² (2.2×) | 243 ns² (2.4×) | 212 ns² (2.1×) | 164 ns² (1.61×) | 648 ns² (6.4×) | 290 ns² (2.8×) | 346 ns² (3.4×) | 308 ns² (3.0×) | 265 ns² (2.6×) | 484 ns²³ (4.7×) |
+| iterate | 1,000 | 35.5 µs (3.4×) | 19.4 µs (1.87×) | 14.6 µs (1.41×) | 11.5 µs³ (1.11×) | 16.6 µs (1.61×) | 19.3 µs (1.86×) | **10.4 µs** | 13.3 µs (1.29×) | 13.2 µs (1.27×) | 28.0 µs (2.7×) | 12.3 µs (1.19×) | 24.1 µs (2.3×) | 22.6 µs (2.2×) | 14.1 µs (1.36×) | 26.3 µs³ (2.5×) |
+| iterate | 100,000 | 3.23 ms (3.5×) | 3.15 ms (3.4×) | 1.33 ms (1.44×) | 1.27 ms³ (1.36×) | 1.28 ms (1.38×) | 1.26 ms (1.36×) | 1.07 ms (1.15×) | 1.26 ms (1.36×) | **929 µs** | 5.63 ms (6.1×) | 1.49 ms (1.60×) | 4.19 ms (4.5×) | 1.34 ms (1.45×) | 952 µs (1.02×) | 3.47 ms³ (3.7×) |
+| fromArray | 8 | 129 ns (1.81×) | 132 ns (1.85×) | 98 ns² (1.38×) | **71 ns²³** | 104 ns²³ (1.46×) | 131 ns²³ (1.85×) | 83 ns²³ (1.17×) | 136 ns (1.91×) | 264 ns (3.7×) | 549 ns² (7.7×) | 220 ns² (3.1×) | 898 ns²³ (13×) | 140 ns² (2.0×) | 138 ns (1.95×) | 980 ns²⁴ (14×) |
+| fromArray | 1,000 | 1.10 µs²⁴ (2.3×) | 1.07 µs (2.3×) | 841 ns²⁴ (1.79×) | 1.74 µs³ (3.7×) | 567 ns²³ (1.20×) | 1.00 µs³ (2.1×) | **470 ns³** | 975 ns² (2.1×) | 7.83 µs (17×) | 78.3 µs (166×) | 23.2 µs (49×) | 27.3 µs³ (58×) | 1.05 µs² (2.2×) | 1.07 µs² (2.3×) | 15.4 µs²⁴ (33×) |
+| fromArray | 100,000 | 886 µs² (1.27×) | 1.54 ms² (2.2×) | 709 µs² (1.02×) | 1.54 ms²³ (2.2×) | 850 µs²³ (1.22×) | **697 µs²³** | 701 µs²³ (1.01×) | 880 µs² (1.26×) | 1.68 ms (2.4×) | 15.4 ms (22×) | 5.76 ms (8.3×) | 3.72 ms³ (5.3×) | 782 µs² (1.12×) | 768 µs²⁴ (1.10×) | 6.36 ms⁴ (9.1×) |
+| toArray | 8 | 86 ns² (2.8×) | 64 ns⁴ (2.1×) | 69 ns (2.2×) | 286 ns² (9.3×) | 40 ns² (1.30×) | 68 ns²³ (2.2×) | 66 ns²⁴ (2.1×) | **31 ns²³** | 108 ns² (3.5×) | 1.11 µs² (36×) | 211 ns (6.8×) | 288 ns²³ (9.3×) | 40 ns² (1.30×) | 49 ns (1.60×) | 346 ns² (11×) |
+| toArray | 1,000 | 85 ns (3.2×) | 55 ns² (2.1×) | 66 ns (2.5×) | 3.02 µs² (113×) | 47 ns² (1.74×) | 70 ns²³ (2.6×) | 45 ns² (1.68×) | 39 ns²³ (1.46×) | 11.7 µs (437×) | 60.4 µs (2,254×) | 8.65 µs (323×) | 40.6 µs³ (1,516×) | **27 ns²** | 44 ns² (1.63×) | 29.0 µs (1,081×) |
+| toArray | 100,000 | 97 ns (6.0×) | 72 ns⁴ (4.4×) | 67 ns (4.1×) | 1.01 ms (62,686×) | 1.04 ms⁴ (64,356×) | 70 ns³ (4.3×) | 41 ns²⁴ (2.5×) | **16 ns²³** | 2.68 ms² (166,027×) | 13.1 ms (807,550×) | 3.12 ms (193,317×) | 5.76 ms³ (356,312×) | 44 ns² (2.7×) | 62 ns² (3.8×) | 6.18 ms (382,550×) |
+| eq | 8 | 208 ns (2.5×) | 146 ns² (1.78×) | 95 ns²³ (1.16×) | **82 ns** | 182 ns⁴ (2.2×) | 666 ns²⁴ (8.2×) | 103 ns³ (1.27×) | 85 ns² (1.04×) | 99 ns² (1.22×) | 1.45 µs² (18×) | 164 ns²³⁴ (2.0×) | 1.12 µs²⁴ (14×) | 83 ns²³⁴ (1.01×) | 252 ns² (3.1×) | 392 ns²³ (4.8×) |
+| eq | 1,000 | 10.2 µs (4.4×) | 12.5 µs (5.4×) | 2.44 µs²³ (1.06×) | 2.40 µs (1.04×) | 14.7 µs (6.4×) | 27.6 µs⁴ (12×) | 2.65 µs²³ (1.15×) | **2.30 µs²⁴** | 12.6 µs (5.5×) | 81.1 µs (35×) | 13.7 µs³⁴ (6.0×) | 107 µs⁴ (46×) | 8.71 µs³⁴ (3.8×) | 10.2 µs (4.4×) | 51.8 µs³ (23×) |
+| eq | 100,000 | 1.45 ms (6.0×) | 1.59 ms (6.5×) | 350 µs³ (1.44×) | **244 µs** | 3.59 ms (15×) | 3.97 ms⁴ (16×) | 876 µs³ (3.6×) | 1.38 ms⁴ (5.7×) | 590 µs (2.4×) | 11.4 ms (47×) | 1.30 ms³⁴ (5.3×) | 8.41 ms⁴ (35×) | 1.15 ms³⁴ (4.7×) | 1.31 ms (5.4×) | 7.53 ms³ (31×) |
+| sort | 8 | 2.07 µs²⁴ (2.0×) | 1.93 µs² (1.87×) | 1.73 µs² (1.68×) | 4.42 µs (4.3×) | 5.49 µs⁴ (5.3×) | 2.04 µs (2.0×) | **1.03 µs³** | 1.57 µs³ (1.52×) | 1.13 µs² (1.10×) | 6.47 µs (6.3×) | 7.15 µs²⁴ (6.9×) | 6.21 µs (6.0×) | 2.06 µs² (2.0×) | 1.24 µs³ (1.20×) | 3.63 µs (3.5×) |
+| sort | 1,000 | 529 µs⁴ (1.95×) | 531 µs (2.0×) | 455 µs (1.68×) | 1.52 ms (5.6×) | 1.35 ms⁴ (5.0×) | 544 µs (2.0×) | **272 µs³** | 398 µs³ (1.46×) | 424 µs (1.56×) | 2.11 ms (7.8×) | 1.24 ms²⁴ (4.6×) | 1.72 ms (6.3×) | 506 µs (1.86×) | 362 µs³ (1.33×) | 1.06 ms (3.9×) |
+| sort | 100,000 | 117 ms⁴ (1.77×) | 126 ms (1.92×) | 134 ms (2.0×) | 217 ms (3.3×) | 571 ms⁴ (8.7×) | 116 ms (1.76×) | **65.8 ms²³** | 100 ms³ (1.52×) | 137 ms (2.1×) | 452 ms (6.9×) | failed | 385 ms² (5.8×) | 142 ms (2.2×) | 118 ms³ (1.79×) | 280 ms (4.2×) |
+
+### 5.2 The single operations, each candidate on the other style
+
+**§3's single operations, each candidate on the OTHER style (cons: array-first; every other: Elm-style)**
+
+| op | n | native mut | native CoW | cow | trie | hybrid1024 | adaptive256 | E1 | E1t | cons | Immutable.js | funkia | mori | Mutative | Immer | Elm Array |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| *style* | | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* | *first* | *elm* | *elm* | *elm* | *elm* | *elm* | *elm* |
+| get | 8 | 21 ns (2.0×) | 18 ns (1.69×) | 26 ns³⁴ (2.4×) | 12 ns² (1.10×) | 14 ns³ (1.26×) | 25 ns (2.3×) | 12 ns³ (1.12×) | **11 ns⁴** | 21 ns³ (2.0×) | 14 ns² (1.30×) | 15 ns³ (1.36×) | 47 ns (4.4×) | 19 ns³⁴ (1.75×) | 16 ns³ (1.52×) | 14 ns (1.34×) |
+| get | 1,000 | 7.43 µs (1.43×) | 5.87 µs (1.13×) | 10.5 µs²³⁴ (2.0×) | 6.21 µs (1.20×) | **5.18 µs³** | 7.94 µs (1.53×) | 6.34 µs³ (1.22×) | 5.99 µs⁴ (1.16×) | 8.78 µs³ (1.69×) | 157 µs (30×) | 47.3 µs³ (9.1×) | 57.5 µs (11×) | 6.64 µs³⁴ (1.28×) | 5.70 µs³ (1.10×) | 8.29 µs (1.60×) |
+| get | 100,000 | 1.16 ms (3.1×) | 665 µs (1.78×) | 641 µs²³⁴ (1.72×) | 791 µs (2.1×) | 907 µs²³ (2.4×) | 1.04 ms (2.8×) | 757 µs³ (2.0×) | 722 µs⁴ (1.93×) | **374 µs³** | 19.7 ms¹ (53×) | 4.68 ms³ (13×) | 5.24 ms (14×) | 4.58 ms³⁴ (12×) | 716 µs³ (1.91×) | 953 µs (2.6×) |
+| set, first | 8 | n/p | 272 ns²³ (2.7×) | 138 ns² (1.36×) | 1.39 µs² (14×) | 267 ns² (2.6×) | 137 ns²³ (1.35×) | 130 ns² (1.27×) | 188 ns² (1.84×) | **102 ns** | 532 ns² (5.2×) | 329 ns²⁴ (3.2×) | 1.23 µs² (12×) | 51.5 µs⁴ (506×) | 36.1 µs² (354×) | 587 ns² (5.8×) |
+| set, first | 1,000 | n/p | 2.46 ms²³ (237×) | 740 µs² (71×) | 4.81 ms² (465×) | 3.71 ms² (358×) | 1.98 ms²³ (191×) | 472 µs² (46×) | 544 µs² (52×) | **10.4 µs** | 1.26 ms² (122×) | 212 µs⁴ (20×) | 11.9 ms² (1,149×) | 1.57 s²⁴ (151,544×) | 1.01 s² (97,683×) | 3.57 ms² (345×) |
+| set, first | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **593 µs²** | 197 ms² (332×) | 22.7 ms²⁴ (38×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| set, threaded | 8 | 175 ns²³ (1.50×) | 390 ns² (3.3×) | 248 ns⁴ (2.1×) | 561 ns²³⁴ (4.8×) | 197 ns² (1.69×) | 192 ns² (1.64×) | 212 ns²³ (1.82×) | 222 ns (1.90×) | **117 ns²³** | 647 ns² (5.6×) | 481 ns (4.1×) | 1.34 µs² (12×) | 20.5 µs² (176×) | 29.1 µs² (249×) | 1.05 µs²⁴ (9.0×) |
+| set, threaded | 1,000 | 133 µs³ (28×) | 4.27 ms² (899×) | 633 µs²⁴ (133×) | 3.30 ms²³⁴ (694×) | 2.93 ms² (617×) | 2.69 ms² (565×) | 643 µs²³ (135×) | 576 µs² (121×) | **4.76 µs³** | 1.32 ms (278×) | 226 µs² (48×) | 17.2 ms² (3,614×) | 325 ms² (68,335×) | 1.03 s² (217,620×) | 6.06 ms²⁴ (1,274×) |
+| set, threaded | 100,000 | 330 ms²³ (577×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **572 µs²³** | 169 ms² (295×) | 25.3 ms² (44×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| push, first | 8 | n/p | 484 ns²⁴ (2.6×) | 358 ns² (1.95×) | 418 ns²³ (2.3×) | 388 ns² (2.1×) | 365 ns⁴ (2.0×) | 398 ns² (2.2×) | 340 ns⁴ (1.85×) | **184 ns²** | 1.20 µs²³⁴ (6.5×) | 367 ns³ (2.0×) | 1.13 µs²³ (6.1×) | 404 ns²⁴ (2.2×) | 371 ns² (2.0×) | 919 ns²³⁴ (5.0×) |
+| push, first | 1,000 | n/p | 1.36 µs² (5.0×) | 1.55 µs² (5.7×) | 320 ns²³ (1.18×) | 1.68 µs² (6.2×) | 1.77 µs²⁴ (6.5×) | 1.62 µs² (6.0×) | 1.41 µs² (5.2×) | 19.8 µs (73×) | 1.32 µs²³⁴ (4.9×) | **271 ns²³** | 1.45 µs²³ (5.4×) | 1.37 µs² (5.1×) | 1.14 µs² (4.2×) | 1.01 µs²³⁴ (3.7×) |
+| push, first | 100,000 | n/p | 983 µs²⁴ (2,516×) | 873 µs (2,236×) | 760 ns²³ (1.95×) | 412 ns² (1.05×) | 1.04 ms⁴ (2,657×) | 879 µs² (2,250×) | 919 µs (2,352×) | 1.15 ms² (2,937×) | 835 ns²³⁴ (2.1×) | **391 ns²³** | 2.76 µs²³ (7.1×) | 724 µs²⁴ (1,853×) | 830 µs² (2,125×) | 1.32 µs²³⁴ (3.4×) |
+| push, threaded | 8 | 97 ns²³⁴ (0.39×) | 397 ns² (1.61×) | 618 ns² (2.5×) | 455 ns² (1.85×) | 609 ns² (2.5×) | 345 ns² (1.40×) | 549 ns² (2.2×) | 320 ns²³ (1.30×) | 308 ns²⁴ (1.25×) | 2.03 µs²⁴ (8.3×) | 330 ns (1.34×) | 1.09 µs² (4.4×) | 359 ns² (1.46×) | 353 ns²³ (1.43×) | **246 ns²³** |
+| push, threaded | 1,000 | 83 ns²³⁴ (0.43×) | 1.87 µs² (9.8×) | 1.90 µs² (9.9×) | 415 ns² (2.2×) | 586 ns² (3.1×) | 1.97 µs² (10×) | 2.19 µs² (11×) | 1.33 µs²³ (7.0×) | 22.1 µs (115×) | 1.26 µs²⁴ (6.6×) | 373 ns² (2.0×) | 1.51 µs² (7.9×) | 2.02 µs² (11×) | 1.70 µs²³ (8.9×) | **191 ns²³** |
+| push, threaded | 100,000 | 155 ns³⁴ (0.47×) | 962 µs (2,928×) | 975 µs (2,968×) | **329 ns²** | 696 ns² (2.1×) | 693 µs² (2,111×) | 913 µs² (2,779×) | 697 µs²³ (2,123×) | 1.08 ms²⁴ (3,288×) | 1.17 µs² (3.6×) | 366 ns² (1.11×) | 1.35 µs (4.1×) | 863 µs² (2,627×) | 945 µs²³ (2,876×) | 693 ns²³ (2.1×) |
+| pop, first | 8 | n/p | 1.59 µs² (9.2×) | 1.32 µs² (7.6×) | 5.86 µs³ (34×) | 1.41 µs³ (8.1×) | 1.91 µs²⁴ (11×) | 1.18 µs² (6.8×) | 1.23 µs² (7.1×) | **173 ns²³** | 11.7 µs (68×) | 2.70 µs² (16×) | 13.5 µs³ (78×) | 825 µs²³⁴ (4,763×) | 229 µs²³ (1,321×) | 5.49 µs (32×) |
+| pop, first | 1,000 | n/p | 7.40 ms (362×) | 1.36 ms (67×) | 8.63 ms³ (422×) | 6.67 ms³ (326×) | 7.95 ms (389×) | 1.59 ms (78×) | 1.50 ms (73×) | **20.4 µs³** | 1.68 ms (82×) | 413 µs (20×) | 41.2 ms²³ (2,017×) | 7.62 s¹³⁴ (372,785×) | 2.87 s³ (140,627×) | 7.91 ms (387×) |
+| pop, first | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **1.09 ms²³** | 269 ms² (247×) | 43.1 ms² (40×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| pop, threaded | 8 | 1.98 µs² (13×) | 1.23 µs (8.3×) | 728 ns² (4.9×) | 2.62 µs² (18×) | 950 ns²³ (6.4×) | 1.53 µs²⁴ (10×) | 614 ns² (4.2×) | 843 ns²³ (5.7×) | **147 ns²⁴** | 24.6 µs²³⁴ (167×) | 1.59 µs² (11×) | 7.91 µs²⁴ (54×) | 93.9 µs²⁴ (637×) | 696 µs²³⁴ (4,718×) | 2.42 µs²³ (16×) |
+| pop, threaded | 1,000 | 342 µs (55×) | 7.38 ms (1,188×) | 1.72 ms (277×) | 10.9 ms² (1,758×) | 6.68 ms³ (1,076×) | 8.26 ms⁴ (1,329×) | 910 µs² (146×) | 1.46 ms²³ (236×) | **6.21 µs²⁴** | 6.41 ms²³⁴ (1,031×) | 347 µs (56×) | 43.3 ms²⁴ (6,975×) | 2.23 s⁴ (359,201×) | 7.50 s¹³⁴ (1,207,213×) | 9.13 ms²³ (1,470×) |
+| pop, threaded | 100,000 | 2.51 s (1,041×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **2.41 ms²** | 409 ms²³⁴ (169×) | 49.0 ms² (20×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| slice | 8 | 884 ns² (4.9×) | 1.33 µs²⁴ (7.4×) | 715 ns² (4.0×) | 2.75 µs² (15×) | 1.23 µs² (6.8×) | 1.54 µs²⁴ (8.6×) | 602 ns² (3.3×) | 780 ns² (4.3×) | **180 ns²³** | 7.93 µs² (44×) | 1.59 µs⁴ (8.8×) | 6.34 µs (35×) | 41.1 µs (228×) | 74.3 µs² (413×) | 2.25 µs³ (13×) |
+| slice | 1,000 | 119 µs (8.7×) | 2.22 ms⁴ (163×) | 562 µs² (41×) | 2.69 ms (198×) | 2.02 ms⁴ (148×) | 2.14 ms (158×) | 419 µs (31×) | 567 µs (42×) | **13.6 µs³** | 908 µs (67×) | 176 µs⁴ (13×) | 11.2 ms² (824×) | 418 ms (30,744×) | 750 ms (55,250×) | 2.55 ms³ (188×) |
+| slice | 100,000 | 1.27 s⁴ (1,557×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **815 µs²³** | 124 ms² (152×) | 22.2 ms⁴ (27×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| concat | 8 | 123 ns²³ (0.69×) | 638 ns²⁴ (3.6×) | 393 ns²³⁴ (2.2×) | 386 ns²⁴ (2.2×) | 357 ns² (2.0×) | 430 ns² (2.4×) | 347 ns² (1.94×) | 414 ns (2.3×) | 256 ns² (1.43×) | 1.80 µs² (10×) | 261 ns⁴ (1.46×) | 1.13 µs²⁴ (6.3×) | 471 ns² (2.6×) | 346 ns²³ (1.94×) | **179 ns²³⁴** |
+| concat | 1,000 | 6.21 µs²³ (4.3×) | 3.86 µs²⁴ (2.7×) | 1.70 µs²³⁴ (1.17×) | 12.4 µs (8.5×) | 8.51 µs² (5.9×) | 1.80 µs² (1.24×) | 2.47 µs (1.70×) | 1.63 µs² (1.12×) | 21.1 µs (15×) | 146 µs (101×) | **1.45 µs²⁴** | 29.9 µs⁴ (21×) | 2.72 µs² (1.87×) | 2.53 µs³ (1.74×) | 6.53 µs²³⁴ (4.5×) |
+| concat | 100,000 | 3.15 ms³ (626×) | 2.35 ms⁴ (466×) | 1.60 ms²³⁴ (317×) | 1.87 ms² (371×) | 6.56 ms² (1,301×) | 1.67 ms² (330×) | 2.22 ms (441×) | 1.59 ms² (316×) | 4.88 ms² (968×) | 28.1 ms² (5,582×) | **5.04 µs²** | 4.78 ms⁴ (948×) | 2.19 ms² (434×) | 2.00 ms³ (397×) | 763 µs²³⁴ (151×) |
+| insert, first | 8 | n/p | 1.47 µs² (7.6×) | 1.21 µs² (6.3×) | 5.39 µs² (28×) | 1.57 µs² (8.1×) | 1.87 µs² (9.7×) | 18.7 µs²⁴ (97×) | 4.27 µs²³⁴ (22×) | **193 ns²** | 8.16 µs²³ (42×) | 1.60 µs (8.3×) | 5.86 µs (30×) | 61.0 µs (316×) | 104 µs (535×) | 3.54 µs²³ (18×) |
+| insert, first | 1,000 | n/p | 2.27 ms (106×) | 465 µs² (22×) | 3.60 ms (167×) | 1.74 ms (81×) | 2.13 ms⁴ (99×) | 2.99 ms²⁴ (139×) | 678 µs³⁴ (32×) | **21.5 µs** | 1.15 ms³ (53×) | 162 µs (7.5×) | 8.02 ms (373×) | 490 ms (22,785×) | 639 ms (29,716×) | 2.62 ms³ (122×) |
+| insert, first | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **868 µs** | 153 ms²³ (177×) | 22.1 ms² (25×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| insert, threaded | 8 | 3.14 µs² (15×) | 1.82 µs² (8.4×) | 1.49 µs² (6.9×) | 3.85 µs² (18×) | 1.49 µs² (6.9×) | 4.03 µs² (19×) | 1.62 µs²⁴ (7.5×) | 1.16 µs² (5.3×) | **217 ns²** | 18.6 µs² (86×) | 2.19 µs²⁴ (10×) | 9.76 µs⁴ (45×) | 75.0 µs² (346×) | 263 µs²⁴ (1,213×) | 3.67 µs² (17×) |
+| insert, threaded | 1,000 | 322 µs (22×) | 2.08 ms (143×) | 505 µs (35×) | 2.74 ms⁴ (189×) | 3.18 ms (219×) | 2.86 ms (197×) | 579 µs⁴ (40×) | 681 µs (47×) | **14.5 µs** | 1.35 ms (93×) | 234 µs⁴ (16×) | 12.9 ms²⁴ (888×) | 634 ms² (43,666×) | 886 ms⁴ (61,082×) | 4.83 ms² (333×) |
+| insert, threaded | 100,000 | 489 ms² (603×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **812 µs** | 222 ms (273×) | 25.9 ms⁴ (32×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| remove, first | 8 | n/p | 2.17 µs²⁴ (14×) | 1.33 µs² (8.7×) | 3.97 µs²³ (26×) | 1.17 µs² (7.7×) | 1.37 µs⁴ (8.9×) | 2.06 µs²⁴ (13×) | 1.39 µs² (9.1×) | **153 ns²** | 21.5 µs² (140×) | 2.00 µs²⁴ (13×) | 8.56 µs²⁴ (56×) | 58.8 µs²³ (384×) | 57.8 µs⁴ (378×) | 2.46 µs²⁴ (16×) |
+| remove, first | 1,000 | n/p | 2.32 ms⁴ (118×) | 426 µs (22×) | 2.65 ms³ (135×) | 1.33 ms (68×) | 1.71 ms⁴ (87×) | 889 µs⁴ (45×) | 591 µs² (30×) | **19.6 µs** | 1.59 ms² (81×) | 190 µs⁴ (9.7×) | 12.7 ms²⁴ (646×) | 416 ms³ (21,241×) | 562 ms² (28,718×) | 2.18 ms² (112×) |
+| remove, first | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **831 µs²** | 246 ms (295×) | 22.3 ms⁴ (27×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| remove, threaded | 8 | 1.04 µs²³ (5.9×) | 2.94 µs²³⁴ (17×) | 1.71 µs² (9.7×) | 4.54 µs²³⁴ (26×) | 1.74 µs²³ (9.9×) | 2.49 µs² (14×) | 785 ns²³ (4.5×) | 794 ns (4.5×) | **176 ns²⁴** | 4.39 µs² (25×) | 611 ns²³ (3.5×) | 5.24 µs²³ (30×) | 29.9 µs² (170×) | 45.6 µs² (260×) | 1.55 µs²⁴ (8.8×) |
+| remove, threaded | 1,000 | 155 µs³ (18×) | 2.62 ms²³⁴ (298×) | 424 µs²⁴ (48×) | 2.15 ms³⁴ (245×) | 1.66 ms³ (189×) | 2.55 ms (291×) | 328 µs³ (37×) | 314 µs² (36×) | **8.76 µs⁴** | 864 µs⁴ (99×) | 43.4 µs²³ (5.0×) | 9.26 ms³ (1,057×) | 459 ms (52,385×) | 697 ms (79,473×) | 2.23 ms⁴ (255×) |
+| remove, threaded | 100,000 | 591 ms³ (157×) | > 8 s | 26.0 s¹³ (6,919×) | > 8 s | > 8 s | > 8 s | > 8 s | 21.8 s¹³ (5,792×) | **3.75 ms²⁴** | 151 ms⁴ (40×) | 10.3 ms³ (2.7×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| swap, first | 8 | n/p | 3.82 µs²³ (27×) | 2.17 µs² (16×) | 8.94 µs⁴ (64×) | 9.61 µs⁴ (69×) | 3.90 µs²³ (28×) | 1.84 µs² (13×) | 7.02 µs² (50×) | **140 ns²³** | 26.9 µs² (192×) | 6.35 µs³⁴ (46×) | 22.1 µs (158×) | 237 µs³ (1,694×) | 408 µs²³ (2,924×) | 8.48 µs (61×) |
+| swap, first | 1,000 | n/p | 11.5 ms³ (429×) | 2.02 ms (76×) | 14.7 ms² (548×) | 17.0 ms²⁴ (633×) | 12.2 ms³ (456×) | 2.19 ms (82×) | 5.46 ms (204×) | **26.8 µs³** | 3.55 ms (132×) | 778 µs²³⁴ (29×) | 71.6 ms (2,674×) | 2.29 s³ (85,592×) | 3.13 s¹³ (116,947×) | 31.5 ms (1,175×) |
+| swap, first | 100,000 | n/p | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **1.29 ms²³** | 454 ms (351×) | 79.2 ms²³⁴ (61×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| swap, threaded | 8 | 2.48 µs² (6.7×) | 2.57 µs² (7.0×) | 6.17 µs²³ (17×) | 10.4 µs (28×) | 5.92 µs²³⁴ (16×) | 9.21 µs (25×) | 3.92 µs³ (11×) | 4.85 µs² (13×) | **369 ns²** | 28.6 µs² (78×) | 3.38 µs²³ (9.2×) | 44.5 µs (121×) | 255 µs² (692×) | 341 µs²³ (924×) | 52.4 µs²³⁴ (142×) |
+| swap, threaded | 1,000 | 553 µs² (34×) | 11.4 ms²⁴ (688×) | 3.79 ms³ (229×) | 15.0 ms (907×) | 27.3 ms³⁴ (1,654×) | 19.1 ms² (1,160×) | 2.71 ms³ (164×) | 3.32 ms (201×) | **16.5 µs** | 3.36 ms (204×) | 483 µs³ (29×) | 95.7 ms (5,795×) | 2.41 s (145,790×) | 3.91 s¹³ (237,068×) | 46.9 ms²³⁴ (2,842×) |
+| swap, threaded | 100,000 | 4.03 s¹ (2,333×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | **1.73 ms²** | 449 ms² (260×) | 55.9 ms²³ (32×) | > 8 s | > 8 s | > 8 s | > 8 s |
+| map | 8 | 1.61 µs²⁴ (4.9×) | 1.43 µs²³⁴ (4.4×) | 1.38 µs² (4.2×) | 5.92 µs²³ (18×) | 1.50 µs² (4.6×) | 1.90 µs² (5.8×) | 1.96 µs²³⁴ (6.0×) | 1.47 µs²³ (4.5×) | **326 ns** | 13.7 µs (42×) | 2.68 µs²⁴ (8.2×) | 12.9 µs (40×) | 180 µs³ (550×) | 278 µs (851×) | 5.67 µs⁴ (17×) |
+| map | 1,000 | 282 µs⁴ (0.39×) | 8.85 ms³⁴ (12×) | 1.16 ms (1.62×) | 9.53 ms³ (13×) | 6.76 ms (9.4×) | 6.77 ms (9.4×) | 1.47 ms³⁴ (2.0×) | 1.40 ms³ (2.0×) | 3.97 ms (5.5×) | 1.80 ms (2.5×) | **719 µs²⁴** | 47.9 ms² (67×) | 1.57 s³ (2,187×) | 2.59 s (3,609×) | 9.53 ms²⁴ (13×) |
+| map | 100,000 | 4.93 s⁴ (81×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 222 ms² (3.7×) | **60.8 ms²⁴** | > 8 s | > 8 s | > 8 s | > 8 s |
+| filter | 8 | 4.63 µs²³⁴ (15×) | 1.01 µs² (3.3×) | 730 ns²³ (2.3×) | 2.63 µs² (8.5×) | 4.51 µs²³⁴ (15×) | 1.27 µs² (4.1×) | 1.05 µs²³ (3.4×) | 1.05 µs (3.4×) | **311 ns²** | 7.64 µs (25×) | 1.70 µs² (5.5×) | 7.93 µs (26×) | 28.2 µs³⁴ (91×) | 52.6 µs³ (169×) | 2.17 µs (7.0×) |
+| filter | 1,000 | 384 µs³⁴ (2.2×) | 1.45 ms (8.4×) | 320 µs³ (1.85×) | 2.81 ms (16×) | 5.14 ms³⁴ (30×) | 1.35 ms (7.8×) | 542 µs³ (3.1×) | 502 µs (2.9×) | 3.46 ms (20×) | 1.00 ms (5.8×) | **174 µs** | 9.79 ms (56×) | 319 ms³ (1,839×) | 511 ms³ (2,942×) | 2.31 ms (13×) |
+| filter | 100,000 | 731 ms³⁴ (30×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 165 ms (6.8×) | **24.2 ms²** | > 8 s | > 8 s | > 8 s | > 8 s |
+| foldl | 8 | 271 ns² (1.38×) | 256 ns (1.30×) | 312 ns²⁴ (1.58×) | 288 ns² (1.46×) | 265 ns²⁴ (1.35×) | 355 ns² (1.80×) | 284 ns² (1.44×) | 227 ns² (1.15×) | **197 ns²³** | 1.18 µs² (6.0×) | 714 ns² (3.6×) | 1.35 µs³ (6.9×) | 370 ns²³ (1.88×) | 291 ns²³ (1.48×) | 677 ns² (3.4×) |
+| foldl | 1,000 | 32.5 µs (1.35×) | 25.4 µs (1.05×) | 31.1 µs⁴ (1.29×) | 30.3 µs (1.26×) | 42.4 µs⁴ (1.76×) | 38.1 µs (1.58×) | 35.5 µs (1.47×) | **24.1 µs** | 3.86 ms³ (160×) | 373 µs (15×) | 126 µs (5.2×) | 151 µs³ (6.2×) | 33.2 µs³ (1.38×) | 26.6 µs³ (1.10×) | 53.0 µs (2.2×) |
+| foldl | 100,000 | 2.05 ms (1.54×) | 1.83 ms (1.37×) | 2.00 ms⁴ (1.49×) | 2.77 ms (2.1×) | 3.79 ms⁴ (2.8×) | 2.08 ms (1.56×) | 1.54 ms (1.15×) | **1.34 ms** | > 8 s | 46.6 ms (35×) | 9.71 ms (7.3×) | 13.8 ms³ (10×) | 1.96 ms³ (1.46×) | 3.65 ms³ (2.7×) | 5.56 ms (4.2×) |
+| iterate | 8 | 185 ns² (1.11×) | 277 ns (1.65×) | 281 ns²³ (1.68×) | 243 ns² (1.45×) | 235 ns² (1.40×) | 221 ns² (1.32×) | 225 ns² (1.35×) | 173 ns²³ (1.04×) | **167 ns²** | 381 ns² (2.3×) | 389 ns² (2.3×) | 235 ns²⁴ (1.41×) | 272 ns²³ (1.62×) | 286 ns² (1.71×) | 353 ns (2.1×) |
+| iterate | 1,000 | 14.8 µs (1.29×) | 14.0 µs (1.23×) | 18.8 µs³ (1.64×) | 11.5 µs (1.01×) | 19.9 µs (1.74×) | 13.7 µs (1.20×) | **11.4 µs** | 13.4 µs³ (1.17×) | 17.1 µs (1.50×) | 24.9 µs (2.2×) | 14.0 µs (1.23×) | 35.2 µs⁴ (3.1×) | 15.6 µs³ (1.36×) | 19.8 µs (1.73×) | 24.4 µs (2.1×) |
+| iterate | 100,000 | 1.18 ms (1.27×) | 2.60 ms (2.8×) | 1.28 ms³ (1.37×) | 1.29 ms (1.39×) | 1.71 ms² (1.83×) | **931 µs** | 1.49 ms (1.61×) | 1.46 ms³ (1.56×) | 1.25 ms (1.34×) | 5.48 ms (5.9×) | 1.55 ms² (1.67×) | 3.94 ms⁴ (4.2×) | 1.27 ms³ (1.37×) | 1.59 ms (1.71×) | 2.78 ms (3.0×) |
+| fromArray | 8 | 120 ns² (1.46×) | 115 ns² (1.40×) | **82 ns²** | 265 ns²³⁴ (3.2×) | 137 ns² (1.66×) | 235 ns³ (2.9×) | 171 ns (2.1×) | 111 ns² (1.36×) | 155 ns²³ (1.89×) | 222 ns²³ (2.7×) | 285 ns² (3.5×) | 811 ns² (9.9×) | 135 ns²³ (1.65×) | 95 ns²³ (1.16×) | 150 ns²⁴ (1.83×) |
+| fromArray | 1,000 | 1.46 µs² (2.9×) | 660 ns² (1.29×) | **510 ns²** | 3.36 µs²³⁴ (6.6×) | 1.59 µs² (3.1×) | 2.96 µs²³ (5.8×) | 958 ns (1.88×) | 591 ns² (1.16×) | 7.92 µs³ (16×) | 46.9 µs³ (92×) | 28.4 µs (56×) | 32.0 µs² (63×) | 869 ns²³ (1.70×) | 698 ns²³ (1.37×) | 5.42 µs²⁴ (11×) |
+| fromArray | 100,000 | 653 µs (0.95×) | 907 µs² (1.32×) | **687 µs²** | 1.41 ms³⁴ (2.1×) | 1.58 ms²⁴ (2.3×) | 1.27 ms³ (1.85×) | 902 µs² (1.31×) | 1.04 ms² (1.51×) | 1.71 ms³ (2.5×) | 10.6 ms³ (15×) | 6.27 ms (9.1×) | 6.26 ms (9.1×) | 845 µs²³ (1.23×) | 844 µs³ (1.23×) | 2.89 ms (4.2×) |
+| toArray | 8 | 53 ns²³ (1.47×) | 37 ns³ (1.02×) | 62 ns² (1.71×) | 286 ns² (7.9×) | 63 ns²³ (1.75×) | 54 ns² (1.50×) | **36 ns²³** | 63 ns² (1.75×) | 158 ns²⁴ (4.4×) | 369 ns² (10×) | 169 ns²⁴ (4.7×) | 277 ns² (7.7×) | 55 ns²³ (1.52×) | 38 ns² (1.06×) | 257 ns²³ (7.1×) |
+| toArray | 1,000 | 42 ns²³ (1.26×) | **33 ns²³** | 52 ns² (1.55×) | 3.13 µs² (93×) | 67 ns²³ (2.0×) | 58 ns² (1.72×) | 36 ns²³ (1.09×) | 46 ns² (1.39×) | 14.4 µs (431×) | 26.8 µs (802×) | 8.64 µs⁴ (258×) | 34.6 µs (1,033×) | 51 ns²³ (1.51×) | 44 ns² (1.31×) | 35.3 µs³ (1,054×) |
+| toArray | 100,000 | 46 ns²³ (4.0×) | **12 ns²³** | 57 ns² (4.9×) | 1.24 ms (107,806×) | 1.24 ms³ (107,285×) | 60 ns (5.2×) | 26 ns²³ (2.3×) | 36 ns² (3.1×) | 3.63 ms²⁴ (314,744×) | 5.83 ms (505,377×) | 3.13 ms⁴ (271,813×) | 6.75 ms (585,863×) | 55 ns²³ (4.7×) | 39 ns² (3.4×) | 5.81 ms³ (504,250×) |
+| eq | 8 | 154 ns² (2.9×) | 287 ns⁴ (5.4×) | 75 ns²³ (1.40×) | **54 ns²³⁴** | 140 ns² (2.6×) | 265 ns² (4.9×) | 62 ns³ (1.16×) | 80 ns² (1.50×) | 88 ns² (1.64×) | 881 ns²³ (16×) | 219 ns² (4.1×) | 601 ns² (11×) | 89 ns²³ (1.66×) | 224 ns³ (4.2×) | 353 ns²³ (6.6×) |
+| eq | 1,000 | 11.3 µs (6.2×) | 12.8 µs⁴ (7.0×) | **1.83 µs²³** | 2.02 µs³⁴ (1.10×) | 9.37 µs (5.1×) | 12.5 µs (6.8×) | 2.12 µs²³ (1.16×) | 5.50 µs² (3.0×) | 10.4 µs (5.7×) | 91.2 µs³ (50×) | 21.3 µs (12×) | 75.6 µs (41×) | 8.78 µs³ (4.8×) | 11.6 µs³ (6.4×) | 49.7 µs³ (27×) |
+| eq | 100,000 | 1.48 ms (5.9×) | 1.48 ms⁴ (6.0×) | 301 µs³ (1.21×) | **248 µs³⁴** | 2.73 ms (11×) | 1.53 ms (6.2×) | 1.51 ms³ (6.1×) | 1.49 ms (6.0×) | 548 µs (2.2×) | 14.1 ms³ (57×) | 1.74 ms (7.0×) | 8.10 ms (33×) | 1.11 ms³ (4.5×) | 1.42 ms³ (5.7×) | 6.78 ms³ (27×) |
+| sort | 8 | 5.89 µs³⁴ (3.7×) | 5.82 µs (3.7×) | 5.22 µs (3.3×) | 18.9 µs (12×) | 7.68 µs (4.8×) | 4.58 µs³ (2.9×) | 4.69 µs³ (3.0×) | 14.3 µs⁴ (9.0×) | **1.59 µs** | 58.2 µs² (37×) | 8.68 µs (5.5×) | 48.3 µs (30×) | 269 µs³ (169×) | 475 µs²³ (299×) | 12.5 µs³⁴ (7.9×) |
+| sort | 1,000 | 2.79 ms³⁴ (0.80×) | 21.5 ms² (6.1×) | 7.56 ms (2.2×) | 33.5 ms (9.6×) | 19.6 ms (5.6×) | 15.0 ms³ (4.3×) | 6.17 ms³ (1.77×) | 42.1 ms²⁴ (12×) | **3.49 ms** | 38.0 ms (11×) | 4.65 ms (1.33×) | 130 ms (37×) | 4.56 s¹³ (1,306×) | 6.39 s¹³ (1,828×) | 22.5 ms³⁴ (6.4×) |
+| sort | 100,000 | 6.07 s¹³⁴ (6.0×) | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | > 8 s | 5.86 s¹ (5.8×) | **1.02 s** | > 8 s | > 8 s | > 8 s | > 8 s |
+
+## 6. The check tables (§8)
+
+**research 40's hand-minified sibling against the adaptive array it minified (T = 1 024)**
+
+| scenario / op | n | adaptive1024 | adaptive-min |
+|---|--:|--:|--:|
+| *style* | | *index* | *index* |
+| table/update one/first | 1,000 | **3.77 µs³** | 7.09 µs³ (1.88×) |
+| table/update one/first | 10,000 | **60.4 µs³** | 84.0 µs³ (1.39×) |
+| table/update one/steady | 1,000 | **6.39 µs²³** | 8.98 µs³ (1.40×) |
+| table/update one/steady | 10,000 | **60.4 µs³** | 110 µs³ (1.83×) |
+| table/update every 10th/first | 1,000 | 56.9 µs³ (1.25×) | **45.6 µs** |
+| table/update every 10th/first | 10,000 | **453 µs²³** | 505 µs² (1.12×) |
+| table/update every 10th/steady | 1,000 | **72.4 µs⁴** | 94.6 µs² (1.31×) |
+| table/update every 10th/steady | 10,000 | 409 µs²⁴ (1.03×) | **395 µs²** |
+| table/swap/first | 1,000 | **8.37 µs** | 8.57 µs (1.02×) |
+| table/swap/first | 10,000 | **101 µs** | 113 µs (1.12×) |
+| table/swap/steady | 1,000 | **8.00 µs²** | 8.54 µs (1.07×) |
+| table/swap/steady | 10,000 | 74.1 µs (1.12×) | **66.0 µs** |
+| table/remove one/first | 1,000 | 44.9 µs (1.49×) | **30.1 µs** |
+| table/remove one/first | 10,000 | 544 µs² (1.34×) | **405 µs** |
+| table/remove one + add one/steady | 1,000 | 36.9 µs (1.02×) | **36.2 µs²** |
+| table/remove one + add one/steady | 10,000 | **514 µs** | 626 µs (1.22×) |
+| table/append 1000/first | 1,000 | **86.4 µs⁴** | 86.5 µs²³ (1.00×) |
+| table/append 1000/first | 10,000 | 136 µs²⁴ (1.11×) | **123 µs³** |
+| table/select/steady | 1,000 | 6.58 µs (1.04×) | **6.35 µs** |
+| table/select/steady | 10,000 | **59.6 µs⁴** | 65.0 µs (1.09×) |
+| decoded/decode | 10,000 | **9.16 ms** | 20.8 ms (2.3×) |
+| decoded/decode | 100,000 | **86.0 ms²** | 174 ms² (2.0×) |
+| decoded/count (foldl) | 10,000 | 306 µs⁴ (5.0×) | **60.9 µs³⁴** |
+| decoded/count (foldl) | 100,000 | 3.56 ms²⁴ (6.7×) | **532 µs³⁴** |
+| decoded/total (foldl) | 10,000 | 119 µs³ (1.04×) | **115 µs** |
+| decoded/total (foldl) | 100,000 | 1.30 ms³ (1.08×) | **1.20 ms** |
+| decoded/filter | 10,000 | 218 µs (1.34×) | **163 µs** |
+| decoded/filter | 100,000 | 1.23 ms (1.35×) | **910 µs** |
+| decoded/sort + slice 20 | 10,000 | **5.67 ms** | 6.01 ms (1.06×) |
+| decoded/sort + slice 20 | 100,000 | 92.0 ms⁴ (1.11×) | **82.7 ms** |
+| decoded/1000 binary searches | 10,000 | 477 µs⁴ (1.03×) | **465 µs** |
+| decoded/1000 binary searches | 100,000 | **748 µs** | 751 µs⁴ (1.00×) |
+| decoded/page of 50 by get | 10,000 | 1.23 µs² (1.42×) | **864 ns²** |
+| decoded/page of 50 by get | 100,000 | 1.44 µs²⁴ (1.58×) | **910 ns²** |
+| grid/make | 10,000 | 286 µs²⁴ (1.77×) | **162 µs²** |
+| grid/make | 1,000,000 | 127 ms²⁴ (1.63×) | **77.4 ms²** |
+| grid/tick k=1/first | 10,000 | 21.6 µs²⁴ (1.07×) | **20.2 µs²⁴** |
+| grid/tick k=1/first | 1,000,000 | 2.79 ms² (1.06×) | **2.64 ms²⁴** |
+| grid/tick k=1/steady | 10,000 | **623 ns²³** | 802 ns²³ (1.29×) |
+| grid/tick k=1/steady | 1,000,000 | 1.24 µs²³ (1.59×) | **783 ns²³** |
+| grid/tick k=100/first | 10,000 | 72.5 µs (1.04×) | **69.6 µs** |
+| grid/tick k=100/first | 1,000,000 | **2.50 ms²** | 2.69 ms² (1.08×) |
+| grid/tick k=100/steady | 10,000 | **55.1 µs** | 63.1 µs (1.14×) |
+| grid/tick k=100/steady | 1,000,000 | **66.2 µs²** | 193 µs² (2.9×) |
+| grid/life step | 10,000 | 2.79 ms³ (1.41×) | **1.98 ms** |
+| grid/life step | 1,000,000 | **409 ms³** | 437 ms² (1.07×) |
+| build/collect by push | 1,000 | 631 µs⁴ (1.01×) | **624 µs³⁴** |
+| build/collect by push | 100,000 | 24.8 ms² (1.30×) | **19.1 ms³⁴** |
+| build/histogram of 100 000 | 1,000 | 89.7 ms (1.04×) | **86.3 ms** |
+| build/histogram of 100 000 | 100,000 | **46.9 ms²** | 47.8 ms² (1.02×) |
+| build/coin-change table | 1,000 | 829 µs³ (1.12×) | **742 µs³** |
+| build/coin-change table | 100,000 | 27.4 ms³ (1.23×) | **22.2 ms³** |
+| history/edit/first | 10,000 | 55.0 µs⁴ (2.5×) | **22.2 µs²³** |
+| history/edit/steady | 10,000 | **1.64 µs²** | 2.07 µs² (1.26×) |
+| history/undo 100 | 10,000 | 122 µs³ (1.21×) | **100 µs** |
+| interop/toJs/mapped | 10,000 | 46 ns² (1.78×) | **26 ns²³** |
+| interop/toJs/mapped | 100,000 | 61 ns (1.32×) | **46 ns²³** |
+| interop/JSON.stringify/mapped | 10,000 | **2.35 ms³** | 3.71 ms (1.58×) |
+| interop/JSON.stringify/mapped | 100,000 | 29.3 ms³ (1.06×) | **27.6 ms⁴** |
+| interop/Math.max/mapped | 10,000 | 88.9 µs (1.14×) | **78.2 µs** |
+| interop/Math.max/mapped | 100,000 | 1.30 ms (3.0×) | **431 µs** |
+| interop/html list/mapped | 10,000 | **2.21 ms⁴** | 2.54 ms²³⁴ (1.15×) |
+| interop/html list/mapped | 100,000 | **55.5 ms²⁴** | 80.7 ms²³⁴ (1.45×) |
+| interop/toJs/edited | 10,000 | **27.8 µs** | 35.9 µs³ (1.29×) |
+| interop/toJs/edited | 100,000 | **968 µs** | 1.24 ms³ (1.28×) |
+| interop/JSON.stringify/edited | 10,000 | 2.78 ms⁴ (1.13×) | **2.46 ms³** |
+| interop/JSON.stringify/edited | 100,000 | **25.3 ms⁴** | 42.0 ms³ (1.66×) |
+| interop/Math.max/edited | 10,000 | 138 µs (1.25×) | **111 µs** |
+| interop/Math.max/edited | 100,000 | 2.09 ms (1.44×) | **1.45 ms³** |
+| interop/html list/edited | 10,000 | **1.94 ms** | 1.96 ms (1.01×) |
+| interop/html list/edited | 100,000 | 63.0 ms² (1.74×) | **36.3 ms²** |
+| retained/one version | 10,000 | **79 KB** | 79 KB (1.00×) |
+| retained/101 versions | 10,000 | 180 KB (1.01×) | **179 KB** |
+
+**the rewrite of the list syntax, list: cons over the rewritten output against cons over beni's own output**
+
+| op | n | cons | cons-raw |
+|---|--:|--:|--:|
+| *style* | | *elm* | *elm* |
+| map, recursive | 1,000 | 12.2 µs⁴ (1.44×) | **8.47 µs** |
+| map, recursive | 10,000 | 111 µs⁴ (1.11×) | **100 µs** |
+| map, recursive | 100,000 | **806 µs²⁴** | 1.20 ms² (1.49×) |
+| filter, recursive | 1,000 | 12.3 µs⁴ (2.4×) | **5.03 µs³** |
+| filter, recursive | 10,000 | 337 µs²⁴ (5.9×) | **56.8 µs³** |
+| filter, recursive | 100,000 | 925 µs²⁴ (1.65×) | **562 µs²³** |
+| map, accumulator + reverse | 1,000 | **13.7 µs** | 16.9 µs (1.23×) |
+| map, accumulator + reverse | 10,000 | **160 µs** | 194 µs (1.21×) |
+| map, accumulator + reverse | 100,000 | **1.46 ms²** | 1.54 ms² (1.06×) |
+| filter, accumulator + reverse | 1,000 | 22.9 µs²⁴ (1.01×) | **22.7 µs³** |
+| filter, accumulator + reverse | 10,000 | **147 µs⁴** | 155 µs³ (1.05×) |
+| filter, accumulator + reverse | 100,000 | 6.35 ms²⁴ (5.4×) | **1.18 ms²³** |
+| sum | 1,000 | **3.23 µs³** | 3.29 µs (1.02×) |
+| sum | 10,000 | **27.5 µs³** | 34.7 µs (1.26×) |
+| sum | 100,000 | 372 µs³ (1.12×) | **333 µs** |
+| sum, List.foldl | 1,000 | **3.24 µs** | 3.71 µs (1.15×) |
+| sum, List.foldl | 10,000 | **38.2 µs** | 46.1 µs (1.21×) |
+| sum, List.foldl | 100,000 | **371 µs** | 373 µs (1.01×) |
+| takeWhile (90 %) | 1,000 | **7.19 µs²³** | 7.91 µs³⁴ (1.10×) |
+| takeWhile (90 %) | 10,000 | 77.0 µs³ (1.03×) | **74.6 µs³⁴** |
+| takeWhile (90 %) | 100,000 | 962 µs²³ (1.48×) | **652 µs²³⁴** |
+| pairwise | 1,000 | **18.1 µs** | 44.0 µs²³⁴ (2.4×) |
+| pairwise | 10,000 | **215 µs** | 292 µs²³⁴ (1.36×) |
+| pairwise | 100,000 | 12.3 ms² (3.3×) | **3.70 ms²³⁴** |
+| merge sort | 1,000 | **283 µs⁴** | 305 µs (1.08×) |
+| merge sort | 10,000 | **4.46 ms⁴** | 7.50 ms²⁴ (1.68×) |
+| merge sort | 100,000 | 371 ms²⁴ (1.08×) | **344 ms** |
+| merge sort, sorted input | 1,000 | **181 µs³⁴** | 256 µs (1.42×) |
+| merge sort, sorted input | 10,000 | **6.73 ms²³⁴** | 6.95 ms² (1.03×) |
+| merge sort, sorted input | 100,000 | **81.4 ms²³⁴** | 304 ms² (3.7×) |
+| foldr building a list | 1,000 | **35.4 µs²** | 37.0 µs² (1.04×) |
+| foldr building a list | 10,000 | 367 µs (1.14×) | **321 µs** |
+| foldr building a list | 100,000 | 4.53 ms² (1.40×) | **3.23 ms** |
+| foldr sum | 1,000 | **25.9 µs** | 29.0 µs (1.12×) |
+| foldr sum | 10,000 | 299 µs (1.17×) | **255 µs** |
+| foldr sum | 100,000 | **3.39 ms²** | 5.13 ms (1.51×) |
+| range + sum | 1,000 | **8.38 µs** | 9.26 µs³ (1.10×) |
+| range + sum | 10,000 | 87.2 µs (1.06×) | **82.1 µs³** |
+| range + sum | 100,000 | 1.02 ms² (1.23×) | **835 µs²³** |
+| map2 (zip) | 1,000 | 36.8 µs⁴ (1.73×) | **21.3 µs⁴** |
+| map2 (zip) | 10,000 | 1.53 ms²⁴ (3.6×) | **431 µs²⁴** |
+| map2 (zip) | 100,000 | 29.9 ms²⁴ (13×) | **2.36 ms²** |
+| concatMap | 1,000 | 85.4 µs² (1.10×) | **77.5 µs³** |
+| concatMap | 10,000 | **703 µs²** | 1.17 ms²³ (1.66×) |
+| concatMap | 100,000 | **12.1 ms²** | 19.3 ms²³ (1.60×) |
+| append in a loop, acc ++ [x] | 1,000 | **6.77 ms** | 8.44 ms⁴ (1.25×) |
+| append in a loop, acc ++ [x] | 10,000 | 701 ms (1.09×) | **640 ms⁴** |
+| append in a loop, acc ++ [x] | 100,000 | > 8 s | > 8 s |
+| append two | 1,000 | 15.0 µs² (1.02×) | **14.6 µs³** |
+| append two | 10,000 | 147 µs (1.04×) | **142 µs³** |
+| append two | 100,000 | 8.91 ms² (1.26×) | **7.08 ms²³** |
+| reverse | 1,000 | 7.69 µs (1.10×) | **6.99 µs** |
+| reverse | 10,000 | 87.2 µs (1.12×) | **78.2 µs** |
+| reverse | 100,000 | 927 µs² (1.04×) | **892 µs²** |
+| List.map | 1,000 | 51.0 µs (1.45×) | **35.3 µs** |
+| List.map | 10,000 | 1.09 ms² (3.0×) | **363 µs²** |
+| List.map | 100,000 | 5.76 ms² (1.48×) | **3.89 ms²** |
+| List.filter | 1,000 | **27.9 µs³** | 30.0 µs⁴ (1.08×) |
+| List.filter | 10,000 | 560 µs²³ (1.30×) | **431 µs²⁴** |
+| List.filter | 100,000 | **3.08 ms²³** | 3.52 ms²⁴ (1.14×) |
+| x :: acc, then reverse | 1,000 | 27.0 µs (1.02×) | **26.6 µs³** |
+| x :: acc, then reverse | 10,000 | 254 µs² (1.07×) | **238 µs³** |
+| x :: acc, then reverse | 100,000 | 3.73 ms²⁴ (1.13×) | **3.31 ms²³** |
+| into a record field | 1,000 | 49.3 µs (1.08×) | **45.8 µs** |
+| into a record field | 10,000 | 503 µs (1.26×) | **400 µs⁴** |
+| into a record field | 100,000 | 5.28 ms (1.24×) | **4.25 ms** |
+| into a tuple (partition) | 1,000 | 38.7 µs³⁴ (1.41×) | **27.4 µs³⁴** |
+| into a tuple (partition) | 10,000 | 430 µs³⁴ (1.54×) | **279 µs³⁴** |
+| into a tuple (partition) | 100,000 | 3.90 ms³⁴ (1.27×) | **3.07 ms³⁴** |
+| paths sharing tails, all kept | 1,000 | **19.8 µs²³⁴** | 124 µs²³ (6.3×) |
+| paths sharing tails, all kept | 10,000 | **228 µs³⁴** | 232 µs²³ (1.02×) |
+| paths sharing tails, all kept | 100,000 | **1.63 ms²³⁴** | 23.6 ms²³ (14×) |
+| undo stack (3 edits, 1 undo) | 1,000 | **24.0 µs²** | 27.9 µs³ (1.16×) |
+| undo stack (3 edits, 1 undo) | 10,000 | 262 µs (1.03×) | **254 µs³** |
+| undo stack (3 edits, 1 undo) | 100,000 | 2.26 ms² (1.31×) | **1.73 ms²³** |
+| add to front, first | 1,000 | 18.4 µs (1.04×) | **17.7 µs** |
+| add to front, first | 10,000 | 219 µs (1.19×) | **183 µs** |
+| add to front, first | 100,000 | 4.74 ms (1.44×) | **3.29 ms** |
+| add + remove oldest, steady | 1,000 | **44.8 µs** | 52.5 µs (1.17×) |
+| add + remove oldest, steady | 10,000 | **411 µs** | 492 µs² (1.20×) |
+| add + remove oldest, steady | 100,000 | **4.61 ms** | 5.40 ms (1.17×) |
+| toggle one, steady | 1,000 | **49.7 µs** | 52.7 µs³ (1.06×) |
+| toggle one, steady | 10,000 | **389 µs** | 573 µs³ (1.47×) |
+| toggle one, steady | 100,000 | **4.82 ms²** | 7.03 ms²³ (1.46×) |
+| remove one, first | 1,000 | **59.0 µs⁴** | 59.4 µs³ (1.01×) |
+| remove one, first | 10,000 | 511 µs² (1.01×) | **508 µs³** |
+| remove one, first | 100,000 | 18.6 ms⁴ (1.14×) | **16.3 ms²³** |
+| render only | 1,000 | **14.0 µs³** | 21.9 µs⁴ (1.56×) |
+| render only | 10,000 | **144 µs³** | 382 µs⁴ (2.6×) |
+| render only | 100,000 | **850 µs²³** | 1.44 ms⁴ (1.69×) |
+
+**the rewrite of the list syntax, ops: cons over the rewritten output against cons over beni's own output**
+
+| op | n | cons | cons-raw |
+|---|--:|--:|--:|
+| *style* | | *elm* | *elm* |
+| get | 8 | 9.7 ns³ (1.05×) | **9.3 ns³** |
+| get | 1,000 | 3.71 µs³ (1.40×) | **2.65 µs³** |
+| get | 100,000 | 130 µs³ (1.11×) | **116 µs³** |
+| set, first | 8 | **95 ns²** | 303 ns²⁴ (3.2×) |
+| set, first | 1,000 | **27.3 µs²** | 43.3 µs⁴ (1.59×) |
+| set, first | 100,000 | **4.49 ms²** | 23.6 ms²⁴ (5.3×) |
+| set, threaded | 8 | 98 ns² (1.17×) | **84 ns²³** |
+| set, threaded | 1,000 | 21.5 µs² (1.39×) | **15.4 µs³** |
+| set, threaded | 100,000 | 3.82 ms² (1.40×) | **2.72 ms²³** |
+| push, first | 8 | 351 ns² (2.9×) | **119 ns²³** |
+| push, first | 1,000 | 27.2 µs (1.47×) | **18.5 µs³** |
+| push, first | 100,000 | 4.57 ms² (1.42×) | **3.22 ms²³** |
+| push, threaded | 8 | **252 ns²** | 501 ns (2.0×) |
+| push, threaded | 1,000 | 19.4 µs⁴ (1.04×) | **18.6 µs** |
+| push, threaded | 100,000 | **3.43 ms²** | 3.75 ms² (1.09×) |
+| pop, first | 8 | 1.31 µs²⁴ (4.3×) | **306 ns²⁴** |
+| pop, first | 1,000 | 102 µs²⁴ (2.6×) | **40.0 µs⁴** |
+| pop, first | 100,000 | 27.5 ms⁴ (9.0×) | **3.05 ms⁴** |
+| pop, threaded | 8 | 237 ns (1.08×) | **219 ns²** |
+| pop, threaded | 1,000 | 17.4 µs (1.43×) | **12.2 µs** |
+| pop, threaded | 100,000 | 3.45 ms (1.05×) | **3.29 ms²** |
+| slice | 8 | 269 ns (1.06×) | **255 ns²** |
+| slice | 1,000 | 11.6 µs (1.23×) | **9.42 µs²** |
+| slice | 100,000 | 930 µs²⁴ (1.37×) | **677 µs²** |
+| concat | 8 | 326 ns² (1.06×) | **308 ns²** |
+| concat | 1,000 | **20.5 µs** | 27.5 µs (1.34×) |
+| concat | 100,000 | **3.59 ms²** | 3.60 ms² (1.00×) |
+| insert, first | 8 | **413 ns²** | 442 ns² (1.07×) |
+| insert, first | 1,000 | 21.5 µs (1.05×) | **20.5 µs** |
+| insert, first | 100,000 | 2.86 ms² (1.21×) | **2.36 ms²** |
+| insert, threaded | 8 | **372 ns²** | 3.33 µs²⁴ (8.9×) |
+| insert, threaded | 1,000 | **17.4 µs** | 120 µs²⁴ (6.9×) |
+| insert, threaded | 100,000 | 6.61 ms² (1.33×) | **4.97 ms⁴** |
+| remove, first | 8 | **355 ns²** | 427 ns² (1.20×) |
+| remove, first | 1,000 | **17.3 µs** | 29.1 µs (1.68×) |
+| remove, first | 100,000 | **2.13 ms²** | 7.31 ms² (3.4×) |
+| remove, threaded | 8 | 373 ns² (1.23×) | **303 ns²³** |
+| remove, threaded | 1,000 | 10.3 µs² (1.05×) | **9.80 µs³** |
+| remove, threaded | 100,000 | 3.83 ms² (1.63×) | **2.35 ms²³** |
+| swap, first | 8 | **325 ns²⁴** | 430 ns² (1.32×) |
+| swap, first | 1,000 | **45.6 µs²⁴** | 58.4 µs (1.28×) |
+| swap, first | 100,000 | 6.89 ms²⁴ (1.53×) | **4.51 ms²** |
+| swap, threaded | 8 | 386 ns²³⁴ (1.08×) | **357 ns²³** |
+| swap, threaded | 1,000 | **48.8 µs³⁴** | 83.6 µs²³ (1.71×) |
+| swap, threaded | 100,000 | 5.68 ms³⁴ (1.18×) | **4.83 ms³** |
+| map | 8 | **286 ns²** | 369 ns² (1.29×) |
+| map | 1,000 | **37.0 µs²** | 39.5 µs² (1.07×) |
+| map | 100,000 | 3.60 ms (1.12×) | **3.23 ms** |
+| filter | 8 | **251 ns²³** | 283 ns² (1.13×) |
+| filter | 1,000 | 29.1 µs³ (1.05×) | **27.8 µs** |
+| filter | 100,000 | 2.73 ms²³ (1.14×) | **2.40 ms²** |
+| foldl | 8 | **67 ns²** | 88 ns⁴ (1.33×) |
+| foldl | 1,000 | **9.15 µs** | 12.7 µs⁴ (1.39×) |
+| foldl | 100,000 | **384 µs** | 456 µs⁴ (1.19×) |
+| iterate | 8 | 164 ns² (1.04×) | **158 ns²³** |
+| iterate | 1,000 | **13.2 µs** | 14.2 µs³ (1.08×) |
+| iterate | 100,000 | **929 µs** | 1.12 ms³ (1.21×) |
+| fromArray | 8 | 264 ns (1.13×) | **233 ns²³** |
+| fromArray | 1,000 | 7.83 µs (1.20×) | **6.54 µs³** |
+| fromArray | 100,000 | 1.68 ms (1.23×) | **1.36 ms³** |
+| toArray | 8 | **108 ns²** | 153 ns²³ (1.42×) |
+| toArray | 1,000 | **11.7 µs** | 17.8 µs³ (1.52×) |
+| toArray | 100,000 | **2.68 ms²** | 3.58 ms³ (1.33×) |
+| eq | 8 | 99 ns² (1.22×) | **81 ns³** |
+| eq | 1,000 | 12.6 µs (1.22×) | **10.3 µs³** |
+| eq | 100,000 | **590 µs** | 648 µs³ (1.10×) |
+| sort | 8 | **1.13 µs²** | 1.31 µs³ (1.16×) |
+| sort | 1,000 | **424 µs** | 455 µs²³ (1.07×) |
+| sort | 100,000 | 137 ms (1.01×) | **135 ms³** |
+
+Spread: 5489 cells; within a run, IQR / median: median 8.7 %, 90th percentile 70.4 %; between rounds, (max − min) / median of a cell's round medians: median 17.9 %, 90th percentile 47.6 %. Loads seen: 5.42 – 34.77.
+
+---
+
+## 7. Bytes (`node all.mjs size`)
+
+esbuild `--minify`, tree-shaken, brotli 11. *Sibling*: the first-order foreign surface of the
+array-first core plus the list syntax, as the candidate's `seq/surface.js` bundle ships it (the
+surface's derived code for views and builders is included, the same for every candidate that uses
+it). *Whole surface*: every public function of the one array-first `List`
+(`lists/surface/E1/Surface.beni`, compiled by beni) over that sibling.
+
+| candidate | sibling min | gzip | **brotli** | whole surface, brotli |
+|---|--:|--:|--:|--:|
+| native mut | 2 580 | 1 183 | 1 117 | 2 395 |
+| native CoW | 2 453 | 1 136 | 1 070 | 2 356 |
+| cow | 3 187 | 1 340 | 1 275 | 2 537 |
+| trie | 4 901 | 1 961 | 1 833 | 3 138 |
+| hybrid1024 | 5 944 | 2 296 | 2 143 | 3 437 |
+| adaptive256 | 5 886 | 2 260 | 2 130 | 3 394 |
+| E1 | 6 989 | 2 552 | 2 396 | 3 661 |
+| **E1t** | 6 162 | 2 348 | 2 196 | **3 468** |
+| cons | 3 766 | 1 560 | 1 452 | 2 681 |
+| Immutable.js | 68 235 | 19 577 | 17 512 | 18 852 |
+| funkia | 16 659 | 5 854 | 5 473 | 6 770 |
+| mori | 189 082 | 39 972 | 32 177 | 33 535 |
+| Mutative | 23 284 | 8 070 | 7 335 | 8 661 |
+| Immer | 12 008 | 4 868 | 4 516 | 5 814 |
+| Elm Array | 31 528 | 11 053 | 9 833 | 11 150 |
+| **today's two types**: cons `List` + adaptive `Array` (`lists/surface/A`) | | | | **3 189** |
+
+Elm's figure is the whole `elm make` output the adapter loads; research 38 §6 measured the Array
+functions' own share of an `--optimize` program at 1.5 KB. Research 40's hand-minified `Array`
+sibling is **1 099** bytes against **1 496** for the adaptive1024 port it minified, the same
+surface.
+
+## 8. The checks
+
+### 8.1 Research 40's minified sibling
+
+On the 71 array rows it is slower than adaptive1024 in 41 and faster in 30, beyond 1.5× either way
+in 17, with no direction; both are the same algorithm (the differential test agrees result for
+result), and every difference is within this batch's noise (§1.4). Research 40 §6 measured the
+same two files on a quiet machine at 0.999× for the median cell.
+
+### 8.2 The rewrite of the list syntax
+
+The cons list over the rewritten output, against the cons list over beni's own output
+(`cons-raw`): slower in 48 of 90 list rows and 39 of 70 single-operation rows, faster in the rest,
+beyond 1.5× in 21 and 16, no direction. Research 38 §16.2 measured the same comparison at a median
+of 1.01× on a quieter machine. The rewrite costs nothing that this batch can see, which is what
+licenses running the cons list on byte-identical code with everyone else.
+
+## 9. Verdict
+
+**One sequence type or `List` + `Array`, and which representation?** Everything except two designs
+is dominated on this batch:
+
+* **The copy-on-write family (cow, native CoW, Mutative, Immer)** is quadratic on every list built
+  by `push` and 10³–10⁵× the best on every large array write. Mutative and Immer add their proxy on
+  top. None can be the one type, and none should be `Array` above a few hundred elements.
+* **The libraries** pay a constant everywhere and bytes on top: Immutable.js and mori are over 10×
+  the best in half or more of the list rows at 5–10× E1t's bytes; Elm's Array is 2–10× on reads;
+  **funkia** is the only one with a real asymptotic edge (`slice`, `concat`, `insert`, `remove` in
+  O(log n)) and no quadratic case, but it is within 1.5× of the best in only 8 of 90 list rows and
+  13 of 73 array rows, at 2× E1t's bytes.
+* **trie, hybrid1024, adaptive256 and E1** are E1t without one of its changes, and lose to it on
+  most rows of every table.
+
+That leaves **today's two types** (the cons list for `List`, adaptive256 or E1t's representation for
+`Array`) and **one array-first type over E1t**:
+
+| | two types (cons + adaptive `Array`) | one type (E1t) |
+|---|---|---|
+| list code written for it | cons: best or within 1.5× in 67 of 90 rows | E1t: 48 of 90 |
+| catastrophic list rows | `acc ++ [x]` (quadratic), `xs ++ ys` | none quadratic; kept paths and the persistent stack 4–17×, the bare `x :: rest` walk ≈ 10× |
+| array scenarios | adaptive256 within 1.5× in 32 of 73 | E1t in 49 of 73 |
+| the wrong style | array-first code on cons is quadratic wherever it indexes | Elm-style accumulators copy per step |
+| bytes, whole surface | 3 189 | 3 468 |
+
+**On speed the runtime does not decide it**: each design is catastrophic only on the other's
+idiom, and within its own idiom both are in the same class (the cons list ahead on list code, E1t
+ahead on array code, where it also beats today's adaptive256 `Array`). What decides it is what
+research 38 §16–§17 said: a one-type design needs the compiler work that makes its bad rows go away
+(scalar views for `x :: rest`, R3; binding a pattern's tail only where used), costs 280 bytes more,
+and makes `acc ++ [x]` linear; the two-type design keeps O(1) `::` onto any tail as a guarantee with
+no optimiser behind it. **Whichever the owner picks, `Array` (or the one type) should use E1t's
+representation, not adaptive256**: it is at least as fast on every array table and it removes E1's
+and adaptive's `push` cost. The measurements that would change the ranking are the ones not made
+here: the Chrome pass (V8 with pointer compression makes cow's large copies 5–20× cheaper, research
+38 §4.4) and a quiet machine.
+
+## 10. Reproducing
+
+From `bench/arrays/`, after `zig build` at the root and `npm ci`:
+
+```sh
+node all.mjs                          # the quick run (§1.5)
+node all.mjs build && node all.mjs test
+FULL=1 node all.mjs bench 3           # this report's sweep (it ran 1 round and most of a 2nd)
+node all.mjs size && node all.mjs tables node
+FULL=1 node all.mjs chrome 3 && node all.mjs mem && node all.mjs stack    # not run here
+```
+
+The raw cells are `results/all-node.jsonl` (every record carries its round, core and load),
+`results/all-test.txt`, `results/all-size.json` and `results/all-tables-node.md`.
