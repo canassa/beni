@@ -24,50 +24,62 @@ pub equatable foreign type List a
 foreign type Builder a
 
 
-pub foreign cons : a, List a -> List a
+pub foreign pure cons : a, List a -> List a
 
 
-pub foreign eq : List a, List a -> Bool
+pub foreign pure eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
 
 
-pub foreign compare : List a, List a -> Order
+pub foreign pure compare : List a, List a -> Order
     where a.compare : a, a -> Order
 
 
-pub foreign length : List a -> Int
+pub foreign pure length : List a -> Int
 
 
-foreign unsafeGet : List a, Int -> a
+foreign pure unsafeGet : List a, Int -> a
 
 
 --| Replace one element. Out of range: unchanged.
-pub foreign set : List a, Int, a -> List a
+pub foreign pure set : List a, Int, a -> List a
 
 
 --| Add one element at the end. O(1) amortised above 256 elements, a copy
 --| below.
-pub foreign push : List a, a -> List a
+pub foreign pure push : List a, a -> List a
 
 
 --| Remove the last element.
-pub foreign pop : List a -> List a
+pub foreign pure pop : List a -> List a
 
 
 --| Elements `from` up to, not including, `to`; negative counts from the end.
-pub foreign slice : List a, Int, Int -> List a
+pub foreign pure slice : List a, Int, Int -> List a
 
 
-pub foreign append : List a, List a -> List a
+pub foreign pure append : List a, List a -> List a
 
 
-foreign builder : Int -> Builder a
+--| Insert before index `i` (report 38 §12.3). Out of range: unchanged.
+pub foreign pure insertAt : List a, Int, a -> List a
 
 
-foreign add : Builder a, a -> Builder a
+--| Remove index `i`. Out of range: unchanged.
+pub foreign pure removeAt : List a, Int -> List a
 
 
-foreign done : Builder a -> List a
+--| Exchange two elements. Out of range: unchanged.
+pub foreign pure swap : List a, Int, Int -> List a
+
+
+foreign pure builder : Int -> Builder a
+
+
+foreign pure add : Builder a, a -> Builder a
+
+
+foreign pure done : Builder a -> List a
 
 
 pub singleton : a -> List a

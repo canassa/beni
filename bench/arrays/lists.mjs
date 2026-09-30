@@ -40,6 +40,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { REWRITES } from './lists/rewrites-c.js';
+import { rewriteModule, splitDecls } from './lib/rewrite.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 process.chdir(here);
@@ -68,60 +69,8 @@ const ALL = ['map, recursive', 'filter, recursive', 'map, accumulator + reverse'
   'toggle one, steady', 'remove one, first', 'render only'];
 
 // ---------------------------------------------------------------------------------------------
-// The rewrite of beni's list syntax. beni emits `::` as a call of `List$cons` already; what it
-// writes inline is the empty list `{ $: 0, a: null, b: null }`, a literal's cells
-// `{ $: 1, a: h, b: t }`, the case tests `s.$ === 0` / `s.$ === 1`, and the cell reads `s.a` /
-// `s.b` of a subject it has tested. The rewrite turns exactly those into `$nil`, `$cons(h, t)`,
-// `$isNil(s)` / `$isCons(s)`, `$hd(s)` and `$tl(s)` — what a patched `js/Lower.zig` (`nilNode`,
-// `consNode`, `fanDiscriminant`/`edgeKey` for `.list`, `bindings` for `.pat_cons`/`.pat_list`) would
-// emit. A subject is recognised by its test; a read of `.a`/`.b` is rewritten only on a subject or
-// on the tail of one, so a tuple's `.a` and a constructor's `.a` are left alone.
+// The rewrite of beni's list syntax lives in lib/rewrite.js (shared with all.mjs).
 
-const NIL = '{ $: 0, a: null, b: null }';
-const CONS = '{ $: 1, a: ';
-function scanExpr(s, i, stops) { // from i to the first depth-0 occurrence of one of `stops`
-  let d = 0;
-  for (; i < s.length; i++) {
-    const c = s[i];
-    if (c === '"' || c === "'" || c === '`') { const q = c; for (i++; i < s.length && s[i] !== q; i++) if (s[i] === '\\') i++; continue; }
-    if (d === 0) for (const st of stops) if (s.startsWith(st, i)) return i;
-    if (c === '(' || c === '[' || c === '{') d++;
-    else if (c === ')' || c === ']' || c === '}') d--;
-  }
-  throw new Error('unbalanced');
-}
-function rewriteDecl(src) {
-  let s = src.split(NIL).join('$nil');
-  for (let k = s.lastIndexOf(CONS); k >= 0; k = s.lastIndexOf(CONS)) {
-    const h0 = k + CONS.length, h1 = scanExpr(s, h0, [', b: ']);
-    const t0 = h1 + ', b: '.length, t1 = scanExpr(s, t0, [' }']);
-    s = s.slice(0, k) + `$cons(${s.slice(h0, h1)}, ${s.slice(t0, t1)})` + s.slice(t1 + 2);
-  }
-  if (s.includes('reduceRight')) throw new Error('a list literal longer than the cons limit: not handled');
-  const subjects = new Set();
-  for (const m of s.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.\$ === [01]\b/g)) subjects.add(m[1]);
-  s = s.replace(/(?<![\w$.])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)( === [01]\b)?/g, (all, ch, test) => {
-    const t = ch.split('.');
-    let cur = t[0], raw = t[0], isList = subjects.has(raw);
-    for (let i = 1; i < t.length; i++) {
-      const f = t[i];
-      if (isList && f === '$') {
-        if (i !== t.length - 1 || !test) throw new Error(`a list tag read that is not a test: ${all}`);
-        return `${test.endsWith('0') ? '$isNil' : '$isCons'}(${cur})`;
-      }
-      if (isList && (f === 'a' || f === 'b')) { cur = f === 'a' ? `$hd(${cur})` : `$tl(${cur})`; raw += '.' + f; isList = f === 'b' || subjects.has(raw); }
-      else { cur += '.' + f; raw += '.' + f; isList = subjects.has(raw); }
-    }
-    return cur + (test ?? '');
-  });
-  if (/\.\$ === [01]\b/.test(s) || s.includes('{ $: 1') || s.includes('{ $: 0')) throw new Error('list syntax survived the rewrite:\n' + s);
-  return s;
-}
-const splitDecls = (text) => text.split(/\n(?=const |export |import )/);
-function rewriteModule(text, extraImport = '') {
-  const out = splitDecls(text).map((d) => (d.startsWith('const ') ? rewriteDecl(d) : d)).join('\n');
-  return `import { $nil, $cons, $isNil, $isCons, $hd, $tl, $fromArray } from "list-syntax";\n${extraImport}${out}`;
-}
 function applyC(file, text) {
   const table = REWRITES[file];
   if (!table) return text;
@@ -406,7 +355,7 @@ else if (mode === 'test') {
     await bundle(name, `import { stack } from './lists/harness.js'; stack(${JSON.stringify(name)}, 100000, JSON.parse(process.argv[2]));`, { format: 'iife', outfile: file });
     const skip = name === 'A' ? ['append in a loop, acc ++ [x]'] : [];
     const r = spawnSync(process.execPath, ['--max-old-space-size=4096', file, JSON.stringify(skip)], { encoding: 'utf8', maxBuffer: 1 << 26 });
-    const lines = r.stdout.split('\n').filter((l) => l.startsWith('{'));
+    const lines = r.stdout.split('\n').filter((l) => l.startsWith('{') && !l.startsWith('{"start"'));
     fs.appendFileSync('results/first-stack.jsonl', lines.join('\n') + '\n');
     const rows = lines.map((l) => JSON.parse(l));
     console.log(name, `exit ${r.status}`, rows.filter((x) => x.stack !== 'ok').map((x) => `${x.op}: ${x.stack}`).join('; ') || 'every cell ok');

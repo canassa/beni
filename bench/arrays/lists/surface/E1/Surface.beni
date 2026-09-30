@@ -52,6 +52,9 @@ pub array =
     , last = List.last
     , update = List.update
     , initialize = List.initialize
+    , insertAt = List.insertAt
+    , removeAt = List.removeAt
+    , swap = List.swap
     }
 
 

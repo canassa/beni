@@ -1,0 +1,75 @@
+-- Report 38 §3's single operations, written array-first over the one
+-- sequence type of §17 (lists/first-core/List.beni; report 46). Elements are
+-- opaque here; the harness passes the functions and the comparison.
+import List
+
+
+pub get : List a, Int -> Maybe a
+get xs i =
+    List.get xs i
+
+
+pub set : List a, Int, a -> List a
+set xs i v =
+    List.set xs i v
+
+
+pub push : List a, a -> List a
+push xs v =
+    List.push xs v
+
+
+pub pop : List a -> List a
+pop xs =
+    List.pop xs
+
+
+pub slice : List a, Int, Int -> List a
+slice xs from to =
+    List.slice xs from to
+
+
+pub concat : List a, List a -> List a
+concat xs ys =
+    xs ++ ys
+
+
+pub insert : List a, Int, a -> List a
+insert xs i v =
+    List.insertAt xs i v
+
+
+pub remove : List a, Int -> List a
+remove xs i =
+    List.removeAt xs i
+
+
+pub swap : List a, Int, Int -> List a
+swap xs i j =
+    List.swap xs i j
+
+
+pub map : List a, (a -> b) -> List b
+map xs f =
+    List.map xs f
+
+
+pub filter : List a, (a -> Bool) -> List a
+filter xs keep =
+    List.filter xs keep
+
+
+pub foldl : List a, b, (a, b -> b) -> b
+foldl xs acc f =
+    List.foldl xs acc f
+
+
+pub eq : List a, List a -> Bool
+    where a.eq : a, a -> Bool
+eq xs ys =
+    xs == ys
+
+
+pub sort : List a, (a, a -> Order) -> List a
+sort xs cmp =
+    List.sortWith xs cmp

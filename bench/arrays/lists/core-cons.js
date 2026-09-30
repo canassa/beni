@@ -14,3 +14,9 @@ export function fromJs(arr) { let l = $nil; for (let i = arr.length - 1; i >= 0;
 export function toJs(l) { const out = []; for (; l.$ === 1; l = l.b) out.push(l.a); return out; }
 export function walk(l, visit) { for (let k = 0; l.$ === 1; l = l.b, k++) visit(l.a, k); }
 export const kind = () => 'cons';
+
+// tail calls modulo cons (lib/rewrite.js's `trmc`): the destination-passing loop beni emits, with the
+// root cell's unused head holding the last cell
+export const $trmcStart = () => { const r = { $: 1, a: null, b: null }; r.a = r; return r; };
+export const $trmcAdd = (r, h) => { const c = { $: 1, a: h, b: null }; r.a.b = c; r.a = c; };
+export const $trmcDone = (r, t) => { r.a.b = t; return r.b; };

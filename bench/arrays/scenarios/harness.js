@@ -13,21 +13,8 @@ import * as Build from 'beni-out/Build.mjs';
 import * as History from 'beni-out/History.mjs';
 import * as Interop from 'beni-out/Interop.mjs';
 
-const now = () => performance.now();
-let sink = null;
-const CFG = { minMs: 10, warmMs: 25, samples: 7, maxCallMs: 400, hugeMs: 1500 };
-function measure(fn) {
-  let t0 = now(), calls = 0;
-  do { sink = fn(); calls++; } while ((calls < 3 && now() - t0 < CFG.maxCallMs) || now() - t0 < CFG.warmMs);
-  const one = (now() - t0) / calls;
-  const k = Math.max(1, Math.ceil(CFG.minMs / Math.max(one, 1e-6)));
-  const S = one > CFG.hugeMs ? 1 : one > CFG.maxCallMs ? 3 : CFG.samples;
-  const xs = [];
-  for (let s = 0; s < S; s++) { const a = now(); for (let i = 0; i < k; i++) sink = fn(); xs.push(((now() - a) / k) * 1e6); }
-  xs.sort((a, b) => a - b);
-  const q = (p) => xs[Math.min(xs.length - 1, Math.floor(p * (xs.length - 1) + 0.5))];
-  return { med: q(0.5), lo: xs[0], hi: xs[xs.length - 1], q1: q(0.25), q3: q(0.75), S };
-}
+// the timing loop is lib/measure.js, shared by every harness here
+import { measure, keep, cellLine } from '../lib/measure.js';
 
 // ---------------------------------------------------------------------------------------------
 // Inputs, deterministic
@@ -68,7 +55,7 @@ function render(model, rowsState) {
     }
   }
   if (rowsState.length > k) rowsState.length = k;
-  sink = dirty;
+  keep(dirty);
   return rowsState;
 }
 const mounted = (model) => render(model, []);
@@ -160,32 +147,47 @@ function interopCells(N) {
 function retained(build) {
   gc(); gc();
   const base = process.memoryUsage().heapUsed;
-  let keep = build();
+  let held = build();
   gc(); gc();
   const used = process.memoryUsage().heapUsed - base;
-  sink = keep; keep = null;
+  keep(held); held = null;
   return used;
 }
 
+// `n` (a cell's size label) builds only that size's inputs: all.mjs runs one cell per process
+const at = (n, k, f) => (n === undefined || n === k ? f() : []);
 export const SCENARIOS = {
-  table: () => [...tableCells(1000), ...tableCells(10000)],
-  decoded: () => [...decodedCells(10000), ...decodedCells(100000)],
-  grid: () => [...gridCells(100), ...gridCells(1000)],
-  build: () => [...buildCells(1000), ...buildCells(100000)],
-  history: () => historyCells(10000),
-  interop: () => [...interopCells(10000), ...interopCells(100000)],
+  table: (n) => [...at(n, 1000, () => tableCells(1000)), ...at(n, 10000, () => tableCells(10000))],
+  decoded: (n) => [...at(n, 10000, () => decodedCells(10000)), ...at(n, 100000, () => decodedCells(100000))],
+  grid: (n) => [...at(n, 10000, () => gridCells(100)), ...at(n, 1000000, () => gridCells(1000))],
+  build: (n) => [...at(n, 1000, () => buildCells(1000)), ...at(n, 100000, () => buildCells(100000))],
+  history: (n) => at(n, 10000, () => historyCells(10000)),
+  interop: (n) => [...at(n, 10000, () => interopCells(10000)), ...at(n, 100000, () => interopCells(100000))],
 };
 
-export function run(name, only) {
-  const p = (x) => +x.toPrecision(4);
+// `skip` names cells (`op@n`) not to run: all.mjs passes the ones that crashed or ran over its cap in
+// an earlier attempt, and a `start` line before each cell names the one a dead process was running
+export function run(name, only, skip = [], pick = null) {
+  // a cell over 1 s a call at the smaller size is not run at the larger one (it would be over 10 s)
+  const slow = new Set();
   for (const sc of only) {
-    for (const [op, n, fn] of SCENARIOS[sc]()) {
+    for (const [op, n, fn] of SCENARIOS[sc](pick && pick.length === 1 ? +pick[0].split('@')[1] : undefined)) {
+      if (pick && !pick.includes(`${op}@${n}`)) continue;
+      if (skip.includes(`${op}@${n}`)) continue;
+      if (slow.has(op)) { console.log(JSON.stringify({ engine: 'node', impl: name, sc, op, n, skipped: 'over 1 s a call, or failed, at the size before' })); continue; }
+      slow.add(op); // until it finishes in time
+      console.log(JSON.stringify({ start: `${op}@${n}` }));
       if (typeof gc === 'function') gc();
-      const r = measure(fn);
-      console.log(JSON.stringify({ engine: 'node', impl: name, sc, op, n, med: p(r.med), q1: p(r.q1), q3: p(r.q3), lo: p(r.lo), hi: p(r.hi), S: r.S }));
+      let r;
+      try { r = measure(fn); } catch (e) {
+        if (e instanceof RangeError && /call stack/.test(e.message)) { console.log(JSON.stringify({ engine: "node", impl: name, sc, op, n, overflow: true })); continue; }
+        throw e;
+      }
+      if (r.med <= 1e9) slow.delete(op);
+      console.log(cellLine({ engine: 'node', impl: name, sc, op, n }, r));
     }
   }
-  if (only.includes('history') && typeof gc === 'function') {
+  if (only.includes('history') && typeof gc === 'function' && globalThis.process?.memoryUsage) {
     // retained bytes: the history after 150 one-cell edits (100 past versions + the current one), and
     // one version for scale; elements are small integers, so this is the containers alone
     const N = 10000;

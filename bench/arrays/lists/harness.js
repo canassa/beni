@@ -6,28 +6,14 @@
 import * as RT from 'list-rt';
 const { fromJs, toJs, walk } = RT;
 // the array-first sources of §17 keep a stack's top at the END
-const topFirst = (s) => (RT.stackTopLast ? toJs(s).reverse() : toJs(s));
+const topFirst = (s) => (RT.stackTopLast ? toJs(s).slice().reverse() : toJs(s));
 import * as Recur from 'beni-out/Recur.mjs';
 import * as Lib from 'beni-out/Lib.mjs';
 import * as Todo from 'beni-out/Todo.mjs';
 import * as Paths from 'beni-out/Paths.mjs';
 
-const now = () => performance.now();
-let sink = null;
-// WARM_MS lengthens the warm-up: §17's one-op-per-process runs start with cold core functions
-const CFG = { minMs: 10, warmMs: +(globalThis.process?.env?.WARM_MS ?? 25), samples: 7, maxCallMs: 400, hugeMs: 1500 };
-function measure(fn) {
-  let t0 = now(), calls = 0;
-  do { sink = fn(); calls++; } while ((calls < 3 && now() - t0 < CFG.maxCallMs) || now() - t0 < CFG.warmMs);
-  const one = (now() - t0) / calls;
-  const k = Math.max(1, Math.ceil(CFG.minMs / Math.max(one, 1e-6)));
-  const S = one > CFG.hugeMs ? 1 : one > CFG.maxCallMs ? 3 : CFG.samples;
-  const xs = [];
-  for (let s = 0; s < S; s++) { const a = now(); for (let i = 0; i < k; i++) sink = fn(); xs.push(((now() - a) / k) * 1e6); }
-  xs.sort((a, b) => a - b);
-  const q = (p) => xs[Math.min(xs.length - 1, Math.floor(p * (xs.length - 1) + 0.5))];
-  return { med: q(0.5), lo: xs[0], hi: xs[xs.length - 1], q1: q(0.25), q3: q(0.75), S };
-}
+// the timing loop is lib/measure.js, shared by every harness here
+import { measure, keep, cellLine } from '../lib/measure.js';
 
 // ---- inputs, deterministic ------------------------------------------------------------------------
 function ints(n, seed) {
@@ -50,13 +36,14 @@ function render(model, rows) {
     n = k + 1;
   });
   if (rows.length > n) rows.length = n;
-  sink = dirty;
+  keep(dirty);
   return rows;
 }
 
 // ---- the cells: [scenario, op, n, fn] ------------------------------------------------------------
 export const SIZES = [10, 100, 1000, 10000, 100000];
-export function cells(n) {
+const TEA = ["add to front, first", "add + remove oldest, steady", "toggle one, steady", "remove one, first", "render only"];
+export function cells(n, pick = null) {
   const arr = ints(n, 4242), xs = fromJs(arr), ys = fromJs(ints(n, 99));
   const sortedPrefix = fromJs(arr.map((_, i) => i)); // takeWhile on a sorted list keeps 90 %
   const lim = Math.floor(n * 0.9);
@@ -88,6 +75,8 @@ export function cells(n) {
     ['4 prepend in a fold', 'undo stack (3 edits, 1 undo)', n, () => Paths.Paths$undoSession(n)],
   ];
   // 5: the TEA model. `first` starts from the same fresh model every call; `steady` threads it.
+  // (built only when a TEA cell is wanted: `create` over a representation it does not suit can be slow)
+  if (pick && !pick.some((op) => TEA.includes(op))) return out;
   const m0 = Todo.Todo$create(n), U = Todo.Todo$update;
   const snap0 = render(m0, []);
   out.push(['5 TEA list', 'add to front, first', n, () => render(U(Todo.Todo$add, m0), snap0.slice())]);
@@ -105,28 +94,34 @@ export function cells(n) {
 // (over 3 s per call at the size before, or crashed here in an earlier attempt). A `start` line goes
 // out before each cell, so a process that dies (heap exhausted) names the cell that killed it; a
 // RangeError is recorded as a stack overflow.
-export function run(name, n, skip) {
-  const p = (x) => +x.toPrecision(4);
-  for (const [sc, op, nn, fn] of cells(n)) {
-    if (skip.includes(op) || (process.env.ONLY && !process.env.ONLY.split(';').includes(op))) continue;
+export function run(name, n, skip, cellsOf = cells, pick = null) {
+  const only = pick ?? globalThis.process?.env?.ONLY?.split(";");
+  const all = cellsOf(n, only);
+  for (let k = 0; k < all.length; k++) {
+    const [sc, op, nn, fn0, per = 1] = all[k];
+    if (skip.includes(op) || (only && !only.includes(op))) continue;
+    // a candidate that writes in place (native) gets fresh inputs for every cell
+    const fn = RT.MUTABLE ? cellsOf(n, only)[k][3] : fn0;
     const base = { engine: 'node', impl: name, sc, op, n: nn };
     console.log(JSON.stringify({ start: op }));
     if (typeof gc === 'function') gc();
     let r;
-    try { r = measure(fn); } catch (e) {
-      if (e instanceof RangeError) { console.log(JSON.stringify({ ...base, overflow: true })); continue; }
+    try { r = measure(fn, per); } catch (e) {
+      if (e instanceof RangeError && /call stack/.test(e.message)) { console.log(JSON.stringify({ ...base, overflow: true })); continue; }
       throw e;
     }
-    console.log(JSON.stringify({ ...base, med: p(r.med), q1: p(r.q1), q3: p(r.q3), lo: p(r.lo), hi: p(r.hi), S: r.S }));
+    console.log(cellLine(base, r));
   }
 }
 
 // ---- stack safety (§17): every cell once at n, on whatever stack the process was given ----------------
-export function stack(name, n, skip) {
-  for (const [sc, op, , fn] of cells(n)) {
+export function stack(name, n, skip, cellsOf = cells, pick = null) {
+  for (const [sc, op, , fn] of cellsOf(n, pick)) {
+    if (pick && !pick.includes(op)) continue;
     if (skip.includes(op)) { console.log(JSON.stringify({ impl: name, sc, op, n, stack: 'not run' })); continue; }
+    console.log(JSON.stringify({ start: op }));
     let r;
-    try { sink = fn(); r = 'ok'; } catch (e) { r = e instanceof RangeError ? 'stack overflow' : String(e); }
+    try { keep(fn()); r = "ok"; } catch (e) { r = e instanceof RangeError && /call stack/.test(e.message) ? "stack overflow" : String(e); }
     console.log(JSON.stringify({ impl: name, sc, op, n, stack: r }));
   }
 }
@@ -135,12 +130,12 @@ export function stack(name, n, skip) {
 // peak = the process's resident high-water mark across the call, reset just before it through
 // /proc/self/clear_refs (Linux), minus the resident size then; retained = heap still used after two
 // full GCs while holding the result, minus before the call (the inputs are held throughout)
-let keep = null;
+let held = null;
 const fs = globalThis.process?.getBuiltinModule?.('node:fs');
 const status = (k) => +new RegExp(k + ":\\s+(\\d+)").exec(fs.readFileSync("/proc/self/status", "utf8"))[1];
-export function mem(name, op, n) {
-  keep = cells(n);
-  const cell = keep.find((c) => c[1] === op);
+export function mem(name, op, n, cellsOf = cells) {
+  held = cellsOf(n, [op]);
+  const cell = held.find((c) => c[1] === op);
   gc(); gc();
   fs.writeFileSync("/proc/self/clear_refs", "5");
   const rss0 = status("VmRSS"), h0 = process.memoryUsage().heapUsed;
@@ -149,7 +144,7 @@ export function mem(name, op, n) {
   const peakKB = status("VmHWM") - rss0;
   gc(); gc();
   const h1 = process.memoryUsage().heapUsed;
-  sink = res;
+  keep(res);
   console.log(JSON.stringify({ engine: "node", impl: name, sc: cell[0], op, n, peakKB, retained: err ? null : h1 - h0, err }));
 }
 
@@ -163,16 +158,20 @@ function dig(v) {
   return fnv(JSON.stringify(toJs(v)));
 }
 const byId = (items) => items.slice().sort((x, y) => x.id - y.id);
-const pathSet = (ps) => fnv(JSON.stringify(toJs(ps).map((p) => toJs(p).sort((a, b) => a - b)).sort((p, q) => p.length - q.length)));
+const pathSet = (ps) => fnv(JSON.stringify(toJs(ps).map((p) => toJs(p).slice().sort((a, b) => a - b)).sort((p, q) => p.length - q.length)));
 export function test() {
   const out = [];
   for (const n of [0, 1, 2, 3, 10, 257, 1000]) {
-    for (const [sc, op, nn, fn] of cells(n)) {
+    for (const [sc, op, nn, fn0, k] of cells(n).map((c, k) => [...c, k])) {
+      // a candidate that writes in place (native) gets fresh inputs for every cell, so a cell is
+      // judged on its own writes and not on an earlier cell's
+      const fn = RT.MUTABLE ? cells(n)[k][3] : fn0;
       // a TEA cell returns the render's row state: its rows' ids and `done`s
       // (both compared as sets, because the array-first versions of §17 keep a different order: a
       // path root first, the paths oldest first, a new TEA row last)
       const d = op.startsWith('paths') ? pathSet : op.startsWith('undo') ? (t) => `(${t.a}, ${fnv(JSON.stringify(topFirst(t.b)))})` : sc.startsWith('5') ? (rows) => fnv(JSON.stringify(byId(rows.map((r) => r.x)).map((x) => [x.id, x.done]))) : dig;
-      out.push(`${sc} | ${op} | ${nn} | ${d(fn())} | ${d(fn())}`);
+      const once = () => { try { return d(fn()); } catch (e) { return `threw ${String(e).slice(0, 60)}`; } };
+      out.push(`${sc} | ${op} | ${nn} | ${once()} | ${once()}`);
     }
   }
   // inputs unchanged, and the TEA model threaded through many messages

@@ -7,43 +7,43 @@
 pub foreign type Array a
 
 
-pub foreign length : Array a -> Int
+pub foreign pure length : Array a -> Int
 
 
-pub foreign unsafeGet : Array a, Int -> a
+pub foreign pure unsafeGet : Array a, Int -> a
 
 
-pub foreign set : Array a, Int, a -> Array a
+pub foreign pure set : Array a, Int, a -> Array a
 
 
-pub foreign push : Array a, a -> Array a
+pub foreign pure push : Array a, a -> Array a
 
 
-pub foreign pop : Array a -> Array a
+pub foreign pure pop : Array a -> Array a
 
 
-pub foreign slice : Array a, Int, Int -> Array a
+pub foreign pure slice : Array a, Int, Int -> Array a
 
 
-pub foreign append : Array a, Array a -> Array a
+pub foreign pure append : Array a, Array a -> Array a
 
 
-pub foreign fromList : List a -> Array a
+pub foreign pure fromList : List a -> Array a
 
 
-pub foreign toList : Array a -> List a
+pub foreign pure toList : Array a -> List a
 
 
-pub foreign sortWith : Array a, (a, a -> Order) -> Array a
+pub foreign pure sortWith : Array a, (a, a -> Order) -> Array a
 
 
-pub foreign fromJs : Array a -> Array a
+pub foreign pure fromJs : Array a -> Array a
 
 
-pub foreign toJs : Array a -> Array a
+pub foreign pure toJs : Array a -> Array a
 
 
-pub foreign chunks : Array a -> Array (Array a)
+pub foreign pure chunks : Array a -> Array (Array a)
 
 
 pub empty : Array a

@@ -32,6 +32,9 @@ export const push = (xs, v) => {
 export const pop = (xs) => xs.slice(0, -1);
 export const slice = (xs, from, to) => xs.slice(from, to);
 export const append = (xs, ys) => xs.concat(ys);
+export const insertAt = (xs, i, v) => (i < 0 || i > xs.length ? xs : xs.toSpliced(i, 0, v));
+export const removeAt = (xs, i) => (i < 0 || i >= xs.length ? xs : xs.toSpliced(i, 1));
+export const swap = (xs, i, j) => (i < 0 || j < 0 || i >= xs.length || j >= xs.length ? xs : xs.with(i, xs[j]).with(j, xs[i]));
 export const builder = (n) => [];
 export const add = (b, x) => {
   b.push(x);

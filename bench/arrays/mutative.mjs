@@ -120,21 +120,7 @@ async function adapterModule(name) {
 // calls, then 7 samples (3 when a call exceeds 400 ms) of >= 10 ms each, median; a full GC first.
 
 const HARNESS = String.raw`
-const now = () => performance.now();
-let sink = null;
-const CFG = { minMs: 10, warmMs: 25, samples: 7, maxCallMs: 400 };
-function measure(fn, per) {
-  let t0 = now(), calls = 0;
-  do { sink = fn(); calls++; } while ((calls < 3 && now() - t0 < CFG.maxCallMs) || now() - t0 < CFG.warmMs);
-  const one = (now() - t0) / calls;
-  const k = Math.max(1, Math.ceil(CFG.minMs / Math.max(one, 1e-6)));
-  const S = one > CFG.maxCallMs ? 3 : CFG.samples;
-  const xs = [];
-  for (let s = 0; s < S; s++) { const a = now(); for (let i = 0; i < k; i++) sink = fn(); xs.push(((now() - a) / k) * 1e6 / per); }
-  xs.sort((a, b) => a - b);
-  const q = (p) => xs[Math.min(xs.length - 1, Math.floor(p * (xs.length - 1) + 0.5))];
-  return { med: q(0.5), lo: xs[0], hi: xs[xs.length - 1], q1: q(0.25), q3: q(0.75), S };
-}
+import { measure } from '../lib/measure.js'; // the timing loop, shared by every harness here
 function prewarm() {
   const xs = [1, 2, 3, 4, 5, 6, 7, 8];
   for (let r = 0; r < 3; r++) for (const f of [() => xs.slice(), () => xs.length, () => xs.map((x) => x), () => ({ a: xs }), () => xs[3]]) measure(f, 1);

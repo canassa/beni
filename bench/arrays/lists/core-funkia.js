@@ -35,3 +35,8 @@ export const fromJs = (arr) => L.from(arr);
 export const toJs = (xs) => L.toArray(xs);
 export function walk(xs, visit) { let k = 0; L.forEach((x) => visit(x, k++), xs); }
 export const kind = () => 'rrb';
+
+// tail calls modulo cons (lib/rewrite.js's `trmc`): a builder the loop owns
+export const $trmcStart = () => [];
+export const $trmcAdd = (b, h) => { b.push(h); };
+export const $trmcDone = (b, t) => (t.length === 0 ? L.from(b) : L.concat(L.from(b), t));

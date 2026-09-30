@@ -81,3 +81,8 @@ export function walk(xs, visit) {
   for (let i = o; i < n; i++) visit(a[i], i - o);
 }
 export const kind = (xs) => (Array.isArray(xs) ? 'plain' : xs instanceof S.V ? 'view' : 'trie');
+
+// tail calls modulo cons (lib/rewrite.js's `trmc`): a builder the loop owns
+export const $trmcStart = () => [];
+export const $trmcAdd = (b, h) => { b.push(h); };
+export const $trmcDone = (b, t) => (len(t) === 0 ? b : b.concat(plain(t)));
