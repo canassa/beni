@@ -1,7 +1,8 @@
 -- run: fixing the callback order of `map`, `filter`, `filterMap` and
--- `partition` must not cost their stack safety. All four are now `foldl` and
--- then `reverse`, and both of those are direct self tail calls that the code
--- generator turns into a labelled loop (`backend.md` §8), so twenty thousand
+-- `partition` must not cost their stack safety. All four were made `foldl`
+-- and then `reverse`, and are now cons steps (`func x :: map rest func`);
+-- either way the code generator turns them into a labelled loop
+-- (`backend.md` §8, and its *Tail calls modulo cons*), so twenty thousand
 -- cells, where a non-tail recursion over a list overflows Node's default
 -- stack at about 8 000, go through each of them without touching the
 -- JavaScript stack — the same guarantee `ListFoldDeep` pins for the folds

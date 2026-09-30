@@ -1709,7 +1709,12 @@ const Main$fetchSum = (a$1, b$2) =>
 - **Tail recursion modulo cons** (`backend.md` §8) is **not applied** in a suspendable body: its
   destination is two locals a resumption would have to carry into a second entry of the loop, which
   the spike does not build. A `::` step there is an ordinary call, and its recursion is a real
-  frame on the fast path, as it was before that rewrite.
+  frame on the fast path, as it was before that rewrite. *Superseded 2026-09-30, when `core/List`'s
+  `map` and its kin became cons steps and `List$map$s` overflowed at 100 000 elements on the fast
+  path:* a suspendable body builds too. The fast path stays in the loop; the slow path's `continue`
+  re-enters the function, which builds the rest of the list in a destination of its own, and the
+  continuation links that list into `$last` and returns `$root.b` (`backend.md` §8, *What it owes
+  the fiber lowering*). No second entry to the loop is needed.
 - **A `let` function** a continuation's statements declare is hoisted in front of the suspension
   point when something before the point calls it, so `language.md` §7's "a function may be read
   anywhere" still holds.

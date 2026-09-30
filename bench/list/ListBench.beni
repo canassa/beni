@@ -1,0 +1,101 @@
+-- The workloads of `bench/list/run.mjs`: one exported function per
+-- `core/List` function that builds a list, each a single call with a cheap
+-- callback, so what is timed is the list function and not the work it is
+-- handed. Built with `--library`, so every one of them is a root.
+import List
+
+
+pub make : Int -> List Int
+make n =
+    List.range 1 n
+
+
+pub chunks : Int -> List (List Int)
+chunks n =
+    List.map (List.range 1 (n // 10)) (\_ -> List.range 1 10)
+
+
+pub pairs : Int -> List ( Int, Int )
+pairs n =
+    List.map (List.range 1 n) (\x -> ( x, x ))
+
+
+pub map : List Int -> List Int
+map xs =
+    List.map xs (\x -> x + 1)
+
+
+pub filter : List Int -> List Int
+filter xs =
+    List.filter xs (\x -> modBy x 2 == 0)
+
+
+pub filterMap : List Int -> List Int
+filterMap xs =
+    List.filterMap xs
+        (\x ->
+            if modBy x 2 == 0 then
+                Just x
+            else
+                Nothing
+        )
+
+
+pub indexedMap : List Int -> List Int
+indexedMap xs =
+    List.indexedMap xs (\i x -> i + x)
+
+
+pub take : List Int, Int -> List Int
+take xs n =
+    List.take xs n
+
+
+pub append : List Int -> List Int
+append xs =
+    List.append xs [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+
+
+pub concat : List (List Int) -> List Int
+concat lists =
+    List.concat lists
+
+
+pub concatMap : List Int -> List Int
+concatMap xs =
+    List.concatMap xs (\x -> [ x, x ])
+
+
+pub map2 : List Int -> List Int
+map2 xs =
+    List.map2 xs xs (\a b -> a + b)
+
+
+pub map3 : List Int -> List Int
+map3 xs =
+    List.map3 xs xs xs (\a b c -> a + b + c)
+
+
+pub map5 : List Int -> List Int
+map5 xs =
+    List.map5 xs xs xs xs xs (\a b c d v -> a + b + c + d + v)
+
+
+pub partition : List Int -> ( List Int, List Int )
+partition xs =
+    List.partition xs (\x -> modBy x 2 == 0)
+
+
+pub unzip : List ( Int, Int ) -> ( List Int, List Int )
+unzip ps =
+    List.unzip ps
+
+
+pub intersperse : List Int -> List Int
+intersperse xs =
+    List.intersperse xs 0
+
+
+pub sortWith : List Int -> List Int
+sortWith xs =
+    List.sortWith xs (\a b -> Basics.compare b a)

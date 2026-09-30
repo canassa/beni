@@ -168,14 +168,22 @@ rangeHelp lo hi list =
 --|     map [ 1, 4, 9 ] negate == [ -1, -4, -9 ]
 --|
 --| `func` is called on the first element first (`checker.md` Appendix B).
---| That is why this is `foldl` and then `reverse` rather than the one-liner
---| `foldr xs [] (\x acc -> func x :: acc)`: `foldr` is reverse-then-`foldl`,
---| so the short spelling walks the list backwards and hands `func` the last
---| element first. The cost is the same either way — one intermediate list of
---| n cells — and this one puts it after the calls instead of before them.
+--|
+--| This is the plain recursion, `func x :: map rest func`, and it walks a
+--| list of any length: a self-call under `::` is a **cons step**, which the
+--| code generator compiles to one loop that builds the result front to back
+--| (`backend.md` §8, *Tail calls modulo cons*) — n cells, no `reverse`, no
+--| stack. The head is evaluated before the loop moves on, so `func` sees
+--| the elements in list order, as the recursion would. Every function below
+--| that builds a list is written the same way.
 pub map : List a, (a -> b) -> List b
 map xs func =
-    reverse (foldl xs [] (\x acc -> func x :: acc))
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            func x :: map rest func
 
 
 --| Same as `map` but the function is also given the index of each element,
@@ -184,28 +192,37 @@ map xs func =
 --|     indexedMap [ "a", "b" ] (\i x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a -> b) -> List b
 indexedMap xs func =
-    map2 (range 0 (length xs - 1)) xs func
+    indexedMapHelp xs 0 func
+
+
+indexedMapHelp : List a, Int, (Int, a -> b) -> List b
+indexedMapHelp xs index func =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            func index x :: indexedMapHelp rest (index + 1) func
 
 
 --| Keep the elements that pass the test.
 --|
 --|     filter [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == [ 2, 4 ]
 --|
---| `isGood` is asked about the first element first, so this is a `foldl` and
---| a `reverse` rather than a `foldr` (see `map`).
+--| `isGood` is asked about the first element first. A dropped element is an
+--| ordinary tail call, so it costs no cell; the result is a new list even
+--| when nothing was dropped.
 pub filter : List a, (a -> Bool) -> List a
 filter list isGood =
-    reverse
-        (foldl
-            list
+    case list of
+        [] ->
             []
-            (\x xs ->
-                if isGood x then
-                    x :: xs
-                else
-                    xs
-            )
-        )
+
+        x :: rest ->
+            if isGood x then
+                x :: filter rest isGood
+            else
+                filter rest isGood
 
 
 --| Filter out certain values. For example, to get all the heads of a list of
@@ -213,21 +230,20 @@ filter list isGood =
 --|
 --|     filterMap [ [ 1, 2 ], [], [ 3 ] ] head == [ 1, 3 ]
 --|
---| `func` sees the first element first, so this is a `foldl` and a `reverse`
---| rather than a `foldr` (see `map`).
+--| `func` sees the first element first.
 pub filterMap : List a, (a -> Maybe b) -> List b
 filterMap xs func =
-    reverse (foldl xs [] (\value rest -> maybeCons value rest func))
+    case xs of
+        [] ->
+            []
 
+        x :: rest ->
+            case func x of
+                Just value ->
+                    value :: filterMap rest func
 
-maybeCons : a, List b, (a -> Maybe b) -> List b
-maybeCons value xs func =
-    case func value of
-        Just result ->
-            result :: xs
-
-        Nothing ->
-            xs
+                Nothing ->
+                    filterMap rest func
 
 
 --| Determine the length of a list.
@@ -332,6 +348,9 @@ product xs =
 --| Put two lists together. `++` does the same thing.
 --|
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
+--|
+--| `ys` is not copied: it is the result's tail, and `append xs []` is `xs`
+--| itself.
 pub append : List a, List a -> List a
 append xs ys =
     case ys of
@@ -339,23 +358,83 @@ append xs ys =
             xs
 
         _ ->
-            foldr xs ys cons
+            appendHelp xs ys
+
+
+appendHelp : List a, List a -> List a
+appendHelp xs ys =
+    case xs of
+        [] ->
+            ys
+
+        x :: rest ->
+            x :: appendHelp rest ys
 
 
 --| Concatenate a bunch of lists into a single list.
 --|
 --|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
+--|
+--| The last list that is not empty is not copied: it is the result's tail,
+--| as it was when this was `append` folded from the right, so `concat [ xs
+--| ]` is `xs` itself.
 pub concat : List (List a) -> List a
 concat lists =
-    foldr lists [] append
+    concatHelp [] [] lists
+
+
+--| `copying` is what is left of the list being copied, `pending` the last
+--| non-empty list met, not yet copied because it may turn out to be the
+--| last and then is shared instead.
+concatHelp : List a, List a, List (List a) -> List a
+concatHelp copying pending lists =
+    case copying of
+        x :: more ->
+            x :: concatHelp more pending lists
+
+        [] ->
+            case lists of
+                [] ->
+                    pending
+
+                [] :: rest ->
+                    concatHelp [] pending rest
+
+                next :: rest ->
+                    concatHelp pending next rest
 
 
 --| Map a given function onto a list and flatten the resulting lists.
 --|
 --|     concatMap [ 1, 2 ] (\x -> [ x, x ]) == [ 1, 1, 2, 2 ]
+--|
+--| `func` is called on the first element first, and the last list it
+--| answers that is not empty is shared rather than copied, exactly as
+--| `concat (map list func)` shares it — in one pass, without that
+--| intermediate list.
 pub concatMap : List a, (a -> List b) -> List b
 concatMap list func =
-    concat (map list func)
+    concatMapHelp [] [] list func
+
+
+concatMapHelp : List b, List b, List a, (a -> List b) -> List b
+concatMapHelp copying pending list func =
+    case copying of
+        x :: more ->
+            x :: concatMapHelp more pending list func
+
+        [] ->
+            case list of
+                [] ->
+                    pending
+
+                y :: rest ->
+                    case func y of
+                        [] ->
+                            concatMapHelp [] pending rest func
+
+                        next ->
+                            concatMapHelp pending next rest func
 
 
 --| Places the given value between all members of the given list.
@@ -368,14 +447,17 @@ intersperse xs sep =
             []
 
         hd :: tl ->
-            let
-                step x rest =
-                    sep :: x :: rest
+            hd :: intersperseHelp tl sep
 
-                spersed =
-                    foldr tl [] step
-            in
-            hd :: spersed
+
+intersperseHelp : List a, a -> List a
+intersperseHelp xs sep =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            sep :: x :: intersperseHelp rest sep
 
 
 --| Combine two lists, combining them with the given function. If one list is
@@ -384,63 +466,40 @@ intersperse xs sep =
 --|     map2 [ 1, 2, 3 ] [ 10, 20 ] (+) == [ 11, 22 ]
 --|
 --| `func` is called on the first elements first, and not at all for the tail
---| the shorter list does not reach. Like `map`, this is an accumulator loop
---| and then a `reverse` rather than `func x y :: map2 …`: the short spelling
---| is not a tail call, so its stack depth was the LENGTH OF THE LIST and it
---| died at about 5 700 elements. `map3`–`map5` are the same shape, one
---| argument wider each, and they died proportionally sooner.
+--| the shorter list does not reach. `func x y :: map2 …` was once the
+--| spelling that died at about 5 700 elements, because it recursed to the
+--| length of the list; it is a cons step now, compiled to a loop (see
+--| `map`). `map3`–`map5` are the same shape, one argument wider each.
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
-    reverse (map2Help xs ys func [])
-
-
-map2Help : List a, List b, (a, b -> result), List result -> List result
-map2Help xs ys func acc =
     case ( xs, ys ) of
         ( x :: xrest, y :: yrest ) ->
-            map2Help xrest yrest func (func x y :: acc)
+            func x y :: map2 xrest yrest func
 
         _ ->
-            acc
+            []
 
 
 --| Combine three lists, combining them with the given function.
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
-    reverse (map3Help xs ys zs func [])
-
-
-map3Help : List a, List b, List c, (a, b, c -> result), List result -> List result
-map3Help xs ys zs func acc =
     case ( xs, ys, zs ) of
         ( x :: xrest, y :: yrest, z :: zrest ) ->
-            map3Help xrest yrest zrest func (func x y z :: acc)
+            func x y z :: map3 xrest yrest zrest func
 
         _ ->
-            acc
+            []
 
 
 --| Combine four lists, combining them with the given function.
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
-    reverse (map4Help xs ys zs ws func [])
-
-
-map4Help :
-    List a
-    , List b
-    , List c
-    , List d
-    , (a, b, c, d -> result)
-    , List result
-    -> List result
-map4Help xs ys zs ws func acc =
     case ( xs, ys, zs, ws ) of
         ( x :: xrest, y :: yrest, z :: zrest, w :: wrest ) ->
-            map4Help xrest yrest zrest wrest func (func x y z w :: acc)
+            func x y z w :: map4 xrest yrest zrest wrest func
 
         _ ->
-            acc
+            []
 
 
 --| Combine five lists, combining them with the given function.
@@ -453,25 +512,12 @@ pub map5 :
     , (a, b, c, d, e -> result)
     -> List result
 map5 xs ys zs ws vs func =
-    reverse (map5Help xs ys zs ws vs func [])
-
-
-map5Help :
-    List a
-    , List b
-    , List c
-    , List d
-    , List e
-    , (a, b, c, d, e -> result)
-    , List result
-    -> List result
-map5Help xs ys zs ws vs func acc =
     case ( xs, ys, zs, ws, vs ) of
         ( x :: xrest, y :: yrest, z :: zrest, w :: wrest, v :: vrest ) ->
-            map5Help xrest yrest zrest wrest vrest func (func x y z w v :: acc)
+            func x y z w v :: map5 xrest yrest zrest wrest vrest func
 
         _ ->
-            acc
+            []
 
 
 --| Sort a list from lowest to highest, by the element type's own `compare`.
@@ -500,7 +546,7 @@ sort xs =
 --| list, and not at all for a one-element one — so an expensive key was
 --| recomputed and an effectful one would run its effect a number of times
 --| nobody could predict. The COMPARATOR's order and count stay unspecified,
---| which is inherent to a sort. Both `map`s are `foldl` underneath, so the
+--| which is inherent to a sort. Both `map`s are loops (see `map`), so the
 --| decoration is as stack-safe as the merge.
 --|
 --| Ties are `EQ` on the key, and `mergeWith` takes the left element on `EQ`,
@@ -526,8 +572,9 @@ sortBy xs toKey =
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in, and that is a contract rather than an accident of the merge
 --| (`checker.md` Appendix B) — `mergeWith` takes the LEFT element on
---| anything but `GT`, and `splitHalf` keeps the front half in front. The
---| order in which `cmp` is asked, and how many times, stays unspecified.
+--| anything but `GT`, and the front half, the first ⌊n / 2⌋ elements, stays
+--| in front. The order in which `cmp` is asked, and how many times, stays
+--| unspecified.
 pub sortWith : List a, (a, a -> Order) -> List a
 sortWith list cmp =
     case list of
@@ -538,68 +585,68 @@ sortWith list cmp =
             list
 
         _ ->
-            let
-                ( front, back ) =
-                    splitHalf list
-            in
-            mergeWith (sortWith front cmp) (sortWith back cmp) cmp
+            mergeWith
+                (sortWith (frontHalf list list) cmp)
+                (sortWith (backHalf list list) cmp)
+                cmp
 
 
---| Split a list into two halves whose lengths differ by at most one, with a
---| slow pointer walking one step for every two of the fast one.
-splitHalf : List a -> ( List a, List a )
-splitHalf list =
-    splitHalfHelp list list []
-
-
-splitHalfHelp : List a, List a, List a -> ( List a, List a )
-splitHalfHelp slow fast acc =
+--| The first ⌊n / 2⌋ elements of a list of n: a slow pointer taking one
+--| element for every two the fast one passes, built front to back (see
+--| `map`).
+frontHalf : List a, List a -> List a
+frontHalf slow fast =
     case fast of
-        [] ->
-            ( reverse acc, slow )
-
-        [ _ ] ->
-            ( reverse acc, slow )
-
         _ :: _ :: fastRest ->
             case slow of
-                [] ->
-                    ( reverse acc, slow )
-
                 x :: slowRest ->
-                    splitHalfHelp slowRest fastRest (x :: acc)
+                    x :: frontHalf slowRest fastRest
+
+                [] ->
+                    []
+
+        _ ->
+            []
+
+
+--| What `frontHalf` leaves: the list itself, not a copy, after ⌊n / 2⌋
+--| elements.
+backHalf : List a, List a -> List a
+backHalf slow fast =
+    case fast of
+        _ :: _ :: fastRest ->
+            case slow of
+                _ :: slowRest ->
+                    backHalf slowRest fastRest
+
+                [] ->
+                    slow
+
+        _ ->
+            slow
 
 
 --| Merge two sorted lists into one. On `EQ` the left element wins, which is
---| what makes `sortWith` stable.
+--| what makes `sortWith` stable. What is left of one list when the other
+--| runs out is the result's tail, not a copy.
 mergeWith : List a, List a, (a, a -> Order) -> List a
 mergeWith left right cmp =
-    mergeWithHelp left right [] cmp
-
-
-mergeWithHelp : List a, List a, List a, (a, a -> Order) -> List a
-mergeWithHelp left right acc cmp =
     case left of
         [] ->
-            reverseAppend acc right
+            right
 
         x :: xrest ->
             case right of
                 [] ->
-                    reverseAppend acc left
+                    left
 
                 y :: yrest ->
                     case cmp x y of
                         GT ->
-                            mergeWithHelp left yrest (y :: acc) cmp
+                            y :: mergeWith left yrest cmp
 
                         _ ->
-                            mergeWithHelp xrest right (x :: acc) cmp
-
-
-reverseAppend : List a, List a -> List a
-reverseAppend acc rest =
-    foldl acc rest cons
+                            x :: mergeWith xrest right cmp
 
 
 --| Determine if a list is empty.
@@ -648,20 +695,15 @@ tail list =
 --|     take [ 1, 2, 3 ] 2 == [ 1, 2 ]
 pub take : List a, Int -> List a
 take list n =
-    reverse (takeHelp n list [])
-
-
-takeHelp : Int, List a, List a -> List a
-takeHelp n list acc =
     if n <= 0 then
-        acc
+        []
     else
         case list of
             [] ->
-                acc
+                []
 
             x :: xs ->
-                takeHelp (n - 1) xs (x :: acc)
+                x :: take xs (n - 1)
 
 
 --| Drop the first `n` members of a list.
@@ -686,21 +728,26 @@ drop list n =
 --|
 --|     partition [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
 --|
---| `pred` is asked about the first element first, so this is a `foldl` and a
---| `reverse` of each half rather than a `foldr` (see `map`).
+--| `pred` is asked about each element once, the first element first. This
+--| one function still accumulates and reverses: it builds two lists, and a
+--| cons step has one destination. Its two accumulators are parameters of
+--| the loop rather than a pair rebuilt per element.
 pub partition : List a, (a -> Bool) -> ( List a, List a )
 partition list pred =
-    let
-        step x ( trues, falses ) =
-            if pred x then
-                ( x :: trues, falses )
-            else
-                ( trues, x :: falses )
+    partitionHelp list pred [] []
 
-        ( kept, dropped ) =
-            foldl list ( [], [] ) step
-    in
-    ( reverse kept, reverse dropped )
+
+partitionHelp : List a, (a -> Bool), List a, List a -> ( List a, List a )
+partitionHelp list pred trues falses =
+    case list of
+        [] ->
+            ( reverse trues, reverse falses )
+
+        x :: rest ->
+            if pred x then
+                partitionHelp rest pred (x :: trues) falses
+            else
+                partitionHelp rest pred trues (x :: falses)
 
 
 --| Decompose a list of tuples into a tuple of lists.
@@ -708,8 +755,4 @@ partition list pred =
 --|     unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )
 pub unzip : List ( a, b ) -> ( List a, List b )
 unzip pairs =
-    let
-        step ( x, y ) ( xs, ys ) =
-            ( x :: xs, y :: ys )
-    in
-    foldr pairs ( [], [] ) step
+    ( map pairs (\( x, _ ) -> x), map pairs (\( _, y ) -> y) )

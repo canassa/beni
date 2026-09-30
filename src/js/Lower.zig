@@ -1850,9 +1850,6 @@ const Lowerer = struct {
         /// front to back through `root` and `last` (§8, *Tail calls modulo
         /// cons*). Set by `markTails`.
         builds: bool = false,
-        /// A suspendable body never builds (transparent-effects-proposal.md
-        /// §16.3): its `::` steps are ordinary calls.
-        no_cons: bool = false,
         /// `$root`, the cell before the result's first, and `$last`, the
         /// cell whose tail the next step or exit writes. `.none` unless
         /// `builds`.
@@ -1920,9 +1917,7 @@ const Lowerer = struct {
                 slot.carried = true;
             }
         }
-        // A suspendable body does not build (§16.3): a `::` step there is an
-        // ordinary call.
-        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots, .no_cons = suspendable };
+        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .ev_let = ev_let, .slots = slots };
         if (!l.markTails(body, &loop)) return l.functionOf(evidence, ev_let, params, body, suspendable);
 
         // A new function is a new label scope (§7).
@@ -1977,8 +1972,18 @@ const Lowerer = struct {
         try l.tailStmts(&loop_body, body, &loop);
         // A suspension point in the loop's body: the fast path stays in the
         // loop, and the slow path re-enters the function with its slots
-        // (§16.3).
-        const split = try l.splitSuspensions(loop_body.items, .{ .label = label, .callee = label, .params = names.items }, .loop);
+        // (§16.3). A building loop's slow path goes on writing into the same
+        // destination: its re-entry builds the rest as a list of its own,
+        // which a continuation links into `$last` (§8, *Tail calls modulo
+        // cons*, *What it owes the fiber lowering*).
+        var reentry: Suspend.Loop = .{ .label = label, .callee = label, .params = names.items };
+        if (loop.builds and l.markers != 0) {
+            reentry.root = loop.root;
+            reentry.last = loop.last;
+            reentry.tail = try l.name(.{ .module = .none, .base = try l.slotName(1), .tag = JsIr.Name.no_tag });
+            reentry.built = try l.fixedName("$built");
+        }
+        const split = try l.splitSuspensions(loop_body.items, reentry, .loop);
 
         const range = try l.b.addRange(split);
         const record = try l.b.addRecord(range);
@@ -2026,7 +2031,6 @@ const Lowerer = struct {
                 // A cons step: the tail of a `::` in tail position is a tail
                 // position again, and one that reaches a self-call makes the
                 // function build (§8, *Tail calls modulo cons*).
-                if (loop.no_cons) return false;
                 const tail = l.consTail(inst) orelse return false;
                 if (!l.markTails(tail, loop)) return false;
                 loop.builds = true;

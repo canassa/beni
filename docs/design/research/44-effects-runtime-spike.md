@@ -259,7 +259,9 @@ node size.mjs ../../zig-out/bin/beni out/size
   body its site's callee takes; erring towards `$s` costs speed, never correctness.
 - **Mutual recursion on the fast path** keeps a real frame per call, as it did before.
 - **Tail recursion modulo cons is off in a suspendable body** (P2 §16.3), so a `::`-building
-  recursion that may suspend uses a frame per element on the fast path.
+  recursion that may suspend uses a frame per element on the fast path. *(Closed 2026-09-30: a
+  suspendable body builds too, its slow path linking a re-entry's list into `$last` — `backend.md`
+  §8, *What it owes the fiber lowering*.)*
 - **A named binding nothing reads is still dropped by `--release`**, even over an impure call; only
   `let _ =` is kept. *(Closed 2026-09-30: every binding that may be impure is kept — `backend.md`
   §9 item 1, `language.md` §6.)*

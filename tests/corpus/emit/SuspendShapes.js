@@ -36,8 +36,38 @@ const SuspendShapes$total = ($in$0, $in$1) => {
     }
   }
 };
+const SuspendShapes$fetchAll = ($in$0) => {
+  const $root = { $: 1, a: null, b: null };
+  let $last = $root;
+  SuspendShapes$fetchAll: while (true) {
+    const xs$1 = $in$0;
+    if (xs$1.$ === 0) {
+      $last.b = { $: 0, a: null, b: null };
+      return $root.b;
+    } else {
+      const x$2 = xs$1.a;
+      const rest$3 = xs$1.b;
+      const $t$6 = SuspendShapes$fetch(x$2);
+      if (Task$isWaiting($t$6)) {
+        return Task$andThen($t$6, ($t$6) => {
+          $last.b = { $: 1, a: $t$6, b: null };
+          $last = $last.b;
+          $in$0 = rest$3;
+          return Task$andThen(SuspendShapes$fetchAll($in$0), ($built) => {
+            $last.b = $built;
+            return $root.b;
+          });
+        });
+      }
+      $last.b = { $: 1, a: $t$6, b: null };
+      $last = $last.b;
+      $in$0 = rest$3;
+      continue SuspendShapes$fetchAll;
+    }
+  }
+};
 const SuspendShapes$twice = (f$1, x$2) => f$1(f$1(x$2));
-const SuspendShapes$twice$s = (f$1, x$2) => Task$andThen(f$1(x$2), ($t$6) => f$1($t$6));
-const SuspendShapes$both = (n$1) => Task$andThen(SuspendShapes$twice$s(SuspendShapes$fetch, n$1), ($t$8) => Basics$add($t$8, SuspendShapes$twice((k$2) => Basics$add(k$2, 1), n$1)));
+const SuspendShapes$twice$s = (f$1, x$2) => Task$andThen(f$1(x$2), ($t$7) => f$1($t$7));
+const SuspendShapes$both = (n$1) => Task$andThen(SuspendShapes$twice$s(SuspendShapes$fetch, n$1), ($t$9) => Basics$add($t$9, SuspendShapes$twice((k$2) => Basics$add(k$2, 1), n$1)));
 const SuspendShapes$plain = (n$1) => n$1 <= 0 ? 0 : Basics$add(n$1, SuspendShapes$plain(Basics$sub(n$1, 1)));
-export { SuspendShapes$fetch, SuspendShapes$pick, SuspendShapes$total, SuspendShapes$both, SuspendShapes$plain };
+export { SuspendShapes$fetch, SuspendShapes$pick, SuspendShapes$total, SuspendShapes$fetchAll, SuspendShapes$both, SuspendShapes$plain };

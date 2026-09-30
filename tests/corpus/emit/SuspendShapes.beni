@@ -13,6 +13,11 @@
 --     `Task$isWaiting`, then the rest of the iteration and `continue` — and
 --     the slow path's arrow is a copy whose `continue` became a call of the
 --     function with its slots.
+--   - `fetchAll`: a loop that BUILDS (`backend.md` §8, *Tail calls modulo
+--     cons*). `$root` and `$last` before the loop, the fast path writing
+--     the cell in place, and the slow path's `continue` become a call of
+--     the function whose list a `($built) => …` arrow links into `$last.b`
+--     before returning `$root.b`.
 --   - `twice`: two bodies. `both` calls it with a function that suspends and
 --     with one that does not, so both are reached: `Main$twice`, exactly as
 --     before, and `Main$twice$s`.
@@ -49,6 +54,16 @@ total xs acc =
 
         x :: rest ->
             total rest (acc + fetch x)
+
+
+pub fetchAll : List Int -> List Int
+fetchAll xs =
+    case xs of
+        [] ->
+            []
+
+        x :: rest ->
+            fetch x :: fetchAll rest
 
 
 twice : (Int -> Int), Int -> Int

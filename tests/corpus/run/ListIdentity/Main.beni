@@ -1,0 +1,107 @@
+-- The identities `core/List` keeps, observed through a test platform's
+-- `refEq` (`backend.md` §15.8): a markup lowering's reference check per
+-- hole and per row input skips work only for the very same value, so a
+-- rewrite of these functions must not copy what the old ones shared.
+--
+--   * The ELEMENTS a function passes through — `filter`, `take`,
+--     `partition`, `append`, `concat` — are the input's own values.
+--   * `append xs []` is `xs`, `append [] ys` is `ys`, and `xs ++ ys` shares
+--     `ys` as its tail.
+--   * `concat` shares its last non-empty list, however many empty ones
+--     follow it, and `concatMap` does the same with the last non-empty list
+--     its callback answered — the list `concat (map …)` answered before.
+--   * `sort` of one element is the list itself.
+--
+-- `filter` keeping everything is NOT pinned either way: the old
+-- `foldl`-and-`reverse` built a new list, and so does the loop.
+import Identity
+import List
+import Node
+
+
+type alias Row =
+    id : Int
+
+
+show : String, Bool -> String
+show label b =
+    if b then
+        label ++ " same"
+    else
+        label ++ " copied"
+
+
+main : Node.Program
+main =
+    let
+        rows =
+            [ { id = 1 }, { id = 2 }, { id = 3 } ]
+
+        single =
+            [ 5 ]
+
+        firstOf xs =
+            case xs of
+                x :: _ ->
+                    Identity.refEq x (headOr rows)
+
+                [] ->
+                    False
+
+        a =
+            [ 1, 2 ]
+
+        b =
+            [ 3, 4 ]
+
+        joined =
+            List.concat [ [], a, [], b, [], [] ]
+
+        mapped =
+            List.concatMap [ 1, 2, 3 ]
+                (\n ->
+                    if n == 2 then
+                        b
+                    else
+                        []
+                )
+
+        mappedTwo =
+            List.concatMap [ 1, 2, 3 ]
+                (\n ->
+                    if n == 3 then
+                        []
+                    else if n == 1 then
+                        a
+                    else
+                        b
+                )
+
+        ( kept, _ ) =
+            List.partition rows (\r -> r.id < 2)
+    in
+    Node.printLines
+        [ show "filter element" (firstOf (List.filter rows (\r -> r.id == 1)))
+        , show "take element" (firstOf (List.take rows 2))
+        , show "partition element" (firstOf kept)
+        , show "append element" (firstOf (List.append rows [ { id = 9 } ]))
+        , show "concat element" (firstOf (List.concat [ [], rows ]))
+        , show "append xs []" (Identity.refEq (List.append rows []) rows)
+        , show "append [] ys" (Identity.refEq (List.append [] rows) rows)
+        , show "xs ++ ys tail" (Identity.refEq (List.drop (a ++ b) 2) b)
+        , show "concat one" (Identity.refEq (List.concat [ a ]) a)
+        , show "concat last" (Identity.refEq (List.drop joined 2) b)
+        , show "concatMap alone" (Identity.refEq mapped b)
+        , show "concatMap last" (Identity.refEq (List.drop mappedTwo 2) b)
+        , show "sort one" (Identity.refEq (List.sort single) single)
+        ]
+
+
+headOr : List Row -> Row
+headOr xs =
+    case xs of
+        x :: _ ->
+            x
+
+        [] ->
+            { id = 0 }

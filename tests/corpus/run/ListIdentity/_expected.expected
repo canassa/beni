@@ -1,0 +1,13 @@
+filter element same
+take element same
+partition element same
+append element same
+concat element same
+append xs [] same
+append [] ys same
+xs ++ ys tail same
+concat one same
+concat last same
+concatMap alone same
+concatMap last same
+sort one same

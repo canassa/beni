@@ -1,0 +1,67 @@
+-- run: every `core/List` function that builds a list, over 100 000
+-- elements. They are written as cons steps — `func x :: map rest func` —
+-- which recursing would overflow Node's stack at about 8 000 cells; the code
+-- generator compiles each to one loop that builds front to back
+-- (`backend.md` §8, *Tail calls modulo cons*). A function the rewrite left
+-- recursing would throw `RangeError` here; one that built backwards would
+-- print the wrong first and last elements.
+import List
+import Node exposing (Program)
+import String
+
+
+cells : List Int
+cells =
+    List.range 1 100000
+
+
+ends : List Int -> String
+ends xs =
+    String.join
+        [ String.fromInt (List.length xs)
+        , Debug.toString (List.head xs)
+        , Debug.toString (List.head (List.drop xs (List.length xs - 1)))
+        , String.fromInt (List.sum xs)
+        ]
+        " "
+
+
+main : Program
+main =
+    let
+        ( odd, even ) =
+            List.partition cells (\n -> modBy n 2 == 1)
+
+        ( firsts, seconds ) =
+            List.unzip (List.map cells (\n -> ( n, n * 2 )))
+    in
+    Node.printLines
+        [ ends (List.map cells (\n -> n * 2))
+        , ends (List.filter cells (\n -> modBy n 3 == 0))
+        , ends
+            (List.filterMap
+                cells
+                (\n ->
+                    if modBy n 3 == 0 then
+                        Nothing
+                    else
+                        Just n
+                )
+            )
+        , ends (List.indexedMap cells (\i n -> i + n))
+        , ends (List.take cells 99999)
+        , ends (List.append cells [ 0 ])
+        , ends (cells ++ cells)
+        , ends (List.concat [ cells, [], cells ])
+        , ends (List.concatMap cells (\n -> [ n, n ]))
+        , ends (List.map2 cells cells (\a b -> a - b))
+        , ends (List.map3 cells cells cells (\a b c -> a + b + c))
+        , ends (List.map4 cells cells cells cells (\a b c d -> a + b + c + d))
+        , ends (List.map5 cells cells cells cells cells (\a b c d v -> a + b + c + d + v))
+        , ends odd
+        , ends even
+        , ends firsts
+        , ends seconds
+        , ends (List.intersperse cells 0)
+        , ends (List.sortWith cells (\a b -> Basics.compare b a))
+        ]

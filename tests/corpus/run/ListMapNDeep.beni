@@ -2,10 +2,11 @@
 -- would make their stack depth linear in their input: recursing, `map2`
 -- threw `RangeError: Maximum call stack size exceeded` at about
 -- 5 700 elements, `map3` at 4 900, `map4` at 4 200 and `map5` at 3 700, and
--- `indexedMap` is `map2`. Their self-calls are not in tail position, so
--- they are written the way `map` is: `foldl` plus `reverse`, an
--- accumulator loop (`backend.md` §8).
---
+-- `indexedMap` was `map2`. Their self-calls were not in tail position, so
+-- they were written the way `map` was: `foldl` plus `reverse`, an
+-- accumulator loop (`backend.md` §8). Since 2026-09-30 each is
+-- `func x y :: map2 …` again, a cons step the code generator compiles to a
+-- loop that builds front to back (§8, *Tail calls modulo cons*).
 --
 -- Everything the rewrite had to keep is pinned below, because an accumulator
 -- loop is exactly the shape that gets each of them wrong:

@@ -1,0 +1,155 @@
+-- run: `core/List`'s building functions, written as cons steps that the
+-- code generator compiles to one front-to-back loop (`backend.md` §8, *Tail
+-- calls modulo cons*), must answer exactly what the accumulator-and-`reverse`
+-- versions they replaced answered, at every edge: the empty list, one
+-- element, a count that is negative, zero or past the end, empty lists at
+-- the front, middle and end of a `concat`, and callbacks that answer
+-- `Nothing` or `[]` at the ends.
+--
+-- The order lines pin what a loop gets wrong and a recursion does not: a
+-- callback that itself calls a building function (`map` inside `map`,
+-- `concatMap` inside `filterMap`) finishes its own list before the outer
+-- one moves on, and every callback still sees the first element first
+-- (`checker.md` Appendix B).
+import List
+import Node exposing (Program)
+import String
+
+
+note : String, Int -> Int
+note tag n =
+    Debug.log n tag
+
+
+show : List Int -> String
+show xs =
+    Debug.toString xs
+
+
+main : Program
+main =
+    let
+        nested =
+            List.map [ 1, 2 ] (\x -> List.map [ 10, 20 ] (\y -> note "inner" (x * y)))
+
+        picked =
+            List.filterMap [ 1, 2, 3 ]
+                (\x ->
+                    case List.concatMap [ x, x ] (\y -> [ note "concatMap" y ]) of
+                        [ 2, _ ] ->
+                            Nothing
+
+                        other ->
+                            Just (List.sum other)
+                )
+
+        indexed =
+            List.indexedMap [ 5, 6, 7 ] (\i x -> note "indexedMap" (i * 100 + x))
+
+        fives =
+            List.map5
+                [ 1, 2 ]
+                [ 10, 20 ]
+                [ 100, 200 ]
+                [ 1000, 2000 ]
+                [ 0, 0, 0 ]
+                (\a b c d v -> note "map5" (a + b + c + d + v))
+
+        halves =
+            List.partition [ 1, 2, 3, 4 ] (\x -> note "partition" x > 2)
+    in
+    Node.printLines
+        [ Debug.toString nested
+        , Debug.toString picked
+        , show indexed
+        , show fives
+        , Debug.toString halves
+        , show (List.map [] (\x -> x + 1))
+        , show (List.map [ 1 ] (\x -> x + 1))
+        , show (List.filter [] (\x -> x > 1))
+        , show (List.filter [ 1, 2, 3, 4 ] (\x -> x > 10))
+        , show (List.filter [ 1, 2, 3, 4 ] (\x -> x > 0))
+        , show (List.filter [ 1, 2, 3, 4 ] (\x -> modBy x 2 == 1))
+        , show
+            (List.filterMap
+                [ 1, 2, 3 ]
+                (\x ->
+                    if x == 2 then
+                        Just x
+                    else
+                        Nothing
+                )
+            )
+        , show
+            (List.filterMap
+                [ 1, 2, 3 ]
+                (\x ->
+                    if x == 2 then
+                        Nothing
+                    else
+                        Just x
+                )
+            )
+        , show (List.indexedMap [] (\i x -> i + x))
+        , show (List.take [ 1, 2, 3 ] (0 - 1))
+        , show (List.take [ 1, 2, 3 ] 0)
+        , show (List.take [ 1, 2, 3 ] 2)
+        , show (List.take [ 1, 2, 3 ] 3)
+        , show (List.take [ 1, 2, 3 ] 9)
+        , show (List.take [] 2)
+        , show (List.append [] [])
+        , show (List.append [ 1 ] [])
+        , show (List.append [] [ 2 ])
+        , show ([ 1, 2 ] ++ [ 3, 4 ])
+        , show (List.concat [])
+        , show (List.concat [ [], [] ])
+        , show (List.concat [ [], [ 1, 2 ], [], [ 3 ], [] ])
+        , show (List.concat [ [ 1 ], [ 2 ], [ 3 ] ])
+        , show
+            (List.concatMap
+                [ 1, 2, 3 ]
+                (\x ->
+                    if x == 2 then
+                        []
+                    else
+                        [ x, x ]
+                )
+            )
+        , show
+            (List.concatMap
+                [ 1, 2, 3 ]
+                (\x ->
+                    if x == 3 then
+                        []
+                    else
+                        [ x ]
+                )
+            )
+        , show
+            (List.concatMap
+                [ 1, 2, 3 ]
+                (\x ->
+                    if x == 1 then
+                        [ 7, 8 ]
+                    else
+                        []
+                )
+            )
+        , show (List.concatMap [] (\x -> [ x ]))
+        , show (List.map2 [ 1, 2, 3 ] [] (\a b -> a + b))
+        , show (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100 ] (\a b c -> a + b + c))
+        , show
+            (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [ 1000, 2000 ] (\a b c d -> a + b + c + d))
+        , Debug.toString (List.partition [] (\x -> x > 1))
+        , Debug.toString (List.partition [ 1, 2, 3, 4 ] (\x -> x > 0))
+        , Debug.toString (List.unzip [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ) ])
+        , Debug.toString (List.unzip [])
+        , show (List.intersperse [ 1, 2, 3 ] 0)
+        , show (List.intersperse [ 1 ] 0)
+        , show (List.sort [ 5, 3, 9, 1, 3, 7, 2 ])
+        , Debug.toString
+            (List.sortBy
+                [ ( 2, "b" ), ( 1, "x" ), ( 2, "a" ), ( 1, "y" ) ]
+                (\( k, _ ) -> note "sortBy" k)
+            )
+        ]

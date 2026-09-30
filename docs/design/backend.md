@@ -1808,6 +1808,12 @@ the callback order Appendix B of [`checker.md`](checker.md) states, keeps the wa
 shortest list without calling the callback for the unmatched tail, and adds no traversal `map` does
 not already pay. `tests/corpus/run/ListMapNDeep.beni` is the fixture, at a million elements each.
 
+*Amended 2026-09-30.* The accumulator loops above are gone from `core/List`: `map`, `map2`–`map5`,
+`indexedMap`, `filter`, `filterMap`, `take`, `append`, `concat`, `concatMap`, `intersperse`,
+`unzip` and the merge of `sortWith` are written as the plain recursion again, each self-call the
+tail of a `::`, which *Tail calls modulo cons* below compiles to one loop that builds front to back.
+*Tail calls modulo cons* has the details, the identities kept and the measurement.
+
 ### Tail calls modulo cons
 
 *Added 2026-09-30.* The loop above ends the stack overflow of an accumulator. It did not end the
@@ -1923,10 +1929,67 @@ would write the same private cell twice and the first result would change under 
 effects ever resume a continuation more than once, a building function whose steps can suspend
 must copy the cells built so far (Koka copies the context in that case) or give up the rewrite.
 
+*As built, 2026-09-30.* The first version switched the rewrite off in a suspendable body, which
+made every `::` step there an ordinary call and its recursion a frame per element on the fast path.
+That was harmless while nothing in `core/` had the shape; once `List.map` did (below), `List$map$s`
+over 100 000 elements with a callback that may suspend but does not overflowed the stack, where the
+accumulator version had been a loop (`run/SuspendListBuildDeep`, red before this paragraph). So a
+suspendable body builds too, and the slow path needs no second entry to the loop. The continuation
+is `Suspend`'s loop mode unchanged — a copy of the rest of the iteration, which writes its cells into
+the captured `$last` and moves it — except that its `continue` becomes
+
+```js
+return Task$andThen(F($in$0, …), ($built) => {
+  $last.b = $built;
+  return $root.b;
+});
+```
+
+the function re-entered with its slots, building the rest of the list in a destination of its own,
+and that list linked in as this one's tail. Capturing the `let` itself rather than its value is
+sound here, because the call that allocated `$last` has returned the waiting sentinel and never
+runs again: the continuation is the destination's only owner. The fast path stays in the loop,
+so a callback that answers at once costs what it costs in the direct body; each park costs one
+more root cell and one arrow, and a list whose every element parks holds one linking continuation
+per park on the fiber's stack — on the heap, and popped one at a time by the run loop, like any
+other continuation (`run/SuspendDeepRecursion`). Resumption is still one-shot, which is what makes
+the capture sound. `emit/SuspendShapes`' `fetchAll` pins the shape.
+
 **`core/` as written today does not have this shape**: `map`, `filter`, `filterMap`, `take`,
 `append` and `map2`–`map5` are accumulator loops followed by one `reverse` (or `foldr`, which is
 `reverse` and `foldl`), and none of them is a cons step. Whether they should be rewritten into it
 is measured below and is not part of this change.
+
+*Amended 2026-09-30: `core/` now has this shape.* Every `core/List` function that builds one list
+is the recursion Elm writes, its self-call under `::`, and so one loop: `map`, `indexedMap` (a
+helper carrying the index, where it was `map2` over a `range` of the `length`), `filter` and
+`filterMap` (a dropped element is an ordinary tail call), `take`, `append`, `concat`, `concatMap`
+(one pass, where it was `concat` of a `map`), `intersperse` (two cells per step), `map2`–`map5`,
+`unzip` (two `map`s), and `sortWith`'s merge. What they kept:
+
+* **Callback order**: a step's head is evaluated before the loop moves on, so every callback sees
+  the first element first, as `checker.md` Appendix B states, and a callback that itself builds a
+  list finishes it before the outer one moves (`run/ListDirectEdges`, `run/CallbackOrderList`).
+* **Identity**, where the old functions shared: `append xs []` is `xs`, and `append` shares its
+  second list as the tail. `concat` shares its last non-empty list, as `foldr … append` did, which a
+  loop that copies every list it meets would not: it keeps the last non-empty list met *pending*,
+  copies it only when another non-empty one arrives, and returns it as the tail at the end.
+  `concatMap` does the same with its callback's answers, which is exactly what `concat (map …)`
+  shared. The merge returns what is left of one list as the tail, as `reverseAppend` did.
+  `filter` keeping everything was a new list and still is (`run/ListIdentity`).
+* **Stability and the comparator's calls**: `sortWith` splits with the same slow and fast pointers
+  `splitHalf` had, as two functions — `frontHalf`, a cons step building the first ⌊n / 2⌋ elements
+  front to back, and `backHalf`, a plain loop returning the rest uncopied — so the halves, the
+  merges and every call of `cmp` are what they were. (Counting the list and splitting at `n // 2`
+  was tried and dropped: `//` is `Basics.idiv`, a `foreign`, and made every development build that
+  sorts ship `Basics.foreign.mjs`, 1.5 kB brotli.)
+* **Stack safety** at 100 000 elements for each of them (`run/ListDirectDeep`), and in the
+  suspendable body with a callback that may suspend (`run/SuspendListBuildDeep`, above).
+
+**`partition` still accumulates and reverses**: it builds two lists, and a cons step has one
+destination. Its accumulators are now loop parameters instead of a pair rebuilt per element. `foldr`
+is `reverse` then `foldl` by contract, `range` and `repeat` build back to front already, and the
+`Dict` folds walk trees.
 
 ### Fixtures
 
@@ -1952,6 +2015,11 @@ proved by running still holds, and the shape claim gets exactly one golden.
 | `TailModConsEvidence` | a `where`-constrained building function forwarding its evidence, and one whose consing step recurses at a different instantiation | the second prints `0,1,1`; an evidence slot assumed invariant would compare `Box`es as strings |
 | `TailModConsOrder` | `Debug.log` in two heads and in the argument, a head that is a `case`, and closures over each step's head | the log order of the recursive version, byte for byte; `10,20,30` |
 | `emit/TailModConsLoop`, `emit/release/TailModConsLoop` | the shape: `$root` and `$last` before the loop, one cell per head, the exit's write and `return $root.b`, and a `::` that does not reach a self-call left alone | the goldens of §12 |
+| `ListDirectEdges` | *added 2026-09-30 with core's rewrite, like the rows below it.* Every rewritten `List` function at its edges (empty, one element, counts past either end, empty lists at every position of a `concat`), and `Debug.log` order through nested building calls | the old functions' output, recorded before the rewrite |
+| `ListDirectDeep` | every rewritten function over 100 000 elements | lengths, first and last elements, sums |
+| `ListIdentity/` | through a test platform's `refEq`: the elements passed through, `append`'s two shares, `concat`'s and `concatMap`'s last non-empty list, `sort` of one element | `same` on every line; a `concat` that copies its last list prints `copied` |
+| `SuspendListBuildDeep` | `map`, `filter`, `filterMap`, `indexedMap`, `concatMap` and `map2` over 100 000 elements with a callback that may suspend and does not, then with one that parks every thousandth element | the same lists; the fast path overflowed while a suspendable body did not build |
+| `emit/SuspendShapes` (`fetchAll`) | a building loop in a suspendable body: the fast path in place, the slow path's `continue` a re-entry linked into `$last.b` | the golden of §12 |
 
 Shadowing needs no new fixture: `tests/corpus/parse/bad/ShadowingParam.beni` already refuses a
 parameter named like a top-level value, which is the only way a self-call's name could be captured.
@@ -1998,6 +2066,39 @@ steps would make them 2.4–7× faster** and allocate n cells instead of 2n, wit
 `foreign` (the effects plan keeps higher-order functions in beni); `filterMap`, `concat` and
 `map2`–`map5` have the same accumulator shape and were not measured.
 That change is `core/`'s to make and is not part of this one.
+
+*`core/` rewritten, measured 2026-09-30* (`node bench/list/run.mjs --before-rev=<parent>
+--sample-ms=50`, Node 24.19, one pinned core, load 10.7–13.8 from other sessions; the median of
+three rounds of nine samples, both cores built by one compiler and timed interleaved against the
+same input). µs per call, before → after:
+
+| function | n = 1 000 | n = 10 000 | n = 100 000 |
+|---|--:|--:|--:|
+| `map` | 23.3 → 8.8 (0.38×) | 337 → 85 (0.25×) | 4 687 → 1 304 (0.28×) |
+| `filter` (half kept) | 15.2 → 7.6 (0.50×) | 148 → 63 (0.43×) | 1 979 → 817 (0.41×) |
+| `filterMap` | 18.6 → 9.5 (0.51×) | 195 → 95 (0.49×) | 2 151 → 1 103 (0.51×) |
+| `indexedMap` | 33.4 → 8.6 (0.26×) | 393 → 100 (0.25×) | 10 878 → 2 296 (0.21×) |
+| `take` (half) | 11.1 → 4.4 (0.40×) | 108 → 41 (0.38×) | 1 399 → 491 (0.35×) |
+| `append` (`ys` of 10) | 31.2 → 8.0 (0.26×) | 330 → 77 (0.23×) | 3 992 → 1 194 (0.30×) |
+| `concat` (lists of 10) | 33.3 → 8.0 (0.24×) | 360 → 105 (0.29×) | 7 233 → 2 236 (0.31×) |
+| `concatMap` (two each) | 145 → 30 (0.21×) | 1 738 → 324 (0.19×) | 49 319 → 5 600 (0.11×) |
+| `map2` | 26.0 → 11.2 (0.43×) | 243 → 104 (0.43×) | 3 662 → 1 410 (0.39×) |
+| `map3` | 26.2 → 12.2 (0.46×) | 258 → 116 (0.45×) | 3 935 → 1 542 (0.39×) |
+| `map5` | 28.8 → 17.0 (0.59×) | 241 → 141 (0.59×) | 3 045 → 1 487 (0.49×) |
+| `partition` | 20.1 → 10.8 (0.54×) | 210 → 119 (0.56×) | 2 518 → 2 022 (0.80×) |
+| `unzip` | 21.6 → 11.3 (0.52×) | 234 → 123 (0.53×) | 3 269 → 2 021 (0.62×) |
+| `intersperse` | 23.2 → 11.0 (0.47×) | 262 → 134 (0.51×) | 4 633 → 3 116 (0.67×) |
+| `sortWith` | 281 → 157 (0.56×) | 3 901 → 2 042 (0.52×) | 63 304 → 31 096 (0.49×) |
+
+Every function is faster at every size, 1.25–9× (`partition`, which still reverses, gains from
+dropping the pair per element). A first `partition` that mapped the answers and then selected
+each half measured 1.08–1.10× *slower* at 1 000 and 10 000 and was replaced; 100 000-element
+samples shorter than 50 ms moved by ±40 % with where a scavenge fell, so they are not quoted.
+**Size** (`bench/size.mjs`, 293 programs, the same compiler with each core): the development
+total 1 409 664 → 1 410 589 brotli (+0.07 %), the release total 239 627 → 241 453 (+0.76 %): a
+building loop is longer than `reverse (foldl …)`. The table benchmark's application, which
+uses `filter` and `indexedMap`, went 5 093 → 5 024 brotli in `--release` (14 850 → 14 635 in
+development), its `indexedMap` no longer reaching `range`, `length` and `map2`.
 
 ## 9. The optimiser, ranked by compressed bytes
 

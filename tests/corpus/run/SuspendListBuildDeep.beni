@@ -1,0 +1,73 @@
+-- run: `core/List`'s building functions with a callback that may suspend,
+-- over 100 000 elements (docs/design/transparent-effects-proposal.md
+-- §16.3, `backend.md` §8's *Tail calls modulo cons*). The callback joins a
+-- fiber that has already ended, which answers at once: it may suspend, so
+-- each function's suspendable body runs (`List$map$s`, …), and it never
+-- does, so every element takes the fast path. That path must stay in the
+-- building loop: were the suspendable body the plain recursion
+-- `func x :: map rest func` is, 100 000 elements would overflow the stack.
+--
+-- The second half parks: its callback yields every thousandth element, so
+-- the loop leaves through a continuation that must go on writing into the
+-- same list, and every element must still come out once and in order.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+ends : List Int -> String
+ends xs =
+    String.join
+        [ String.fromInt (List.length xs)
+        , Debug.toString (List.head xs)
+        , Debug.toString (List.head (List.drop xs (List.length xs - 1)))
+        , String.fromInt (List.sum xs)
+        ]
+        " "
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                one =
+                    Task.spawn (\() -> 1)
+                _ =
+                    Io.sleep 1
+                cells =
+                    List.range 1 100000
+                slow n =
+                    let
+                        _ =
+                            if modBy n 1000 == 0 then
+                                Task.yieldNow ()
+                            else
+                                ()
+                    in
+                    n
+            in
+            Node.printLines
+                [ ends (List.map cells (\n -> n * Task.join one))
+                , ends (List.filter cells (\n -> modBy n (2 * Task.join one) == 0))
+                , ends
+                    (List.filterMap
+                        cells
+                        (\n ->
+                            if modBy n 3 == Task.join one then
+                                Nothing
+                            else
+                                Just n
+                        )
+                    )
+                , ends (List.indexedMap cells (\i n -> i * Task.join one + n))
+                , ends (List.concatMap cells (\n -> [ n, Task.join one ]))
+                , ends (List.map2 cells cells (\a b -> a * Task.join one + b))
+                , ends (List.map cells slow)
+                , ends (List.filter cells (\n -> slow n > 50000))
+                , ends (List.concatMap cells (\n -> [ slow n ]))
+                , ends (List.map2 cells cells (\a b -> slow a - b))
+                ]
+        )
