@@ -665,6 +665,15 @@ const Lowerer = struct {
     /// The declaration `read_locals` is of: a body written in place
     /// (`enterInline`) switches the locals under it.
     read_locals_decl: u32 = std.math.maxInt(u32),
+    /// The list locals of the loops being lowered that hold an OFFSET into
+    /// a base array rather than a list (§8, *Scalar views*), innermost
+    /// last: each loop's parameters that the rule applies to, and every
+    /// `rest` a pattern binds of them.
+    scalars: std.ArrayList(Scalar) = .empty,
+    /// The `local` instructions written as the offset they hold, not
+    /// built into a list: a tail self-call's argument to its own slot, and
+    /// the scrutinee of a `case` on one.
+    scalar_raw: std.ArrayList(Inst.Index) = .empty,
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -1522,7 +1531,8 @@ const Lowerer = struct {
                 if (d.is_pub or d.kind != .foreign_value) continue;
                 const symbol = l.bir.symbol(d.name);
                 if (symbol != InternPool.WellKnown.unsafeGet.symbol() and symbol != InternPool.WellKnown.view.symbol() and
-                    symbol != InternPool.WellKnown.close.symbol()) continue;
+                    symbol != InternPool.WellKnown.close.symbol() and symbol != InternPool.WellKnown.base.symbol() and
+                    symbol != InternPool.WellKnown.offset.symbol()) continue;
                 if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
             }
         }
@@ -2127,6 +2137,28 @@ const Lowerer = struct {
         const no_local: u32 = std.math.maxInt(u32);
     };
 
+    /// A list local a loop carries as an offset into a base array (§8,
+    /// *Scalar views*): a parameter the rule applies to, or a `rest` a
+    /// pattern binds of it. Its JavaScript binding holds the integer.
+    const Scalar = struct {
+        /// The declaration whose local it is: a body written in place has
+        /// locals of its own under the same indices (`enterInline`).
+        decl: u32,
+        local: u32,
+        /// `$s`, the base array every offset of the slot indexes.
+        base: JsIr.NameIndex,
+        /// The loop the slot belongs to, and which slot.
+        label: JsIr.NameIndex,
+        slot: u32,
+        /// For the parameter itself, the list the call was entered with,
+        /// which a read at the entry offset is (§4, *Identity*); `.none`
+        /// for a `rest`, which never is.
+        entry: JsIr.NameIndex = .none,
+        /// Whether some read built the parameter as a list, which needs
+        /// `entry` bound before the loop.
+        entry_read: bool = false,
+    };
+
     /// The `Func` record for a function that may loop: §8's shape when it
     /// has at least one tail self-call, and byte for byte what `functionOf`
     /// emits when it has none. `label` is the function's emitted name and
@@ -2231,6 +2263,14 @@ const Lowerer = struct {
             loop.root = try l.fixedName("$root");
             before = try l.add(.const_decl, p, @intFromEnum(loop.root), (try l.arrayNode(&.{}, p)).int());
         }
+        // Scalar views (§8): each walked list slot is read through its
+        // base array by an offset. Not in a suspendable body, whose
+        // re-entry passes the slots as lists.
+        const scalar_mark = l.scalars.items.len;
+        defer l.scalars.shrinkRetainingCapacity(scalar_mark);
+        const scalar_at = try l.scratch.alloc(?usize, slots.len);
+        @memset(scalar_at, null);
+        if (!l.suspendable) try l.scalarSlots(loop, body, scalar_at);
         try l.tailStmts(&loop_body, body, loop);
         // A suspension point in the loop's body: the fast path stays in the
         // loop, and the slow path re-enters the function with its slots
@@ -2289,8 +2329,220 @@ const Lowerer = struct {
         // Control leaves by `return` or by `continue`, so nothing follows
         // the loop and there is no `break` (§8).
         const while_node = try l.add(.while_true, p, @intFromEnum(loop_label), @intFromEnum(record));
-        if (loop.builds) return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{ before, while_node }) };
-        return .{ .names = names.items, .stmts = try l.scratch.dupe(Node.Index, &.{while_node}) };
+        // Before the loop, each scalar slot's base, and its offset written
+        // into the slot: `const $v = xs;` when a read builds the list the
+        // call was entered with, `const $s = List$base(xs); xs =
+        // List$offset(xs);`.
+        var head: StmtList = .empty;
+        for (slots, scalar_at) |slot, at| {
+            const k = at orelse continue;
+            const scalar = l.scalars.items[k];
+            const param = if (in_place and slot.carried and slot.body != .none) slot.body else slot.param;
+            if (scalar.entry_read) try l.constDecl(&head, scalar.entry, try l.ident(param, p), p);
+            const base = try l.call(try l.corePrivate(.base, p), &.{try l.ident(param, p)}, p);
+            try l.constDecl(&head, scalar.base, base, p);
+            const offset = try l.call(try l.corePrivate(.offset, p), &.{try l.ident(param, p)}, p);
+            try head.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(param, p)).int(), offset.int()));
+        }
+        if (loop.builds) try head.append(l.scratch, before);
+        try head.append(l.scratch, while_node);
+        return .{ .names = names.items, .stmts = head.items };
+    }
+
+    /// §8's *Scalar views*: which list slots of `loop` are walked — every
+    /// tail self-call passes the slot the parameter itself or a `rest` a
+    /// list pattern bound of it, and some `case` matches the parameter
+    /// with a list pattern — and so can be carried as an offset into a
+    /// base array fixed for the call. Registers each such slot's
+    /// parameter and every `rest` of it in `scalars`, and `at[i]` the
+    /// parameter's entry.
+    fn scalarSlots(l: *Lowerer, loop: *const Loop, body: Inst.Index, at: []?usize) !void {
+        var start = @intFromEnum(body);
+        for (loop.slots) |slot| {
+            if (slot.pattern.unwrap()) |pattern| start = @min(start, @intFromEnum(pattern));
+        }
+        const decl = l.decl_index orelse std.math.maxInt(u32);
+        var tails: std.ArrayList(u32) = .empty;
+        for (loop.slots, 0..) |slot, i| {
+            if (i < loop.evidence or slot.local == Loop.no_local or !slot.carried or slot.unwritten) continue;
+            tails.clearRetainingCapacity();
+            try tails.append(l.scratch, slot.local);
+            if (!try l.walkedSlot(@enumFromInt(start), body, &tails)) continue;
+            if (!l.selfArgsIn(body, loop, i - loop.evidence, tails.items)) continue;
+            const base = try l.fresh(l.well.temp);
+            at[i] = l.scalars.items.len;
+            for (tails.items, 0..) |local, j| {
+                try l.scalars.append(l.scratch, .{
+                    .decl = decl,
+                    .local = local,
+                    .base = base,
+                    .label = loop.label,
+                    .slot = @intCast(i),
+                    .entry = if (j == 0) try l.fresh(l.well.temp) else .none,
+                });
+            }
+        }
+    }
+
+    /// Whether some `case` from `start` to `body` matches a local of
+    /// `tails` with a list pattern, adding every `rest` those patterns
+    /// bind to `tails` until none is new. False, too, when one of those
+    /// patterns has an item after its spread, whose end the rule does not
+    /// read by an offset.
+    fn walkedSlot(l: *Lowerer, start: Inst.Index, body: Inst.Index, tails: *std.ArrayList(u32)) !bool {
+        var walked = false;
+        var grew = true;
+        while (grew) {
+            grew = false;
+            var inst = @intFromEnum(start);
+            while (inst <= @intFromEnum(body)) : (inst += 1) {
+                const case_inst: Inst.Index = @enumFromInt(inst);
+                if (l.bir.instTag(case_inst) != .case) continue;
+                const d = l.bir.instData(case_inst);
+                const scrutinee: Inst.Index = @enumFromInt(d.lhs);
+                const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                // The roots `planCase` reads: the scrutinee, or the elements
+                // of a tuple literal every row matches element-wise.
+                const elements: []const Inst.Index = if (l.bir.instTag(scrutinee) == .tuple)
+                    l.bir.extraSlice(Bir.inlineRange(l.bir.instData(scrutinee)), Inst.Index)
+                else
+                    &.{};
+                const spread = elements.len != 0 and l.rowsAreTuples(branches, elements.len);
+                const roots: []const Inst.Index = if (spread) elements else &.{scrutinee};
+                for (roots, 0..) |root, r| {
+                    if (l.bir.instTag(root) != .local) continue;
+                    if (std.mem.indexOfScalar(u32, tails.items, l.bir.instData(root).lhs) == null) continue;
+                    for (branches) |branch| {
+                        var pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+                        if (spread) {
+                            if (l.bir.instTag(pattern) != .pat_tuple) continue;
+                            pattern = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index)[r];
+                        }
+                        while (l.bir.instTag(pattern) == .pat_as) pattern = @enumFromInt(l.bir.instData(pattern).lhs);
+                        if (l.bir.instTag(pattern) != .pat_list) continue;
+                        walked = true;
+                        const items = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index);
+                        for (items, 0..) |item, k| {
+                            if (l.bir.instTag(item) != .pat_spread) continue;
+                            if (k + 1 != items.len) return false;
+                            const operand: Inst.Index = @enumFromInt(l.bir.instData(item).lhs);
+                            if (l.bir.instTag(operand) != .pat_var) continue;
+                            const local = l.bir.instData(operand).lhs;
+                            if (std.mem.indexOfScalar(u32, tails.items, local) != null) continue;
+                            try tails.append(l.scratch, local);
+                            grew = true;
+                        }
+                    }
+                }
+            }
+        }
+        return walked;
+    }
+
+    /// Whether every tail self-call under `inst` — cons steps included —
+    /// passes argument `arg` a local of `tails`.
+    fn selfArgsIn(l: *Lowerer, inst: Inst.Index, loop: *const Loop, arg: usize, tails: []const u32) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.selfArgsIn(@enumFromInt(d.rhs), loop, arg, tails),
+            .case => {
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    if (!l.selfArgsIn(@enumFromInt(l.bir.instData(branch).rhs), loop, arg, tails)) return false;
+                }
+                return true;
+            },
+            .call => {
+                if (l.isSelfCall(inst, loop)) {
+                    const value = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)[arg];
+                    if (l.bir.instTag(value) != .local) return false;
+                    return std.mem.indexOfScalar(u32, tails, l.bir.instData(value).lhs) != null;
+                }
+                const tail = l.consTail(inst) orelse return true;
+                return l.selfArgsIn(tail, loop, arg, tails);
+            },
+            else => return true,
+        }
+    }
+
+    /// The entry of `scalars` for local `index` of the declaration being
+    /// lowered, innermost first; null when it holds a list.
+    fn scalarOf(l: *const Lowerer, index: u32) ?usize {
+        const decl = l.decl_index orelse std.math.maxInt(u32);
+        var k = l.scalars.items.len;
+        while (k > 0) {
+            k -= 1;
+            const s = l.scalars.items[k];
+            if (s.local == index and s.decl == decl) return k;
+        }
+        return null;
+    }
+
+    /// Whether the `local` instruction `inst` is written as the offset it
+    /// holds (`scalar_raw`).
+    fn isScalarRaw(l: *const Lowerer, inst: Inst.Index) bool {
+        return std.mem.indexOfScalar(Inst.Index, l.scalar_raw.items, inst) != null;
+    }
+
+    /// The list at offset `offset` of scalar `k`'s base, built where a
+    /// list is read as a value: `List$view($s, offset)`, and for the
+    /// parameter itself the list the call was entered with when the offset
+    /// is still the entry one (§8: a walk that took no step gives back the
+    /// very list it was given). A suffix of the base is at the entry
+    /// offset exactly when it is as long as the entry list.
+    fn materialise(l: *Lowerer, k: usize, offset: Node.Index, p: u32) !Node.Index {
+        const scalar = &l.scalars.items[k];
+        const base = try l.ident(scalar.base, p);
+        const view = try l.call(try l.corePrivate(.view, p), &.{ base, offset }, p);
+        if (scalar.entry == .none) return view;
+        scalar.entry_read = true;
+        const entry = try l.ident(scalar.entry, p);
+        const left = try l.binary(.sub, try l.lengthOf(base, p), offset, p);
+        const at_entry = try l.binary(.strict_eq, left, try l.lengthOf(entry, p), p);
+        return l.condOf(at_entry, entry, view, p);
+    }
+
+    /// `offset + k`, or `offset` itself at 0.
+    fn offsetPlus(l: *Lowerer, offset: Node.Index, k: u32, p: u32) !Node.Index {
+        if (k == 0) return offset;
+        return l.binary(.add, offset, try l.intNode(k, p), p);
+    }
+
+    /// The bindings of `pattern` matched against scalar `k` at `offset`
+    /// (`bindings` for a list the loop holds as an offset): an element is
+    /// `$s[offset + i]`, a `rest` the rule registered is the integer
+    /// `offset + i`, and anything bound as a list is built
+    /// (`materialise`).
+    fn scalarBindings(l: *Lowerer, out: *StmtList, pattern: Inst.Index, k: usize, offset: Node.Index) Allocator.Error!void {
+        const d = l.bir.instData(pattern);
+        const p = l.pos(pattern);
+        switch (l.bir.instTag(pattern)) {
+            .pat_wild => {},
+            .pat_var => try l.constDecl(out, try l.localName(d.lhs), try l.materialise(k, offset, p), p),
+            .pat_as => {
+                try l.scalarBindings(out, @enumFromInt(d.lhs), k, offset);
+                try l.constDecl(out, try l.localName(d.rhs), try l.materialise(k, offset, p), p);
+            },
+            .pat_list => {
+                const base = try l.ident(l.scalars.items[k].base, p);
+                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |element, i| {
+                    const at = try l.offsetPlus(offset, @intCast(i), p);
+                    if (l.bir.instTag(element) == .pat_spread) {
+                        const operand: Inst.Index = @enumFromInt(l.bir.instData(element).lhs);
+                        if (!try l.bindsRead(operand)) continue;
+                        if (l.bir.instTag(operand) == .pat_var and l.scalarOf(l.bir.instData(operand).lhs) != null) {
+                            try l.constDecl(out, try l.localName(l.bir.instData(operand).lhs), at, p);
+                        } else {
+                            try l.bindings(out, operand, try l.call(try l.corePrivate(.view, p), &.{ base, at }, p));
+                        }
+                        continue;
+                    }
+                    if (l.bindCount(element.toOptional()) == 0) continue;
+                    try l.bindings(out, element, try l.add(.index_get, p, base.int(), at.int()));
+                }
+            },
+            else => try l.bindings(out, pattern, try l.materialise(k, offset, p)),
+        }
     }
 
     /// Whether no `lambda` and no `let` function lies among the instructions
@@ -2580,6 +2832,17 @@ const Lowerer = struct {
         const p = l.pos(inst);
         l.region = inst;
         const evidence = try l.evidenceArguments(l.rootsOf(inst), p);
+        // An argument that is a scalar slot's own list — its parameter or a
+        // `rest` of it — is passed as the offset it holds (§8, *Scalar
+        // views*).
+        const raw_mark = l.scalar_raw.items.len;
+        defer l.scalar_raw.shrinkRetainingCapacity(raw_mark);
+        for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, j| {
+            if (l.bir.instTag(arg) != .local) continue;
+            const k = l.scalarOf(l.bir.instData(arg).lhs) orelse continue;
+            const scalar = l.scalars.items[k];
+            if (scalar.label == loop.label and scalar.slot == loop.evidence + j) try l.scalar_raw.append(l.scratch, arg);
+        }
         const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
         const values = try l.scratch.alloc(Node.Index, loop.slots.len);
         for (loop.slots, values, 0..) |slot, *value, i| {
@@ -3613,6 +3876,12 @@ const Lowerer = struct {
     /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
+        // A list a loop holds as an offset (§8, *Scalar views*): the offset
+        // where the loop reads it so, the list built anywhere else.
+        if (l.bir.instTag(inst) == .local) if (l.scalarOf(l.bir.instData(inst).lhs)) |k| {
+            const offset = try l.ident(try l.localName(l.bir.instData(inst).lhs), p);
+            return if (l.isScalarRaw(inst)) offset else l.materialise(k, offset, p);
+        };
         if (l.jsIntrinsicOf(inst)) |which| switch (which) {
             .null => return l.nullNode(p),
             .undefined => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
@@ -7618,6 +7887,10 @@ const Lowerer = struct {
         /// inside it (`emitFan`): set for a long `else if` chain, whose
         /// leaves all jump.
         flat_else: bool = false,
+        /// Per root: the `scalars` entry of a list a loop holds as an
+        /// offset (§8, *Scalar views*), whose root node is that offset;
+        /// empty when no root is one.
+        scalar: []const ?usize = &.{},
     };
 
     /// A `case` in expression position: §7's last three rows.
@@ -7762,11 +8035,23 @@ const Lowerer = struct {
         // becomes `if (n$1 <= 0)` — and every `if` in the language is a
         // `case` (`language.md` §8).
         const root_nodes = try l.scratch.alloc(Node.Index, roots);
-        for (root_nodes, 0..) |*root, r| {
+        const scalar = try l.scratch.alloc(?usize, roots);
+        var any_scalar = false;
+        for (root_nodes, scalar, 0..) |*root, *root_scalar, r| {
+            // A list a loop holds as an offset is matched at that offset
+            // over its base (§8, *Scalar views*), never built.
+            const source = if (spread) elements[r] else scrutinee;
+            root_scalar.* = if (l.bir.instTag(source) == .local) l.scalarOf(l.bir.instData(source).lhs) else null;
+            const raw_mark = l.scalar_raw.items.len;
+            defer l.scalar_raw.shrinkRetainingCapacity(raw_mark);
+            if (root_scalar.* != null) {
+                any_scalar = true;
+                try l.scalar_raw.append(l.scratch, source);
+            }
             // Each tuple element is evaluated in source order, so the
             // elements keep running left to right whatever the tree tests
             // first — which is also why an element read once is still bound.
-            const value = try l.expr(out, if (spread) elements[r] else scrutinee);
+            const value = try l.expr(out, source);
             var reads = tree.fanReads(@intCast(r), max_switch_cases);
             for (0..branches.len) |i| {
                 if (tree.uses[i] == 0) continue;
@@ -7806,6 +8091,7 @@ const Lowerer = struct {
             .ready = try l.scratch.alloc(Ready, 0),
             .sink = .{ .tail = null },
             .p = p,
+            .scalar = if (any_scalar) scalar else &.{},
         };
     }
 
@@ -7915,6 +8201,10 @@ const Lowerer = struct {
     fn leafBody(l: *Lowerer, c: *Case, out: *StmtList, branch: u32) !void {
         for (c.roots, 0..) |root, r| {
             const pattern = c.pats[branch * c.roots.len + r].unwrap() orelse continue;
+            if (c.scalar.len != 0) if (c.scalar[r]) |k| {
+                try l.scalarBindings(out, pattern, k, root);
+                continue;
+            };
             try l.bindings(out, pattern, root);
         }
         const body: Inst.Index = @enumFromInt(l.bir.instData(c.branches[branch]).rhs);
@@ -8281,6 +8571,8 @@ const Lowerer = struct {
             // a view, and near O(1) on a trie.
             .head => blk: {
                 const at = try l.listPos(c, o.parent);
+                // Over a scalar view's base, a plain array: indexed.
+                if (at.start != null) break :blk try l.add(.index_get, c.p, at.base.int(), (try l.posIndex(at, c.p)).int());
                 break :blk try l.listElement(at.base, try l.posIndex(at, c.p), c.p);
             },
             // A list the tree only tests is never built (`listPos`); one a
@@ -8301,11 +8593,18 @@ const Lowerer = struct {
     /// tails is a position in the list it started from, so nothing is
     /// built for a tail the tree only tests: `(x :: y :: rest)` is `r` at
     /// 0, 1 and 2.
-    const ListPos = struct { base: Node.Index, k: u32, from_end: u32 = 0 };
+    /// A list a loop holds as an offset (§8, *Scalar views*) is its base
+    /// array from `start`, the offset, on.
+    const ListPos = struct { base: Node.Index, k: u32, from_end: u32 = 0, start: ?Node.Index = null };
 
     fn listPos(l: *Lowerer, c: *Case, occ: u32) Allocator.Error!ListPos {
         const o = c.tree.occs[occ];
-        if (o.parent == Decision.Occ.no_parent) return .{ .base = try l.occNode(c, occ), .k = 0 };
+        if (o.parent == Decision.Occ.no_parent) {
+            if (c.scalar.len != 0) if (c.scalar[o.root]) |k| {
+                return .{ .base = try l.ident(l.scalars.items[k].base, c.p), .k = 0, .start = c.roots[o.root] };
+            };
+            return .{ .base = try l.occNode(c, occ), .k = 0 };
+        }
         return switch (o.kind) {
             .tail => blk: {
                 var at = try l.listPos(c, o.parent);
@@ -8320,6 +8619,7 @@ const Lowerer = struct {
     /// The index a position's first element is at: `k`, or, counted from
     /// the end, `base.length - (from_end - k)`.
     fn posIndex(l: *Lowerer, at: ListPos, p: u32) !Node.Index {
+        if (at.start) |start| return l.offsetPlus(start, at.k, p);
         if (at.from_end == 0) return l.intNode(at.k, p);
         return l.lengthMinus(at.base, at.from_end - at.k, p);
     }

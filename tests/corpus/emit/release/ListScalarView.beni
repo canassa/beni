@@ -1,0 +1,94 @@
+-- emit: the SHAPE of scalar views (`docs/design/backend.md` §8, *Scalar
+-- views*), which running cannot observe — `run/ListScalarView` proves the
+-- answers.
+--
+-- The golden pins: before the loop, the slot's base (`List$base`) and its
+-- offset written into the slot, which from then on carries an integer; a
+-- pattern's tests against the base's length and its elements read from the
+-- base by index, with no `List$unsafeGet` and no `List$view` on the walk;
+-- and a `rest` passed back as the next offset. `sum` is a bare walk,
+-- `mapRec` a building walk, `merge` two list slots. A list read as a value
+-- is built there and only there: `dropWhile` returns its parameter, which
+-- is the list it was given when no step was taken (`$v`), and `capture`
+-- hands `rest` to a closure. `notAWalk` is the control: its slot takes a
+-- list the rule cannot see is a suffix of its parameter — the result of a
+-- call — so it is left unchanged.
+import Node exposing (Program)
+
+
+pub sum : List Int, Int -> Int
+sum xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ x, ...rest ] ->
+            sum rest (acc + x)
+
+
+pub mapRec : List a, (a -> b) -> List b
+mapRec xs f =
+    case xs of
+        [] ->
+            []
+
+        [ x, ...rest ] ->
+            [ f x, ...mapRec rest f ]
+
+
+pub merge : List Int, List Int -> List Int
+merge xs ys =
+    case xs of
+        [] ->
+            ys
+
+        [ x, ...restX ] ->
+            case ys of
+                [] ->
+                    xs
+
+                [ y, ...restY ] ->
+                    if x <= y then
+                        [ x, ...merge restX ys ]
+
+                    else
+                        [ y, ...merge xs restY ]
+
+
+pub dropWhile : List Int, (Int -> Bool) -> List Int
+dropWhile xs keep =
+    case xs of
+        [ x, ...rest ] ->
+            if keep x then
+                dropWhile rest keep
+
+            else
+                xs
+
+        [] ->
+            xs
+
+
+pub capture : List Int, List (() -> Int) -> List (() -> Int)
+capture xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ _, ...rest ] ->
+            capture rest (List.push acc (\() -> List.length rest))
+
+
+pub notAWalk : List Int, Int -> Int
+notAWalk xs n =
+    case xs of
+        [] ->
+            n
+
+        [ _, ...rest ] ->
+            notAWalk (List.drop rest 1) (n - 1)
+
+
+main : Program
+main =
+    Node.printLines []

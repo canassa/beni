@@ -2977,7 +2977,14 @@ What is **not** a cons step, spelled out because the new syntax makes it easy to
 
 ### Scalar views
 
-*Added 2026-10-01; specified, not built* (`plans/list-arrays.md`'s third slice). This is the rule
+*Added 2026-10-01; specified, not built* (`plans/list-arrays.md`'s third slice). *Built
+2026-10-02, with these departures, each reversible:* the rule is not applied in a suspendable body
+(its re-entry passes the slots as lists), nor to a slot some `case` matches with an item after the
+spread; §7's re-consing is not part of it (a re-cons is an argument the rule does not recognise, so
+its slot stays a list); the entry test when the parameter itself is built is `$s.length - o ===
+$v.length ? $v : List$view($s, o)` — a suffix of the base is at the entry offset exactly when it is
+as long as the entry list — so no entry offset is kept; and `Reach` keeps `base` and `offset` for
+every declaration with a list pattern, as it keeps `unsafeGet` and `view`. This is the rule
 the owner's decision names: **an `x :: rest` walk becomes an index loop.** It is research 38 §16.3's
 **R3**. Without it each step of a walk allocates a view where a cons list's cells already existed,
 3.8–7.9× the cons list on a bare `sum` (research 38 §17.4, research 46 §0's "bare `x :: rest` walk

@@ -612,6 +612,10 @@ pub const Builder = struct {
     /// that writes one. `cons` is how a building loop is recognised.
     list_get: ?Node = null,
     list_view: ?Node = null,
+    /// `base` and `offset`, which a loop that walks a list by a scalar
+    /// view reads it through (`backend.md` §8, *Scalar views*).
+    list_base: ?Node = null,
+    list_offset: ?Node = null,
     list_slice: ?Node = null,
     list_close: ?Node = null,
     list_cons: ?Node = null,
@@ -636,6 +640,8 @@ pub const Builder = struct {
             .basics_eq = in.coreDecl(.Basics, .eq),
             .list_get = in.coreDecl(.List, .unsafeGet),
             .list_view = in.coreDecl(.List, .view),
+            .list_base = in.coreDecl(.List, .base),
+            .list_offset = in.coreDecl(.List, .offset),
             .list_slice = in.coreDecl(.List, .slice),
             .list_close = in.coreDecl(.List, .close),
             .list_cons = in.coreDecl(.List, .cons),
@@ -780,8 +786,10 @@ pub const Builder = struct {
     }
 
     /// The `core/List` edges of declaration `d` that no instruction names
-    /// (`list_get` and the rest): `unsafeGet` and `view` when it holds a
-    /// list pattern, `slice` when one has an item after its spread
+    /// (`list_get` and the rest): `unsafeGet`, `view`, `base` and `offset`
+    /// when it holds a list pattern — the last two for a loop that walks
+    /// its list by a scalar view (`backend.md` §8), which only lowering
+    /// decides — `slice` when one has an item after its spread
     /// (`[ ...init, last ]`), and `close` when it calls `List.cons` in a way
     /// a building loop's step can (`isBuildingStep`) — the loop's exit
     /// calls it (`backend.md` §8). Coarse by a little: a pattern that reads no
@@ -816,6 +824,8 @@ pub const Builder = struct {
         const picks = [_]struct { bool, ?Node }{
             .{ pattern, b.list_get },
             .{ pattern, b.list_view },
+            .{ pattern, b.list_base },
+            .{ pattern, b.list_offset },
             .{ end, b.list_slice },
             .{ cons, b.list_close },
             .{ append, b.list_append },

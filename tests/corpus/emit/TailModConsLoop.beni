@@ -12,6 +12,11 @@
 -- writes nothing and jumps. `plain` is the control: a spread whose operand does
 -- not reach a self-call is an ordinary returned value, and the function is
 -- unchanged, byte for byte.
+--
+-- Since lists are arrays the destination is `const $root = []`, pushed onto
+-- (`backend.md` §8, *Tail calls modulo cons, onto an array*), and each walk
+-- reads its list by a scalar view — the base before the loop, the offset in
+-- the slot (§8, *Scalar views*; `emit/ListScalarView` pins that shape).
 import Node exposing (Program)
 
 

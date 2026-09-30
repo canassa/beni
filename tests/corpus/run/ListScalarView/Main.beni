@@ -1,0 +1,232 @@
+-- Scalar views (`backend.md` §8, *Scalar views*): a loop that walks its
+-- list parameter with `[ x, ...rest ]` and passes `rest` back to itself
+-- reads the list's base array by an offset, and builds a list value only
+-- where one is read as a value. Each walk below is run over the three
+-- forms a list can be — a plain list, a view (a pattern's `rest`, here
+-- `List.drop`), and a trie (a list pushed onto, and one prepended onto) —
+-- and must answer what the recursive walk over cons cells answered:
+--
+--   * a bare walk (`sumFrom`), and one that steps two at a time;
+--   * a building walk (`mapRec`, a cons step) and one with two list slots
+--     (`merge`);
+--   * a slot that one call passes unchanged (`countDown`);
+--   * every place a list is read as a value, where it is materialised:
+--     returned at an exit (`dropWhile`, `dropTwo`), captured by a closure
+--     (`thunks`), passed to another function (`lengths`), bound whole by a
+--     pattern (`whole`), and walked by a nested `case` on `rest`;
+--   * the list a walk was given, returned by a walk that took no step, is
+--     the very same list (`refEq`), whichever form it was;
+--   * `Debug.log` in a step logs in the walk's order.
+import Identity
+import List
+import Node
+
+
+sumFrom : List Int, Int -> Int
+sumFrom xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ x, ...rest ] ->
+            sumFrom rest (acc + x)
+
+
+pairSums : List Int, List Int -> List Int
+pairSums xs acc =
+    case xs of
+        [ a, b, ...rest ] ->
+            pairSums rest (List.push acc (a + b))
+
+        _ ->
+            acc
+
+
+mapRec : List Int, (Int -> Int) -> List Int
+mapRec xs f =
+    case xs of
+        [] ->
+            []
+
+        [ x, ...rest ] ->
+            [ f x, ...mapRec rest f ]
+
+
+merge : List Int, List Int -> List Int
+merge xs ys =
+    case xs of
+        [] ->
+            ys
+
+        [ x, ...restX ] ->
+            case ys of
+                [] ->
+                    xs
+
+                [ y, ...restY ] ->
+                    if x <= y then
+                        [ x, ...merge restX ys ]
+
+                    else
+                        [ y, ...merge xs restY ]
+
+
+countDown : List Int, Int, Int -> Int
+countDown xs n acc =
+    if n > 0 then
+        countDown xs (n - 1) (acc + 1)
+
+    else
+        case xs of
+            [] ->
+                acc
+
+            [ x, ...rest ] ->
+                countDown rest x acc
+
+
+dropWhile : List Int, (Int -> Bool) -> List Int
+dropWhile xs keep =
+    case xs of
+        [ x, ...rest ] ->
+            if keep x then
+                dropWhile rest keep
+
+            else
+                xs
+
+        [] ->
+            xs
+
+
+dropTwo : List Int, Int -> List Int
+dropTwo xs n =
+    if n <= 0 then
+        xs
+
+    else
+        case xs of
+            [ _, _, ...rest ] ->
+                dropTwo rest (n - 1)
+
+            _ ->
+                []
+
+
+thunks : List Int, List (() -> Int) -> List (() -> Int)
+thunks xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ _, ...rest ] ->
+            thunks rest (List.push acc (\() -> List.sum rest))
+
+
+lengths : List Int, List Int -> List Int
+lengths xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ _, ...rest ] ->
+            lengths rest (List.push acc (List.length rest))
+
+
+whole : List Int, List Int -> List Int
+whole xs acc =
+    case xs of
+        [ x, ...rest ] ->
+            if x == 3 then
+                case xs of
+                    all ->
+                        List.append acc all
+
+            else
+                whole rest (List.push acc x)
+
+        [] ->
+            acc
+
+
+nested : List Int, Int -> Int
+nested xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ x, ...rest ] ->
+            case rest of
+                [] ->
+                    acc + x
+
+                [ y, ...more ] ->
+                    nested more (acc + x * y)
+
+
+logged : List Int, Int -> Int
+logged xs acc =
+    case xs of
+        [] ->
+            acc
+
+        [ x, ...rest ] ->
+            logged rest (acc + Debug.log x "step")
+
+
+ints : List Int -> String
+ints xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+same : String, Bool -> String
+same label b =
+    if b then
+        label ++ " same"
+
+    else
+        label ++ " copied"
+
+
+forms : List ( String, List Int )
+forms =
+    [ ( "plain", List.range 1 40 )
+    , ( "view", List.drop (List.range 0 40) 1 )
+    , ( "pushed", List.foldl (List.range 1 40) [] (\n acc -> List.push acc n) )
+    , ( "prepended", List.foldr (List.range 1 40) [] (\n acc -> [ n, ...acc ]) )
+    ]
+
+
+report : ( String, List Int ) -> List String
+report ( name, xs ) =
+    let
+        fromThree =
+            List.drop xs 2
+    in
+    [ name ++ " sum " ++ String.fromInt (sumFrom xs 0)
+    , name ++ " pairs " ++ ints (pairSums xs [])
+    , name ++ " map " ++ ints (mapRec xs (\x -> x * 2))
+    , name ++ " countDown " ++ String.fromInt (countDown xs 1 0)
+    , name ++ " dropWhile " ++ ints (dropWhile xs (\x -> x < 35))
+    , name ++ " dropTwo " ++ ints (dropTwo xs 18)
+    , name ++ " thunks " ++ ints (List.map (thunks (List.take xs 4) []) (\t -> t ()))
+    , name ++ " lengths " ++ ints (List.take (lengths xs []) 3)
+    , name ++ " whole " ++ ints (whole xs [])
+    , name ++ " nested " ++ String.fromInt (nested xs 0)
+    , same (name ++ " dropWhile none") (Identity.refEq (dropWhile xs (\x -> x > 100)) xs)
+    , same (name ++ " dropTwo 0") (Identity.refEq (dropTwo xs 0) xs)
+    , same (name ++ " whole at the start") (Identity.refEq (whole fromThree []) fromThree)
+    ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.concat
+            [ List.concatMap forms report
+            , [ "merge " ++ ints (merge [ 1, 4, 9, 12 ] (List.range 2 6))
+              , "merge view " ++ ints (merge (List.drop [ 0, 3, 5 ] 1) (List.drop [ 0, 1, 4 ] 1))
+              , "logged " ++ String.fromInt (logged [ 1, 2, 3 ] 0)
+              ]
+            ]
+        )

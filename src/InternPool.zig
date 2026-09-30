@@ -284,11 +284,15 @@ pub const WellKnown = enum(u32) {
     // patterns over arrays*): an element, the list after a spread with
     // nothing behind it, and the elements a spread covers when items follow
     // it; and a building loop's exit (§8, *Tail calls modulo cons, onto an
-    // array*). `unsafeGet`, `view` and `close` are core-private.
+    // array*). `unsafeGet`, `view` and `close` are core-private. And the
+    // base array and offset a scalar view reads a walked list by (§8,
+    // *Scalar views*), core-private too.
     unsafeGet,
     view,
     slice,
     close,
+    base,
+    offset,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));
