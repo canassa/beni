@@ -147,6 +147,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     try b.lambdaRoots();
     try b.selectors();
     const item_only = try b.itemOnly();
+    const constant = try b.constants();
     return .{
         .tree = .{
             .roots = b.roots,
@@ -171,6 +172,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
             },
             .requires = m.gated,
             .item_only = item_only,
+            .constant = constant,
         },
         .root_insts = b.root_insts.items,
         .node_tokens = b.node_tokens.items,
@@ -799,6 +801,41 @@ const Builder = struct {
         var body: std.ArrayList(u32) = .empty;
         for (fd.inst_start.int()..fd.inst_end.int()) |i| try body.append(b.arena, @intCast(i));
         return b.hunt(h, f, body.items, inner.items, depth + 1);
+    }
+
+    // ---- Values that are the same on every evaluation (boundary.md §9.4.6, 1.4)
+    //
+    // A literal, a constructor of no fields — one shared object, a bare tag
+    // or a boolean (backend.md §4) — and a reference to a top-level value
+    // or function: none can be a different JavaScript value on the next
+    // render, so a lowering need not keep or compare it.
+
+    fn constants(b: *Builder) Allocator.Error![]const bool {
+        const out = try b.arena.alloc(bool, b.values.items.len);
+        for (b.values.items, out) |v, *c| c.* = switch (v) {
+            .inst => |inst| b.constantInst(inst),
+            .string, .true, .callee => true,
+            else => false,
+        };
+        return out;
+    }
+
+    fn constantInst(b: *const Builder, inst: Inst.Index) bool {
+        const bir_ = b.bir();
+        const d = bir_.instData(inst);
+        return switch (bir_.instTag(inst)) {
+            .int, .float, .char, .string => true,
+            .top => d.lhs < bir_.decls.len and bir_.decls[d.lhs].kind.isValue(),
+            .ext_value => true,
+            .ctor => blk: {
+                if (d.lhs >= bir_.ctors.len) break :blk false;
+                const c = bir_.ctors[d.lhs];
+                break :blk Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end }) == 0;
+            },
+            .ext_ctor => d.lhs < b.in.interfaces.len and d.rhs < b.in.interfaces[d.lhs].ctors.len and
+                b.in.interfaces[d.lhs].ctors[d.rhs].arity == 0,
+            else => false,
+        };
     }
 
     // ---- Values that read only the item (language.md §11.11) -------------

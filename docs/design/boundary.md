@@ -1216,6 +1216,16 @@ and other inputs are `===` to last render's, and whose selector is not, when the
 the rows whose key is one of the two are run as any row whose input changed. `ssr` ignores it;
 `dom` targets 1.3 (`backend.md` §15.5).
 
+**Version 1.4** (*amended 2026-09-30*, additive and gated on nothing; research 41 §5.2):
+**`Tree.constant`**, per value, whether it is the same JavaScript value every time the program
+evaluates it — a number, character or string literal (not an interpolation), a constructor of no
+fields (one shared object or a bare tag, `backend.md` §4), a reference to a top-level value or
+function of any module, or a slot that evaluates nothing and names one of these — and
+`tree.isConstant(v)` to ask. A lowering may skip remembering and comparing such a value from
+render to render: it is `===` to the last one by construction, so a helper call or a component
+whose other arguments are unchanged is skipped as §9.4.4 allows. `ssr` ignores it; `dom` targets
+1.4 (`backend.md` §15.3–§15.4).
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

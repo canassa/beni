@@ -5,7 +5,9 @@
 -- itself, so a skipped call allocates nothing. In a row compiled in place
 -- the same test guards the call. A local function, a call that passes
 -- evidence and a markup primitive stay values of the root, made every
--- render.
+-- render. A constant argument — `"fixed"`, `1`, the row's `0` — is neither
+-- kept nor compared, and `label "fixed" 1`, all constants, is called at
+-- mount only (backend.md §15.4, *amended 2026-09-30*).
 import Html exposing (Html)
 
 

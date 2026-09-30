@@ -26,17 +26,12 @@ const DomHelpers$k27 = { m: (v$10, cx$11) => {
   const c$16 = $markup$slot(r$12, w$14, cx$11);
   $markup$childHtml(c$15, DomHelpers$label(v$10[0], v$10[1]));
   $markup$childHtml(c$16, DomHelpers$label(v$10[2], v$10[3]));
-  return { s: r$12, q: null, e: r$12, c0: c$15, c1: c$16, a0_0: v$10[0], a0_1: v$10[1], a1_0: v$10[2], a1_1: v$10[3] };
+  return { s: r$12, q: null, e: r$12, c0: c$15, c1: c$16, a0_0: v$10[0], a0_1: v$10[1] };
 }, p: (i$17, v$18) => {
   if (v$18[0] !== i$17.a0_0 || v$18[1] !== i$17.a0_1) {
     i$17.a0_0 = v$18[0];
     i$17.a0_1 = v$18[1];
     $markup$childHtml(i$17.c0, DomHelpers$label(v$18[0], v$18[1]));
-  }
-  if (v$18[2] !== i$17.a1_0 || v$18[3] !== i$17.a1_1) {
-    i$17.a1_0 = v$18[2];
-    i$17.a1_1 = v$18[3];
-    $markup$childHtml(i$17.c1, DomHelpers$label(v$18[2], v$18[3]));
   }
 } };
 const DomHelpers$t44 = $markup$template("<ul>", 0);
@@ -104,11 +99,10 @@ const DomHelpers$rows = (names$1) => ({ t: DomHelpers$k44, v: [names$1, { m: (it
   const r$28 = DomHelpers$t42();
   const c$29 = $markup$slot(r$28, null, cx$27);
   $markup$childHtml(c$29, DomHelpers$label(item$25, 0));
-  return { s: r$28, q: null, e: r$28, c0: c$29, a0_0: item$25, a0_1: 0 };
+  return { s: r$28, q: null, e: r$28, c0: c$29, a0_0: item$25 };
 }, p: (i$30, item$31, position$32) => {
-  if (item$31 !== i$30.a0_0 || 0 !== i$30.a0_1) {
+  if (item$31 !== i$30.a0_0) {
     i$30.a0_0 = item$31;
-    i$30.a0_1 = 0;
     $markup$childHtml(i$30.c0, DomHelpers$label(item$31, 0));
   }
 }, i: false, f: null }] });

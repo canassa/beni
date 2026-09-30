@@ -9,15 +9,14 @@ const DomComponents$k14 = { m: (v$3, cx$4) => {
   const c$9 = $markup$slot(r$5, w$7, cx$4);
   $markup$childHtml(c$8, v$3[2](v$3[1]));
   $markup$childHtml(c$9, v$3[5](v$3[4]));
-  return { s: r$5, q: null, e: r$5, c0: c$8, c1: c$9, a0_0: v$3[0], a0c: v$3[1], a1_0: v$3[3], a1c: v$3[4] };
+  return { s: r$5, q: null, e: r$5, c0: c$8, c1: c$9, a0_0: v$3[0], a0c: v$3[1], a1c: v$3[4] };
 }, p: (i$10, v$11) => {
   if (v$11[0] !== i$10.a0_0 || v$11[1] !== i$10.a0c) {
     i$10.a0_0 = v$11[0];
     i$10.a0c = v$11[1];
     $markup$childHtml(i$10.c0, v$11[2](v$11[1]));
   }
-  if (v$11[3] !== i$10.a1_0 || v$11[4] !== i$10.a1c) {
-    i$10.a1_0 = v$11[3];
+  if (v$11[4] !== i$10.a1c) {
     i$10.a1c = v$11[4];
     $markup$childHtml(i$10.c1, v$11[5](v$11[4]));
   }

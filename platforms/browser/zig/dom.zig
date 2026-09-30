@@ -46,7 +46,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 3 },
+    .targets = .{ .major = 1, .minor = 4 },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -1219,11 +1219,17 @@ const Gen = struct {
             },
             .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.ident(f.slots[k].?), x.value)),
             .helper => |x| {
-                for (x.args, 0..) |p, j| try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
+                for (x.args, 0..) |p, j| {
+                    if (g.constantOperand(b, p)) continue;
+                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
+                }
                 try js.expression(f.block, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.helperCall(b, f, x.callee, x.args) }));
             },
             .component => |x| {
-                for (x.props, 0..) |p, j| try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
+                for (x.props, 0..) |p, j| {
+                    if (g.constantOperand(b, p)) continue;
+                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
+                }
                 if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = try g.read(b, f, ch) });
                 try js.expression(f.block, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.componentCall(b, f, op.node, x.thunk, x.children) }));
             },
@@ -1288,10 +1294,14 @@ const Gen = struct {
                 .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.fieldOf(f, "c{d}", .{k}), x.value)),
                 .helper => |x| {
                     // A component's skip, for a plain function: the call is
-                    // made only when an argument changed (§11.6).
+                    // made only when an argument changed (§11.6). A
+                    // constant argument never does (`Tree.constant`), so
+                    // a call of constants is made at mount only.
+                    if (x.args.len != 0 and g.allConstant(b, x.args)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.args, 0..) |p, j| {
+                        if (g.constantOperand(b, p)) continue;
                         const test_ = try js.binary(.strict_ne, try g.read(b, f, p), try g.fieldOf(f, "a{d}_{d}", .{ k, j }));
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
                         try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
@@ -1300,10 +1310,11 @@ const Gen = struct {
                     if (changed) |c| try js.@"if"(f.block, c, then, null) else try js.nested(f.block, then);
                 },
                 .component => |x| {
-                    if (x.props.len == 0 and x.children == null) continue;
+                    if (x.children == null and g.allConstant(b, x.props)) continue;
                     var changed: ?m.Expr = null;
                     const then = try js.block();
                     for (x.props, 0..) |p, j| {
+                        if (g.constantOperand(b, p)) continue;
                         const test_ = try js.binary(.strict_ne, try g.read(b, f, p), try g.fieldOf(f, "a{d}_{d}", .{ k, j }));
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
                         try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
@@ -1487,6 +1498,20 @@ const Gen = struct {
             return g.jsb().call(try g.read(b, f, thunk), args);
         }
         return g.cx.componentCall(n, if (children) |ch| try g.read(b, f, ch) else null);
+    }
+
+    /// Whether operand `k` is a value that is the same on every render
+    /// (`Tree.constant`), which needs no field and no comparison.
+    fn constantOperand(g: *Gen, b: *const Body, k: u32) bool {
+        return switch (b.operands.items[k]) {
+            .value => |v| g.tree.isConstant(v),
+            else => false,
+        };
+    }
+
+    fn allConstant(g: *Gen, b: *const Body, ks: []const u32) bool {
+        for (ks) |k| if (!g.constantOperand(b, k)) return false;
+        return true;
     }
 
     /// A helper's call: its callee named where it is, its arguments read.

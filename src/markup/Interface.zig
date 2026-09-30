@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.3: what the compiler hands a platform's markup lowering, and everything
+//! 1.4: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -20,8 +20,9 @@ const std = @import("std");
 
 /// The version of the interface this module declares (§9.4.6). Version 1.0
 /// is `boundary.md` §9.4 as written on 2026-09-29; 1.1 adds `Hole.call`,
-/// 1.2 `Tree.item_only` and `Context.rowValuesApart`, 1.3 `Row.selector`.
-pub const version: Version = .{ .major = 1, .minor = 3 };
+/// 1.2 `Tree.item_only` and `Context.rowValuesApart`, 1.3 `Row.selector`,
+/// 1.4 `Tree.constant`.
+pub const version: Version = .{ .major = 1, .minor = 4 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -115,6 +116,17 @@ pub const Tree = struct {
     /// reads nothing but the row's item — no input, no capture, no position
     /// — so it is the same whenever the item is. Empty: none is known to.
     item_only: []const bool = &.{},
+    /// 1.4: per value, whether it is the same JavaScript value every time
+    /// it is evaluated — a literal, a constructor of no fields, a top-level
+    /// value or function — so it need not be kept or compared from render
+    /// to render. Empty: none is known to be.
+    constant: []const bool = &.{},
+
+    /// Whether value `v` is the same on every evaluation (`constant`).
+    pub fn isConstant(t: *const Tree, v: Value.Index) bool {
+        const at = @intFromEnum(v);
+        return at < t.constant.len and t.constant[at];
+    }
 
     /// Whether value `v` reads only its row's item (`item_only`).
     pub fn itemOnly(t: *const Tree, v: Value.Index) bool {

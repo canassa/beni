@@ -3606,6 +3606,15 @@ comparison per argument and builds nothing, and neither do the helpers it would 
 block is still built when the call is made; inlining a helper's markup into its caller's template
 (research 39 §6.3, option 2) stays later work.
 
+*Amended 2026-09-30: a constant argument is neither kept nor compared* (research 41 §5.2). The
+benchmark's `view` calls `button "run" "Create 1,000 rows" Run` six times, and the container's
+instance kept all eighteen arguments and compared them on every render, though every one is a
+literal or a shared nullary constructor and cannot change. Interface 1.4 marks the values that are
+the same JavaScript value on every evaluation (`boundary.md` §9.4.6, `Tree.constant`); `dom` keeps
+and compares only a helper's or a component's other arguments, and a helper or component whose
+arguments are all constant is called at mount and never again — the skip of §11.6 and §11.8,
+decided at compile time. Pinned by `emit/dom/DomHelpers`.
+
 ### 15.5 `For` and `Show` in the `dom` lowering
 
 `For` is Solid 2's list (research 27 §7.1), with **dom-expressions' `reconcileArrays` without
