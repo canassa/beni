@@ -180,6 +180,17 @@ Four checks run at build time, and all four are things Elm does not do:
    refused there as `foreign_bad_shape` before check 4 runs — conservative, and a safe refusal; if
    check 1 learns aliases, check 4 already counts `(eq, x)` for it.
 
+   *Amended 2026-10-02.* **A trailing run of `()` parameters may be left out.** A `foreign` whose
+   annotation ends in `()` parameters — `yieldNow : () -> ()`, `start : Int, () -> Handle` — may be
+   exported taking all of them or none of that run: `(unit) => …` and `() => …` both pass, and so
+   does any count in between. Every call still passes `null` for each (`backend.md` §6, *A parameter
+   of type `()`*), which a function that does not take it ignores, so no argument arrives nowhere —
+   the one failure this check exists for. It is the same rule beni's own functions follow since that
+   day, `f () = …` being `() => …`, so a runtime and a sibling agree on what `() -> a` takes. The run
+   is read off the annotation as WRITTEN: a `()` before a written parameter holds its position and
+   must be taken, and so must one behind an alias. `run/ForeignUnitParameters` builds a sibling of
+   each shape, `build/bad/ForeignArityUnitNotLast` refuses one that drops a `()` that is not last.
+
    **Which export forms are accepted, and why the list is closed.** The parameter list must be
    written AT the export, so that a reader can count it against the declaration by eye and so that
    the compiler can count it without a JavaScript parser:

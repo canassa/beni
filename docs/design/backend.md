@@ -414,6 +414,8 @@ decision the implementation had to make and §4 did not:
    precisely so that it does not. A saturated call of either becomes `&&`/`||`, and when the right
    side needs statements of its own it becomes the `if`/`else` a short circuit really is.
    Arithmetic and comparison stay calls; that peephole really is the optimiser's (§9).
+   *Amended 2026-10-02:* no optimiser took it, and arithmetic is an operator in both builds now —
+   *Arithmetic is an operator*, below.
 
 And one thing §4's table is silent on that the emitter had to settle: **where the empty list comes
 from.** "cons cells (`{$:1, a, b}` / the empty singleton)" does not say who owns the singleton, and
@@ -1500,6 +1502,109 @@ hazard, a leading `function`, cannot arise: `JsIr` has no function expression. F
 `run/ArrowBodyStartsWithRecord` and `run/ArrowBodyLeftmostBrace` (dev and `--release`), and
 `Print.zig`'s two unit tests for the statement position, which no lowering reaches today.
 
+### Arithmetic is an operator
+
+*Added 2026-10-02 (research 47 §6 item 4).* Correction 3 above left arithmetic a call "for the
+optimiser", and no optimiser ever took it: `k + 1` was `Basics$add(k, 1)` in both builds, in every
+program. **A saturated call of one of the core functions below is the JavaScript expression it
+computes**, written by `Lower` in both builds, with no call, no import, and no edge for `Reach`
+(`src/js/Operator.zig`), so the declaration ships only where it is passed as a value:
+
+| call | JavaScript | why it is exact |
+|---|---|---|
+| `Basics.add a b`, `sub`, `mul` (`+`, `-`, `*`) | `a + b`, `a - b`, `a * b` | `number` is `Int` or `Float`, and both are a JavaScript number (§4's table), so the operator is the function's own body whichever the call instantiates. No type is read |
+| `Basics.fdiv a b` (`/`) | `a / b` | the sibling's body |
+| `Basics.pow a b` (`^`) | `a ** b` | the sibling's body. `**` is right-associative, like `^`, and its left operand may not be a unary expression, so the printer brackets it on its own rule (`JsIr.BinaryOp.leftPrecedence`) |
+| `Basics.lt`, `gt`, `le`, `ge` called by name | `a < b`, … | the sibling's body. The comparison OPERATORS were already `<` on a number, through `compare`'s `primitive` answer |
+| `Basics.not b` | `!b` | a `Bool` is `true`/`false` (correction 1) |
+| `Basics.negate n` (prefix `-`) | `0 - n` | `negate`'s own body. Not `-n`: the two differ at zero, where `-0` is another number (`1 / -0` is `-Infinity`) |
+| `Int32.fromInt n` | `n \| 0` | the sibling's body, ToInt32 |
+| `Int32.toInt x` | `x` | the identity (the table's `Int32` row) |
+| `Int32.toUnsignedInt x` | `x >>> 0` | the sibling's body |
+| `Int32.add`, `sub` | `(a + b) \| 0`, `(a - b) \| 0` | the sibling's body |
+| `Int32.and`, `or`, `xor`, `shiftLeft`, `shiftRight` | `a & b`, `a \| b`, `a ^ b`, `a << n`, `a >> n` | the sibling's body |
+| `Int32.shiftRightZero x n` | `(x >>> n) \| 0` | the sibling's body |
+
+**What stays a call, and why.** `idiv` (`//`), `modBy`, `remainderBy` and `Int32`'s `div`, `rem`
+and `mod` answer `0` for a zero divisor where `/` and `%` answer `Infinity` or `NaN`, and a guard
+around the operator is a conditional no smaller than the call; `Int32.mul` is `Math.imul`, a host
+global the renamer does not know (research 47 §2.3's `global_this` is how one would be written).
+The rule is **exact equivalence or nothing**: no call is replaced by an operator that answers
+differently for any input the type admits.
+
+**Evaluation order is the call's**: the operands are evaluated once each, left to right, with the
+same pinning a call's arguments get (`orderedExprs`), which is `language.md` §6's *binary
+operator* row, unchanged. `&&` and `||` are keyed the same way, so `Reach` now drops the edge to
+`Basics.and`/`or` too, which correction 3 wrote in place and still shipped.
+
+**Development output changes, deliberately.** Every `emit/` golden holding arithmetic was
+re-blessed with this, and every `run/` and `browser/` program prints what it printed before — the
+corpus is the differential test. Keyed on the core package, the module and the value's name, never
+on a spelling: a root-package module named `Basics` or `Int32` is an ordinary module. Fixtures:
+`emit/OperatorsInPlace` (every row, the brackets `**` needs, and the calls that stay),
+`run/OperatorsInPlace` (the answers, `-0` and `**`'s associativity among them).
+
+**Measured** on 2026-10-02 with the three subsections below and §6's and §8's amendments of the
+same day, research 47 §6 items 2, 3, 4 and 7 together, over the 302 programs `bench/size.mjs`
+builds with both compilers: release **253 304 → 245 685 brotli bytes (−3.0 %)**, 851 500 →
+827 785 raw; development 1 465 204 → 1 287 767 brotli (−12.1 %), most of it the imports of
+`Basics` that no longer exist. The `bench/ui` app under `--release`: 14 208 → 13 968 raw,
+**5 117 → 5 032 brotli**; the empty page is unchanged (980), its bytes being the hand-written
+runtime's. Speed, one Chrome batch of five and one of ten on update and select: within noise of
+the compiler before on every operation, and below Solid 1 on five of six in the first batch
+(update, 1.54 ms against 1.48, with overlapping ranges) and on both in the second.
+
+### A discarded value is a statement
+
+*Added 2026-10-02 (research 47 §6 item 2).* `let _ = e` was `const $t = e;`, which the release
+optimiser keeps when `e` may be impure and a development build always keeps. **It is `e` as a
+statement**, `Lower.discard`:
+
+- a value that only reads — a name, a literal, a field of one — is **nothing**, since evaluating
+  it does nothing (a `Js.set` or `Js.throw` leaves `null` or `undefined` behind, and that is all a
+  `let _ =` of one used to bind);
+- a conditional `c ? a : b` is **`if (c) { a; } else { b; }`**, each arm discarded in turn, an empty
+  arm dropped and `if (!c)` written when only the second is left — `let _ = if c then f x else ()`
+  is `if (c) { f(x); }`;
+- anything else is the **expression statement** `e;` (bracketed when it would begin with `{`,
+  *An arrow body or a statement that would begin with `{`*, above).
+
+Whether `e` may have an effect decides nothing about the shape and everything about what
+`--release` does with it, exactly as it did for the `const` (`language.md` §6, *What an optimiser
+may assume*): an impure `e` is evaluated in both builds, and a pure one is evaluated by a
+development build and dropped whole by the release optimiser, which `Lower` tells through
+`Result.pure_discards` as it tells it the bindings to keep through `effect_keep`. A `let` whose
+pattern binds names is unchanged.
+
+**`Js.throw` in tail position ends its block.** Its value is the `undefined` no `return` can reach,
+and `return undefined;` after a `throw` is no longer written.
+
+### A result nothing reads
+
+*Added 2026-10-02 (research 47 §6 item 2).* A function whose result is `()` returned `null`, and
+every caller that wrote `let _ = f x` threw it away. **When nothing can read what a function
+returns, the printer does not write it**: at the function's END — its last statement, through the
+two arms of an `if` and the body of a block — `return e;` is `e;`, or nothing when `e` only reads;
+anywhere else in it, `return null;` is `return;`. A `switch` case is not followed (falling off one
+runs the next) and neither is a loop.
+
+"Nothing can read" is decided per module over `Bir` by `Lower.findUnobserved`, and it is
+deliberately narrow. A declaration qualifies when it is a function of this module (§6's `params` or
+`lambda` definition) that is **not exported** — not `pub`, not in the interface, not the entry —
+**no dispatch answer names** (a private `eq` is still what `==` calls inside its module), has **no
+second body** and **does not suspend** (a suspendable body's return value is the fiber runtime's to
+read), takes **no evidence**, and whose **every reference** is the callee of a call in a discarded
+position — the right-hand side of a `let _ =`, a branch of a `case` or the body of a `let` in
+one — **or** in a tail position of a declaration that itself qualifies, whose result goes where
+that one's goes. That last clause is a greatest fixpoint: every candidate starts unread, and a
+single read anywhere takes it out, and with it whatever its tail positions call. A reference of
+any other kind — a value passed, stored, returned from a closure, exported — is a read.
+
+Nothing about the TYPE is asked, because nothing needs to be: a value nobody reads may be anything,
+`null` or not. A development build and a release build print the same decision, and a program
+cannot tell: the caller that would have seen `undefined` for `null` does not exist.
+Fixture: `emit/DiscardedStatements` (with the statements above), and every `run/` program.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
@@ -1615,6 +1720,30 @@ checker at every site, and never something the backend has to discover.
 `boundary.md`'s wall means the only hand-written JavaScript in a build is core's siblings, and a
 codegen helper would be neither that nor beni. Dropping the adapter makes that easier to keep, not
 harder — it was the one helper this section had ever needed.
+
+### A parameter of type `()`
+
+*Added 2026-10-02 (research 47 §6 item 7).* `f () = …` compiled to `($p) => …`: a parameter that
+binds nothing, whose argument is always `null`. **A trailing run of parameters whose pattern is
+`()` is not written in the JavaScript parameter list** — `f () = …` is `() => …`, `\() -> …` is
+`() => …`, `g x () = …` is `(x) => …` — for a declaration, a `let` function and a lambda alike,
+and for a function that loops (§8), whose jump still evaluates such an argument and stores it
+nowhere. A `()` before a written parameter stays, because positions do not move.
+
+**A call does not have to know.** Every call still passes what the source wrote, and `null` for a
+`()`, and JavaScript ignores an argument its callee does not take — so a caller in another module,
+a call through a parameter, the fiber runtime's `f(null)` and a hand-written runtime's `f()` all
+reach the same function. Where the callee is a declaration of the same module defined with its
+parameters, a trailing `()` literal in the position of an unwritten parameter is not passed:
+`f ()` is `f()`. Nothing else changes: an evidence parameter is leading and is never dropped,
+and `.length` is read by nothing a program can reach (the derived engine's depth parameter is a
+derived function's, never a user function's).
+
+**This is what the boundary needs** (research 47 §6 item 7): a beni function a hand-written runtime
+calls with no arguments has no parameters. The other direction is `boundary.md` §4's check 4,
+amended the same day: a sibling may leave out a `foreign`'s trailing `()` parameters, and a call
+passes `null` for them all the same. Fixture: `emit/UnitParameters`, and `run/ForeignUnitParameters`
+for the sibling.
 
 ## 7. Pattern matching
 
@@ -2280,7 +2409,8 @@ Each iteration conses a closure over `n`. Reassign `n` in place and every closur
 value: `build 3 []`, then applying each to `0`, prints `0 0 0` instead of `1 2 3` — measured on Node
 24 from both shapes written by hand. The per-iteration `const` fixes it because a `while` body block
 gets a fresh declarative environment on every evaluation, so iteration *i*'s closures capture
-iteration *i*'s binding. The copies are therefore **unconditional**: the answer has to be right for
+iteration *i*'s binding. The copies are therefore **unconditional** (*amended 2026-10-02*: unless
+the body makes no function at all, *In place, when nothing captures*, below): the answer has to be right for
 lambdas, `f a _` placeholders, `<-` continuations and §6's eta-expanded evidence alike, and a
 capture analysis that is wrong once is wrong silently.
 
@@ -2290,6 +2420,70 @@ tail self-call and loops, while the continuation is a different function and its
 tail position of the outer one. The continuation closes over this iteration's parameters, including
 over the callback parameter it is replacing — in-place reassignment there does not merely read a
 stale value, it builds a closure that calls itself.
+
+### In place, when nothing captures
+
+*Added 2026-10-02 (research 47 §6 item 3), amending "the copies are therefore unconditional"
+above.* The copies exist for a closure over this iteration's parameters, and **a body that makes
+no function cannot hold one**. The answer the section above refused to trust — a capture analysis
+— is not needed, because the question is asked of the JavaScript and not of beni: after the body is
+lowered, `Lower.functionOrLoop` walks what it built (`JsIr.Builder.holds`), and **only when it holds
+no `arrow` and no `function` declaration at all** — no lambda, no `let` function, no placeholder,
+no `<-` continuation, no eta-expanded evidence, no constructor used as a value, captured or not —
+and no suspension point (whose re-entry passes the slots), the loop is written in place:
+
+```js
+const Main$count = (n$1, acc$2) => {         // count n acc = if n <= 0 then acc
+  for (;;) {                                  //              else count (n - 1) (acc + n)
+    if (n$1 <= 0) {
+      return acc$2;
+    } else {
+      acc$2 = acc$2 + n$1;
+      n$1 = n$1 - 1;
+    }
+  }
+};
+```
+
+- **The parameters are the loop's variables.** No `$in$<i>`, no prologue `const`; a jump assigns
+  the parameter itself. A parameter whose pattern is not a bare variable keeps its compiler-made
+  name and destructures inside the loop as before; one written `_` keeps its `$in$<i>`, which
+  nothing reads.
+- **The order of the assignments is chosen, and "no temporaries" becomes "few".** The old scheme
+  needed none because its arguments read the copies. In place, an argument that reads a
+  parameter an earlier assignment rebinds would read the new value, so `tailJump` orders them:
+  when **no argument makes a call**, evaluating one before another cannot be observed (`language.md`
+  §6, *What an optimiser may assume*, as amended the same day), so each parameter is assigned once
+  no argument still to come reads it — `count (n - 1) (acc + n)` is `acc = acc + n; n = n - 1;` —
+  and only a cycle, `f b a`, takes a temporary. When some argument makes a call, the arguments are
+  evaluated in parameter order, and one that a later argument reads goes through a temporary
+  whose assignment moves after the rest. Either way no argument reads a parameter that has
+  already been rebound, which is the *self tail
+  call* row of `language.md` §6. The jump is written in this form before the walk decides,
+  whenever `Bir` shows no lambda and no `let` function in the body; should the walk then find a
+  function after all (an eta-expanded evidence argument), the copies stay and the order and
+  temporaries are harmless.
+- **No label**, in either shape. A `continue` reaches the innermost loop of its own function, a
+  `switch` or a labelled block between the jump and the loop does not stop it, and a loop body
+  holds no loop of its own (a nested loop is a nested function's). The label stays only where the
+  body does hold one, and where a suspension point's re-entry names the loop (§16.3). The
+  paragraph above that reserved the label for §7's `switch` was cautious, not necessary.
+- **`for (;;)` and not `while (true)`**, for every loop the emitter writes, copies or not: four bytes
+  fewer and the same statement.
+- **A `continue` that ends the body is not printed**, in either shape: control reaching the end of
+  the body goes round again. The printer follows the body's last statement through the arms of an
+  `if` and into a block, and never into a `switch` case, where falling off the end runs the next
+  case (`Print.markLoopTail`).
+
+A body that does make a function keeps the copies and the `const` prologue, exactly as above,
+with its jumps in parameter order and no temporary (`mayGoInPlace` says so before the body is
+lowered, from `Bir`; it is a hint, and the walk over the JavaScript still decides) — `emit/TailCallInPlace` pins both shapes side by side, and `run/TailCallClosures` (the
+`build n acc` program) still prints `1 2 3`.
+
+**`if (c) { return x; } else { … }` stays as it is.** Research 47 §6 item 3 also asked for
+`if (c) return x; …`, §9's `if_return`. It was built in the printer and measured on 2026-10-02:
+`bench/size.mjs`'s release total fell 617 brotli bytes of 244 527 (−0.25 %), and the `bench/ui`
+app, the browser measurement, grew 5 (5 032 → 5 037). §9's finding stands and it was taken out.
 
 ### Evidence parameters
 
@@ -2894,7 +3088,8 @@ ranking. Build them in this order:
 
 **Explicitly not built**, because they measured zero or negative after compression: boolean
 shortening (`true` → `!0` makes brotli output *larger*), `if_return`, `collapse_vars`, inlining,
-constant evaluation, sequence joining, comparison and switch rewriting.
+constant evaluation, sequence joining, comparison and switch rewriting. (*2026-10-02*: `if_return`
+was measured again, and stays out — §8, *In place, when nothing captures*.)
 
 **Emission order matters and is free.** Declarations are emitted in module-grouped reachability
 order and names are stable across builds; a size-sorted order costs up to 7% of compressed bytes at

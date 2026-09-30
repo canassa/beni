@@ -775,7 +775,7 @@ observable today; effects will make them observable in what a program *does*.
 | `case` | **the scrutinee exactly once**, then exactly one branch body. A scrutinee that is a tuple literal evaluates each element once, left to right, before any test is made |
 | `e?` | the subject once — `?` is a `case` on it (§6.6) |
 | `let` bindings | **in the order written.** A binding whose right-hand side is a *function* is available throughout the block, so mutual recursion among `let` functions is unrestricted; a binding whose right-hand side is a *value* may only name bindings written before it — and one that does not is `let_forward_reference` (§7), which is the error that makes "in the order written" a total rule rather than an aspiration |
-| a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8) |
+| a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8). *Amended 2026-10-02:* "before" is what a program can see: each argument reads the parameters as they were, and one that makes a call runs in parameter order, but the loop may rebind a parameter no argument still to come reads (§8, *In place, when nothing captures*) |
 | top-level constants | each before its own first use, at module load |
 | a top-level value with a `where` clause and no parameters | **its initialiser runs once per evidence, at the first use that needs it** (2026-09-26). It takes its evidence as hidden arguments (`static-dispatch-spike.md` §8.1), so it cannot run at load; the emitter keeps the value the last evidence gave, and a read or call with the same evidence reuses it (`static-dispatch-spike.md` A.85 *as amended 2026-09-26*). The memo is ONE slot keyed on the IDENTITY of every evidence argument, so what "the same evidence" means is what the emitter builds: a primitive's evidence, a context-free nominal type's derived function and a `where`-free method are module-level names, and a use whose evidence arguments are all such names runs it once, like the same value without the `where`, only at its first use rather than at load. Evidence built AT the use — a structural type (`List Int`, a record, a tuple) or a nominal type whose derived context is not empty — is a fresh closure at each read, so such a use computes again at each read, as before; so does one instantiation read from two modules, each with its own evidence names. A use with other evidence computes again, and evicts the slot. Hoisting closed evidence to module level, which would make it once per instantiation, is recorded, not done (narrowed 2026-09-26). A body that is itself a reference to a constrained function (`h = maxOf`) computes nothing and is called straight through. `run/EvidenceFunctionBodyPerCall.beni`, `run/EvidenceThunkOncePerEvidence.beni`. *Until 2026-09-26 it ran at EACH read or call.* |
 | *markup (the next six rows were added on 2026-09-29 with §11, the helper call the same day; §11.11 says what a render may skip)* | |
@@ -872,7 +872,12 @@ and a platform's primitives that start or observe something. So:
 - **Two evaluations that both survive may not be reordered against each other**, and neither may be
   duplicated into a position where it runs more often than the table above says. Inlining
   substitutes a *body*, never an argument expression: an argument is evaluated once, at the call,
-  however many times the parameter is mentioned.
+  however many times the parameter is mentioned. *Amended 2026-10-02:* **an evaluation that makes no
+  call** — arithmetic on numbers, a comparison of two, a field read, building a record, a tuple or a
+  string, a literal, a name — changes nothing and cannot fail, so where it runs against another
+  such evaluation is not observable, and the backend may choose (`backend.md` §8, *In place, when
+  nothing captures*, orders a tail call's assignments this way). An evaluation that makes a call —
+  any call, pure or not — keeps its place.
 - A `let` binding may be sunk into the one branch that uses it, or dropped, but not lifted out of a
   branch into a position where it runs when that branch does not.
 
