@@ -866,7 +866,7 @@ what §8.3 wants to map. `len` is the element count except for `strings`, where 
 | `values` | `name: u32`, `scheme: u32`, `flags: u8` (bit 0 `is_foreign`), pad `[3]` | 12 |
 | `types` | `name: u32`, `ctors_start: u32`, `ctors_end: u32`, `arity: u16`, `kind: u8`, `flags: u8` (bit 0 opaque, bit 1 equatable), `payload_params: u32`, `eq_context: u32`, `compare_context: u32`, `eq_status: u8`, `compare_status: u8`, pad `[2]` | 32 |
 | `ctors` | `name`, `type`, `arity`, `arg_terms`, `quantified_start`, `fields`, all `u32`; `result: u8`, pad `[3]` | 28 |
-| `schemes` | `quantified_start: u32`, `quantified_count: u32`, `body: u32` | 12 |
+| `schemes` | `quantified_start: u32`, `quantified_count: u32`, `body: u32`, `effects: u32` (since format 9) | 16 |
 | `term_tags` / `term_lhs` / `term_rhs` | `u8` / `u32` / `u32` | 1 / 4 / 4 |
 | `extra`, `symbols` | `u32` | 4 |
 | `type_refs` | `module: u32`, `name: u32`, `package: u8`, pad `[3]` | 12 |
@@ -892,6 +892,12 @@ constructor of the declaration (an opaque type's hidden ones included); a record
 checked says `unchecked`. `iface_bytes.verify` refuses a bitset of the wrong length or with a bit
 past the arity, a context entry naming a parameter the type does not have, a context on an absent
 row, and a `record_alias` row whose names do not number its arguments.
+
+**`format_version` 9** (2026-09-30) adds a scheme's `effects` word: the `extra` offset of its
+effect block, or `no_terms` — the bits the checker infers for every function, in the layout
+[`transparent-effects-proposal.md`](transparent-effects-proposal.md) §14.6 specifies. `verify`
+refuses a block that leaves `extra`, names a class or a step kind that does not exist, or a field
+step that is not a symbol slot.
 
 **Every scalar is little-endian by definition of the format**, converted on write and on read, so the
 bytes and therefore the hash are a function of the source on any host. What is host-specific is the

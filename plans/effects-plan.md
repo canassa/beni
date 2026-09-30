@@ -403,6 +403,31 @@ Applying the same test:
 - **E5 is decided by E4's report**, not by a spike of its own; P2 §11 Q7 already frames it as
   "whether double translation is worth building at all".
 
+**As built, the first slice (2026-09-30).** Built to P2 §14 and `checker-v2.md` §26, not to the table's
+`Touches` column: the bits do **not** live on `TypeStore.Func` and `Solve` has no `flag_le`
+obligation. A class is a union-find class of the store — a function type, or an application of a
+nominal type whose body holds a function (§14.5) — so unification merges classes for free, and
+generation, solving and instantiation only *record* edges (`callee ⊑ ambient`), seeds, joins,
+zips, and which own-scheme variable each copy came from. `src/check/Effects.zig` runs after P5:
+it joins, orders the declarations by those records into SCCs, and solves each component's
+summary as a least fixpoint on the ladder `pure ⊏ impure ⊏ suspends`. A summary is a class list
+(rung plus a 64-bit dependency mask) and a site list of paths into the scheme; it is the
+interface's new effect block (interface format 9, frontend artifact 9, cache entry 7), and an
+importer applies it at instantiation. An annotated declaration's two readings of its annotation
+are paired by position instead of walked. `foreign` values carry a rung word (`foreign pure f`;
+`foreign_effect_missing`, `unknown_foreign_effect`); `Debug.log`, `Debug.todo` and
+`Html.targetValue`/`targetChecked` are `impure`. `dump --stage=types|interface` print `!impure`,
+`!suspends`, `!e1` and `-- evaluates: impure`; diagnostics print no effects. No emitted byte moved:
+no `emit/` golden and no run hash changed. Fixtures: `check/good/Effect*` (higher-order, evidence,
+recursion, nominal, across modules), `check/good/core/EffectForeignRungs`,
+`check/good/core/EffectSuspendsAcrossModules`, `parse/bad/core/{ForeignEffectMissing,UnknownForeignEffect}`,
+a types-dump black-box test, and a cache test whose dependency flips a bit across the firewall.
+**Measurement**: `beni check --jobs=1 --no-cache` over the 100 159-line generated corpus retires
+772.3 M → 805.4 M instructions (+4.3 % of the process; about +7 % of the check phase, inside the
+§3 bound of +10 %). Of the +33 M, recording is about +7 M and `Effects.run` the rest. `zig build
+bench -- --generate=100000` on a loaded machine: check median 69.7 → 77.1 ms over ten ABBA-ordered
+runs each, measured on an earlier build of the slice about 5 M instructions heavier (wall time, noisy; the instruction count is the figure to trust).
+
 ---
 
 ## 5. Decisions only the owner can take

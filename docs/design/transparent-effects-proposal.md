@@ -1262,7 +1262,9 @@ every group of the module has been checked (§14.4).
    whose body the call is in: a top-level or `let` definition's own arrow, a lambda's own arrow,
    and, for a top-level value with no parameters, its **evaluation class** — module-local, never
    published, printed by `dump --stage=types`, and what `sync` will read for `main` (decision 5).
-   A lambda that is only passed along joins nothing (§4.2 rule 4).
+   A lambda that is only passed along joins nothing (§4.2 rule 4). A dot-call answered by a
+   record's field (`api.log s`, static-dispatch-spike.md §11) calls the field's function, so the
+   field joins the dot-call's own arrow, which the call joined into its ambient.
 2. **Unification joins.** Two function types that unify are one class, and so are the expansions
    of one alias applied to one argument list when unification merges the two names without
    meeting their expansions (`Unify.throughAlias`).
@@ -1276,7 +1278,8 @@ every group of the module has been checked (§14.4).
    instance and its definition are one class, which is §4.3's extraction hazard, accepted.
 5. **An annotation's arrows are inferred, never promised.** The annotation says nothing about
    bits, so the scheme callers instantiate and the reading the body is checked against are one:
-   their classes are joined, position by position.
+   their classes are joined, position by position, the `where` clause's method types included —
+   the body calls its evidence through the reading's givens, and callers see the scheme's.
 6. **A `foreign`'s rung is its own arrow's.** Its `where` evidence joins its own arrow — evidence
    is handed over to be called during the call, as `core/List.js`'s `eq` loop does. A function
    type in a *positive* position of the signature (one the host makes and hands back: a returned
@@ -1382,6 +1385,9 @@ diagnostics never do, so no message's text moves:
   `Int -> (Int -> Int !e1) !impure` cannot be misread;
 - `dump --stage=types` prints a top-level value's evaluation class, when it is not pure, as
   `  -- evaluates: impure` after its scheme.
+- A class the printed type does not show — a function field inside a record alias, which prints
+  by name — is still named where another class depends on it: `callApi : Api -> Int !e1` says
+  the arrow depends on a function inside `Api`.
 
 `List.map : List a, (a -> b !e1) -> List b !e1` is the whole feature on one line.
 
