@@ -347,6 +347,34 @@ as well as decode, and engine-owned context; §7 records the still-open H4
 obligation at synchronous host boundaries. Schemas neither grant user packages
 `foreign` nor replace this section's platform/main contract or ports automatically.
 
+### 4.2 `Js`, JavaScript written from beni
+
+*Added 2026-10-02, when the owner ordered the browser runtime rewritten in beni (`plans/browser-
+decisions.md`, R47-1 and R47-2).* Core's `Js` module is research 47 §2's draft, adopted as it
+stands there and with the three declarations of `Js.Ref` below: `foreign` declarations whose saturated calls the backend writes as the
+JavaScript they name (`o.f`, `o.f = v`, `a === b`, `o.m(a, b)`), and whose sibling `core/Js.js`
+ships only for a declaration passed as a value. **`import Js` outside core and a platform package
+is `js_outside_platform`**, for the wall's own reason: `Js.to` is an unchecked cast. A module named
+`Js` in the root package is an ordinary module.
+
+**A mutable local is a `Js.Ref`** (R47-2; there is no `let mut`):
+
+| declaration | rung | written as |
+|---|---|---|
+| `pub foreign type Ref a` | — | a cell holding an `a` |
+| `ref : a -> Ref a` | pure | a new cell: `{ v: x }`, or a `let` |
+| `read : Ref a -> a` | impure | what the cell holds: `r.v`, or the `let`'s name |
+| `write : Ref a, a -> ()` | impure | the statement `r.v = x`, or `n = x`; its value `null` |
+
+`ref` is pure because making a cell is making an object — a pure `ref` nobody reads may be dropped,
+and nothing that can be dropped can be merged, since no optimiser merges two evaluations. `read` is
+impure because its answer is not a function of its argument: a `read` that nothing reads may go, and
+none may move past a `write`. **A cell that does not escape is a plain `let`**, a read of it the
+name and a write an assignment — the shape hand-written JavaScript uses for the same thing
+(`template`'s `let node = null`, the render loop's `let scheduled = false`). What "does not escape"
+means, and why a closure is not an escape, is `backend.md` §4's *A `Js.Ref` that does not escape is
+a `let`*; the program cannot tell the two shapes apart.
+
 ## 5. `main`, and what a platform provides
 
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per

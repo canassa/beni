@@ -1605,6 +1605,71 @@ Nothing about the TYPE is asked, because nothing needs to be: a value nobody rea
 cannot tell: the caller that would have seen `undefined` for `null` does not exist.
 Fixture: `emit/DiscardedStatements` (with the statements above), and every `run/` program.
 
+*Amended 2026-10-02.* **A discarded `case` is its tree, each leaf discarded** (`Lower.discardCase`).
+The list above covered a conditional that lowers to `c ? a : b`; an `if` or `case` whose arms need
+statements of their own lowered to a temporary assigned in every arm, `let $t; if (c) { …; $t =
+null; } else { $t = null; }`. It is now the decision tree with no temporary, each leaf's body
+discarded in turn by the same rules (a `let` its bindings then its body, a nested `case` its tree),
+an arm that only reads leaving nothing — `let _ = if c then (let … in Js.write r x) else ()` is
+`if (c) { …; r = x; }`, the hand-written runtime's own shape. A tree that needs a `$c$<d>` block
+keeps it and its `break`s. A `case` whose branches may suspend is unchanged, since its join needs
+the value. `emit/core/JsRef` and `emit/release/core/JsRef` pin it.
+
+### A `Js.Ref` that does not escape is a `let`
+
+*Added 2026-10-02 (research 47 §6 item 5; `plans/browser-decisions.md` R47-2; `boundary.md` §4.2).*
+A `Js.Ref` is a cell, `{ v: x }`, read as `r.v` and written as the statement `r.v = x`. **A ref
+binding that does not escape is a plain `let` instead**: `let n = x;`, a read is `n`, a write the
+statement `n = x;` whose value is `null`. The two are indistinguishable to a program; the second is
+one object and one property access fewer, and is what hand-written JavaScript writes.
+
+**A ref binding** is a `let` binding without parameters, or a top-level declaration without
+parameters and without evidence (`Convention`'s `constant`), whose pattern is a name and whose
+right-hand side is a saturated call `Js.ref e`. **Its cell positions** are the first argument of a
+saturated `Js.read` and the first argument of a saturated `Js.write`. **It does not escape** when:
+
+1. **every reference to its name is in a cell position.** Anything else — an argument of any other
+   call, `Js.same` and `Js.from` included; an element of a record, tuple, list or constructor; a
+   returned value; the base of a record update; a binding of another name; a placeholder's or
+   evidence's capture — is an escape, and the binding is a cell. `Js.ref` passed as a value is the
+   sibling's `ref`, which makes a cell, so a `Ref` that arrives through a parameter, a field or
+   another module is always a cell and a read of one is always `.v`;
+2. **for a top-level one, no other module can name it**: it is not `pub`, not the entry, and no
+   dispatch answer names it. Condition 1 is then over the whole module, which is every place its
+   name can be written.
+
+That is the whole analysis, because beni is lexically scoped: every reference to a local is in the
+function that binds it or in a closure made inside that function. **A closure is not an escape.** A
+JavaScript closure captures the `let` binding itself and not its value, so a write through it is
+seen by every reader, exactly as a write through a shared cell is — `template`'s cloner reads and
+assigns its enclosing `let node`. A suspension needs no rule either (§16.3): its continuation is a
+closure, and a tail-call loop re-entered after one starts a new iteration, which evaluates its own
+`Js.ref` again as a fresh `let` in a fresh block, as a new cell would be. A binding inside a loop body
+is a `let` in the loop's block, one per iteration, for the same reason.
+
+**A read of a `let` cell is not an atom.** `Lower.isAtom` answers no for its name, so wherever an
+operand is pinned before a later one hoists a statement (`orderedExprs`, `bindSubject`, a markup
+value), a read is pinned as work would be: `f (Js.read r) (Js.write r 2)` is `const $t = r; r = 2;
+f($t, null)`, and reads `1`, which is what the cell reads. A `let` binding of a read keeps what it
+read (`let seen = Js.read r` is `const seen = r`). Under `--release`, `Opt` folds no binding whose
+initialiser reads one (`Lower.Result.mutable`): a module-level one may be written by any function,
+and a fold rests on its base not changing between the binding and the use.
+
+**Where the check lives**: `Lower.findRefs`, once per module over `Bir`, before any declaration is
+lowered, since a `let` function may read a cell bound after it. Development and release builds make
+the same decision. Fixtures: `emit/core/JsRef` (the development shape: a captured `let`, a
+module-level `let`, and cells that escape by being returned and passed), `emit/release/core/JsRef`
+(the same under `--release`, set beside `platforms/browser/runtime.js`'s `template` and render
+queue), `run/JsRef` (a platform module's cells, read, written, captured, passed, returned, and a
+read before a write in one call, in both builds).
+
+**Measured** on 2026-10-02, research 47's empty page (`--release`, the one file, brotli 11) with
+`tests/platforms/beni-runtime-src/Rt.beni` rewritten to use cells where the hand-written runtime
+has `let`s — `template`'s node, the render queue's `queued`, `scheduled` and `phase`, `mount`'s
+model and waiting flag, `send` and `queue` moved into the closures that hold them: **1 181 → 1 107**
+(the hand-written runtime: 980). The port still passes every `browser/dom/` page under happy-dom,
+built both ways.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
