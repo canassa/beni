@@ -9395,19 +9395,29 @@ const Lowerer = struct {
         return n;
     }
 
-    fn markupRuntime(l: *Lowerer, export_name: []const u8) (Allocator.Error || error{Reported})!JsIr.NameIndex {
-        const st = l.mk.?;
-        // An export the runtime module supplies is that module's value
-        // (`backend.md` §15.1, *The runtime module*).
-        if (l.in.markup) |mk| if (mk.module) |module| for (mk.supplied) |s| {
+    /// The runtime module's value that supplies the runtime export
+    /// `export_name`, recorded as used, or null when the file supplies it
+    /// (`backend.md` §15.1, *The runtime module*).
+    fn suppliedName(l: *Lowerer, export_name: []const u8) Allocator.Error!?JsIr.NameIndex {
+        const mk = l.in.markup orelse return null;
+        const module = mk.module orelse return null;
+        for (mk.supplied) |s| {
             if (!std.mem.eql(u8, s.name, export_name)) continue;
             var known = false;
             for (l.markup_module_uses.items) |u| known = known or std.mem.eql(u8, u, s.name);
             if (!known) try l.markup_module_uses.append(l.scratch, s.name);
-            if (module == l.in.module) return l.topName(s.decl);
+            if (module == l.in.module) return try l.topName(s.decl);
             try l.need(module, s.value);
-            return l.externalName(module, s.value);
-        };
+            return try l.externalName(module, s.value);
+        }
+        return null;
+    }
+
+    fn markupRuntime(l: *Lowerer, export_name: []const u8) (Allocator.Error || error{Reported})!JsIr.NameIndex {
+        const st = l.mk.?;
+        // An export the runtime module supplies is that module's value
+        // (`backend.md` §15.1, *The runtime module*).
+        if (try l.suppliedName(export_name)) |n| return n;
         for (st.lowering.runtime) |declared| {
             if (!std.mem.eql(u8, declared.name, export_name)) continue;
             const base = try l.interner.getOrPut(l.gpa, export_name);
@@ -9420,8 +9430,10 @@ const Lowerer = struct {
 
     /// The name a use of a markup primitive reads: the markup runtime's
     /// export of that name (`boundary.md` §9.3), never the vocabulary
-    /// module's.
+    /// module's — the runtime module's value when it supplies the
+    /// primitive (§9.2, *A runtime module*).
     fn primitiveName(l: *Lowerer, module: Symbol, base: Symbol) Allocator.Error!JsIr.NameIndex {
+        if (try l.suppliedName(l.interner.slice(base))) |n| return n;
         return l.markupImport(base, JsIr.Name.qualified(module, base));
     }
 

@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "raw-page",
+  "platforms": ["browser"],
+  "reexports": ["Html", "Browser"]
+}

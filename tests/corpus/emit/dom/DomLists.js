@@ -1,5 +1,5 @@
-import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition, insertText as $markup$insertText, show as $markup$show, hide as $markup$hide } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition, show as $markup$show, hide as $markup$hide } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot, Rt$insertText } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
 const DomLists$t18 = Rt$template("<li> ", 0);
 const DomLists$k18 = { m: (v$1, cx$2) => {
@@ -112,8 +112,8 @@ const DomLists$k102 = { m: (v$99, cx$100) => {
   const r$101 = DomLists$t102();
   const w$102 = r$101.firstChild;
   const w$103 = w$102.nextSibling;
-  const x$104 = $markup$insertText(r$101, w$102, v$99[0]);
-  const x$105 = $markup$insertText(r$101, w$103, v$99[1]);
+  const x$104 = Rt$insertText(r$101, w$102, v$99[0]);
+  const x$105 = Rt$insertText(r$101, w$103, v$99[1]);
   return { s: r$101, q: null, e: r$101, x0: x$104, x1: x$105, a0: v$99[0], a1: v$99[1] };
 }, p: (i$106, v$107) => {
   if (v$107[0] !== i$106.a0) {
@@ -163,8 +163,8 @@ const DomLists$lists = (model$1) => {
     const r$52 = DomLists$t58();
     const w$53 = r$52.firstChild;
     const w$54 = w$53.nextSibling;
-    const x$55 = $markup$insertText(r$52, w$53, position$50);
-    const x$56 = $markup$insertText(r$52, w$54, item$49);
+    const x$55 = Rt$insertText(r$52, w$53, position$50);
+    const x$56 = Rt$insertText(r$52, w$54, item$49);
     return { s: r$52, q: null, e: r$52, x0: x$55, x1: x$56, a0: position$50, a1: item$49 };
   }, p: (i$57, item$58, position$59) => {
     if (position$59 !== i$57.a0) {

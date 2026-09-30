@@ -933,10 +933,14 @@ package that declares `"runtime"`:
 |---|---|---|
 | `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have |
 
-- **Which exports it supplies.** Every name of §9.4.5's union — a lowering's declared export, and
-  `run` when the markup runtime is also the program runtime — that the module declares as a `pub`
-  value with a body is supplied by the module, and the file supplies the rest. Check 2 holds the
-  file to exactly the rest; a markup primitive is always the file's. A supplied value must take the
+- **Which exports it supplies.** Every name of §9.4.5's union — a lowering's declared export, one
+  per markup primitive of the vocabulary, and `run` when the markup runtime is also the program
+  runtime — that the module declares as a `pub` value with a body is supplied by the module, and
+  the file supplies the rest. Check 2 holds the file to exactly the rest. *(Amended the same day,
+  `plans/runtime-in-beni.md` step 2: a markup primitive was always the file's. It is supplied like
+  any other name, and a use of it then reads the module's declaration — `Html.text` is `Rt$text` —
+  so §9.3's "binds to the markup runtime" means the file or its module, whichever supplies it.)*
+  A supplied value must take the
   declared count of parameters and no evidence (`Convention`'s arity, a trailing `()` run counted as
   written or not, as check 4 counts a sibling's), or it is `foreign_arity_mismatch` at the
   declaration. `run` takes one. The module is ordinary platform code: it may import `Js` (§4.2)
@@ -957,7 +961,8 @@ the lowering's `Lowering.runtime` list is its contract with both halves together
 
 `browser` has a runtime module since 2026-10-02: `Rt.beni` holds the slot and mount half and the
 render loop, `runtime.js` the rest (`backend.md` §15.11's last amendment;
-`plans/runtime-in-beni.md`).
+`plans/runtime-in-beni.md`). Since step 2 it also holds the `Maybe Html` hole, a text hole's node,
+the attribute writes but for URLs, classes and styles, and both primitives, `text` and `map`.
 
 ### 9.3 The vocabulary, and why it is not `foreign`
 

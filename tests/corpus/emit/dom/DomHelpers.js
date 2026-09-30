@@ -1,12 +1,12 @@
-import { insertText as $markup$insertText, forKeyed as $markup$forKeyed, text as Html$text } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot, Rt$childHtml } from "./_platform/Rt.mjs";
+import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$insertText, Rt$slot, Rt$childHtml, Rt$text } from "./_platform/Rt.mjs";
 const DomHelpers$t10 = Rt$template("<b> <!>", 0);
 const DomHelpers$k10 = { m: (v$1, cx$2) => {
   const r$3 = DomHelpers$t10();
   const w$4 = r$3.firstChild;
   const w$5 = w$4.nextSibling;
-  const x$6 = $markup$insertText(r$3, w$4, v$1[0]);
-  const x$7 = $markup$insertText(r$3, w$5, v$1[1]);
+  const x$6 = Rt$insertText(r$3, w$4, v$1[0]);
+  const x$7 = Rt$insertText(r$3, w$5, v$1[1]);
   return { s: r$3, q: null, e: r$3, x0: x$6, x1: x$7, a0: v$1[0], a1: v$1[1] };
 }, p: (i$8, v$9) => {
   if (v$9[0] !== i$8.a0) {
@@ -62,8 +62,8 @@ const DomHelpers$k85 = { m: (v$40, cx$41) => {
   const r$42 = DomHelpers$t85();
   const w$43 = r$42.firstChild;
   const w$44 = w$43.nextSibling;
-  const x$45 = $markup$insertText(r$42, w$43, v$40[0]);
-  const x$46 = $markup$insertText(r$42, w$44, v$40[1]);
+  const x$45 = Rt$insertText(r$42, w$43, v$40[0]);
+  const x$46 = Rt$insertText(r$42, w$44, v$40[1]);
   return { s: r$42, q: null, e: r$42, x0: x$45, x1: x$46, a0: v$40[0], a1: v$40[1] };
 }, p: (i$47, v$48) => {
   if (v$48[0] !== i$47.a0) {
@@ -117,7 +117,7 @@ const DomHelpers$others = (n$1) => {
   }
   const $t$49 = DomHelpers$same(DomHelpers$eq$prim, n$1, 1);
   const $t$50 = twice$2(n$1);
-  const $t$51 = Html$text("t");
+  const $t$51 = Rt$text("t");
   return { t: DomHelpers$k96, v: [$t$49, $t$50, $t$51] };
 };
 export { DomHelpers$page, DomHelpers$rows, DomHelpers$others };

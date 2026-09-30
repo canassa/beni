@@ -1,0 +1,21 @@
+-- A `raw` attribute in a page (backend.md §15.3): `innerHTML` is the
+-- runtime's `rawHtml`, which writes the text as markup, character
+-- references decoded, and writes it again when it changes. The attribute is
+-- written in a platform package of the project's own, over `browser`, where
+-- it is no warning.
+import Browser
+import Html exposing (Html)
+import Raw
+
+
+view : Bool -> Html Bool
+view on =
+    <main>
+        <button id="flip" onClick={not on}>flip</button>
+        {Raw.raw (if on then "<i>on</i> &amp; <b>off</b>" else "<b>off</b>")}
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = False, update = \on _ -> on, view = view }

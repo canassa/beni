@@ -1,0 +1,9 @@
+--! Markup text written unescaped, from a platform package: `innerHTML` in
+--! the root package is the warning `raw_markup_attribute`, and a page
+--! fixture must build clean.
+import Html exposing (Html)
+
+
+pub raw : String -> Html msg
+raw markup =
+    <div id="raw" innerHTML={markup}></div>

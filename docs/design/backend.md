@@ -5172,7 +5172,9 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
 - **The runtime module** (*added 2026-10-02*; `boundary.md` §9.2's `"module"`). An export the
   module supplies is a declaration of an emitted module: `cx.runtime(name)` answers the name of
   that declaration, imported from the module's file as any other module's value is (`Rt$template`,
-  a short name under `--release`), and the build records it as used. The entry file imports `run`
+  a short name under `--release`), and the build records it as used. A use of a markup primitive
+  the module supplies is the same: `Html.text s` is `Rt$text(s)`, never an import of the file's
+  `text` (*amended the same day*, `plans/runtime-in-beni.md` step 2). The entry file imports `run`
   and `start` from the module when the module supplies them. The file's `import … from
   "beni:<Module>"` is written three ways: in a development build and a multi-file release build it
   is rewritten, as the file is copied, to import the declarations' emitted names from the module's
@@ -6047,3 +6049,12 @@ specialiser cannot see, and the entry file's `run(main)` escapes both `run` and 
 Written in beni, `program` would lose the `sync` its signature demands of `update` and `view`,
 which only a `foreign` signature may write (`language.md` §5.4) — so it stays hand-written; hand
 removing the hosted branch and the phase from the page measures **838 → 816**.
+
+*Amended the same day: templates' holes and attributes are written in beni* (`plans/runtime-in-beni.md`,
+step 2). `Rt.beni` also holds `childMaybe`, `insertText`, `attr`, `attrNS`, `rawHtml` and the two
+markup primitives, `text` and `map` with their kinds — which the module may now supply
+(`boundary.md` §9.2, amended). `childList` stays in `runtime.js` beside `forPosition`, whose loop
+it shares (moved alone, a page with both paid 43 bytes more brotli), and so does `safeUrl` (`Js`
+writes no regular expression literal, and nothing of it specialises). A page that uses the moved
+functions is 9–90 bytes brotli smaller; one that does not ships the same JavaScript, byte for
+byte but for which short names its declarations are given.

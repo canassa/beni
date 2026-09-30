@@ -1,0 +1,13 @@
+# The `Maybe Html` hole emptied, then filled again.
+click #toggle
+click #toggle
+# The list grows by one row, and shrinks by two.
+click #more
+click #less
+click #less
+# The inner button's message goes through `Inner`: 1, then 10 once flipped.
+click #inner
+# Every attribute and the text flip; the URL is refused.
+click #flip
+click #inner
+click #flip

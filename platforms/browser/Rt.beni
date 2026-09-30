@@ -1,5 +1,6 @@
---! The slot and mount half of the browser platform's runtime, written in
---! beni over core's `Js` (research 47; `plans/runtime-in-beni.md`, step 1).
+--! The slot and mount half of the browser platform's runtime, and the holes,
+--! attribute writes and markup primitives of a template, written in beni
+--! over core's `Js` (research 47; `plans/runtime-in-beni.md`, steps 1–2).
 --! Each declaration is the hand-written JavaScript function of the same
 --! name it replaced, statement for statement where beni allows it. It is
 --! this platform's runtime module (`boundary.md` §9.2, *A runtime module*):
@@ -468,3 +469,129 @@ microtask () =
 
     else
         ()
+
+
+-- ---- Holes (backend.md §15.3–§15.4) --------------------------------------
+
+
+-- `(slot, block or null)`: a `Maybe Html` hole; null empties the slot.
+pub childMaybe : V, V -> ()
+childMaybe s b =
+    if Js.isNull b then
+        if Js.isNull (Js.get s "i") then
+            ()
+
+        else
+            let
+                _ =
+                    drop (Js.get s "i")
+            in
+            Js.set s "i" Js.null
+
+    else
+        childHtml s b
+
+
+-- `(parent, marker, value)`: a text hole's node, inserted before the marker
+-- (or last, for none).
+pub insertText : V, V, V -> V
+insertText parent marker value =
+    Js.call parent "insertBefore" [ Js.call (Js.global "document") "createTextNode" [ value ], marker ]
+
+
+-- ---- Attributes (backend.md §15.3, §15.6) --------------------------------
+
+
+-- `(el, name, value)`: the attribute, or none when `value` is null.
+pub attr : V, V, V -> ()
+attr el name value =
+    if Js.isNull value then
+        Js.to (Js.call el "removeAttribute" [ name ])
+
+    else
+        Js.to (Js.call el "setAttribute" [ name, value ])
+
+
+-- `(el, namespace, name, value)`: an attribute of a namespace (`xlink:href`).
+pub attrNS : V, V, V, V -> ()
+attrNS el namespace name value =
+    if Js.isNull value then
+        Js.to (Js.call el "removeAttributeNS" [ namespace, Js.call name "slice" [ Js.from (Js.to (Js.call name "indexOf" [ Js.from ":" ]) + 1) ] ])
+
+    else
+        Js.to (Js.call el "setAttributeNS" [ namespace, name, value ])
+
+
+-- `(el, markup)`: the `raw` escape hatch, markup text written unescaped.
+pub rawHtml : V, V -> ()
+rawHtml el markup =
+    Js.set el "innerHTML" markup
+
+
+-- ---- The markup primitives (language.md §11.13) --------------------------
+
+
+-- A text instance: its node, and the text it shows.
+textKind : V
+textKind =
+    Js.from
+        { m =
+            \v ->
+                let
+                    n =
+                        Js.call (Js.global "document") "createTextNode" [ v ]
+                in
+                Js.from { s = n, q = Js.null, e = n, d = v }
+        , p =
+            \i v ->
+                if Js.same v (Js.get i "d") then
+                    ()
+
+                else
+                    let
+                        _ =
+                            Js.set i "d" v
+                    in
+                    Js.set (Js.get i "s") "data" v
+        }
+
+
+-- `Html.text`: the text, as a text hole shows it.
+pub text : V -> V
+text s =
+    Js.from { t = textKind, v = s }
+
+
+-- A map's instance is its markup's, mounted with a context that sends
+-- through `f` and then through the contexts it was mounted in. A new `f`
+-- is written into the context, so no handler inside changes.
+mapKind : V
+mapKind =
+    Js.from
+        { m =
+            \v cx ->
+                let
+                    c =
+                        Js.from { f = Js.at v 1, up = cx }
+
+                    h =
+                        slot Js.null Js.null c
+
+                    _ =
+                        Js.set h "i" (unit (Js.at v 0) c)
+                in
+                Js.from { s = Js.null, q = h, e = Js.null, c = c }
+        , p =
+            \i v ->
+                let
+                    _ =
+                        Js.set (Js.get i "c") "f" (Js.at v 1)
+                in
+                Js.set (Js.get i "q") "i" (patch (Js.get (Js.get i "q") "i") (Js.at v 0) (Js.get i "c"))
+        }
+
+
+-- `Html.map`: the same markup, its messages passed through `f`.
+pub map : V, V -> V
+map html f =
+    Js.from { t = mapKind, v = Js.array [ html, f ] }

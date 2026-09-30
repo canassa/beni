@@ -1265,7 +1265,8 @@ const Emitter = struct {
     /// Take out of `expected` every export the runtime module supplies, held
     /// to its count (`boundary.md` §9.2): no evidence, and the declared
     /// count of parameters, a trailing run of `()` counted or not, as check
-    /// 4 counts a sibling's. A markup primitive is always the file's.
+    /// 4 counts a sibling's. A markup primitive is supplied likewise, and
+    /// its uses then read the module's value (`Lower.primitiveName`).
     fn takeSupplied(e: *Emitter, expected: *std.ArrayList(Expected), lowering_name: []const u8) !void {
         const name = e.options.platform.markup_module orelse return;
         const module = try e.markupModule() orelse {
@@ -1291,7 +1292,7 @@ const Emitter = struct {
         var k: usize = 0;
         while (k < expected.items.len) {
             const want = expected.items[k];
-            const decl = if (want.primitive == null) e.moduleValue(module, want.name) else null;
+            const decl = e.moduleValue(module, want.name);
             const index = decl orelse {
                 k += 1;
                 continue;

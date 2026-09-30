@@ -5,8 +5,9 @@
 -- runtime call each — `childHtml`, `childMaybe` and `childList` — decided
 -- by the hole's type, never by the value. A fragment's markup is several
 -- top-level nodes, each of its holes with a marker, and the template
--- flagged to clone them all. `Html.text` and `Html.map` are the runtime's
--- exports.
+-- flagged to clone them all. `Html.text` and `Html.map` are the markup
+-- runtime's, supplied by `browser`'s runtime module (`Rt$text`, `Rt$map`;
+-- boundary.md §9.2).
 import Html exposing (Html)
 
 

@@ -6,9 +6,12 @@
 // **Its slot and mount half is written in beni**, in `Rt.beni`, this
 // platform's runtime module (boundary.md §9.2, *A runtime module*;
 // `plans/runtime-in-beni.md`): an instance's nodes, templates, slots, a
-// block's mount and patch, the render loop and the mount. This file holds
-// the rest, and reads the beni half through the import below; both are
-// compiled with the program, and only what a page reaches is written.
+// block's mount and patch, the render loop and the mount, the `Html` and
+// `Maybe Html` holes, a text hole's node, the attribute writes but for
+// classes, styles and URLs, and the markup primitives `text` and `map`.
+// This file holds the rest, and reads the beni half through the import
+// below; both are compiled with the program, and only what a page reaches
+// is written.
 //
 // Parts are ported from dom-expressions' client runtime (MIT, © Ryan
 // Carniato; references/dom-expressions/packages/runtime/src): `template`
@@ -35,23 +38,17 @@
 // The page is reached through `globalThis`, a capability of this file
 // and of `Rt.beni`'s `Js` calls alone: the code the compiler emits for a
 // view touches only the nodes the runtime hands it.
-import { first, last, put, drop, slot, parentOf, unit, patch, place, childHtml } from "beni:Rt";
-
-// `(slot, block or null)`: a `Maybe Html` hole; null empties the slot.
-export const childMaybe = (s, b) => {
-  if (b !== null) childHtml(s, b);
-  else if (s.i !== null) {
-    drop(s.i);
-    s.i = null;
-  }
-};
+import { first, last, put, drop, parentOf, unit, patch, place } from "beni:Rt";
 
 // A list's elements, by backend.md §4's protocol: the array itself, or a
 // view's or a trie's plain copy (made once per list and cached). Read, never
 // written.
 const Elements = (list) => (Array.isArray(list) ? list : list.$plain());
 
-// `(slot, list)`: a `List Html` hole, its blocks matched by position.
+// `(slot, list)`: a `List Html` hole, its blocks matched by position. It
+// stays here with `forPosition`, whose loop it shares: written in beni
+// alone, a page with both pays for the loop twice after brotli
+// (`plans/runtime-in-beni.md`, step 2).
 export const childList = (s, list) => {
   if (list === s.b) return;
   s.b = list;
@@ -562,18 +559,6 @@ export const hide = (s, f) => {
 
 // ---- Attributes (backend.md §15.3, §15.6) --------------------------------
 
-// `(el, name, value)`: the attribute, or none when `value` is null.
-export const attr = (el, name, value) => {
-  if (value === null) el.removeAttribute(name);
-  else el.setAttribute(name, value);
-};
-
-// `(el, namespace, name, value)`: an attribute of a namespace (`xlink:href`).
-export const attrNS = (el, namespace, name, value) => {
-  if (value === null) el.removeAttributeNS(namespace, name.slice(name.indexOf(":") + 1));
-  else el.setAttributeNS(namespace, name, value);
-};
-
 // The names whose flag is `True`, a name holding whitespace being several.
 const classSet = (list) => {
   const names = new Set();
@@ -615,19 +600,12 @@ export const styles = (el, list, previous) => {
 
 // Elm's rule: a URL whose scheme is `javascript:`, or `data:text/html`,
 // with any whitespace or control character where a browser ignores one,
-// runs script, so it is written as nothing.
+// runs script, so it is written as nothing. It stays here: `Js` writes no
+// regular expression literal, and the one function has nothing a page could
+// specialise (`plans/runtime-in-beni.md`, step 2).
 const scriptUrl =
   /^[\s\x00-\x20]*(j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:|d\s*a\s*t\s*a\s*:\s*t\s*e\s*x\s*t\s*\/\s*h\s*t\s*m\s*l\s*[,;])/i;
 export const safeUrl = (url) => (scriptUrl.test(url) ? "" : url);
-
-// `(el, markup)`: the `raw` escape hatch, markup text written unescaped.
-export const rawHtml = (el, markup) => {
-  el.innerHTML = markup;
-};
-
-// `(parent, marker, value)`: a text hole's node, inserted before the marker
-// (or last, for none).
-export const insertText = (parent, marker, value) => parent.insertBefore(globalThis.document.createTextNode(value), marker);
 
 // ---- Events (backend.md §15.3) -------------------------------------------
 
@@ -699,40 +677,3 @@ export const listen = (el, name, flags) => {
     if (el[key] !== undefined) fire(el, event, key, flags);
   });
 };
-
-// ---- The markup primitives (language.md §11.13) ----------------------------
-
-const textKind = {
-  m: (v) => {
-    const n = globalThis.document.createTextNode(v);
-    return { s: n, q: null, e: n, d: v };
-  },
-  p: (i, v) => {
-    if (v !== i.d) {
-      i.d = v;
-      i.s.data = v;
-    }
-  },
-};
-
-// `Html.text`: the text, as a text hole shows it.
-export const text = (s) => ({ t: textKind, v: s });
-
-// A map's instance is its markup's, mounted with a context that sends
-// through `f` and then through the contexts it was mounted in. A new `f`
-// is written into the context, so no handler inside changes.
-const mapKind = {
-  m: (v, cx) => {
-    const c = { f: v[1], up: cx };
-    const h = slot(null, null, c);
-    h.i = unit(v[0], c);
-    return { s: null, q: h, e: null, c };
-  },
-  p: (i, v) => {
-    i.c.f = v[1];
-    i.q.i = patch(i.q.i, v[0], i.c);
-  },
-};
-
-// `Html.map`: the same markup, its messages passed through `f`.
-export const map = (html, f) => ({ t: mapKind, v: [html, f] });

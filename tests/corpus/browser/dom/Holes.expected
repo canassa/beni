@@ -1,0 +1,367 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "2"
+        <!---->
+        " of "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "2"
+        <!---->
+        " of "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "2"
+        <!---->
+        " of "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "2"
+        <!---->
+        " of "
+        "2"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "3"
+        <!---->
+        " of "
+        "3"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #less
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+      <li>
+        "item "
+        "2"
+        <!---->
+        " of "
+        "2"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #less
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #inner
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "1"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "1"
+      <!---->
+      " and "
+      "on"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" disabled="" .value="">
+    <a id="link" href="">"link"</a>
+    <my-icon xlink:href="#a"></my-icon>
+  </main>
+</body>
+-- click #inner
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "11"
+      <!---->
+      " and "
+      "on"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" disabled="" .value="">
+    <a id="link" href="">"link"</a>
+    <my-icon xlink:href="#a"></my-icon>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <p>
+      "got "
+      "11"
+      <!---->
+      " and "
+      "off"
+      <!---->
+    </p>
+    <b>"shown"</b>
+    <ul>
+      <li>
+        "item "
+        "1"
+        <!---->
+        " of "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <button id="inner">"inner"</button>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+  </main>
+</body>

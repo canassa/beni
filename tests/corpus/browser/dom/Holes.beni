@@ -1,0 +1,79 @@
+-- Every hole and attribute write the runtime does for a template, in a page
+-- (backend.md §15.3–§15.4): a `Maybe Html` hole emptied and refilled
+-- (`childMaybe`), a `List Html` hole grown, patched and shrunk by position
+-- (`childList`), text holes beside other nodes (`insertText`), `Html.text`
+-- and `Html.map` blocks (`map` sends the inner button's message through
+-- its function, which a render replaces), a `Bool` attribute written and
+-- removed (`attr`), a namespaced one (`attrNS`), and a URL whose
+-- `javascript:` scheme is written as nothing (`safeUrl`). (`rawHtml` is
+-- not here: `innerHTML` in the root package is a warning, and a page must
+-- build clean; `RawHtml` writes it from a platform of its own.)
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Toggle
+    | More
+    | Less
+    | Flip
+    | Inner Int
+
+
+type alias Model =
+    { shown : Bool, count : Int, on : Bool, got : Int }
+
+
+update : Msg, Model -> Model
+update msg model =
+    case msg of
+        Toggle ->
+            { model | shown = not model.shown }
+
+        More ->
+            { model | count = model.count + 1 }
+
+        Less ->
+            { model | count = model.count - 1 }
+
+        Flip ->
+            { model | on = not model.on }
+
+        Inner n ->
+            { model | got = model.got + n }
+
+
+items : Int -> List (Html msg)
+items n =
+    if n <= 0 then
+        []
+
+    else
+        [ ...items (n - 1), <li>item {String.fromInt n} of {String.fromInt n}</li> ]
+
+
+inner : Int -> Html Int
+inner step =
+    <button id="inner" onClick={step}>inner</button>
+
+
+view : Model -> Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="more" onClick={More}>more</button>
+        <button id="less" onClick={Less}>less</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <p>got {String.fromInt model.got} and {Html.text (if model.on then "on" else "off")}</p>
+        {if model.shown then Just (<b>shown</b>) else Nothing}
+        <ul>{items model.count}</ul>
+        {Html.map (inner (if model.on then 10 else 1)) Inner}
+        <input id="field" disabled={model.on} />
+        <a id="link" href={if model.on then "javascript:alert(1)" else "/ok"}>link</a>
+        <my-icon "xlink:href"={if model.on then "#a" else "#b"}></my-icon>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { shown = True, count = 2, on = False, got = 0 }, update = update, view = view }

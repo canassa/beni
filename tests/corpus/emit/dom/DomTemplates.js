@@ -1,5 +1,4 @@
-import { insertText as $markup$insertText, attr as $markup$attr } from "./_platform/runtime.foreign.mjs";
-import { Rt$template } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$insertText, Rt$attr } from "./_platform/Rt.mjs";
 const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me", 0);
 const DomTemplates$k3 = { m: (v$1, cx$2) => {
   const r$3 = DomTemplates$t3();
@@ -13,9 +12,9 @@ const DomTemplates$k19 = { m: (v$9, cx$10) => {
   const w$12 = r$11.firstChild.nextSibling;
   const w$13 = w$12.nextSibling.nextSibling;
   const w$14 = w$13.nextSibling.nextSibling;
-  const x$15 = $markup$insertText(r$11, w$12, v$9[0]);
-  const x$16 = $markup$insertText(r$11, w$13, v$9[1]);
-  const x$17 = $markup$insertText(r$11, w$14, v$9[2]);
+  const x$15 = Rt$insertText(r$11, w$12, v$9[0]);
+  const x$16 = Rt$insertText(r$11, w$13, v$9[1]);
+  const x$17 = Rt$insertText(r$11, w$14, v$9[2]);
   return { s: r$11, q: null, e: r$11, x0: x$15, x1: x$16, x2: x$17, a0: v$9[0], a1: v$9[1], a2: v$9[2] };
 }, p: (i$18, v$19) => {
   if (v$19[0] !== i$18.a0) {
@@ -57,7 +56,7 @@ const DomTemplates$k51 = { m: (v$36, cx$37) => {
   const r$38 = DomTemplates$t51();
   r$38.setAttribute("id", v$36[0]);
   r$38.setAttribute("title", v$36[1]);
-  $markup$attr(r$38, "hidden", v$36[2] ? "" : null);
+  Rt$attr(r$38, "hidden", v$36[2] ? "" : null);
   r$38.setAttribute("tabindex", v$36[3]);
   return { s: r$38, q: null, e: r$38, w0: r$38, a0: v$36[0], a1: v$36[1], a2: v$36[2], a3: v$36[3] };
 }, p: (i$39, v$40) => {
@@ -70,7 +69,7 @@ const DomTemplates$k51 = { m: (v$36, cx$37) => {
     i$39.a1 = v$40[1];
   }
   if (v$40[2] !== i$39.a2) {
-    $markup$attr(i$39.w0, "hidden", v$40[2] ? "" : null);
+    Rt$attr(i$39.w0, "hidden", v$40[2] ? "" : null);
     i$39.a2 = v$40[2];
   }
   if (v$40[3] !== i$39.a3) {

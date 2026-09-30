@@ -1,0 +1,37 @@
+-- A page that reaches the holes and attribute writes the runtime module
+-- `Rt` supplies since the second step of its move to beni
+-- (`plans/runtime-in-beni.md`): a `Maybe Html` hole (`childMaybe`), a text
+-- hole beside another node (`insertText`), a `Bool` attribute (`attr`), a
+-- namespaced one (`attrNS`), and the markup primitives `Html.text` and
+-- `Html.map`, which the module supplies in the runtime file's place
+-- (boundary.md §9.2): a use of either reads the module's declaration. Each
+-- is compiled with the page and specialised to it (backend.md §9): `text`
+-- is called with one string and becomes a function of nothing. Of the
+-- hand-written file only the delegated listener is written.
+import Browser
+import Html exposing (Html)
+
+
+type alias Model =
+    { on : Bool, count : Int }
+
+
+flip : Model -> Html Bool
+flip model =
+    <button onClick={not model.on}>flip</button>
+
+
+view : Model -> Html Bool
+view model =
+    <main>
+        <p>{Html.text "count"} {String.fromInt model.count}</p>
+        {if model.on then Just (<b>on</b>) else Nothing}
+        {Html.map (flip model) identity}
+        <input disabled={model.on} />
+        <my-icon "xml:lang"={if model.on then "en" else "pt"}></my-icon>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program { init = { on = False, count = 0 }, update = \on m -> { on = on, count = m.count + 1 }, view = view }

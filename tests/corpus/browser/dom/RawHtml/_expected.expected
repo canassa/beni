@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <div id="raw">
+      <b>"off"</b>
+    </div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <div id="raw">
+      <i>"on"</i>
+      " & "
+      <b>"off"</b>
+    </div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <div id="raw">
+      <b>"off"</b>
+    </div>
+  </main>
+</body>
