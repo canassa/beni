@@ -1,0 +1,115 @@
+--! `Js.Ref` in a platform module (`backend.md` §4, *A `Js.Ref` that does not
+--! escape is a `let`*): cells written as a `let` and cells that escape into
+--! `{ v }`, each read and written, and the program sees the same thing.
+import Js
+
+
+--| A counter whose cell is captured by the closure it returns: a `let`.
+pub counter : Int -> (() -> Int)
+counter start =
+    let
+        n =
+            Js.ref start
+    in
+    \() ->
+        let
+            _ =
+                Js.write n (Js.read n + 1)
+        in
+        Js.read n
+
+
+--| A module-level cell only this module reads and writes: a `let`.
+calls : Js.Ref Int
+calls =
+    Js.ref 0
+
+
+--| How many times it has been called, counting this one.
+pub tick : () -> Int
+tick () =
+    let
+        _ =
+            Js.write calls (Js.read calls + 1)
+    in
+    Js.read calls
+
+
+--| One step of a loop that counts in a cell.
+countDown : Js.Ref Int, Int -> ()
+countDown total k =
+    if k == 0 then
+        ()
+
+    else
+        let
+            _ =
+                Js.write total (Js.read total + k)
+        in
+        countDown total (k - 1)
+
+
+--| A cell passed to another function escapes: `{ v }`, and the writes the
+--| callee makes are the caller's to read.
+pub sumTo : Int -> Int
+sumTo n =
+    let
+        total =
+            Js.ref 0
+
+        _ =
+            countDown total n
+    in
+    Js.read total
+
+
+pair : Int, () -> String
+pair a _ =
+    String.fromInt a
+
+
+--| A read written before a write is evaluated before it: `1`, not `2`.
+pub readThenWrite : String
+readThenWrite =
+    let
+        r =
+            Js.ref 1
+    in
+    pair (Js.read r) (Js.write r 2)
+
+
+--| A value read out of a cell keeps what it read when the cell changes.
+pub snapshot : String
+snapshot =
+    let
+        r =
+            Js.ref "before"
+
+        seen =
+            Js.read r
+
+        _ =
+            Js.write r "after"
+    in
+    "${seen} ${Js.read r}"
+
+
+--| A cell made and returned escapes; each call makes a new one.
+pub fresh : () -> Js.Ref Int
+fresh () =
+    Js.ref 0
+
+
+pub freshAreDistinct : Bool
+freshAreDistinct =
+    let
+        a =
+            fresh ()
+
+        b =
+            fresh ()
+
+        _ =
+            Js.write a 5
+    in
+    Js.read b == 0 && Js.read a == 5

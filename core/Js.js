@@ -33,3 +33,9 @@ const throw_ = (v) => {
   throw v;
 };
 export { throw_ as throw };
+export const ref = (v) => ({ v });
+export const read = (r) => r.v;
+export const write = (r, v) => {
+  r.v = v;
+  return null;
+};

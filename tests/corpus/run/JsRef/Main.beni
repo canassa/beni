@@ -1,0 +1,37 @@
+-- `Js.Ref` cells, written as a `let` where they do not escape and as `{ v }`
+-- where they do, read and written by a platform module: a counter closure, a
+-- module-level cell, a cell passed to a loop, a read before a write in one
+-- call, a read kept across a write, and cells a function returns.
+import Cells
+import Node
+
+
+main : Node.Program
+main =
+    let
+        next =
+            Cells.counter 10
+
+        a =
+            next ()
+
+        b =
+            next ()
+
+        t1 =
+            Cells.tick ()
+
+        t2 =
+            Cells.tick ()
+    in
+    Node.printLines
+        [ "${String.fromInt a} ${String.fromInt b}"
+        , "${String.fromInt t1} ${String.fromInt t2}"
+        , String.fromInt (Cells.sumTo 4)
+        , Cells.readThenWrite
+        , Cells.snapshot
+        , if Cells.freshAreDistinct then
+            "distinct"
+          else
+            "shared"
+        ]

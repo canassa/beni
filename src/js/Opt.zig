@@ -115,7 +115,7 @@ const scan_limit: usize = 64;
 /// per declaration, by a stamp rather than a `@memset`, so the reset is O(1)
 /// and the pass stays linear in the module.
 pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
-    return runKeeping(arena, ir, &.{}, &.{});
+    return runKeeping(arena, ir, &.{}, &.{}, &.{});
 }
 
 /// `run`, keeping the bindings `keep` names whatever their uses: each is a
@@ -124,8 +124,11 @@ pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
 /// amended 2026-09-30). `discarded` are the statements of a `let _ = e` whose
 /// `e` cannot have an effect, which `Lower` wrote as statements with no
 /// binding (`backend.md` §4, *A discarded value is a statement*): dropped
-/// whole, as their `const` was when there was one.
-pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discarded: []const Index) Allocator.Error!Plan {
+/// whole, as their `const` was when there was one. `mutable` are the names
+/// of `Js.Ref`s written as a `let` (`Lower.Result.mutable`): a write in
+/// another declaration may rebind one, so no binding whose initialiser reads
+/// one is folded into a later statement.
+pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discarded: []const Index, mutable: []const NameIndex) Allocator.Error!Plan {
     if (ir.nodes.len == 0) return .none;
 
     const kept = try arena.alloc(u32, (ir.nodes.len + 31) / 32);
@@ -145,6 +148,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .inlined = try arena.alloc(Node.OptionalIndex, ir.nodes.len),
+        .mutable = mutable,
     };
     @memset(o.stamp, 0);
     @memset(o.dropped, 0);
@@ -192,6 +196,8 @@ const Opt = struct {
     assigned: []bool,
     dropped: []u32,
     inlined: []Node.OptionalIndex,
+    /// `runKeeping`'s `mutable`: bases no fold may rest on.
+    mutable: []const NameIndex = &.{},
     /// The `ident` node `exprUses` last matched, which `findUse` reads back
     /// as the use site. One slot rather than a returned pair, because the
     /// count and the node are wanted at different depths of the same walk.
@@ -424,6 +430,7 @@ const Opt = struct {
             const base = o.chainBase(value) orelse continue;
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
+                if (std.mem.indexOfScalar(NameIndex, o.mutable, base) != null) continue;
             }
             const at = try o.findUse(stmts[i + 1 ..], n) orelse continue;
             o.drop(stmt);

@@ -90,3 +90,24 @@ pub foreign impure at : Value, Int -> Value
 
 --| `throw v`, a statement. Nothing after it runs.
 pub foreign impure throw : Value -> a
+
+
+--| A mutable cell holding an `a`: `ref` makes one, `read` reads it and
+--| `write` replaces what it holds. Where a cell never leaves the code that
+--| made it — every use of its name is `read` or `write`, in its function or
+--| in a closure made there — it is compiled to a plain `let`, a read to the
+--| name and a write to an assignment; anywhere else it is `{ v }`
+--| (`backend.md` §4, *A `Js.Ref` that does not escape is a `let`*).
+pub foreign type Ref a
+
+
+--| A new cell holding `v`.
+pub foreign pure ref : a -> Ref a
+
+
+--| What the cell holds now.
+pub foreign impure read : Ref a -> a
+
+
+--| Make the cell hold `v`, a statement.
+pub foreign impure write : Ref a, a -> ()

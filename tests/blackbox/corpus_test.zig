@@ -477,6 +477,13 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const release_start = fixtures.items.len;
         try collect(arena, release_dir, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
+        // `emit/release/core/`: the same again with `--core`, for the shapes
+        // of code only core and platforms may write (`Js`), under the
+        // release optimiser.
+        const release_core = try std.fs.path.join(arena, &.{ kind_dir, "release", "core" });
+        const release_core_start = fixtures.items.len;
+        try collect(arena, release_core, true, false, &fixtures, true);
+        for (fixtures.items[release_core_start..]) |*fixture| fixture.release = true;
 
         // `emit/release/app/`: release APPLICATIONS, which are one
         // scope-hoisted file (`backend.md` §9, *One scope-hoisted file under

@@ -29,3 +29,8 @@ release application is one scope-hoisted file (`backend.md` §9, *One
 scope-hoisted file under `--release`*): every module, sibling and runtime
 of the program in ES module evaluation order, in one module scope. A
 directory there is a project as above, its entry module named after it.
+
+**`core/` is built with `--core` as well**, like `emit/core/`: the shapes of
+code only core and platform packages may write (`Js`), under the release
+optimiser, where the claim is usually "the same JavaScript the hand-written
+runtime writes for this" (`plans/browser-decisions.md`, R47-3).

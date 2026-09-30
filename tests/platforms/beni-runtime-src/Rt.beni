@@ -4,9 +4,11 @@
 --! allows it; `splice.mjs` compiles this module and writes the result into
 --! `../beni-runtime/runtime.js` in place of the hand-written half.
 --!
---! Where beni has no counterpart the port says so: a module-level `let`
---! is a property of `loop`, a closure's `let` a property of an object of
---! its own, and a `for` loop a tail call.
+--! Where beni has no counterpart the port says so: a `for` loop is a tail
+--! call. A `let` the JavaScript assigns is a `Js.Ref`, which the compiler
+--! writes as that `let` (`backend.md` §4, *A `Js.Ref` that does not escape
+--! is a `let`*); which is why `mount`'s closures hold what `send` and
+--! `queue` were: a cell passed to a helper would escape.
 import Js
 
 
@@ -131,31 +133,27 @@ swap old i =
 pub template : String, Int -> (() -> V)
 template html flags =
     let
-        cell =
-            Js.from { node = Js.null }
-    in
-    \() -> clone cell html flags
-
-
-clone : V, String, Int -> V
-clone cell html flags =
-    let
         node =
-            if Js.isNull (Js.get cell "node") then
-                parse cell html flags
-
-            else
-                Js.get cell "node"
+            Js.ref Js.null
     in
-    if Js.bitAnd flags 1 /= 0 then
-        Js.call (Js.global "document") "importNode" [ node, Js.from True ]
+    \() ->
+        let
+            _ =
+                if Js.isNull (Js.read node) then
+                    Js.write node (parse html flags)
 
-    else
-        Js.call node "cloneNode" [ Js.from True ]
+                else
+                    ()
+        in
+        if Js.bitAnd flags 1 /= 0 then
+            Js.call (Js.global "document") "importNode" [ Js.read node, Js.from True ]
+
+        else
+            Js.call (Js.read node) "cloneNode" [ Js.from True ]
 
 
-parse : V, String, Int -> V
-parse cell html flags =
+parse : String, Int -> V
+parse html flags =
     let
         document =
             Js.global "document"
@@ -175,22 +173,16 @@ parse cell html flags =
 
             else
                 content
-
-        node =
-            if Js.bitAnd flags 4 /= 0 then
-                if Js.bitAnd flags 2 /= 0 then
-                    gather unwrapped (Js.call document "createDocumentFragment" [])
-
-                else
-                    unwrapped
-
-            else
-                Js.get unwrapped "firstChild"
-
-        _ =
-            Js.set cell "node" node
     in
-    node
+    if Js.bitAnd flags 4 /= 0 then
+        if Js.bitAnd flags 2 /= 0 then
+            gather unwrapped (Js.call document "createDocumentFragment" [])
+
+        else
+            unwrapped
+
+    else
+        Js.get unwrapped "firstChild"
 
 
 gather : V, V -> V
@@ -299,33 +291,43 @@ childHtml s b =
 
 -- The module's `let`s: the programs with a render queued, whether a flush
 -- is, and the after-render phase a hosted program sets.
-loop : V
-loop =
-    Js.from { queued = Js.array [], scheduled = False, phase = Js.null }
+queued : Js.Ref V
+queued =
+    Js.ref (Js.array [])
+
+
+scheduled : Js.Ref Bool
+scheduled =
+    Js.ref False
+
+
+phase : Js.Ref V
+phase =
+    Js.ref Js.null
 
 
 -- Render every program a message is waiting on, then run the after-render
 -- phase.
 pub flush : () -> ()
-flush _ =
+flush () =
     let
         _ =
-            Js.set loop "scheduled" (Js.from False)
+            Js.write scheduled False
 
         renders =
-            Js.get loop "queued"
+            Js.read queued
 
         _ =
-            Js.set loop "queued" (Js.array [])
+            Js.write queued (Js.array [])
 
         _ =
             each renders 0
     in
-    if Js.isNull (Js.get loop "phase") then
+    if Js.isNull (Js.read phase) then
         ()
 
     else
-        Js.to (Js.apply (Js.get loop "phase") [])
+        Js.to (Js.apply (Js.read phase) [])
 
 
 each : V, Int -> ()
@@ -404,9 +406,9 @@ setPhase : V -> V
 setPhase f =
     let
         _ =
-            Js.set loop "phase" f
+            Js.write phase f
     in
-    Js.get loop "scheduled"
+    Js.from (Js.read scheduled)
 
 
 refusal : V, V -> String
@@ -434,59 +436,59 @@ mount program root =
         s =
             slot root Js.null Js.null
 
-        state =
-            Js.from { model = Js.get program "init", waiting = False }
+        model =
+            Js.ref (Js.get program "init")
+
+        waiting =
+            Js.ref False
 
         render =
             \() ->
                 let
                     _ =
-                        Js.set state "waiting" (Js.from False)
+                        Js.write waiting False
                 in
-                childHtml s (Js.call program "view" [ Js.get state "model" ])
+                childHtml s (Js.call program "view" [ Js.read model ])
 
         _ =
-            Js.set root "$$root" (Js.from (\msg -> send program state render msg))
+            Js.set
+                root
+                "$$root"
+                (Js.from
+                    (\msg ->
+                        let
+                            _ =
+                                if Js.read waiting then
+                                    ()
+
+                                else
+                                    let
+                                        _ =
+                                            Js.write waiting True
+
+                                        _ =
+                                            Js.call (Js.read queued) "push" [ Js.from render ]
+                                    in
+                                    if Js.read scheduled then
+                                        ()
+
+                                    else
+                                        let
+                                            _ =
+                                                Js.write scheduled True
+                                        in
+                                        Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from (\() -> microtask ()) ])
+                        in
+                        Js.write model (Js.call program "update" [ msg, Js.read model ])
+                    )
+                )
     in
-    childHtml s (Js.call program "view" [ Js.get state "model" ])
-
-
-send : V, V, (() -> ()), V -> ()
-send program state render msg =
-    let
-        _ =
-            if Js.to (Js.get state "waiting") then
-                ()
-
-            else
-                queue state render
-    in
-    Js.set state "model" (Js.call program "update" [ msg, Js.get state "model" ])
-
-
-queue : V, (() -> ()) -> ()
-queue state render =
-    let
-        _ =
-            Js.set state "waiting" (Js.from True)
-
-        _ =
-            Js.call (Js.get loop "queued") "push" [ Js.from render ]
-    in
-    if Js.to (Js.get loop "scheduled") then
-        ()
-
-    else
-        let
-            _ =
-                Js.set loop "scheduled" (Js.from True)
-        in
-        Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from (\() -> microtask ()) ])
+    childHtml s (Js.call program "view" [ Js.read model ])
 
 
 microtask : () -> ()
-microtask _ =
-    if Js.to (Js.get loop "scheduled") then
+microtask () =
+    if Js.read scheduled then
         flush ()
 
     else

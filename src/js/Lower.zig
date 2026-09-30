@@ -110,6 +110,10 @@ pub const Result = struct {
     /// (`Lowerer.findUnobserved`): the printer leaves out what they return
     /// (`backend.md` §4, *A result nothing reads*).
     unobserved: []const Node.Index = &.{},
+    /// The names of the `Js.Ref` bindings written as a `let`
+    /// (`Lowerer.findRefs`), in the caller's scratch arena: the release
+    /// optimiser folds no read of one, since a write elsewhere may move it.
+    mutable: []const JsIr.NameIndex = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -252,6 +256,7 @@ pub fn lower(
     try l.readTable();
     try l.findDeadArms();
     try l.findUnobserved();
+    try l.findRefs();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -301,6 +306,7 @@ pub fn lower(
         .effect_keep = l.effect_keep.items,
         .pure_discards = l.pure_discards.items,
         .unobserved = l.unobserved_arrows.items,
+        .mutable = l.mutable_names.items,
     };
 }
 
@@ -613,6 +619,15 @@ const Lowerer = struct {
     /// (`findUnobserved`).
     unobserved: []bool = &.{},
     unobserved_arrows: std.ArrayList(Node.Index) = .empty,
+    /// The `Js.Ref` bindings written as a plain `let` (`findRefs`;
+    /// `backend.md` §4, *A `Js.Ref` that does not escape is a `let`*): per
+    /// local of the module, indexed from its declaration's `locals_start`,
+    /// and per declaration.
+    unboxed_locals: []bool = &.{},
+    unboxed_tops: []bool = &.{},
+    /// The JavaScript names of those bindings. A read of one is not an
+    /// atom (`isAtom`): a write may come between it and where it lands.
+    mutable_names: std.ArrayList(JsIr.NameIndex) = .empty,
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -1264,6 +1279,19 @@ const Lowerer = struct {
             .thunk => try l.constDecl(out, n, try l.memoArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, &.{}, body, p), p),
             .constant => {
                 var stmts: StmtList = .empty;
+                // A module-level `Js.Ref` that does not escape is a
+                // module-level `let` of its value (§4).
+                if (l.unboxed_tops.len > index and l.unboxed_tops[index]) {
+                    try l.markMutable(n);
+                    const init_inst = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(body).rhs)), Inst.Index)[0];
+                    const init = try l.expr(&stmts, init_inst);
+                    const value = if (stmts.items.len == 0) init else blk: {
+                        try stmts.append(l.scratch, try l.returnStmt(init, p));
+                        break :blk try l.call(try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p), &.{}, p);
+                    };
+                    try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(value.toOptional())));
+                    return;
+                }
                 const value = try l.expr(&stmts, body);
                 // A constant whose lowering needed statements cannot be a
                 // bare `const`: wrap it in a called arrow, which is the one
@@ -3009,9 +3037,19 @@ const Lowerer = struct {
     /// reason.
     fn isAtom(l: *Lowerer, value: Node.Index) bool {
         return switch (l.b.nodes.items(.tag)[value.int()]) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => true,
+            // A `Js.Ref` written as a `let` is a name a write may rebind
+            // (`findRefs`): a read of one keeps its place like any work.
+            .ident => l.mutable_names.items.len == 0 or !l.isMutable(value),
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this => true,
             else => false,
         };
+    }
+
+    /// Whether `value` is an `ident` naming a `Js.Ref` written as a `let`.
+    fn isMutable(l: *Lowerer, value: Node.Index) bool {
+        if (l.b.nodes.items(.tag)[value.int()] != .ident) return false;
+        const n: JsIr.NameIndex = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs);
+        return std.mem.indexOfScalar(JsIr.NameIndex, l.mutable_names.items, n) != null;
     }
 
     /// Lower one expression, and keep what it emits as shallow as the
@@ -6252,6 +6290,23 @@ const Lowerer = struct {
     /// other `[name]`; a list literal of arguments is spread into the call.
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
+        // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
+        // escape is a `let`*): a read is its name, a write assigns it. The
+        // name is not an atom, so whatever holds a read pins it before a
+        // later write.
+        if ((which == .read or which == .write) and args.len != 0 and l.unboxedRef(args[0])) {
+            const target = try l.expr(out, args[0]);
+            if (l.b.nodes.items(.tag)[target.int()] == .ident) {
+                try l.markMutable(@enumFromInt(l.b.nodes.items(.data)[target.int()].lhs));
+                if (which == .read) return target;
+                const value = try l.expr(out, args[1]);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+                return l.nullNode(p);
+            }
+            // `findRefs` said a `let`, and the name is not one.
+            try l.report(.internal, args[0], "a `Js.Ref` written as a `let` was lowered as something other than its name.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -6321,6 +6376,14 @@ const Lowerer = struct {
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => l.call(v[0], rest, p),
             W.at => l.add(.index_get, p, v[0].int(), v[1].int()),
+            // A `Js.Ref` that escapes is a cell, `{ v }` (§4).
+            W.ref => l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "v"), v[0], p)}, p),
+            W.read => l.member(v[0], try l.interner.getOrPut(l.gpa, "v"), p),
+            W.write => blk: {
+                const target = try l.member(v[0], try l.interner.getOrPut(l.gpa, "v"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), v[1].int()));
+                break :blk l.nullNode(p);
+            },
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -6561,6 +6624,17 @@ const Lowerer = struct {
                             try l.constDecl(out, n, lambda, p);
                             continue;
                         }
+                        // A `Js.Ref` that does not escape is a `let` of
+                        // its value (§4).
+                        const local = if (l.decl_index) |index| l.bir.decls[index].locals_start + payload.local else std.math.maxInt(u32);
+                        if (local < l.unboxed_locals.len and l.unboxed_locals[local]) {
+                            try l.markMutable(n);
+                            const init_inst = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(value_inst).rhs)), Inst.Index)[0];
+                            const init = try l.expr(out, init_inst);
+                            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(init.toOptional())));
+                            if (l.mayHaveEffect(init_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+                            continue;
+                        }
                         const value = try l.expr(out, value_inst);
                         try l.constDecl(out, n, value, p);
                         // Read by nothing or not, a binding that may have an
@@ -6699,6 +6773,123 @@ const Lowerer = struct {
         }
     }
 
+    /// Which `Js.Ref` bindings are written as a plain `let` (`backend.md`
+    /// §4, *A `Js.Ref` that does not escape is a `let`*). A candidate is a
+    /// `let` binding without parameters, or a top-level constant, whose
+    /// right-hand side is a saturated `Js.ref e`. It stays one when every
+    /// reference to it is the first argument of a saturated `Js.read` or
+    /// `Js.write` — its cell position — and anything else, a value passed,
+    /// stored, returned or compared, is an escape. A reference inside a
+    /// closure is not one: the closure captures the `let` itself. A
+    /// top-level candidate must also be one no other module can name (not
+    /// `pub`, not the entry, no dispatch answer's). A suspension needs no
+    /// rule: its continuation is a closure too (§16.3), and a re-entered
+    /// loop is a new iteration, which evaluates its `Js.ref` again.
+    fn findRefs(l: *Lowerer) !void {
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        const decls = l.bir.decls;
+        l.unboxed_locals = try l.scratch.alloc(bool, l.bir.locals.len);
+        @memset(l.unboxed_locals, false);
+        l.unboxed_tops = try l.scratch.alloc(bool, decls.len);
+        @memset(l.unboxed_tops, false);
+        // The cell positions, and whether the module makes a ref at all.
+        var any = false;
+        const cell = try l.scratch.alloc(bool, tags.len);
+        @memset(cell, false);
+        for (tags, data) |tag, d| {
+            if (tag != .call) continue;
+            const which = l.jsIntrinsicOf(@enumFromInt(d.lhs)) orelse continue;
+            const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+            switch (which) {
+                .read, .write => if (args.len != 0 and args[0].int() < cell.len) {
+                    cell[args[0].int()] = true;
+                },
+                .ref => any = true,
+                else => {},
+            }
+        }
+        if (!any) return;
+        const named = try l.scratch.alloc(bool, decls.len);
+        @memset(named, false);
+        for (l.in.dispatch.terms) |t| switch (t) {
+            .top => |u| if (@intFromEnum(u.decl) < decls.len) {
+                named[@intFromEnum(u.decl)] = true;
+            },
+            else => {},
+        };
+        if (l.in.entry_decl) |index| if (index < decls.len) {
+            named[index] = true;
+        };
+        for (decls, 0..) |d, i| {
+            const index: u32 = @intCast(i);
+            if (d.kind != .value) continue;
+            if (d.body.unwrap()) |body| {
+                if (!d.is_pub and !named[i] and l.isRefCall(body) and
+                    Convention.definitionOf(l.in.dispatch, l.bir, index) == .constant)
+                {
+                    l.unboxed_tops[i] = true;
+                }
+            }
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .let_def) continue;
+                const payload = l.bir.extraData(@enumFromInt(data[at].lhs), Bir.LetDef);
+                if (payload.params_start != payload.params_end) continue;
+                if (!l.isRefCall(@enumFromInt(data[at].rhs))) continue;
+                const local = d.locals_start + payload.local;
+                if (local < l.unboxed_locals.len) l.unboxed_locals[local] = true;
+            }
+        }
+        // The escapes.
+        for (decls) |d| {
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (cell[at]) continue;
+                switch (tags[at]) {
+                    .local => {
+                        const local = d.locals_start + data[at].lhs;
+                        if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                    },
+                    .top => if (data[at].lhs < decls.len) {
+                        l.unboxed_tops[data[at].lhs] = false;
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+
+    /// Whether `inst` is a saturated `Js.ref e`.
+    fn isRefCall(l: *Lowerer, inst: Inst.Index) bool {
+        if (l.bir.instTag(inst) != .call) return false;
+        const d = l.bir.instData(inst);
+        if (l.jsIntrinsicOf(@enumFromInt(d.lhs)) != .ref) return false;
+        return l.bir.subRange(@enumFromInt(d.rhs)).len() == 1;
+    }
+
+    /// Whether the reference `inst` names a `Js.Ref` binding written as a
+    /// `let` (`findRefs`).
+    fn unboxedRef(l: *Lowerer, inst: Inst.Index) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .local => {
+                const index = l.decl_index orelse return false;
+                const local = l.bir.decls[index].locals_start + d.lhs;
+                return local < l.unboxed_locals.len and l.unboxed_locals[local];
+            },
+            .top => return d.lhs < l.unboxed_tops.len and l.unboxed_tops[d.lhs],
+            else => return false,
+        }
+    }
+
+    /// Record `n` as the name of a `Js.Ref` written as a `let`.
+    fn markMutable(l: *Lowerer, n: JsIr.NameIndex) !void {
+        if (std.mem.indexOfScalar(JsIr.NameIndex, l.mutable_names.items, n) == null) {
+            try l.mutable_names.append(l.scratch, n);
+        }
+    }
+
     /// The declaration `inst` calls when it is a call of one of this
     /// module's declarations, which is what a discarded or tail position
     /// can make unread.
@@ -6729,12 +6920,49 @@ const Lowerer = struct {
     /// is still evaluated in a development build, exactly as its `const` was,
     /// and its statements are listed for the release optimiser, which drops
     /// them as it dropped the `const` (`language.md` §6).
-    fn discard(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) !void {
-        const value = try l.expr(out, inst);
+    fn discard(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) Allocator.Error!void {
+        // A `let` is its bindings, then its body discarded in turn.
+        var at = inst;
+        while (l.bir.instTag(at) == .let) {
+            const d = l.bir.instData(at);
+            try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+            at = @enumFromInt(d.rhs);
+        }
+        // A `case` (and an `if`) is the tree, each leaf discarded: no
+        // temporary assigned in every arm.
+        if (l.bir.instTag(at) == .case and !(l.suspendable and l.branchesYield(at))) {
+            const before = out.items.len;
+            try l.discardCase(out, at);
+            if (!l.mayHaveEffect(at)) try l.pure_discards.appendSlice(l.scratch, out.items[before..]);
+            return;
+        }
+        const value = try l.expr(out, at);
         const before = out.items.len;
         try l.discardValue(out, value, p);
-        if (l.mayHaveEffect(inst)) return;
+        if (l.mayHaveEffect(at)) return;
         try l.pure_discards.appendSlice(l.scratch, out.items[before..]);
+    }
+
+    /// A `case` whose value nothing reads, as statements: the decision tree
+    /// with each leaf's body discarded (`discard`), no result temporary.
+    fn discardCase(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!void {
+        var c = try l.planCase(out, inst) orelse return;
+        const depth = l.case_depth;
+        l.case_depth += 1;
+        defer l.case_depth = depth;
+        c.sink = .{ .discard = .{ .result = .none } };
+        if (l.condChainPossible(&c)) {
+            try l.lowerReady(&c);
+            if (l.readyIsClean(&c)) return l.discardValue(out, try l.condChain(&c, c.tree.root), c.p);
+        }
+        const wrapped = c.tree.hasSwitch() or c.tree.hasShared();
+        if (!wrapped) return l.emitCase(&c, out);
+        const wrapper = try l.caseLabel(&c);
+        c.sink = .{ .discard = .{ .result = .none, .wrapper = wrapper } };
+        var inner: StmtList = .empty;
+        try l.emitCase(&c, &inner);
+        l.trimTrailingBreak(&inner, wrapper);
+        try out.append(l.scratch, try l.blockStmt(wrapper, inner.items, c.p));
     }
 
     /// The statements that evaluate `value` and throw its result away:
@@ -6787,7 +7015,8 @@ const Lowerer = struct {
     fn isRead(l: *Lowerer, value: Node.Index) bool {
         var at = value;
         while (l.b.nodes.items(.tag)[at.int()] == .member) at = @enumFromInt(l.b.nodes.items(.data)[at.int()].lhs);
-        return l.isAtom(at);
+        // A read of a `Js.Ref` written as a `let` changes nothing either.
+        return l.isAtom(at) or l.isMutable(at);
     }
 
     // ---- `case` — the decision tree (backend.md §7) ------------------------
@@ -6814,6 +7043,10 @@ const Lowerer = struct {
         /// **Expression position**: each leaf assigns the result temporary
         /// and, when the tree needed a `$c$<d>` block, breaks out of it.
         value: Value,
+        /// **Discarded** (`discardCase`, `backend.md` §4, *A discarded value
+        /// is a statement*): each leaf's body is discarded in turn, and
+        /// breaks out of the block when there is one. `result` is `.none`.
+        discard: Value,
     };
 
     const Value = struct {
@@ -7183,6 +7416,12 @@ const Lowerer = struct {
                 const value = try l.expr(out, body);
                 try l.finishLeaf(c, out, value, p);
             },
+            .discard => |v| {
+                try l.discard(out, body, p);
+                if (v.wrapper != .none) {
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                }
+            },
         }
     }
 
@@ -7263,6 +7502,12 @@ const Lowerer = struct {
             .value => |v| {
                 const target = try l.ident(v.result, p);
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+                if (v.wrapper != .none) {
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                }
+            },
+            .discard => |v| {
+                try l.discardValue(out, value, p);
                 if (v.wrapper != .none) {
                     try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
                 }
@@ -7530,7 +7775,7 @@ const Lowerer = struct {
                     .tail => |loop| if (loop) |lp| {
                         if (l.isSelfCall(body, lp) or l.isConsStep(body, lp)) return false;
                     },
-                    .value => {},
+                    .value, .discard => {},
                 },
                 else => {},
             }
@@ -7764,7 +8009,11 @@ const Lowerer = struct {
             const value = try l.expr(out, inst);
             const tag = l.b.nodes.items(.tag)[value.int()];
             st.bound[v] = switch (tag) {
-                .ident => .{ .name = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs) },
+                .ident => if (l.isMutable(value)) blk: {
+                    const n = try l.fresh(l.well.temp);
+                    try l.constDecl(out, n, value, l.pos(inst));
+                    break :blk .{ .name = n };
+                } else .{ .name = @enumFromInt(l.b.nodes.items(.data)[value.int()].lhs) },
                 .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
                 else => blk: {
                     const n = try l.fresh(l.well.temp);

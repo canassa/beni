@@ -1,0 +1,90 @@
+-- A `Js.Ref` every use of which is `Js.read` or `Js.write` is a plain `let`
+-- (`backend.md` §4, *A `Js.Ref` that does not escape is a `let`*): a read is
+-- the name and a write an assignment, in the function that made it and in a
+-- closure made there, and a module-level one is a module-level `let`. These
+-- are the hand-written browser runtime's shapes: `template`'s `let node =
+-- null` captured by the cloner it returns, and the render loop's `let
+-- scheduled = false`. A cell that escapes — returned, or passed to a
+-- function — is `{ v }`, read as `.v` and written as `.v =`.
+-- Built with `--core`, which is what lets a root-package module import `Js`.
+import Js
+
+
+pub template : String -> (() -> Js.Value)
+template html =
+    let
+        node =
+            Js.ref Js.null
+    in
+    \() ->
+        let
+            _ =
+                if Js.isNull (Js.read node) then
+                    let
+                        t =
+                            Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+
+                        _ =
+                            Js.set t "innerHTML" (Js.from html)
+                    in
+                    Js.write node (Js.get (Js.get t "content") "firstChild")
+                else
+                    ()
+        in
+        Js.call (Js.read node) "cloneNode" [ Js.from True ]
+
+
+scheduled : Js.Ref Bool
+scheduled =
+    Js.ref False
+
+
+pub flush : () -> ()
+flush () =
+    Js.write scheduled False
+
+
+pub schedule : () -> ()
+schedule () =
+    if Js.read scheduled then
+        ()
+    else
+        let
+            _ =
+                Js.write scheduled True
+
+            _ =
+                Js.apply
+                    (Js.global "queueMicrotask")
+                    [ Js.from
+                        (\() ->
+                            if Js.read scheduled then
+                                flush ()
+                            else
+                                ()
+                        )
+                    ]
+        in
+        ()
+
+
+pub cell : Int -> Js.Ref Int
+cell n =
+    Js.ref n
+
+
+pub bump : Js.Ref Int -> ()
+bump r =
+    Js.write r (Js.read r + 1)
+
+
+pub counted : Int -> Int
+counted n =
+    let
+        r =
+            cell n
+
+        _ =
+            bump r
+    in
+    Js.read r
