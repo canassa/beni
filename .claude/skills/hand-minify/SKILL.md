@@ -63,7 +63,34 @@ bytes (research 40 §4.2), only the sign and the large magnitudes carry informat
   an export's parameter list** (check 4 counts it) and keep `export const x = (…) =>`
   per export.
 
-### 1.4 Never trade speed silently
+### 1.4 Bytes never buy runtime cost
+
+**The owner's rule: minification must not cause slowdowns — JavaScript processing
+time dominates over network time.** A saved byte is worth far less than a
+microsecond on a hot path, and less than any work added at load. So:
+
+- **Refuse every technique that makes the code do work the original did not** to
+  save bytes. The canonical example is packing data into a string and decoding it:
+  ```js
+  // original: plain data, read directly
+  var australia = [-22,112, -36,116, -32,136, /* … */];
+  lat = australia[i]; lon = australia[i + 1];
+  // REFUSED: smaller, but every read now decodes
+  var australia = "Bi;j=o6q?sHqDpGnBi";
+  lat = australia.charCodeAt(i) * 2 - 90; lon = australia.charCodeAt(i + 1) * 4 - 180;
+  ```
+  The same goes for self-extracting packers, `eval`/`Function` of a built string,
+  lookup tables rebuilt at load, arithmetic tricks that replace a literal with a
+  computation, `with`, and anything that turns a direct property access or call
+  into an indirection. These are js1k/js13k techniques; they are not beni's.
+- **Only transformations that are free at runtime are allowed without
+  measurement**: renaming, whitespace, statement joining, dropping dead code,
+  equivalent spellings the engine treats identically (`!0` for `true` in a
+  condition, concise arrows, `a&2` for `(a&2)!==0` in a test).
+- **Anything that changes what runs** (a different algorithm, a merged function
+  that adds a branch or a parameter, a different loop shape, a changed object
+  shape) is timed on its hot path before it is kept, and dropped if it is slower
+  beyond noise — whatever it saves.
 
 Every smaller-but-different algorithm is timed on its hot path before it is kept,
 or kept out and flagged. Research 40 §4.4 rejected −36 bytes because the first
