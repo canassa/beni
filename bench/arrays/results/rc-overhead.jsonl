@@ -1,0 +1,81 @@
+{"mode":"r1","op":"foldl over Ints: plain","ns":0.882}
+{"mode":"r1","op":"foldl over Ints: $dupA per element","ns":0.873}
+{"mode":"r1","op":"foldl over records: plain","ns":5.898}
+{"mode":"r1","op":"foldl over records: $dupA per element","ns":7.583}
+{"mode":"r1","op":"foldl over records: $dupA + $dropA per element","ns":8.327}
+{"mode":"r1","op":"get of a record: plain","ns":3.853}
+{"mode":"r1","op":"get of a record: $dupA","ns":5.486}
+{"mode":"r1","op":"record update {...m, selected}: plain","ns":15.676}
+{"mode":"r1","op":"record update, counted, unique model","ns":16.701}
+{"mode":"r1","op":"record update, counted, shared model","ns":18.857}
+{"mode":"r1","op":"call with a borrowed array","ns":0.51}
+{"mode":"r1","op":"call with an owned array, dup + drop","ns":1.232}
+{"mode":"r1","op":"build + walk 100 000 cons cells","ns":8.527}
+{"mode":"r1","op":"build + walk 100 000 counted cons cells","ns":7.744}
+{"mode":"r2","op":"foldl over Ints: plain","ns":0.942}
+{"mode":"r2","op":"foldl over Ints: $dupA per element","ns":0.929}
+{"mode":"r2","op":"foldl over records: plain","ns":6.317}
+{"mode":"r2","op":"foldl over records: $dupA per element","ns":8.107}
+{"mode":"r2","op":"get of a record: plain","ns":5.192}
+{"mode":"r2","op":"get of a record: $dupA","ns":5.538}
+{"mode":"r2","op":"record update {...m, selected}: plain","ns":15.846}
+{"mode":"r2","op":"record update, counted, unique model","ns":17.788}
+{"mode":"r2","op":"record update, counted, shared model","ns":18.329}
+{"mode":"r2","op":"call with a borrowed array","ns":0.521}
+{"mode":"r2","op":"call with an owned array, dup + drop","ns":0.645}
+{"mode":"r2","op":"build + walk 100 000 cons cells","ns":8.073}
+{"mode":"r2","op":"build + walk 100 000 counted cons cells","ns":7.566}
+{"mode":"r1","op":"foldl over Ints: plain","ns":0.889}
+{"mode":"r1","op":"foldl over Ints: $dupA per element","ns":0.892}
+{"mode":"r1","op":"foldl over records: plain","ns":6.25}
+{"mode":"r1","op":"foldl over records: $dupA per element","ns":7.898}
+{"mode":"r1","op":"foldl over records: $dupA + $dropA per element","ns":8.748}
+{"mode":"r1","op":"get of a record: plain","ns":4.152}
+{"mode":"r1","op":"get of a record: $dupA","ns":5.279}
+{"mode":"r1","op":"record update {...m, selected}: plain","ns":15.453}
+{"mode":"r1","op":"record update, counted, unique model","ns":16.391}
+{"mode":"r1","op":"record update, counted, shared model","ns":18.049}
+{"mode":"r1","op":"call with a borrowed array","ns":0.481}
+{"mode":"r1","op":"call with an owned array, dup + drop","ns":1.153}
+{"mode":"r1","op":"build + walk 100 000 cons cells","ns":7.332}
+{"mode":"r1","op":"build + walk 100 000 counted cons cells","ns":7.474}
+{"mode":"r2","op":"foldl over Ints: plain","ns":0.857}
+{"mode":"r2","op":"foldl over Ints: $dupA per element","ns":0.837}
+{"mode":"r2","op":"foldl over records: plain","ns":5.99}
+{"mode":"r2","op":"foldl over records: $dupA per element","ns":7.51}
+{"mode":"r2","op":"get of a record: plain","ns":4.217}
+{"mode":"r2","op":"get of a record: $dupA","ns":5.418}
+{"mode":"r2","op":"record update {...m, selected}: plain","ns":15.747}
+{"mode":"r2","op":"record update, counted, unique model","ns":16.886}
+{"mode":"r2","op":"record update, counted, shared model","ns":17.996}
+{"mode":"r2","op":"call with a borrowed array","ns":0.489}
+{"mode":"r2","op":"call with an owned array, dup + drop","ns":0.585}
+{"mode":"r2","op":"build + walk 100 000 cons cells","ns":6.92}
+{"mode":"r2","op":"build + walk 100 000 counted cons cells","ns":10.198}
+{"mode":"r1","op":"foldl over Ints: plain","ns":0.955}
+{"mode":"r1","op":"foldl over Ints: $dupA per element","ns":0.922}
+{"mode":"r1","op":"foldl over records: plain","ns":6.285}
+{"mode":"r1","op":"foldl over records: $dupA per element","ns":7.438}
+{"mode":"r1","op":"foldl over records: $dupA + $dropA per element","ns":8.467}
+{"mode":"r1","op":"get of a record: plain","ns":4.534}
+{"mode":"r1","op":"get of a record: $dupA","ns":6.303}
+{"mode":"r1","op":"record update {...m, selected}: plain","ns":16.634}
+{"mode":"r1","op":"record update, counted, unique model","ns":18.125}
+{"mode":"r1","op":"record update, counted, shared model","ns":19.597}
+{"mode":"r1","op":"call with a borrowed array","ns":0.552}
+{"mode":"r1","op":"call with an owned array, dup + drop","ns":1.311}
+{"mode":"r1","op":"build + walk 100 000 cons cells","ns":6.068}
+{"mode":"r1","op":"build + walk 100 000 counted cons cells","ns":7.389}
+{"mode":"r2","op":"foldl over Ints: plain","ns":0.931}
+{"mode":"r2","op":"foldl over Ints: $dupA per element","ns":0.907}
+{"mode":"r2","op":"foldl over records: plain","ns":6.167}
+{"mode":"r2","op":"foldl over records: $dupA per element","ns":8.567}
+{"mode":"r2","op":"get of a record: plain","ns":6.103}
+{"mode":"r2","op":"get of a record: $dupA","ns":9.447}
+{"mode":"r2","op":"record update {...m, selected}: plain","ns":16.528}
+{"mode":"r2","op":"record update, counted, unique model","ns":17.903}
+{"mode":"r2","op":"record update, counted, shared model","ns":18.659}
+{"mode":"r2","op":"call with a borrowed array","ns":0.527}
+{"mode":"r2","op":"call with an owned array, dup + drop","ns":0.638}
+{"mode":"r2","op":"build + walk 100 000 cons cells","ns":6.516}
+{"mode":"r2","op":"build + walk 100 000 counted cons cells","ns":9.115}

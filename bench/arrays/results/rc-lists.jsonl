@@ -1,0 +1,345 @@
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":12890,"q1":12610,"q3":13610,"lo":12090,"hi":28170,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":1000,"med":23920,"q1":23180,"q3":24160,"lo":22430,"hi":24260,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":17780,"q1":17430,"q3":18470,"lo":17400,"hi":36610,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":1000,"med":1544,"q1":1520,"q3":1686,"lo":1448,"hi":2639,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":1000,"med":20280,"q1":19980,"q3":20470,"lo":19110,"hi":20790,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":12460,"q1":12300,"q3":13310,"lo":12130,"hi":14920,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":21380,"q1":21360,"q3":21710,"lo":21160,"hi":21730,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":22060,"q1":21980,"q3":22170,"lo":21570,"hi":22920,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":201400,"q1":195700,"q3":341600,"lo":171500,"hi":415000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":10000,"med":241500,"q1":229700,"q3":379700,"lo":222900,"hi":660900,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":178700,"q1":176100,"q3":208500,"lo":171800,"hi":230500,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":10000,"med":18770,"q1":18380,"q3":18950,"lo":18190,"hi":19450,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":10000,"med":194800,"q1":194800,"q3":433600,"lo":185200,"hi":557500,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":164500,"q1":161700,"q3":177400,"lo":157700,"hi":213600,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":202000,"q1":198600,"q3":216800,"lo":190000,"hi":297300,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":193500,"q1":187200,"q3":201000,"lo":177300,"hi":206000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":8124000,"q1":7366000,"q3":10820000,"lo":1728000,"hi":18320000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":100000,"med":2954000,"q1":2815000,"q3":6192000,"lo":2586000,"hi":6262000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2053000,"q1":2041000,"q3":6298000,"lo":1952000,"hi":6444000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":100000,"med":166900,"q1":166100,"q3":168700,"lo":159000,"hi":199100,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":100000,"med":2272000,"q1":2144000,"q3":3720000,"lo":2110000,"hi":3738000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2348000,"q1":2275000,"q3":4949000,"lo":2231000,"hi":7067000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":4238000,"q1":2576000,"q3":4497000,"lo":2523000,"hi":5760000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":443400,"q1":435900,"q3":705500,"lo":395600,"hi":711100,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":1000,"med":556200,"q1":533600,"q3":582700,"lo":505400,"hi":799200,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":326000,"q1":307400,"q3":435300,"lo":293700,"hi":638900,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":1000,"med":14070,"q1":13980,"q3":14310,"lo":13490,"hi":14620,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":1000,"med":6929,"q1":6421,"q3":7975,"lo":5643,"hi":9584,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":5735000,"q1":4731000,"q3":9910000,"lo":1626000,"hi":11220000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":19530,"q1":19270,"q3":20630,"lo":17570,"hi":25130,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18020,"q1":17940,"q3":18130,"lo":17430,"hi":18460,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":47290000,"q1":42530000,"q3":52480000,"lo":33760000,"hi":55490000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":10000,"med":44620000,"q1":44230000,"q3":48010000,"lo":42090000,"hi":57810000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":21540000,"q1":20580000,"q3":21740000,"lo":19540000,"hi":23860000,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":10000,"med":95520,"q1":95230,"q3":99310,"lo":93100,"hi":101300,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":10000,"med":138600,"q1":135700,"q3":160800,"lo":70670,"hi":221700,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":531200000,"q1":531200000,"q3":594300000,"lo":524900000,"hi":594300000,"S":3}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":125500,"q1":118200,"q3":130400,"lo":118000,"hi":210000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":142700,"q1":141300,"q3":153500,"lo":122100,"hi":162400,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":28380000000,"q1":28380000000,"q3":28380000000,"lo":28380000000,"hi":28380000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":100000,"med":26770000000,"q1":26770000000,"q3":26770000000,"lo":26770000000,"hi":26770000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":16210000000,"q1":16210000000,"q3":16210000000,"lo":16210000000,"hi":16210000000,"S":1}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":100000,"med":1260000,"q1":1249000,"q3":1278000,"lo":1147000,"hi":1334000,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":100000,"med":3193000,"q1":3079000,"q3":3403000,"lo":2926000,"hi":3565000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":4127000,"q1":4031000,"q3":4236000,"lo":3957000,"hi":4388000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":4192000,"q1":4125000,"q3":4233000,"lo":3934000,"hi":4302000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":5620,"q1":5517,"q3":5702,"lo":5416,"hi":5718,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":1000,"med":535400,"q1":507400,"q3":630200,"lo":470900,"hi":1640000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":345500,"q1":335000,"q3":431700,"lo":323200,"hi":573100,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":1000,"med":894.9,"q1":845.3,"q3":1778,"lo":794,"hi":2293,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":1000,"med":6091,"q1":6031,"q3":6334,"lo":5680,"hi":6425,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":4226000,"q1":3531000,"q3":9279000,"lo":1051000,"hi":10610000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":22960,"q1":21680,"q3":28570,"lo":19910,"hi":32320,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":19550,"q1":19550,"q3":19650,"lo":18440,"hi":20430,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":44380,"q1":43780,"q3":58140,"lo":43080,"hi":76400,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":10000,"med":37160000,"q1":37120000,"q3":38230000,"lo":36340000,"hi":41610000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":23800000,"q1":23730000,"q3":24880000,"lo":22260000,"hi":49320000,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":10000,"med":12160,"q1":11970,"q3":13050,"lo":11710,"hi":13330,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":10000,"med":136100,"q1":122700,"q3":145200,"lo":83220,"hi":151000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":627700000,"q1":627700000,"q3":701500000,"lo":599900000,"hi":701500000,"S":3}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":139300,"q1":139100,"q3":141900,"lo":138100,"hi":226200,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":182200,"q1":178100,"q3":249400,"lo":164100,"hi":262200,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":2778000,"q1":2424000,"q3":3700000,"lo":2385000,"hi":3848000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":100000,"med":39530000000,"q1":39530000000,"q3":39530000000,"lo":39530000000,"hi":39530000000,"S":1}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":14150000000,"q1":14150000000,"q3":14150000000,"lo":14150000000,"hi":14150000000,"S":1}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":100000,"med":91090,"q1":90800,"q3":92320,"lo":90070,"hi":100100,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":100000,"med":2242000,"q1":2210000,"q3":2298000,"lo":2199000,"hi":3877000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3073000,"q1":3071000,"q3":3085000,"lo":3048000,"hi":5410000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2621000,"q1":2593000,"q3":2812000,"lo":2584000,"hi":4061000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":3981,"q1":3981,"q3":5109,"lo":3233,"hi":5974,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":1000,"med":4407,"q1":4256,"q3":5318,"lo":3429,"hi":6611,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":4919,"q1":4893,"q3":5134,"lo":4757,"hi":5671,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":1000,"med":587.9,"q1":585.8,"q3":592.3,"lo":581.2,"hi":637.3,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":1000,"med":4023,"q1":3895,"q3":5431,"lo":3578,"hi":6965,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":2663000,"q1":1377000,"q3":4967000,"lo":1223000,"hi":5893000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":43410,"q1":28840,"q3":51890,"lo":21040,"hi":52690,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":25360,"q1":24800,"q3":33820,"lo":20080,"hi":40690,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":34870,"q1":34410,"q3":38080,"lo":30420,"hi":53610,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":10000,"med":38970,"q1":38860,"q3":39490,"lo":38810,"hi":82470,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":56900,"q1":55000,"q3":73640,"lo":52920,"hi":94100,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":10000,"med":8859,"q1":8789,"q3":9193,"lo":8717,"hi":9451,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":10000,"med":69810,"q1":68790,"q3":111500,"lo":64060,"hi":117000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":411300000,"q1":411300000,"q3":425200000,"lo":268500000,"hi":425200000,"S":3}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":131700,"q1":123400,"q3":143700,"lo":115600,"hi":165200,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":103400,"q1":101900,"q3":112100,"lo":101300,"hi":115800,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":1491000,"q1":1385000,"q3":1964000,"lo":1337000,"hi":1966000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":100000,"med":1506000,"q1":1402000,"q3":1892000,"lo":1351000,"hi":2026000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":1820000,"q1":1637000,"q3":2419000,"lo":1592000,"hi":2479000,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":100000,"med":90660,"q1":89820,"q3":91080,"lo":88350,"hi":93680,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":100000,"med":1457000,"q1":1444000,"q3":1995000,"lo":1417000,"hi":1999000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2584000,"q1":2580000,"q3":3616000,"lo":2553000,"hi":3625000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2580000,"q1":2566000,"q3":3371000,"lo":2537000,"hi":3383000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":14020,"q1":13980,"q3":15150,"lo":13760,"hi":20220,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":1000,"med":41990,"q1":34840,"q3":43190,"lo":25190,"hi":44220,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":16470,"q1":16410,"q3":16920,"lo":16240,"hi":21950,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":1000,"med":13710,"q1":13550,"q3":14040,"lo":12910,"hi":14040,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":1000,"med":3877,"q1":3861,"q3":10050,"lo":3812,"hi":10670,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":3062000,"q1":3052000,"q3":3731000,"lo":2161000,"hi":3847000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":19180,"q1":18730,"q3":30580,"lo":18080,"hi":31620,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18110,"q1":18040,"q3":18520,"lo":17560,"hi":18730,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":292700,"q1":278700,"q3":369100,"lo":251500,"hi":382300,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":10000,"med":414100,"q1":414000,"q3":512400,"lo":411000,"hi":536500,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":157400,"q1":157000,"q3":160100,"lo":147600,"hi":164200,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":10000,"med":130900,"q1":128500,"q3":134400,"lo":83890,"hi":159400,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":10000,"med":158900,"q1":157200,"q3":159500,"lo":57720,"hi":159900,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":430200000,"q1":430200000,"q3":436000000,"lo":429700000,"hi":436000000,"S":3}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":242000,"q1":240700,"q3":249900,"lo":235500,"hi":251400,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":158200,"q1":157100,"q3":164700,"lo":155000,"hi":174300,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":4121000,"q1":3842000,"q3":5298000,"lo":3754000,"hi":5416000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":100000,"med":7410000,"q1":7401000,"q3":7642000,"lo":7277000,"hi":8629000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2349000,"q1":2329000,"q3":3817000,"lo":2265000,"hi":7617000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":100000,"med":865900,"q1":852400,"q3":876800,"lo":844200,"hi":879000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":100000,"med":2242000,"q1":2235000,"q3":2281000,"lo":2201000,"hi":3201000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3378000,"q1":3354000,"q3":4882000,"lo":3308000,"hi":4940000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2978000,"q1":2938000,"q3":4019000,"lo":2924000,"hi":4042000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":12710,"q1":12000,"q3":13440,"lo":11850,"hi":23250,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":1000,"med":23540,"q1":23320,"q3":23770,"lo":22970,"hi":23790,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":17630,"q1":17510,"q3":18340,"lo":16870,"hi":34080,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":1000,"med":1839,"q1":1799,"q3":2045,"lo":1734,"hi":3135,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":1000,"med":20220,"q1":19950,"q3":20440,"lo":19350,"hi":20630,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":11890,"q1":11850,"q3":12280,"lo":11640,"hi":12450,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":22070,"q1":21980,"q3":22290,"lo":21150,"hi":22370,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":21060,"q1":21020,"q3":21240,"lo":20760,"hi":21360,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":182500,"q1":180200,"q3":247000,"lo":178600,"hi":411400,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":10000,"med":218600,"q1":217400,"q3":239400,"lo":186500,"hi":474400,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":164800,"q1":163100,"q3":194200,"lo":156200,"hi":205000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":10000,"med":17330,"q1":17320,"q3":17370,"lo":17100,"hi":17440,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":10000,"med":216900,"q1":192100,"q3":428600,"lo":172200,"hi":482300,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":145700,"q1":142300,"q3":160500,"lo":136000,"hi":194100,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":188000,"q1":181400,"q3":196900,"lo":173500,"hi":198500,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":192400,"q1":189200,"q3":197100,"lo":180200,"hi":202400,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":7283000,"q1":7087000,"q3":7441000,"lo":7041000,"hi":7519000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":100000,"med":3497000,"q1":3456000,"q3":4656000,"lo":2443000,"hi":5112000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2074000,"q1":2031000,"q3":2289000,"lo":2022000,"hi":2396000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":100000,"med":153200,"q1":152900,"q3":153700,"lo":152400,"hi":154000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":100000,"med":2204000,"q1":2188000,"q3":2221000,"lo":2155000,"hi":2250000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2699000,"q1":2610000,"q3":2763000,"lo":2546000,"hi":2803000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2617000,"q1":2613000,"q3":2683000,"lo":2590000,"hi":4767000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":384500,"q1":383100,"q3":516000,"lo":297600,"hi":574500,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":1000,"med":355800,"q1":353000,"q3":367000,"lo":343700,"hi":368000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":249200,"q1":238800,"q3":294000,"lo":232700,"hi":455400,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":1000,"med":12420,"q1":12360,"q3":12630,"lo":12080,"hi":14210,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":1000,"med":5116,"q1":5013,"q3":6596,"lo":4769,"hi":6638,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":2918000,"q1":1475000,"q3":6487000,"lo":918400,"hi":6685000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":19470,"q1":18380,"q3":23670,"lo":17540,"hi":27170,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18030,"q1":17830,"q3":18110,"lo":17610,"hi":18110,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":29430000,"q1":27720000,"q3":31530000,"lo":27570000,"hi":38600000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":10000,"med":38190000,"q1":37530000,"q3":39170000,"lo":36980000,"hi":46820000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":18120000,"q1":17820000,"q3":18490000,"lo":16750000,"hi":19080000,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":10000,"med":77880,"q1":77650,"q3":122800,"lo":75870,"hi":125600,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":10000,"med":66980,"q1":61760,"q3":106800,"lo":60540,"hi":111900,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":508900000,"q1":508900000,"q3":515200000,"lo":456500000,"hi":515200000,"S":3}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":134000,"q1":132600,"q3":137100,"lo":126200,"hi":199100,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":131300,"q1":130600,"q3":175400,"lo":118400,"hi":189500,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":27140000000,"q1":27140000000,"q3":27140000000,"lo":27140000000,"hi":27140000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":100000,"med":47130000000,"q1":47130000000,"q3":47130000000,"lo":47130000000,"hi":47130000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":12280000000,"q1":12280000000,"q3":12280000000,"lo":12280000000,"hi":12280000000,"S":1}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":100000,"med":833400,"q1":831800,"q3":835800,"lo":813400,"hi":836500,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":100000,"med":2124000,"q1":2110000,"q3":2136000,"lo":2037000,"hi":3636000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2751000,"q1":2666000,"q3":2816000,"lo":2576000,"hi":4610000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2506000,"q1":2491000,"q3":2583000,"lo":2445000,"hi":4621000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":3769,"q1":3761,"q3":3844,"lo":2998,"hi":4967,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":1000,"med":293700,"q1":291400,"q3":296700,"lo":288200,"hi":297000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":191300,"q1":186000,"q3":199900,"lo":183600,"hi":390400,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":1000,"med":634.2,"q1":597.9,"q3":929.4,"lo":585,"hi":1085,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":1000,"med":4373,"q1":4087,"q3":4991,"lo":3547,"hi":7238,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":2939000,"q1":1157000,"q3":4041000,"lo":1018000,"hi":4044000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":41710,"q1":27350,"q3":43110,"lo":19340,"hi":43180,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":23730,"q1":21690,"q3":25620,"lo":18750,"hi":27280,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":29580,"q1":27890,"q3":30220,"lo":27770,"hi":46730,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":10000,"med":23270000,"q1":23260000,"q3":23550000,"lo":22620000,"hi":23830000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":14700000,"q1":14650000,"q3":14860000,"lo":14540000,"hi":15260000,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":10000,"med":8592,"q1":8556,"q3":8746,"lo":8440,"hi":8895,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":10000,"med":52810,"q1":51590,"q3":91800,"lo":50820,"hi":93250,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":402800000,"q1":402800000,"q3":419400000,"lo":391500000,"hi":419400000,"S":3}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":116000,"q1":115300,"q3":136600,"lo":100300,"hi":180300,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":94960,"q1":94840,"q3":97540,"lo":91960,"hi":97590,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":1574000,"q1":1541000,"q3":2054000,"lo":1381000,"hi":2096000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":100000,"med":23950000000,"q1":23950000000,"q3":23950000000,"lo":23950000000,"hi":23950000000,"S":1}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":14120000000,"q1":14120000000,"q3":14120000000,"lo":14120000000,"hi":14120000000,"S":1}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":100000,"med":111700,"q1":111200,"q3":118500,"lo":107700,"hi":147800,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":100000,"med":2012000,"q1":1977000,"q3":2164000,"lo":1883000,"hi":3530000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3513000,"q1":3412000,"q3":3733000,"lo":3273000,"hi":3742000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2913000,"q1":2897000,"q3":2954000,"lo":2829000,"hi":5036000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":4910,"q1":4899,"q3":5015,"lo":4855,"hi":7630,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":1000,"med":5540,"q1":5354,"q3":6410,"lo":5317,"hi":6549,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":6989,"q1":6967,"q3":7324,"lo":6752,"hi":7350,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":1000,"med":837.3,"q1":834.8,"q3":841.3,"lo":830.3,"hi":845.3,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":1000,"med":4485,"q1":4477,"q3":5373,"lo":4434,"hi":6596,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":3727000,"q1":3549000,"q3":6707000,"lo":942600,"hi":7154000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":17050,"q1":16930,"q3":18160,"lo":16050,"hi":22190,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":16080,"q1":15880,"q3":16280,"lo":15650,"hi":16730,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":37270,"q1":36410,"q3":38410,"lo":35220,"hi":66730,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":10000,"med":44490,"q1":43660,"q3":68870,"lo":42490,"hi":78170,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":61370,"q1":60940,"q3":75490,"lo":59110,"hi":104500,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":10000,"med":11010,"q1":11000,"q3":11070,"lo":10840,"hi":11180,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":10000,"med":101300,"q1":72470,"q3":128700,"lo":72350,"hi":130500,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":510100000,"q1":510100000,"q3":630200000,"lo":299000000,"hi":630200000,"S":3}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":125100,"q1":123400,"q3":196400,"lo":120000,"hi":206600,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":114700,"q1":113000,"q3":116600,"lo":103600,"hi":119500,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":1863000,"q1":1622000,"q3":2118000,"lo":1483000,"hi":2143000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":100000,"med":2208000,"q1":2148000,"q3":2551000,"lo":1536000,"hi":3145000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2243000,"q1":2243000,"q3":2681000,"lo":1856000,"hi":2785000,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":100000,"med":109900,"q1":106900,"q3":112700,"lo":99710,"hi":119800,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":100000,"med":2167000,"q1":2158000,"q3":2226000,"lo":2099000,"hi":3187000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2779000,"q1":2774000,"q3":3732000,"lo":2756000,"hi":3768000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2834000,"q1":2799000,"q3":3800000,"lo":2750000,"hi":4194000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":15110,"q1":14990,"q3":17920,"lo":14440,"hi":23710,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":1000,"med":29430,"q1":29310,"q3":30400,"lo":28520,"hi":36470,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":18400,"q1":18160,"q3":25880,"lo":17670,"hi":31540,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":1000,"med":15100,"q1":14500,"q3":15790,"lo":13780,"hi":16050,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":1000,"med":5892,"q1":5597,"q3":7576,"lo":4687,"hi":12010,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":4166000,"q1":3904000,"q3":4945000,"lo":1045000,"hi":8405000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":29260,"q1":26940,"q3":43750,"lo":23780,"hi":44430,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":19370,"q1":19240,"q3":21810,"lo":19220,"hi":30410,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":322200,"q1":270600,"q3":421700,"lo":269200,"hi":510100,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":10000,"med":469900,"q1":463700,"q3":605500,"lo":451400,"hi":630700,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":159200,"q1":159200,"q3":171200,"lo":145300,"hi":754800,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":10000,"med":149400,"q1":146600,"q3":157900,"lo":94580,"hi":207700,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":10000,"med":197500,"q1":197300,"q3":200700,"lo":191100,"hi":228900,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":480000000,"q1":480000000,"q3":488700000,"lo":475800000,"hi":488700000,"S":3}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":292300,"q1":291600,"q3":307900,"lo":278800,"hi":308500,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":193100,"q1":184200,"q3":200200,"lo":179200,"hi":235600,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":4690000,"q1":4616000,"q3":6665000,"lo":4558000,"hi":8861000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":100000,"med":8623000,"q1":8568000,"q3":9176000,"lo":6163000,"hi":9764000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2788000,"q1":2785000,"q3":2832000,"lo":2713000,"hi":4390000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":100000,"med":958800,"q1":937100,"q3":977500,"lo":915800,"hi":2399000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":100000,"med":3181000,"q1":3159000,"q3":3234000,"lo":3106000,"hi":4231000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":4398000,"q1":4385000,"q3":5899000,"lo":4226000,"hi":6822000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":3779000,"q1":3760000,"q3":3833000,"lo":3691000,"hi":5493000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":15240,"q1":14750,"q3":15830,"lo":14480,"hi":32400,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":1000,"med":29630,"q1":29380,"q3":30320,"lo":28730,"hi":30890,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":23870,"q1":23740,"q3":36470,"lo":23370,"hi":40000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":1000,"med":1885,"q1":1876,"q3":2036,"lo":1820,"hi":2232,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":1000,"med":25230,"q1":25170,"q3":25570,"lo":24670,"hi":26110,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":19150,"q1":18560,"q3":19510,"lo":17640,"hi":19710,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":26110,"q1":25930,"q3":26690,"lo":25010,"hi":26830,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":25910,"q1":25520,"q3":26800,"lo":25150,"hi":28380,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":230800,"q1":228800,"q3":378400,"lo":220200,"hi":620300,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":10000,"med":413300,"q1":342400,"q3":642500,"lo":311800,"hi":691800,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":261000,"q1":259800,"q3":274400,"lo":245300,"hi":281300,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":10000,"med":25440,"q1":25350,"q3":25790,"lo":24500,"hi":26060,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":10000,"med":239200,"q1":238400,"q3":242200,"lo":237100,"hi":242600,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":258000,"q1":237700,"q3":627200,"lo":197000,"hi":707900,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":304600,"q1":304200,"q3":328000,"lo":233600,"hi":328500,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":257300,"q1":246000,"q3":270500,"lo":229400,"hi":271900,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":7697000,"q1":7021000,"q3":8435000,"lo":1700000,"hi":12050000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a record field","n":100000,"med":3068000,"q1":3042000,"q3":6910000,"lo":2828000,"hi":7849000,"S":7}
+{"engine":"node","impl":"A","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2176000,"q1":2172000,"q3":6510000,"lo":2128000,"hi":6774000,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"sum by x :: rest","n":100000,"med":191400,"q1":190700,"q3":194300,"lo":188900,"hi":194700,"S":7}
+{"engine":"node","impl":"A","sc":"read","op":"List.map","n":100000,"med":2647000,"q1":2645000,"q3":5557000,"lo":2545000,"hi":6464000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":4761000,"q1":2900000,"q3":4851000,"lo":2813000,"hi":6295000,"S":7}
+{"engine":"node","impl":"A","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2591000,"q1":2568000,"q3":5203000,"lo":2456000,"hi":7230000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":431000,"q1":430000,"q3":613400,"lo":330100,"hi":654700,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":1000,"med":358300,"q1":351300,"q3":381900,"lo":344800,"hi":386000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":246400,"q1":245500,"q3":269600,"lo":241400,"hi":341900,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":1000,"med":14770,"q1":14490,"q3":15250,"lo":14310,"hi":15920,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":1000,"med":5875,"q1":5854,"q3":7185,"lo":5730,"hi":8825,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":4856000,"q1":1387000,"q3":5498000,"lo":959000,"hi":6373000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":18060,"q1":17450,"q3":21210,"lo":16400,"hi":23870,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18060,"q1":18010,"q3":18360,"lo":17680,"hi":18630,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":37350000,"q1":36970000,"q3":38280000,"lo":32340000,"hi":41010000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":10000,"med":37700000,"q1":37360000,"q3":40100000,"lo":36200000,"hi":54480000,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":19450000,"q1":19420000,"q3":19670000,"lo":19050000,"hi":21150000,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":10000,"med":125200,"q1":80380,"q3":128600,"lo":78940,"hi":129600,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":10000,"med":109800,"q1":87400,"q3":117600,"lo":62650,"hi":118200,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":455700000,"q1":455700000,"q3":481400000,"lo":432600000,"hi":481400000,"S":3}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":107800,"q1":106300,"q3":117100,"lo":100600,"hi":194100,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":156100,"q1":138600,"q3":160500,"lo":117500,"hi":176600,"S":7}
+{"engine":"node","impl":"B","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":31510000000,"q1":31510000000,"q3":31510000000,"lo":31510000000,"hi":31510000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a record field","n":100000,"med":41950000000,"q1":41950000000,"q3":41950000000,"lo":41950000000,"hi":41950000000,"S":1}
+{"engine":"node","impl":"B","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":14040000000,"q1":14040000000,"q3":14040000000,"lo":14040000000,"hi":14040000000,"S":1}
+{"engine":"node","impl":"B","sc":"read","op":"sum by x :: rest","n":100000,"med":1171000,"q1":1142000,"q3":1231000,"lo":1074000,"hi":1248000,"S":7}
+{"engine":"node","impl":"B","sc":"read","op":"List.map","n":100000,"med":2451000,"q1":2417000,"q3":2598000,"lo":2405000,"hi":2671000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":2952000,"q1":2921000,"q3":3035000,"lo":2815000,"hi":4923000,"S":7}
+{"engine":"node","impl":"B","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":2951000,"q1":2908000,"q3":3026000,"lo":2858000,"hi":5039000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":4802,"q1":4712,"q3":5056,"lo":4391,"hi":7967,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":1000,"med":360200,"q1":354100,"q3":360400,"lo":350300,"hi":414200,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":239700,"q1":238800,"q3":254900,"lo":237200,"hi":439100,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":1000,"med":732.6,"q1":732,"q3":736.5,"lo":722.5,"hi":759.9,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":1000,"med":5437,"q1":5370,"q3":6873,"lo":4721,"hi":8855,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":3940000,"q1":1414000,"q3":5235000,"lo":857000,"hi":5338000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":18640,"q1":18420,"q3":20510,"lo":17040,"hi":24570,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18740,"q1":18720,"q3":19410,"lo":18630,"hi":19420,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":37730,"q1":37100,"q3":39040,"lo":36260,"hi":56800,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":10000,"med":29180000,"q1":28930000,"q3":31770000,"lo":28590000,"hi":32060000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":18060000,"q1":18060000,"q3":21000000,"lo":17640000,"hi":21980000,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":10000,"med":11860,"q1":11350,"q3":12360,"lo":10080,"hi":12410,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":10000,"med":123800,"q1":122000,"q3":129300,"lo":73690,"hi":132100,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":431000000,"q1":431000000,"q3":472200000,"lo":421900000,"hi":472200000,"S":3}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":108500,"q1":108100,"q3":112100,"lo":101400,"hi":204200,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":165200,"q1":138500,"q3":170200,"lo":126400,"hi":170200,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":1881000,"q1":1708000,"q3":2123000,"lo":1538000,"hi":2398000,"S":7}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a record field","n":100000,"med":30620000000,"q1":30620000000,"q3":30620000000,"lo":30620000000,"hi":30620000000,"S":1}
+{"engine":"node","impl":"C","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":15460000000,"q1":15460000000,"q3":15460000000,"lo":15460000000,"hi":15460000000,"S":1}
+{"engine":"node","impl":"C","sc":"read","op":"sum by x :: rest","n":100000,"med":119900,"q1":118700,"q3":121600,"lo":115500,"hi":127800,"S":7}
+{"engine":"node","impl":"C","sc":"read","op":"List.map","n":100000,"med":2691000,"q1":2665000,"q3":2809000,"lo":2597000,"hi":4424000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3637000,"q1":3629000,"q3":3658000,"lo":3544000,"hi":3779000,"S":7}
+{"engine":"node","impl":"C","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":3423000,"q1":3397000,"q3":3631000,"lo":3261000,"hi":5465000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":5302,"q1":5293,"q3":5338,"lo":5220,"hi":5399,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":1000,"med":5108,"q1":5073,"q3":5398,"lo":4984,"hi":6740,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":7014,"q1":6947,"q3":7111,"lo":6905,"hi":7234,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":1000,"med":719.1,"q1":715.8,"q3":723.1,"lo":707.6,"hi":770.2,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":1000,"med":5152,"q1":5060,"q3":5206,"lo":4935,"hi":6891,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":3868000,"q1":3450000,"q3":6897000,"lo":895900,"hi":6959000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":20020,"q1":19500,"q3":22250,"lo":18350,"hi":28610,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":18710,"q1":18570,"q3":18920,"lo":18330,"hi":18940,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":41270,"q1":41230,"q3":56660,"lo":40770,"hi":63020,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":10000,"med":45220,"q1":45020,"q3":45460,"lo":44730,"hi":53290,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":61630,"q1":60320,"q3":73700,"lo":57430,"hi":117900,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":10000,"med":12110,"q1":11800,"q3":12430,"lo":10880,"hi":12500,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":10000,"med":126600,"q1":124700,"q3":128000,"lo":67760,"hi":128700,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":470700000,"q1":470700000,"q3":482700000,"lo":296300000,"hi":482700000,"S":3}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":146100,"q1":146000,"q3":200800,"lo":145200,"hi":239100,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":133300,"q1":130200,"q3":137100,"lo":124300,"hi":139100,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":1905000,"q1":1888000,"q3":2603000,"lo":1642000,"hi":2666000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a record field","n":100000,"med":1891000,"q1":1748000,"q3":2302000,"lo":1559000,"hi":2547000,"S":7}
+{"engine":"node","impl":"R0","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":2554000,"q1":2211000,"q3":3238000,"lo":1977000,"hi":3338000,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"sum by x :: rest","n":100000,"med":119200,"q1":119100,"q3":119600,"lo":115000,"hi":125700,"S":7}
+{"engine":"node","impl":"R0","sc":"read","op":"List.map","n":100000,"med":2055000,"q1":2024000,"q3":3103000,"lo":1925000,"hi":3112000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3430000,"q1":3358000,"q3":4478000,"lo":3125000,"hi":4652000,"S":7}
+{"engine":"node","impl":"R0","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":3360000,"q1":3351000,"q3":4600000,"lo":3200000,"hi":4704000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":1000,"med":19120,"q1":17300,"q3":27480,"lo":16280,"hi":39260,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":1000,"med":30810,"q1":30690,"q3":31580,"lo":30200,"hi":31630,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":1000,"med":20030,"q1":19060,"q3":22460,"lo":17950,"hi":43520,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":1000,"med":14610,"q1":14260,"q3":15330,"lo":13830,"hi":15640,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":1000,"med":5780,"q1":4804,"q3":7386,"lo":4575,"hi":10460,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":1000,"med":4217000,"q1":3338000,"q3":4360000,"lo":2320000,"hi":4390000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":1000,"med":35850,"q1":32620,"q3":46070,"lo":23890,"hi":49960,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":1000,"med":20970,"q1":20450,"q3":21740,"lo":19830,"hi":22000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":10000,"med":369000,"q1":352800,"q3":619000,"lo":279800,"hi":654300,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":10000,"med":508900,"q1":503500,"q3":695100,"lo":485800,"hi":705600,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":10000,"med":232600,"q1":219300,"q3":336000,"lo":197600,"hi":419500,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":10000,"med":102900,"q1":102800,"q3":104000,"lo":101000,"hi":106100,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":10000,"med":211000,"q1":209100,"q3":217200,"lo":208300,"hi":265400,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"paths sharing tails, all kept","n":10000,"med":469300000,"q1":469300000,"q3":519900000,"lo":399700000,"hi":519900000,"S":3}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":10000,"med":282500,"q1":278400,"q3":283800,"lo":273300,"hi":287800,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":10000,"med":189600,"q1":187400,"q3":207400,"lo":175700,"hi":224400,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"x :: acc in a foldl, then reverse","n":100000,"med":4541000,"q1":4490000,"q3":9206000,"lo":4068000,"hi":10000000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a record field","n":100000,"med":8533000,"q1":8448000,"q3":8840000,"lo":6295000,"hi":10060000,"S":7}
+{"engine":"node","impl":"R2","sc":"prepend","op":"into a tuple (partition)","n":100000,"med":3329000,"q1":2613000,"q3":3809000,"lo":2507000,"hi":5264000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"sum by x :: rest","n":100000,"med":1086000,"q1":1049000,"q3":1124000,"lo":1009000,"hi":1154000,"S":7}
+{"engine":"node","impl":"R2","sc":"read","op":"List.map","n":100000,"med":3221000,"q1":3207000,"q3":3594000,"lo":3004000,"hi":5108000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, hands over","n":100000,"med":3813000,"q1":3770000,"q3":5466000,"lo":3747000,"hi":5486000,"S":7}
+{"engine":"node","impl":"R2","sc":"tea","op":"add + remove oldest, steady, runtime retains","n":100000,"med":3356000,"q1":3343000,"q3":4505000,"lo":3301000,"hi":4545000,"S":7}

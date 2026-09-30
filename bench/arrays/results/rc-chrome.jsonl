@@ -1,0 +1,1218 @@
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":1000,"med":11360,"q1":11360,"q3":94320,"lo":6818,"hi":105700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":10270,"q1":6696,"q3":20540,"lo":6696,"hi":54910,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":7255,"q1":7168,"q3":7605,"lo":6643,"hi":8129,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":57000,"q1":42000,"q3":68000,"lo":27000,"hi":114000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":20180,"q1":20180,"q3":27190,"lo":17540,"hi":27850,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":1000,"med":4460,"q1":4020,"q3":4681,"lo":3910,"hi":5121,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":3435,"q1":3366,"q3":4060,"lo":3088,"hi":5135,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":3343,"q1":3303,"q3":3502,"lo":3064,"hi":4178,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":1000,"med":12880,"q1":12880,"q3":13150,"lo":12600,"hi":13150,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":17550,"q1":17550,"q3":18010,"lo":17320,"hi":18010,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":17330,"q1":17330,"q3":17540,"lo":17120,"hi":17750,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":1000,"med":79820,"q1":79820,"q3":170200,"lo":53510,"hi":203500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3166,"q1":3109,"q3":3166,"lo":3051,"hi":3397,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":1000,"med":3186,"q1":3186,"q3":3235,"lo":3137,"hi":4461,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":10000,"med":41220,"q1":39690,"q3":43510,"lo":39690,"hi":48850,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":42010,"q1":41550,"q3":46580,"lo":41100,"hi":49320,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":44810,"q1":44340,"q3":47170,"lo":42920,"hi":50940,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":188000,"q1":188000,"q3":194000,"lo":186000,"hi":198000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":187000,"q1":185200,"q3":187000,"lo":181500,"hi":222200,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":10000,"med":42130,"q1":41620,"q3":42640,"lo":41620,"hi":42640,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":34290,"q1":33060,"q3":35100,"lo":33060,"hi":35100,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":37190,"q1":36180,"q3":37690,"lo":35180,"hi":38190,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":10000,"med":129600,"q1":127800,"q3":133300,"lo":125900,"hi":133300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":194400,"q1":186100,"q3":202800,"lo":180600,"hi":202800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":186500,"q1":186500,"q3":197300,"lo":183800,"hi":200000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":10000,"med":114300,"q1":77310,"q3":163000,"lo":75630,"hi":172300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":34690,"q1":34690,"q3":35200,"lo":34180,"hi":45410,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":10000,"med":35540,"q1":34710,"q3":49590,"lo":33880,"hi":49590,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":10000,"med":1900000,"q1":1880000,"q3":1900000,"lo":1880000,"hi":2260000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":36970,"q1":36490,"q3":37440,"lo":35550,"hi":37910,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":104100,"q1":102700,"q3":105400,"lo":100000,"hi":105400,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":10000,"med":98610,"q1":97220,"q3":98610,"lo":97220,"hi":100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2450000,"q1":2450000,"q3":2450000,"lo":2400000,"hi":2550000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":190600,"q1":187500,"q3":190600,"lo":181200,"hi":200000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":305.3,"q1":297.1,"q3":338.3,"lo":288.8,"hi":371.3,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":100000,"med":26900000,"q1":19500000,"q3":41500000,"lo":18400000,"hi":42000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":970000,"q1":970000,"q3":980000,"lo":970000,"hi":1010000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1022000,"q1":1022000,"q3":1244000,"lo":1000000,"hi":1744000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":100000,"med":900000,"q1":890000,"q3":900000,"lo":880000,"hi":910000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":31300000,"q1":31100000,"q3":31800000,"lo":30800000,"hi":31900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":293700,"q1":293700,"q3":303100,"lo":290600,"hi":306200,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":302.9,"q1":297.4,"q3":302.9,"lo":291.9,"hi":319.4,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":10000,"med":105400,"q1":105400,"q3":106500,"lo":103300,"hi":106500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":7700,"q1":7605,"q3":7795,"lo":7510,"hi":7795,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":458.4,"q1":285.2,"q3":631.6,"lo":285.2,"hi":652,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":34010,"q1":33670,"q3":34010,"lo":33330,"hi":35030,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":27700,"q1":27700,"q3":28250,"lo":27150,"hi":28530,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":10000,"med":1220000,"q1":1220000,"q3":1240000,"lo":1200000,"hi":1280000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":1000000,"med":20100000,"q1":20000000,"q3":20200000,"lo":20000000,"hi":20400000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1256000,"q1":1244000,"q3":1267000,"lo":988900,"hi":1267000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":300.6,"q1":300.6,"q3":319.8,"lo":294.2,"hi":409.3,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1300000,"q1":1300000,"q3":1311000,"lo":1011000,"hi":1311000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":32300,"q1":30740,"q3":32680,"lo":29960,"hi":33070,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":1000000,"med":147000000,"q1":145800000,"q3":169300000,"lo":144500000,"hi":174800000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":1000,"med":57270,"q1":55450,"q3":59090,"lo":53640,"hi":60910,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":1000,"med":5500000,"q1":5500000,"q3":5550000,"lo":5450000,"hi":5600000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":1000,"med":90700,"q1":88370,"q3":95350,"lo":86050,"hi":162800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":100000,"med":11500000,"q1":11500000,"q3":11800000,"lo":10400000,"hi":12000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":100000,"med":14700000,"q1":14600000,"q3":15000000,"lo":14100000,"hi":15100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":100000,"med":8900000,"q1":8800000,"q3":9600000,"lo":8700000,"hi":14100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/first","n":10000,"med":7240,"q1":7240,"q3":7325,"lo":7240,"hi":7325,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/steady","n":10000,"med":492.3,"q1":492.3,"q3":503.3,"lo":492.3,"hi":514.2,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/undo 100","n":10000,"med":64290,"q1":61900,"q3":117900,"lo":60710,"hi":117900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":3.979,"q1":3.979,"q3":5.969,"lo":3.979,"hi":5.969,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1400000,"q1":1386000,"q3":1443000,"lo":1343000,"hi":1471000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":20800,"q1":20800,"q3":21020,"lo":20580,"hi":21020,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":10000,"med":618200,"q1":600000,"q3":690900,"lo":581800,"hi":763600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":10000,"med":9843,"q1":9558,"q3":9843,"lo":9558,"hi":9986,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1286000,"q1":1286000,"q3":1286000,"lo":1271000,"hi":1300000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":32930,"q1":32930,"q3":33330,"lo":32530,"hi":33330,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":10000,"med":592300,"q1":592300,"q3":676900,"lo":592300,"hi":707700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":7214,"q1":7124,"q3":7304,"lo":7124,"hi":7394,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":4.842,"q1":4.842,"q3":4.842,"lo":2.421,"hi":7.264,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":15700000,"q1":15400000,"q3":16300000,"lo":15100000,"hi":18400000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":236100,"q1":236100,"q3":238900,"lo":236100,"hi":258300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":100000,"med":8600000,"q1":8600000,"q3":18900000,"lo":8500000,"hi":19200000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":100000,"med":230400,"q1":210900,"q3":252200,"lo":171700,"hi":278300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":15200000,"q1":15200000,"q3":15300000,"lo":15100000,"hi":17100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":459100,"q1":459100,"q3":477300,"lo":422700,"hi":486400,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":100000,"med":8600000,"q1":8600000,"q3":18500000,"lo":8500000,"hi":19100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":78510,"q1":77690,"q3":78510,"lo":76860,"hi":79340,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":1000,"med":3443,"q1":3443,"q3":4003,"lo":3363,"hi":4083,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4021,"q1":3926,"q3":5298,"lo":3642,"hi":5393,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":3617,"q1":3537,"q3":3696,"lo":3299,"hi":4253,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":19650,"q1":19650,"q3":20090,"lo":17470,"hi":20520,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":18850,"q1":18850,"q3":22360,"lo":18210,"hi":22680,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":1000,"med":3401,"q1":3401,"q3":3493,"lo":3355,"hi":3539,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":3856,"q1":3506,"q3":3988,"lo":3462,"hi":5171,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":3211,"q1":3129,"q3":3252,"lo":3005,"hi":3788,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":1000,"med":12970,"q1":12720,"q3":12970,"lo":12720,"hi":13220,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":13650,"q1":13650,"q3":14020,"lo":13650,"hi":14210,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":13360,"q1":13190,"q3":16120,"lo":12870,"hi":18570,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":1000,"med":81250,"q1":56250,"q3":161600,"lo":49110,"hi":189300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3410,"q1":3280,"q3":4489,"lo":3194,"hi":5654,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":1000,"med":3040,"q1":3040,"q3":3270,"lo":3001,"hi":3925,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":10000,"med":32100,"q1":32100,"q3":32470,"lo":31730,"hi":32840,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":39410,"q1":38140,"q3":44490,"lo":32200,"hi":45340,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":39930,"q1":39570,"q3":42810,"lo":37050,"hi":43530,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":176900,"q1":176900,"q3":178800,"lo":175000,"hi":213500,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":187000,"q1":184800,"q3":187000,"lo":143500,"hi":189100,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":10000,"med":34250,"q1":33790,"q3":34700,"lo":33790,"hi":35160,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":31510,"q1":31510,"q3":31960,"lo":31510,"hi":33330,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":33980,"q1":33980,"q3":34470,"lo":33010,"hi":34470,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":10000,"med":121700,"q1":121700,"q3":123300,"lo":120000,"hi":125000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":127300,"q1":127300,"q3":130300,"lo":124200,"hi":130300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":127100,"q1":127100,"q3":128600,"lo":122900,"hi":130000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":10000,"med":136700,"q1":116500,"q3":138500,"lo":67890,"hi":139400,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":31700,"q1":31700,"q3":31700,"lo":31250,"hi":32590,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":10000,"med":33810,"q1":33330,"q3":33810,"lo":32860,"hi":33810,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":10000,"med":1760000,"q1":1740000,"q3":1780000,"lo":1740000,"hi":2040000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":30300,"q1":30300,"q3":30300,"lo":29920,"hi":30300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":87500,"q1":86460,"q3":87500,"lo":85420,"hi":89580,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":10000,"med":71430,"q1":71430,"q3":71430,"lo":70540,"hi":72320,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2175000,"q1":2175000,"q3":2175000,"lo":2150000,"hi":2200000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":176900,"q1":176900,"q3":179500,"lo":174400,"hi":182100,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":243.5,"q1":243.5,"q3":243.5,"lo":237.1,"hi":256.4,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":100000,"med":24700000,"q1":17900000,"q3":38100000,"lo":17200000,"hi":38100000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":900000,"q1":900000,"q3":900000,"lo":890900,"hi":909100,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":881800,"q1":881800,"q3":890900,"lo":872700,"hi":890900,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":100000,"med":715400,"q1":707700,"q3":715400,"lo":700000,"hi":715400,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":29100000,"q1":29100000,"q3":29800000,"lo":28900000,"hi":32400000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":268600,"q1":268600,"q3":277100,"lo":268600,"hi":280000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":242,"q1":242,"q3":246.8,"lo":242,"hi":246.8,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":10000,"med":98000,"q1":97000,"q3":98000,"lo":96000,"hi":100000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":2716,"q1":2464,"q3":2940,"lo":2156,"hi":3024,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":152.9,"q1":148.9,"q3":157,"lo":148.9,"hi":161,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":16150,"q1":16150,"q3":16310,"lo":15990,"hi":16480,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":13660,"q1":13520,"q3":13660,"lo":13520,"hi":13800,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":10000,"med":1100000,"q1":1100000,"q3":1175000,"lo":1075000,"hi":1400000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":1000000,"med":19500000,"q1":19400000,"q3":19600000,"lo":19300000,"hi":19700000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1162000,"q1":1150000,"q3":1175000,"lo":1125000,"hi":1175000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":148.8,"q1":148.8,"q3":156.9,"lo":144.8,"hi":156.9,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1200000,"q1":1189000,"q3":1289000,"lo":1067000,"hi":1333000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":14310,"q1":14310,"q3":14450,"lo":14010,"hi":14450,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":1000000,"med":188400000,"q1":159100000,"q3":194700000,"lo":154600000,"hi":197900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":1000,"med":7258,"q1":7157,"q3":7359,"lo":7157,"hi":7560,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":1000,"med":762500,"q1":762500,"q3":787500,"lo":725000,"hi":1387000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":1000,"med":31580,"q1":31580,"q3":32110,"lo":31050,"hi":32110,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram, no inlining","n":1000,"med":24100000,"q1":23600000,"q3":24900000,"lo":22600000,"hi":25300000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":100000,"med":3500000,"q1":3467000,"q3":3667000,"lo":3133000,"hi":3900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":100000,"med":1643000,"q1":1629000,"q3":1643000,"lo":1629000,"hi":1657000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":100000,"med":3533000,"q1":3500000,"q3":3567000,"lo":3467000,"hi":3567000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/first","n":10000,"med":8774,"q1":8774,"q3":8985,"lo":8562,"hi":9091,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/steady","n":10000,"med":608.9,"q1":608.9,"q3":645.8,"lo":572,"hi":719.6,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/undo 100","n":10000,"med":135800,"q1":134000,"q3":135800,"lo":54720,"hi":145300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":4.482,"q1":4.482,"q3":6.722,"lo":4.482,"hi":6.722,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1130000,"q1":1130000,"q3":1150000,"lo":1120000,"hi":1160000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":24140,"q1":24140,"q3":24380,"lo":23890,"hi":25370,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":10000,"med":690000,"q1":670000,"q3":910000,"lo":610000,"hi":930000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":10000,"med":6.627,"q1":4.418,"q3":6.627,"lo":2.209,"hi":6.627,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":960000,"q1":950000,"q3":1060000,"lo":950000,"hi":1130000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":22070,"q1":22070,"q3":22070,"lo":21850,"hi":22300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":10000,"med":746200,"q1":715400,"q3":853800,"lo":615400,"hi":861500,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":2173,"q1":2173,"q3":2255,"lo":2145,"hi":2530,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":4.937,"q1":4.937,"q3":7.405,"lo":4.937,"hi":7.405,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":16000000,"q1":16000000,"q3":16100000,"lo":15900000,"hi":18400000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":244100,"q1":244100,"q3":247100,"lo":244100,"hi":247100,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9200000,"q1":9100000,"q3":19700000,"lo":9000000,"hi":19800000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":100000,"med":6.239,"q1":4.159,"q3":6.239,"lo":4.159,"hi":6.239,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":15400000,"q1":15300000,"q3":15500000,"lo":15200000,"hi":17700000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":242900,"q1":240500,"q3":245200,"lo":238100,"hi":245200,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":100000,"med":9000000,"q1":9000000,"q3":20100000,"lo":8700000,"hi":20100000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":156500,"q1":153200,"q3":183900,"lo":143500,"hi":185500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":1000,"med":5021,"q1":4915,"q3":5556,"lo":4701,"hi":5769,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4893,"q1":4714,"q3":5191,"lo":4475,"hi":5668,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":4946,"q1":4649,"q3":5341,"lo":4649,"hi":5341,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":25000,"q1":24500,"q3":31000,"lo":21500,"hi":46500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":22750,"q1":22750,"q3":27540,"lo":22160,"hi":41320,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":1000,"med":4945,"q1":4945,"q3":6387,"lo":4876,"hi":6525,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4085,"q1":4085,"q3":5882,"lo":4085,"hi":6100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":4742,"q1":4672,"q3":5509,"lo":4393,"hi":6834,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":1000,"med":26360,"q1":25910,"q3":27270,"lo":25450,"hi":27730,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":30200,"q1":30200,"q3":31020,"lo":29390,"hi":31020,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":29860,"q1":29500,"q3":30580,"lo":29140,"hi":30580,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":1000,"med":44120,"q1":43630,"q3":44610,"lo":43140,"hi":47060,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3969,"q1":3969,"q3":4046,"lo":3893,"hi":4046,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":1000,"med":4006,"q1":3956,"q3":5292,"lo":3858,"hi":6182,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":10000,"med":52380,"q1":51590,"q3":53170,"lo":50790,"hi":62700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":52870,"q1":51720,"q3":56320,"lo":50570,"hi":58050,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":51300,"q1":51300,"q3":52170,"lo":49570,"hi":52170,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":257900,"q1":257900,"q3":371100,"lo":178900,"hi":460500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":255300,"q1":252600,"q3":257900,"lo":181600,"hi":278900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":10000,"med":49330,"q1":49330,"q3":51330,"lo":49330,"hi":52670,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":41630,"q1":41150,"q3":42110,"lo":41150,"hi":54550,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":41480,"q1":41480,"q3":42610,"lo":40910,"hi":43180,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":10000,"med":225000,"q1":221900,"q3":234400,"lo":218800,"hi":237500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":233300,"q1":233300,"q3":246700,"lo":230000,"hi":253300,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":236700,"q1":230000,"q3":246700,"lo":226700,"hi":250000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":10000,"med":75810,"q1":75000,"q3":76610,"lo":75000,"hi":79030,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":36360,"q1":36360,"q3":36360,"lo":35830,"hi":36900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":10000,"med":39670,"q1":39670,"q3":39670,"lo":39130,"hi":40220,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":10000,"med":1860000,"q1":1860000,"q3":1880000,"lo":1840000,"hi":2120000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":51450,"q1":50720,"q3":52170,"lo":50000,"hi":52170,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":105700,"q1":104300,"q3":108600,"lo":104300,"hi":108600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":10000,"med":132000,"q1":130000,"q3":132000,"lo":128000,"hi":132000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2300000,"q1":2275000,"q3":2300000,"lo":2275000,"hi":2300000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":200000,"q1":196400,"q3":203600,"lo":192900,"hi":207100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":364.6,"q1":364.6,"q3":374.4,"lo":354.7,"hi":374.4,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":100000,"med":26400000,"q1":18300000,"q3":40500000,"lo":17600000,"hi":42400000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":945500,"q1":945500,"q3":945500,"lo":936400,"hi":945500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1056000,"q1":1044000,"q3":1078000,"lo":1033000,"hi":1078000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":100000,"med":1313000,"q1":1313000,"q3":1325000,"lo":1300000,"hi":1325000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":30800000,"q1":30600000,"q3":31100000,"lo":29900000,"hi":31200000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":306700,"q1":306700,"q3":313300,"lo":303300,"hi":316700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":370,"q1":363.5,"q3":370,"lo":350.5,"hi":370,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":10000,"med":103800,"q1":102600,"q3":103800,"lo":96150,"hi":105100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":7590,"q1":7590,"q3":7780,"lo":7306,"hi":7780,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":543.9,"q1":478.2,"q3":553.3,"lo":300.1,"hi":590.8,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":38980,"q1":38980,"q3":39370,"lo":38190,"hi":39760,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":28290,"q1":28290,"q3":28860,"lo":28290,"hi":29140,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":10000,"med":1300000,"q1":1275000,"q3":1300000,"lo":1200000,"hi":2350000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":1000000,"med":20500000,"q1":20500000,"q3":20600000,"lo":20200000,"hi":20900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1267000,"q1":1267000,"q3":1300000,"lo":977800,"hi":1300000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":324.6,"q1":324.6,"q3":330.7,"lo":318.5,"hi":459.4,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1322000,"q1":1311000,"q3":1344000,"lo":1056000,"hi":1367000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":32270,"q1":31910,"q3":39360,"lo":31560,"hi":39720,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":1000000,"med":162600000,"q1":151200000,"q3":186300000,"lo":149800000,"hi":191700000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":1000,"med":13130,"q1":12970,"q3":13450,"lo":12820,"hi":13450,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":1000,"med":3000000,"q1":2700000,"q3":3100000,"lo":2500000,"hi":3300000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":1000,"med":35290,"q1":35290,"q3":37820,"lo":33610,"hi":43700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":100000,"med":4200000,"q1":4167000,"q3":4533000,"lo":4133000,"hi":4633000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":100000,"med":5500000,"q1":5450000,"q3":5550000,"lo":5400000,"hi":5550000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":100000,"med":3567000,"q1":3567000,"q3":3600000,"lo":3500000,"hi":3600000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/first","n":10000,"med":7666,"q1":7581,"q3":7751,"lo":7581,"hi":9540,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/steady","n":10000,"med":2395,"q1":2395,"q3":3649,"lo":2319,"hi":3801,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/undo 100","n":10000,"med":152400,"q1":84130,"q3":158700,"lo":84130,"hi":188900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":6.929,"q1":4.619,"q3":6.929,"lo":4.619,"hi":9.239,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1471000,"q1":1443000,"q3":1757000,"lo":1371000,"hi":2214000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":23920,"q1":23630,"q3":24500,"lo":23340,"hi":25360,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":10000,"med":618200,"q1":618200,"q3":736400,"lo":600000,"hi":818200,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":10000,"med":10000,"q1":9884,"q3":10120,"lo":9651,"hi":10120,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1350000,"q1":1338000,"q3":1888000,"lo":1338000,"hi":1900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":34020,"q1":33610,"q3":34850,"lo":33200,"hi":34850,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":10000,"med":620000,"q1":610000,"q3":750000,"lo":610000,"hi":790000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":7334,"q1":7334,"q3":7532,"lo":7235,"hi":7631,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.079,"q1":5.079,"q3":7.619,"lo":5.079,"hi":7.619,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":15400000,"q1":15400000,"q3":15900000,"lo":15300000,"hi":17900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":215400,"q1":215400,"q3":217900,"lo":215400,"hi":382100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":100000,"med":8800000,"q1":8700000,"q3":19300000,"lo":8600000,"hi":19300000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":100000,"med":248800,"q1":227900,"q3":251200,"lo":220900,"hi":253500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":15800000,"q1":15800000,"q3":15900000,"lo":15700000,"hi":17900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":490500,"q1":485700,"q3":504800,"lo":409500,"hi":514300,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":100000,"med":9100000,"q1":9000000,"q3":19200000,"lo":8700000,"hi":19700000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":80830,"q1":80830,"q3":82500,"lo":80830,"hi":82500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":1000,"med":4830,"q1":4640,"q3":5682,"lo":4545,"hi":6818,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4919,"q1":4745,"q3":5035,"lo":4282,"hi":5903,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":4637,"q1":4536,"q3":5343,"lo":4435,"hi":5746,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":24410,"q1":23940,"q3":24880,"lo":20660,"hi":35210,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":23380,"q1":23380,"q3":27920,"lo":22730,"hi":30190,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":1000,"med":4854,"q1":4794,"q3":5097,"lo":4672,"hi":8131,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4010,"q1":3958,"q3":4010,"lo":3958,"hi":5885,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":3956,"q1":3956,"q3":4799,"lo":3891,"hi":5253,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":1000,"med":21430,"q1":21030,"q3":21830,"lo":20630,"hi":22620,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":25610,"q1":25610,"q3":25910,"lo":25000,"hi":25910,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":25980,"q1":25680,"q3":26280,"lo":25380,"hi":26280,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":1000,"med":41340,"q1":40780,"q3":41900,"lo":40220,"hi":44130,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3683,"q1":3634,"q3":6122,"lo":3634,"hi":6421,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":1000,"med":3655,"q1":3609,"q3":3655,"lo":3609,"hi":4842,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":10000,"med":50940,"q1":50000,"q3":54720,"lo":48110,"hi":56600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":50270,"q1":49730,"q3":53510,"lo":47570,"hi":54590,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":47660,"q1":46880,"q3":49220,"lo":46090,"hi":50000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":245000,"q1":242500,"q3":422500,"lo":172500,"hi":440000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":245900,"q1":243200,"q3":248600,"lo":178400,"hi":251400,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":10000,"med":49670,"q1":49670,"q3":50980,"lo":49020,"hi":52940,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":41950,"q1":41950,"q3":42530,"lo":41950,"hi":42530,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":42050,"q1":42050,"q3":42050,"lo":40910,"hi":44890,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":10000,"med":163600,"q1":161400,"q3":168200,"lo":159100,"hi":168200,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":174500,"q1":168600,"q3":176500,"lo":164700,"hi":178400,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":167400,"q1":167400,"q3":181400,"lo":165100,"hi":181400,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":10000,"med":77970,"q1":77120,"q3":78810,"lo":75420,"hi":78810,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":38220,"q1":38220,"q3":38220,"lo":37700,"hi":38740,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":10000,"med":38020,"q1":37500,"q3":38020,"lo":36980,"hi":38020,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":10000,"med":1860000,"q1":1840000,"q3":1860000,"lo":1820000,"hi":2160000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":50720,"q1":50720,"q3":51450,"lo":50720,"hi":53620,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":105400,"q1":104100,"q3":108100,"lo":102700,"hi":108100,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":10000,"med":116400,"q1":116400,"q3":117900,"lo":114900,"hi":119400,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2275000,"q1":2250000,"q3":2275000,"lo":2225000,"hi":2275000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":192900,"q1":192900,"q3":196400,"lo":189300,"hi":200000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":362.5,"q1":362.5,"q3":371.1,"lo":345.2,"hi":371.1,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":100000,"med":26300000,"q1":18500000,"q3":39000000,"lo":17700000,"hi":43300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":936400,"q1":936400,"q3":936400,"lo":927300,"hi":945500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1056000,"q1":1056000,"q3":1089000,"lo":1044000,"hi":1089000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":100000,"med":1175000,"q1":1175000,"q3":1188000,"lo":1175000,"hi":1188000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":30000000,"q1":29900000,"q3":30200000,"lo":29800000,"hi":30700000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":309700,"q1":306500,"q3":309700,"lo":303200,"hi":316100,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":360.9,"q1":360.9,"q3":367.3,"lo":360.9,"hi":367.3,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":10000,"med":101300,"q1":101300,"q3":102500,"lo":98730,"hi":103800,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":7655,"q1":7556,"q3":7753,"lo":7458,"hi":7753,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":507.3,"q1":415.1,"q3":535,"lo":322.8,"hi":553.4,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":42080,"q1":42080,"q3":42080,"lo":40830,"hi":42500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":28360,"q1":28360,"q3":28650,"lo":28070,"hi":29240,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":10000,"med":1250000,"q1":1250000,"q3":1300000,"lo":1250000,"hi":2000000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":1000000,"med":20200000,"q1":20200000,"q3":20300000,"lo":19900000,"hi":20300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1267000,"q1":1267000,"q3":1278000,"lo":977800,"hi":1300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":333.4,"q1":327.1,"q3":339.7,"lo":327.1,"hi":465.5,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1333000,"q1":1333000,"q3":1356000,"lo":1022000,"hi":1356000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":32010,"q1":32010,"q3":32370,"lo":31650,"hi":39210,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":1000000,"med":181800000,"q1":177400000,"q3":198000000,"lo":162300000,"hi":198300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":1000,"med":14040,"q1":13870,"q3":14040,"lo":13360,"hi":14550,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":1000,"med":2800000,"q1":2800000,"q3":2800000,"lo":2700000,"hi":3000000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":1000,"med":37040,"q1":35800,"q3":38270,"lo":34570,"hi":60490,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":100000,"med":4150000,"q1":4150000,"q3":4300000,"lo":4100000,"hi":4850000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":100000,"med":5550000,"q1":5550000,"q3":5650000,"lo":5450000,"hi":5750000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":100000,"med":3700000,"q1":3667000,"q3":3767000,"lo":3633000,"hi":3767000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/first","n":10000,"med":7881,"q1":7793,"q3":7881,"lo":7706,"hi":8669,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/steady","n":10000,"med":2008,"q1":1945,"q3":2416,"lo":1914,"hi":2824,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/undo 100","n":10000,"med":158600,"q1":150000,"q3":163800,"lo":87930,"hi":167200,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":7.686,"q1":5.124,"q3":7.686,"lo":2.562,"hi":10.25,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1486000,"q1":1486000,"q3":1500000,"lo":1414000,"hi":1514000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":24680,"q1":24680,"q3":25000,"lo":24350,"hi":25000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":10000,"med":650000,"q1":630000,"q3":780000,"lo":620000,"hi":880000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":10000,"med":10290,"q1":10290,"q3":10660,"lo":10290,"hi":10660,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1329000,"q1":1314000,"q3":1343000,"lo":1314000,"hi":1357000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":34330,"q1":34330,"q3":34700,"lo":33580,"hi":35070,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":10000,"med":620000,"q1":620000,"q3":750000,"lo":620000,"hi":800000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":7449,"q1":7356,"q3":7542,"lo":7356,"hi":7542,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.13,"q1":5.13,"q3":7.695,"lo":5.13,"hi":7.695,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":15500000,"q1":15400000,"q3":15500000,"lo":15300000,"hi":17900000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":240000,"q1":240000,"q3":242900,"lo":237100,"hi":242900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9100000,"q1":8900000,"q3":19400000,"lo":8600000,"hi":19600000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":100000,"med":245500,"q1":215900,"q3":252300,"lo":213600,"hi":295500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":15700000,"q1":15600000,"q3":15900000,"lo":15500000,"hi":18500000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":500000,"q1":500000,"q3":519000,"lo":409500,"hi":528600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":100000,"med":9000000,"q1":8900000,"q3":19100000,"lo":8800000,"hi":19600000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":81360,"q1":81360,"q3":82200,"lo":81360,"hi":84750,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":1000,"med":3177,"q1":3098,"q3":3257,"lo":3098,"hi":3892,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":3829,"q1":3785,"q3":4533,"lo":3433,"hi":5766,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":3298,"q1":3298,"q3":3823,"lo":3186,"hi":3861,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":22610,"q1":20600,"q3":23120,"lo":19600,"hi":24120,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":20710,"q1":20710,"q3":21070,"lo":19640,"hi":25710,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":1000,"med":3411,"q1":3411,"q3":3566,"lo":3333,"hi":3643,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":3209,"q1":3209,"q3":3859,"lo":3128,"hi":4874,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":2968,"q1":2931,"q3":3006,"lo":2894,"hi":3599,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":1000,"med":17040,"q1":17040,"q3":17040,"lo":16590,"hi":17260,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":21700,"q1":21700,"q3":21980,"lo":21430,"hi":21980,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":21500,"q1":21500,"q3":21760,"lo":21240,"hi":21760,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":1000,"med":38890,"q1":38890,"q3":39320,"lo":38460,"hi":39740,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3217,"q1":3217,"q3":3272,"lo":3161,"hi":4493,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":1000,"med":3212,"q1":3165,"q3":3448,"lo":2976,"hi":4015,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":10000,"med":34680,"q1":34270,"q3":34680,"lo":34270,"hi":35080,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":35660,"q1":35660,"q3":38110,"lo":34840,"hi":38520,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":39470,"q1":37970,"q3":43610,"lo":35340,"hi":43980,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":229300,"q1":229300,"q3":387800,"lo":163400,"hi":409800,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":233300,"q1":230800,"q3":233300,"lo":166700,"hi":233300,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":10000,"med":37370,"q1":36870,"q3":38380,"lo":36360,"hi":40400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":31980,"q1":31980,"q3":33330,"lo":31980,"hi":34230,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":31470,"q1":31030,"q3":31470,"lo":31030,"hi":31470,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":10000,"med":171700,"q1":167400,"q3":180400,"lo":167400,"hi":180400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":174400,"q1":174400,"q3":184600,"lo":171800,"hi":184600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":176900,"q1":176900,"q3":184600,"lo":171800,"hi":187200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":10000,"med":73640,"q1":71820,"q3":75450,"lo":70000,"hi":75450,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":29510,"q1":29510,"q3":29920,"lo":29100,"hi":29920,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":10000,"med":29150,"q1":29150,"q3":29550,"lo":29150,"hi":29550,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":10000,"med":1800000,"q1":1800000,"q3":1820000,"lo":1800000,"hi":2140000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":30270,"q1":30270,"q3":30650,"lo":29890,"hi":30650,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":103800,"q1":103800,"q3":106400,"lo":101300,"hi":106400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":10000,"med":104000,"q1":104000,"q3":105300,"lo":104000,"hi":106700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2250000,"q1":2250000,"q3":2275000,"lo":2225000,"hi":2275000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":163400,"q1":161000,"q3":170700,"lo":161000,"hi":173200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":326.5,"q1":319.1,"q3":334,"lo":311.7,"hi":334,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":100000,"med":26200000,"q1":18300000,"q3":39700000,"lo":17400000,"hi":41300000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":920000,"q1":920000,"q3":920000,"lo":910000,"hi":920000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1056000,"q1":1033000,"q3":1067000,"lo":1022000,"hi":1078000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":100000,"med":1044000,"q1":1044000,"q3":1044000,"lo":1044000,"hi":1044000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":29900000,"q1":29900000,"q3":30100000,"lo":29500000,"hi":30100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":265700,"q1":265700,"q3":268600,"lo":260000,"hi":277100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":328,"q1":328,"q3":328,"lo":322.2,"hi":333.8,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":10000,"med":100000,"q1":98980,"q3":102000,"lo":98980,"hi":103100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":2392,"q1":2392,"q3":2734,"lo":2175,"hi":2796,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":156.9,"q1":156.9,"q3":161,"lo":152.9,"hi":165,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":16640,"q1":16640,"q3":16810,"lo":16300,"hi":16810,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":14310,"q1":14310,"q3":14310,"lo":14160,"hi":14450,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":10000,"med":1120000,"q1":1120000,"q3":1140000,"lo":1080000,"hi":1160000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":1000000,"med":20200000,"q1":20200000,"q3":20300000,"lo":20000000,"hi":20400000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1271000,"q1":1214000,"q3":1343000,"lo":1186000,"hi":1457000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":154.9,"q1":154.9,"q3":159,"lo":154.9,"hi":183.4,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1271000,"q1":1271000,"q3":1286000,"lo":1229000,"hi":1457000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":14500,"q1":14500,"q3":14650,"lo":14350,"hi":14650,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":1000000,"med":143800000,"q1":134400000,"q3":158500000,"lo":131800000,"hi":159500000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":1000,"med":12750,"q1":12750,"q3":12900,"lo":12290,"hi":12900,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":1000,"med":1680000,"q1":1680000,"q3":1720000,"lo":1660000,"hi":1720000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":1000,"med":24710,"q1":24710,"q3":25880,"lo":24710,"hi":25880,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":100000,"med":4167000,"q1":4133000,"q3":4533000,"lo":4033000,"hi":4533000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":100000,"med":4433000,"q1":4400000,"q3":4600000,"lo":4333000,"hi":4633000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":100000,"med":2550000,"q1":2550000,"q3":2575000,"lo":2525000,"hi":2575000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/first","n":10000,"med":2056,"q1":2056,"q3":2361,"lo":2028,"hi":2472,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/steady","n":10000,"med":4387,"q1":4301,"q3":5032,"lo":4129,"hi":5333,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/undo 100","n":10000,"med":18180,"q1":18180,"q3":42730,"lo":17270,"hi":89090,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":4.405,"q1":4.405,"q3":6.607,"lo":4.405,"hi":8.81,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1078000,"q1":1067000,"q3":1078000,"lo":1067000,"hi":1111000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":23280,"q1":23280,"q3":23560,"lo":23280,"hi":23850,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":10000,"med":720000,"q1":700000,"q3":880000,"lo":590000,"hi":890000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":10000,"med":3.948,"q1":3.948,"q3":7.896,"lo":3.948,"hi":7.896,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":950000,"q1":950000,"q3":1030000,"lo":930000,"hi":1100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":23580,"q1":23300,"q3":23580,"lo":23300,"hi":23580,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":10000,"med":723100,"q1":723100,"q3":761500,"lo":584600,"hi":846200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":2203,"q1":2123,"q3":2282,"lo":2017,"hi":2442,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":4.778,"q1":4.778,"q3":7.167,"lo":4.778,"hi":7.167,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":15600000,"q1":15600000,"q3":15700000,"lo":15500000,"hi":18800000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":238600,"q1":225000,"q3":240900,"lo":220500,"hi":245500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9000000,"q1":9000000,"q3":19400000,"lo":8800000,"hi":19700000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":100000,"med":4.2,"q1":4.2,"q3":8.4,"lo":2.1,"hi":8.4,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":15600000,"q1":15600000,"q3":15700000,"lo":15200000,"hi":18300000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":239500,"q1":239500,"q3":242100,"lo":236800,"hi":242100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":100000,"med":9900000,"q1":8800000,"q3":19000000,"lo":8800000,"hi":19900000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":169800,"q1":166000,"q3":179200,"lo":160400,"hi":224500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":1000,"med":11840,"q1":9796,"q3":12650,"lo":8571,"hi":34690,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":13860,"q1":12540,"q3":17270,"lo":8801,"hi":25740,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":5991,"q1":4608,"q3":14440,"lo":4301,"hi":20740,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":25770,"q1":25380,"q3":28460,"lo":24620,"hi":58850,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":25420,"q1":25420,"q3":25850,"lo":25000,"hi":30080,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":1000,"med":5594,"q1":5364,"q3":5900,"lo":5364,"hi":7663,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4520,"q1":4424,"q3":6185,"lo":4282,"hi":8040,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":4288,"q1":4233,"q3":4728,"lo":4178,"hi":5992,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":1000,"med":17390,"q1":17390,"q3":19020,"lo":16850,"hi":19020,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":26320,"q1":26020,"q3":26320,"lo":24850,"hi":27190,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":26610,"q1":26340,"q3":26880,"lo":26080,"hi":26880,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":1000,"med":47530,"q1":46910,"q3":48150,"lo":45680,"hi":58640,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3988,"q1":3911,"q3":4064,"lo":3911,"hi":4294,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":1000,"med":4034,"q1":3978,"q3":4034,"lo":3922,"hi":7507,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":10000,"med":56250,"q1":53750,"q3":60000,"lo":51250,"hi":72500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":56410,"q1":55770,"q3":58970,"lo":55130,"hi":59620,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":54000,"q1":52670,"q3":58000,"lo":52000,"hi":60000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":247500,"q1":237500,"q3":445000,"lo":167500,"hi":452500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":285700,"q1":282900,"q3":291400,"lo":197100,"hi":308600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":10000,"med":58040,"q1":58040,"q3":60840,"lo":56640,"hi":64340,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":44670,"q1":44670,"q3":47330,"lo":44000,"hi":47330,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":43040,"q1":43040,"q3":46200,"lo":43040,"hi":46840,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":10000,"med":168400,"q1":168400,"q3":176300,"lo":160500,"hi":184200,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":239300,"q1":239300,"q3":260700,"lo":232100,"hi":264300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":250000,"q1":239300,"q3":253600,"lo":232100,"hi":267900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":10000,"med":123500,"q1":115700,"q3":270600,"lo":98040,"hi":374500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":42290,"q1":41710,"q3":42860,"lo":41140,"hi":64570,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":10000,"med":39460,"q1":39460,"q3":40000,"lo":38920,"hi":40000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":10000,"med":2160000,"q1":2160000,"q3":2300000,"lo":1940000,"hi":3140000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":85420,"q1":83330,"q3":88540,"lo":75000,"hi":88540,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":263300,"q1":256700,"q3":270000,"lo":243300,"hi":280000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":10000,"med":235000,"q1":225000,"q3":240000,"lo":215000,"hi":245000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":5400000,"q1":5250000,"q3":5750000,"lo":4450000,"hi":6400000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":294100,"q1":288200,"q3":347100,"lo":270600,"hi":411800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":796.9,"q1":720.3,"q3":888.9,"lo":429.1,"hi":1747,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":100000,"med":69400000,"q1":49400000,"q3":89400000,"lo":37400000,"hi":99000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1567000,"q1":1500000,"q3":2100000,"lo":1433000,"hi":2183000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1780000,"q1":1740000,"q3":2700000,"lo":1600000,"hi":2740000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":100000,"med":2275000,"q1":1800000,"q3":2375000,"lo":1375000,"hi":2375000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":78500000,"q1":64600000,"q3":91500000,"lo":54500000,"hi":94300000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":678600,"q1":664300,"q3":685700,"lo":614300,"hi":692900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":854.3,"q1":810.5,"q3":876.2,"lo":657.2,"hi":985.8,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":10000,"med":303200,"q1":293500,"q3":351600,"lo":225800,"hi":351600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":25000,"q1":24210,"q3":27380,"lo":20630,"hi":38100,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":1065,"q1":1065,"q3":1084,"lo":1027,"hi":2301,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":72860,"q1":68570,"q3":118600,"lo":61430,"hi":120000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":80510,"q1":77970,"q3":92370,"lo":71190,"hi":97460,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":10000,"med":2950000,"q1":2700000,"q3":3850000,"lo":2000000,"hi":6950000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":1000000,"med":47800000,"q1":45500000,"q3":55300000,"lo":34400000,"hi":57700000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":2020000,"q1":1980000,"q3":2060000,"lo":1900000,"hi":2080000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":512.1,"q1":512.1,"q3":825.7,"lo":501.7,"hi":846.6,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1883000,"q1":1883000,"q3":2483000,"lo":1800000,"hi":3083000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":51660,"q1":50990,"q3":54300,"lo":49010,"hi":67550,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":1000000,"med":189000000,"q1":173000000,"q3":224300000,"lo":164700000,"hi":230000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":1000,"med":69770,"q1":69770,"q3":73260,"lo":65120,"hi":75580,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":1000,"med":7450000,"q1":7450000,"q3":7500000,"lo":7250000,"hi":7650000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":1000,"med":182800,"q1":120700,"q3":231000,"lo":117200,"hi":289700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":100000,"med":13500000,"q1":13100000,"q3":14300000,"lo":11300000,"hi":14800000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":100000,"med":16500000,"q1":16500000,"q3":16800000,"lo":15900000,"hi":17000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":100000,"med":10600000,"q1":10600000,"q3":11300000,"lo":10500000,"hi":18600000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/first","n":10000,"med":8381,"q1":8381,"q3":8476,"lo":8190,"hi":8476,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/steady","n":10000,"med":593.5,"q1":580.3,"q3":593.5,"lo":580.3,"hi":699,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/undo 100","n":10000,"med":75680,"q1":75680,"q3":136500,"lo":74320,"hi":166200,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":5.826,"q1":5.826,"q3":8.739,"lo":5.826,"hi":8.739,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1567000,"q1":1550000,"q3":1567000,"lo":1517000,"hi":1600000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":26300,"q1":25690,"q3":26910,"lo":25380,"hi":26910,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":10000,"med":680000,"q1":670000,"q3":830000,"lo":670000,"hi":1000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":10000,"med":10830,"q1":10680,"q3":10990,"lo":10680,"hi":11300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1433000,"q1":1433000,"q3":1450000,"lo":1433000,"hi":1483000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":36700,"q1":36240,"q3":37160,"lo":35320,"hi":38530,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":10000,"med":691700,"q1":683300,"q3":808300,"lo":658300,"hi":833300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":8053,"q1":8053,"q3":8155,"lo":7951,"hi":8155,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.761,"q1":5.761,"q3":8.642,"lo":2.881,"hi":8.642,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":16400000,"q1":16400000,"q3":16700000,"lo":16400000,"hi":17400000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":256300,"q1":256300,"q3":262500,"lo":256200,"hi":265600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9900000,"q1":9700000,"q3":18900000,"lo":9600000,"hi":19200000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":100000,"med":259500,"q1":257100,"q3":273800,"lo":238100,"hi":273800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":16600000,"q1":16600000,"q3":16800000,"lo":16500000,"hi":17100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":520000,"q1":520000,"q3":615000,"lo":355000,"hi":630000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":100000,"med":10200000,"q1":10000000,"q3":18900000,"lo":7700000,"hi":22000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":93270,"q1":91350,"q3":94230,"lo":87500,"hi":94230,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":1000,"med":3984,"q1":3906,"q3":4688,"lo":3828,"hi":4688,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4775,"q1":4560,"q3":6330,"lo":4399,"hi":6545,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":4261,"q1":4212,"q3":4358,"lo":4163,"hi":5338,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":23300,"q1":22330,"q3":23300,"lo":20390,"hi":23790,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":22150,"q1":21820,"q3":27690,"lo":21170,"hi":31600,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":1000,"med":4370,"q1":4319,"q3":4470,"lo":4269,"hi":4671,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4675,"q1":4370,"q3":5539,"lo":4268,"hi":6301,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":4087,"q1":4034,"q3":4193,"lo":3875,"hi":5308,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":1000,"med":16670,"q1":16670,"q3":17050,"lo":16670,"hi":17440,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":17240,"q1":17240,"q3":17240,"lo":16750,"hi":17240,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":16980,"q1":16790,"q3":17160,"lo":16600,"hi":17160,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":1000,"med":97530,"q1":62960,"q3":171600,"lo":60490,"hi":219800,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":4257,"q1":4257,"q3":4332,"lo":4033,"hi":4481,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":1000,"med":4133,"q1":4133,"q3":5204,"lo":4082,"hi":7500,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":10000,"med":44390,"q1":44390,"q3":45990,"lo":43850,"hi":45990,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":53050,"q1":49390,"q3":58540,"lo":43900,"hi":60370,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":47740,"q1":46230,"q3":49250,"lo":45730,"hi":50750,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":239500,"q1":236800,"q3":244700,"lo":176300,"hi":250000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":256400,"q1":253800,"q3":261500,"lo":182100,"hi":274400,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":10000,"med":44630,"q1":44070,"q3":45760,"lo":43500,"hi":46890,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":43330,"q1":42670,"q3":44000,"lo":42670,"hi":46000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":44830,"q1":44830,"q3":45520,"lo":44140,"hi":46210,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":10000,"med":161200,"q1":157100,"q3":165300,"lo":153100,"hi":169400,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":166700,"q1":163600,"q3":178800,"lo":163600,"hi":221200,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":168400,"q1":165800,"q3":173700,"lo":160500,"hi":178900,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":10000,"med":95710,"q1":92860,"q3":207100,"lo":91430,"hi":224300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":41250,"q1":41250,"q3":41880,"lo":41250,"hi":44370,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":10000,"med":44380,"q1":44380,"q3":44380,"lo":43820,"hi":44940,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":10000,"med":2100000,"q1":2100000,"q3":2125000,"lo":2075000,"hi":2550000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":37560,"q1":37560,"q3":38050,"lo":37070,"hi":38540,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":117500,"q1":116300,"q3":117500,"lo":115000,"hi":118800,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":10000,"med":104100,"q1":104100,"q3":105500,"lo":104100,"hi":108200,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2667000,"q1":2667000,"q3":2733000,"lo":2633000,"hi":2800000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":205700,"q1":202900,"q3":214300,"lo":197100,"hi":220000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":287,"q1":280.4,"q3":300.4,"lo":273.7,"hi":300.4,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":100000,"med":28600000,"q1":22000000,"q3":46100000,"lo":19600000,"hi":46200000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1056000,"q1":1056000,"q3":1078000,"lo":1044000,"hi":1078000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1162000,"q1":1162000,"q3":1175000,"lo":1150000,"hi":1188000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":100000,"med":1033000,"q1":1033000,"q3":1044000,"lo":1011000,"hi":1044000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":34000000,"q1":33200000,"q3":35000000,"lo":32200000,"hi":35400000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":303200,"q1":303200,"q3":306500,"lo":300000,"hi":312900,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":296.4,"q1":290.9,"q3":312.9,"lo":285.4,"hi":312.9,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":10000,"med":121400,"q1":120200,"q3":123800,"lo":116700,"hi":123800,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":3086,"q1":2980,"q3":3576,"lo":2700,"hi":4558,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":172.3,"q1":172.3,"q3":172.3,"lo":167.8,"hi":185.9,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":17920,"q1":17920,"q3":17920,"lo":17740,"hi":18110,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":15480,"q1":15330,"q3":15630,"lo":15170,"hi":15790,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":10000,"med":1350000,"q1":1325000,"q3":1450000,"lo":1325000,"hi":2050000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":1000000,"med":24200000,"q1":24000000,"q3":24400000,"lo":23100000,"hi":24500000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1300000,"q1":1283000,"q3":1733000,"lo":1233000,"hi":1833000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":170.3,"q1":170.3,"q3":174.6,"lo":166.1,"hi":187.4,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1371000,"q1":1343000,"q3":1400000,"lo":1300000,"hi":1486000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":15380,"q1":15380,"q3":15690,"lo":15230,"hi":15690,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":1000000,"med":155900000,"q1":146100000,"q3":166700000,"lo":142800000,"hi":176600000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":1000,"med":6949,"q1":6949,"q3":7130,"lo":6859,"hi":7401,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":1000,"med":1013000,"q1":1013000,"q3":1025000,"lo":1000000,"hi":1025000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":1000,"med":30610,"q1":30610,"q3":31120,"lo":30100,"hi":32140,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram, no inlining","n":1000,"med":24100000,"q1":23500000,"q3":26600000,"lo":22900000,"hi":27900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":100000,"med":3333000,"q1":3300000,"q3":3767000,"lo":3267000,"hi":3933000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":100000,"med":3067000,"q1":3067000,"q3":3267000,"lo":3000000,"hi":3300000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":100000,"med":3400000,"q1":3400000,"q3":3500000,"lo":3333000,"hi":3533000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/first","n":10000,"med":8583,"q1":8383,"q3":8982,"lo":8184,"hi":9082,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/steady","n":10000,"med":603.3,"q1":603.3,"q3":659.9,"lo":565.6,"hi":697.6,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/undo 100","n":10000,"med":148100,"q1":146200,"q3":150000,"lo":55770,"hi":153800,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":5.52,"q1":5.52,"q3":8.28,"lo":5.52,"hi":8.28,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1225000,"q1":1225000,"q3":1275000,"lo":1200000,"hi":1300000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":25490,"q1":25490,"q3":25820,"lo":24840,"hi":26140,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":10000,"med":833300,"q1":711100,"q3":933300,"lo":677800,"hi":988900,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":10000,"med":5.319,"q1":5.319,"q3":7.979,"lo":2.66,"hi":7.979,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1075000,"q1":1075000,"q3":1112000,"lo":1050000,"hi":1175000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":22830,"q1":22830,"q3":23330,"lo":22580,"hi":24070,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":10000,"med":741700,"q1":658300,"q3":841700,"lo":641700,"hi":941700,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":2429,"q1":2399,"q3":2460,"lo":2338,"hi":2703,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":4.342,"q1":4.342,"q3":8.683,"lo":4.342,"hi":8.683,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":16300000,"q1":16300000,"q3":16500000,"lo":16100000,"hi":17100000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":256100,"q1":253700,"q3":258500,"lo":251200,"hi":261000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9800000,"q1":9800000,"q3":18100000,"lo":9600000,"hi":18900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":100000,"med":4.186,"q1":4.186,"q3":6.278,"lo":4.185,"hi":8.371,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":16100000,"q1":16100000,"q3":16300000,"lo":15900000,"hi":16900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":247200,"q1":247200,"q3":250000,"lo":244400,"hi":250000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":100000,"med":9600000,"q1":9500000,"q3":18100000,"lo":9400000,"hi":18200000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":155000,"q1":153300,"q3":161700,"lo":148300,"hi":180000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":1000,"med":4870,"q1":4870,"q3":6002,"lo":4757,"hi":6002,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":5064,"q1":4759,"q3":5247,"lo":4698,"hi":6955,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":4985,"q1":4885,"q3":5484,"lo":4885,"hi":5583,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":25730,"q1":25730,"q3":28640,"lo":23790,"hi":52430,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":24150,"q1":23810,"q3":29930,"lo":23470,"hi":37410,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":1000,"med":6147,"q1":5147,"q3":6862,"lo":4932,"hi":6934,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4430,"q1":4373,"q3":5524,"lo":4373,"hi":5754,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":4198,"q1":4198,"q3":5423,"lo":4023,"hi":6764,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":1000,"med":23650,"q1":23650,"q3":23990,"lo":23310,"hi":24660,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":28090,"q1":28090,"q3":28510,"lo":26810,"hi":30210,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":28620,"q1":28620,"q3":28970,"lo":27590,"hi":28970,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":1000,"med":43370,"q1":42770,"q3":46390,"lo":42170,"hi":48190,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3824,"q1":3824,"q3":3897,"lo":3750,"hi":3897,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":1000,"med":3833,"q1":3833,"q3":4611,"lo":3778,"hi":6611,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":10000,"med":54880,"q1":53660,"q3":63410,"lo":52440,"hi":63410,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":52350,"q1":52350,"q3":53530,"lo":51760,"hi":55880,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":51820,"q1":49640,"q3":53280,"lo":48180,"hi":54010,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":266700,"q1":251300,"q3":320500,"lo":182100,"hi":448700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":252500,"q1":252500,"q3":255000,"lo":185000,"hi":265000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":10000,"med":51030,"q1":50340,"q3":53790,"lo":49660,"hi":54480,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":44440,"q1":43830,"q3":46910,"lo":43210,"hi":59880,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":45000,"q1":44380,"q3":45620,"lo":43750,"hi":45630,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":10000,"med":230000,"q1":226700,"q3":240000,"lo":226700,"hi":260000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":258600,"q1":248300,"q3":262100,"lo":241400,"hi":265500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":242900,"q1":242900,"q3":257100,"lo":239300,"hi":271400,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":10000,"med":77550,"q1":76530,"q3":78570,"lo":76530,"hi":79590,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":38460,"q1":38460,"q3":39010,"lo":37910,"hi":39010,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":10000,"med":38760,"q1":38760,"q3":39230,"lo":38280,"hi":39230,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":10000,"med":1880000,"q1":1860000,"q3":1880000,"lo":1860000,"hi":2200000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":52310,"q1":52310,"q3":53080,"lo":52310,"hi":55380,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":110400,"q1":107500,"q3":111900,"lo":107500,"hi":114900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":10000,"med":134800,"q1":134800,"q3":137000,"lo":132600,"hi":137000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2325000,"q1":2325000,"q3":2350000,"lo":2325000,"hi":2425000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":200000,"q1":200000,"q3":207100,"lo":192900,"hi":217900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":385.5,"q1":385.5,"q3":385.5,"lo":366.7,"hi":394.9,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":100000,"med":27900000,"q1":19700000,"q3":42400000,"lo":18500000,"hi":46000000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1067000,"q1":1067000,"q3":1078000,"lo":1056000,"hi":1078000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1237000,"q1":1237000,"q3":1238000,"lo":1212000,"hi":1250000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":100000,"med":1483000,"q1":1483000,"q3":1500000,"lo":1467000,"hi":1517000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":31700000,"q1":31600000,"q3":32000000,"lo":30800000,"hi":32700000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":324100,"q1":320700,"q3":327600,"lo":317200,"hi":331000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":396.5,"q1":389.5,"q3":403.4,"lo":382.6,"hi":403.4,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":10000,"med":115200,"q1":115200,"q3":115200,"lo":107600,"hi":121500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":8239,"q1":8126,"q3":8804,"lo":8014,"hi":9142,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":563.2,"q1":553.5,"q3":602.1,"lo":330.2,"hi":640.9,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":40330,"q1":39920,"q3":40740,"lo":39920,"hi":40740,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":28900,"q1":28610,"q3":29190,"lo":28030,"hi":29480,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":10000,"med":1225000,"q1":1225000,"q3":1300000,"lo":1225000,"hi":1725000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":1000000,"med":21600000,"q1":21400000,"q3":22300000,"lo":21300000,"hi":22500000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1389000,"q1":1356000,"q3":1411000,"lo":1044000,"hi":1433000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":335.5,"q1":335.5,"q3":342.1,"lo":322.4,"hi":486.8,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1456000,"q1":1444000,"q3":1456000,"lo":1144000,"hi":1467000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":33580,"q1":33210,"q3":33960,"lo":32840,"hi":41040,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":1000000,"med":170500000,"q1":168200000,"q3":197600000,"lo":159000000,"hi":198900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":1000,"med":14610,"q1":14440,"q3":14610,"lo":14080,"hi":14790,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":1000,"med":3000000,"q1":3000000,"q3":3100000,"lo":2900000,"hi":3300000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":1000,"med":41030,"q1":41030,"q3":65380,"lo":38460,"hi":75640,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":100000,"med":4350000,"q1":4300000,"q3":4550000,"lo":4200000,"hi":5100000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":100000,"med":5750000,"q1":5750000,"q3":5850000,"lo":5650000,"hi":5900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":100000,"med":3833000,"q1":3833000,"q3":3900000,"lo":3800000,"hi":3967000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/first","n":10000,"med":8326,"q1":8326,"q3":8688,"lo":8235,"hi":9140,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/steady","n":10000,"med":3451,"q1":2801,"q3":3776,"lo":2680,"hi":4791,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/undo 100","n":10000,"med":170900,"q1":169100,"q3":181800,"lo":90910,"hi":201800,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":7.342,"q1":7.342,"q3":7.342,"lo":4.895,"hi":9.789,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1517000,"q1":1500000,"q3":1550000,"lo":1467000,"hi":1583000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":24920,"q1":24920,"q3":25550,"lo":24610,"hi":25550,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":10000,"med":677800,"q1":666700,"q3":855600,"lo":655600,"hi":922200,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":10000,"med":10840,"q1":10720,"q3":10970,"lo":10590,"hi":11100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1400000,"q1":1383000,"q3":1400000,"lo":1367000,"hi":1433000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":36200,"q1":36200,"q3":36650,"lo":35750,"hi":38010,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":10000,"med":700000,"q1":688900,"q3":844400,"lo":677800,"hi":855600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":8394,"q1":8394,"q3":8394,"lo":8290,"hi":8601,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":6.404,"q1":6.404,"q3":9.606,"lo":3.202,"hi":9.606,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":16600000,"q1":16600000,"q3":16700000,"lo":16500000,"hi":17600000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":231000,"q1":231000,"q3":235700,"lo":228600,"hi":235700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9700000,"q1":9600000,"q3":18500000,"lo":9400000,"hi":19100000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":100000,"med":248600,"q1":232400,"q3":264900,"lo":205400,"hi":267600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":16500000,"q1":16500000,"q3":16600000,"lo":16400000,"hi":17000000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":515000,"q1":510000,"q3":585000,"lo":365000,"hi":605000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":100000,"med":9600000,"q1":9500000,"q3":18000000,"lo":9400000,"hi":18500000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":85710,"q1":84820,"q3":85710,"lo":80360,"hi":87500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":1000,"med":4797,"q1":4797,"q3":5627,"lo":4520,"hi":5720,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4957,"q1":4957,"q3":5130,"lo":4553,"hi":5764,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":5050,"q1":4869,"q3":5410,"lo":4599,"hi":5410,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":28160,"q1":27010,"q3":35060,"lo":22410,"hi":64940,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":26390,"q1":25590,"q3":26910,"lo":22430,"hi":44060,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":1000,"med":5395,"q1":5395,"q3":6646,"lo":5238,"hi":8913,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":4475,"q1":4475,"q3":4537,"lo":4475,"hi":4661,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":5137,"q1":4648,"q3":5382,"lo":4354,"hi":5920,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":1000,"med":24460,"q1":24460,"q3":25320,"lo":24030,"hi":25750,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":28780,"q1":28780,"q3":30260,"lo":28040,"hi":39110,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":28870,"q1":28570,"q3":29460,"lo":28570,"hi":29460,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":1000,"med":45320,"q1":44830,"q3":46310,"lo":44330,"hi":48280,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":4212,"q1":4155,"q3":4212,"lo":4098,"hi":4952,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":1000,"med":4216,"q1":4216,"q3":4276,"lo":4157,"hi":4276,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":10000,"med":56320,"q1":55170,"q3":57470,"lo":52870,"hi":67820,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":54760,"q1":53570,"q3":57140,"lo":52980,"hi":59520,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":52780,"q1":52080,"q3":54860,"lo":50690,"hi":65280,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":253700,"q1":248800,"q3":414600,"lo":185400,"hi":439000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":257900,"q1":257900,"q3":265800,"lo":184200,"hi":278900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":10000,"med":55120,"q1":54330,"q3":55910,"lo":53540,"hi":62200,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":48230,"q1":47520,"q3":48940,"lo":46810,"hi":49650,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":45660,"q1":45660,"q3":46240,"lo":45660,"hi":46240,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":10000,"med":248100,"q1":240700,"q3":259300,"lo":237000,"hi":274100,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":256000,"q1":252000,"q3":268000,"lo":240000,"hi":284000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":235300,"q1":232400,"q3":247100,"lo":232400,"hi":252900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":10000,"med":79350,"q1":78260,"q3":80430,"lo":72830,"hi":82610,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":40280,"q1":40280,"q3":40760,"lo":39810,"hi":42650,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":10000,"med":39440,"q1":38890,"q3":39440,"lo":38330,"hi":40000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":10000,"med":1900000,"q1":1880000,"q3":1900000,"lo":1860000,"hi":2240000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":53540,"q1":53540,"q3":54330,"lo":53540,"hi":56690,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":117600,"q1":116200,"q3":119100,"lo":113200,"hi":120600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":10000,"med":127700,"q1":127700,"q3":129800,"lo":125500,"hi":129800,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2350000,"q1":2350000,"q3":2350000,"lo":2325000,"hi":2375000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":197100,"q1":197100,"q3":202900,"lo":194100,"hi":211800,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":372.3,"q1":372.3,"q3":383.3,"lo":361.4,"hi":383.3,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":100000,"med":27100000,"q1":19400000,"q3":41600000,"lo":17800000,"hi":44000000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":980000,"q1":970000,"q3":980000,"lo":950000,"hi":980000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1100000,"q1":1090000,"q3":1110000,"lo":1080000,"hi":1110000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":100000,"med":1243000,"q1":1243000,"q3":1257000,"lo":1229000,"hi":1271000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":31100000,"q1":31000000,"q3":31400000,"lo":30900000,"hi":32400000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":313300,"q1":313300,"q3":316700,"lo":310000,"hi":326700,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":388.5,"q1":388.5,"q3":395.3,"lo":374.8,"hi":395.3,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":10000,"med":116400,"q1":112300,"q3":116400,"lo":105500,"hi":119200,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":7881,"q1":7881,"q3":8200,"lo":7774,"hi":8307,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":567.2,"q1":397,"q3":567.2,"lo":321.4,"hi":633.3,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":39360,"q1":39360,"q3":39760,"lo":39360,"hi":39760,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":28150,"q1":28150,"q3":28450,"lo":27860,"hi":28740,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":10000,"med":1300000,"q1":1275000,"q3":1375000,"lo":1275000,"hi":2325000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":1000000,"med":20900000,"q1":20900000,"q3":21000000,"lo":20700000,"hi":21400000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1300000,"q1":1300000,"q3":1300000,"lo":988900,"hi":1322000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":336.6,"q1":330.2,"q3":349.6,"lo":323.7,"hi":485.5,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1463000,"q1":1138000,"q3":1475000,"lo":1112000,"hi":1500000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":32960,"q1":32960,"q3":33330,"lo":32590,"hi":42960,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":1000000,"med":155200000,"q1":154600000,"q3":183800000,"lo":153000000,"hi":203000000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":1000,"med":13730,"q1":13730,"q3":13890,"lo":13560,"hi":13890,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":1000,"med":2800000,"q1":2800000,"q3":2900000,"lo":2700000,"hi":3100000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":1000,"med":39740,"q1":37180,"q3":65380,"lo":37180,"hi":70510,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":100000,"med":4300000,"q1":4150000,"q3":4350000,"lo":4100000,"hi":5100000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":100000,"med":5550000,"q1":5550000,"q3":5650000,"lo":5400000,"hi":5700000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":100000,"med":3700000,"q1":3700000,"q3":3767000,"lo":3667000,"hi":3800000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/first","n":10000,"med":7673,"q1":7673,"q3":7757,"lo":7504,"hi":8432,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/steady","n":10000,"med":1858,"q1":1858,"q3":2146,"lo":1730,"hi":2883,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/undo 100","n":10000,"med":160000,"q1":120000,"q3":161700,"lo":88330,"hi":166700,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":7.095,"q1":7.095,"q3":7.095,"lo":4.73,"hi":7.095,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1500000,"q1":1500000,"q3":1543000,"lo":1429000,"hi":1543000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":22440,"q1":22440,"q3":22710,"lo":21880,"hi":22710,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":10000,"med":650000,"q1":640000,"q3":790000,"lo":640000,"hi":910000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":10000,"med":10580,"q1":10580,"q3":10730,"lo":10430,"hi":10730,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1386000,"q1":1371000,"q3":1400000,"lo":1357000,"hi":1400000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":34910,"q1":34910,"q3":35340,"lo":34480,"hi":36640,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":10000,"med":650000,"q1":650000,"q3":790000,"lo":640000,"hi":800000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":7635,"q1":7552,"q3":7635,"lo":7552,"hi":7718,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.148,"q1":5.148,"q3":7.722,"lo":5.148,"hi":7.722,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":15900000,"q1":15800000,"q3":15900000,"lo":15800000,"hi":18400000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":228900,"q1":226300,"q3":228900,"lo":223700,"hi":228900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":100000,"med":9700000,"q1":9600000,"q3":20600000,"lo":9400000,"hi":20900000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":100000,"med":254100,"q1":240500,"q3":267600,"lo":208100,"hi":273000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":35000000,"q1":33800000,"q3":43200000,"lo":31500000,"hi":51700000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":1489000,"q1":1344000,"q3":1767000,"lo":1244000,"hi":1878000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":100000,"med":27300000,"q1":24600000,"q3":43300000,"lo":23200000,"hi":58800000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":269200,"q1":259000,"q3":274400,"lo":197400,"hi":284600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":1000,"med":10560,"q1":10160,"q3":12750,"lo":7769,"hi":15940,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":11700,"q1":11290,"q3":11970,"lo":10610,"hi":15240,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":10250,"q1":9125,"q3":12130,"lo":8875,"hi":13250,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":86170,"q1":78720,"q3":119100,"lo":45740,"hi":202100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":72930,"q1":71430,"q3":77440,"lo":66170,"hi":87970,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":1000,"med":9701,"q1":9204,"q3":9950,"lo":8582,"hi":10820,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":9900,"q1":9900,"q3":10030,"lo":9273,"hi":10400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":8889,"q1":8444,"q3":9889,"lo":8111,"hi":10110,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":1000,"med":48570,"q1":47140,"q3":55710,"lo":45710,"hi":57140,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":66940,"q1":62100,"q3":74190,"lo":54840,"hi":112100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":62570,"q1":58480,"q3":63740,"lo":52050,"hi":64330,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":1000,"med":172100,"q1":133800,"q3":238200,"lo":127900,"hi":254400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":10510,"q1":10230,"q3":10510,"lo":9659,"hi":10800,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":1000,"med":11940,"q1":11660,"q3":16710,"lo":10530,"hi":19240,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":10000,"med":116700,"q1":112800,"q3":120500,"lo":92310,"hi":120500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":116000,"q1":114800,"q3":156800,"lo":102500,"hi":159300,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":110000,"q1":108000,"q3":115000,"lo":83000,"hi":126000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":588900,"q1":577800,"q3":966700,"lo":533300,"hi":1322000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":800000,"q1":650000,"q3":1050000,"lo":633300,"hi":1258000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":10000,"med":101300,"q1":101300,"q3":110100,"lo":100000,"hi":116500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":112300,"q1":109600,"q3":113700,"lo":101400,"hi":120500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":100000,"q1":98530,"q3":110300,"lo":82350,"hi":113200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":10000,"med":566700,"q1":526700,"q3":626700,"lo":493300,"hi":680000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":550000,"q1":550000,"q3":587500,"lo":512500,"hi":843800,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":526700,"q1":506700,"q3":620000,"lo":460000,"hi":686700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":10000,"med":245000,"q1":242500,"q3":255000,"lo":217500,"hi":267500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":102900,"q1":101400,"q3":107100,"lo":95710,"hi":128600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":10000,"med":112900,"q1":112900,"q3":116100,"lo":101600,"hi":117700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":10000,"med":6050000,"q1":5950000,"q3":6700000,"lo":5550000,"hi":6800000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":85000,"q1":85000,"q3":93750,"lo":78750,"hi":97500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":357100,"q1":335700,"q3":364300,"lo":214300,"hi":371400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":10000,"med":300000,"q1":257900,"q3":342100,"lo":252600,"hi":357900,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":7800000,"q1":7700000,"q3":7900000,"lo":5900000,"hi":12000000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":500000,"q1":480000,"q3":500000,"lo":480000,"hi":560000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":2015,"q1":1992,"q3":3497,"lo":764.2,"hi":3729,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":100000,"med":38600000,"q1":36200000,"q3":51600000,"lo":33700000,"hi":73600000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1660000,"q1":1660000,"q3":1700000,"lo":1620000,"hi":1740000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":2300000,"q1":2040000,"q3":3260000,"lo":1880000,"hi":3300000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":100000,"med":1883000,"q1":1867000,"q3":1933000,"lo":1817000,"hi":2017000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":55600000,"q1":53600000,"q3":57500000,"lo":52600000,"hi":59500000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":409500,"q1":395200,"q3":433300,"lo":385700,"hi":452400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":545.7,"q1":527.2,"q3":591.9,"lo":527.2,"hi":591.9,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":10000,"med":174500,"q1":172700,"q3":185500,"lo":165500,"hi":198200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":3767,"q1":3715,"q3":3973,"lo":3406,"hi":5573,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":425.1,"q1":239.8,"q3":479.6,"lo":207.1,"hi":479.6,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":26230,"q1":26230,"q3":28400,"lo":25620,"hi":28400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":22570,"q1":22120,"q3":23010,"lo":21460,"hi":23230,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":10000,"med":1900000,"q1":1867000,"q3":2000000,"lo":1867000,"hi":3767000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":1000000,"med":32800000,"q1":32600000,"q3":33600000,"lo":32300000,"hi":33600000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1960000,"q1":1520000,"q3":2300000,"lo":1480000,"hi":2340000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":212.4,"q1":206.6,"q3":218.1,"lo":200.9,"hi":275.5,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1633000,"q1":1600000,"q3":2167000,"lo":1533000,"hi":2317000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":22320,"q1":20850,"q3":23430,"lo":19740,"hi":29700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":1000000,"med":214100000,"q1":210100000,"q3":256300000,"lo":198600000,"hi":647900000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":1000,"med":48280,"q1":48280,"q3":66380,"lo":47410,"hi":101700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":1000,"med":7300000,"q1":7100000,"q3":7300000,"lo":6900000,"hi":7600000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":1000,"med":113300,"q1":113300,"q3":313300,"lo":100000,"hi":326700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":100000,"med":13300000,"q1":13200000,"q3":13800000,"lo":11000000,"hi":15800000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":100000,"med":14700000,"q1":14500000,"q3":16800000,"lo":14100000,"hi":22000000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":100000,"med":10800000,"q1":10200000,"q3":14300000,"lo":10000000,"hi":14400000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/first","n":10000,"med":4556,"q1":4476,"q3":4716,"lo":4317,"hi":6954,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/steady","n":10000,"med":21230,"q1":20790,"q3":32060,"lo":13470,"hi":32060,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/undo 100","n":10000,"med":366700,"q1":361900,"q3":376200,"lo":342900,"hi":447600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":26.76,"q1":17.84,"q3":26.76,"lo":17.84,"hi":26.76,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":3500000,"q1":3500000,"q3":3600000,"lo":3400000,"hi":3600000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":98700,"q1":98700,"q3":100000,"lo":84420,"hi":100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":10000,"med":3100000,"q1":3000000,"q3":4800000,"lo":2333000,"hi":5033000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":10000,"med":18.23,"q1":18.23,"q3":36.47,"lo":18.23,"hi":36.47,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":3550000,"q1":3500000,"q3":3650000,"lo":3250000,"hi":3800000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":100000,"q1":98390,"q3":100000,"lo":95160,"hi":103200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":10000,"med":4433000,"q1":4067000,"q3":7433000,"lo":2367000,"hi":8533000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":4667,"q1":4500,"q3":5000,"lo":4000,"hi":8000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":23.17,"q1":23.17,"q3":23.17,"lo":11.59,"hi":34.76,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":61100000,"q1":59900000,"q3":65800000,"lo":58800000,"hi":110100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":1700000,"q1":1650000,"q3":2575000,"lo":1425000,"hi":3300000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":100000,"med":41700000,"q1":34000000,"q3":67100000,"lo":29000000,"hi":73900000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":100000,"med":26.01,"q1":26.01,"q3":26.01,"lo":0,"hi":52.03,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":66400000,"q1":62700000,"q3":80000000,"lo":55500000,"hi":90100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":1233000,"q1":1083000,"q3":1600000,"lo":1050000,"hi":1783000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":100000,"med":33300000,"q1":32700000,"q3":67400000,"lo":26500000,"hi":70100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":509500,"q1":500000,"q3":661900,"lo":214300,"hi":1167000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":1000,"med":91530,"q1":38980,"q3":94920,"lo":23730,"hi":144100,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":19950,"q1":18540,"q3":20890,"lo":17370,"hi":23940,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":16770,"q1":16560,"q3":16970,"lo":16160,"hi":22900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":58330,"q1":56250,"q3":66670,"lo":39580,"hi":75000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":80170,"q1":79340,"q3":89260,"lo":51240,"hi":139700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":1000,"med":17120,"q1":16300,"q3":21510,"lo":10550,"hi":24930,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":7290,"q1":7290,"q3":8830,"lo":7187,"hi":8932,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":14040,"q1":13890,"q3":14180,"lo":13740,"hi":14910,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":1000,"med":31310,"q1":28280,"q3":48480,"lo":26260,"hi":49490,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":51450,"q1":44510,"q3":56650,"lo":43350,"hi":60690,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":44970,"q1":44970,"q3":45640,"lo":42280,"hi":62420,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":1000,"med":96360,"q1":93640,"q3":149100,"lo":85450,"hi":157300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":8383,"q1":8184,"q3":13770,"lo":7186,"hi":13970,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":1000,"med":7273,"q1":7177,"q3":9091,"lo":6986,"hi":11580,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/first","n":10000,"med":105300,"q1":92110,"q3":160500,"lo":89470,"hi":165800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":140300,"q1":140300,"q3":203000,"lo":138800,"hi":241800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":86890,"q1":85250,"q3":88520,"lo":80330,"hi":90160,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":686700,"q1":620000,"q3":813300,"lo":380000,"hi":1460000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":652900,"q1":647100,"q3":688200,"lo":417600,"hi":870600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/first","n":10000,"med":101400,"q1":101400,"q3":141400,"lo":88570,"hi":182900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":87950,"q1":86750,"q3":95180,"lo":80720,"hi":104800,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":75790,"q1":74740,"q3":81050,"lo":73680,"hi":117900,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one/first","n":10000,"med":450000,"q1":365400,"q3":723100,"lo":273100,"hi":746200,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":550000,"q1":550000,"q3":600000,"lo":500000,"hi":650000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":718200,"q1":700000,"q3":972700,"lo":327300,"hi":1155000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/append 1000/first","n":10000,"med":148600,"q1":145700,"q3":162900,"lo":135700,"hi":170000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":79570,"q1":78490,"q3":80650,"lo":75270,"hi":86020,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"table","op":"table/select/steady, hands over","n":10000,"med":70100,"q1":69070,"q3":83510,"lo":68040,"hi":87630,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":10000,"med":3650000,"q1":3600000,"q3":3700000,"lo":3600000,"hi":3900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":72580,"q1":70970,"q3":79030,"lo":69350,"hi":90320,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":317200,"q1":220700,"q3":344800,"lo":193100,"hi":379300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":10000,"med":336400,"q1":236400,"q3":354500,"lo":186400,"hi":363600,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":9300000,"q1":9300000,"q3":9600000,"lo":9100000,"hi":9700000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":750000,"q1":650000,"q3":2450000,"lo":550000,"hi":2500000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":1357,"q1":1297,"q3":1478,"lo":1236,"hi":1538,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/decode","n":100000,"med":109300000,"q1":79100000,"q3":119900000,"lo":64300000,"hi":133900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":3175000,"q1":3150000,"q3":3350000,"lo":3125000,"hi":3450000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":3925000,"q1":3200000,"q3":4200000,"lo":2175000,"hi":4225000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/filter","n":100000,"med":2000000,"q1":1950000,"q3":2750000,"lo":1925000,"hi":2775000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":94200000,"q1":87400000,"q3":124800000,"lo":59300000,"hi":124900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":505900,"q1":494100,"q3":529400,"lo":482400,"hi":535300,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":545.7,"q1":545.7,"q3":556.4,"lo":502.9,"hi":577.8,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":10000,"med":210000,"q1":204000,"q3":216000,"lo":192000,"hi":216000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":14720,"q1":14720,"q3":14910,"lo":14150,"hi":19500,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":1088,"q1":1088,"q3":1146,"lo":1030,"hi":1248,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":60310,"q1":59540,"q3":61070,"lo":58020,"hi":61070,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":43520,"q1":43060,"q3":45370,"lo":41670,"hi":45830,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":10000,"med":2100000,"q1":2100000,"q3":2233000,"lo":2067000,"hi":3633000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/make","n":1000000,"med":34300000,"q1":34000000,"q3":34900000,"lo":33600000,"hi":35100000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1983000,"q1":1983000,"q3":2633000,"lo":1933000,"hi":2683000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":499,"q1":488.4,"q3":796.3,"lo":488.4,"hi":796.3,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":2160000,"q1":2160000,"q3":2160000,"lo":2100000,"hi":2160000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":52080,"q1":50000,"q3":54860,"lo":48610,"hi":74310,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"grid","op":"grid/life step","n":1000000,"med":219400000,"q1":217600000,"q3":254400000,"lo":214500000,"hi":266000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":1000,"med":76670,"q1":76670,"q3":81670,"lo":71670,"hi":86670,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":1000,"med":7800000,"q1":7800000,"q3":7900000,"lo":7700000,"hi":7900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":1000,"med":129600,"q1":125900,"q3":237000,"lo":118500,"hi":266700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/collect by push","n":100000,"med":13700000,"q1":13500000,"q3":15200000,"lo":11400000,"hi":15200000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/histogram of 100 000","n":100000,"med":16800000,"q1":16700000,"q3":17300000,"lo":15900000,"hi":17500000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"build","op":"build/coin-change table","n":100000,"med":12400000,"q1":12300000,"q3":13300000,"lo":12200000,"hi":19000000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/first","n":10000,"med":10260,"q1":10020,"q3":10260,"lo":10020,"hi":10960,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/edit/steady","n":10000,"med":740.9,"q1":704.7,"q3":813.2,"lo":686.7,"hi":921.6,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"history","op":"history/undo 100","n":10000,"med":163300,"q1":136700,"q3":168300,"lo":90000,"hi":180000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":8.175,"q1":5.45,"q3":8.175,"lo":5.45,"hi":8.175,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1633000,"q1":1633000,"q3":1717000,"lo":1600000,"hi":1783000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":25630,"q1":25630,"q3":25940,"lo":25310,"hi":25940,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":10000,"med":1014000,"q1":814300,"q3":1043000,"lo":800000,"hi":1086000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":10000,"med":12840,"q1":12840,"q3":13030,"lo":12450,"hi":13030,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1780000,"q1":1760000,"q3":1780000,"lo":1760000,"hi":1820000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":46580,"q1":45960,"q3":50310,"lo":44720,"hi":50310,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":10000,"med":900000,"q1":890000,"q3":1070000,"lo":880000,"hi":1140000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":11450,"q1":10840,"q3":15960,"lo":10540,"hi":20180,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":7.433,"q1":7.433,"q3":11.15,"lo":3.717,"hi":11.15,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":21600000,"q1":21400000,"q3":22000000,"lo":19600000,"hi":24500000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":328000,"q1":328000,"q3":332000,"lo":328000,"hi":336000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/mapped","n":100000,"med":13300000,"q1":13300000,"q3":26000000,"lo":10500000,"hi":26900000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/toJs/edited","n":100000,"med":323100,"q1":323100,"q3":453800,"lo":265400,"hi":457700,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":21600000,"q1":20100000,"q3":22300000,"lo":19400000,"hi":22400000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":684600,"q1":653800,"q3":715400,"lo":423100,"hi":915400,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/html list/edited","n":100000,"med":13500000,"q1":13200000,"q3":24600000,"lo":10500000,"hi":25800000,"S":7}
+{"engine":"chrome","impl":"adaptive","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":111500,"q1":111500,"q3":119200,"lo":109000,"hi":120500,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":1000,"med":5331,"q1":5187,"q3":6484,"lo":4755,"hi":6916,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":6743,"q1":6667,"q3":6973,"lo":5900,"hi":7586,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":5274,"q1":5207,"q3":5741,"lo":5073,"hi":6075,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":29690,"q1":29170,"q3":31770,"lo":25000,"hi":56770,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":32550,"q1":26170,"q3":34230,"lo":25500,"hi":53020,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":1000,"med":4991,"q1":4877,"q3":5221,"lo":4819,"hi":6311,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":5075,"q1":5007,"q3":5281,"lo":5007,"hi":5281,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":4705,"q1":4705,"q3":4805,"lo":4605,"hi":4805,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":1000,"med":18210,"q1":18210,"q3":18850,"lo":17890,"hi":18850,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":25310,"q1":25000,"q3":26560,"lo":24060,"hi":30000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":25070,"q1":25070,"q3":25330,"lo":24540,"hi":25860,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":1000,"med":60420,"q1":59370,"q3":66670,"lo":52080,"hi":66670,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":4960,"q1":4960,"q3":5362,"lo":4826,"hi":6166,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":1000,"med":5140,"q1":5140,"q3":8567,"lo":5062,"hi":9579,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/first","n":10000,"med":50000,"q1":50000,"q3":50520,"lo":48960,"hi":51040,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":54350,"q1":53620,"q3":59420,"lo":50000,"hi":60870,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":53460,"q1":53460,"q3":53460,"lo":52830,"hi":55350,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":290000,"q1":273300,"q3":570000,"lo":186700,"hi":573300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":309100,"q1":306100,"q3":312100,"lo":206100,"hi":333300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/first","n":10000,"med":48910,"q1":48180,"q3":50360,"lo":47450,"hi":50360,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":48200,"q1":48200,"q3":49640,"lo":46760,"hi":50360,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":48810,"q1":48810,"q3":49400,"lo":48210,"hi":49400,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one/first","n":10000,"med":182400,"q1":179400,"q3":191200,"lo":170600,"hi":197100,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":181000,"q1":181000,"q3":195200,"lo":178600,"hi":200000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":186000,"q1":179100,"q3":193000,"lo":174400,"hi":197700,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/append 1000/first","n":10000,"med":100000,"q1":96000,"q3":104000,"lo":86670,"hi":105300,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":50320,"q1":50320,"q3":51610,"lo":48390,"hi":52900,"S":7}
+{"engine":"chrome","impl":"R0","sc":"table","op":"table/select/steady, hands over","n":10000,"med":49010,"q1":49010,"q3":49670,"lo":48340,"hi":50990,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":10000,"med":2500000,"q1":2500000,"q3":2550000,"lo":2450000,"hi":3075000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":46050,"q1":46050,"q3":46710,"lo":45390,"hi":48030,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":135400,"q1":135400,"q3":140000,"lo":135400,"hi":140000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":10000,"med":122800,"q1":121100,"q3":122800,"lo":119300,"hi":124600,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":3167000,"q1":3167000,"q3":3233000,"lo":3100000,"hi":3333000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":246200,"q1":242300,"q3":253800,"lo":234600,"hi":257700,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":334.3,"q1":334.3,"q3":343.9,"lo":315.2,"hi":343.9,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/decode","n":100000,"med":33800000,"q1":24500000,"q3":53100000,"lo":23100000,"hi":58200000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1156000,"q1":1156000,"q3":1189000,"lo":1144000,"hi":1211000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1329000,"q1":1300000,"q3":1357000,"lo":1286000,"hi":1357000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/filter","n":100000,"med":1188000,"q1":1175000,"q3":1200000,"lo":1150000,"hi":1350000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":38800000,"q1":38600000,"q3":39100000,"lo":38000000,"hi":39600000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":340000,"q1":336000,"q3":364000,"lo":328000,"hi":368000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":340.2,"q1":327.3,"q3":346.6,"lo":301.7,"hi":359.4,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":10000,"med":141700,"q1":138300,"q3":145000,"lo":128300,"hi":146700,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":3029,"q1":2946,"q3":4896,"lo":2822,"hi":6017,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":202.1,"q1":192,"q3":207.2,"lo":187,"hi":217.3,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":20580,"q1":20350,"q3":20800,"lo":19910,"hi":21240,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":17510,"q1":17340,"q3":17690,"lo":17160,"hi":17860,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":10000,"med":1467000,"q1":1467000,"q3":1567000,"lo":1433000,"hi":3133000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/make","n":1000000,"med":26700000,"q1":26700000,"q3":27000000,"lo":25700000,"hi":27100000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1740000,"q1":1340000,"q3":1960000,"lo":1300000,"hi":2060000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":180.6,"q1":176.2,"q3":185,"lo":167.4,"hi":193.8,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1500000,"q1":1500000,"q3":1714000,"lo":1471000,"hi":1786000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":17200,"q1":16530,"q3":17200,"lo":16360,"hi":17370,"S":7}
+{"engine":"chrome","impl":"R0","sc":"grid","op":"grid/life step","n":1000000,"med":208300000,"q1":193600000,"q3":216400000,"lo":184000000,"hi":233700000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":1000,"med":13960,"q1":11440,"q3":16480,"lo":10760,"hi":17160,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":1000,"med":1620000,"q1":1600000,"q3":1640000,"lo":1580000,"hi":1700000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":1000,"med":52880,"q1":50960,"q3":53850,"lo":50000,"hi":55770,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram, no inlining","n":1000,"med":26900000,"q1":26400000,"q3":28300000,"lo":24400000,"hi":29300000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/collect by push","n":100000,"med":4650000,"q1":4550000,"q3":4750000,"lo":4350000,"hi":5550000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/histogram of 100 000","n":100000,"med":4050000,"q1":3950000,"q3":4200000,"lo":3850000,"hi":4300000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"build","op":"build/coin-change table","n":100000,"med":4400000,"q1":4367000,"q3":4533000,"lo":4333000,"hi":4633000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/first","n":10000,"med":12040,"q1":12040,"q3":12330,"lo":11290,"hi":12480,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/edit/steady","n":10000,"med":1209,"q1":1052,"q3":2351,"lo":850.9,"hi":2463,"S":7}
+{"engine":"chrome","impl":"R0","sc":"history","op":"history/undo 100","n":10000,"med":195000,"q1":195000,"q3":197500,"lo":190000,"hi":197500,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":8.228,"q1":8.228,"q3":12.34,"lo":4.114,"hi":12.34,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":2075000,"q1":2050000,"q3":2125000,"lo":2000000,"hi":2150000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":30080,"q1":30080,"q3":30490,"lo":29670,"hi":30890,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":10000,"med":900000,"q1":850000,"q3":1083000,"lo":816700,"hi":1417000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":10000,"med":6.758,"q1":6.758,"q3":10.14,"lo":3.379,"hi":10.14,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1780000,"q1":1760000,"q3":1820000,"lo":1740000,"hi":1880000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":27430,"q1":27080,"q3":27430,"lo":27080,"hi":27780,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":10000,"med":833300,"q1":825000,"q3":966700,"lo":808300,"hi":1017000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":2686,"q1":2554,"q3":2906,"lo":2466,"hi":2994,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":5.922,"q1":5.922,"q3":8.882,"lo":5.922,"hi":8.882,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":20000000,"q1":19900000,"q3":20400000,"lo":17600000,"hi":20500000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":303800,"q1":303800,"q3":303800,"lo":300000,"hi":307700,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/mapped","n":100000,"med":13200000,"q1":12800000,"q3":24000000,"lo":10300000,"hi":25900000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/toJs/edited","n":100000,"med":8.582,"q1":5.721,"q3":8.582,"lo":5.721,"hi":8.582,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":23000000,"q1":22900000,"q3":23400000,"lo":21200000,"hi":23500000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":392600,"q1":388900,"q3":396300,"lo":348100,"hi":400000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/html list/edited","n":100000,"med":14300000,"q1":14000000,"q3":25900000,"lo":11100000,"hi":28000000,"S":7}
+{"engine":"chrome","impl":"R0","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":209100,"q1":206800,"q3":240900,"lo":177300,"hi":268200,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":1000,"med":9072,"q1":9072,"q3":9705,"lo":6751,"hi":15820,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":7631,"q1":7010,"q3":8607,"lo":6921,"hi":9051,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":7536,"q1":7246,"q3":13620,"lo":6957,"hi":13620,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":40610,"q1":35760,"q3":53330,"lo":33330,"hi":83640,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":37110,"q1":34770,"q3":57030,"lo":33590,"hi":57810,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":1000,"med":8179,"q1":8047,"q3":9894,"lo":7916,"hi":10160,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":6472,"q1":6472,"q3":7524,"lo":6392,"hi":10280,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":6023,"q1":6023,"q3":7756,"lo":5941,"hi":9653,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":1000,"med":34120,"q1":34120,"q3":43530,"lo":32940,"hi":44710,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":40690,"q1":39710,"q3":42650,"lo":39220,"hi":44610,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":40340,"q1":39920,"q3":41180,"lo":38240,"hi":42020,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":1000,"med":65930,"q1":65190,"q3":72590,"lo":63700,"hi":75560,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":5947,"q1":5947,"q3":7512,"lo":5790,"hi":10020,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":1000,"med":5765,"q1":5765,"q3":6005,"lo":5604,"hi":10810,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/first","n":10000,"med":87500,"q1":77080,"q3":120800,"lo":75000,"hi":122900,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":74550,"q1":74550,"q3":75450,"lo":73640,"hi":76360,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":75340,"q1":73970,"q3":76710,"lo":72600,"hi":83560,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":363300,"q1":356700,"q3":420000,"lo":346700,"hi":753300,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":396200,"q1":261500,"q3":415400,"lo":253800,"hi":584600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/first","n":10000,"med":76580,"q1":74770,"q3":79280,"lo":74770,"hi":90990,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":68090,"q1":68090,"q3":70210,"lo":68090,"hi":70210,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":67000,"q1":66000,"q3":68000,"lo":65000,"hi":68000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one/first","n":10000,"med":347100,"q1":347100,"q3":364700,"lo":341200,"hi":394100,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":364700,"q1":364700,"q3":382400,"lo":352900,"hi":417600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":355600,"q1":355600,"q3":361100,"lo":355600,"hi":405600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/append 1000/first","n":10000,"med":117500,"q1":117500,"q3":123800,"lo":107900,"hi":128600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":58820,"q1":58820,"q3":59560,"lo":58090,"hi":60290,"S":7}
+{"engine":"chrome","impl":"R1","sc":"table","op":"table/select/steady, hands over","n":10000,"med":57520,"q1":57520,"q3":59290,"lo":56640,"hi":60180,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":10000,"med":2700000,"q1":2633000,"q3":2700000,"lo":2633000,"hi":2700000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":75900,"q1":75900,"q3":77110,"lo":74700,"hi":79520,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":161900,"q1":159500,"q3":161900,"lo":154800,"hi":166700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":10000,"med":200000,"q1":195500,"q3":200000,"lo":190900,"hi":200000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":3333000,"q1":3333000,"q3":3367000,"lo":3267000,"hi":3367000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":300000,"q1":291700,"q3":333300,"lo":283300,"hi":466700,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":557.3,"q1":528.7,"q3":557.3,"lo":528.7,"hi":871.7,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/decode","n":100000,"med":37300000,"q1":27200000,"q3":58900000,"lo":24900000,"hi":62200000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1388000,"q1":1363000,"q3":1412000,"lo":1362000,"hi":1425000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1583000,"q1":1583000,"q3":1617000,"lo":1550000,"hi":1617000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/filter","n":100000,"med":1900000,"q1":1880000,"q3":1900000,"lo":1860000,"hi":1920000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":42000000,"q1":42000000,"q3":42700000,"lo":41400000,"hi":54400000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":390900,"q1":377300,"q3":404500,"lo":372700,"hi":413600,"S":7}
+{"engine":"chrome","impl":"R1","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":511.9,"q1":503.6,"q3":520.1,"lo":462.4,"hi":536.7,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":10000,"med":146700,"q1":146700,"q3":153300,"lo":138300,"hi":155000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":10770,"q1":10770,"q3":19230,"lo":10460,"hi":19690,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":733.4,"q1":722.1,"q3":756,"lo":383.6,"hi":801.1,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":44980,"q1":44500,"q3":45450,"lo":44020,"hi":46410,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":30970,"q1":30650,"q3":31610,"lo":30320,"hi":32260,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":10000,"med":1700000,"q1":1667000,"q3":1800000,"lo":1633000,"hi":2333000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/make","n":1000000,"med":29000000,"q1":28800000,"q3":29200000,"lo":28500000,"hi":29500000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1586000,"q1":1543000,"q3":2100000,"lo":1486000,"hi":2143000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":389.5,"q1":381.2,"q3":397.7,"lo":372.9,"hi":406,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1629000,"q1":1586000,"q3":2129000,"lo":1571000,"hi":2157000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":39050,"q1":37620,"q3":40480,"lo":37620,"hi":51430,"S":7}
+{"engine":"chrome","impl":"R1","sc":"grid","op":"grid/life step","n":1000000,"med":211500000,"q1":211400000,"q3":242000000,"lo":207200000,"hi":249400000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":1000,"med":18000,"q1":18000,"q3":18220,"lo":18000,"hi":18450,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":1000,"med":2800000,"q1":2700000,"q3":2800000,"lo":2600000,"hi":7400000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":1000,"med":52000,"q1":50000,"q3":56000,"lo":50000,"hi":120000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/collect by push","n":100000,"med":5150000,"q1":5050000,"q3":5550000,"lo":4700000,"hi":5600000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/histogram of 100 000","n":100000,"med":6800000,"q1":6650000,"q3":6850000,"lo":6450000,"hi":7250000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"build","op":"build/coin-change table","n":100000,"med":5367000,"q1":5367000,"q3":5467000,"lo":5167000,"hi":5467000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/first","n":10000,"med":10910,"q1":10790,"q3":10910,"lo":10790,"hi":11150,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/edit/steady","n":10000,"med":4084,"q1":3869,"q3":6179,"lo":3439,"hi":6233,"S":7}
+{"engine":"chrome","impl":"R1","sc":"history","op":"history/undo 100","n":10000,"med":217600,"q1":217600,"q3":223500,"lo":214700,"hi":241200,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":10.1,"q1":10.1,"q3":10.1,"lo":6.731,"hi":10.1,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1900000,"q1":1900000,"q3":1925000,"lo":1850000,"hi":1950000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":29310,"q1":29310,"q3":29740,"lo":28880,"hi":33190,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":10000,"med":900000,"q1":820000,"q3":1140000,"lo":800000,"hi":1380000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":10000,"med":13270,"q1":13270,"q3":13470,"lo":13060,"hi":13880,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1740000,"q1":1700000,"q3":1820000,"lo":1660000,"hi":1900000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":43750,"q1":43750,"q3":44890,"lo":42610,"hi":47160,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":10000,"med":866700,"q1":850000,"q3":866700,"lo":833300,"hi":1267000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":11160,"q1":11010,"q3":11160,"lo":10860,"hi":11310,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":8.663,"q1":8.663,"q3":12.99,"lo":4.331,"hi":12.99,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":19400000,"q1":19400000,"q3":19600000,"lo":17500000,"hi":19800000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":304000,"q1":304000,"q3":308000,"lo":300000,"hi":308000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12500000,"q1":12100000,"q3":23000000,"lo":9700000,"hi":23500000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/toJs/edited","n":100000,"med":293500,"q1":293500,"q3":316100,"lo":193500,"hi":377400,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":19200000,"q1":19000000,"q3":20300000,"lo":17500000,"hi":20400000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":612500,"q1":612500,"q3":668800,"lo":418700,"hi":737500,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/html list/edited","n":100000,"med":12200000,"q1":12000000,"q3":23000000,"lo":9700000,"hi":24000000,"S":7}
+{"engine":"chrome","impl":"R1","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":107200,"q1":106000,"q3":113300,"lo":106000,"hi":116900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":1000,"med":7311,"q1":6266,"q3":7833,"lo":6005,"hi":8355,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":7255,"q1":6906,"q3":8217,"lo":6206,"hi":8304,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":6593,"q1":6319,"q3":7418,"lo":6319,"hi":8791,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":37950,"q1":37950,"q3":48190,"lo":31330,"hi":77710,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":34670,"q1":32850,"q3":42340,"lo":30290,"hi":54740,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":1000,"med":7328,"q1":7220,"q3":8405,"lo":7004,"hi":8836,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":5961,"q1":5877,"q3":6213,"lo":5793,"hi":9908,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":5850,"q1":5850,"q3":7589,"lo":5771,"hi":8221,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":1000,"med":35160,"q1":31870,"q3":40660,"lo":30770,"hi":50550,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":37730,"q1":37270,"q3":38640,"lo":37270,"hi":38640,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":37390,"q1":37390,"q3":37840,"lo":36940,"hi":38290,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":1000,"med":58330,"q1":58330,"q3":59260,"lo":56480,"hi":62960,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":5273,"q1":5273,"q3":5541,"lo":5183,"hi":7775,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":1000,"med":5161,"q1":5161,"q3":8145,"lo":5000,"hi":9597,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/first","n":10000,"med":76000,"q1":73330,"q3":77330,"lo":69330,"hi":97330,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":67460,"q1":67460,"q3":67460,"lo":66670,"hi":69840,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":68750,"q1":67190,"q3":70310,"lo":64060,"hi":79690,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":366700,"q1":362500,"q3":370800,"lo":345800,"hi":691700,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":385200,"q1":363000,"q3":496300,"lo":229600,"hi":574100,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/first","n":10000,"med":71870,"q1":70830,"q3":72920,"lo":68750,"hi":75000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":63390,"q1":62500,"q3":64290,"lo":61610,"hi":64290,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":62830,"q1":62830,"q3":62830,"lo":61950,"hi":63720,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one/first","n":10000,"med":304500,"q1":304500,"q3":336400,"lo":300000,"hi":354500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":318200,"q1":313600,"q3":340900,"lo":309100,"hi":354500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":318200,"q1":313600,"q3":345500,"lo":309100,"hi":350000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/append 1000/first","n":10000,"med":104300,"q1":104300,"q3":110100,"lo":98550,"hi":111600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":55120,"q1":55120,"q3":55910,"lo":55120,"hi":55910,"S":7}
+{"engine":"chrome","impl":"R2","sc":"table","op":"table/select/steady, hands over","n":10000,"med":56300,"q1":56300,"q3":57140,"lo":55460,"hi":57980,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":10000,"med":2450000,"q1":2425000,"q3":2450000,"lo":2400000,"hi":2950000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":72970,"q1":71620,"q3":72970,"lo":71620,"hi":77030,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":155000,"q1":155000,"q3":157500,"lo":152500,"hi":167500,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":10000,"med":170000,"q1":170000,"q3":170000,"lo":166700,"hi":173300,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":3133000,"q1":3133000,"q3":3200000,"lo":3100000,"hi":3200000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":266700,"q1":260000,"q3":280000,"lo":253300,"hi":280000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":502.5,"q1":489.9,"q3":515.1,"lo":477.4,"hi":527.6,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/decode","n":100000,"med":35200000,"q1":25300000,"q3":55100000,"lo":23000000,"hi":61300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1362000,"q1":1362000,"q3":1388000,"lo":1362000,"hi":1388000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1557000,"q1":1529000,"q3":1643000,"lo":1500000,"hi":1643000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/filter","n":100000,"med":1667000,"q1":1650000,"q3":1667000,"lo":1633000,"hi":1667000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":39600000,"q1":39600000,"q3":39800000,"lo":37500000,"hi":39900000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":369600,"q1":365200,"q3":391300,"lo":356500,"hi":395700,"S":7}
+{"engine":"chrome","impl":"R2","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":495.3,"q1":472.1,"q3":510.8,"lo":441.1,"hi":510.8,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":10000,"med":149100,"q1":145500,"q3":152700,"lo":138200,"hi":152700,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":10360,"q1":10230,"q3":10490,"lo":10100,"hi":12660,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":722.7,"q1":722.7,"q3":768.6,"lo":378.6,"hi":780.1,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":46410,"q1":45930,"q3":46410,"lo":45450,"hi":46890,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":31760,"q1":31760,"q3":32770,"lo":31080,"hi":33110,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":10000,"med":1733000,"q1":1700000,"q3":1833000,"lo":1667000,"hi":2467000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/make","n":1000000,"med":28500000,"q1":28100000,"q3":30300000,"lo":27600000,"hi":30900000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1471000,"q1":1443000,"q3":1943000,"lo":1400000,"hi":1957000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":346.9,"q1":339.5,"q3":354.3,"lo":339.5,"hi":354.3,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1650000,"q1":1438000,"q3":1800000,"lo":1375000,"hi":1813000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":36210,"q1":34910,"q3":37500,"lo":34910,"hi":46120,"S":7}
+{"engine":"chrome","impl":"R2","sc":"grid","op":"grid/life step","n":1000000,"med":222100000,"q1":220000000,"q3":228300000,"lo":213300000,"hi":242700000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":1000,"med":18460,"q1":18460,"q3":18690,"lo":17990,"hi":18690,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":1000,"med":3900000,"q1":3900000,"q3":4000000,"lo":3800000,"hi":4300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":1000,"med":95650,"q1":73910,"q3":97830,"lo":56520,"hi":132600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/collect by push","n":100000,"med":5000000,"q1":4950000,"q3":5300000,"lo":4500000,"hi":5700000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/histogram of 100 000","n":100000,"med":6150000,"q1":6050000,"q3":6150000,"lo":5950000,"hi":6200000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"build","op":"build/coin-change table","n":100000,"med":4567000,"q1":4567000,"q3":4733000,"lo":4367000,"hi":4800000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/first","n":10000,"med":10300,"q1":10300,"q3":11180,"lo":10080,"hi":11520,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/edit/steady","n":10000,"med":2434,"q1":2434,"q3":3856,"lo":2284,"hi":4380,"S":7}
+{"engine":"chrome","impl":"R2","sc":"history","op":"history/undo 100","n":10000,"med":213000,"q1":213000,"q3":223900,"lo":171700,"hi":232600,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":10.4,"q1":6.934,"q3":10.4,"lo":6.934,"hi":10.4,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1900000,"q1":1880000,"q3":1940000,"lo":1880000,"hi":2020000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":29730,"q1":29730,"q3":32430,"lo":28570,"hi":32820,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":10000,"med":866700,"q1":850000,"q3":1167000,"lo":833300,"hi":1317000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":10000,"med":13790,"q1":13610,"q3":14310,"lo":13260,"hi":14660,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1780000,"q1":1760000,"q3":1840000,"lo":1720000,"hi":1860000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":45560,"q1":44970,"q3":46750,"lo":43790,"hi":47340,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":10000,"med":866700,"q1":866700,"q3":916700,"lo":850000,"hi":1300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":10140,"q1":10140,"q3":10140,"lo":9881,"hi":10140,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":6.559,"q1":6.559,"q3":9.839,"lo":6.559,"hi":13.12,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":17700000,"q1":17500000,"q3":18000000,"lo":15500000,"hi":18500000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":277800,"q1":277800,"q3":283300,"lo":275000,"hi":283300,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12200000,"q1":11800000,"q3":22800000,"lo":9600000,"hi":23400000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/toJs/edited","n":100000,"med":278800,"q1":278800,"q3":284800,"lo":239400,"hi":303000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":17900000,"q1":17900000,"q3":18400000,"lo":16600000,"hi":18500000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":552900,"q1":541200,"q3":605900,"lo":435300,"hi":605900,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/html list/edited","n":100000,"med":11400000,"q1":11100000,"q3":21400000,"lo":8900000,"hi":22300000,"S":7}
+{"engine":"chrome","impl":"R2","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":98950,"q1":93680,"q3":101100,"lo":93680,"hi":102100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":1000,"med":3805,"q1":3729,"q3":4262,"lo":3577,"hi":4414,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":1000,"med":4767,"q1":4535,"q3":4826,"lo":4244,"hi":6977,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":1000,"med":4369,"q1":4320,"q3":5097,"lo":3981,"hi":5388,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":1000,"med":27320,"q1":27320,"q3":29380,"lo":23200,"hi":42270,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":1000,"med":22950,"q1":22950,"q3":28080,"lo":22600,"hi":44860,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":1000,"med":4083,"q1":4083,"q3":4186,"lo":4031,"hi":4444,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":1000,"med":3828,"q1":3828,"q3":4492,"lo":3726,"hi":6534,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":1000,"med":3836,"q1":3758,"q3":3913,"lo":3526,"hi":4301,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":1000,"med":20360,"q1":20000,"q3":20730,"lo":20000,"hi":21090,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":1000,"med":21750,"q1":21750,"q3":21750,"lo":21100,"hi":23380,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":1000,"med":21740,"q1":21740,"q3":22010,"lo":21200,"hi":22280,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":1000,"med":93040,"q1":93040,"q3":146100,"lo":62610,"hi":217400,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":1000,"med":3838,"q1":3838,"q3":3906,"lo":3704,"hi":3973,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":1000,"med":4005,"q1":3942,"q3":4005,"lo":3942,"hi":6946,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/first","n":10000,"med":41580,"q1":41580,"q3":42080,"lo":41090,"hi":43560,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, runtime retains","n":10000,"med":48910,"q1":44570,"q3":52170,"lo":36960,"hi":53260,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update one/steady, hands over","n":10000,"med":44690,"q1":43810,"q3":46460,"lo":42480,"hi":53540,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, runtime retains","n":10000,"med":252300,"q1":247700,"q3":252300,"lo":190900,"hi":254500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/update every 10th/steady, hands over","n":10000,"med":279400,"q1":279400,"q3":282400,"lo":200000,"hi":288200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/first","n":10000,"med":42770,"q1":41570,"q3":42770,"lo":40960,"hi":43980,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, runtime retains","n":10000,"med":39580,"q1":39580,"q3":40280,"lo":38890,"hi":42360,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/swap/steady, hands over","n":10000,"med":37270,"q1":36820,"q3":37270,"lo":36360,"hi":37270,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one/first","n":10000,"med":209700,"q1":203200,"q3":216100,"lo":200000,"hi":229000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, runtime retains","n":10000,"med":203100,"q1":203100,"q3":218800,"lo":196900,"hi":228100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/remove one + add one/steady, hands over","n":10000,"med":200000,"q1":200000,"q3":215200,"lo":193900,"hi":221200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/append 1000/first","n":10000,"med":86960,"q1":85510,"q3":176800,"lo":81160,"hi":185500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, runtime retains","n":10000,"med":37170,"q1":36650,"q3":37170,"lo":36650,"hi":38220,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"table","op":"table/select/steady, hands over","n":10000,"med":36970,"q1":36490,"q3":36970,"lo":36020,"hi":37440,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":10000,"med":1940000,"q1":1940000,"q3":1980000,"lo":1920000,"hi":2260000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":10000,"med":32200,"q1":32200,"q3":32630,"lo":31780,"hi":32630,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":10000,"med":116200,"q1":116200,"q3":120600,"lo":116200,"hi":123500,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":10000,"med":123100,"q1":123100,"q3":126200,"lo":120000,"hi":126200,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":10000,"med":2550000,"q1":2550000,"q3":2625000,"lo":2475000,"hi":2675000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":10000,"med":173500,"q1":173500,"q3":179400,"lo":170600,"hi":194100,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":10000,"med":357.9,"q1":357.9,"q3":357.9,"lo":348.7,"hi":367,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/decode","n":100000,"med":28200000,"q1":21100000,"q3":44700000,"lo":18800000,"hi":46200000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/count (foldl)","n":100000,"med":1111000,"q1":1100000,"q3":1111000,"lo":1100000,"hi":1122000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/total (foldl)","n":100000,"med":1237000,"q1":1225000,"q3":1263000,"lo":1212000,"hi":1263000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/filter","n":100000,"med":1238000,"q1":1237000,"q3":1250000,"lo":1237000,"hi":1275000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/sort + slice 20","n":100000,"med":32300000,"q1":32300000,"q3":32900000,"lo":31500000,"hi":33300000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/1000 binary searches","n":100000,"med":306300,"q1":300000,"q3":312500,"lo":296900,"hi":315600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"decoded","op":"decoded/page of 50 by get","n":100000,"med":406.7,"q1":399.9,"q3":413.4,"lo":366,"hi":433.8,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":10000,"med":156900,"q1":150000,"q3":158600,"lo":143100,"hi":158600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":10000,"med":3134,"q1":3051,"q3":4806,"lo":2967,"hi":5391,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":10000,"med":203.3,"q1":197.3,"q3":209.3,"lo":185.4,"hi":209.3,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":10000,"med":24340,"q1":24100,"q3":24580,"lo":23610,"hi":25060,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":10000,"med":21230,"q1":21230,"q3":21660,"lo":21020,"hi":21660,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":10000,"med":1733000,"q1":1733000,"q3":1867000,"lo":1667000,"hi":3100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/make","n":1000000,"med":31900000,"q1":31900000,"q3":32500000,"lo":31200000,"hi":33100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/first","n":1000000,"med":1700000,"q1":1320000,"q3":1960000,"lo":1260000,"hi":2000000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=1/steady","n":1000000,"med":214.5,"q1":204.5,"q3":244.4,"lo":194.5,"hi":244.4,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/first","n":1000000,"med":1650000,"q1":1633000,"q3":1783000,"lo":1433000,"hi":1850000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/tick k=100/steady","n":1000000,"med":19790,"q1":18910,"q3":19960,"lo":18210,"hi":19960,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"grid","op":"grid/life step","n":1000000,"med":181600000,"q1":170200000,"q3":183300000,"lo":162800000,"hi":198400000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":1000,"med":17990,"q1":17560,"q3":18200,"lo":16920,"hi":18420,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":1000,"med":2500000,"q1":2500000,"q3":2567000,"lo":2500000,"hi":2633000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":1000,"med":38100,"q1":36190,"q3":40000,"lo":36190,"hi":41900,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/collect by push","n":100000,"med":5000000,"q1":5000000,"q3":5350000,"lo":4700000,"hi":5500000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/histogram of 100 000","n":100000,"med":5050000,"q1":5000000,"q3":5300000,"lo":4900000,"hi":5400000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"build","op":"build/coin-change table","n":100000,"med":3525000,"q1":3425000,"q3":3575000,"lo":3225000,"hi":3575000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/first","n":10000,"med":2447,"q1":2447,"q3":2624,"lo":2376,"hi":2801,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/edit/steady","n":10000,"med":4936,"q1":4879,"q3":5216,"lo":4655,"hi":5552,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"history","op":"history/undo 100","n":10000,"med":26320,"q1":25260,"q3":111600,"lo":24210,"hi":114700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":10000,"med":9.306,"q1":6.204,"q3":9.306,"lo":6.204,"hi":9.306,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":10000,"med":1920000,"q1":1900000,"q3":1940000,"lo":1840000,"hi":1960000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":10000,"med":26760,"q1":26420,"q3":26760,"lo":26420,"hi":26760,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":10000,"med":1057000,"q1":814300,"q3":1100000,"lo":814300,"hi":1114000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":10000,"med":8.671,"q1":5.781,"q3":8.671,"lo":5.781,"hi":8.671,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":10000,"med":1600000,"q1":1560000,"q3":1680000,"lo":1560000,"hi":1720000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":10000,"med":24310,"q1":24310,"q3":24620,"lo":23690,"hi":24620,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":10000,"med":818200,"q1":790900,"q3":936400,"lo":772700,"hi":963600,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":10000,"med":3047,"q1":2957,"q3":3181,"lo":2778,"hi":3181,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/mapped","n":100000,"med":8.442,"q1":5.628,"q3":8.442,"lo":5.628,"hi":11.26,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/mapped","n":100000,"med":17800000,"q1":17800000,"q3":18400000,"lo":17500000,"hi":18400000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/mapped","n":100000,"med":280600,"q1":280600,"q3":288900,"lo":280600,"hi":291700,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/mapped","n":100000,"med":12200000,"q1":11900000,"q3":22900000,"lo":11500000,"hi":23000000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/toJs/edited","n":100000,"med":8.051,"q1":5.367,"q3":8.051,"lo":5.367,"hi":10.73,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/JSON.stringify/edited","n":100000,"med":18700000,"q1":18700000,"q3":18900000,"lo":16700000,"hi":19100000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/Math.max/edited","n":100000,"med":300000,"q1":300000,"q3":300000,"lo":294400,"hi":302800,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/html list/edited","n":100000,"med":11900000,"q1":11400000,"q3":21100000,"lo":9100000,"hi":21500000,"S":7}
+{"engine":"chrome","impl":"R2plain","sc":"interop","op":"interop/reprice after toJs","n":100000,"med":168600,"q1":164700,"q3":176500,"lo":152900,"hi":209800,"S":7}
