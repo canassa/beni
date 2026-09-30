@@ -3204,6 +3204,68 @@ test "a sibling export that is also an object key keeps its name and is aliased 
     try w.expectProgram(world.entry_file, .{ .stdout = "a  b   c!\n" });
 }
 
+test "a release page ships the browser runtime's map only when it maps" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Html.map`'s runtime export is cut from a program that never maps
+    // (backend.md §9; research 41 §5.4): no other binding of the runtime
+    // may share its name, since a lexical pass counts every mention of a
+    // name as a use. The page has a keyed list, so the reconciler that
+    // once declared a local `map` is kept.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const page =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : List Int -> Html msg
+        \\view xs =
+        \\    <ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\
+    ;
+    try w.write("plain/Main.beni", page);
+    try w.write("mapped/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : List Int -> Html msg
+        \\view xs =
+        \\    Html.map (<ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>) (\msg -> msg)
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=plain-out", "plain/Main.beni" }, .{ .raw_diagnostics = true });
+    const mapped = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=mapped-out", "mapped/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(plain);
+    try expectBuilt(mapped);
+    // A release application is one scope-hoisted file, so names are gone;
+    // `Html.map`'s kind is the one object literal with an `up` key.
+    const plain_js = try w.read("plain-out/_main.mjs");
+    const mapped_js = try w.read("mapped-out/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_js, "up:") == null);
+    try testing.expect(std.mem.indexOf(u8, mapped_js, "up:") != null);
+}
+
 test "a development build copies hand-written JavaScript byte for byte" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
