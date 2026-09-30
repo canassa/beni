@@ -1,5 +1,6 @@
-import { template as $markup$template, classes as $markup$classes, styles as $markup$styles, safeUrl as $markup$safeUrl } from "./_platform/runtime.foreign.mjs";
-const DomAttributes$t27 = $markup$template("<tr class=row style=font-size:12px><td>x", 0);
+import { classes as $markup$classes, styles as $markup$styles, safeUrl as $markup$safeUrl } from "./_platform/runtime.foreign.mjs";
+import { Rt$template } from "./_platform/Rt.mjs";
+const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x", 0);
 const DomAttributes$k27 = { m: (v$3, cx$4) => {
   const r$5 = DomAttributes$t27();
   if (v$3[0]) {
@@ -17,7 +18,7 @@ const DomAttributes$k27 = { m: (v$3, cx$4) => {
     i$6.w0.style.setProperty("color", v$7[1]);
   }
 } };
-const DomAttributes$t48 = $markup$template("<p>x", 0);
+const DomAttributes$t48 = Rt$template("<p>x", 0);
 const DomAttributes$k48 = { m: (v$10, cx$11) => {
   const r$12 = DomAttributes$t48();
   $markup$classes(r$12, v$10[0], null);
@@ -33,7 +34,7 @@ const DomAttributes$k48 = { m: (v$10, cx$11) => {
     i$13.a1 = v$14[1];
   }
 } };
-const DomAttributes$t68 = $markup$template("<form><input><a>link</a><b>", 0);
+const DomAttributes$t68 = Rt$template("<form><input><a>link</a><b>", 0);
 const DomAttributes$k68 = { m: (v$20, cx$21) => {
   const r$22 = DomAttributes$t68();
   const w$23 = r$22.firstChild;

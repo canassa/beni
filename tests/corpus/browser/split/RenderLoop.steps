@@ -1,7 +1,0 @@
-# Five messages in one task: five updates, one render after the task, and
-# no row runs, since nothing a row reads changed.
-click #tick 5
-# Every row reads `selected`, so each runs again.
-click #select
-# The runtime's `flush` renders before it returns.
-flush #tick

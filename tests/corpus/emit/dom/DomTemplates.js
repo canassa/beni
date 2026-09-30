@@ -1,12 +1,13 @@
-import { template as $markup$template, insertText as $markup$insertText, attr as $markup$attr } from "./_platform/runtime.foreign.mjs";
-const DomTemplates$t3 = $markup$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me", 0);
+import { insertText as $markup$insertText, attr as $markup$attr } from "./_platform/runtime.foreign.mjs";
+import { Rt$template } from "./_platform/Rt.mjs";
+const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me", 0);
 const DomTemplates$k3 = { m: (v$1, cx$2) => {
   const r$3 = DomTemplates$t3();
   return { s: r$3, q: null, e: r$3 };
 }, p: (i$4, v$5) => {
 } };
 const DomTemplates$b3 = { t: DomTemplates$k3, v: null };
-const DomTemplates$t19 = $markup$template("<p>Hello <!>, you have <!> items and <!> more.", 0);
+const DomTemplates$t19 = Rt$template("<p>Hello <!>, you have <!> items and <!> more.", 0);
 const DomTemplates$k19 = { m: (v$9, cx$10) => {
   const r$11 = DomTemplates$t19();
   const w$12 = r$11.firstChild.nextSibling;
@@ -30,7 +31,7 @@ const DomTemplates$k19 = { m: (v$9, cx$10) => {
     i$18.x2.data = v$19[2];
   }
 } };
-const DomTemplates$t32 = $markup$template("<tr><td class=col-md-1> </td><td class=col-md-4><a> ", 0);
+const DomTemplates$t32 = Rt$template("<tr><td class=col-md-1> </td><td class=col-md-4><a> ", 0);
 const DomTemplates$k32 = { m: (v$22, cx$23) => {
   const r$24 = DomTemplates$t32();
   const w$25 = r$24.firstChild;
@@ -51,7 +52,7 @@ const DomTemplates$k32 = { m: (v$22, cx$23) => {
     i$30.w5.data = v$31[1];
   }
 } };
-const DomTemplates$t51 = $markup$template("<div aria-label=static><input disabled type=text>", 0);
+const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>", 0);
 const DomTemplates$k51 = { m: (v$36, cx$37) => {
   const r$38 = DomTemplates$t51();
   r$38.setAttribute("id", v$36[0]);

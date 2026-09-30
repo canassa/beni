@@ -1956,7 +1956,7 @@ test "hoisting: what cannot join one scope says why" {
 /// One file that ships in the box: it must be neither refused by the
 /// tokenizer nor left uncut by elimination, or a release build would copy
 /// it whole without saying so.
-fn expectCompacted(path: []const u8, source: []const u8) !void {
+fn expectCompacted(path: []const u8, source: []const u8, program: ?[]const u8) !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1973,11 +1973,22 @@ fn expectCompacted(path: []const u8, source: []const u8) !void {
     // And it joins a release application's one scope rather than keeping a
     // module of its own (`backend.md` §9, *One scope-hoisted file under
     // `--release`*).
-    const h = (try hoistable(arena, source, &.{})).?;
+    const h = (try hoistableWith(arena, source, &.{}, program)).?;
     if (h.declines()) |why| {
         std.debug.print("{s} cannot be scope-hoisted: {s}\n", .{ path, why });
         return error.Refused;
     }
+}
+
+/// `beni:<Module>` for a manifest whose `"markup"` names a runtime module,
+/// else null: the manifest's one `"module"` key, read as the embedded
+/// manifests write it.
+fn manifestModule(gpa: Allocator, manifest: []const u8) !?[]const u8 {
+    const key = "\"module\"";
+    const at = std.mem.indexOf(u8, manifest, key) orelse return null;
+    const open = std.mem.indexOfScalarPos(u8, manifest, at + key.len, '"') orelse return null;
+    const close = std.mem.indexOfScalarPos(u8, manifest, open + 1, '"') orelse return null;
+    return try std.fmt.allocPrint(gpa, "beni:{s}", .{manifest[open + 1 .. close]});
 }
 
 test "every hand-written file that ships in the box is compacted and cut" {
@@ -1986,14 +1997,21 @@ test "every hand-written file that ships in the box is compacted and cut" {
     var seen: u32 = 0;
     for (core_package.assets) |asset| {
         if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
-        try expectCompacted(asset.path, asset.bytes);
+        try expectCompacted(asset.path, asset.bytes, null);
         seen += 1;
     }
-    for (platform_packages.platforms) |platform| for (platform.assets) |asset| {
-        if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
-        try expectCompacted(asset.path, asset.bytes);
-        seen += 1;
-    };
+    for (platform_packages.platforms) |platform| {
+        // A platform whose markup runtime has a runtime module (`"module"`,
+        // `boundary.md` §9.2): the file's import of it is the program's own
+        // scope, not a module the one file keeps.
+        const program = try manifestModule(testing.allocator, platform.manifest);
+        defer if (program) |p| testing.allocator.free(p);
+        for (platform.assets) |asset| {
+            if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
+            try expectCompacted(asset.path, asset.bytes, program);
+            seen += 1;
+        }
+    }
     // A zero would mean the embedding broke and this looked at nothing.
     try testing.expect(seen >= 10);
     // The derived-comparison engine a release build writes (`Emit`), which

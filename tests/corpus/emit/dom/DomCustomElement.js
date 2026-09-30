@@ -1,5 +1,5 @@
-import { template as $markup$template } from "./_platform/runtime.foreign.mjs";
-const DomCustomElement$t7 = $markup$template("<my-widget><x-a-b>hi", 1);
+import { Rt$template } from "./_platform/Rt.mjs";
+const DomCustomElement$t7 = Rt$template("<my-widget><x-a-b>hi", 1);
 const DomCustomElement$k7 = { m: (v$1, cx$2) => {
   const r$3 = DomCustomElement$t7();
   r$3.setAttribute("title", v$1[0]);

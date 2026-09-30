@@ -893,7 +893,7 @@ readings of the example above:
 
 ```json
 "markup": { "vocabulary": "Html", "type": "Html.Html" }          -- html
-"markup": { "lowering": "dom", "runtime": "runtime.js" }          -- browser: the same file as its "runtime"
+"markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" }   -- browser: the same file as its "runtime"
 "markup": { "lowering": "ssr", "runtime": "markup.js" }           -- node
 ```
 
@@ -954,6 +954,10 @@ package that declares `"runtime"`:
 
 A lowering does not change: `cx.runtime(name)` answers the name emitted code reads either way, and
 the lowering's `Lowering.runtime` list is its contract with both halves together.
+
+`browser` has a runtime module since 2026-10-02: `Rt.beni` holds the slot and mount half and the
+render loop, `runtime.js` the rest (`backend.md` §15.11's last amendment;
+`plans/runtime-in-beni.md`).
 
 ### 9.3 The vocabulary, and why it is not `foreign`
 

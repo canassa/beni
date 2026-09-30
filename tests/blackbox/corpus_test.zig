@@ -524,27 +524,19 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         try collect(arena, tea_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
     }
-    // `split/`: pages, and release applications' one file, built for
-    // `tests/platforms/beni-runtime`, whose markup runtime is a beni module
-    // and a hand-written file together (`boundary.md` §9.2, *A runtime
-    // module*): `browser/split/` runs them, `emit/release/split/` pins the
-    // one file beside the hand-written runtime's.
-    if (kind == .browser or kind == .emit) {
-        const split_dir = if (kind == .browser)
-            try std.fs.path.join(arena, &.{ kind_dir, "split" })
-        else
-            try std.fs.path.join(arena, &.{ kind_dir, "release", "split" });
+    // `emit/release/split/`: release applications built for `browser`,
+    // whose markup runtime is a beni module and a hand-written file together
+    // (`boundary.md` §9.2, *A runtime module*), their golden the one file
+    // whole: what a page ships once the program and the runtime are
+    // specialised together (`backend.md` §9).
+    if (kind == .emit) {
+        const split_dir = try std.fs.path.join(arena, &.{ kind_dir, "release", "split" });
         const start = fixtures.items.len;
         try collect(arena, split_dir, false, false, &fixtures, false);
-        if (fixtures.items.len != start) {
-            const platform = try Io.Dir.cwd().realPathFileAlloc(testing.io, split_platform, arena);
-            for (fixtures.items[start..]) |*fixture| {
-                fixture.platform = platform;
-                if (kind == .emit) {
-                    fixture.app = true;
-                    fixture.release = true;
-                }
-            }
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser";
+            fixture.app = true;
+            fixture.release = true;
         }
     }
     return fixtures.items;
@@ -1039,9 +1031,6 @@ const Fixture = struct {
         return std.mem.indexOf(u8, path, text) != null;
     }
 };
-
-/// The platform `split/` fixtures are built for.
-const split_platform = "tests/platforms/beni-runtime";
 
 /// Append the `.beni` files directly under `dir`, sorted by name — plus,
 /// for a kind that has them, the project subdirectories.

@@ -3,12 +3,19 @@
 // runtime at once, so a delegated listener can hand a message to the
 // program that owns the node it fired on (boundary.md §9.2).
 //
+// **Its slot and mount half is written in beni**, in `Rt.beni`, this
+// platform's runtime module (boundary.md §9.2, *A runtime module*;
+// `plans/runtime-in-beni.md`): an instance's nodes, templates, slots, a
+// block's mount and patch, the render loop and the mount. This file holds
+// the rest, and reads the beni half through the import below; both are
+// compiled with the program, and only what a page reaches is written.
+//
 // Parts are ported from dom-expressions' client runtime (MIT, © Ryan
 // Carniato; references/dom-expressions/packages/runtime/src): `template`
-// from client.js `template`, the class and style diffs from `className`
-// and `style`, the delegated listener from `eventHandler`, and
-// `reconcile` from reconcile.js (udomdiff) with its slot ownership tags
-// removed, since every node here has one owning slot.
+// (now in `Rt.beni`) from client.js `template`, the class and style diffs
+// from `className` and `style`, the delegated listener from
+// `eventHandler`, and `reconcile` from reconcile.js (udomdiff) with its
+// slot ownership tags removed, since every node here has one owning slot.
 //
 // **Markup is a block**, `{ t, v }`: `t` a kind `{ m(v, cx), p(inst, v) }`,
 // which the compiler makes per source site, and `v` the values the kind
@@ -26,128 +33,9 @@
 // protocol, `Elements` below — and a tuple as `{ a, b }`.
 //
 // The page is reached through `globalThis`, a capability of this file
-// alone: the code the compiler emits touches only the nodes this file
-// hands it.
-
-// ---- Instances and their nodes ---------------------------------------
-
-const first = (i) => (i.s !== null ? i.s : head(i.q));
-const last = (i) => (i.e !== null ? i.e : tail(i.q));
-
-// A slot's first and last node: what it holds, or its marker when it
-// holds nothing.
-const head = (s) => {
-  if (s.u !== null && s.u.length !== 0) return first(s.u[0]);
-  return s.i !== null ? first(s.i) : s.m;
-};
-const tail = (s) => {
-  if (s.m !== null) return s.m;
-  if (s.u !== null && s.u.length !== 0) return last(s.u[s.u.length - 1]);
-  return last(s.i);
-};
-
-// Move an instance's nodes before `before` in `parent`, in order.
-const put = (parent, i, before) => {
-  const end = last(i);
-  let n = first(i);
-  for (;;) {
-    const next = n.nextSibling;
-    parent.insertBefore(n, before);
-    if (n === end) return;
-    n = next;
-  }
-};
-
-// Take an instance's nodes out of the page.
-const drop = (i) => {
-  const end = last(i);
-  let n = first(i);
-  for (;;) {
-    const next = n.nextSibling;
-    n.remove();
-    if (n === end) return;
-    n = next;
-  }
-};
-
-// Put `i` where `old` is, and take `old` out.
-const swap = (old, i) => {
-  const f = first(old);
-  put(f.parentNode, i, f);
-  drop(old);
-};
-
-// ---- Templates ---------------------------------------------------------
-
-// `(html, flags)`: a cloner that parses `html` on its first call and clones
-// the result after that. Flag 1: import rather than clone, so a custom
-// element is upgraded; 2: the markup is wrapped in its namespace's root
-// element, which is taken off; 4: the template is several nodes, and the
-// cloner returns them in a fragment.
-export const template = (html, flags) => {
-  let node = null;
-  return () => {
-    if (node === null) {
-      const document = globalThis.document;
-      const t = document.createElement("template");
-      t.innerHTML = html;
-      node = t.content;
-      if (flags & 2) node = node.firstChild;
-      if (flags & 4) {
-        if (flags & 2) {
-          const f = document.createDocumentFragment();
-          while (node.firstChild !== null) f.appendChild(node.firstChild);
-          node = f;
-        }
-      } else node = node.firstChild;
-    }
-    return flags & 1 ? globalThis.document.importNode(node, true) : node.cloneNode(true);
-  };
-};
-
-// ---- Slots -------------------------------------------------------------
-
-// `(parent, marker, cx)`: a slot, and the mount context what it holds is
-// mounted with.
-export const slot = (parent, marker, cx) => ({ p: parent, m: marker, cx, i: null, u: null, b: null, x: null, y: null, z: null, d: false });
-
-const parentOf = (s) => (s.p !== null ? s.p : s.m.parentNode);
-
-// A block mounted on its own: an instance that remembers its kind and the
-// block it shows.
-const unit = (b, cx) => {
-  const i = b.t.m(b.v, cx);
-  i.t = b.t;
-  i.b = b;
-  return i;
-};
-
-// `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
-// instance in its place. The instance now shown.
-const patch = (i, b, cx) => {
-  if (b === i.b) return i;
-  if (b.t === i.t) {
-    b.t.p(i, b.v);
-    i.b = b;
-    return i;
-  }
-  const n = unit(b, cx);
-  swap(i, n);
-  return n;
-};
-
-// Put a new instance in the slot, in place of what it held.
-const place = (s, i) => {
-  if (s.i !== null) swap(s.i, i);
-  else put(parentOf(s), i, s.m);
-  s.i = i;
-};
-
-// `(slot, block)`: an `Html` hole.
-export const childHtml = (s, b) => {
-  if (s.i === null) place(s, unit(b, s.cx));
-  else s.i = patch(s.i, b, s.cx);
-};
+// and of `Rt.beni`'s `Js` calls alone: the code the compiler emits for a
+// view touches only the nodes the runtime hands it.
+import { first, last, put, drop, slot, parentOf, unit, patch, place, childHtml } from "beni:Rt";
 
 // `(slot, block or null)`: a `Maybe Html` hole; null empties the slot.
 export const childMaybe = (s, b) => {
@@ -848,76 +736,3 @@ const mapKind = {
 
 // `Html.map`: the same markup, its messages passed through `f`.
 export const map = (html, f) => ({ t: mapKind, v: [html, f] });
-
-// ---- The program and its render loop (backend.md §15.11) -----------------
-//
-// Only what every page needs is here: the render queue, one microtask
-// flush, the mount and its `send`. A hosted program's dispatcher, the
-// after-render phase, `flush`'s guards and the waits on the phase are
-// `Browser.js`'s, reached through the mount `Browser.hosted` makes, so a
-// page that mounts none ships none of them: nothing this file always
-// keeps names them (research 40 §8, rule 2).
-
-// Programs with a render queued, rendered by one microtask flush.
-let queued = [];
-let scheduled = false;
-// The after-render phase, once a hosted program has mounted: `Browser.js`
-// sets it, and every flush ends with it.
-let phase = null;
-
-// Render every program a message is waiting on, then run the after-render
-// phase. A message sent while this runs queues the next flush.
-export const flush = () => {
-  scheduled = false;
-  const renders = queued;
-  queued = [];
-  for (const render of renders) render();
-  phase?.();
-};
-
-// `(program)`: start every program the value holds (`Browser.js`: an array
-// of `{ a, n, h }`), in order, so one may mount at an element an earlier
-// one rendered. A mount node that is missing, or that holds a program
-// already, is a fault of the page, thrown before that program renders
-// anything.
-export const run = (program) => {
-  const document = globalThis.document;
-  for (const m of program) {
-    const root = m.n === null ? document.body : document.getElementById(m.n);
-    // (One line, so that compaction keeps no line break before `throw`.)
-    if (root === null || root.$$root !== undefined) throw new Error(root === null ? `no element has the id "${m.n}" to mount a program at` : `${m.n === null ? "the page's body" : `the element "${m.n}"`} already holds a program`);
-    // A hosted mount (`Browser.hosted`) is handed `flush` and a function
-    // that makes its argument the after-render phase and answers whether a
-    // flush is queued, and returns the record to mount.
-    mount(m.h ? m.h(root, flush, (f) => (phase = f, scheduled)) : m.a, root);
-  }
-};
-
-// Render `view init` after the children of `root`, and mark `root` with
-// the program's `send`, which puts every message through `update`: the
-// model is rendered on the next flush, however many messages arrive
-// before it. The render and its flush are queued before `update` runs, so
-// work `update` starts runs after that flush.
-const mount = (program, root) => {
-  const s = slot(root, null, null);
-  let model = program.init;
-  let waiting = false;
-  const render = () => {
-    waiting = false;
-    childHtml(s, program.view(model));
-  };
-  root.$$root = (msg) => {
-    if (!waiting) {
-      waiting = true;
-      queued.push(render);
-      if (!scheduled) {
-        scheduled = true;
-        queueMicrotask(() => {
-          if (scheduled) flush();
-        });
-      }
-    }
-    model = program.update(msg, model);
-  };
-  childHtml(s, program.view(model));
-};

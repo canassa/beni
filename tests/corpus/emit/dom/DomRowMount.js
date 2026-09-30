@@ -1,36 +1,37 @@
-import { template as $markup$template, slot as $markup$slot, forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
+import { forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
-const DomRowMount$t59 = $markup$template("<ul>", 0);
+const DomRowMount$t59 = Rt$template("<ul>", 0);
 const DomRowMount$k59 = { m: (v$4, cx$5) => {
   const r$6 = DomRowMount$t59();
-  const c$7 = $markup$slot(r$6, null, cx$5);
+  const c$7 = Rt$slot(r$6, null, cx$5);
   $markup$forKeyed(c$7, v$4[0], v$4[1], v$4[2], v$4[3]);
   return { s: r$6, q: null, e: r$6, c0: c$7 };
 }, p: (i$8, v$9) => {
   $markup$forKeyed(i$8.c0, v$9[0], v$9[1], v$9[2], v$9[3]);
 } };
-const DomRowMount$t57 = $markup$template("<li><a> </a><input>", 0);
-const DomRowMount$t91 = $markup$template("<ul>", 0);
+const DomRowMount$t57 = Rt$template("<li><a> </a><input>", 0);
+const DomRowMount$t91 = Rt$template("<ul>", 0);
 const DomRowMount$k91 = { m: (v$29, cx$30) => {
   const r$31 = DomRowMount$t91();
-  const c$32 = $markup$slot(r$31, null, cx$30);
+  const c$32 = Rt$slot(r$31, null, cx$30);
   $markup$forKeyed(c$32, v$29[0], v$29[1], v$29[2], v$29[3]);
   return { s: r$31, q: null, e: r$31, c0: c$32 };
 }, p: (i$33, v$34) => {
   $markup$forKeyed(i$33.c0, v$34[0], v$34[1], v$34[2], v$34[3]);
 } };
-const DomRowMount$t89 = $markup$template("<li>", 0);
-const DomRowMount$t117 = $markup$template("<ul>", 0);
+const DomRowMount$t89 = Rt$template("<li>", 0);
+const DomRowMount$t117 = Rt$template("<ul>", 0);
 const DomRowMount$k117 = { m: (v$49, cx$50) => {
   const r$51 = DomRowMount$t117();
-  const c$52 = $markup$slot(r$51, null, cx$50);
+  const c$52 = Rt$slot(r$51, null, cx$50);
   $markup$forKeyed(c$52, v$49[0], v$49[1], v$49[2], v$49[3]);
   return { s: r$51, q: null, e: r$51, c0: c$52 };
 }, p: (i$53, v$54) => {
   $markup$forKeyed(i$53.c0, v$54[0], v$54[1], v$54[2], v$54[3]);
 } };
-const DomRowMount$t115 = $markup$template("<li> ", 0);
+const DomRowMount$t115 = Rt$template("<li> ", 0);
 const DomRowMount$Msg$$order = { Pick: 0, Typed: 1 };
 const DomRowMount$Msg$$compare = ($x, $y) => {
   if ($x.$ !== $y.$) {

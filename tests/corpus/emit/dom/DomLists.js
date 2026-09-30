@@ -1,6 +1,7 @@
-import { template as $markup$template, slot as $markup$slot, forKeyed as $markup$forKeyed, forPosition as $markup$forPosition, insertText as $markup$insertText, show as $markup$show, hide as $markup$hide } from "./_platform/runtime.foreign.mjs";
+import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition, insertText as $markup$insertText, show as $markup$show, hide as $markup$hide } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
-const DomLists$t18 = $markup$template("<li> ", 0);
+const DomLists$t18 = Rt$template("<li> ", 0);
 const DomLists$k18 = { m: (v$1, cx$2) => {
   const r$3 = DomLists$t18();
   const w$4 = r$3.firstChild;
@@ -12,33 +13,33 @@ const DomLists$k18 = { m: (v$1, cx$2) => {
     i$5.w1.data = v$6[0];
   }
 } };
-const DomLists$t44 = $markup$template("<table><tbody>", 0);
+const DomLists$t44 = Rt$template("<table><tbody>", 0);
 const DomLists$k44 = { m: (v$10, cx$11) => {
   const r$12 = DomLists$t44();
   const w$13 = r$12.firstChild;
-  const c$14 = $markup$slot(w$13, null, cx$11);
+  const c$14 = Rt$slot(w$13, null, cx$11);
   $markup$forKeyed(c$14, v$10[0], v$10[1], v$10[2], v$10[3]);
   return { s: r$12, q: null, e: r$12, c0: c$14 };
 }, p: (i$15, v$16) => {
   $markup$forKeyed(i$15.c0, v$16[0], v$16[1], v$16[2], v$16[3]);
 } };
-const DomLists$t42 = $markup$template("<tr><td> ", 0);
-const DomLists$t62 = $markup$template("<li>none", 0);
+const DomLists$t42 = Rt$template("<tr><td> ", 0);
+const DomLists$t62 = Rt$template("<li>none", 0);
 const DomLists$k62 = { m: (v$32, cx$33) => {
   const r$34 = DomLists$t62();
   return { s: r$34, q: null, e: r$34 };
 }, p: (i$35, v$36) => {
 } };
 const DomLists$b62 = { t: DomLists$k62, v: null };
-const DomLists$t81 = $markup$template("<div><ol></ol><ul></ul><ul>", 0);
+const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
 const DomLists$k81 = { m: (v$38, cx$39) => {
   const r$40 = DomLists$t81();
   const w$41 = r$40.firstChild;
   const w$42 = w$41.nextSibling;
   const w$43 = w$42.nextSibling;
-  const c$44 = $markup$slot(w$41, null, cx$39);
-  const c$45 = $markup$slot(w$42, null, cx$39);
-  const c$46 = $markup$slot(w$43, null, cx$39);
+  const c$44 = Rt$slot(w$41, null, cx$39);
+  const c$45 = Rt$slot(w$42, null, cx$39);
+  const c$46 = Rt$slot(w$43, null, cx$39);
   $markup$forPosition(c$44, v$38[0], v$38[1], null);
   $markup$forKeyed(c$45, v$38[2], null, v$38[3], v$38[4]);
   $markup$forKeyed(c$46, v$38[5], null, v$38[6], null);
@@ -48,15 +49,15 @@ const DomLists$k81 = { m: (v$38, cx$39) => {
   $markup$forKeyed(i$47.c1, v$48[2], null, v$48[3], v$48[4]);
   $markup$forKeyed(i$47.c2, v$48[5], null, v$48[6], null);
 } };
-const DomLists$t58 = $markup$template("<li>. <!>", 0);
-const DomLists$t72 = $markup$template("<li>blank", 0);
+const DomLists$t58 = Rt$template("<li>. <!>", 0);
+const DomLists$t72 = Rt$template("<li>blank", 0);
 const DomLists$k72 = { m: (v$64, cx$65) => {
   const r$66 = DomLists$t72();
   return { s: r$66, q: null, e: r$66 };
 }, p: (i$67, v$68) => {
 } };
 const DomLists$b72 = { t: DomLists$k72, v: null };
-const DomLists$t77 = $markup$template("<li> ", 0);
+const DomLists$t77 = Rt$template("<li> ", 0);
 const DomLists$k77 = { m: (v$69, cx$70) => {
   const r$71 = DomLists$t77();
   const w$72 = r$71.firstChild;
@@ -68,18 +69,18 @@ const DomLists$k77 = { m: (v$69, cx$70) => {
     i$73.w1.data = v$74[0];
   }
 } };
-const DomLists$t96 = $markup$template("<p>none", 0);
+const DomLists$t96 = Rt$template("<p>none", 0);
 const DomLists$k96 = { m: (v$79, cx$80) => {
   const r$81 = DomLists$t96();
   return { s: r$81, q: null, e: r$81 };
 }, p: (i$82, v$83) => {
 } };
 const DomLists$b96 = { t: DomLists$k96, v: null };
-const DomLists$t104 = $markup$template("<!>", 4);
+const DomLists$t104 = Rt$template("<!>", 4);
 const DomLists$k104 = { m: (v$84, cx$85) => {
   const r$86 = DomLists$t104();
   const w$87 = r$86.firstChild;
-  const c$88 = $markup$slot(null, w$87, cx$85);
+  const c$88 = Rt$slot(null, w$87, cx$85);
   let key$89 = c$88;
   let shown$90 = null;
   if (v$84[0].$ === "Just") {
@@ -106,7 +107,7 @@ const DomLists$k104 = { m: (v$84, cx$85) => {
     $markup$hide(i$92.c0, v$93[2]);
   }
 } };
-const DomLists$t102 = $markup$template("<p> of <!>", 0);
+const DomLists$t102 = Rt$template("<p> of <!>", 0);
 const DomLists$k102 = { m: (v$99, cx$100) => {
   const r$101 = DomLists$t102();
   const w$102 = r$101.firstChild;

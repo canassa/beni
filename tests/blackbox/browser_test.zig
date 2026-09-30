@@ -309,7 +309,8 @@ test "a library build's page delivers the events its markup delegates, with no p
     // A `--library` build writes no entry file, so nothing calls the
     // runtime's `start` with the events to listen for: each kind registers
     // the names it delegates when it mounts (backend.md §15.3). The page's
-    // own entry mounts the exported program.
+    // own entry mounts the exported program, with the `run` the platform's
+    // runtime module supplies (backend.md §15.1, *The runtime module*).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -335,7 +336,7 @@ test "a library build's page delivers the events its markup delegates, with no p
     const built = try w.run(&.{ "build", "--platform=browser", "--library", "--out=out", "Main.beni" });
     try expectExit(0, built);
     try w.write("out/page.mjs",
-        \\import { run } from "./_platform/runtime.foreign.mjs";
+        \\import { Rt$run as run } from "./_platform/Rt.mjs";
         \\import { Main$main } from "./Main.mjs";
         \\
         \\run(Main$main);

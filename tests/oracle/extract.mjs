@@ -104,7 +104,10 @@ function solid(code) {
 
 function beni(code) {
   const templates = new Map();
-  for (const m of code.matchAll(/const ([\w$]+) = \$markup\$template\(("(?:[^"\\]|\\.)*"), (\d+)\);/g)) {
+  // `template` is the markup runtime's export (`$markup$template`), or the
+  // declaration of its runtime module that supplies it (`Rt$template`,
+  // backend.md §15.1).
+  for (const m of code.matchAll(/const ([\w$]+) = (?:\$markup|[A-Z]\w*)\$template\(("(?:[^"\\]|\\.)*"), (\d+)\);/g)) {
     templates.set(m[1], { html: JSON.parse(m[2]), flag: m[3] });
   }
   return entries(code, templates, /const (r\$\d+) = ([\w$]+)\(\);/g, /const (w\$\d+) = ([rw]\$\d+)((?:\.(?:firstChild|nextSibling))+);/g).sort();

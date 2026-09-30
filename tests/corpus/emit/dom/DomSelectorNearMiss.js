@@ -1,7 +1,8 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
-import { template as $markup$template, slot as $markup$slot, forKeyed as $markup$forKeyed, forPosition as $markup$forPosition } from "./_platform/runtime.foreign.mjs";
+import { forKeyed as $markup$forKeyed, forPosition as $markup$forPosition } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
-const DomSelectorNearMiss$t202 = $markup$template("<div><!><!><!><!><!><!>", 0);
+const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
 const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
   const r$19 = DomSelectorNearMiss$t202();
   const w$20 = r$19.firstChild;
@@ -10,12 +11,12 @@ const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
   const w$23 = w$22.nextSibling;
   const w$24 = w$23.nextSibling;
   const w$25 = w$24.nextSibling;
-  const c$26 = $markup$slot(r$19, w$20, cx$18);
-  const c$27 = $markup$slot(r$19, w$21, cx$18);
-  const c$28 = $markup$slot(r$19, w$22, cx$18);
-  const c$29 = $markup$slot(r$19, w$23, cx$18);
-  const c$30 = $markup$slot(r$19, w$24, cx$18);
-  const c$31 = $markup$slot(r$19, w$25, cx$18);
+  const c$26 = Rt$slot(r$19, w$20, cx$18);
+  const c$27 = Rt$slot(r$19, w$21, cx$18);
+  const c$28 = Rt$slot(r$19, w$22, cx$18);
+  const c$29 = Rt$slot(r$19, w$23, cx$18);
+  const c$30 = Rt$slot(r$19, w$24, cx$18);
+  const c$31 = Rt$slot(r$19, w$25, cx$18);
   $markup$forKeyed(c$26, v$17[0], v$17[1], v$17[2], v$17[3]);
   $markup$forKeyed(c$27, v$17[4], v$17[5], v$17[6], v$17[7]);
   $markup$forKeyed(c$28, v$17[8], v$17[9], v$17[10], v$17[11]);
@@ -31,12 +32,12 @@ const DomSelectorNearMiss$k202 = { m: (v$17, cx$18) => {
   $markup$forKeyed(i$32.c4, v$33[15], v$33[16], v$33[17], v$33[18]);
   $markup$forKeyed(i$32.c5, v$33[19], v$33[20], v$33[21], v$33[22]);
 } };
-const DomSelectorNearMiss$t68 = $markup$template("<p> ", 0);
-const DomSelectorNearMiss$t98 = $markup$template("<p> ", 0);
-const DomSelectorNearMiss$t127 = $markup$template("<p> ", 0);
-const DomSelectorNearMiss$t152 = $markup$template("<p> ", 0);
-const DomSelectorNearMiss$t180 = $markup$template("<p> ", 0);
-const DomSelectorNearMiss$t200 = $markup$template("<p> ", 0);
+const DomSelectorNearMiss$t68 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t98 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t127 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t152 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t180 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t200 = Rt$template("<p> ", 0);
 const DomSelectorNearMiss$eq$prim = ($x, $y) => $x === $y;
 const DomSelectorNearMiss$eq$r$at = ($m$0, $x, $y, $d = 0) => $d > 400 ? _derived$deep([$m$0, $x.at, $y.at], $d) : $m$0($x.at, $y.at, $d + 1);
 const DomSelectorNearMiss$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";

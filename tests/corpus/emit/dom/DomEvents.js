@@ -1,8 +1,9 @@
-import { template as $markup$template, delegate as $markup$delegate, listen as $markup$listen, identity as $markup$identity } from "./_platform/runtime.foreign.mjs";
+import { delegate as $markup$delegate, listen as $markup$listen, identity as $markup$identity } from "./_platform/runtime.foreign.mjs";
+import { Rt$template } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 const DomEvents$Focused = { $: "Focused", a: null };
 const DomEvents$Sent = { $: "Sent", a: null };
-const DomEvents$t16 = $markup$template("<form><button>go</button><input>", 0);
+const DomEvents$t16 = Rt$template("<form><button>go</button><input>", 0);
 const DomEvents$k16 = { m: (v$6, cx$7) => {
   const r$8 = DomEvents$t16();
   const w$9 = r$8.firstChild;

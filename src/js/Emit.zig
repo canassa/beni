@@ -1395,6 +1395,13 @@ const Emitter = struct {
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
+        } else {
+            // A build with no entry file (`--library`): the page's own
+            // entry mounts the exported program, so the program runtime's
+            // exports are written as the hand-written file's are, whole.
+            for ([_][]const u8{ "run", "start", "flush" }) |w| {
+                if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
+            }
         }
         const uses = try e.programUses(entry);
         try names.appendSlice(e.scratch, uses);

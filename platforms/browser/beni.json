@@ -5,6 +5,6 @@
   "runtime": "runtime.js",
   "platforms": ["html"],
   "reexports": ["Html"],
-  "markup": { "lowering": "dom", "runtime": "runtime.js" },
+  "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" },
   "zig": "zig/root.zig"
 }

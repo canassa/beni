@@ -1,9 +1,0 @@
-{
-  "platform": true,
-  "name": "beni-runtime",
-  "program": "Browser.Program",
-  "runtime": "runtime.js",
-  "platforms": ["html"],
-  "reexports": ["Html"],
-  "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" }
-}

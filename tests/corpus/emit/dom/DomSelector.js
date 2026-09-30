@@ -1,5 +1,6 @@
-import { template as $markup$template, slot as $markup$slot, forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
-const DomSelector$t173 = $markup$template("<div><!><!><!><!><!>", 0);
+import { forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
 const DomSelector$k173 = { m: (v$13, cx$14) => {
   const r$15 = DomSelector$t173();
   const w$16 = r$15.firstChild;
@@ -7,11 +8,11 @@ const DomSelector$k173 = { m: (v$13, cx$14) => {
   const w$18 = w$17.nextSibling;
   const w$19 = w$18.nextSibling;
   const w$20 = w$19.nextSibling;
-  const c$21 = $markup$slot(r$15, w$16, cx$14);
-  const c$22 = $markup$slot(r$15, w$17, cx$14);
-  const c$23 = $markup$slot(r$15, w$18, cx$14);
-  const c$24 = $markup$slot(r$15, w$19, cx$14);
-  const c$25 = $markup$slot(r$15, w$20, cx$14);
+  const c$21 = Rt$slot(r$15, w$16, cx$14);
+  const c$22 = Rt$slot(r$15, w$17, cx$14);
+  const c$23 = Rt$slot(r$15, w$18, cx$14);
+  const c$24 = Rt$slot(r$15, w$19, cx$14);
+  const c$25 = Rt$slot(r$15, w$20, cx$14);
   $markup$forKeyed(c$21, v$13[0], v$13[1], v$13[2], v$13[3]);
   $markup$forKeyed(c$22, v$13[4], v$13[5], v$13[6], v$13[7]);
   $markup$forKeyed(c$23, v$13[8], null, v$13[9], v$13[10]);
@@ -25,11 +26,11 @@ const DomSelector$k173 = { m: (v$13, cx$14) => {
   $markup$forKeyed(i$26.c3, v$27[11], v$27[12], v$27[13], v$27[14]);
   $markup$forKeyed(i$26.c4, v$27[15], v$27[16], v$27[17], v$27[18]);
 } };
-const DomSelector$t83 = $markup$template("<p> ", 0);
-const DomSelector$t108 = $markup$template("<p> ", 0);
-const DomSelector$t127 = $markup$template("<p> ", 0);
-const DomSelector$t154 = $markup$template("<p><b> ", 0);
-const DomSelector$t171 = $markup$template("<p> ", 0);
+const DomSelector$t83 = Rt$template("<p> ", 0);
+const DomSelector$t108 = Rt$template("<p> ", 0);
+const DomSelector$t127 = Rt$template("<p> ", 0);
+const DomSelector$t154 = Rt$template("<p><b> ", 0);
+const DomSelector$t171 = Rt$template("<p> ", 0);
 const DomSelector$Msg$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const DomSelector$Msg$$eq = ($x, $y) => $x.a === $y.a;
 const DomSelector$rowClass = (model$1, row$2) => model$1.selected.$ === "Just" && model$1.selected.a === row$2.id ? "danger" : "";

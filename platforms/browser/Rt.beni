@@ -1,10 +1,13 @@
---! The slot and mount half of `platforms/browser/runtime.js`, written in
---! beni over core's `Js` (research 47, a spike). Each declaration is the
---! JavaScript function of the same name, statement for statement where beni
---! allows it. It is this platform's runtime module (`boundary.md` §9.2, *A
---! runtime module*): its `pub` values stand in for the markup runtime's
---! exports of their names, `runtime.js` holds the rest and imports what it
---! calls from here, and both are compiled with the program.
+--! The slot and mount half of the browser platform's runtime, written in
+--! beni over core's `Js` (research 47; `plans/runtime-in-beni.md`, step 1).
+--! Each declaration is the hand-written JavaScript function of the same
+--! name it replaced, statement for statement where beni allows it. It is
+--! this platform's runtime module (`boundary.md` §9.2, *A runtime module*):
+--! its `pub` values stand in for the markup runtime's exports of their
+--! names, `runtime.js` holds the rest and imports what it calls from here,
+--! and both are compiled with the program — so a release build specialises
+--! these functions to the page (`backend.md` §9), which copied JavaScript
+--! never allowed.
 --!
 --! Where beni has no counterpart the port says so: a `for` loop is a tail
 --! call. A `let` the JavaScript assigns is a `Js.Ref`, which the compiler

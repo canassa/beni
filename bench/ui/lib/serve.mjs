@@ -45,13 +45,15 @@ if (imported === null) {
   window.__flush = one.flush;
 } else {
   const data = JSON.parse(/start\\((.*)\\);/.exec(entry)[1]);
+  // \`run\` and \`flush\` are the runtime module's (\`Rt.beni\`), \`start\` the file's.
   const rt = await import(dir + "_platform/_browser/runtime.foreign.mjs");
+  const loop = await import(dir + "_platform/_browser/Rt.mjs");
   const main = (await import(dir + "Main.mjs"))[imported[1]];
   const t0 = performance.now();
   rt.start(data);
-  rt.run(main);
+  loop.Rt$run(main);
   window.__mount = performance.now() - t0;
-  window.__flush = rt.flush;
+  window.__flush = loop.Rt$flush;
 }
 </script></body></html>`;
     case "solid":

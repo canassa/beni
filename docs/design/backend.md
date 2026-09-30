@@ -5196,7 +5196,10 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   called once is written where it is called*, 1 043. The rest of the gap is research 47 §6's item 8,
   specialisation (§9, *Whole-program specialisation*), which `emit/release/split/EmptyPage` shows:
   `template`'s flag branches for flags the page never passes, the list half of `first` and `last`,
-  and a slot's fields only list code reads.
+  and a slot's fields only list code reads. *Amended 2026-10-02:* **a build with no entry file**
+  (`--library`) roots the module's `run`, `start` and `flush`, as a development build keeps the
+  hand-written file's whole: the page's own entry mounts the exported program with them
+  (`import { Rt$run as run } from "./_platform/Rt.mjs"`; `browser_test`'s library page).
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.
@@ -6029,3 +6032,18 @@ compiler knows it statically — whether `Browser.hosted` is reached — but no 
 choose between two `run`s.) Without them the page would
 be 1 208; one `throw` in `run` and `!= null` in the listener's context walk bought the rest back.
 `build_test`'s *a release page ships the hosted program's loop only when it mounts one* holds it.
+
+*Amended 2026-10-02: the render loop and the mount are written in beni.* `platforms/browser/Rt.beni`
+is the platform's runtime module (`boundary.md` §9.2, *A runtime module*;
+`plans/runtime-in-beni.md`, step 1): an instance's nodes (`first`, `last`, `put`, `drop`, `swap`),
+`template`, `slot`, `unit`, `patch`, `place`, `childHtml`, the render queue, `flush`, `run` and the
+mount, each the hand-written function it replaced, statement for statement where beni allows it.
+`runtime.js` keeps the rest and imports what it calls from `beni:Rt`. The behaviour above is
+unchanged; what a release build gains is that these functions are compiled with the page and
+specialised to it (§9), so the empty `browser` page is **838** brotli against the hand-written
+978, and the benchmark app 6 084 against 6 139. **The 26 bytes above are still paid**, now for two
+reasons a build could remove: `Browser.program`'s mount object is made by `Browser.js`, which the
+specialiser cannot see, and the entry file's `run(main)` escapes both `run` and `main` (§9, fact 3).
+Written in beni, `program` would lose the `sync` its signature demands of `update` and `view`,
+which only a `foreign` signature may write (`language.md` §5.4) — so it stays hand-written; hand
+removing the hosted branch and the phase from the page measures **838 → 816**.
