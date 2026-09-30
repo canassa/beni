@@ -1,0 +1,31 @@
+-- emit: a release application is one line with a newline at its end, every
+-- declaration a `let` — a `const` the compiler wrote is assigned nowhere —
+-- and a function's trailing parameters that its body never mentions are not
+-- written (`backend.md` §9, item 3 and *Compact statements*, amended
+-- 2026-10-02). `first` reads `n` and not the count after it, so it takes
+-- one parameter, and the call through the record still passes two; the
+-- node runtime's hand-written pieces join the same line.
+import Node exposing (Program)
+
+
+type alias Shower =
+    { show : Int, Int -> String }
+
+
+first : Int, Int -> String
+first n _ =
+    String.fromInt n
+
+
+render : Shower, Int -> String
+render s k =
+    s.show k (k * 2)
+
+
+main : Program
+main =
+    let
+        s =
+            { show = first }
+    in
+    Node.printLines [ render s 1, render s 2 ]

@@ -1,11 +1,1 @@
-import{a,b,c,d,e,f}from"./_core/List.mjs";
-import{g}from"./_platform/Node.mjs";
-const h=(c,d)=>{const e=a(c);c=b(c);for(;;){if(e.length===c)return d;const f=e[c],g=c+1;c=g;d+=f}},
-i=(c,d)=>{const e=a(c);c=b(c);const f=[];for(;;){if(e.length===c)return f;const g=e[c],h=c+1;f.push(d(g));c=h}},
-j=(e,f)=>{const g=e,h=a(e);e=b(e);const i=f,k=a(f);f=b(f);const l=[];for(;;){if(h.length===e)return d(l,k.length-f===i.length?i:c(k,f));const m=h[e],n=e+1;if(k.length===f)return d(l,h.length-e===g.length?g:c(h,e));const o=k[f],p=f+1;if(m<=o){l.push(m);e=n}else{l.push(o);f=p}}},
-k=(d,e)=>{const f=d,g=a(d);d=b(d);for(;;){if(g.length===d)return g.length-d===f.length?f:c(g,d);const h=g[d],i=d+1;if(!e(h))return g.length-d===f.length?f:c(g,d);d=i}},
-l=(d,f)=>{const g=a(d);d=b(d);for(;;){const h=d,i=f;if(g.length===h)return i;const j=h+1;d=j;f=e(i,()=>c(g,j).length)}},
-m=(c)=>{const d=a(c);c=b(c);const e=[];for(;;){f:{if(d.length>c)if(d.length>c+1){const g=d[c],h=d[c+1],i=c+2;e.push({a:g,b:h});c=i-1;continue}else break f;break f}return e}},
-n=(a,b)=>{for(;;){if(a.length===0)return b;const d=c(a,1);a=f(d,1);b-=1}},
-o=g([]);
-export{o,h,i,j,k,l,m,n};
+import{a,b,c,d,e,f}from"./_core/List.mjs";import{g}from"./_platform/Node.mjs";let h=(c,d)=>{let e=a(c);c=b(c);for(;;){if(e.length===c)return d;let f=e[c],g=c+1;c=g;d+=f}},i=(c,d)=>{let e=a(c);c=b(c);let f=[];for(;;){if(e.length===c)return f;let g=e[c],h=c+1;f.push(d(g));c=h}},j=(e,f)=>{let g=e,h=a(e);e=b(e);let i=f,k=a(f);f=b(f);let l=[];for(;;){if(h.length===e)return d(l,k.length-f===i.length?i:c(k,f));let m=h[e],n=e+1;if(k.length===f)return d(l,h.length-e===g.length?g:c(h,e));let o=k[f],p=f+1;if(m<=o){l.push(m);e=n}else{l.push(o);f=p}}},k=(d,e)=>{let f=d,g=a(d);d=b(d);for(;;){if(g.length===d)return g.length-d===f.length?f:c(g,d);let h=g[d],i=d+1;if(!e(h))return g.length-d===f.length?f:c(g,d);d=i}},l=(d,f)=>{let g=a(d);d=b(d);for(;;){let h=d,i=f;if(g.length===h)return i;let j=h+1;d=j;f=e(i,()=>c(g,j).length)}},m=(c)=>{let d=a(c);c=b(c);let e=[];for(;;){f:{if(d.length>c)if(d.length>c+1){let g=d[c],h=d[c+1],i=c+2;e.push({a:g,b:h});c=i-1;continue}else break f;break f}return e}},n=(a,b)=>{for(;;){if(a.length===0)return b;let d=c(a,1);a=f(d,1);b-=1}},o=g([]);export{o,h,i,j,k,l,m,n};

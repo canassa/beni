@@ -3944,6 +3944,9 @@ branch points and measures it as free at run time (report 12 §6.1). Worth **−
   stays. Measured cost: **21 brotli bytes on `bench/corpus`, 40 over the corpus, ~0.1%** — for which
   a stack trace still names a declaration by line and a diff of two builds is readable. Closure
   places newlines in similar contexts for the same reason (report 12 §2.2).
+  *Amended 2026-10-02: that one goes too* (§9, *Compact statements*, the last list, which gives
+  the measurement): a release module, and a scope-hoisted application's one file, is one line with a
+  newline at its end.
 
 **Two adjacencies must not close up, and they are the whole of the tokenisation risk.** An
 identifier, keyword or number followed by another is one token when the space goes, which is what
@@ -4435,7 +4438,9 @@ built and measured in research 41 §4).* Two more passes over the same tokens, a
   assigns** — any `x = `, compound assignment, `++`/`--`, `for (x of …)` or destructuring assignment
   of the name anywhere, by name and not by scope, so the `TypeError` the only difference would
   throw cannot happen. All or none, because a partial rewrite measured **+9** brotli on the browser
-  runtime, whose `let i` in one function keeps a `const i` in another.
+  runtime, whose `let i` in one function keeps a `const i` in another. *Amended 2026-10-02*: "the
+  file" is the tokens that are written — a unit elimination cut assigns nothing (§9, *Compact
+  statements*, the last list).
 
 Refusal is per name or per file, as before, and costs bytes only. `Minify.verify` holds the output
 to the plan's spellings, and `zig build fuzz` runs the sweep with both passes on. Measured on the
@@ -4920,6 +4925,47 @@ Measured on `EmptyPage`: 933 → 924 brotli for the bare globals, → 916 for it
 port's `Rt.beni` rewritten for items 5–8 (`isNullish` for the phase, the parse in the cloner, one
 guarded `throw new Error`), items 6 and 7 and the shapes above, **884**, against the hand-written
 runtime's 978; with `Js.each` for its two index loops and `startOne` written in `run`'s loop, **855**.
+
+*Amended 2026-10-02 (the empty page's study, `bench/minify/empty-page/`, ledger steps 03–06): four
+printer and compactor rules that need no whole-program fact, each exact, none in a development
+build.*
+
+- **No newline in the emitted half** (`Print.endLine`, `Emit.appendJoined`). §9 item 3 kept one
+  after every top-level statement, for stack traces that name a declaration by line; the study
+  priced it at 13 brotli bytes of the empty page's 838. Every statement the printer writes ends in
+  `;` or a block's `}`, so no newline was ever standing in for a semicolon. The one file joins its
+  pieces the same way: an emitted module's trailing newline goes, and a hand-written file's goes
+  after a `;` only (its last `}` may end an expression that automatic semicolon insertion ends at
+  that newline). The file ends with one newline. A declined runtime's `import{run,…}from…` keeps a
+  line of its own, which is how `tests/browser/driver.mjs` finds it.
+- **A `const` is written `let`** (`Print`), and a run of adjacent declarations joins whatever their
+  keywords (§9 item 5 joined `const`s and `let`s apart). A `const` the compiler writes is assigned
+  nowhere, so the one difference — the `TypeError` an assignment would throw — cannot arise, and a
+  file of one keyword compresses better than a file of two (research 41; the study's step 03).
+  `for (const x of …)` is `for(let x of …)`: a fresh binding per iteration either way.
+- **A function's trailing parameters that its body never mentions are not written**
+  (`Print.namedParams`): `m:()=>{…}` for a kind whose body reads neither argument, `p=()=>n` for a
+  `view` that ignores its model. The caller still passes them — an argument is evaluated whatever
+  the callee does with it — and an emitted function has no `arguments`, so the one difference is
+  the function's `length`, which no beni program, core file or runtime reads. A mention is any
+  identifier of the name in the body, nested functions and assignment targets included, so a
+  shadowing binding keeps the parameter; a body past the walk's budget keeps them all. A derived
+  comparison's defaulted depth parameter is never touched.
+- **`const` → `let` in a hand-written file is decided over the tokens that are written**
+  (`Minify.constToLet`, *Hand-written JavaScript under `--release`*): a unit elimination cut is never
+  evaluated, so its `i = …` no longer keeps the `const`s of the units that stay. And **the newline
+  after a block statement's `}` goes** (`Minify.statementBlocks`): the body of an `if`, `for`,
+  `while` or `with` head, of `else`, `try`, `catch (…)`, `finally`, `do`, `switch (…)`, or of a
+  function declaration at the start of a statement ends its statement, so the newline after it is
+  never automatic semicolon insertion's. An arrow's or a function expression's body is not one:
+  `f=()=>{}`, a newline, `g()` is two statements only because of that newline, and keeps it.
+
+The whole `run/` and `browser/` corpus's release pass is the differential test; fixtures
+`emit/release/app/OneLine` (user code: one line, `let`, a callback's unread second parameter) and
+every `emit/release/` golden, now one line each; `Minify.zig`'s unit tests for a cut unit's
+assignment and for each block kind. Measured (release, brotli, the whole bundle): the empty
+`browser` page 802 → **776**, `Tea.sandbox` 809 → **781**, `Tea.element` 1 599 → **1 552**, with
+effects 5 839 → **5 758**, the `bench/ui` app 5 998 → **5 941**.
 
 ## 10. Chunking
 

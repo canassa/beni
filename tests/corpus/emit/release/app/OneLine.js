@@ -1,0 +1,1 @@
+import process from"node:process";let f=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};let d=e=>String(e);let g=b=>(Array.isArray(b)?b:b.$plain());let a=d=>{let c=g(d);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}};let b=(a)=>d(a),c=(a,b)=>a.show(b,b*2),e=(()=>{let d={show:b};return a([c(d,1),c(d,2)])})();f(e);

@@ -3008,7 +3008,7 @@ const Emitter = struct {
         for (h.order) |p| switch (p) {
             .file => |x| if (printed[x]) |pr| for (pr.imports) |text| {
                 if ((try seen.getOrPut(scratch, text)).found_existing) continue;
-                try out.appendSlice(scratch, text);
+                try appendJoined(scratch, &out, text, false);
             },
             .module => {},
         };
@@ -3018,10 +3018,10 @@ const Emitter = struct {
         };
 
         for (h.order) |p| switch (p) {
-            .module => |i| if (slots[i].text) |text| try out.appendSlice(scratch, text),
+            .module => |i| if (slots[i].text) |text| try appendJoined(scratch, &out, text, true),
             .file => |x| if (printed[x]) |pr| {
                 const f = &h.files[x];
-                try out.appendSlice(scratch, pr.body);
+                try appendJoined(scratch, &out, pr.body, false);
                 var aliased: std.ArrayList(JsIr.Name) = .empty;
                 for (f.uses.items) |u| {
                     const binding = f.read.exportBinding(u.name).?;
@@ -3037,7 +3037,7 @@ const Emitter = struct {
                     try out.append(scratch, '=');
                     try out.appendSlice(scratch, f.spelling(binding));
                 }
-                if (aliased.items.len != 0) try out.appendSlice(scratch, ";\n");
+                if (aliased.items.len != 0) try out.appendSlice(scratch, ";");
             },
         };
 
@@ -3050,12 +3050,12 @@ const Emitter = struct {
                 const f = &h.files[x];
                 break :blk if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
             } else try e.moduleSpelling(e.runtime_module.?, "start");
-            try out.print(scratch, "{s}({s});\n", .{ callee, s.data });
+            try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
         const run_name = if (e.suppliedAs("run") != null)
             try e.moduleSpelling(e.runtime_module.?, "run")
         else if (runtime.declined) "run" else runtime.spelling(runtime.read.exportBinding("run").?);
-        try out.print(scratch, "{s}({s});\n", .{ run_name, main_name });
+        try out.print(scratch, "{s}({s});", .{ run_name, main_name });
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
@@ -3066,16 +3066,34 @@ const Emitter = struct {
         if (e.suppliedAs("flush") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "flush"))) |ordinal| {
                 var buf: [8]u8 = undefined;
-                try out.print(scratch, "export{{{s} as flush}};\n", .{Rename.spell(ordinal, &buf)});
+                try out.print(scratch, "export{{{s} as flush}};", .{Rename.spell(ordinal, &buf)});
             }
         } else if (!runtime.declined) if (runtime.read.exportBinding("flush")) |binding| {
             const spelled = runtime.spelling(binding);
             if (std.mem.eql(u8, spelled, "flush"))
-                try out.appendSlice(scratch, "export{flush};\n")
+                try out.appendSlice(scratch, "export{flush};")
             else
-                try out.print(scratch, "export{{{s} as flush}};\n", .{spelled});
+                try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
+        // One line, the pieces joined with no newline between them
+        // (`appendJoined`), and a newline at the end of the file.
+        if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
         try e.produce(e.options.platform.entry, out.items, try e.manifestPath());
+    }
+
+    /// Append one piece of the one file without the newline it ends with,
+    /// when nothing can read that newline: after a `;`, and after the `}`
+    /// of an emitted module, whose every statement the printer ends
+    /// explicitly (`backend.md` §9 item 3, amended 2026-10-02). A
+    /// hand-written file's last `}` may end an expression that automatic
+    /// semicolon insertion ends at that newline, and keeps it.
+    fn appendJoined(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8, emitted: bool) Allocator.Error!void {
+        var piece = text;
+        if (piece.len >= 2 and piece[piece.len - 1] == '\n') {
+            const last = piece[piece.len - 2];
+            if (last == ';' or (emitted and last == '}')) piece = piece[0 .. piece.len - 1];
+        }
+        try out.appendSlice(scratch, piece);
     }
 
     /// A declined file keeps its module, written as the multi-file layout
@@ -3088,6 +3106,8 @@ const Emitter = struct {
         // multi-file entry file writes and `tests/browser/driver.mjs` reads.
         const runs = x == h.runtime;
         const starts = h.start != null and h.start.?.file == x;
+        // On a line of its own, which is how the driver finds it.
+        if ((runs or starts) and out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
         if (runs or starts) try out.print(scratch, "import{{{s}{s}{s}}}from\"./{s}\";\n", .{
             if (runs) "run" else "",
             if (runs and starts) "," else "",
@@ -3105,7 +3125,7 @@ const Emitter = struct {
             var buf: [8]u8 = undefined;
             try out.print(scratch, "{s} as {s}", .{ u.name, Rename.spell(e.globals.lookup(u.local).?, &buf) });
         }
-        if (done.items.len != 0) try out.print(scratch, "}}from\"./{s}\";\n", .{f.out});
+        if (done.items.len != 0) try out.print(scratch, "}}from\"./{s}\";", .{f.out});
     }
 
     /// Every whole-program name some file of the build imports, into

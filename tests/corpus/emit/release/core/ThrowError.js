@@ -1,3 +1,1 @@
-const a=(b,c)=>{const d=b.n;if(c===null||c.$$root!==undefined)throw new Error(c===null?`no element has the id "${d}"`:b.n===null?"the body is taken":`the element "${d}" is taken`)},
-b=(a)=>a<0?"minus":a===0?"zero":"plus";
-export{a,b};
+let a=(b,c)=>{let d=b.n;if(c===null||c.$$root!==undefined)throw new Error(c===null?`no element has the id "${d}"`:b.n===null?"the body is taken":`the element "${d}" is taken`)},b=(a)=>a<0?"minus":a===0?"zero":"plus";export{a,b};

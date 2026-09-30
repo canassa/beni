@@ -120,14 +120,18 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
     if (mask) |m| @memcpy(shown, m) else @memset(shown, true);
     const spell = try arena.alloc(?[]const u8, tokens.len);
     @memset(spell, null);
+    var block_ends: ?[]const bool = null;
     if (options.rewrite or options.rename) {
         const s: Structure = try .init(arena, source, tokens);
         // Renaming first: it reads which tokens elimination kept, before
         // the rewrites hide a `;` or a parameter's brackets.
         if (options.rename) try rename(arena, &s, shown, spell);
-        if (options.rewrite) try rewrite(arena, &s, shown, spell);
+        if (options.rewrite) {
+            try rewrite(arena, &s, shown, spell);
+            block_ends = try statementBlocks(arena, &s);
+        }
     }
-    const plan: Plan = .{ .shown = shown, .spell = spell };
+    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = block_ends };
     const out = try print(arena, source, tokens, plan);
     if (std.debug.runtime_safety) try verify(arena, source, tokens, plan, out);
     return out;
@@ -138,11 +142,62 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
 const Plan = struct {
     shown: []const bool,
     spell: []const ?[]const u8,
+    /// Per token, under the release rewrites: a `}` that closes a block
+    /// STATEMENT (`statementBlocks`), after which a line terminator is never
+    /// automatic semicolon insertion's. Null keeps every such newline.
+    block_ends: ?[]const bool = null,
 
     fn text(p: Plan, source: []const u8, tokens: []const Token, i: usize) []const u8 {
         return p.spell[i] orelse tokens[i].text(source);
     }
+
+    /// Whether a line terminator between shown tokens `a` and `b` may go.
+    fn inert(p: Plan, source: []const u8, tokens: []const Token, a: usize, b: usize) bool {
+        if (newlineIsInert(source, tokens[a], tokens[b])) return true;
+        const ends = p.block_ends orelse return false;
+        return ends[a];
+    }
 };
+
+/// Per token, whether it is a `}` closing a block statement — the body of
+/// an `if`/`for`/`while`/`with` head, of `else`, `try`, `catch (…)`,
+/// `finally` or `do`, of a `switch (…)`, or of a function DECLARATION at
+/// the start of a statement. Such a `}` ends its statement whatever
+/// follows, so the newline after it is never where automatic semicolon
+/// insertion acts (`backend.md` §9, *Hand-written JavaScript under
+/// `--release`*, amended 2026-10-02). An arrow's or a function
+/// expression's body is not one: `f=()=>{}` then a newline then `g()` is
+/// two statements only because of that newline.
+fn statementBlocks(arena: Allocator, s: *const Structure) Allocator.Error![]const bool {
+    const tokens = s.tokens;
+    const ends = try arena.alloc(bool, tokens.len);
+    @memset(ends, false);
+    for (tokens, 0..) |t, i| {
+        if (!isPunct(t, s.source, "{") or i == 0) continue;
+        const close = s.close[i];
+        if (close == i) continue;
+        const before = i - 1;
+        const statement = if (s.punct(before, ")")) blk: {
+            if (tokens[before].head) break :blk true;
+            const open = s.close[before];
+            if (open == 0) break :blk false;
+            if (s.word(open - 1, "catch") or s.word(open - 1, "switch")) break :blk true;
+            // `function name(…) {` where `function` begins a statement.
+            if (open < 2 or !s.name(open - 1) or !s.word(open - 2, "function")) break :blk false;
+            break :blk statementStart(s, ends, open - 2);
+        } else s.word(before, "else") or s.word(before, "try") or s.word(before, "finally") or s.word(before, "do");
+        if (statement) ends[close] = true;
+    }
+    return ends;
+}
+
+/// Whether token `k` begins a statement: the first token, or one after a
+/// `;`, after a block statement's `}` (`ends`, filled left to right), or
+/// after `export`.
+fn statementStart(s: *const Structure, ends: []const bool, k: usize) bool {
+    if (k == 0) return true;
+    return s.punct(k - 1, ";") or ends[k - 1] or s.word(k - 1, "export");
+}
 
 // ---------------------------------------------------------------------------
 // Tokens
@@ -478,7 +533,7 @@ fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan
         pending_nl = false;
         const text = plan.text(source, tokens, i);
         if (prev) |a| {
-            if (nl and !newlineIsInert(source, tokens[a], t)) {
+            if (nl and !plan.inert(source, tokens, a, i)) {
                 try out.append(arena, '\n');
             } else if (needsSpace(tokens[a], plan.text(source, tokens, a), t, text)) {
                 try out.append(arena, ' ');
@@ -497,7 +552,7 @@ fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan
 fn verify(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan, out: []const u8) Allocator.Error!void {
     const again = tokenize(arena, out) catch std.debug.panic("Minify: the compacted file does not lex", .{});
     var at: usize = 0;
-    var prev: ?Token = null;
+    var prev: ?usize = null;
     var pending_nl = false;
     for (tokens, 0..) |t, i| {
         if (!plan.shown[i]) {
@@ -510,11 +565,11 @@ fn verify(arena: Allocator, source: []const u8, tokens: []const Token, plan: Pla
         if (got.kind != t.kind or !std.mem.eql(u8, got.text(out), want)) {
             std.debug.panic("Minify: `{s}` became `{s}`", .{ want, got.text(out) });
         }
-        if (prev) |a| if ((pending_nl or t.nl) and !newlineIsInert(source, a, t) and !got.nl) {
+        if (prev) |a| if ((pending_nl or t.nl) and !plan.inert(source, tokens, a, i) and !got.nl) {
             std.debug.panic("Minify: the line break before `{s}` was lost", .{t.text(source)});
         };
         pending_nl = false;
-        prev = t;
+        prev = i;
         at += 1;
     }
     if (at != again.len) std.debug.panic("Minify: the compacted file gained a token", .{});
@@ -1020,9 +1075,14 @@ fn rewrite(arena: Allocator, s: *const Structure, shown: []bool, spell: []?[]con
 /// assignment to the binding is an assignment to its name and there is none.
 /// Names, not scopes: a `let i` assigned in one function keeps a
 /// `const i` in another, and with it every `const` of the file.
+///
+/// Decided over the tokens that are written (*amended 2026-10-02*,
+/// `backend.md` §9, *Hand-written JavaScript under `--release`*): a unit
+/// elimination cut is never evaluated, so its `i = …` assigns nothing, and
+/// it used to keep every `const` of the units that stay.
 fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
     const tokens = s.tokens;
-    const assigned = try assignedNames(arena, s) orelse return;
+    const assigned = try assignedNames(arena, s, shown) orelse return;
     var list: std.ArrayList(u32) = .empty;
 
     // All of the file's `const`s or none: a file that mixes the two
@@ -1045,8 +1105,9 @@ fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell:
 
 /// Every name the file assigns anywhere, by name and not by scope — or null
 /// when a string `eval` runs or a `with` object can assign a name no token
-/// spells.
-fn assignedNames(arena: Allocator, s: *const Structure) Allocator.Error!?Set {
+/// spells. With `shown`, only the tokens that are written: a unit
+/// elimination cut is never evaluated.
+fn assignedNames(arena: Allocator, s: *const Structure, shown: ?[]const bool) Allocator.Error!?Set {
     const tokens = s.tokens;
     for (tokens, 0..) |_, i| if (s.word(i, "eval") or s.word(i, "with")) return null;
 
@@ -1068,6 +1129,7 @@ fn assignedNames(arena: Allocator, s: *const Structure) Allocator.Error!?Set {
     // Every name something assigns.
     var assigned: std.StringHashMapUnmanaged(void) = .empty;
     for (tokens, 0..) |t, i| {
+        if (shown) |mask| if (!mask[i]) continue;
         if (s.name(i) and !declarator[i]) {
             const written = assigns(s, i + 1) or (i > 0 and (s.punct(i - 1, "++") or s.punct(i - 1, "--"))) or
                 (i >= 2 and s.punct(i - 1, "(") and s.word(i - 2, "for")); // `for (x of …)`
@@ -1602,7 +1664,7 @@ pub fn hoistableWith(arena: Allocator, source: []const u8, keep: []const []const
         .imports = imports.items,
         .taken = taken,
         .free = free,
-        .assigned = try assignedNames(arena, &s),
+        .assigned = try assignedNames(arena, &s, null),
         .inert = inert,
         .patterned = patterned,
         .located = located,
@@ -1655,7 +1717,7 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
         }
     }
     try rewrite(arena, &h.structure, shown, spell);
-    const plan: Plan = .{ .shown = shown, .spell = spell };
+    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = try statementBlocks(arena, &h.structure) };
     const body = try print(arena, h.source, tokens, plan);
     if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, body);
     return .{ .body = body, .imports = imports.items };
@@ -1735,6 +1797,26 @@ test "A3: a lone parameter loses its brackets, and const is let when nothing ass
     // same name elsewhere — and then every `const`.
     try expectReleased("export const f = () => { const i = 1; return i; };\nexport const g = () => { let i = 0; i = 1; return i; };\n", null, "export const f=()=>{const a=1;return a};export const g=()=>{let a=0;a=1;return a};\n");
     try expectReleased("const a = [1];\nlet n = 0;\nexport const f = () => { a[0] = 2; n += 1; };\n", null, "let a=[1];let b=0;export let f=()=>{a[0]=2;b+=1};\n");
+}
+
+test "A3: const is let when only a unit elimination cut assigns the name" {
+    // `g`, which assigns `i`, is cut: nothing it does can happen, so `f`'s
+    // `const i` may be a `let`. Kept, it keeps every `const`.
+    const source = "export const f = () => { const i = 1; return i; };\nexport const g = () => { let i = 0; i = 1; return i; };\n";
+    try expectReleased(source, &.{"f"}, "export let f=()=>{let a=1;return a};\n");
+    try expectReleased(source, &.{ "f", "g" }, "export const f=()=>{const a=1;return a};export const g=()=>{let a=0;a=1;return a};\n");
+}
+
+test "a newline after the brace of a block statement goes, and after an arrow's body stays" {
+    // An `if`, `else`, loop, `try`/`catch`/`finally`, `switch` and function
+    // declaration body ends its statement; an arrow's does not.
+    try expectReleased("export function f(a) {\n  if (a) { g(); }\n  return a;\n}\n", null, "export function f(a){if(a){g()}return a}\n");
+    try expectReleased("export function f(a) {\n  for (;;) { g(); }\n  h();\n}\n", null, "export function f(a){for(;;){g()}h()}\n");
+    try expectReleased("export function f(a) {\n  try { g(); } catch (e) { h(); }\n  finally { k(); }\n  return;\n}\n", null, "export function f(a){try{g()}catch(b){h()}finally{k()}return}\n");
+    try expectReleased("export function f(a) {\n  switch (a) { case 1: g(); }\n  h();\n}\n", null, "export function f(a){switch(a){case 1:g()}h()}\n");
+    try expectReleased("function g() {}\nfunction h() {}\nexport const f = () => g(h());\n", null, "function a(){}function b(){}export let f=()=>a(b());\n");
+    try expectReleased("export const f = () => {}\nf()\n", null, "export const f=()=>{}\nf()\n");
+    try expectReleased("export let f = function () {}\nf()\n", null, "export let f=function(){}\nf()\n");
 }
 
 test "A2: bound names are renamed most-used first; exports, imports, keys and globals keep theirs" {

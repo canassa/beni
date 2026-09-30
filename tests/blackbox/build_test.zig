@@ -2932,10 +2932,11 @@ test "a release application is one file with no import or export; --library keep
     try testing.expectEqualStrings("_main.mjs", tree[0]);
     try testing.expectEqualStrings("_manifest.txt", tree[1]);
     const one = try w.read("out/_main.mjs");
-    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";\n"));
+    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "\n"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
     try testing.expect(std.mem.indexOf(u8, one, "export") == null);
-    try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), "\nexport{e,c};\n"));
+    try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), ";export{e,c};\n"));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -3045,11 +3046,7 @@ test "a release build compacts hand-written JavaScript and cuts it to what the p
     // `exclaim` and every comment are gone; `text`, an object key, is not a
     // binding.
     try testing.expectEqualStrings(
-        \\import process from"node:process";
-        \\let c=a=>{process.stdout.write(a.text+"\n")};
-        \\let d=/ +/g;let e=c=>c.toUpperCase();let a=b=>({text:`[${e(b.replace(d," "))}] ${`(${b.length})`}`,});
-        \\const b=a("a  b   c");
-        \\c(b);
+        \\import process from"node:process";let c=a=>{process.stdout.write(a.text+"\n")};let d=/ +/g;let e=c=>c.toUpperCase();let a=b=>({text:`[${e(b.replace(d," "))}] ${`(${b.length})`}`,});let b=a("a  b   c");c(b);
         \\
     , try w.read("out/_main.mjs"));
     try testing.expectEqual(@as(usize, 2), (try treeOf(&w, "out")).len);
@@ -3094,11 +3091,7 @@ test "a sibling whose names cannot move keeps its own module in a release applic
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
     try testing.expectEqualStrings(
-        \\import process from"node:process";
-        \\import{say as a}from"./_platform/Hand.foreign.mjs";
-        \\let c=a=>{process.stdout.write(a.text+"\n")};
-        \\const b=a("a  b   c");
-        \\c(b);
+        \\import process from"node:process";import{say as a}from"./_platform/Hand.foreign.mjs";let c=a=>{process.stdout.write(a.text+"\n")};let b=a("a  b   c");c(b);
         \\
     , try w.read("out/_main.mjs"));
     try testing.expect(w.exists("out/_platform/Hand.foreign.mjs"));
@@ -3183,12 +3176,7 @@ test "a sibling export that is also an object key keeps its name and is aliased 
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
     try testing.expectEqualStrings(
-        \\import process from"node:process";
-        \\let c=a=>{process.stdout.write(a.text+"\n")};
-        \\let d={say:"!"};let say=a=>({text:a+d.say});
-        \\let a=say;
-        \\const b=a("a  b   c");
-        \\c(b);
+        \\import process from"node:process";let c=a=>{process.stdout.write(a.text+"\n")};let d={say:"!"};let say=a=>({text:a+d.say});let a=say;let b=a("a  b   c");c(b);
         \\
     , try w.read("out/_main.mjs"));
 

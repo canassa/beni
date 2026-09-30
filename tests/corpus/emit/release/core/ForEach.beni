@@ -1,7 +1,7 @@
 -- emit: `Js.each` is a `for…of` (`boundary.md` §4.2; `backend.md` §9,
 -- *Compact statements*, item 4). With a lambda, the lambda's body is the
 -- loop's body and its parameter the loop variable: `flush`'s render queue
--- is `for(const b of a)b()`, and `run` writes `start`, called from that one
+-- is `for(let b of a)b()`, and `run` writes `start`, called from that one
 -- place, in its loop. With a function passed as a value the loop calls it.
 import Js
 

@@ -167,6 +167,8 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         if (p.rename) |m| try m.enter(body[i]);
         try p.statement(body[i], 0);
     }
+    // A release module is one line, and a file ends with a newline.
+    if (p.compact and p.joiner.length != 0) try p.push("\n");
     return p.joiner.blit();
 }
 
@@ -457,11 +459,13 @@ const Printer = struct {
     }
 
     /// End a statement. A development build breaks the line after every one;
-    /// a release build breaks it after a TOP-LEVEL one and nowhere else —
-    /// measured at 21 brotli bytes on `bench/corpus` and 0.1% of the corpus,
-    /// for output whose stack traces still name a declaration by line (§9).
+    /// a release build nowhere: it used to break it after a top-level one,
+    /// for stack traces that name a declaration by line, until the empty
+    /// page's study priced that at 13 brotli bytes of 838 (`backend.md` §9
+    /// item 3, amended 2026-10-02). The file's one newline is its last byte.
     fn endLine(p: *Printer, level: u32) Allocator.Error!void {
-        if (!p.compact or level == 0) try p.push("\n");
+        _ = level;
+        if (!p.compact) try p.push("\n");
     }
 
     fn indent(p: *Printer, level: u32) Allocator.Error!void {
@@ -553,41 +557,35 @@ const Printer = struct {
     }
 
     /// §9 items 3 and 5 together, at the module level: a run of top-level
-    /// `const`s joins into one declaration AND keeps its newline after every
-    /// member, `const a=1,\nb=2;`. Both rules are the spec's, and they do not
-    /// conflict — joining saves the `const ` and the `;` while the newline
-    /// still lands after each declaration, so a stack trace still names one by
-    /// line. Worth 23 brotli bytes on `bench/corpus`, which is the whole of
-    /// the gap between this implementation and §9's hand-applied prediction.
+    /// declarations joins into one, `let a=1,b=2;`. Each member is its own
+    /// declaration for §9 item 2, so `enter` restarts the local alphabet per
+    /// member exactly as it would if they were still separate statements.
     ///
-    /// Each member is its own declaration for §9 item 2, so `enter` restarts
-    /// the local alphabet per member exactly as it would if they were still
-    /// separate statements.
-    ///
-    /// A run of top-level `let`s joins the same way, `let a=[],\nb=false;`
-    /// (`backend.md` §9, *Compact statements*): a `let` run evaluates left to
-    /// right as the separate statements did.
+    /// *Amended 2026-10-02* (`backend.md` §9, *Compact statements*): the
+    /// newline that used to follow every member is gone, and a `const` is
+    /// written `let` — so a `const` and a `let` next to each other are one
+    /// run. Adjacent, so nothing moves past anything, and a comma
+    /// declaration evaluates left to right as the separate statements did.
     fn topConstRun(p: *Printer, list: []const Index, from: usize) Allocator.Error!usize {
-        const tag = p.ir.tag(list[from]);
-        try p.push(if (tag == .let_decl) "let" else "const");
+        try p.push("let");
         var last = from;
         var i = from;
         var written: usize = 0;
         while (i < list.len) : (i += 1) {
             if (p.plan.isDropped(list[i])) continue;
-            if (p.ir.tag(list[i]) != tag) break;
-            if (written != 0) {
-                try p.push(",");
-                try p.push("\n");
-            }
+            if (!isDeclaration(p.ir.tag(list[i]))) break;
+            if (written != 0) try p.push(",");
             if (p.rename) |m| try m.enter(list[i]);
             try p.declarator(list[i], 1);
             written += 1;
             last = i;
         }
         try p.push(";");
-        try p.push("\n");
         return last;
+    }
+
+    fn isDeclaration(tag: Node.Tag) bool {
+        return tag == .const_decl or tag == .let_decl;
     }
 
     /// `name=value`, or a `let`'s `name` alone when it has no value.
@@ -600,26 +598,23 @@ const Printer = struct {
         try p.expression(v, 0, level);
     }
 
-    /// Print the run of `const_decl`s starting at `from` as one declaration,
-    /// and return the index of its last member.
+    /// Print the run of declarations starting at `from` as one, and return
+    /// the index of its last member. Compact mode only.
     ///
-    /// A `let_decl` does not join a `const` run and an uninitialised one does
-    /// not join at all (§9 item 5): §7's `let $t$n;` sits above an `if`/`else`
-    /// chain and joining it with a later `const` would move a declaration past
-    /// the statements between them.
-    ///
-    /// A run of `let`s joins likewise, `let a=1,b;` — adjacent, so nothing
-    /// moves past anything; a `let` never joins a `const`.
+    /// A run is adjacent `const_decl`s and `let_decl`s, initialised or not,
+    /// printed `let a=1,b;`: adjacent, so nothing moves past anything, and a
+    /// `const` the compiler wrote is assigned nowhere, so as a `let` it
+    /// behaves the same (`backend.md` §9, *Compact statements*, amended
+    /// 2026-10-02; §9 item 5 used to join the two kinds apart).
     fn constRun(p: *Printer, list: []const Index, from: usize, level: u32) Allocator.Error!usize {
-        const tag = p.ir.tag(list[from]);
         try p.indent(level);
-        try p.push(if (tag == .let_decl) "let" else "const");
+        try p.push("let");
         var last = from;
         var i = from;
         var written: usize = 0;
         while (i < list.len) : (i += 1) {
             if (p.plan.isDropped(list[i])) continue;
-            if (p.ir.tag(list[i]) != tag) break;
+            if (!isDeclaration(p.ir.tag(list[i]))) break;
             if (written != 0) try p.push(",");
             try p.declarator(list[i], level);
             written += 1;
@@ -696,7 +691,7 @@ const Printer = struct {
                 // The keyword keeps exactly the space that separates it from
                 // the name, and in compact mode the adjacency guard puts that
                 // one back — `const` then `a` cannot run together.
-                try p.tok("const ", "const");
+                try p.tok("const ", "let");
                 try p.name(@enumFromInt(d.lhs), .binding);
                 try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
@@ -839,7 +834,7 @@ const Printer = struct {
             },
             .for_of => {
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
-                try p.tok("for (const ", "for(const");
+                try p.tok("for (const ", "for(let");
                 try p.name(@enumFromInt(d.lhs), .binding);
                 try p.tok(" of ", "of");
                 try p.expression(f.iterable, 0, level);
@@ -1196,11 +1191,75 @@ const Printer = struct {
         return p.paramsOf(f, false);
     }
 
+    /// How many of `f`'s parameters a release build writes: up to the last
+    /// one its body mentions (`backend.md` §9, *Compact statements*,
+    /// amended 2026-10-02). A trailing parameter nothing mentions is one the
+    /// function never reads — an emitted function has no `arguments` — so
+    /// leaving it out changes only the function's `length`, which no beni
+    /// program and no runtime reads. A mention is any `ident` of its name in
+    /// the body, nested functions and assignment targets included, so a
+    /// shadowing declaration of the same name keeps it: the safe way. A body
+    /// too large for the walk's budget keeps them all.
+    fn namedParams(p: *Printer, f: JsIr.Func) Allocator.Error!usize {
+        const ir = p.ir;
+        const names = ir.extraSlice(f.params(), JsIr.NameIndex);
+        if (names.len == 0) return 0;
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(p.spelled);
+        try stack.appendSlice(p.spelled, ir.extraSlice(f.body(), Index));
+        var kept: usize = 0;
+        var budget: u32 = 1 << 14;
+        while (JsIr.popOperand(&stack)) |node| {
+            if (budget == 0) return names.len;
+            budget -= 1;
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .ident => {
+                    const n: JsIr.NameIndex = @enumFromInt(d.lhs);
+                    for (names[kept..], kept..) |m, i| if (m == n) {
+                        kept = i + 1;
+                        if (kept == names.len) return kept;
+                        break;
+                    };
+                },
+                .arrow => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@enumFromInt(d.lhs), JsIr.Func).body(), Index)),
+                .const_decl, .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .func_decl, .gen_decl => try stack.appendSlice(p.spelled, ir.extraSlice(ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), Index)),
+                .assign_stmt => try stack.appendSlice(p.spelled, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+                .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(p.spelled, v),
+                .if_stmt => {
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+                    try stack.appendSlice(p.spelled, ir.extraSlice(branches.thenBody(), Index));
+                    try stack.appendSlice(p.spelled, ir.extraSlice(branches.elseBody(), Index));
+                },
+                .while_true, .block_stmt, .switch_case => {
+                    if (ir.tag(node) == .switch_case) if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(p.spelled, t);
+                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+                },
+                .for_of => {
+                    const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+                    try stack.append(p.spelled, loop.iterable);
+                    try stack.appendSlice(p.spelled, ir.extraSlice(loop.body(), Index));
+                },
+                .switch_stmt => {
+                    try stack.append(p.spelled, @enumFromInt(d.lhs));
+                    try stack.appendSlice(p.spelled, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+                },
+                .expr_stmt, .throw_stmt => try stack.append(p.spelled, @enumFromInt(d.lhs)),
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                else => try ir.pushOperands(p.spelled, &stack, node),
+            }
+        }
+        return kept;
+    }
+
     /// The parameter list; with `depth`, the last parameter defaults to `0`
     /// (`Node.arrow_depth`).
     fn paramsOf(p: *Printer, f: JsIr.Func, depth: bool) Allocator.Error!void {
         try p.push("(");
-        const names = p.ir.extraSlice(f.params(), JsIr.NameIndex);
+        const all = p.ir.extraSlice(f.params(), JsIr.NameIndex);
+        const names = if (p.compact and !depth) all[0..try p.namedParams(f)] else all;
         for (names, 0..) |n, i| {
             if (i != 0) try p.tok(", ", ",");
             try p.name(n, .binding);
@@ -2625,13 +2684,7 @@ test "an arrow body or a statement whose leftmost token is `{` is bracketed whol
 
 test "the leftmost-brace bracket survives compact printing" {
     try expectCompact(
-        \\const m=()=>({a:1}.a),
-        \\c=()=>({a:1}.f(b)),
-        \\s=()=>({a:1}.a+b),
-        \\q=()=>({a:1}.a?1:2),
-        \\k=()=>b*({a:1}.a+1);
-        \\({a:1}.f());
-        \\({a:1}.a)=b;
+        \\let m=()=>({a:1}.a),c=()=>({a:1}.f(b)),s=()=>({a:1}.a+b),q=()=>({a:1}.a?1:2),k=()=>b*({a:1}.a+1);({a:1}.f());({a:1}.a)=b;
         \\
     , LeftmostBrace.go);
 }
@@ -2716,10 +2769,7 @@ test "compact: a binary minus before a negation keeps one space and nothing else
     // adjacency §9 names beside identifier-identifier. `a + -b` is safe, and
     // so is every other pair `BinaryOp.text` and `UnaryOp.text` can make.
     try expectCompact(
-        \\const a=x- -y,
-        \\b=x+-y,
-        \\c=x-y,
-        \\d=-x-y;
+        \\let a=x- -y,b=x+-y,c=x-y,d=-x-y;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -2743,8 +2793,7 @@ test "compact: every keyword keeps exactly the space that separates it from what
     // `continue L` — all of them identifier-character adjacencies, all of
     // them handled by one guard rather than by seven call sites.
     try expectCompact(
-        \\const f=(a)=>{switch(a){case 1:{throw a}default:{break L}}},
-        \\g=(a)=>typeof a;
+        \\let f=(a)=>{switch(a){case 1:{throw a}default:{break L}}},g=(a)=>typeof a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -2774,7 +2823,7 @@ test "compact: a string literal is one token however many pieces it takes to wri
     // space inside the string. `run/StringOps` printed `one| two` until the
     // guard learnt about `openToken`.
     try expectCompact(
-        "const s=\"one\\ntwo\",\nt=`a${b}c`;\n",
+        "let s=\"one\\ntwo\",t=`a${b}c`;\n",
         struct {
             fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
                 try f.constDecl(out, "s", try f.string("one\ntwo"));
@@ -2789,25 +2838,25 @@ test "compact: a string literal is one token however many pieces it takes to wri
     );
 }
 
-test "compact: a run of consts joins, and a newline lands after every top-level declaration" {
-    // §9 item 5 and §9 item 3's one surviving newline, and they are the same
-    // test because they meet: the module body joins into ONE `const` whose
-    // members are still one to a line, so the bytes of `const ` are saved and
-    // a stack trace still names a declaration. Inside a body there is no
-    // newline at all. Every newline the release printer emits comes
-    // immediately after a `;` or a `,`, so ASI is never in a position to stand
-    // in for a semicolon — which is why every semicolon stays.
+test "compact: a run of declarations joins, a const is a let, and the module is one line" {
+    // §9 item 5, with item 3 as amended on 2026-10-02: the module body joins
+    // into ONE declaration, `const` and `let` alike written `let`, with no
+    // newline anywhere but the file's last byte. Every semicolon stays, so
+    // no newline was ever standing in for one. `f`'s parameter nothing
+    // mentions is not written (its `length` is the only difference).
     try expectCompact(
-        \\const f=(a)=>{const b=1,c=2;return b},
-        \\g=2;
+        \\let f=()=>{let b=1,c=2,d;return b},g=2,h=(a)=>a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
             const b1 = try f.node(.const_decl, @intFromEnum(try f.name("b")), (try f.number("1")).int());
             const c2 = try f.node(.const_decl, @intFromEnum(try f.name("c")), (try f.number("2")).int());
+            const d = try f.node(.let_decl, @intFromEnum(try f.name("d")), @intFromEnum(Node.OptionalIndex.none));
             const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("b")).toOptional()), 0);
-            try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{ b1, c2, ret }));
+            try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{ b1, c2, d, ret }));
             try f.constDecl(out, "g", try f.number("2"));
+            const read = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+            try f.constDecl(out, "h", try f.func(&.{try f.name("a")}, &.{read}));
         }
     }.go);
 }
@@ -2815,7 +2864,7 @@ test "compact: a run of consts joins, and a newline lands after every top-level 
 test "compact: a labelled loop, an if/else chain and an assignment" {
     // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\const f=(a)=>{L:for(;;){if(!a)return a;a=1}};
+        \\let f=(a)=>{L:for(;;){if(!a)return a;a=1}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -2840,10 +2889,7 @@ test "compact: a labelled loop, an if/else chain and an assignment" {
 
 test "compact: an import keeps its `as`, and an object and a call lose every space" {
     try expectCompact(
-        \\import{add as Basics$add,Other$f}from"./M.mjs";
-        \\const o={a:1,...rest},
-        \\c=f(1,2);
-        \\export{o,c};
+        \\import{add as Basics$add,Other$f}from"./M.mjs";let o={a:1,...rest},c=f(1,2);export{o,c};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -2958,9 +3004,9 @@ fn printDeepChains() !void {
         const close = if (compact) "}" else " }";
         var expected: std.ArrayList(u8) = .empty;
         defer expected.deinit(testing.allocator);
-        try expected.appendSlice(testing.allocator, if (compact) "const c=a" else "const c = a");
+        try expected.appendSlice(testing.allocator, if (compact) "let c=a" else "const c = a");
         for (1..depth) |_| try expected.appendSlice(testing.allocator, and_op);
-        try expected.appendSlice(testing.allocator, if (compact) ",\nl=" else ";\nconst l = ");
+        try expected.appendSlice(testing.allocator, if (compact) ",l=" else ";\nconst l = ");
         for (0..depth) |_| try expected.appendSlice(testing.allocator, open);
         try expected.appendSlice(testing.allocator, "null");
         for (0..depth) |_| try expected.appendSlice(testing.allocator, close);
