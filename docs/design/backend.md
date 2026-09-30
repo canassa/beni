@@ -1041,6 +1041,17 @@ why it must be a read. Pinned by `emit/EqAgainstConstructor` (the shape) and
 `run/EqAgainstConstructor` (the answers, nested, `Nothing`, both sides, a `List` field, and
 `Debug.log` order when the tags agree and when they differ).
 
+*Amended 2026-09-30 (research 41 §3):* **reachability asks the same question, and a site tested in
+place is not an edge.** §9's third leg followed every dispatch site's callee, so the derived `eq`
+an in-place `==` resolves to — and, for `Maybe`'s, the comparison engine `_core/_derived.mjs` it
+imports — shipped although nothing called it: 339 of the benchmark app's 6 195 brotli bytes. The
+decision is one function, `src/js/CtorEq.zig`, which `Lower.ctorEquality` and `Reach` both call,
+because a disagreement is either dead code shipped or a `ReferenceError` at load. `Edges.declEdges`
+takes an optional site filter for it; `Cycles` passes none, since an extra edge there only orders a
+declaration earlier. Pinned by `emit/app/DceEqAgainstConstructor` (no `Shape$$eq`, and
+`_core/_derived.mjs` not written); `run/EqAgainstConstructor` is the guard that a kept call's
+function was kept.
+
 ### An arrow body or a statement that would begin with `{`
 
 *Added 2026-09-28.* JavaScript reads a `{` in two positions as a block, not as
@@ -1094,6 +1105,17 @@ of them is a new mechanism:
   what someone imports: a `pub` value that survives because something reaches it stays exported
   under its own name, because an export costs the name once and a consumer-driven export list would
   make one module's bytes depend on another's, which is a determinism hazard for nothing.
+  *Amended 2026-09-30 (research 41 §3): under `--release` of an application it does.* A release
+  module's bytes already depend on every other module's — §9 item 2's whole-program name table —
+  so the hazard above is paid already, and the list is cut to the names some file of the build
+  imports: another module's `import`, or the entry file's of `main` (`Emit.markImported`, serial
+  and after `numberGlobals`, so input-derived at every `--jobs`). An application's output tree is
+  the whole program, so an export outside that set is bytes nobody can ask for; an empty list is
+  not written. `--library` keeps every export, its public surface (§9's *Roots*), and a
+  development build is unchanged. In the same change the release entry file names `run` and
+  `start` in one `import` when they are one file's exports (the browser platforms'). Pinned by
+  `build_test`'s *a release application exports only what another file imports* and
+  `external_platform_test`'s entry-file test.
 - **Import lists shrink for free on one leg and need one line on the other.** Cross-module imports
   are already use-driven — `need` / `needDerived` collect them as lowering discovers them
   (`src/js/Lower.zig:743-759`) — so a dropped declaration takes its imports with it and a module
@@ -2072,6 +2094,11 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    (the `err` part is now the `undetermined` term, `checker-v2.md` §13.1, with the same edge).
    Twelve `run/` fixtures fail without the first — every program that puts a `String` in a `Dict` —
    with a `ReferenceError` at load, after a build that exited 0. *(Found in implementation.)*
+
+   **And one site adds none: an `==` or `/=` written as a tag and field test in place** (§4,
+   *`==` against a constructor is a tag and field test*, amended 2026-09-30), which calls neither
+   its callee nor anything the callee's evidence names. `Reach` asks `CtorEq.inPlace`, the
+   decision `Lower` takes, and passes it to `Edges.declEdgesExcept` as a site filter.
 
 Out of a **derived function** row `r` of `m`: every term of `r.body` (`argsAt(r.body)`), recursively, by the
 same mapping — that is how a derived `eq` for `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.
@@ -3063,6 +3090,41 @@ empty page 24 407 / 7 013 → **3 965 / 1 393** (`browser`) and 24 510 / 7 033 �
 (`browser-tea`); `bench/corpus` (`--library`) 96 852 / 24 015 → **83 719 / 19 516**. Renaming a
 hand-written file's locals — the 400 bytes between this and terser — would need scope analysis, which
 is a parser, and is left.
+
+*Amended 2026-09-30: the locals are renamed after all, without scopes (research 40 §7's A2 and A3,
+built and measured in research 41 §4).* Two more passes over the same tokens, after elimination:
+
+- **Renaming (A2).** Every name the file binds — after `let`/`const`/`var`/`function`, in a
+  parameter list (an arrow's, a function's, a `catch`'s; each element's identifier and an array
+  pattern's), before `=>` — is renamed, **all its occurrences at once**, to a short name
+  (`Rename.spell`'s alphabet), most used first, ties by first occurrence. It needs no scope analysis
+  because the renaming is **injective onto names no other identifier of the file spells**: every
+  use refers after to exactly what it referred to before, and nothing can be captured. A name keeps
+  its spelling when it is exported, or named in an `import` or an `export { … }` list (the boundary
+  `boundary.md` §4 fixes); when it is a reserved or contextual word or a global a file may read
+  unbound (`Sibling.isStandardGlobal`'s list and the hosts' — `document`, `window`, `process`,
+  `parent`, … — because check 3 cannot see a global read when the same name is bound elsewhere in
+  the file); and when it **ever** stands where a property name can: before `:` (except as a
+  ternary's consequent or a `case` value), or, inside a `{` that is not provably a block, as a
+  shorthand, a method, a field or a pattern default. A file that mentions `eval`, `with` or `class`
+  is renamed not at all. A property after `.` is never a binding and never renamed.
+- **Rewriting (A3).** `;` before `}` goes unless it is an empty statement (after a statement head's
+  `)`, `else`, `do`, `:`, `{` or `;`); `(x) =>` loses its brackets when the list is one identifier;
+  and `const` is `let` **throughout a file whose `const` declarations name nothing the file
+  assigns** — any `x = `, compound assignment, `++`/`--`, `for (x of …)` or destructuring assignment
+  of the name anywhere, by name and not by scope, so the `TypeError` the only difference would
+  throw cannot happen. All or none, because a partial rewrite measured **+9** brotli on the browser
+  runtime, whose `let i` in one function keeps a `const i` in another.
+
+Refusal is per name or per file, as before, and costs bytes only. `Minify.verify` holds the output
+to the plan's spellings, and `zig build fuzz` runs the sweep with both passes on. Measured on the
+benchmark app (research 41 §4): **5 828 → 5 467 brotli** (A2 −355, A3 −32 alone, −361 together);
+the empty page 3 919 / 1 390 → **3 267 / 1 296** (`browser`), 4 013 / 1 415 → **3 361 / 1 320**
+(`browser-tea`); the floor 619 / 303 → **525 / 279**; every program's release build summed
+(`bench/size.mjs`'s `release_gross`) 225 221 → **216 198**, −4.0 %. A development build still copies
+each file byte for byte. Tests: `Minify.zig`'s A2/A3 unit tests (every refusal, the empty-statement
+cases, an assigned `const` each way), `build_test`'s pinned release bytes of the `hand` platform,
+and `run/SiblingFunctionParams`, a `function f(a, b)` helper renamed and run.
 
 ## 10. Chunking
 
