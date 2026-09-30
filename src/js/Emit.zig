@@ -2374,11 +2374,13 @@ const Emitter = struct {
             const lowered = &(slot.lowered orelse return);
             if (lowered.diagnostics.len != 0) return;
             const scratch = w.module.allocator();
+            try Spec.peephole(scratch, &lowered.ir);
             const plan = try Opt.runKeeping(scratch, &lowered.ir, slot.effect_keep, slot.pure_discards, slot.mutable);
             const kept = w.kept.allocator();
             slot.plan = .{
                 .dropped = try kept.dupe(u32, plan.dropped),
                 .inlined = try kept.dupe(JsIr.Node.OptionalIndex, plan.inlined),
+                .repeated = try kept.dupe(u32, plan.repeated),
             };
             slot.met = try kept.dupe(JsIr.NameIndex, try Rename.collectGlobals(scratch, &lowered.ir, &slot.plan));
             _ = e;

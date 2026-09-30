@@ -4747,6 +4747,33 @@ only reached from a folded branch until slice 3). Fixture: `emit/release/app/Spe
 `limit` and `String.toUpper`; `emit/release/app/HoistOrder`'s `Mid` now reads `String.length` so
 that its three values are not folded away.
 
+### Compact statements
+
+*Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print
+as the hand-written JavaScript it replaces).* Shapes a release build writes more shortly than the
+lowering does, each exact wherever it applies, none in a development build. Each has its golden;
+the whole `run/` and `browser/` corpus's release pass is their differential test.
+
+1. **No `else` after an arm that jumps, and no braces around one statement** (`Print.compactIf`).
+   When an `if`'s first arm always ends in a jump — its last printed statement is a `return`, a
+   `throw`, a `break` or a `continue`, or an `if` both of whose arms do — the second arm is not an
+   `else` but the statements after the `if`: `if(d===e)return;d=f;` for
+   `if(d===e){return null;}else{d=f;}`. When only the second arm jumps, the test is negated (by
+   `negatedTest`: `===` for `!==`, the operand for `!x`) and the arms swap. A body of one statement
+   that JavaScript allows there — a `return`, `throw`, `break`, `continue`, expression or
+   assignment, or an `if` with no `else` after it — has no braces, and an `else` whose body is an
+   `if` is `else if`. What "always jumps" reads is what is PRINTED: a `continue` that ends a loop
+   body and a `return` that a function whose result nothing reads writes as its value (*A result
+   nothing reads*) are not jumps. An arm is not spliced when it declares a name its declaration
+   declares twice (the compiler's positional names can repeat; `Opt.Plan.repeated`), nor out of an
+   `if` that is itself an unbraced body, which must stay one statement. Fixture:
+   `emit/release/core/CompactIf`.
+3. **A flag test is its bits** (`Spec.peephole`, on every release module). In a test position —
+   an `if`'s or a conditional's test, the operand of `!`, either side of `&&`/`||` in one —
+   `(x & k) !== 0` is `x & k` and `(x & k) === 0` is `!(x & k)`: a bitwise operator's value is an
+   integer and never `NaN`, so it is truthy exactly when it is not zero. A comparison node referred
+   to from anywhere else keeps its `Bool`. Fixture: `emit/release/core/FlagTests`.
+
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with

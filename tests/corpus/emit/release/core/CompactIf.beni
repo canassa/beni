@@ -1,0 +1,69 @@
+-- emit: an `if` under `--release` (`backend.md` §9, *Compact
+-- statements*). An arm after an arm that always ends in a jump is not an
+-- `else` but the statements after the `if` (`indexOf`'s loop, `classify`'s
+-- chain); when only the second arm jumps, the test is negated and the arms
+-- swap (`settle`); a body of one statement has no braces, and an `else`
+-- whose body is an `if` is `else if` (`describe`). An arm that neither
+-- jumps nor holds one statement keeps its braces.
+import Js
+
+
+pub indexOf : Js.Value, Js.Value, Int -> Int
+indexOf xs x k =
+    if k == Js.to (Js.get xs "length") then
+        -1
+
+    else if Js.same (Js.at xs k) x then
+        k
+
+    else
+        indexOf xs x (k + 1)
+
+
+pub classify : Int -> String
+classify n =
+    if n < 0 then
+        let
+            m =
+                0 - n
+        in
+        "minus " ++ String.fromInt m
+
+    else if n == 0 then
+        "zero"
+
+    else
+        let
+            s =
+                String.fromInt n
+        in
+        "plus " ++ s
+
+
+pub settle : Js.Value -> ()
+settle o =
+    let
+        _ =
+            if Js.isNull (Js.get o "v") then
+                let
+                    _ =
+                        Js.set o "v" (Js.from 1)
+                in
+                Js.set o "n" (Js.from 0)
+
+            else
+                Js.throw (Js.from "set twice")
+    in
+    Js.set o "done" (Js.from True)
+
+
+pub describe : Js.Value -> ()
+describe o =
+    if Js.isNull o then
+        ()
+
+    else if Js.isUndefined (Js.get o "a") then
+        Js.set o "a" (Js.from 1)
+
+    else
+        Js.set o "b" (Js.from 2)

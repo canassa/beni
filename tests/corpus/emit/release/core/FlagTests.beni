@@ -1,0 +1,31 @@
+-- emit: a flag test in a condition is its bits (`backend.md` §9, *Compact
+-- statements*): `(f & 2) !== 0` in an `if`, a conditional or under `&&` is
+-- `f&2`, and `(f & 4) === 0` is `!(f&4)`. Where the comparison's `Bool` is
+-- the value itself — `wide`'s result — it stays a comparison.
+import Js
+
+
+pub pick : Int, Js.Value -> Js.Value
+pick flags node =
+    if Js.bitAnd flags 2 /= 0 && Js.bitAnd flags 4 == 0 then
+        Js.get node "firstChild"
+
+    else if Js.bitAnd flags 1 /= 0 then
+        node
+
+    else
+        Js.null
+
+
+pub label : Int -> String
+label flags =
+    if Js.bitAnd flags 8 /= 0 then
+        "wide"
+
+    else
+        "narrow"
+
+
+pub wide : Int -> Bool
+wide flags =
+    Js.bitAnd flags 8 /= 0

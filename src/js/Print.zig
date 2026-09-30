@@ -339,6 +339,9 @@ const Printer = struct {
     /// The `return`s such a function ends with (`markTails`), written as
     /// what they evaluate and nothing else.
     tail_returns: std.ArrayList(Index) = .empty,
+    /// The next statement printed is an unbraced `if` or `else` body
+    /// (`compactIf`): an `if` there keeps its `else` and splices nothing.
+    single: bool = false,
 
     // ---- Bytes out ---------------------------------------------------------
 
@@ -580,6 +583,11 @@ const Printer = struct {
 
     fn statement(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
+        // Whether this statement is an unbraced `if` or `else` body, which
+        // must print as ONE statement (`compactIf`); only the statement it
+        // was set for reads it.
+        const single = p.single;
+        p.single = false;
         try p.indent(level);
         switch (p.ir.tag(node)) {
             .import_stmt => {
@@ -709,6 +717,7 @@ const Printer = struct {
                     try p.endLine(level);
                     return;
                 }
+                if (p.compact) return p.compactIf(test_expr, branches, then_live, else_live, single, level);
                 const then_body = if (then_live) branches.thenBody() else branches.elseBody();
                 const else_body: ?JsIr.SubRange = if (then_live and else_live) branches.elseBody() else null;
                 try p.tok("if (", "if(");
@@ -818,6 +827,100 @@ const Printer = struct {
                 try p.endLine(level);
             },
         }
+    }
+
+    /// An `if` under `--release` (`backend.md` §9, *Compact statements*).
+    /// An arm after an arm that always jumps — `return`, `throw`, `break`,
+    /// `continue` — is not an `else` but the statements after the `if`:
+    /// `if(c)return a;b=1;` for `if(c){return a;}else{b=1;}`. When only the
+    /// `else` arm jumps, the test is negated and the arms swap. A body of
+    /// one statement has no braces. Neither applies to an `if` that must be
+    /// one statement itself (`single`: the body of another), nor to an arm
+    /// that declares a name the declaration declares twice
+    /// (`Opt.Plan.repeated`), which could then come to mean another binding.
+    fn compactIf(p: *Printer, test_expr: Index, branches: JsIr.If, then_live: bool, else_live: bool, single: bool, level: u32) Allocator.Error!void {
+        const then_body = branches.thenBody();
+        const else_body = branches.elseBody();
+        if (then_live and else_live and !single) {
+            if (p.jumps(then_body) and p.spliceable(else_body)) {
+                try p.push("if(");
+                try p.expression(test_expr, 0, level);
+                try p.push(")");
+                try p.armBody(then_body, false, level);
+                return p.statements(else_body, level);
+            }
+            if (p.jumps(else_body) and p.spliceable(then_body)) {
+                try p.push("if(");
+                try p.negatedTest(test_expr, level);
+                try p.push(")");
+                try p.armBody(else_body, false, level);
+                return p.statements(then_body, level);
+            }
+        }
+        try p.push("if(");
+        if (then_live) try p.expression(test_expr, 0, level) else try p.negatedTest(test_expr, level);
+        try p.push(")");
+        if (then_live and else_live) {
+            try p.armBody(then_body, true, level);
+            try p.push("else");
+            return p.armBody(else_body, false, level);
+        }
+        return p.armBody(if (then_live) then_body else else_body, false, level);
+    }
+
+    /// An `if` or `else` body: its one statement unbraced when that is
+    /// allowed, else a block. A declaration is not a statement JavaScript
+    /// allows there, and an `if` before an `else` would take that `else`
+    /// as its own.
+    fn armBody(p: *Printer, range: JsIr.SubRange, else_follows: bool, level: u32) Allocator.Error!void {
+        if (p.onlyLive(range)) |only| {
+            const bare = switch (p.ir.tag(only)) {
+                .return_stmt, .continue_stmt, .break_stmt, .throw_stmt, .expr_stmt, .assign_stmt => true,
+                .if_stmt => !else_follows,
+                else => false,
+            };
+            if (bare) {
+                p.single = true;
+                return p.statement(only, level);
+            }
+        }
+        try p.push("{");
+        try p.statements(range, level + 1);
+        try p.push("}");
+    }
+
+    /// Whether control never leaves `range`'s end, as printed: its last
+    /// statement that prints is a jump, or an `if` whose two arms both end
+    /// in one. A `continue` that ends a loop body and a `return` a
+    /// discarding function writes as its value print as nothing that jumps.
+    fn jumps(p: *Printer, range: JsIr.SubRange) bool {
+        var last: ?Index = null;
+        for (p.ir.extraSlice(range, Index)) |node| {
+            if (!p.skipped(node)) last = node;
+        }
+        const node = last orelse return false;
+        return switch (p.ir.tag(node)) {
+            .return_stmt => !(p.discarding and p.isTailReturn(node)),
+            .throw_stmt, .break_stmt, .continue_stmt => true,
+            .if_stmt => blk: {
+                const branches = p.ir.extraData(@enumFromInt(p.ir.data(node).rhs), JsIr.If);
+                break :blk p.anyLive(branches.thenBody()) and p.anyLive(branches.elseBody()) and
+                    p.jumps(branches.thenBody()) and p.jumps(branches.elseBody());
+            },
+            else => false,
+        };
+    }
+
+    /// Whether `range`'s statements may print as part of the list around
+    /// it: none declares a name declared twice in its declaration.
+    fn spliceable(p: *Printer, range: JsIr.SubRange) bool {
+        for (p.ir.extraSlice(range, Index)) |node| {
+            switch (p.ir.tag(node)) {
+                .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(@enumFromInt(p.ir.data(node).lhs))) return false,
+                else => {},
+            }
+        }
+        return true;
     }
 
     fn params(p: *Printer, f: JsIr.Func) Allocator.Error!void {
@@ -2296,7 +2399,7 @@ test "compact: a run of consts joins, and a newline lands after every top-level 
 test "compact: a labelled loop, an if/else chain and an assignment" {
     // The `continue` that ends the body is not printed (`markLoopTail`).
     try expectCompact(
-        \\const f=(a)=>{L:for(;;){if(a){a=1;}else{return a;}}};
+        \\const f=(a)=>{L:for(;;){if(!a)return a;a=1;}};
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {

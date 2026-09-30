@@ -72,10 +72,25 @@ pub const Plan = struct {
     /// `run/MatchRowOrder.beni` catches and which is the reason this array is
     /// as long as `nodes` rather than as long as `names`.
     inlined: []const Node.OptionalIndex = &.{},
+    /// One bit per NAME: declared more than once in some top-level
+    /// declaration (the compiler's positional names can repeat). A
+    /// statement list that declares none of these may be printed as part
+    /// of the list around it — the printer's `else` that follows an arm
+    /// that jumps — since no name in it can then come to mean another.
+    repeated: []const u32 = &.{},
 
     /// The plan a development build runs under: nothing dropped, nothing
     /// substituted.
     pub const none: Plan = .{};
+
+    /// Whether `n` is declared twice in a declaration; true for anything
+    /// the plan does not cover, which is the safe answer.
+    pub fn isRepeated(p: *const Plan, n: NameIndex) bool {
+        const i = n.unwrap() orelse return false;
+        const word = i / 32;
+        if (word >= p.repeated.len) return true;
+        return p.repeated[word] & (@as(u32, 1) << @intCast(i % 32)) != 0;
+    }
 
     pub fn isDropped(p: *const Plan, node: Index) bool {
         const i = node.int();
@@ -144,13 +159,16 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .arena = arena,
         .uses = try arena.alloc(u32, ir.names.len),
         .decls = try arena.alloc(u32, ir.names.len),
+        .binds = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .inlined = try arena.alloc(Node.OptionalIndex, ir.nodes.len),
+        .repeated = try arena.alloc(u32, (ir.names.len + 31) / 32),
         .mutable = mutable,
     };
     @memset(o.stamp, 0);
+    @memset(o.repeated, 0);
     @memset(o.dropped, 0);
     @memset(o.inlined, .none);
     for (discarded) |node| if (node.int() < ir.nodes.len) o.drop(node);
@@ -160,7 +178,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         try o.countStmt(top);
         try o.planStmt(top);
     }
-    return .{ .dropped = o.dropped, .inlined = o.inlined };
+    return .{ .dropped = o.dropped, .inlined = o.inlined, .repeated = o.repeated };
 }
 
 const Opt = struct {
@@ -190,12 +208,17 @@ const Opt = struct {
     /// compiler-made names that are positional rather than counted —
     /// `$in$<i>`, `$m$k`, `$j$<d>$<b>` — can repeat inside one declaration.
     decls: []u32,
+    /// Declarations and parameters of each name in this declaration: what
+    /// `repeated` is decided on.
+    binds: []u32,
     /// Whether any `assign_stmt` in this declaration targets the name. §8
     /// reassigns an `$in$<i>` slot per iteration, so a read of one is not a
     /// stable read and a chain rooted at one may not move.
     assigned: []bool,
     dropped: []u32,
     inlined: []Node.OptionalIndex,
+    /// `Plan.repeated`.
+    repeated: []u32,
     /// `runKeeping`'s `mutable`: bases no fold may rest on.
     mutable: []const NameIndex = &.{},
     /// The `ident` node `exprUses` last matched, which `findUse` reads back
@@ -211,6 +234,7 @@ const Opt = struct {
         o.stamp[i] = o.current;
         o.uses[i] = 0;
         o.decls[i] = 0;
+        o.binds[i] = 0;
         o.assigned[i] = false;
     }
 
@@ -226,6 +250,13 @@ const Opt = struct {
         if (i >= o.decls.len) return;
         o.touch(i);
         o.decls[i] += 1;
+        o.bind(i);
+    }
+
+    /// One more binding of name `i`, a declaration or a parameter.
+    fn bind(o: *Opt, i: u32) void {
+        o.binds[i] += 1;
+        if (o.binds[i] > 1) o.repeated[i / 32] |= @as(u32, 1) << @intCast(i % 32);
     }
 
     fn readOf(o: *Opt, i: u32, comptime field: []const u8) u32 {
@@ -328,7 +359,11 @@ const Opt = struct {
         // A parameter is counted as a READ, not as a declaration. It shadows
         // rather than binds anything this pass may touch, and counting it as
         // a read is the conservative half of the two.
-        for (o.ir.extraSlice(f.params(), NameIndex)) |n| o.use(n);
+        for (o.ir.extraSlice(f.params(), NameIndex)) |n| {
+            o.use(n);
+            const i = n.unwrap() orelse continue;
+            if (i < o.binds.len) o.bind(i);
+        }
         try o.countStmts(f.body());
     }
 

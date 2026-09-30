@@ -1415,6 +1415,101 @@ const Spec = struct {
     }
 };
 
+// ---------------------------------------------------------------------------
+// The release peephole: one module at a time, after specialisation
+// ---------------------------------------------------------------------------
+
+/// `backend.md` §9, *Compact statements*: rewrites of one module's IR that
+/// are exact where they apply, run on every `--release` module (a library's
+/// too) just before `Opt` plans it.
+///
+/// **A flag test is the bits.** In a TEST position — an `if`'s test, a
+/// conditional's, the operand of `!`, and either side of `&&`/`||` in one —
+/// `(x & k) !== 0` is `x & k` and `(x & k) === 0` is `!(x & k)`: a bitwise
+/// operator's value is an integer, never `NaN`, so it is truthy exactly when
+/// it is not zero. Only a node nothing else refers to is rewritten, so a
+/// comparison lowering shared with a value position keeps its `boolean`.
+pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
+    const refs = try gpa.alloc(u8, ir.nodes.len);
+    defer gpa.free(refs);
+    @memset(refs, 0);
+    var children: std.ArrayList(Index) = .empty;
+    defer children.deinit(gpa);
+    for (0..ir.nodes.len) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        children.clearRetainingCapacity();
+        try operandsOf(gpa, ir, node, &children);
+        for (children.items) |c| refs[c.int()] +|= 1;
+    }
+    var tests: std.ArrayList(Index) = .empty;
+    defer tests.deinit(gpa);
+    for (0..ir.nodes.len) |i| {
+        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .if_stmt, .cond => try tests.append(gpa, @enumFromInt(d.lhs)),
+            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .not) try tests.append(gpa, @enumFromInt(d.lhs)),
+            else => {},
+        }
+        while (tests.pop()) |t| {
+            if (ir.tag(t) != .binary) continue;
+            const td = ir.data(t);
+            const op: JsIr.BinaryOp = @enumFromInt(td.rhs);
+            const b = ir.extraData(@enumFromInt(td.lhs), JsIr.Binary);
+            switch (op) {
+                .logical_and, .logical_or => try tests.appendSlice(gpa, &.{ b.left, b.right }),
+                .strict_eq, .strict_ne => {
+                    if (refs[t.int()] > 1) continue;
+                    const bits: Index = if (isZero(ir, b.right) and isBits(ir, b.left))
+                        b.left
+                    else if (isZero(ir, b.left) and isBits(ir, b.right))
+                        b.right
+                    else
+                        continue;
+                    const tags = ir.nodes.items(.tag);
+                    const datas = ir.nodes.items(.data);
+                    if (op == .strict_ne) {
+                        tags[t.int()] = .binary;
+                        datas[t.int()] = ir.data(bits);
+                    } else {
+                        tags[t.int()] = .unary;
+                        datas[t.int()] = .{ .lhs = bits.int(), .rhs = @intFromEnum(JsIr.UnaryOp.not) };
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+}
+
+/// The expression operands of any node, statements' included.
+fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(Index)) Allocator.Error!void {
+    const d = ir.data(node);
+    switch (ir.tag(node)) {
+        .const_decl, .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try out.append(gpa, v),
+        .assign_stmt => try out.appendSlice(gpa, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+        .return_stmt, .switch_case => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try out.append(gpa, v),
+        .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => try out.append(gpa, @enumFromInt(d.lhs)),
+        .import_stmt, .export_stmt, .func_decl, .gen_decl, .while_true, .break_stmt, .continue_stmt, .block_stmt => {},
+        else => try ir.pushOperands(gpa, out, node),
+    }
+}
+
+fn isZero(ir: *const JsIr, node: Index) bool {
+    if (ir.tag(node) != .number) return false;
+    const x = parseNumber(ir.bytes(node)) orelse return false;
+    return x == 0;
+}
+
+/// A bitwise operator: its value is an integer, never `NaN`.
+fn isBits(ir: *const JsIr, node: Index) bool {
+    if (ir.tag(node) != .binary) return false;
+    return switch (@as(JsIr.BinaryOp, @enumFromInt(ir.data(node).rhs))) {
+        .bit_and, .bit_or, .bit_xor, .shl, .sar, .shr => true,
+        else => false,
+    };
+}
+
 /// Whether evaluating `root` can do nothing but make a value: a function, a
 /// literal, a name, or an object, array or template of those. Anything
 /// else — a call, a property read (a getter), an operator (`valueOf`), a
