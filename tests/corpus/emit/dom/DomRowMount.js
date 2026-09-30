@@ -1,5 +1,5 @@
-import { forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot, Rt$delegate } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
 const DomRowMount$t59 = Rt$template("<ul>", 0);
@@ -67,7 +67,7 @@ const DomRowMount$after = (model$1) => {
     const w$14 = r$13.firstChild;
     const w$15 = w$14.firstChild;
     const w$16 = w$14.nextSibling;
-    $markup$delegate(["click", "input"]);
+    Rt$delegate(["click", "input"]);
     if (cx$12 !== null) {
       w$14.$$cx = cx$12;
     }

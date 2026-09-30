@@ -1,5 +1,5 @@
-import { forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot, Rt$delegate } from "./_platform/Rt.mjs";
 const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
 const DomSelector$k173 = { m: (v$13, cx$14) => {
   const r$15 = DomSelector$t173();
@@ -48,7 +48,7 @@ const DomSelector$table = (model$1) => {
   return { t: DomSelector$k173, v: [$t$1, $t$3, { m: (item$28, position$29, cx$30) => {
     const r$31 = DomSelector$t83();
     const w$32 = r$31.firstChild;
-    $markup$delegate(["click"]);
+    Rt$delegate(["click"]);
     if (cx$30 !== null) {
       r$31.$$cx = cx$30;
     }

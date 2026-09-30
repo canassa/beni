@@ -1,5 +1,4 @@
-import { delegate as $markup$delegate, listen as $markup$listen, identity as $markup$identity } from "./_platform/runtime.foreign.mjs";
-import { Rt$template } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$delegate, Rt$listen, Rt$identity } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 const DomEvents$Focused = { $: "Focused", a: null };
 const DomEvents$Sent = { $: "Sent", a: null };
@@ -8,7 +7,7 @@ const DomEvents$k16 = { m: (v$6, cx$7) => {
   const r$8 = DomEvents$t16();
   const w$9 = r$8.firstChild;
   const w$10 = w$9.nextSibling;
-  $markup$delegate(["submit", "click", "input", "keydown"]);
+  Rt$delegate(["submit", "click", "input", "keydown"]);
   r$8.$$submit = v$6[0];
   r$8.$$submitF = 1;
   if (cx$7 !== null) {
@@ -24,9 +23,9 @@ const DomEvents$k16 = { m: (v$6, cx$7) => {
     w$10.$$cx = cx$7;
   }
   w$10.$$focus = v$6[3];
-  $markup$listen(w$10, "focus", 0);
+  Rt$listen(w$10, "focus", 0);
   w$10.$$keydown = v$6[4];
-  w$10.$$keydownX = $markup$identity;
+  w$10.$$keydownX = Rt$identity;
   return { s: r$8, q: null, e: r$8, w0: r$8, w1: w$9, w3: w$10, a0: v$6[0], a1: v$6[1], a2: v$6[2], a3: v$6[3], a4: v$6[4] };
 }, p: (i$11, v$12) => {
   if (v$12[0] !== i$11.a0) {

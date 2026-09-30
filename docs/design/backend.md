@@ -6077,3 +6077,17 @@ it shares (moved alone, a page with both paid 43 bytes more brotli), and so does
 writes no regular expression literal, and nothing of it specialises). A page that uses the moved
 functions is 9–90 bytes brotli smaller; one that does not ships the same JavaScript, byte for
 byte but for which short names its declarations are given.
+
+*Amended the same day: `Browser.program` and the events are written in beni* (`plans/runtime-in-beni.md`,
+step 3). With `sync` allowed in a platform's ordinary signatures (`transparent-effects-proposal.md`
+§15.2 item 1, amended), `Browser.program` is a beni declaration of `Browser.beni` that keeps its
+demand on `update` and `view`, and the entry's `run(main)` is read as a call (§9, *The entry's call
+is a call*): **the 26 bytes above are gone** from every page whose program is `Browser.program`
+(or `Tea.sandbox`, built on it) — `run` has no hosted branch and `flush` no after-render phase —
+and the empty `browser` page is **796** brotli. `Rt.beni` also holds the events — `fire`, the
+delegated listener, `delegate`, `start`, `listen` and `identity` — and `runtime.js` no longer
+exports them. `fire` reads a node's flags without the listener's `?? 0`: an absent flag word is
+`undefined`, whose bits are 0 to `&`. `Browser.hosted` and its loop stay in `Browser.js`: every
+guard of that loop is a `try … finally` (a message's `update`, a render, the after-render phase),
+which beni cannot write, and none of it is on a page a build could specialise further than
+`Minify`'s export cut already does.

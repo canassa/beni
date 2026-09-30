@@ -8,7 +8,9 @@
 // `plans/runtime-in-beni.md`): an instance's nodes, templates, slots, a
 // block's mount and patch, the render loop and the mount, the `Html` and
 // `Maybe Html` holes, a text hole's node, the attribute writes but for
-// classes, styles and URLs, and the markup primitives `text` and `map`.
+// classes, styles and URLs, the markup primitives `text` and `map`, and
+// the events: the delegated listener, `delegate`, `start`, `listen` and
+// `identity`.
 // This file holds the rest, and reads the beni half through the import
 // below; both are compiled with the program, and only what a page reaches
 // is written.
@@ -16,8 +18,8 @@
 // Parts are ported from dom-expressions' client runtime (MIT, © Ryan
 // Carniato; references/dom-expressions/packages/runtime/src): `template`
 // (now in `Rt.beni`) from client.js `template`, the class and style diffs
-// from `className` and `style`, the delegated listener from
-// `eventHandler`, and `reconcile` from reconcile.js (udomdiff) with its
+// from `className` and `style`, the delegated listener (now in `Rt.beni`)
+// from `eventHandler`, and `reconcile` from reconcile.js (udomdiff) with its
 // slot ownership tags removed, since every node here has one owning slot.
 //
 // **Markup is a block**, `{ t, v }`: `t` a kind `{ m(v, cx), p(inst, v) }`,
@@ -606,74 +608,3 @@ export const styles = (el, list, previous) => {
 const scriptUrl =
   /^[\s\x00-\x20]*(j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:|d\s*a\s*t\s*a\s*:\s*t\s*e\s*x\s*t\s*\/\s*h\s*t\s*m\s*l\s*[,;])/i;
 export const safeUrl = (url) => (scriptUrl.test(url) ? "" : url);
-
-// ---- Events (backend.md §15.3) -------------------------------------------
-
-// An event node holds its handler as `$$<name>`, a payload extractor as
-// `$$<name>X` when the handler takes a payload, its declaration's
-// `preventDefault` (1) and `stopPropagation` (2) as `$$<name>F`, and the
-// mount context of the `Html.map`s it is inside as `$$cx`. A program's
-// mount node holds its `send` as `$$root`.
-
-// The payload of an event whose handler takes the event itself.
-export const identity = (event) => event;
-
-// Send the message `node`'s handler makes of `event` to the program whose
-// mount node is nearest above it, through every `Html.map` it is inside,
-// innermost first. The search starts at the node's parent: a program
-// renders only inside its mount node, so a mount node's own handler is
-// the program's around it.
-const fire = (node, event, key, flags) => {
-  if (flags & 1) event.preventDefault();
-  const x = node[`${key}X`];
-  let msg = x === undefined ? node[key] : node[key](x(event));
-  // `!= null`: a node outside every `Html.map` has no `$$cx`, and the
-  // outermost context's `up` is null.
-  for (let c = node.$$cx; c != null; c = c.up) msg = c.f(msg);
-  let root = node.parentNode;
-  while (root !== null && root.$$root === undefined) root = root.parentNode;
-  if (root !== null) root.$$root(msg);
-  if (flags & 2) event.stopPropagation();
-};
-
-// The one listener per delegated event name: from the target up, every
-// node with a handler for the event, until one stops it. An event inside
-// a program mounted in another's markup goes on into the outer one, as
-// the DOM's own bubbling does, and each handler's message goes to the
-// program that rendered it.
-const delegated = (event) => {
-  const key = `$$${event.type}`;
-  for (let node = event.target; node !== null; node = node.parentNode) {
-    if (node[key] !== undefined && !node.disabled) {
-      const flags = node[`${key}F`] ?? 0;
-      fire(node, event, key, flags);
-      if (flags & 2) return;
-    }
-  }
-};
-
-const registered = new Set();
-
-// `(names)`: listen for each delegated event name once.
-export const delegate = (names) => {
-  for (const name of names) {
-    if (registered.has(name)) continue;
-    registered.add(name);
-    globalThis.document.addEventListener(name, delegated);
-  }
-};
-
-// `(data)`: the program's start data — the delegated names of every
-// module the build wrote.
-export const start = (data) => {
-  if (data.delegate !== undefined) delegate(data.delegate);
-};
-
-// `(el, name, flags)`: a listener of the element's own for an event that
-// is not delegated; it reads the handler the node holds when it fires.
-export const listen = (el, name, flags) => {
-  const key = `$$${name}`;
-  el.addEventListener(name, (event) => {
-    if (el[key] !== undefined) fire(el, event, key, flags);
-  });
-};

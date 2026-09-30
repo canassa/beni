@@ -1,6 +1,7 @@
---! The slot and mount half of the browser platform's runtime, and the holes,
---! attribute writes and markup primitives of a template, written in beni
---! over core's `Js` (research 47; `plans/runtime-in-beni.md`, steps 1–2).
+--! The slot and mount half of the browser platform's runtime, the holes,
+--! attribute writes and markup primitives of a template, and its events,
+--! written in beni over core's `Js` (research 47; `plans/runtime-in-beni.md`,
+--! steps 1–3).
 --! Each declaration is the hand-written JavaScript function of the same
 --! name it replaced, statement for statement where beni allows it. It is
 --! this platform's runtime module (`boundary.md` §9.2, *A runtime module*):
@@ -595,3 +596,184 @@ mapKind =
 pub map : V, V -> V
 map html f =
     Js.from { t = mapKind, v = Js.array [ html, f ] }
+
+
+-- ---- Events (backend.md §15.3) --------------------------------------------
+
+
+-- An event node holds its handler as `$$<name>`, a payload extractor as
+-- `$$<name>X` when the handler takes a payload, its declaration's
+-- `preventDefault` (1) and `stopPropagation` (2) as `$$<name>F`, and the
+-- mount context of the `Html.map`s it is inside as `$$cx`. A program's
+-- mount node holds its `send` as `$$root`.
+
+
+-- The payload of an event whose handler takes the event itself.
+pub identity : V -> V
+identity event =
+    event
+
+
+-- Send the message `node`'s handler makes of `event` to the program whose
+-- mount node is nearest above it, through every `Html.map` it is inside,
+-- innermost first. The search starts at the node's parent: a program
+-- renders only inside its mount node, so a mount node's own handler is
+-- the program's around it. `flags` may be `undefined`, a node that
+-- declared neither: its bits are then 0.
+fire : V, V, String, Int -> ()
+fire node event key flags =
+    let
+        _ =
+            if Js.bitAnd flags 1 /= 0 then
+                Js.to (Js.call event "preventDefault" [])
+
+            else
+                ()
+
+        x =
+            Js.get node "${key}X"
+
+        msg =
+            through
+                (Js.get node "$$cx")
+                (if Js.isUndefined x then
+                    Js.get node key
+
+                 else
+                    Js.call node key [ Js.apply x [ event ] ]
+                )
+
+        root =
+            mountAbove (Js.get node "parentNode")
+
+        _ =
+            if Js.isNull root then
+                ()
+
+            else
+                Js.to (Js.call root "$$root" [ msg ])
+    in
+    if Js.bitAnd flags 2 /= 0 then
+        Js.to (Js.call event "stopPropagation" [])
+
+    else
+        ()
+
+
+-- `msg` through each context from `c` out. (`isNullish`: a node outside
+-- every `Html.map` has no `$$cx`, and the outermost context's `up` is null.)
+through : V, V -> V
+through c msg =
+    if Js.isNullish c then
+        msg
+
+    else
+        through (Js.get c "up") (Js.call c "f" [ msg ])
+
+
+-- The nearest mount node from `n` up, or null.
+mountAbove : V -> V
+mountAbove n =
+    if Js.isNull n || not (Js.isUndefined (Js.get n "$$root")) then
+        n
+
+    else
+        mountAbove (Js.get n "parentNode")
+
+
+-- The one listener per delegated event name: from the target up, every
+-- node with a handler for the event, until one stops it. An event inside
+-- a program mounted in another's markup goes on into the outer one, as
+-- the DOM's own bubbling does, and each handler's message goes to the
+-- program that rendered it.
+delegated : V -> ()
+delegated event =
+    let
+        type_ : String
+        type_ =
+            Js.to (Js.get event "type")
+    in
+    bubble event "$$${type_}" (Js.get event "target")
+
+
+bubble : V, String, V -> ()
+bubble event key node =
+    if Js.isNull node then
+        ()
+
+    else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
+        let
+            flags =
+                Js.to (Js.get node "${key}F")
+
+            _ =
+                fire node event key flags
+        in
+        if Js.bitAnd flags 2 /= 0 then
+            ()
+
+        else
+            bubble event key (Js.get node "parentNode")
+
+    else
+        bubble event key (Js.get node "parentNode")
+
+
+-- The delegated names listened for so far.
+registered : V
+registered =
+    Js.construct (Js.global "Set") []
+
+
+-- `(names)`: listen for each delegated event name once.
+pub delegate : V -> ()
+delegate names =
+    Js.each
+        names
+        (\name ->
+            if Js.to (Js.call registered "has" [ name ]) then
+                ()
+
+            else
+                let
+                    _ =
+                        Js.call registered "add" [ name ]
+                in
+                Js.to (Js.call (Js.global "document") "addEventListener" [ name, Js.from delegated ])
+        )
+
+
+-- `(data)`: the program's start data — the delegated names of every
+-- module the build wrote.
+pub start : V -> ()
+start data =
+    if Js.isUndefined (Js.get data "delegate") then
+        ()
+
+    else
+        delegate (Js.get data "delegate")
+
+
+-- `(el, name, flags)`: a listener of the element's own for an event that
+-- is not delegated; it reads the handler the node holds when it fires.
+pub listen : V, String, Int -> ()
+listen el name flags =
+    let
+        key =
+            "$$${name}"
+    in
+    Js.to
+        (Js.call
+            el
+            "addEventListener"
+            [ Js.from name
+            , Js.from
+                (\event ->
+                    if Js.isUndefined (Js.get el key) then
+                        ()
+
+                    else
+                        fire el event key flags
+                )
+            ]
+        )

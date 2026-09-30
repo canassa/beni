@@ -1,5 +1,5 @@
-import { forKeyed as $markup$forKeyed, delegate as $markup$delegate } from "./_platform/runtime.foreign.mjs";
-import { Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { forKeyed as $markup$forKeyed } from "./_platform/runtime.foreign.mjs";
+import { Rt$template, Rt$slot, Rt$delegate } from "./_platform/Rt.mjs";
 const DomRowItemOnly$t53 = Rt$template("<table>", 0);
 const DomRowItemOnly$k53 = { m: (v$4, cx$5) => {
   const r$6 = DomRowItemOnly$t53();
@@ -45,7 +45,7 @@ const DomRowItemOnly$table = (model$1) => {
     const w$18 = w$17.firstChild;
     const w$19 = w$16.nextSibling;
     const w$20 = w$19.firstChild;
-    $markup$delegate(["click"]);
+    Rt$delegate(["click"]);
     if (cx$12 !== null) {
       w$17.$$cx = cx$12;
     }

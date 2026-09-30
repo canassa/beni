@@ -25,22 +25,28 @@ u=(a,b,c,d)=>d===null?a.removeAttributeNS(b,c.slice(c.indexOf(":")+1)):a.setAttr
 y={m:(a)=>{const b=document.createTextNode(a);return{d:a,e:b,q:null,s:b}},p:(c,d)=>{if(d!==c.d){c.d=d;c.s.data=d}}},
 z=()=>({t:y,v:"count"}),
 A={m:(a,b)=>{const c={f:a[1],up:b},d=i(null,null,c);d.i=v(a[0],c);return{c:c,e:null,q:d,s:null}},p:(e,f)=>{e.c.f=f[1];e.q.i=w(e.q.i,f[0],e.c)}},
-B=(a,b)=>({t:A,v:[a,b]});
-let Q=(z,event,A,C)=>{if(C&1)event.preventDefault();let F=z[`${A}X`];let E=F===undefined?z[A]:z[A](F(event));for(let D=z.$$cx;D!=null;D=D.up)E=D.f(E);let B=z.parentNode;while(B!==null&&B.$$root===undefined)B=B.parentNode;if(B!==null)B.$$root(E);if(C&2)event.stopPropagation()};let R=event=>{let A=`$$${event.type}`;for(let z=event.target;z!==null;z=z.parentNode){if(z[A]!==undefined&&!z.disabled){let C=z[`${A}F`]??0;Q(z,event,A,C);if(C&2)return}}};let S=new Set();let T=H=>{for(let name of H){if(S.has(name))continue;S.add(name);globalThis.document.addEventListener(name,R)}};let U=G=>{if(G.delegate!==undefined)T(G.delegate)};
-let C=d=>String(d);
-const D=(a)=>a;
-const E=(a)=>[{a:a,n:null}];
-const F={$:"Nothing",a:null},
-G=h("<button>flip",0),
-H={m:(a,b)=>{const c=G();c.$$click=a[0];if(b!==null)c.$$cx=b;return{s:c,q:null,e:c,w0:c,a0:a[0]}},p:(d,e)=>{if(e[0]!==d.a0){d.a0=e[0];d.w0.$$click=e[0]}}},
-I=h("<b>on",0),
-J={m:(a,b)=>{const c=I();return{s:c,q:null,e:c}},p:(d,e)=>{}},
-K={t:J,v:null},
-L=h("<main><p> <!></p><!><input><my-icon>",1),
-M={m:(a,b)=>{const c=L(),d=c.firstChild,e=d.firstChild,f=e.nextSibling,g=d.nextSibling,h=g.nextSibling,k=h.nextSibling,l=i(d,e,b),m=i(c,g,b),n=i(c,h,b);j(l,a[0]);const o=s(d,f,a[1]);r(m,a[2].a);j(n,a[3]);t(h,"disabled",a[4]?"":null);u(k,"http://www.w3.org/XML/1998/namespace","xml:lang",a[5]);return{s:c,q:null,e:c,w5:h,w6:k,c0:l,x1:o,c2:m,c3:n,a1:a[1],a4:a[4],a5:a[5]}},p:(p,q)=>{j(p.c0,q[0]);if(q[1]!==p.a1){p.a1=q[1];p.x1.data=q[1]}r(p.c2,q[2].a);j(p.c3,q[3]);if(q[4]!==p.a4){t(p.w5,"disabled",q[4]?"":null);p.a4=q[4]}if(q[5]!==p.a5){u(p.w6,"http://www.w3.org/XML/1998/namespace","xml:lang",q[5]);p.a5=q[5]}}},
-N=(a)=>{const b=!a.on;return{t:H,v:[b]}},
-O=(a)=>{const b=z(),c=C(a.count),d=a.on?{$:"Just",a:K}:F,e=B(N(a),D),f=a.on,g=a.on?"en":"pt";return{t:M,v:[b,c,d,e,f,g]}},
-P=E({init:{count:0,on:false},update:(a,b)=>({count:b.count+1,on:a}),view:O});
-U({"delegate":["click"]});
-p(P);
+B=(a,b)=>({t:A,v:[a,b]}),
+C=(a,b)=>{for(;;){if(a==null)return b;const c=a.up;b=a.f(b);a=c}},
+D=(a)=>{for(;;){if(a===null||a.$$root!==undefined)return a;a=a.parentNode}},
+E=(a,b,c,d)=>{if((d&1)!==0)b.preventDefault();const e=a[`${c}X`],f=C(a.$$cx,e===undefined?a[c]:a[c](e(b))),g=D(a.parentNode);if(g!==null)g.$$root(f);if(d&2)b.stopPropagation()},
+F=(a)=>{const b=a.type,c=`$$${b}`;let d=a.target;while(d!==null)if(d[c]!==undefined&&!d.disabled){const e=d[`${c}F`];E(d,a,c,e);if(e&2)return;d=d.parentNode}else d=d.parentNode},
+G=new Set(),
+H=(a)=>{for(const b of a)if(!G.has(b)){G.add(b);document.addEventListener(b,F)}},
+I=(a)=>{if(a.delegate!==undefined)H(a.delegate)};
+let J=d=>String(d);
+const K=(a)=>a;
+const L=(a)=>[{a:a,n:null}];
+const M={$:"Nothing",a:null},
+N=h("<button>flip",0),
+O={m:(a,b)=>{const c=N();c.$$click=a[0];if(b!==null)c.$$cx=b;return{s:c,q:null,e:c,w0:c,a0:a[0]}},p:(d,e)=>{if(e[0]!==d.a0){d.a0=e[0];d.w0.$$click=e[0]}}},
+P=h("<b>on",0),
+Q={m:(a,b)=>{const c=P();return{s:c,q:null,e:c}},p:(d,e)=>{}},
+R={t:Q,v:null},
+S=h("<main><p> <!></p><!><input><my-icon>",1),
+T={m:(a,b)=>{const c=S(),d=c.firstChild,e=d.firstChild,f=e.nextSibling,g=d.nextSibling,h=g.nextSibling,k=h.nextSibling,l=i(d,e,b),m=i(c,g,b),n=i(c,h,b);j(l,a[0]);const o=s(d,f,a[1]);r(m,a[2].a);j(n,a[3]);t(h,"disabled",a[4]?"":null);u(k,"http://www.w3.org/XML/1998/namespace","xml:lang",a[5]);return{s:c,q:null,e:c,w5:h,w6:k,c0:l,x1:o,c2:m,c3:n,a1:a[1],a4:a[4],a5:a[5]}},p:(p,q)=>{j(p.c0,q[0]);if(q[1]!==p.a1){p.a1=q[1];p.x1.data=q[1]}r(p.c2,q[2].a);j(p.c3,q[3]);if(q[4]!==p.a4){t(p.w5,"disabled",q[4]?"":null);p.a4=q[4]}if(q[5]!==p.a5){u(p.w6,"http://www.w3.org/XML/1998/namespace","xml:lang",q[5]);p.a5=q[5]}}},
+U=(a)=>{const b=!a.on;return{t:O,v:[b]}},
+V=(a)=>{const b=z(),c=J(a.count),d=a.on?{$:"Just",a:R}:M,e=B(U(a),K),f=a.on,g=a.on?"en":"pt";return{t:T,v:[b,c,d,e,f,g]}},
+W=L({init:{count:0,on:false},update:(a,b)=>({count:b.count+1,on:a}),view:V});
+I({"delegate":["click"]});
+p(W);
 export{n as flush};
