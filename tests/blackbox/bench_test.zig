@@ -368,6 +368,56 @@ test "bench/size.mjs builds a root that declares no main behind a synthesised en
     try testing.expect(program.net_raw_bytes > 0);
 }
 
+test "bench/size.mjs builds a program in a subdirectory as a project with its own modules" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `tests/corpus/run/<Dir>/` is a multi-module project: its `Main`
+    // imports a module beside it. Built as one file under the corpus root,
+    // `import Other` found nothing and the script exited 1 on every such
+    // program.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Pair/Main.beni",
+        \\import Node exposing (Program)
+        \\import Other
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print Other.greeting
+        \\
+    );
+    try w.write("Pair/Other.beni",
+        \\pub greeting : String
+        \\greeting =
+        \\    "hello"
+        \\
+    );
+    const node_exe = w.node_exe orelse return error.NodeNotOnPath;
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        node_exe,
+        "bench/size.mjs",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
+    var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
+    _ = it.next(); // the floor
+    const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
+    try testing.expect(std.mem.endsWith(u8, program.program, "Pair/Main.beni"));
+    try testing.expect(program.net_raw_bytes > 0);
+}
+
 test "bench/runtime.mjs times a program against a beni floor, checks its answer and reports ns/op" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

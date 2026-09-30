@@ -579,7 +579,41 @@ function main() {
     if (programs.length !== 0) {
       for (const program of programs) {
         const projectDir = join(work, `${corpus.replace(/[^\w]/g, "_")}__${program.replace(/[^\w]/g, "_")}`);
-        mkdirSync(join(projectDir, dirname(program) === "." ? "" : dirname(program)), { recursive: true });
+        // A program in a subdirectory is a multi-module PROJECT, as the
+        // corpus walker builds it (`tests/corpus/README.md`): the directory
+        // is the source root, every `.beni` directly in it is a module of
+        // the build, and a `platform/` beside them is the platform. Built as
+        // one file under the corpus root it cannot find its own imports —
+        // every `run/` project failed that way until 2026-09-30.
+        if (dirname(program) !== ".") {
+          const source = join(root, dirname(program));
+          cpSync(source, projectDir, { recursive: true });
+          const sources = readdirSync(projectDir)
+            .filter((f) => f.endsWith(".beni"))
+            .sort();
+          const projectRel = relative(work, projectDir).split(sep).join("/");
+          let platform = "node";
+          try {
+            if (statSync(join(projectDir, "platform")).isDirectory()) platform = `${projectRel}/platform`;
+          } catch {}
+          const run = buildProject(beni, work, projectDir, sources, false, false, platform);
+          if (run.status !== 0) {
+            process.stderr.write(
+              `bench/size.mjs: ${corpus}/${program} did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`,
+            );
+            failed = true;
+            continue;
+          }
+          record(
+            { program: `${corpus}/${program}`, entry: moduleNameOf(program.slice(dirname(program).length + 1)), roots: "main" },
+            {
+              ...measureTree(join(projectDir, "out")),
+              ...(measureRelease(options, beni, work, projectDir, sources, false, platform) ?? {}),
+            },
+          );
+          continue;
+        }
+        mkdirSync(projectDir, { recursive: true });
         cpSync(join(root, program), join(projectDir, program));
         const run = build(projectDir, [program], false);
         if (run.status !== 0) {
