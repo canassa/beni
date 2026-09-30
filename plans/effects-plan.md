@@ -447,6 +447,19 @@ makes the importer's error appear warm and go again. **Measurement**: `beni chec
 --no-cache` over the 100 159-line generated corpus, pinned, six runs each ABBA: 807.35 M → 812.75 M
 instructions (+0.67 %); the harness's `check` line read 69.5 → 71.4 ms, one run each (wall time).
 
+**As built, the runtime spike (2026-09-30).** E3, E4 and E5 together, built to P2 §16 on a
+branch-sized series of commits rather than a long-lived branch. Not to the table's `Touches`
+column: the runtime is core's `Task.js`, not `platforms/node/runtime.js`, so no file an existing
+program is built from changed, and the `node` platform gains a module, `Io`, for its primitives.
+Double translation (E5) was built with it rather than after, because `List.map` with a suspending
+callback cannot run without it. First, as decided, a top-level value other than a
+function must not suspend (P2 §15.6), with `check/bad/core/TopLevelValueSuspends`. Fixtures:
+`run/{SuspendSequence,SpawnJoin,ScopeChildren,BracketRelease,SuspendDeepRecursion,SuspendLoopFastPath,SuspendBothWays,SuspendJoinPoint,SuspendLoopClosure,SuspendReadFile}`,
+`emit/SuspendShapes` and its release twin; no earlier golden or run hash moved. The E4 table's
+`RaceLosersCancelled` and `QueueTakerCancelled` wait for `race` and `Queue`, which come with the
+adoption. **Measurement**: [`research/44`](../docs/design/research/44-effects-runtime-spike.md) —
+in Chrome and Node, not Firefox; the rAF sweep at 16 / 64 / 512 / 2048 keeps 64.
+
 ---
 
 ## 5. Decisions only the owner can take

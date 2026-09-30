@@ -240,8 +240,14 @@ miscompiled. **Both have now landed**, and the proposal has had its spec pass:
 [`plans/effects-plan.md`](plans/effects-plan.md) holds the slice plan; the owner took its
 eight decisions on 2026-09-30 (§5). **Effects are being built**: the checker infers
 both bits for every function (`src/check/Effects.zig`, `checker-v2.md` §26), and every
-`foreign` declares its rung (`foreign pure|impure|suspends`); nothing is emitted from
-them yet. One
+`foreign` declares its rung (`foreign pure|impure|suspends`). **The runtime spike has
+landed** (proposal §16, [`research/44`](docs/design/research/44-effects-runtime-spike.md)): a
+function that may suspend is emitted in a suspendable form — a comparison on the fast path, a
+continuation handed to core's fiber runtime (`core/Task.js`) when it parks — with a second body,
+`name$s`, for a declaration whose callbacks may or may not suspend; code that cannot suspend is
+emitted byte for byte as before. `Task` has `spawn`, `join`, `scope` and `bracket`; the `node`
+platform's `Io` has `run`, `sleep` and `readFile`. The other primitives, and the browser's, are
+still to come. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
 `where` clause, so their siblings are JavaScript loops calling beni evidence —
 the shape `foldl` was.

@@ -1796,3 +1796,17 @@ goldens of the lowered shapes: a sequence, a join, a loop and a twin body.
   position, which is the property §7.4 asks the lowering not to foreclose, and no map is written.
 - **A per-site choice of body for evidence**, and mutual recursion's stack on the fast path
   (`backend.md` §14 question 5).
+
+### 16.8 As built (2026-09-30)
+
+Built to §16.1–§16.6 with no departure a program can see. The sentinel is `Y`, an object
+local to `core/Task.js`; the answers of §16.2 are `src/check/EffectPlan.zig`'s, computed after the
+effect solve and handed to the backend in the dispatch sidecar; the lowering is `src/js/Lower.zig`
+(hoists, joins, twin bodies) and `src/js/Suspend.zig` (the post-pass that turns each hoist into a
+closure or a loop's fast path). The budget sweep of §7.5 was run in Chrome as well as Node, but not
+in Firefox. Measurements, against Effect v4 in both hosts, are
+[`research/44`](research/44-effects-runtime-spike.md): a suspension point on its fast path costs
+2.4 ns against a plain call's 1.7 ns in Node, a real park 125 ns, 10 000 fibers fan out and join in
+3.4 ms, and a release program using a scope, a bracket, a spawn, a join and a sleep is 2 114 bytes
+brotli against Effect's 26 878 for the same program; the budget of 64 keeps
+a page painting through a loop of pure yields. Everything in §16.7 remains undone.
