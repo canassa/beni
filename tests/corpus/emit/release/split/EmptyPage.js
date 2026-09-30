@@ -13,16 +13,15 @@ z=(a,b,d)=>{if(b===a.b)return a;if(b.t===a.t){b.t.p(a,b.v);a.b=b;return a}const 
 A=(a,b)=>{if(a.i===null)l(v(a),b,a.m);else c(a.i,b);a.i=b},
 h=(a,b)=>{if(a.i===null)A(a,w(b,a.cx));else a.i=z(a.i,b,a.cx)};
 let i=[],
-j=false,
-k=null;
-const m=()=>{j=false;const a=i;i=[];for(const b of a)b();k?.()},
-n=(a,b)=>{const c=g(b);let d=a.init,e=false;const f=()=>{e=false;h(c,a.view(d))};b.$$root=(k)=>{if(!e){e=true;i.push(f);if(!j){j=true;queueMicrotask(()=>{if(j)m()})}}d=a.update(k,d)};h(c,a.view(d))},
-o=(a)=>{for(const b of a){const c=document,d=b.n===null?c.body:c.getElementById(b.n);if(d===null||d.$$root!==undefined){const e=b.n;throw new Error(d===null?`no element has the id "${e}" to mount a program at`:b.n===null?"the page's body already holds a program":`the element "${e}" already holds a program`)}if(b.h===undefined)n(b.a,d);else n(b.h(d,m,(f)=>{k=f;return j}),d)}};
-let p=b=>[{a:b,n:null}];
-const r=f(),
-s={m:(a,b)=>{const c=r();return{s:c,q:null,e:c}},p:(d,e)=>{}},
-t={t:s,v:null},
-u=(a)=>t,
-x=p({init:{},update:(a,b)=>b,view:u});
-o(x);
-export{m as flush};
+j=false;
+const k=()=>{j=false;const a=i;i=[];for(const b of a)b()},
+m=(a,b)=>{const c=g(b);let d=a.init,e=false;const f=()=>{e=false;h(c,a.view(d))};b.$$root=(l)=>{if(!e){e=true;i.push(f);if(!j){j=true;queueMicrotask(()=>{if(j)k()})}}d=a.update(l,d)};h(c,a.view(d))},
+n=(a)=>{for(const b of a){const c=document,d=b.n===null?c.body:c.getElementById(b.n);if(d===null||d.$$root!==undefined){const e=b.n;throw new Error(d===null?`no element has the id "${e}" to mount a program at`:b.n===null?"the page's body already holds a program":`the element "${e}" already holds a program`)}m(b.a,d)}};
+const o=(a)=>[{a:a,n:null}];
+const p=f(),
+r={m:(a,b)=>{const c=p();return{s:c,q:null,e:c}},p:(d,e)=>{}},
+s={t:r,v:null},
+t=(a)=>s,
+u=o({init:{},update:(a,b)=>b,view:t});
+n(u);
+export{k as flush};

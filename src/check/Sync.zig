@@ -586,7 +586,11 @@ const Sync = struct {
                 const iface = cx.iface(@enumFromInt(data.lhs));
                 if (data.rhs >= iface.values.len) break :blk .beni;
                 const value = iface.values[data.rhs];
-                break :blk if (value.is_foreign or value.is_markup_primitive) .platform else .beni;
+                // A platform package's own beni function hands what it is
+                // given to its platform as a `foreign` does (§15.2 item 1,
+                // amended 2026-10-02: `Browser.program` is written in beni).
+                const platform = cx.graph.modules.items(.package)[data.lhs] == .platform;
+                break :blk if (value.is_foreign or value.is_markup_primitive or platform) .platform else .beni;
             },
             .method_call => if (bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall).origin.spelling() != null) .operator else .beni,
             else => .beni,

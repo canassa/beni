@@ -2468,19 +2468,25 @@ const Emitter = struct {
             try modules.append(e.scratch, .{ .ir = ir, .global = global, .prop = prop });
         }
         // What files the pass cannot see read or call: the entry file's
-        // `main`, `run`, `start` and `flush`, and what the markup runtime
-        // imports from the runtime module (`markImported`'s list).
+        // `start` and `flush`, and what the markup runtime imports from the
+        // runtime module (`markImported`'s list). The entry's `run(main)`
+        // is handed over as the call it is when `run` is the module's
+        // (backend.md §9, *The entry's call is a call*); otherwise both
+        // names escape.
         var escaping: std.ArrayList(u32) = .empty;
+        var run_id: ?u32 = null;
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
-            for ([_][]const u8{ "run", "start", "flush" }) |w| {
+            for ([_][]const u8{ "start", "flush" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
             for (names.items) |n| {
                 if (ids.get(Rename.Globals.key(try e.moduleName(module, n)))) |g| try escaping.append(e.scratch, g);
             }
+            if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
+        var main_id: ?u32 = null;
         const b = e.bir(entry.module);
         if (entry.decl.int() < b.decls.len) {
             const main: JsIr.Name = .{
@@ -2488,7 +2494,14 @@ const Emitter = struct {
                 .base = b.symbol(b.decls[entry.decl.int()].name),
                 .tag = JsIr.Name.no_tag,
             };
-            if (ids.get(Rename.Globals.key(main))) |g| try escaping.append(e.scratch, g);
+            main_id = ids.get(Rename.Globals.key(main));
+        }
+        var entry_call: ?Spec.Entry = null;
+        if (run_id != null and main_id != null) {
+            entry_call = .{ .callee = run_id.?, .args = try e.scratch.dupe(u32, &.{main_id.?}) };
+        } else {
+            if (run_id) |g| try escaping.append(e.scratch, g);
+            if (main_id) |g| try escaping.append(e.scratch, g);
         }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
@@ -2498,6 +2511,7 @@ const Emitter = struct {
             .props = props.count(),
             .builtin_props = builtin.items,
             .escaping = escaping.items,
+            .entry = entry_call,
         });
     }
 

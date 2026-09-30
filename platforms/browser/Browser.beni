@@ -9,6 +9,7 @@
 --! model once, on one microtask after the messages of a task, writing only
 --! the holes whose values changed.
 import Html exposing (Html)
+import Js
 import Task
 
 
@@ -21,9 +22,15 @@ pub foreign type Program
 --| at `document.body` unless `mountAt` gives it another node.
 --| `update` and `view` are `sync`: the page calls them while it handles an
 --| event or renders, so neither may suspend.
-pub foreign pure program :
+pub program :
     { init : model, update : sync (msg, model -> model), view : sync (model -> Html msg) }
     -> Program
+program p =
+    -- One mount, `{ a, n }`: the record, and no element id. Written in beni
+    -- (`plans/runtime-in-beni.md`, step 3), so a release build sees that the
+    -- mount has no `h` and drops the runtime's hosted branch (`backend.md`
+    -- §9, fact 3).
+    Js.to (Js.array [ Js.from { a = p, n = Js.null } ])
 
 
 --| The same program, mounted at the element whose `id` is the string

@@ -7,7 +7,10 @@
 -- the hand-written half, which the empty page does not reach. `run(…)` and
 -- `export{… as flush}` name the module's declarations. Each function is the
 -- hand-written runtime's it replaced, in shape (research 47 §4.3), and the
--- page is specialised to what it passes (backend.md §9).
+-- page is specialised to what it passes (backend.md §9). `Browser.program`
+-- is beni too, and the entry's `run(main)` is read as a call (§9, *The
+-- entry's call is a call*), so `run` sees a mount with no `h`: it has no
+-- hosted branch, and `flush` no after-render phase.
 import Browser
 import Html exposing (Html)
 

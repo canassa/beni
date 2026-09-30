@@ -9,7 +9,8 @@
 //!   1. **Constant arguments.** Per parameter of every top-level function,
 //!      the one literal every call passes it, or ⊤. A function whose name
 //!      appears anywhere but as the callee of a call — passed, stored,
-//!      called by a hand-written file or the entry file (`Input.escaping`) —
+//!      called by a hand-written file or the entry file (`Input.escaping`,
+//!      `Input.entry`) —
 //!      has every parameter ⊤, and so does one called with a different
 //!      number of arguments than it has parameters. An argument that is a
 //!      caller's own parameter takes that parameter's value, so the fact
@@ -82,10 +83,31 @@ pub const Input = struct {
     /// not read as `undefined` there.
     builtin_props: []const u32 = &.{},
     /// Whole-program names some file the pass cannot see reads or calls:
-    /// the entry file's `main`, `run`, `start` and `flush`, and what the
-    /// markup runtime imports from the runtime module.
+    /// the entry file's `start` and `flush` (and `main` and `run` when
+    /// `entry` is null), and what the markup runtime imports from the
+    /// runtime module.
     escaping: []const u32,
+    /// The entry file's `run(main)`, when `run` is the program's own
+    /// (backend.md §9, *The entry's call is a call*): fact 3 reads it as a
+    /// call, facts 1 and 2 and `prune` as names that escape.
+    entry: ?Entry = null,
 };
+
+/// A call the entry file makes of a top-level function: the whole-program
+/// names of the callee and of each argument, a name read whole.
+pub const Entry = struct {
+    callee: u32,
+    args: []const u32,
+};
+
+/// Every name `Input.escaping` lists, then the entry call's.
+fn eachRoot(in: Input, i: usize) ?u32 {
+    if (i < in.escaping.len) return in.escaping[i];
+    const e = in.entry orelse return null;
+    const j = i - in.escaping.len;
+    if (j == 0) return e.callee;
+    return if (j - 1 < e.args.len) e.args[j - 1] else null;
+}
 
 /// How many rounds of facts-then-rewrite the pass takes at most. Each round
 /// is sound on its own; a later one only finds more (a dropped call site
@@ -366,7 +388,8 @@ const Spec = struct {
         @memset(s.assigned, false);
         @memset(s.reads, 0);
         s.params.clearRetainingCapacity();
-        for (s.in.escaping) |g| if (g < s.escaped.len) {
+        var ri: usize = 0;
+        while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < s.escaped.len) {
             s.escaped[g] = true;
         };
         // Every top-level declaration, by its whole-program name.
@@ -991,7 +1014,8 @@ const Spec = struct {
         const live = try s.arena.alloc(bool, s.in.globals);
         @memset(live, false);
         var work: std.ArrayList(u32) = .empty;
-        for (s.in.escaping) |g| if (g < referenced.len) {
+        var ri: usize = 0;
+        while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < referenced.len) {
             referenced[g] = true;
             try work.append(s.arena, g);
         };
@@ -1887,6 +1911,7 @@ const Pts = struct {
             }
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(p.view(p.globals[g]));
+            if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();
             if (!p.changed) {
                 p.ok = true;
@@ -2112,6 +2137,26 @@ const Pts = struct {
     /// callee may be, and its value is what they return. A callee that may
     /// be anything else is code the pass cannot see: the arguments escape,
     /// and so does the object whose method it is.
+    /// The entry file's call (`Input.entry`), as `call` reads one whose
+    /// callee and arguments are names: each argument's objects join the
+    /// parameter it is passed to, and escape when the callee may be
+    /// something the program did not make.
+    fn entryCall(p: *Pts, e: Entry) Allocator.Error!void {
+        if (e.callee >= p.globals.len) return;
+        for (e.args) |a| if (a >= p.globals.len) return;
+        const vc = p.view(p.globals[e.callee]);
+        var unknown = vc.top or vc.prim;
+        for (vc.sites) |site| {
+            if (p.sites.items[site].kind != .func) {
+                unknown = true;
+                continue;
+            }
+            const params = p.sites.items[site].params;
+            for (params, 0..) |v, i| try p.join(v, if (i < e.args.len) p.view(p.globals[e.args[i]]) else Val.prim_val);
+        }
+        if (unknown) for (e.args) |a| try p.escape(p.view(p.globals[a]));
+    }
+
     fn call(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
         const ir = p.s.mods[mi].ir;
         const vals = p.vals[mi];

@@ -4803,6 +4803,25 @@ hand-written on `beni-runtime`, so `m.h === undefined` does not fold on that pag
 fields), `run/SpecializeFields` (the same, beside a record `Debug.toString` reads whole, which keeps
 every field), `emit/release/split/EmptyPage`.
 
+**The entry's call is a call** (*added 2026-10-02*, `plans/runtime-in-beni.md` step 3). The entry
+file is the compiler's own output, and when the runtime module supplies `run` what it does is
+known: `run(main)`, once, its result unread. So `run` and `main` no longer escape (`Input.escaping`
+lists what the entry reads it cannot say more about — `start`, `flush`, and what the markup runtime
+imports); the pass is handed the call instead (`Input.entry`: the callee's and the arguments'
+whole-program names), and each fact reads it as the call it is:
+
+- **fact 3** joins `main`'s objects into `run`'s parameter, exactly as a `call` node whose callee is
+  `run` and whose argument is the name `main` would — through a callee that is not the program's
+  own function, the argument escapes, as at any unknown call;
+- **fact 1** keeps both names' parameters ⊤, as before (`main` is a value, never a literal, so the
+  call could give `run`'s parameter nothing better), and **`prune`** keeps both as roots.
+
+So a program description made in beni reaches `run` with its fields known: on a page whose `main`
+is `Browser.program { … }`, `m.h === undefined` folds to `true`, the hosted branch of `run` goes
+and with it the after-render phase (`setPhase`, and `phase` constant `null`). Nothing else changes:
+a description made by a hand-written file is ⊤ as before. Fixture: `emit/release/split/EmptyPage`
+(no `h`, no phase), and every `browser/` page's release pass as the differential.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

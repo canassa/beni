@@ -1,5 +1,6 @@
 // The sibling JavaScript of `Browser.beni` (docs/design/boundary.md §4): a
-// program is an array of mounts, `{ a, n, h }` — the record it was given,
+// program is an array of mounts, `{ a, n, h }` (`program`'s is made in
+// beni, in `Browser.beni`) — the record it was given,
 // the id of the element it mounts at or null for `document.body`, and for
 // a `hosted` program the function that turns it into a record the
 // platform's runtime mounts — which only the runtime reads.
@@ -12,8 +13,6 @@
 // and a function that sets the after-render phase and answers whether a
 // flush is queued — and a flush is queued through the mount node's `send`,
 // with `Skip`, which renders nothing.
-
-export const program = (p) => [{ a: p, n: null }];
 
 export const hosted = (p) => [{ n: null, h: (root, flush, loop) => Host(p, root, flush, loop) }];
 
