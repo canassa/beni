@@ -15,6 +15,10 @@
 # is always safe, because every entry is content-addressed.
 .beni-cache/
 
+# bench/fiber's fetched dependencies (Effect v4 and esbuild) and its builds.
+/bench/fiber/node_modules
+/bench/fiber/out/
+
 # bench/compare's generated projects and fetched dependencies
 # (docs/design/compare-bench.md §8.2, §12): generated code is never committed.
 /bench/compare/work/

@@ -1,0 +1,11 @@
+{
+  "name": "beni-fiber-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "effect": "4.0.0-rc.116"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

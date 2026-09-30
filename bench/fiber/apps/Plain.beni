@@ -1,0 +1,13 @@
+-- The size of the same program with nothing that waits
+-- (bench/fiber/size.mjs): the baseline Fibers.beni is measured against.
+import Node exposing (Program)
+
+
+worker : Int -> Int
+worker n =
+    n * 2
+
+
+main : Program
+main =
+    Node.print (String.fromInt (worker 21))

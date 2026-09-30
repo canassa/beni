@@ -1,0 +1,33 @@
+-- The size of a program that uses the spike's four primitives and a
+-- timer (bench/fiber/size.mjs): a scope, a bracket, a spawn, a join and a
+-- sleep, and nothing else of the runtime.
+import Io
+import Node exposing (Program)
+import Task
+
+
+worker : Int -> Int
+worker n =
+    let
+        _ =
+            Io.sleep 1
+    in
+    n * 2
+
+
+main : Program
+main =
+    Io.run
+        (\() ->
+            let
+                answer =
+                    Task.scope
+                        (\s ->
+                            Task.bracket
+                                (\() -> 21)
+                                (\_ _ -> ())
+                                (\r -> Task.join (Task.spawnIn s (\() -> worker r)))
+                        )
+            in
+            Node.print (String.fromInt answer)
+        )
