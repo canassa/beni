@@ -15,34 +15,65 @@ import Browser
 import Hosted exposing (Key, Tap)
 
 
---| The subscriptions a model needs.
+--| The subscriptions a model needs: `None`, or the declarations of every
+--| `listen` in it, in order. Only `listen` makes a `Listen` from nothing —
+--| `batch` and `map` rebuild one only from one — so a program that never
+--| calls it has no `Listen`, and the architecture's code for one is
+--| eliminated with it (`docs/design/backend.md` §9, *A `case` arm on a
+--| constructor nothing builds*). A program never needs either.
 pub type Sub msg
-    = Sub (List ( Key, Tap msg ))
+    = None
+    | Listen (List ( Key, Tap msg ))
 
 
 --| None.
 pub none : Sub msg
 none =
-    Sub []
+    None
 
 
 --| All of these.
 pub batch : List (Sub msg) -> Sub msg
 batch subs =
-    Sub (List.concat (List.map subs taps))
+    List.foldr subs None both
+
+
+both : Sub msg, Sub msg -> Sub msg
+both sub rest =
+    case sub of
+        None ->
+            rest
+
+        Listen list ->
+            case rest of
+                None ->
+                    Listen list
+
+                Listen more ->
+                    Listen (List.append list more)
 
 
 --| Every declaration, in order: its key and its tap. What the
 --| architecture that runs a program reads; a program never needs it.
 pub taps : Sub msg -> List ( Key, Tap msg )
-taps (Sub list) =
-    list
+taps sub =
+    case sub of
+        None ->
+            []
+
+        Listen list ->
+            list
 
 
 --| The same subscriptions, each message passed through `tag`.
 pub map : Sub a, (a -> msg) -> Sub msg
-map (Sub list) tag =
-    Sub (List.map list (\( k, t ) -> ( k, Hosted.mapTap t tag )))
+map sub tag =
+    case sub of
+        None ->
+            None
+
+        Listen list ->
+            Listen (List.map list (\( k, t ) -> ( k, Hosted.mapTap t tag )))
 
 
 --| While `key` is in the set, one fiber runs `body`, and each value it
@@ -55,4 +86,4 @@ map (Sub list) tag =
 pub listen : k, (Browser.Send a -> ()), (a -> msg) -> Sub msg
     where k.compare : k, k -> Order
 listen k body tag =
-    Sub [ ( Hosted.key k, Hosted.tap body tag ) ]
+    Listen [ ( Hosted.key k, Hosted.tap body tag ) ]

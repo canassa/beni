@@ -433,10 +433,14 @@ function measureFloor(options, beni, work) {
 ///
 /// Two more pages weigh effects (`boundary.md` §9.8): `element` is
 /// `Tea.element` with no command and no subscription, the cost of the
-/// command table and the subscription diff alone; `effects` is a page that
+/// architecture when it is asked for no work; `effects` is a page that
 /// fetches with `Http` on a keyed `Restart` and ticks with `Time.every`.
-/// `reaches_task` says whether the page ships core's fiber runtime: a
-/// `sandbox` must not.
+/// `reaches_task` says whether the page ships core's fiber runtime — a
+/// fiber's record, the one place `interrupted` is written, in the release
+/// file, or else core's `Task` sibling in the development tree, which is
+/// copied whole once anything of it is reached: neither a `sandbox` nor,
+/// since `backend.md` §9's *A `case` arm on a constructor nothing builds*,
+/// an `element` that asks for no work may.
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
 const pages = [
@@ -473,17 +477,22 @@ function measurePage(options, beni, work, page) {
     return null;
   }
   const measured = measureTree(join(projectDir, "out"));
+  const release = measureRelease(options, beni, work, projectDir, ["Page.beni"], false, platform);
+  const releaseDir = join(projectDir, "out-release");
+  const reachesTask = release === null
+    ? filesUnder(join(projectDir, "out"), ".mjs").some((rel) => rel.split(sep).join("/") === "_core/Task.foreign.mjs")
+    : filesUnder(releaseDir, ".mjs").some((rel) => readFileSync(join(releaseDir, rel), "utf8").includes("interrupted"));
   return {
     page: true,
     platform,
     name: page.name,
-    reaches_task: filesUnder(join(projectDir, "out"), ".mjs").some((rel) => rel.split(sep).join("/") === "_core/Task.foreign.mjs"),
+    reaches_task: reachesTask,
     entry: "Page",
     files: measured.files,
     raw_bytes: measured.raw_bytes,
     gzip_bytes: measured.gzip_bytes,
     brotli_bytes: measured.brotli_bytes,
-    ...(measureRelease(options, beni, work, projectDir, ["Page.beni"], false, platform) ?? {}),
+    ...(release ?? {}),
   };
 }
 

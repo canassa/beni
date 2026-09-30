@@ -1735,9 +1735,38 @@ dropped, the new body after the old one's cleanup), `Policies`, `TupleKeyRestart
 `--release`, brotli): the empty `Tea.sandbox` page 1 551 bytes and it reaches no `Task`; the empty
 `Tea.element` 5 496 — declaration-granular elimination keeps the command table, the diff and the
 fiber runtime whenever `element` is reached, so R45 §7's "must not reach `Task`" holds for
-`sandbox` only; a page on a keyed `Restart` `Http.get` and a `Time.every`, 6 144. A message
+`sandbox` only; a page on a keyed `Restart` `Http.get` and a `Time.every`, 6 144. *(Amended
+2026-10-02: see the note below — 1 945 and 5 427, and an `element` that asks for no work reaches
+no fiber.)* A message
 dispatched to a counter costs about 30 ns under `Tea.element` against 13 ns under `Tea.sandbox`
 (happy-dom in Node, the update and the dispatcher, one render per thousand messages).
+
+*Amended 2026-10-02: what a page asks for is what it ships.* Three changes, one rule each:
+
+- **The hosted loop is `Browser.js`'s** (`backend.md` §15.11's last amendment), so a page of
+  `Browser.program`s alone ships no dispatcher, after-render phase or waits.
+- **An arm on a constructor nothing builds keeps nothing alive** (`backend.md` §9, *A `case` arm on
+  a constructor nothing builds*). `Tea.element`'s command table is a `case` over `Cmd.Item`, so
+  each item kind's code — and the fiber runtime, `Dict` and `Hosted.compare` behind it — ships only
+  when the program builds that kind; a page that asks only for `Restart` ships no `Ignore`,
+  `Queue` or `Concurrent`.
+- **`Sub` has a constructor for "nothing"**: `type Sub msg = None | Listen (List ( Key, Tap msg ))`.
+  Only `listen` makes a `Listen` from nothing (`batch` and `map` rebuild one from one), and `Tea`'s
+  live set is `Idle` until a `Listen`'s diff makes it `Running`, so a program that never subscribes
+  ships neither the diff nor the cancellation of what it started. `taps` and the rest of §9.8.5's
+  surface are unchanged; the constructors are for the architecture, as `Cmd.Item`'s are.
+- Core's `Task.js` makes its outside-any-fiber record on first use, so a build that keeps only
+  `openRoot` of it keeps no call at its top level (research 40 §8, rule 5).
+
+Measured (`bench/size.mjs`, `--release`, brotli): the empty `browser` page **1 234**, the empty
+`Tea.sandbox` **1 239**, the empty `Tea.element` **1 945** with no fiber runtime
+(`reaches_task` false; `build_test`'s *an element whose commands are all `Cmd.none` ships no fiber
+runtime*), and the `Http` + `Time` page **5 427**. What the last still ships, each group priced by
+leaving it out of the file: the fiber runtime (about 1 150: the scheduler, suspension, spawn into
+a scope, cancellation and its wait), the keyed-`Restart` table and the subscription diff (about
+520), `Dict` (about 370: `get`, `insert` and `foldl`, for the table and the diff), `Http`'s
+request (about 280) and `Hosted.compare` (about 190, the order keys are matched by). Each is used
+by what the page does; the rest is the 1 234 of any page.
 
 ## Appendix — what is deliberately not done
 

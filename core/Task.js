@@ -69,9 +69,11 @@ let current = null;
 
 // Where `spawn`, a finaliser's push and `uninterruptible` act outside any
 // fiber (§16.4): nothing there can park, and nothing runs these finalisers.
-const outside = newFiber(null);
+// Made on first use, so that a build keeping only `openRoot` of this file
+// keeps no call at the top level (research 40 §8, rule 5).
+let outside = null;
 
-const here = () => current ?? outside;
+const here = () => current ?? (outside ??= newFiber(null));
 
 // ---- The scheduler (§7.5) ---------------------------------------------------
 

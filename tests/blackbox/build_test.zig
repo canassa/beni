@@ -3326,6 +3326,59 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     try testing.expect(std.mem.indexOf(u8, hosted_js, "finally") != null);
 }
 
+test "an element whose commands are all Cmd.none ships no fiber runtime" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Tea.element`'s command table and subscription diff name the fiber
+    // runtime only in the arms for `Cmd`'s items and `Sub.Listen`, which a
+    // program that never asks for work never builds (`backend.md` §9, *A
+    // `case` arm on a constructor nothing builds*). A fiber's record is the
+    // one place the runtime writes `interrupted`; the page that performs a
+    // command ships it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const head =
+        \\import Browser
+        \\import Cmd
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea
+        \\
+        \\
+        \\view : Int -> Html msg
+        \\view _ =
+        \\    <></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\
+    ;
+    try w.write("none/Main.beni", head ++
+        \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model, Cmd.none ), view = view, subscriptions = \_ -> Sub.none }
+        \\
+    );
+    try w.write("some/Main.beni", head ++
+        \\    Tea.element { init = ( 0, Cmd.none ), update = \msg model -> ( model, Cmd.do (\() -> ()) ), view = view, subscriptions = \_ -> Sub.none }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const none = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=none-out", "none/Main.beni" }, .{ .raw_diagnostics = true });
+    const some = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=some-out", "some/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(none);
+    try expectBuilt(some);
+    try testing.expect(std.mem.indexOf(u8, try w.read("none-out/_main.mjs"), "interrupted") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("some-out/_main.mjs"), "interrupted") != null);
+}
+
 test "a development build copies hand-written JavaScript byte for byte" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
