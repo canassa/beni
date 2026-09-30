@@ -96,17 +96,16 @@ raw and 21 840 → **15 017** brotli (−31%), `run/Dictionaries` 7 008 → 5 86
 (−16%), the floor 835 → 789. **Development output did not move by one byte**,
 which is what makes an `emit/` golden that changes a finding. The whole `run/`
 corpus is built and run a SECOND time under the flag, 121 programs, +13 s of
-`test-blackbox`; `emit/release/` is the golden directory for shape claims and
-`ReleaseDeadDebug.release-expected` is the one place the two builds
-legitimately differ. **`--release` refuses a build that reaches `Debug`** (the
+`test-blackbox`; `emit/release/` is the golden directory for shape claims, and
+the two builds print the same thing everywhere: `--release` keeps any unread
+binding that may be impure or suspend (`language.md` §6). **`--release` refuses a build that reaches `Debug`** (the
 owner's decision, 2026-09-19 — Elm's `--optimize` rule): `debug_in_release`,
 exit 1, nothing written, the use sites named, so "a release build behaves
 exactly as the development build does" holds with no exception and §9 *Item
 4*'s "pin every field if `Debug` survives" is withdrawn. The corpus's release
 second pass carries a hidden, test-only `--allow-debug`, because `Debug.log`
 is its only instrument for evaluation order (24 of the 121 fixtures);
-`tests/corpus/build/bad-release/` is the kind that does not pass it, and
-`ReleaseDeadDebug.release-expected` is now a harness-only fact. Still to come
+`tests/corpus/build/bad-release/` is the kind that does not pass it. Still to come
 in M3c: **item 4**, type-directed field ambiguation, which needs a per-build
 field-interference artifact the backend
 does not receive (§9's *What the second slice owes*), integer constructor tags
