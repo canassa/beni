@@ -1,0 +1,95 @@
+--! Facts 5 and 6 of whole-program specialisation (`backend.md` §9, *slice
+--! 4*) where they fire and beside where they must not: each answer is the
+--! same in both builds.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- Every `Node` instance's `s` is a clone a host call makes: nonnull.
+node : V -> V
+node proto =
+    Js.from { s = Js.call proto "cloneNode" [ Js.from True ], q = Js.from "fallback" }
+
+
+-- A `Slot` instance's `s` is `null` in one construction and a node in
+-- another: no fold.
+slot : Bool, V -> V
+slot empty proto =
+    if empty then
+        Js.from { s = Js.null, q = Js.from "slot fallback" }
+
+    else
+        Js.from { s = Js.call proto "cloneNode" [ Js.from True ], q = Js.from "unused" }
+
+
+firstNode : V -> String
+firstNode i =
+    if Js.isNull (Js.get i "s") then
+        Js.to (Js.get i "q")
+
+    else
+        Js.to (Js.get (Js.get i "s") "name")
+
+
+firstSlot : V -> String
+firstSlot i =
+    if Js.isNull (Js.get i "s") then
+        Js.to (Js.get i "q")
+
+    else
+        Js.to (Js.get (Js.get i "s") "name")
+
+
+-- One block, made once; another made on every call.
+block : V
+block =
+    Js.from { t = "kind" }
+
+
+same : V, V -> String
+same a b =
+    if Js.same a b then
+        "same"
+
+    else
+        "other"
+
+
+made : () -> V
+made () =
+    Js.from { t = "kind" }
+
+
+-- A property no literal has is `undefined`, not `null`.
+missing : V -> String
+missing r =
+    if Js.isNull (Js.get r "zzz") then
+        "null"
+
+    else if Js.isUndefined (Js.get r "zzz") then
+        "undefined"
+
+    else
+        "something"
+
+
+pub demo : () -> List String
+demo () =
+    let
+        _ =
+            Js.set (Js.global "globalThis") "probeNode" (Js.from { cloneNode = \_ -> Js.from { name = "cloned" } })
+
+        proto =
+            Js.get (Js.global "globalThis") "probeNode"
+    in
+    [ firstNode (node proto)
+    , firstSlot (slot True proto)
+    , firstSlot (slot False proto)
+    , same block block
+    , same (made ()) block
+    , same (made ()) (made ())
+    , missing (Js.from { t = "kind" })
+    ]

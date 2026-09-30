@@ -1964,8 +1964,21 @@ const Case = struct {
     /// paths the build must NOT have written, one per line — which is how
     /// "a module vanishes" is asserted, there being no other way to golden
     /// a file that is not there.
-    fn emitted(c: Case) !void {
+    fn emitted(case: Case) !void {
         var sources: std.ArrayList([]const u8) = .empty;
+        // A project with a `platform/` directory builds for that platform,
+        // as a `run/` project does — how a golden shows, inside an
+        // application, what only a platform may write (`Js`) — in a world
+        // of its own, so no other fixture's platform files are in it.
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        const own_platform = c.fixture.project and hasPlatformDir(try c.fixturePath());
+        if (own_platform) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            try c.w.copyTree(try c.fixturePath(), "_expected.");
+        }
         if (c.fixture.project) {
             const dir_path = try c.fixturePath();
             var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
@@ -1991,7 +2004,8 @@ const Case = struct {
         }
 
         var args: std.ArrayList([]const u8) = .empty;
-        try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{c.fixture.platform orelse "node"}), "--out=out" });
+        const platform = if (own_platform) "platform" else c.fixture.platform orelse "node";
+        try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform}), "--out=out" });
         if (!c.fixture.app) try args.append(c.arena, "--library");
         // `--allow-debug` rides with `--release` here for `run/`'s reason:
         // one rule for the whole corpus, so that a shape golden can be about

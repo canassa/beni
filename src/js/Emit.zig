@@ -2505,11 +2505,14 @@ const Emitter = struct {
         }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
+        var makers: std.ArrayList(u32) = .empty;
+        for (Spec.node_makers) |n| if (props.get(n)) |id| try makers.append(e.scratch, id);
         try Spec.run(e.gpa, e.scratch, .{
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
             .builtin_props = builtin.items,
+            .node_makers = makers.items,
             .escaping = escaping.items,
             .entry = entry_call,
         });

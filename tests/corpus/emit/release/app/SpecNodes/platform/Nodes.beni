@@ -1,0 +1,88 @@
+--! Facts 5 and 6 of whole-program specialisation (`backend.md` §9, *slice
+--! 4*), in the code only a platform may write: the browser runtime's
+--! `first`, `last` and `patch`, over objects this module makes.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- An instance: its first node a clone, which a node-making host call
+-- returns (never `null`), its last an object literal, its `q` null.
+instance : V -> V
+instance proto =
+    let
+        c =
+            Js.call proto "cloneNode" [ Js.from True ]
+    in
+    Js.from { s = c, q = Js.null, e = Js.from { tag = "end" } }
+
+
+first : V -> V
+first i =
+    if Js.isNull (Js.get i "s") then
+        Js.get i "q"
+
+    else
+        Js.get i "s"
+
+
+last : V -> V
+last i =
+    if Js.isNull (Js.get i "e") then
+        Js.get i "q"
+
+    else
+        Js.get i "e"
+
+
+-- One block, made once at the module's top level; `view` always shows it.
+block : V
+block =
+    Js.from { t = "kind" }
+
+
+view : Int -> V
+view _ =
+    block
+
+
+-- What `patch` does when it is shown the block it shows already.
+patch : V, V -> String
+patch shown b =
+    if Js.same b shown then
+        "same"
+
+    else
+        "other"
+
+
+-- A block made here is never the module's one.
+fresh : V -> String
+fresh b =
+    let
+        made =
+            Js.from { t = "kind" }
+    in
+    if Js.same made b then
+        "same"
+
+    else
+        "other"
+
+
+pub demo : () -> List String
+demo () =
+    let
+        proto =
+            Js.get (Js.global "globalThis") "probeNode"
+
+        i =
+            instance proto
+    in
+    [ Js.to (Js.get (first i) "name")
+    , Js.to (Js.get (last i) "tag")
+    , patch (view 1) (view 2)
+    , fresh (view 3)
+    ]

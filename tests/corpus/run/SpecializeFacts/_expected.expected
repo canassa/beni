@@ -1,0 +1,11 @@
+box 2 plain
+box 1 plain
+box 1 loud
+{ kind = "box", mode = "plain", size = 1 }
+cloned
+slot fallback
+cloned
+same
+other
+other
+undefined

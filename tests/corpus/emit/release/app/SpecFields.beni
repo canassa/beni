@@ -2,7 +2,10 @@
 -- field no reachable read reaches is not written into the object literal
 -- when its value does nothing. `point`'s `label` and `rank` are read
 -- nowhere, so its literal holds `tag`, `x` and `y` only — and, since every
--- call passes `3`, it is a constant function (fact 1).
+-- call passes `3`, it is a constant function (fact 1). Since slice 4 its
+-- one literal writes `x` and `y` as `3` and `6`, so `p.x + p.y` is `9`
+-- (fact 4) and the two keys go with their reads; `tag`'s string is longer
+-- than a read and stays one.
 import Node exposing (Program)
 
 

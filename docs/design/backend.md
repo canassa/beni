@@ -4827,6 +4827,90 @@ and with it the after-render phase (`setPhase`, and `phase` constant `null`). No
 a description made by a hand-written file is ⊤ as before. Fixture: `emit/release/split/EmptyPage`
 (no `h`, no phase), and every `browser/` page's release pass as the differential.
 
+**Slice 4 — three more facts** (*added 2026-10-02*; the empty page's study, `bench/minify/
+empty-page/`, ledger steps 10, 13 and 15, which priced them at about 190 brotli bytes together on
+the hand-written runtime). Each is a small extension of fact 3's allocation sites, and each is
+spent by the rewrites slices 1–3 already have.
+
+4. **A field whose every write is one literal.** Per abstract object and property: the join, in
+   facts 1–2's lattice, of every value written to it — the object literal's own key, and every
+   `o.p = v` whose `o` may be it. A read `x.p` through a name or properties of one (a chain: its
+   evaluation does nothing the fold could lose) is that literal when every object `x` may be is a
+   program object literal that nothing unseen holds, none written under an unknown key or copied
+   from by a spread, and **each one's literal has the key** — the property exists from the moment
+   the object does, so a flow-insensitive join is its value at every read. The literal is written
+   in place of the read only when it prints in at most 5 bytes, and never as the object of another
+   read (`null.parentNode` would say the same thing and nothing shorter); otherwise its value
+   still folds what it decides. User code: a record field every construction and every update
+   writes the same literal (a configuration flag) folds the branches it decides.
+5. **A field that is never `null`.** The lattice gains one value between a literal and ⊤,
+   *nonnull*: known to be neither `null` nor `undefined`. It is what an object, array, function,
+   template or `new` makes, what any operator but `&&`/`||` gives, a non-nullish literal, the join
+   of two such, a name bound to one, a parameter every call passes one, and — joined per property
+   as fact 4 joins literals — a read of a field every write gives one. A call's value is the join
+   of what the functions it may call return (every `return`, and `undefined` when the body may run
+   off its end). **One host fact**: a call of `cloneNode`, `importNode`, `createElement`,
+   `createElementNS`, `createTextNode`, `createComment` or `createDocumentFragment` on a value the
+   program did not allocate returns a node or throws — the DOM's contract for those seven, which a
+   platform's hand-written file (trusted, `boundary.md` §4) is taken to honour. Spent in one place:
+   `c ? t : f` whose test compares a read `x.p` with `null` strictly (`===`/`!==`), where `x.p` is
+   nonnull, is the branch the comparison takes — when every value `x` may have is an object of the
+   program, or when that branch is itself the read `x.p`: then a `null` or primitive `x` behaves as
+   before, since the read that throws or gives `undefined` is still the first thing evaluated.
+   `first i = if isNull i.s then head i.q else i.s` is `(b)=>b.s` on a page whose instances all
+   hold nodes, and `head` goes with its last call.
+6. **An object allocated once.** An object literal evaluated at most once — at a module's top
+   level, outside any function and any loop — is ONE object. `a === b` (and `!==`) of two chains
+   that each may be only that object is `true`; of two chains whose sets of objects are disjoint,
+   neither of which may be a host value and at most one a primitive, it is `false`. Both chains
+   must read nothing that may throw: every object a chain reads a property of may only be a program
+   object literal. So `patch i b` returns at `b === i.b` on a page whose `view` returns one
+   module-level block, and its other two arms go.
+
+**What fact 3 learns for these** (`Spec.Pts`). A primitive value is `null`, `undefined` or
+`prim` (any other); reading a property of a `null` or `undefined` value throws, so it contributes
+nothing to what the read may be — a `head (i.q)` whose `q` is always `null` no longer makes every
+read in `head` ⊤. What may be `undefined` is tracked, not assumed away: a read of a key an object's
+literal lacks, an index, a missing argument, a `return` with no value and a function that may run
+off its end. A site knows whether it is made once (fact 6). And **a guard narrows**: in the branch
+of `if (X === null)` (or `!==`, or `==`, either way round) where the chain `X` is not `null` (nor
+`undefined`, for `==`), a read of the same chain made before anything that may change what it
+reads — a call, a `new`, an assignment, a declaration, a loop's next turn, a read through a host
+value — is not `null`: `patch (s.i) b` in `childHtml`'s `else` passes an instance, not the slot's
+first `null`. A function in the branch runs later, and sees no guard.
+
+**And two small rewrites the facts feed.** A template whose every substitution is a literal is the
+string it makes — when that prints no longer, and a number only when its spelling is how
+JavaScript writes it back — so a mount record's `n`, always `null`, makes the error message
+`"no element has the id \"null\" …"`. And *Compact statements*' flag test (item 3) counts a
+comparison's uses over the nodes the module still writes: a conditional lowering wrote as an `if`
+no longer makes `fire`'s `(flags & 1) !== 0` look shared.
+
+Every fold stays exact or is not made: a read replaced by a literal is one whose object cannot be
+`null`, `undefined` or a primitive; a comparison replaced by its value reads nothing that could
+throw, or its taken branch reads the same thing first.
+
+*As built* (2026-10-02, `Spec.memberValue`, `propValue`, `callValue`, `identity`,
+`nullTestTaken`, `templateValue`; `Pts.safeChain`, `Pts.narrowed`). Fixtures:
+`emit/release/app/SpecFacts` (user code: `verbose` and `scale`, which every `Settings` writes
+`False` and `3`, fold, and their keys go), `emit/release/app/SpecNodes` (a project with a platform
+module: `first`/`last` over instances a host clone fills, the module's one block compared with
+itself and a fresh one with it), `run/SpecializeFacts` (each beside what must defeat it —
+constructions that disagree, a record update, a record `Debug.toString` reads, a field one
+construction leaves `null`, a function called with both blocks, a key no literal has),
+`emit/release/app/SpecFields` (`p.x + p.y` is `9`), `emit/release/split/EmptyPage`. The corpus
+harness builds an `emit/` project with a `platform/` directory for that platform, as `run/` does.
+
+Measured (release, brotli, the whole bundle, on the one-line output of *Compact statements*' last
+list, with `Browser.program` in beni and the entry's call read as one): the empty `browser` page
+776 → **657** — the mount record's `n` (fact 4: the body, the messages as strings), a slot's `cx`
+and the instance's ends (fact 5: `first` is `(a)=>a.s`, `head`, `tail` and `q` go); `Tea.sandbox`
+781 → **662**, `Tea.element` 1 552 → **1 527**, with effects 5 758 → **5 718**, the `bench/ui`
+app 5 941 → **5 906**. **Fact 6 does not fire on the page yet**: `patch`'s `b === i.b` compares the
+module's one block with an instance's `b`, which `unit` writes right after the kind makes the
+instance — but a flow-insensitive analysis sees the instance before that write, where `b` is still
+`undefined`.
+
 ### Compact statements
 
 *Added 2026-10-02 (`plans/browser-decisions.md` R47-3: each step of the runtime's port must print

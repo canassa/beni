@@ -1,0 +1,42 @@
+-- Facts 4, 5 and 6 of whole-program specialisation (`backend.md` §9, *slice
+-- 4*) beside the cases that must defeat them, printing the same in both
+-- builds:
+--
+--   * a record field every construction writes with one literal (`kind`),
+--     one whose constructions disagree (`size`), and one a record update
+--     changes (`mode`);
+--   * in the platform module, a field a host clone fills (nonnull) and one
+--     a construction leaves `null`; the one module-level block compared
+--     with itself, and fresh objects compared with it and with each other;
+--     and a property no literal has, which is `undefined`.
+import Node
+import Probe
+
+
+type alias Shape =
+    { kind : String, size : Int, mode : String }
+
+
+shape : Int -> Shape
+shape n =
+    { kind = "box", size = n, mode = "plain" }
+
+
+small : Shape
+small =
+    { kind = "box", size = 1, mode = "plain" }
+
+
+describe : Shape -> String
+describe s =
+    "${s.kind} ${String.fromInt s.size} ${s.mode}"
+
+
+main : Node.Program
+main =
+    let
+        loud =
+            { small | mode = "loud" }
+    in
+    Node.printLines
+        ([ describe (shape 2), describe small, describe loud, Debug.toString small ] ++ Probe.demo ())

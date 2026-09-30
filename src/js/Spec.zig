@@ -82,6 +82,9 @@ pub const Input = struct {
     /// (`toString`, `constructor`, …): an object literal without one does
     /// not read as `undefined` there.
     builtin_props: []const u32 = &.{},
+    /// The property-name ids of `node_makers`' names: a call of one on a
+    /// value the program did not allocate is a node (fact 5's host fact).
+    node_makers: []const u32 = &.{},
     /// Whole-program names some file the pass cannot see reads or calls:
     /// the entry file's `start` and `flush` (and `main` and `run` when
     /// `entry` is null), and what the markup runtime imports from the
@@ -149,14 +152,18 @@ const Lit = struct {
     bytes: []const u8 = "",
 };
 
-/// The lattice: ⊥ (nothing yet), one literal, or ⊤.
+/// The lattice: ⊥ (nothing yet), one literal, *nonnull* — some value that is
+/// neither `null` nor `undefined` (slice 4, fact 5) — or ⊤. A literal that is
+/// not nullish is below nonnull; `Spec.join` is the join, which needs to
+/// know the literal's kind.
 const Lat = packed struct(u32) {
     state: State,
     lit: u30 = 0,
 
-    const State = enum(u2) { bot, lit, top };
+    const State = enum(u2) { bot, lit, top, nonnull };
     const bot: Lat = .{ .state = .bot };
     const top: Lat = .{ .state = .top };
+    const nonnull: Lat = .{ .state = .nonnull };
 
     fn of(id: u32) Lat {
         return .{ .state = .lit, .lit = @intCast(id) };
@@ -164,18 +171,6 @@ const Lat = packed struct(u32) {
 
     fn eql(a: Lat, b: Lat) bool {
         return a.state == b.state and (a.state != .lit or a.lit == b.lit);
-    }
-
-    fn join(a: Lat, b: Lat) Lat {
-        return switch (a.state) {
-            .bot => b,
-            .top => top,
-            .lit => switch (b.state) {
-                .bot => a,
-                .top => top,
-                .lit => if (a.lit == b.lit) a else top,
-            },
-        };
     }
 };
 
@@ -219,6 +214,9 @@ const Mod = struct {
     param: []u32,
     /// Per literal id: its offset in `string_bytes`, once appended.
     lit_at: std.ArrayList(u32) = .empty,
+    /// Per node, while `patchStmt` walks a statement: it is the object of
+    /// another read.
+    objects: std.DynamicBitSetUnmanaged = .{},
 
     /// The whole-program id of `n`, or null for a local.
     fn globalOf(m: *const Mod, n: NameIndex) ?u32 {
@@ -288,8 +286,79 @@ const Spec = struct {
     /// first of a round only, so that `reads` is a count and not a
     /// multiple of one.
     counting: bool = false,
+    /// Slice 4, facts 4 and 5: per abstract object and property, the join
+    /// of every value written to it; the object sites whose literal has a
+    /// spread; per function, the join of what it returns, and the function
+    /// the walk is in; and the conditionals fact 5 decides though their
+    /// test is no literal, with the branch each takes. Refilled each round.
+    prop_lat: std.AutoHashMapUnmanaged(SiteProp, Lat) = .empty,
+    spread_sites: []bool = &.{},
+    ret_lat: std.AutoHashMapUnmanaged(NodeRef, Lat) = .empty,
+    cur_fn: ?NodeRef = null,
+    decided_conds: std.AutoHashMapUnmanaged(NodeRef, Index) = .empty,
 
     const Frame = struct { node: Index, post: bool };
+    const SiteProp = struct { site: u32, prop: u32 };
+    const NodeRef = struct { module: u32, node: u32 };
+
+    /// The join of the lattice: a literal and nonnull, or two different
+    /// literals, meet at nonnull when no side is `null` or `undefined`.
+    fn join(s: *Spec, a: Lat, b: Lat) Lat {
+        if (a.state == .bot) return b;
+        if (b.state == .bot) return a;
+        if (a.state == .top or b.state == .top) return .top;
+        if (a.state == .lit and b.state == .lit and a.lit == b.lit) return a;
+        if (s.maybeNullish(a) or s.maybeNullish(b)) return .top;
+        return .nonnull;
+    }
+
+    fn maybeNullish(s: *Spec, v: Lat) bool {
+        return switch (v.state) {
+            .bot, .nonnull => false,
+            .top => true,
+            .lit => switch (s.litOf(v).kind) {
+                .null_lit, .undefined_lit => true,
+                else => false,
+            },
+        };
+    }
+
+    /// What a value that must not be written as its literal says: nonnull
+    /// when it is neither `null` nor `undefined`.
+    fn demote(s: *Spec, v: Lat) Lat {
+        return switch (v.state) {
+            .lit => if (s.maybeNullish(v)) .top else .nonnull,
+            else => v,
+        };
+    }
+
+    fn joinInto(s: *Spec, slot: *Lat, v: Lat) void {
+        const joined = s.join(slot.*, v);
+        if (!joined.eql(slot.*)) {
+            slot.* = joined;
+            s.changed = true;
+        }
+    }
+
+    fn joinProp(s: *Spec, site: u32, prop: u32, v: Lat) Allocator.Error!void {
+        if (prop == none) return;
+        const gop = try s.prop_lat.getOrPut(s.arena, .{ .site = site, .prop = prop });
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .bot;
+            if (v.state != .bot) s.changed = true;
+        }
+        s.joinInto(gop.value_ptr, v);
+    }
+
+    fn joinRet(s: *Spec, v: Lat) Allocator.Error!void {
+        const f = s.cur_fn orelse return;
+        const gop = try s.ret_lat.getOrPut(s.arena, f);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .bot;
+            if (v.state != .bot) s.changed = true;
+        }
+        s.joinInto(gop.value_ptr, v);
+    }
 
     fn init(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Spec {
         const mods = try arena.alloc(Mod, in.modules.len);
@@ -310,6 +379,7 @@ const Spec = struct {
                 .assigned = try arena.alloc(bool, ir.names.len),
                 .value = try arena.alloc(Lat, ir.names.len),
                 .param = try arena.alloc(u32, ir.names.len),
+                .objects = try .initEmpty(arena, ir.nodes.len),
             };
             @memset(m.stamp, 0);
             @memset(m.lit_of, none);
@@ -388,6 +458,9 @@ const Spec = struct {
         @memset(s.assigned, false);
         @memset(s.reads, 0);
         s.params.clearRetainingCapacity();
+        s.prop_lat.clearRetainingCapacity();
+        s.ret_lat.clearRetainingCapacity();
+        s.decided_conds.clearRetainingCapacity();
         var ri: usize = 0;
         while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < s.escaped.len) {
             s.escaped[g] = true;
@@ -429,6 +502,8 @@ const Spec = struct {
         }
         // Fact 3 first: a read it proves `undefined` folds like a literal.
         try s.pts.analyse();
+        s.spread_sites = try s.arena.alloc(bool, s.pts.sites.items.len);
+        @memset(s.spread_sites, false);
         var sweep: u32 = 0;
         while (sweep < max_sweeps) : (sweep += 1) {
             s.changed = false;
@@ -615,14 +690,23 @@ const Spec = struct {
                     if (m.decls[i] == 1 and !m.assigned[i]) m.value[i] = v;
                 };
             },
-            .func_decl, .gen_decl => try s.evalFunc(m, mi, @enumFromInt(d.rhs)),
+            .func_decl, .gen_decl => try s.evalFunc(m, mi, @enumFromInt(d.rhs), stmt),
             .assign_stmt => {
                 const target: Index = @enumFromInt(d.lhs);
                 if (ir.tag(target) != .ident) _ = try s.eval(m, mi, target);
-                _ = try s.eval(m, mi, @enumFromInt(d.rhs));
+                const value = try s.eval(m, mi, @enumFromInt(d.rhs));
+                // Facts 4 and 5: what `o.p = v` writes, on every object `o`
+                // may be.
+                if (ir.tag(target) == .member and s.pts.ok) {
+                    const td = ir.data(target);
+                    const obj = s.pts.vals[mi][td.lhs];
+                    const id = s.pts.propId(mi, @enumFromInt(td.rhs));
+                    for (obj.sites) |site| try s.joinProp(site, id, value);
+                }
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| {
-                _ = try s.eval(m, mi, v);
+            .return_stmt => {
+                const v: Lat = if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try s.eval(m, mi, v) else .of(try s.intern(.{ .kind = .undefined_lit }));
+                try s.joinRet(v);
             },
             .if_stmt => {
                 _ = try s.eval(m, mi, @enumFromInt(d.lhs));
@@ -653,8 +737,16 @@ const Spec = struct {
         for (m.ir.extraSlice(range, Index)) |stmt| try s.evalStmt(m, mi, stmt);
     }
 
-    fn evalFunc(s: *Spec, m: *Mod, mi: u32, record: ExtraIndex) Allocator.Error!void {
-        try s.evalList(m, mi, m.ir.extraData(record, JsIr.Func).body());
+    /// A function's body, `node` the arrow or the declaration: what its
+    /// `return`s give, and `undefined` when it may run off its end, join
+    /// its entry of `ret_lat` (fact 5).
+    fn evalFunc(s: *Spec, m: *Mod, mi: u32, record: ExtraIndex, node: Index) Allocator.Error!void {
+        const saved = s.cur_fn;
+        defer s.cur_fn = saved;
+        s.cur_fn = .{ .module = mi, .node = node.int() };
+        const f = m.ir.extraData(record, JsIr.Func);
+        try s.evalList(m, mi, f.body());
+        if (fallsThrough(m.ir, f.body())) try s.joinRet(.of(try s.intern(.{ .kind = .undefined_lit })));
     }
 
     /// The value of `root`, bottom-up over an explicit stack, every node's
@@ -670,8 +762,8 @@ const Spec = struct {
             if (!f.post) {
                 switch (ir.tag(f.node)) {
                     .arrow => {
-                        m.memo[f.node.int()] = .top;
-                        try s.evalFunc(m, mi, @enumFromInt(ir.data(f.node).lhs));
+                        m.memo[f.node.int()] = .nonnull;
+                        try s.evalFunc(m, mi, @enumFromInt(ir.data(f.node).lhs), f.node);
                         continue;
                     },
                     // A leaf has no operands to wait for.
@@ -698,17 +790,44 @@ const Spec = struct {
         return switch (ir.tag(node)) {
             .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => s.literalValue(m, node),
             .ident => s.nameValue(m, @enumFromInt(d.lhs)),
-            .unary => try s.unary(@enumFromInt(d.rhs), m.memo[d.lhs]),
+            // Every operator but `yield`, `&&` and `||` gives a primitive
+            // that is neither `null` nor `undefined`.
+            .unary => blk: {
+                const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
+                const v = try s.unary(op, m.memo[d.lhs]);
+                break :blk if (op != .yield and v.state == .top) .nonnull else v;
+            },
             .binary => blk: {
                 const b = ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                break :blk try s.binary(@enumFromInt(d.rhs), m.memo[b.left.int()], m.memo[b.right.int()]);
+                const op: JsIr.BinaryOp = @enumFromInt(d.rhs);
+                const l = m.memo[b.left.int()];
+                const r = m.memo[b.right.int()];
+                // Facts 5 and 6: an identity test decided by what the two
+                // sides may be, when neither side's evaluation can do
+                // anything the fold would lose.
+                if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) if (try s.identity(m, b.left, b.right, l, r)) |same| {
+                    break :blk try s.boolean(if (op == .strict_eq) same else !same);
+                };
+                const v = try s.binary(op, l, r);
+                break :blk if (op != .logical_and and op != .logical_or and v.state == .top) .nonnull else v;
             },
             .cond => blk: {
                 const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
                 const t = m.memo[d.lhs];
                 break :blk switch (t.state) {
                     .bot => .bot,
-                    .top => .top,
+                    .top, .nonnull => undecided: {
+                        // Fact 5's second case: a test of a nonnull read
+                        // against `null`, whose taken branch is that read.
+                        if (try s.nullTestTaken(m, @enumFromInt(d.lhs), c)) |taken| {
+                            try s.decided_conds.put(s.arena, .{ .module = m.index, .node = node.int() }, taken);
+                            break :undecided m.memo[taken.int()];
+                        }
+                        const a = m.memo[c.consequent.int()];
+                        const e = m.memo[c.alternate.int()];
+                        if (a.state == .bot and e.state == .bot) break :undecided .bot;
+                        break :undecided s.demote(s.join(a, e));
+                    },
                     .lit => switch (s.truthy(s.litOf(t))) {
                         .yes => m.memo[c.consequent.int()],
                         .no => m.memo[c.alternate.int()],
@@ -718,18 +837,145 @@ const Spec = struct {
             },
             .call => blk: {
                 try s.callSite(m, node);
-                break :blk .top;
+                break :blk try s.callValue(m, node);
             },
-            // Fact 3: a property no object this may be ever holds is
-            // `undefined`. Only of a name or properties of one, whose
-            // evaluation does nothing the fold could lose.
-            .member => blk: {
-                const obj = try s.pts.chain(m.index, s.cur_top, @enumFromInt(d.lhs)) orelse break :blk .top;
-                if (!s.pts.neverWritten(obj, s.pts.propId(m.index, @enumFromInt(d.rhs)))) break :blk .top;
-                break :blk .of(try s.intern(.{ .kind = .undefined_lit }));
+            .template => try s.templateValue(m, node),
+            .new_call, .object, .array => blk: {
+                if (ir.tag(node) == .object) try s.objectWrites(m, node);
+                break :blk .nonnull;
             },
+            .member => try s.memberValue(m, node),
             else => .top,
         };
+    }
+
+    /// A template whose every substitution is a literal is the string it
+    /// makes (fact 4's reads end in one: `${m.n}` is `"null"`), when that
+    /// string prints no longer than the template did. A number converts
+    /// only when its spelling is how JavaScript writes it back.
+    fn templateValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+        const ir = m.ir;
+        var text: std.ArrayList(u8) = .empty;
+        var template_len: usize = 2;
+        for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |part| {
+            if (ir.tag(part) == .template_chunk) {
+                const chunk = ir.bytes(part);
+                try text.appendSlice(s.arena, chunk);
+                template_len += chunk.len;
+                for (chunk) |c| template_len += @intFromBool(c == '`' or c == '\\' or c == '$');
+                continue;
+            }
+            const v = m.memo[part.int()];
+            if (v.state == .bot) return .bot;
+            if (v.state != .lit) return .nonnull;
+            const lit = s.litOf(v);
+            const spelled: []const u8 = switch (lit.kind) {
+                .string => lit.bytes,
+                .number => blk: {
+                    const back = try s.number(parseNumber(lit.bytes) orelse return .nonnull);
+                    if (back.state != .lit or !std.mem.eql(u8, s.litOf(back).bytes, lit.bytes)) return .nonnull;
+                    break :blk lit.bytes;
+                },
+                .true_lit => "true",
+                .false_lit => "false",
+                .null_lit => "null",
+                .undefined_lit => "undefined",
+            };
+            try text.appendSlice(s.arena, spelled);
+            template_len += 3 + printedLen(lit);
+        }
+        if (text.items.len > 256) return .nonnull;
+        var string_len: usize = 2 + text.items.len;
+        for (text.items) |c| string_len += @intFromBool(c == '"' or c == '\\' or c < 0x20);
+        if (string_len > template_len) return .nonnull;
+        return .of(try s.intern(.{ .kind = .string, .bytes = text.items }));
+    }
+
+    /// Fact 3, then facts 4 and 5: what a read `x.p` gives. A property no
+    /// object `x` may be ever holds is `undefined`, and one whose every
+    /// write is one literal is that literal — both only through a name or
+    /// properties of one, whose evaluation does nothing the fold could
+    /// lose, on objects that are all the program's own. A read whose every
+    /// write is nonnull is nonnull wherever it does not throw.
+    fn memberValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+        const ir = m.ir;
+        const d = ir.data(node);
+        const id = s.pts.propId(m.index, @enumFromInt(d.rhs));
+        const chain = try s.pts.chain(m.index, s.cur_top, @enumFromInt(d.lhs));
+        if (chain) |obj| if (s.pts.neverWritten(obj, id)) return .of(try s.intern(.{ .kind = .undefined_lit }));
+        if (!s.pts.ok) return .top;
+        const obj = chain orelse s.pts.vals[m.index][d.lhs];
+        const v = s.propValue(obj, id);
+        if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
+        return s.demote(v);
+    }
+
+    /// The join of what is written to property `id` of every object `obj`
+    /// may be: ⊤ unless each is a program object literal that nothing
+    /// unseen holds, none written under an unknown key or copied from by a
+    /// spread, each with the key in its literal. Reading a property of a
+    /// primitive gives `undefined` or a builtin, so a primitive `obj` is ⊤;
+    /// a nullish one throws and gives nothing.
+    fn propValue(s: *Spec, obj: Pts.Val, id: u32) Lat {
+        if (id == none or obj.top or obj.prim or obj.sites.len == 0) return .top;
+        var out: Lat = .bot;
+        for (obj.sites) |site| {
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .object or st.escaped or st.any_written) return .top;
+            if (site >= s.spread_sites.len or s.spread_sites[site]) return .top;
+            const pr = s.pts.findProp(site, id) orelse return .top;
+            if (!pr.init) return .top;
+            out = s.join(out, s.prop_lat.get(.{ .site = site, .prop = id }) orelse .bot);
+        }
+        return out;
+    }
+
+    /// An object literal's keys, joined into what its site's properties
+    /// may hold (facts 4 and 5); a spread makes every one ⊤.
+    fn objectWrites(s: *Spec, m: *Mod, node: Index) Allocator.Error!void {
+        const ir = m.ir;
+        const site = s.pts.site_at.get(.{ .module = m.index, .node = node.int() }) orelse return;
+        for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| {
+            const cd = ir.data(child);
+            switch (ir.tag(child)) {
+                .property => try s.joinProp(site, s.pts.propId(m.index, @enumFromInt(cd.lhs)), m.memo[cd.rhs]),
+                else => {
+                    if (site < s.spread_sites.len and !s.spread_sites[site]) {
+                        s.spread_sites[site] = true;
+                        s.changed = true;
+                    }
+                },
+            }
+        }
+    }
+
+    /// Fact 5: a call's value is the join of what the functions it may call
+    /// return, and a call of one of the DOM's node-making methods on a host
+    /// value is a node. Never a literal: the call is still made.
+    fn callValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+        if (!s.pts.ok) return .top;
+        const ir = m.ir;
+        const callee: Index = @enumFromInt(ir.data(node).lhs);
+        const vc = s.pts.vals[m.index][callee.int()];
+        if (ir.tag(callee) == .member) {
+            const id = s.pts.propId(m.index, @enumFromInt(ir.data(callee).rhs));
+            const host = id != none and std.mem.indexOfScalar(u32, s.in.node_makers, id) != null;
+            const receiver = s.pts.vals[m.index][ir.data(callee).lhs];
+            if (host and receiver.sites.len == 0 and !receiver.prim) return .nonnull;
+        }
+        if (vc.top or vc.prim or vc.sites.len == 0) return .top;
+        var out: Lat = .bot;
+        for (vc.sites) |site| {
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .func) return .top;
+            const ref: NodeRef = .{ .module = st.module, .node = st.node.int() };
+            if (s.mods[st.module].ir.tag(st.node) == .gen_decl) {
+                out = s.join(out, .nonnull);
+                continue;
+            }
+            out = s.join(out, s.ret_lat.get(ref) orelse .bot);
+        }
+        return s.demote(out);
     }
 
     /// A call: its arguments join the parameters of the function it names.
@@ -746,14 +992,60 @@ const Spec = struct {
             s.escaped[g] = true;
             return;
         }
-        for (args, 0..) |a, i| {
-            const slot = &s.params.items[decl.params + i];
-            const joined = slot.join(m.memo[a.int()]);
-            if (!joined.eql(slot.*)) {
-                slot.* = joined;
-                s.changed = true;
-            }
-        }
+        for (args, 0..) |a, i| s.joinInto(&s.params.items[decl.params + i], m.memo[a.int()]);
+    }
+
+    /// Facts 5 and 6: whether `left === right`, from what each side may be,
+    /// or null. Each side must be a chain whose evaluation cannot throw nor
+    /// run a getter (`Pts.safeChain`), so dropping it loses nothing.
+    ///
+    /// - A side that may be neither `null` nor `undefined` against a
+    ///   `null` or `undefined` literal: never the same.
+    /// - Two sides whose objects are disjoint, neither a host value, and
+    ///   not both possibly a primitive of the same kind: never the same.
+    /// - Two sides that may each be only the one object an allocation site
+    ///   made once: the same.
+    fn identity(s: *Spec, m: *Mod, left: Index, right: Index, l: Lat, r: Lat) Allocator.Error!?bool {
+        if (!s.pts.ok) return null;
+        if (l.state == .lit and r.state == .lit) return null;
+        const lv = try s.pts.safeChain(m.index, s.cur_top, left);
+        const rv = try s.pts.safeChain(m.index, s.cur_top, right);
+        const lnull = l.state == .lit and s.maybeNullish(l);
+        const rnull = r.state == .lit and s.maybeNullish(r);
+        if (lnull and r.state == .nonnull and rv != null) return false;
+        if (rnull and l.state == .nonnull and lv != null) return false;
+        const a = lv orelse return null;
+        const b = rv orelse return null;
+        if (a.top or b.top) return null;
+        if (a.sites.len == 0 and !a.prim and !a.nullish()) return null;
+        if (b.sites.len == 0 and !b.prim and !b.nullish()) return null;
+        const scalar_a = a.prim or a.nullish();
+        const scalar_b = b.prim or b.nullish();
+        if (!scalar_a and !scalar_b and a.sites.len == 1 and b.sites.len == 1 and a.sites[0] == b.sites[0] and s.pts.sites.items[a.sites[0]].once) return true;
+        if (a.prim and b.prim) return null;
+        if (a.nul and b.nul) return null;
+        if (a.undef and b.undef) return null;
+        for (a.sites) |x| if (std.mem.indexOfScalar(u32, b.sites, x) != null) return null;
+        return false;
+    }
+
+    /// Fact 5's second case: of `c ? t : f` whose test is `x.p === null`
+    /// (or `!==`, either way round) with `x.p` nonnull, the branch the test
+    /// takes — when that branch is the read `x.p` itself, which evaluated
+    /// first throws, or gives `undefined`, exactly where the test did.
+    fn nullTestTaken(s: *Spec, m: *Mod, test_node: Index, c: JsIr.Cond) Allocator.Error!?Index {
+        _ = s;
+        const ir = m.ir;
+        if (ir.tag(test_node) != .binary) return null;
+        const op: JsIr.BinaryOp = @enumFromInt(ir.data(test_node).rhs);
+        if (op != .strict_eq and op != .strict_ne) return null;
+        const b = ir.extraData(@enumFromInt(ir.data(test_node).lhs), JsIr.Binary);
+        const tested, const other = if (ir.tag(b.right) == .null_lit) .{ b.left, b.right } else .{ b.right, b.left };
+        if (ir.tag(other) != .null_lit or ir.tag(tested) != .member) return null;
+        if (m.memo[tested.int()].state != .nonnull) return null;
+        const taken = if (op == .strict_eq) c.alternate else c.consequent;
+        if (!sameChain(ir, tested, taken)) return null;
+        return taken;
     }
 
     /// What reading `n` gives, from the facts.
@@ -769,7 +1061,14 @@ const Spec = struct {
                 .let_decl => (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap() orelse return .top),
                 else => return .top,
             };
-            return s.literalValue(dm, value) catch .top;
+            const v = s.literalValue(dm, value) catch Lat.top;
+            // Fact 5: an object, an array, a function, a template or a
+            // `new` is never `null` (a read before the declaration throws).
+            if (v.state == .top) switch (dm.ir.tag(value)) {
+                .object, .array, .arrow, .template, .new_call => return .nonnull,
+                else => {},
+            };
+            return v;
         }
         const i = n.unwrap() orelse return .top;
         if (i >= m.stamp.len or m.stamp[i] != s.current) return .top;
@@ -860,7 +1159,10 @@ const Spec = struct {
     fn binary(s: *Spec, op: JsIr.BinaryOp, a: Lat, b: Lat) Allocator.Error!Lat {
         switch (op) {
             .logical_and, .logical_or => {
-                if (a.state != .lit) return a;
+                if (a.state == .bot) return .bot;
+                // Either side may be the value, unless a literal left side
+                // decides; nonnull only when both are.
+                if (a.state != .lit) return s.demote(s.join(a, b));
                 const t = s.truthy(s.litOf(a));
                 if (t == .unknown) return .top;
                 const left_wins = (op == .logical_and) == (t == .no);
@@ -1194,6 +1496,14 @@ const Spec = struct {
         var any = false;
         var stack: std.ArrayList(Index) = .empty;
         defer stack.deinit(s.arena);
+        // The reads that stand as the object of another read (`Mod.objects`,
+        // cleared on the way out): fact 4 does not write one as `null`
+        // (`null.parentNode` says nothing shorter).
+        var marked: std.ArrayList(u32) = .empty;
+        defer {
+            for (marked.items) |i| m.objects.unset(i);
+            marked.deinit(s.arena);
+        }
         try s.pushStmtExprs(m, stmt, &stack);
         while (JsIr.popOperand(&stack)) |node| {
             const ir = m.ir;
@@ -1229,14 +1539,27 @@ const Spec = struct {
                 else => false,
             };
             const v = m.memo[node.int()];
-            if (v.state == .lit and try s.patchLiteral(m, node, v)) {
+            if (v.state == .lit and try s.patchLiteral(m, node, v, m.objects.isSet(node.int()))) {
                 if (shrinks) any = true;
                 continue;
             }
             // A conditional or a logical operator whose left side decides.
             const d = ir.data(node);
             switch (tag) {
+                .member, .index_get => if (!m.objects.isSet(d.lhs)) {
+                    m.objects.set(d.lhs);
+                    try marked.append(s.arena, d.lhs);
+                },
                 .cond => {
+                    // Fact 5's second case: the branch the test takes is the
+                    // read it tested.
+                    if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
+                        m.copyNode(node, b);
+                        m.memo[node.int()] = m.memo[b.int()];
+                        try stack.append(s.arena, node);
+                        any = true;
+                        continue;
+                    }
                     const t = m.memo[d.lhs];
                     if (t.state == .lit) {
                         const c = ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
@@ -1324,9 +1647,16 @@ const Spec = struct {
     /// replaced only under `substitutes`; anything else that folded is
     /// written as its value (it is at least as long as the literal, but for
     /// a string that grew by concatenation, which `binary` caps).
-    fn patchLiteral(s: *Spec, m: *Mod, node: Index, v: Lat) Allocator.Error!bool {
+    fn patchLiteral(s: *Spec, m: *Mod, node: Index, v: Lat, object_position: bool) Allocator.Error!bool {
         const ir = m.ir;
         const lit = s.litOf(v);
+        // Fact 4: a read is written as its literal when that is no longer
+        // than 5 bytes, and never as the object of another read. Fact 3's
+        // `undefined` is written wherever it folds, as before.
+        if (ir.tag(node) == .member and lit.kind != .undefined_lit) {
+            if (printedLen(lit) > 5) return false;
+            if (object_position and (lit.kind == .null_lit)) return false;
+        }
         if (ir.tag(node) == .ident) {
             const n: NameIndex = @enumFromInt(ir.data(node).lhs);
             const uses: u32 = if (m.globalOf(n)) |g| s.reads[g] else if (n.unwrap()) |i| (if (i < m.stamp.len and m.stamp[i] == s.current) m.uses[i] else 2) else 2;
@@ -1566,6 +1896,15 @@ const Spec = struct {
 // Slice 3: allocation sites
 // ---------------------------------------------------------------------------
 
+/// The DOM's methods that return a node or throw, never `null` or
+/// `undefined` (slice 4, fact 5's one host fact): called on a value the
+/// program did not allocate, their result is nonnull. A platform's
+/// hand-written file is trusted to honour the DOM's contract for them.
+pub const node_makers = [_][]const u8{
+    "cloneNode",      "importNode",    "createElement",          "createElementNS",
+    "createTextNode", "createComment", "createDocumentFragment",
+};
+
 /// The names `Object.prototype` has: an object literal that holds none of
 /// these still has one to read (`Input.builtin_props`).
 pub const prototype_names = [_][]const u8{
@@ -1608,6 +1947,23 @@ const Pts = struct {
     children: std.ArrayList(Index) = .empty,
     /// The top-level statement the walk is in: locals are keyed by it.
     top: Index = undefined,
+    /// Whether what the walk is in runs at most once: a module's top level,
+    /// outside any function and any loop. A site made there is `once`.
+    once_ctx: bool = false,
+    /// The guards of the branches the walk is in (slice 4): each a chain
+    /// the branch's test showed is not `null` (or `undefined`), live until
+    /// something runs that may change what it reads. Those below
+    /// `guard_base` belong to an enclosing function and are not in view.
+    guards: std.ArrayList(Guard) = .empty,
+    guard_base: usize = 0,
+
+    const Guard = struct {
+        module: u32,
+        chain: Index,
+        nul: bool,
+        undef: bool,
+        live: bool = true,
+    };
 
     const VarId = u32;
     const Frame = struct { node: Index, post: bool };
@@ -1619,29 +1975,48 @@ const Pts = struct {
     const max_sites = 48;
     const max_pts_sweeps = 64;
 
+    /// `prim` is a primitive that is neither `null` nor `undefined`; `nul`
+    /// and `undef` are those two (slice 4). Reading a property of either
+    /// throws, so it contributes nothing to what the read may be.
     const VSet = struct {
         top: bool = false,
         prim: bool = false,
+        nul: bool = false,
+        undef: bool = false,
         sites: std.ArrayList(u32) = .empty,
     };
 
     const Val = struct {
         top: bool = false,
         prim: bool = false,
+        nul: bool = false,
+        undef: bool = false,
         sites: []const u32 = &.{},
 
         const top_val: Val = .{ .top = true };
         const prim_val: Val = .{ .prim = true };
+        const nul_val: Val = .{ .nul = true };
+        const undef_val: Val = .{ .undef = true };
+
+        fn nullish(v: Val) bool {
+            return v.nul or v.undef;
+        }
     };
 
     const SiteKind = enum(u8) { object, array, func };
 
-    const Prop = struct { id: u32, vals: VarId, read: bool = false, written: bool = false };
+    /// `init`: the object literal has the key, so the property exists from
+    /// the moment the object does (slice 4); a read of one it lacks may be
+    /// `undefined`.
+    const Prop = struct { id: u32, vals: VarId, read: bool = false, written: bool = false, init: bool = false };
 
     const Site = struct {
         kind: SiteKind,
         module: u32,
         node: Index,
+        /// Allocated at most once: made at a module's top level, outside
+        /// any function and any loop (slice 4, fact 6).
+        once: bool = false,
         escaped: bool = false,
         /// Every property read: a computed read, a spread, `for…of`.
         all_read: bool = false,
@@ -1676,7 +2051,7 @@ const Pts = struct {
 
     fn view(p: *Pts, v: VarId) Val {
         const set = &p.vars.items[v];
-        return .{ .top = set.top, .prim = set.prim, .sites = set.sites.items };
+        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites.items };
     }
 
     fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
@@ -1708,6 +2083,14 @@ const Pts = struct {
             p.vars.items[v].prim = true;
             p.changed = true;
         }
+        if (val.nul and !p.vars.items[v].nul) {
+            p.vars.items[v].nul = true;
+            p.changed = true;
+        }
+        if (val.undef and !p.vars.items[v].undef) {
+            p.vars.items[v].undef = true;
+            p.changed = true;
+        }
         for (val.sites) |site| try p.addSite(v, site);
     }
 
@@ -1723,8 +2106,9 @@ const Pts = struct {
     }
 
     fn unionOf(p: *Pts, a: Val, b: Val) Allocator.Error!Val {
-        if (a.sites.len == 0) return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = b.sites };
-        if (b.sites.len == 0) return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = a.sites };
+        const flags: Val = .{ .top = a.top or b.top, .prim = a.prim or b.prim, .nul = a.nul or b.nul, .undef = a.undef or b.undef };
+        if (a.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites };
+        if (b.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites };
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
         var i: usize = 0;
@@ -1742,7 +2126,7 @@ const Pts = struct {
                 j += 1;
             }
         }
-        return .{ .top = a.top or b.top, .prim = a.prim or b.prim, .sites = out.items };
+        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = out.items };
     }
 
     fn orderU32(a: u32, b: u32) std.math.Order {
@@ -1774,7 +2158,7 @@ const Pts = struct {
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(p.sites.items.len);
         gop.value_ptr.* = id;
-        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .any = try p.newVar() });
+        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .once = p.once_ctx, .any = try p.newVar() });
         return id;
     }
 
@@ -1809,6 +2193,9 @@ const Pts = struct {
 
     // ---- Reads and writes ----------------------------------------------------
 
+    /// What reading property `id` of `obj` may give. A `null` or
+    /// `undefined` object throws, and gives nothing; a property the
+    /// object's literal lacks may be `undefined` (slice 4).
     fn read(p: *Pts, obj: Val, id: u32, mark: bool) Allocator.Error!Val {
         var out: Val = .{ .top = obj.top or obj.prim };
         for (obj.sites) |site| {
@@ -1823,8 +2210,12 @@ const Pts = struct {
                     pr.read = true;
                     p.changed = true;
                 }
+                if (!pr.init) out.undef = true;
                 out = try p.unionOf(out, p.view(pr.vals));
-            } else if (p.findProp(site, id)) |pr| out = try p.unionOf(out, p.view(pr.vals));
+            } else if (p.findProp(site, id)) |pr| {
+                if (!pr.init) out.undef = true;
+                out = try p.unionOf(out, p.view(pr.vals));
+            } else out.undef = true;
             out = try p.unionOf(out, p.view(p.sites.items[site].any));
         }
         return out;
@@ -1906,6 +2297,7 @@ const Pts = struct {
             for (s.mods, 0..) |*m, mi| {
                 for (m.ir.extraSlice(m.ir.body, Index)) |top| {
                     p.top = top;
+                    p.once_ctx = true;
                     try p.stmt(@intCast(mi), top, null);
                 }
             }
@@ -1948,17 +2340,20 @@ const Pts = struct {
             .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
             .const_decl, .let_decl => {
                 const v: Node.OptionalIndex = @enumFromInt(d.rhs);
-                const val = if (v.unwrap()) |value| try p.expr(mi, value, func) else Val.prim_val;
+                const val = if (v.unwrap()) |value| try p.expr(mi, value, func) else Val.undef_val;
                 try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), val);
+                // A name declared in a guarded branch may shadow the chain.
+                p.kill();
             },
             .func_decl, .gen_decl => {
                 const site = try p.funcSite(mi, node, @enumFromInt(d.rhs));
                 if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
                 try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), .{ .sites = &.{site} });
-                const f = ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
-                try p.list(mi, f.body(), site);
+                try p.body(mi, @enumFromInt(d.rhs), site);
+                p.kill();
             },
             .assign_stmt => {
+                defer p.kill();
                 const value = try p.expr(mi, @enumFromInt(d.rhs), func);
                 const target: Index = @enumFromInt(d.lhs);
                 const td = ir.data(target);
@@ -1975,21 +2370,35 @@ const Pts = struct {
                     },
                 }
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
-                const val = try p.expr(mi, value, func);
+            .return_stmt => {
+                const val = if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| try p.expr(mi, value, func) else Val.undef_val;
                 if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
             },
             .if_stmt => {
                 _ = try p.expr(mi, @enumFromInt(d.lhs), func);
                 const branches = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                try p.list(mi, branches.thenBody(), func);
-                try p.list(mi, branches.elseBody(), func);
+                const test_guard = nullTest(ir, @enumFromInt(d.lhs));
+                try p.branch(mi, branches.thenBody(), func, if (test_guard) |t| (if (t.null_in_then) null else t.guard(mi)) else null);
+                try p.branch(mi, branches.elseBody(), func, if (test_guard) |t| (if (t.null_in_then) t.guard(mi) else null) else null);
             },
-            .while_true, .block_stmt => try p.list(mi, ir.subRange(@enumFromInt(d.rhs)), func),
+            .block_stmt => try p.list(mi, ir.subRange(@enumFromInt(d.rhs)), func),
+            .while_true => {
+                // A later turn runs after whatever this one did.
+                p.kill();
+                const saved = p.once_ctx;
+                defer p.once_ctx = saved;
+                p.once_ctx = false;
+                try p.list(mi, ir.subRange(@enumFromInt(d.rhs)), func);
+            },
             .for_of => {
                 const f = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
                 const items = try p.readAll(try p.expr(mi, f.iterable, func));
+                // Iterating calls the iterator.
+                p.kill();
                 try p.join(try p.nameVar(mi, @enumFromInt(d.lhs)), items);
+                const saved = p.once_ctx;
+                defer p.once_ctx = saved;
+                p.once_ctx = false;
                 try p.list(mi, f.body(), func);
             },
             .switch_stmt => {
@@ -2011,6 +2420,51 @@ const Pts = struct {
         for (ir.extraSlice(range, Index)) |node| try p.stmt(mi, node, func);
     }
 
+    /// A branch's statements, under `guard` when its test narrows a chain.
+    fn branch(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32, guard: ?Guard) Allocator.Error!void {
+        const base = p.guards.items.len;
+        defer p.guards.shrinkRetainingCapacity(base);
+        if (guard) |g| try p.guards.append(p.arena(), g);
+        try p.list(mi, range, func);
+    }
+
+    /// Every guard in view dies: something ran that may change what a
+    /// chain reads.
+    fn kill(p: *Pts) void {
+        for (p.guards.items[p.guard_base..]) |*g| g.live = false;
+    }
+
+    /// `v`, what chain `node` read, less what a live guard in view says
+    /// it cannot be. A member read through a host value may run a getter,
+    /// which a guard cannot vouch for.
+    fn narrowed(p: *Pts, mi: u32, node: Index, v: Val) Val {
+        var out = v;
+        const ir = p.s.mods[mi].ir;
+        if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) return out;
+        for (p.guards.items[p.guard_base..]) |g| {
+            if (!g.live or g.module != mi or !sameChain(ir, g.chain, node)) continue;
+            if (g.nul) out.nul = false;
+            if (g.undef) out.undef = false;
+        }
+        return out;
+    }
+
+    /// A function's body: walked as what may run many times, and when it
+    /// may run off its end, `undefined` is among what it returns. No guard
+    /// outside it is in view: it runs later.
+    fn body(p: *Pts, mi: u32, record: ExtraIndex, site: u32) Allocator.Error!void {
+        const ir = p.s.mods[mi].ir;
+        const saved = p.once_ctx;
+        defer p.once_ctx = saved;
+        p.once_ctx = false;
+        const saved_base = p.guard_base;
+        defer p.guard_base = saved_base;
+        p.guard_base = p.guards.items.len;
+        const f = ir.extraData(record, JsIr.Func);
+        try p.list(mi, f.body(), site);
+        if (fallsThrough(ir, f.body())) try p.join(p.sites.items[site].ret, Val.undef_val);
+    }
+
     /// What `root` may be, bottom-up over an explicit stack, every node's
     /// into `vals`. An arrow is its site, its body walked as the statements
     /// it is.
@@ -2029,7 +2483,7 @@ const Pts = struct {
                 if (ir.tag(f.node) == .arrow) {
                     const record: ExtraIndex = @enumFromInt(ir.data(f.node).lhs);
                     const site = try p.funcSite(mi, f.node, record);
-                    try p.list(mi, ir.extraData(record, JsIr.Func).body(), site);
+                    try p.body(mi, record, site);
                     vals[f.node.int()] = .{ .sites = try p.tmp.allocator().dupe(u32, &.{site}) };
                     continue;
                 }
@@ -2057,11 +2511,24 @@ const Pts = struct {
         const vals = p.vals[mi];
         const d = ir.data(node);
         return switch (ir.tag(node)) {
-            .number, .string, .template, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit => Val.prim_val,
+            .number, .string, .template, .template_chunk, .true_lit, .false_lit => Val.prim_val,
+            .null_lit => Val.nul_val,
+            .undefined_lit => Val.undef_val,
             .global_this => Val.top_val,
-            .ident => p.view(try p.nameVar(mi, @enumFromInt(d.lhs))),
-            .member => p.read(vals[d.lhs], p.propId(mi, @enumFromInt(d.rhs)), true),
-            .index_get => p.readAll(vals[d.lhs]),
+            .ident => p.narrowed(mi, node, p.view(try p.nameVar(mi, @enumFromInt(d.lhs)))),
+            .member => blk: {
+                const v = p.narrowed(mi, node, try p.read(vals[d.lhs], p.propId(mi, @enumFromInt(d.rhs)), true));
+                // A read through a host value may run a getter.
+                if (vals[d.lhs].top) p.kill();
+                break :blk v;
+            },
+            // An index past the end is `undefined`.
+            .index_get => blk: {
+                var v = try p.readAll(vals[d.lhs]);
+                if (vals[d.lhs].sites.len != 0) v.undef = true;
+                if (vals[d.lhs].top) p.kill();
+                break :blk v;
+            },
             .property => vals[d.rhs],
             .spread_property => vals[d.lhs],
             .object => blk: {
@@ -2075,6 +2542,11 @@ const Pts = struct {
                                 pr.written = true;
                                 p.changed = true;
                             }
+                            // The literal has the key: the property exists
+                            // from the moment the object does. Set before
+                            // the site reaches any var, so no read of it
+                            // ever saw it missing.
+                            pr.init = true;
                             try p.join(pr.vals, vals[cd.rhs]);
                         },
                         // `{...x}` copies what `x` holds, reading all of it.
@@ -2123,9 +2595,16 @@ const Pts = struct {
                     else => Val.prim_val,
                 };
             },
-            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .yield) Val.top_val else Val.prim_val,
-            .call => p.call(mi, node),
+            .unary => if (@as(JsIr.UnaryOp, @enumFromInt(d.rhs)) == .yield) blk: {
+                p.kill();
+                break :blk Val.top_val;
+            } else Val.prim_val,
+            .call => blk: {
+                defer p.kill();
+                break :blk p.call(mi, node);
+            },
             .new_call => blk: {
+                p.kill();
                 for (ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try p.escape(vals[a.int()]);
                 break :blk Val.top_val;
             },
@@ -2152,7 +2631,7 @@ const Pts = struct {
                 continue;
             }
             const params = p.sites.items[site].params;
-            for (params, 0..) |v, i| try p.join(v, if (i < e.args.len) p.view(p.globals[e.args[i]]) else Val.prim_val);
+            for (params, 0..) |v, i| try p.join(v, if (i < e.args.len) p.view(p.globals[e.args[i]]) else Val.undef_val);
         }
         if (unknown) for (e.args) |a| try p.escape(p.view(p.globals[a]));
     }
@@ -2172,7 +2651,7 @@ const Pts = struct {
                 continue;
             }
             const params = p.sites.items[site].params;
-            for (params, 0..) |v, i| try p.join(v, if (i < args.len) vals[args[i].int()] else Val.prim_val);
+            for (params, 0..) |v, i| try p.join(v, if (i < args.len) vals[args[i].int()] else Val.undef_val);
             out = try p.unionOf(out, p.view(p.sites.items[site].ret));
         }
         if (unknown) {
@@ -2205,10 +2684,30 @@ const Pts = struct {
         };
     }
 
+    /// What a chain may be, when evaluating it can neither throw nor run
+    /// code: a name, or a property of a chain every object of which is a
+    /// program object literal (`known`) — no getter, no `null`. Null for
+    /// anything else.
+    fn safeChain(p: *Pts, mi: u32, top: Index, node: Index) Allocator.Error!?Val {
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        return switch (ir.tag(node)) {
+            .ident => try p.chain(mi, top, node),
+            .member => blk: {
+                const obj = try p.safeChain(mi, top, @enumFromInt(d.lhs)) orelse break :blk null;
+                if (!p.known(obj)) break :blk null;
+                break :blk try p.read(obj, p.propId(mi, @enumFromInt(d.rhs)), false);
+            },
+            else => null,
+        };
+    }
+
     /// Whether every object `obj` may be is an object literal the program
     /// made and nothing it cannot see holds.
     fn known(p: *const Pts, obj: Val) bool {
-        if (!p.ok or obj.top or obj.prim or obj.sites.len == 0) return false;
+        // A `null` or `undefined` object makes the read throw, which a
+        // fold would lose.
+        if (!p.ok or obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return false;
         for (obj.sites) |site| {
             const st = &p.sites.items[site];
             if (st.kind != .object or st.escaped) return false;
@@ -2270,11 +2769,22 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
     @memset(refs, 0);
     var children: std.ArrayList(Index) = .empty;
     defer children.deinit(gpa);
-    for (0..ir.nodes.len) |i| {
-        const node: Index = @enumFromInt(@as(u32, @intCast(i)));
+    // Counted over what the module still writes: a node lowering or
+    // specialisation left behind (a conditional written as an `if`, a
+    // folded branch) refers to its operands too, and would make a test
+    // look shared that is not.
+    var seen: std.DynamicBitSetUnmanaged = try .initEmpty(gpa, ir.nodes.len);
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(Index) = .empty;
+    defer stack.deinit(gpa);
+    try stack.appendSlice(gpa, ir.extraSlice(ir.body, Index));
+    while (JsIr.popOperand(&stack)) |node| {
+        if (seen.isSet(node.int())) continue;
+        seen.set(node.int());
         children.clearRetainingCapacity();
         try operandsOf(gpa, ir, node, &children);
         for (children.items) |c| refs[c.int()] +|= 1;
+        try pushChildren(gpa, ir, node, &stack);
     }
     var tests: std.ArrayList(Index) = .empty;
     defer tests.deinit(gpa);
@@ -2333,6 +2843,43 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
     }
 }
 
+/// Every child of `node` onto `stack`: a statement's expressions and
+/// statements, an expression's operands, and a function's body.
+fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.ArrayList(Index)) Allocator.Error!void {
+    const d = ir.data(node);
+    switch (ir.tag(node)) {
+        .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+        .const_decl => try stack.append(gpa, @enumFromInt(d.rhs)),
+        .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try stack.append(gpa, v),
+        .func_decl, .gen_decl => try stack.appendSlice(gpa, ir.extraSlice(ir.extraData(@enumFromInt(d.rhs), JsIr.Func).body(), Index)),
+        .arrow => try stack.appendSlice(gpa, ir.extraSlice(ir.extraData(@enumFromInt(d.lhs), JsIr.Func).body(), Index)),
+        .assign_stmt => try stack.appendSlice(gpa, &.{ @enumFromInt(d.lhs), @enumFromInt(d.rhs) }),
+        .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try stack.append(gpa, v),
+        .if_stmt => {
+            try stack.append(gpa, @enumFromInt(d.lhs));
+            const b = ir.extraData(@enumFromInt(d.rhs), JsIr.If);
+            try stack.appendSlice(gpa, ir.extraSlice(b.thenBody(), Index));
+            try stack.appendSlice(gpa, ir.extraSlice(b.elseBody(), Index));
+        },
+        .while_true, .block_stmt => try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index)),
+        .for_of => {
+            const loop = ir.extraData(@enumFromInt(d.rhs), JsIr.ForOf);
+            try stack.append(gpa, loop.iterable);
+            try stack.appendSlice(gpa, ir.extraSlice(loop.body(), Index));
+        },
+        .switch_stmt => {
+            try stack.append(gpa, @enumFromInt(d.lhs));
+            try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+        },
+        .switch_case => {
+            if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try stack.append(gpa, t);
+            try stack.appendSlice(gpa, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Index));
+        },
+        .expr_stmt, .throw_stmt => try stack.append(gpa, @enumFromInt(d.lhs)),
+        else => try ir.pushOperands(gpa, stack, node),
+    }
+}
+
 /// The expression operands of any node, statements' included.
 fn operandsOf(gpa: Allocator, ir: *const JsIr, node: Index, out: *std.ArrayList(Index)) Allocator.Error!void {
     const d = ir.data(node);
@@ -2360,6 +2907,90 @@ fn isBits(ir: *const JsIr, node: Index) bool {
         .bit_and, .bit_or, .bit_xor, .shl, .sar, .shr => true,
         else => false,
     };
+}
+
+/// A test of a chain against `null`: `X === null` (`!==`), or `X == null`
+/// (`!=`), either way round, where `X` is a name or properties of one.
+const NullTest = struct {
+    chain: Index,
+    /// The branch where the test is true is the one where `X` is null.
+    null_in_then: bool,
+    /// `==`: `undefined` too.
+    loose: bool,
+
+    fn guard(t: NullTest, mi: u32) Pts.Guard {
+        return .{ .module = mi, .chain = t.chain, .nul = true, .undef = t.loose };
+    }
+};
+
+fn nullTest(ir: *const JsIr, node: Index) ?NullTest {
+    if (ir.tag(node) != .binary) return null;
+    const op: JsIr.BinaryOp = @enumFromInt(ir.data(node).rhs);
+    const b = ir.extraData(@enumFromInt(ir.data(node).lhs), JsIr.Binary);
+    const chain, const other = if (ir.tag(b.right) == .null_lit) .{ b.left, b.right } else .{ b.right, b.left };
+    if (ir.tag(other) != .null_lit) return null;
+    switch (ir.tag(chain)) {
+        .ident, .member => {},
+        else => return null,
+    }
+    var x = chain;
+    while (ir.tag(x) == .member) x = @enumFromInt(ir.data(x).lhs);
+    if (ir.tag(x) != .ident) return null;
+    return switch (op) {
+        .strict_eq => .{ .chain = chain, .null_in_then = true, .loose = false },
+        .strict_ne => .{ .chain = chain, .null_in_then = false, .loose = false },
+        .loose_eq => .{ .chain = chain, .null_in_then = true, .loose = true },
+        else => null,
+    };
+}
+
+/// Whether two chains — a name, or properties of one — are the same one.
+fn sameChain(ir: *const JsIr, a: Index, b: Index) bool {
+    var x = a;
+    var y = b;
+    var depth: u32 = 0;
+    while (depth < 64) : (depth += 1) {
+        if (ir.tag(x) != ir.tag(y)) return false;
+        const dx = ir.data(x);
+        const dy = ir.data(y);
+        switch (ir.tag(x)) {
+            .ident => return dx.lhs == dy.lhs,
+            .member => {
+                if (dx.rhs != dy.rhs) return false;
+                x = @enumFromInt(dx.lhs);
+                y = @enumFromInt(dy.lhs);
+            },
+            else => return false,
+        }
+    }
+    return false;
+}
+
+/// Whether a function body may run off its end, returning `undefined`: its
+/// last statement is not a `return` or a `throw`, nor an `if` both of whose
+/// arms end in one. A loop may be left by a `break`, so it may.
+fn fallsThrough(ir: *const JsIr, range: JsIr.SubRange) bool {
+    var list = ir.extraSlice(range, Index);
+    var depth: u32 = 0;
+    while (depth < 64) : (depth += 1) {
+        if (list.len == 0) return true;
+        const last = list[list.len - 1];
+        switch (ir.tag(last)) {
+            .return_stmt, .throw_stmt => return false,
+            .if_stmt => {
+                const branches = ir.extraData(@enumFromInt(ir.data(last).rhs), JsIr.If);
+                if (fallsThrough(ir, branches.thenBody())) return true;
+                list = ir.extraSlice(branches.elseBody(), Index);
+            },
+            .block_stmt => {
+                // A labelled block may be left by its `break`.
+                if (@as(NameIndex, @enumFromInt(ir.data(last).lhs)) != .none) return true;
+                list = ir.extraSlice(ir.subRange(@enumFromInt(ir.data(last).rhs)), Index);
+            },
+            else => return true,
+        }
+    }
+    return true;
 }
 
 /// Whether evaluating `root` can do nothing but make a value: a function, a

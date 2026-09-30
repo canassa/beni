@@ -1,0 +1,18 @@
+-- emit: whole-program specialisation, facts 5 and 6 (`backend.md` §9,
+-- *slice 4*), in a platform module (`platform/Nodes.beni`) — the browser
+-- runtime's shapes, over objects the program makes:
+--
+--   * `first` and `last` read `i.s` and `i.e`, which every instance writes
+--     with a node-making host call's result or an object literal: never
+--     `null`, so each is its read alone and the `q` fallback goes;
+--   * `patch (view 1) (view 2)` compares the one module-level `block` with
+--     itself: `true`, so it says "same" with no test; `fresh` compares a
+--     block it makes with `view 3`, two objects that are never the same
+--     one: "other".
+import Node
+import Nodes
+
+
+main : Node.Program
+main =
+    Node.printLines (Nodes.demo ())

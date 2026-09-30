@@ -1,0 +1,31 @@
+-- emit: whole-program specialisation, fact 4 (`backend.md` §9, *slice 4*):
+-- a record field every construction writes with the same literal is that
+-- literal wherever it is read. Every `Settings` the program builds has
+-- `verbose = False` and `scale = 3`, whatever its `name`: `describe`'s
+-- `if s.verbose` keeps its `else` alone, `s.scale` is `3`, and with no read
+-- left the two keys go from the literal (fact 3). `name` differs per call
+-- and stays a read.
+import Node exposing (Program)
+
+
+type alias Settings =
+    { name : String, verbose : Bool, scale : Int }
+
+
+settings : String -> Settings
+settings name =
+    { name = name, verbose = False, scale = 3 }
+
+
+describe : Settings, Int -> String
+describe s n =
+    if s.verbose then
+        "${s.name}: ${String.fromInt n} (verbose)"
+
+    else
+        "${s.name}: ${String.fromInt (s.scale * n)}"
+
+
+main : Program
+main =
+    Node.printLines [ describe (settings "a") 1, describe (settings "b") 2 ]
