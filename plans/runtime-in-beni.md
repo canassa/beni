@@ -18,7 +18,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 |---|---|---|
 | 1 | **Slot and mount**: an instance's nodes (`first`, `last`, `put`, `drop`, `swap`), `template`, `slot`, `parentOf`, `unit`, `patch`, `place`, `childHtml`, the render queue, `flush`, `run` and the mount | **landed 2026-10-02**, below |
 | 2 | **Templates and holes**: `childMaybe`, `childList`, `insertText`, `attr`, `attrNS`, `rawHtml`, `safeUrl`, the text and map kinds (`text`, `map`) | **landed 2026-10-02**, below; `childList` moves with step 4, `safeUrl` stays |
-| 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | open — `Browser.program` needs the two features below |
+| 3 | **Render loop, events and host**: `fire`, `delegated`, `delegate`, `start`, `listen`, `identity`; `Browser.program`/`hosted` and the hosted loop of `Browser.js` | **landed 2026-10-02**, below, with the two features `Browser.program` needed; `hosted` and its loop stay |
 | 4 | **Keyed lists**: `forKeyed`, `forPosition`, `trimmed`, `reconcile`, `park`, `mountRow`, `patchRow`, `show`, `hide`, `fallback` | open |
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | open |
 
@@ -87,7 +87,7 @@ would let fact 3 fold `m.h === undefined` and drop both — measured by hand on 
    `program` in beni (tried: the branch stays). The entry is the compiler's own output; the pass
    could model it as one call of `run` with `main`.
 
-Both belong to step 3.
+Both belong to step 3, and landed with it.
 
 ## Step 2 — templates and holes (2026-10-02)
 
@@ -206,3 +206,138 @@ One difference that is not bytes: a beni record's keys are written sorted, so a 
 `{d,e,q,s}` where the hand-written one was `{s,q,e,d}`. Both are shapes of their own beside the
 compiled kinds' `{s,q,e,…}`, so no inline cache that was monomorphic becomes polymorphic; `bench/ui`
 does not reach it. `{ c }` is written `{c:c}`: the printer has no shorthand property.
+
+## Step 3 — events, `Browser.program`, and the two features it needed (2026-10-02)
+
+**The two compiler features first**, each specified and red first:
+
+1. **`sync` in a platform's ordinary signatures** (R47-4; `transparent-effects-proposal.md` §15.2
+   item 1, `checker-v2.md` §27, `language.md` §5.4, `boundary.md` §4, all amended). The parser reads
+   `sync (…)` in every top-level annotation; lowering refuses it (`misplaced_sync`, *"Only a platform
+   package may write `sync`"*) outside core and platform packages; a mark on an ordinary
+   declaration is a demand in its own graph, so its summary publishes the class `sync` whatever the
+   body does (`!sync` in the interface) and a body that makes the class suspend is `sync_boundary`
+   at the word. One spelling changed meaning: a type variable named `sync` directly before a
+   parenthesised argument in a top-level annotation (`Pair sync (Int)`); in a `let` annotation it is
+   two arguments still (`parse/good/ForeignSync`). A `sync_boundary` whose callee is a platform
+   package's beni function says the platform calls it, as for a `foreign`. Fixtures, red before the
+   change (`sync (` was a parse error outside a `foreign`): `check/bad/SyncOutsidePlatform`,
+   `check/bad/core/SyncOrdinary/` (`Main` hands `Plat.program` a suspending `view` across the module
+   boundary, directly and through `Lib`; `Plat.race` makes its own marked parameter suspend),
+   `check/good/core/SyncOrdinary` (the interface).
+2. **The entry's `run(main)` is a call** (`backend.md` §9, *The entry's call is a call*): `Spec.Input`
+   takes the entry call (`Entry`, the callee's and arguments' whole-program names) instead of listing
+   `run` and `main` as escaping; fact 3 joins `main`'s objects into `run`'s parameter, facts 1–2 and
+   `prune` treat both names as before. Red first: with `Browser.program` in beni and `Spec` as it was,
+   `emit/release/split/EmptyPage`'s new golden (no `b.h===undefined`, no phase) failed.
+
+**What moved.** `Browser.program` is a beni declaration of `Browser.beni` (`Js.to (Js.array [ Js.from
+{ a = p, n = Js.null } ])`, the hand-written `[{a:p,n:null}]`), with `sync` on `update` and `view`;
+`Rt.beni` holds the events — `fire` (with `through` and `mountAbove`, its two loops), the delegated
+listener (`delegated`, `bubble`), `registered`, `delegate`, `start`, `listen` and `identity`;
+`runtime.js` lost them. One change of form: `fire` takes a node's flag word as it is — the
+listener's `?? 0` is gone, because `undefined & k` is `0`.
+
+**What stayed, and why.**
+
+- **`Browser.hosted` and its loop** (`Host`, the after-render phase, `flush`, `onRendered`): each of its
+  three guards — a message's `update`, a render, the after-render phase — is a `try … finally`, so
+  that an exception thrown there (a stack overflow, a host error, `Debug.todo` in a development
+  build) leaves the loop able to run the next message. Beni writes no `try`: without it the port
+  would leave `Dispatching` or `Busy` set after such a throw and the page would stop handling
+  messages, which is a behaviour change. The feature it needs is a `Js.finally` intrinsic and a
+  `try` statement in `JsIr`, which every IR walk (`Opt`, `Spec`, `Print`, `Rename`, `Suspend`) would
+  learn; a sibling-function version (`finally(f, g)`) needs no compiler change but allocates two
+  closures per message. Neither was built: the loop is on no page `bench/ui` times (the app is a
+  `Tea.sandbox`, which is `Browser.program`), and nothing of it is specialisable beyond what
+  `Minify`'s export cut does already — a page reaches `onRendered` or not, and that is an export.
+- **`mountAt` and `programs`** were not in the step's list; both hand a description to `.map` or a
+  loop over a `List`, where fact 3 would see it escape anyway.
+
+**Sizes** (release, brotli, the whole bundle; the step 2 table's pages plus the rest of `browser/`;
+`--allow-debug` where a page logs). "names only" marks a page whose JavaScript is the same text
+once every identifier is masked.
+
+| page | step 2 | step 3 | |
+|---|--:|--:|--:|
+| empty `browser` | 834 | **802** | −32 (`program` and the entry call alone: 796; the events' move then +6, names only) |
+| empty `Tea.sandbox` | 843 | **809** | −34 |
+| empty `Tea.element` | 1 601 | **1 599** | −2 (names only) |
+| `Tea.element` with effects | 5 829 | 5 839 | +10 (names only) |
+| `bench/ui` app | 6 050 | **5 998** | −52 |
+| `dom/Events` | 4 868 | **4 806** | −62 |
+| `dom/Keyed` | 5 179 | **5 100** | −79 |
+| `dom/KeyedMoves` | 4 902 | **4 811** | −91 |
+| `dom/KeyedReplace` | 4 923 | **4 838** | −85 |
+| `dom/KeyedInPlace` | 5 066 | **4 993** | −73 |
+| `dom/RowMountOrder` | 4 975 | **4 905** | −70 |
+| `dom/Selector` | 4 473 | **4 407** | −66 |
+| `dom/Blocks` | 3 692 | **3 628** | −64 |
+| `dom/NullaryHelperSkip` | 1 862 | **1 799** | −63 |
+| `dom/RowItemOnly` | 3 910 | **3 849** | −61 |
+| `dom/HelperSkip` | 1 993 | **1 935** | −58 |
+| `dom/Holes` | 3 340 | **3 291** | −49 |
+| `dom/RenderLoop` | 3 697 | **3 649** | −48 |
+| `dom/RawHtml` | 1 334 | **1 287** | −47 |
+| `dom/ShowAndBranches` | 1 971 | **1 936** | −35 |
+| `dom/KeyedEnds` | 5 957 | **5 936** | −21 |
+| `tea/Counters` | 2 024 | **1 963** | −61 |
+| `tea/LatestTagger` | 6 472 | **6 427** | −45 |
+| `tea/TypedInput` | 2 544 | **2 505** | −39 |
+| `tea/TwoPrograms` | 1 994 | **1 971** | −23 |
+| other `tea/` pages (11) | | | −9 to −27 |
+
+Every page that reaches a moved piece is smaller. The two that grew reach none of them (a hosted
+program with no handler): their text is unchanged and only the global names were handed out in
+another order, as in step 2.
+
+**Speed.** `bench/ui`, Chromium 153, Ryzen 9 5950X, `--taskset=8-15`, n = 8, release builds of the
+same app with the step 2 compiler ("step 2") and this one, and Solid 1, one batch per group (each
+under 5 minutes); 1-minute load 17.5 / 10.4 / 6.7 at the first three operations (another build was
+running), 0.6–4.5 for the rest; script median ms:
+
+| | run1k | replace1k | update10th | select | swap | remove | create10k | append1k | clear |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| step 2 | 5.63 | 10.7 | 1.29 | 1.40 | 0.98 | 0.51 | 53.0 | 5.31 | 22.3 |
+| step 3 | 5.78 | 10.7 | 1.64 | 1.23 | 1.20 | 0.51 | 54.2 | 5.30 | 22.0 |
+| Solid 1 | 5.46 | 11.9 | 1.67 | 1.54 | 1.86 | 0.55 | 57.3 | 5.29 | 23.3 |
+
+Re-run, load 0.5–1.3: `run1k`, `update10th`, `swap` at n = 16 — step 2 4.96 / 1.68 / 1.04, step 3
+4.93 / 1.43 / 1.11, Solid 1 4.96 / 1.73 / 1.46; `create10k` and `swap` at n = 12 — step 2 53.5 / 1.00,
+step 3 53.7 / 1.21; `swap` and `select` at n = 24 (load 10–16) — step 2 1.08 / 1.25, step 3 1.06 /
+1.42. `update10th`, `select` and `swap` flip between runs and every interquartile range overlaps;
+`run1k` and `create10k` tie. No operation is slower.
+
+**Shape**, the hand-written function against the beni one, from `dom/Events`'s release file:
+
+```js
+// fire (its two loops, through the `Html.map` contexts and up to the mount node, are functions of their own)
+(z,event,A,C)=>{if(C&1)event.preventDefault();let F=z[`${A}X`];let E=F===undefined?z[A]:z[A](F(event));for(let D=z.$$cx;D!=null;D=D.up)E=D.f(E);let B=z.parentNode;while(B!==null&&B.$$root===undefined)B=B.parentNode;if(B!==null)B.$$root(E);if(C&2)event.stopPropagation()}
+(a,b,c,d)=>{if((d&1)!==0)b.preventDefault();const e=a[`${c}X`],f=w(a.$$cx,e===undefined?a[c]:a[c](e(b))),g=x(a.parentNode);if(g!==null)g.$$root(f);if(d&2)b.stopPropagation()}
+w=(a,b)=>{for(;;){if(a==null)return b;const c=a.up;b=a.f(b);a=c}}
+x=(a)=>{for(;;){if(a===null||a.$$root!==undefined)return a;a=a.parentNode}}
+// the delegated listener
+event=>{const x=`$$${event.type}`;for(let y=event.target;y!==null;y=y.parentNode){if(y[x]!==undefined&&!y.disabled){const R=y[`${x}F`]??0;ga(y,event,x,R);if(R&2)return}}}
+(a)=>{const b=a.type,c=`$$${b}`;let d=a.target;while(d!==null)if(d[c]!==undefined&&!d.disabled){const e=d[`${c}F`];y(d,a,c,e);if(e&2)return;d=d.parentNode}else d=d.parentNode}
+// delegate, start
+Ma=>{for(const name of Ma){if(ia.has(name))continue;ia.add(name);globalThis.document.addEventListener(name,ha)}}
+(a)=>{for(const b of a)if(!A.has(b)){A.add(b);document.addEventListener(b,z)}}
+Ha=>{if(Ha.delegate!==undefined)ja(Ha.delegate)}
+(a)=>{if(a.delegate!==undefined)B(a.delegate)}
+// listen, which this page calls with flags 0 only
+(xa,name,R)=>{const x=`$$${name}`;xa.addEventListener(name,event=>{if(xa[x]!==undefined)ga(xa,event,x,R)})}
+(a,b)=>{const c=`$$${b}`;a.addEventListener(b,(d)=>{if(a[c]!==undefined)y(a,d,c,0)})}
+// Browser.program
+b=>[{a:b,n:null}]
+(a)=>[{a:a,n:null}]
+```
+
+And what the entry call removes from every `Browser.program` page (`emit/release/split/EmptyPage`):
+`if(b.h===undefined)n(b.a,d);else n(b.h(d,m,(f)=>{k=f;return j}),d)` is `m(b.a,d)`, the `let k=null`
+phase is gone, and `flush` ends at its render loop (`…for(const b of a)b()` where it was `…b();k?.()`).
+
+Two bytes a later pass could take: `(d&1)!==0` in `fire`'s first test is not the flag peephole's
+`d&1` (the development build writes the same `if`, so `Spec.peephole` declines it for a reason not
+yet looked into — its test for a comparison referenced once is the likely one), and `b.n===null` in `run` reads a key every description writes as
+`null` — a "constant property" fact beside fact 3 would fold it, and the mount's error message with
+it.
