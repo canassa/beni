@@ -145,17 +145,21 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
             i = try collectExport(arena, items, i, &exports, &bound, &arities);
             continue;
         }
+        // A function's parameter list, `function f(a, b)` or `function (a)`,
+        // before the declarator branch below, which would otherwise take
+        // `function f` and leave `(a, b)` to be read as references. The
+        // name is a binding too.
+        if (isArrowParams(items, i)) {
+            if (i + 1 < items.len and items[i + 1].kind == .ident) try bound.put(arena, items[i + 1].text, {});
+            i = try collectParenNames(arena, items, i, &bound);
+            continue;
+        }
         if (isDeclarator(token.text)) {
             i = try collectDeclaration(arena, items, i, &bound);
             continue;
         }
         if (eql(token.text, "catch")) {
             i = try collectParenNames(arena, items, i + 1, &bound);
-            continue;
-        }
-        // A parameter list: `(a, b) =>` or `function f(a, b)`.
-        if (isArrowParams(items, i)) {
-            i = try collectParenNames(arena, items, i, &bound);
             continue;
         }
         if (isReference(items, i)) try referenced.append(arena, .{ .text = token.text, .offset = token.offset });
@@ -643,7 +647,7 @@ fn isKeyword(text: []const u8) bool {
 /// `__dirname`, `window`, `Deno`, `Bun` — is deliberately NOT here: those
 /// are exactly the edges check 3 exists to make visible, and importing
 /// `node:process` is the fix.
-fn isStandardGlobal(text: []const u8) bool {
+pub fn isStandardGlobal(text: []const u8) bool {
     const globals = [_][]const u8{
         "Array",           "ArrayBuffer",        "BigInt",          "Boolean",
         "DataView",        "Date",               "Error",           "EvalError",

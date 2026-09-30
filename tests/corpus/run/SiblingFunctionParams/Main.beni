@@ -1,0 +1,13 @@
+-- A sibling may declare a helper as `function name(params)` (boundary.md
+-- §4, check 3): its parameters are bindings, not references, even when no
+-- other line of the file names them. The platform's `Padding.js` declares
+-- `function repeat(piece, count)` and `count` appears nowhere else; the
+-- build must succeed, and the helper must still run after `--release`
+-- renames it and its parameters.
+import Node
+import Padding
+
+
+main : Node.Program
+main =
+    Node.print (Padding.pad "7" 3)

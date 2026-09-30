@@ -1,0 +1,5 @@
+--! A test platform whose sibling declares a helper with `function`.
+
+
+--| `text` right-aligned in `width` characters.
+pub foreign pad : String, Int -> String
