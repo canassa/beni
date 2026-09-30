@@ -176,25 +176,29 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportMarkup(&report, bir, in.graph);
 
     // P2: every annotated value's scheme, before any body is checked.
-    var syncs: std.ArrayList(Var) = .empty;
+    var syncs: std.ArrayList(Types.Builder.SyncMark) = .empty;
     defer syncs.deinit(scratch);
     for (bir.decls, 0..) |d, i| {
         if (!d.kind.isValue()) continue;
         const annotation = d.annotation.unwrap() orelse continue;
         var b = cx.builder(.flex, TypeStore.generalized);
         defer b.deinit();
-        // A `foreign`'s `sync`-marked function types (transparent-effects-
-        // proposal.md §15.2 item 1), which only its own signature can hold.
+        // The `sync`-marked function types (transparent-effects-proposal.md
+        // §15.2 item 1), which only the declaration's own signature can hold:
+        // a `foreign`'s go to its summary; an ordinary declaration's, which
+        // a platform may write since 2026-10-02, are demands in its graph.
         syncs.clearRetainingCapacity();
-        if (d.kind == .foreign_value) {
-            b.syncs = &syncs;
-            b.sync_bir = bir;
-            b.sync_tags = in.artifacts.spans(file).tags;
-        }
+        b.syncs = &syncs;
+        b.sync_bir = bir;
+        b.sync_tags = in.artifacts.spans(file).tags;
         const reading_start = store.count();
         decl_scheme[i] = (try cx.readAnnotation(&b, annotation, @intCast(i))).toOptional();
         b.syncs = null;
-        for (syncs.items) |v| try effects.foreignSync(@intCast(i), v);
+        for (syncs.items) |m| {
+            if (d.kind == .foreign_value) {
+                try effects.foreignSync(@intCast(i), m.v);
+            } else try effects.demand(.{ .v = m.v, .kind = .signature, .site = m.inst, .decl = @intCast(i) });
+        }
         // The `where` clause is read with the SAME builder, so a variable a
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.

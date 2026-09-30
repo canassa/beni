@@ -1,0 +1,19 @@
+-- check/bad (core): `sync` in an ordinary declaration's signature, which a
+-- platform package may write (transparent-effects-proposal.md §15.2 item 1,
+-- amended 2026-10-02). `program` never calls `view`, yet its summary says
+-- `view` is `sync`, because the signature says so: `Main` hands it a
+-- suspending function across the module boundary and is refused at the
+-- field's value, and so is `Lib.page`, which hands its own parameter on.
+-- `race` makes its marked parameter suspend itself, by joining it with a
+-- suspending function, and is refused at the word.
+pub foreign suspends get : Int -> String
+
+
+pub program : { init : Int, view : sync (Int -> String) } -> Int
+program p =
+    p.init
+
+
+pub race : sync (Int -> String), Bool -> String
+race f fast =
+    (if fast then f else get) 1

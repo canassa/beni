@@ -34,8 +34,16 @@
         (type_var msg))))
   (annotation pair
     (type_con Pair
-      (type_var sync)
-      (type_paren
-        (type_con Int))))
+      (type_sync
+        (type_paren
+          (type_con Int)))))
   (definition pair
-    (ident pair)))
+    (let
+      (let_annotation local
+        (type_con Pair
+          (type_var sync)
+          (type_paren
+            (type_con Int))))
+      (let_def local
+        (ident pair))
+      (ident local))))

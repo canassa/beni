@@ -1,9 +1,12 @@
 -- The `sync` mark in a `foreign` value's signature (transparent-effects-
 -- proposal.md §15.2): a contextual word before a parenthesised type, which
 -- the tree keeps as a `type_sync` around it — in a parameter, in a record
--- field of one, and in a type argument. Outside a `foreign` signature the
--- same spelling is a type variable applied to nothing and a parenthesised
--- type, as it always was: `Pair sync (Int)` is two arguments.
+-- field of one, and in a type argument. Since 2026-10-02 the word is the
+-- mark in every top-level signature (§15.2 item 1, amended: a platform may
+-- mark an ordinary declaration's), so `Pair sync (Int)` there is one
+-- marked argument, whatever lowering then says of it; in a `let`
+-- annotation the same spelling is a type variable applied to nothing and a
+-- parenthesised type, as it always was: two arguments.
 pub foreign pure onInput : sync (String -> msg) -> Attribute msg
 
 
@@ -15,4 +18,9 @@ pub foreign pure handlers : List (sync (Event -> msg)) -> Attribute msg
 
 pair : Pair sync (Int)
 pair =
-    pair
+    let
+        local : Pair sync (Int)
+        local =
+            pair
+    in
+    local

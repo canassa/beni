@@ -1468,6 +1468,25 @@ Six places, each a boundary where a beni function is called by something that ca
    back to beni). Anything else is `misplaced_sync`, reported by lowering at the word; the
    declaration is otherwise read without the mark. Like the rung, it is a promise the platform
    author makes about the sibling; `boundary.md` §4's checks do not read the JavaScript to test it.
+
+   *Amended 2026-10-02 (the owner's decision R47-4, `plans/browser-decisions.md`):* **a platform
+   package may write `sync` in the signature of any top-level declaration**, not only a `foreign`'s,
+   so a runtime piece moved from JavaScript to beni keeps its "must not suspend" (`Browser.program`'s
+   `update` and `view`, the effects host). The word is the marker in every top-level annotation, in
+   every package, directly before `(`, and an ordinary type variable everywhere else (a `let`
+   annotation, a type alias, a type's constructor); what it may mark is unchanged. The one spelling
+   this takes from a top-level annotation is a type variable named `sync` written directly before a
+   parenthesised type argument (`Pair sync (Int)`, two arguments until now), which is the mark
+   there now — rename the variable. In a package that
+   may not write `foreign` (`boundary.md` §2) it is `misplaced_sync` at the word, *"only a platform
+   package may write `sync`"*, and the declaration is read without it — user code gets the same
+   guarantee from any platform function it passes a function to, and a boundary of its own by
+   passing to one. A mark on an ordinary declaration is a **demand in the declaration's own graph**,
+   on the marked class, attributed to the word: so (§15.3) the summary publishes the class `sync`
+   whatever the body does with it — every use, in any module, demands its copy — and a body that
+   makes the class suspend itself (by unifying the parameter with a function that suspends) is
+   `sync_boundary` at the word, *"`program`'s signature marks this function `sync`"*, with the
+   chain. A mark on a `foreign` is read as before.
 2. **A `foreign`'s `where` evidence.** §14.3 rule 6 already says the sibling calls its evidence
    during the call; it calls it from JavaScript, synchronously — `core/List.js`'s `eq` loop is the
    case (plan §2.1). So every `where` type of a `foreign` is `sync`, with nothing written.

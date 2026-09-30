@@ -740,12 +740,13 @@ pub const Builder = struct {
     schema_context: ?*anyopaque = null,
     schema_lookup: ?*const fn (*anyopaque, u32, bool, []const Var) Allocator.Error!?Var = null,
     interfaces: []const Interface = &.{},
-    /// While P2 reads a `foreign` value's annotation: where each
-    /// `sync`-marked function type it builds goes, and the token tags of the
-    /// module whose BIR `sync_bir` is. A marked `type_fn`'s `main_token` is
-    /// the word `sync`, not the arrow (transparent-effects-proposal.md §15.2,
-    /// §15.5), and only a `foreign` signature can hold one.
-    syncs: ?*std.ArrayList(Var) = null,
+    /// While P2 reads a value's annotation: where each `sync`-marked
+    /// function type it builds goes, with its `type_fn` instruction, and the
+    /// token tags of the module whose BIR `sync_bir` is. A marked `type_fn`'s
+    /// `main_token` is the word `sync`, not the arrow
+    /// (transparent-effects-proposal.md §15.2, §15.5), and only a top-level
+    /// signature can hold one.
+    syncs: ?*std.ArrayList(SyncMark) = null,
     sync_bir: ?*const Bir = null,
     sync_tags: []const Token.Tag = &.{},
     /// The annotation's type variables, in first-appearance order. A
@@ -855,6 +856,8 @@ pub const Builder = struct {
         return b.rank;
     }
 
+    pub const SyncMark = struct { v: Var, inst: u32 };
+
     /// Pre-bind `name` to `v`, for an alias body read with its parameters
     /// already chosen, or a constructor read under its type's parameters.
     pub fn bind(b: *Builder, name_symbol: Symbol, v: Var) Error!void {
@@ -885,7 +888,7 @@ pub const Builder = struct {
                 const v = try b.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, b.varRank());
                 if (b.syncs) |list| if (b.sync_bir == bir) {
                     const token = bir.insts.items(.main_token)[inst.int()];
-                    if (token < b.sync_tags.len and b.sync_tags[token] == .lower_ident) try list.append(b.scratch, v);
+                    if (token < b.sync_tags.len and b.sync_tags[token] == .lower_ident) try list.append(b.scratch, .{ .v = v, .inst = inst.int() });
                 };
                 return v;
             },

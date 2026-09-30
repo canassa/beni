@@ -136,7 +136,10 @@ thunk, a finaliser — is left unmarked (report 43 §9.6). A `foreign`'s `where`
 with nothing written, because the sibling calls it from JavaScript during the call. Like the rung
 and the arity check 4 counts, the mark is a promise about the sibling; no check reads the
 JavaScript to test it. `sync` anywhere else in the signature — around a type that is not a function
-written out, or on a function the platform hands back — is `misplaced_sync`.
+written out, or on a function the platform hands back — is `misplaced_sync`. *Amended 2026-10-02 (R47-4):* a platform package may also write `sync` in an ordinary beni
+declaration's signature, where it demands the same of every caller
+([`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15.2 item 1); a user
+package may not.
 
 Four checks run at build time, and all four are things Elm does not do:
 

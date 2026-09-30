@@ -1986,10 +1986,14 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // the word `sync` — the mark, in the BIR, costs no column
         // (transparent-effects-proposal.md §15.2, §15.5). A mark on anything
         // but a function type written out, or on one the declaration hands
-        // back, is `misplaced_sync` and is dropped.
+        // back, is `misplaced_sync` and is dropped — and so is any mark in
+        // a package that may not write `foreign` (§15.2 item 1, amended
+        // 2026-10-02: a platform may mark any top-level signature).
         .type_sync => {
             const inner = try l.lowerType(l.tree.operand(node));
-            const reading: Diagnostics.Item.Markup = if (l.insts.items(.tag)[inner.int()] != .type_fn)
+            const reading: Diagnostics.Item.Markup = if (!l.options.core and !l.options.platform)
+                .sync_outside_platform
+            else if (l.insts.items(.tag)[inner.int()] != .type_fn)
                 .sync_not_function
             else if (!l.receives)
                 .sync_handed_back

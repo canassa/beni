@@ -65,7 +65,7 @@ pub const Site = struct { call: u32 = none, ambient: u32 = none };
 
 /// Which boundary put a demand on its class (§15.2).
 /// `.value` is a top-level value other than `main` (§15.2 item 7).
-pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, method };
+pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, method, signature };
 
 /// "This class must not suspend" (§15.1), recorded before the run: `v`
 /// carries the class, `site` is the instruction it is attributed to.
@@ -74,7 +74,10 @@ pub const DemandKind = enum(u8) { argument, handler, row, key, main, value, meth
 /// `where` method `method` (a `Symbol`) — as far as a site of the summary
 /// says, and `holder` when the class is a nominal application's rather
 /// than a function type's. `.main`, `.value` and `.method`: the declaration, and for
-/// a method the name of the type it is written for, in `field`.
+/// a method the name of the type it is written for, in `field`. `.signature`: a
+/// function type an ordinary declaration's signature marks `sync` (§15.2 item
+/// 1, amended 2026-10-02), `site` its `type_fn` instruction, `decl` the
+/// declaration.
 pub const Demand = struct {
     v: Var,
     kind: DemandKind,

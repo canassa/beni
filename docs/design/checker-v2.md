@@ -5378,3 +5378,10 @@ section says only where it sits in this checker.
   class, `DemandKind.value`, in every package. `Effects.run` places those demands after the
   summaries and only where the class reached `suspends`, because an evaluation class is on no path
   a summary reads and a demand placed before would cost every summary a walk.
+- *Amended 2026-10-02 (R47-4; `transparent-effects-proposal.md` §15.2 item 1):* P2 notes the
+  `sync`-marked function types of every annotated value, not only a `foreign`'s. A `foreign`'s go
+  to its summary as before; an ordinary declaration's are each a demand, `DemandKind.signature`,
+  on the marked class, whose site is the marked `type_fn` instruction — so `summarise` finds the
+  class reaching a demand and publishes it `sync`, and `Sync.check` reports it at the word when the
+  body makes it suspend. Lowering refuses the word (`misplaced_sync`) in a package that may not
+  write `foreign`; the parser reads it in every top-level annotation.

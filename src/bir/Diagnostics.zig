@@ -82,9 +82,12 @@ pub const Item = struct {
         name_control,
         /// `misplaced_sync`: what the word marks (transparent-effects-proposal.md
         /// §15.2) — a type that is not a function type written out, or a
-        /// function the declaration hands back rather than receives.
+        /// function the declaration hands back rather than receives; or a
+        /// `sync` in a package that may not write `foreign` (amended
+        /// 2026-10-02).
         sync_not_function,
         sync_handed_back,
+        sync_outside_platform,
     };
 };
 
@@ -148,7 +151,15 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\Each field of a record is set once. Remove one of the two.
         , .{text}),
-        .misplaced_sync => if (item.markup == .sync_handed_back) try w.writeAll(
+        .misplaced_sync => if (item.markup == .sync_outside_platform) try w.writeAll(
+            \\Only a platform package may write `sync`.
+            \\
+            \\`sync` marks a function that a platform calls synchronously, so that it must
+            \\never suspend. It is legal in the core package and in a package whose manifest
+            \\says `"platform": true`. A function of yours gets the same guarantee by being
+            \\handed to a platform function that marks its parameter `sync`. Remove the
+            \\`sync`; the signature means the same without it.
+        ) else if (item.markup == .sync_handed_back) try w.writeAll(
             \\This `sync` marks a function the platform hands back to beni, not one it receives.
             \\
             \\`sync` says that the platform calls a function synchronously, so the function

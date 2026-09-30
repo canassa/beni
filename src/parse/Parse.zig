@@ -164,10 +164,13 @@ in_layout_field: bool = false,
 /// True while a `where` constraint's type is being parsed: the comma rule
 /// of §2.3 takes one more token of lookahead there.
 in_where: bool = false,
-/// True while a `foreign` value's signature is being parsed: the one
-/// place `sync (…)` marks a function type (transparent-effects-proposal.md
-/// §15.2). Everywhere else `sync` is an ordinary type variable.
-in_foreign_signature: bool = false,
+/// True while a top-level annotation's or a `foreign` value's signature is
+/// being parsed: the one place `sync (…)` marks a function type
+/// (transparent-effects-proposal.md §15.2 item 1, amended 2026-10-02: any
+/// top-level signature, and lowering refuses it outside a platform). A
+/// `let` annotation leaves it false; there `sync` is an ordinary type
+/// variable, as it is everywhere else.
+in_signature: bool = false,
 
 /// Deeper nesting than this reports `nesting_too_deep` instead of
 /// recursing: one level per bracket, block form, right-associative operator
@@ -1252,7 +1255,9 @@ fn parseAnnotation(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index {
     var header = header_in;
     const name = p.next();
     _ = p.next(); // ':' by lookahead
+    p.in_signature = true;
     const type_expr = try p.parseTopType();
+    p.in_signature = false;
     const clause = try p.parseWhere();
     header.where_start = clause.start;
     header.where_end = clause.end;
@@ -1475,9 +1480,9 @@ fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index
         .placeholder => |node| return node,
     };
     _ = try p.expectToken(.colon);
-    p.in_foreign_signature = true;
+    p.in_signature = true;
     const type_expr = try p.parseTopType();
-    p.in_foreign_signature = false;
+    p.in_signature = false;
     const clause = try p.parseWhere();
     header.where_start = clause.start;
     header.where_end = clause.end;
@@ -1770,10 +1775,10 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.type_expr);
     defer p.context = saved_context;
     switch (p.peek()) {
-        // `sync (…)` in a `foreign` value's signature: a contextual word,
-        // like the rung, and only there (transparent-effects-proposal.md
-        // §15.2). What it may mark is lowering's to decide.
-        .lower_ident => if (p.in_foreign_signature and p.peekAt(1) == .l_paren and p.isSyncToken(p.tok_i)) {
+        // `sync (…)` in a top-level signature: a contextual word, like the
+        // rung, and only there (transparent-effects-proposal.md §15.2).
+        // What it may mark, and in which package, is lowering's to decide.
+        .lower_ident => if (p.in_signature and p.peekAt(1) == .l_paren and p.isSyncToken(p.tok_i)) {
             const word = p.next();
             return p.unary(.type_sync, word, try p.parseTypeAtom());
         } else return p.typeVar(p.next(), .none),

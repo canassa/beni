@@ -257,7 +257,7 @@ const Sync = struct {
                 const decl = bir.decls[d.decl];
                 return .{ @intFromEnum(decl.inst_start), decl.name_token };
             },
-            .handler, .row, .key => return .{ d.site, null },
+            .handler, .row, .key, .signature => return .{ d.site, null },
             .argument => {},
         }
         if (d.site >= bir.insts.len or d.param == none) return .{ d.site, null };
@@ -406,6 +406,13 @@ const Sync = struct {
             .handler => return w.writeAll("This handler must not suspend: the page calls it synchronously, while the event is being dispatched."),
             .row => return w.writeAll("This row function must not suspend: the page calls it synchronously, while it renders."),
             .key => return w.writeAll("This key function must not suspend: the page calls it synchronously, while it renders."),
+            .signature => {
+                const decl = cx.bir.decls[d.decl];
+                return w.print(
+                    "This function must not suspend: `{s}`'s signature marks it `sync`, so every caller is held to it.",
+                    .{cx.interner.slice(cx.bir.symbol(decl.name))},
+                );
+            },
             .argument => {},
         }
         var callee: std.Io.Writer.Allocating = .init(y.scratch);
