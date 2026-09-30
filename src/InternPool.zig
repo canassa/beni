@@ -279,6 +279,13 @@ pub const WellKnown = enum(u32) {
     Task,
     andThen,
     isWaiting,
+    // NOT prelude names either: the three `core/List` values the code
+    // generator calls for a list pattern with elements after its spread,
+    // `[ ...init, last ]` (`docs/design/backend.md` §7, *List patterns with
+    // elements after the spread*).
+    length,
+    drop,
+    take,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));

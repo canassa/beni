@@ -82,6 +82,11 @@ pub const Occ = struct {
     /// argument `slot` is the alias's field `slot` in declaration order and
     /// not the positional `a`, `b`, … every other constructor uses.
     via: Inst.OptionalIndex = .none,
+    /// `.slot` is the parent's slot `slot`. `.last` is the list made of the
+    /// parent list's last `slot` cells — where a pattern's items after its
+    /// spread are read from (`backend.md` §7, *List patterns with elements
+    /// after the spread*); the emitter walks to it.
+    kind: enum(u8) { slot, last } = .slot,
 
     pub const no_parent: u32 = std.math.maxInt(u32);
 };
@@ -345,11 +350,15 @@ const Builder = struct {
     /// constructors of one type share a representation, and a record alias
     /// has exactly one, so the first `via` recorded answers for the slot.
     fn subOcc(b: *Builder, parent: u32, slot: u32, via: Inst.OptionalIndex) !u32 {
+        return b.internOcc(parent, slot, via, .slot);
+    }
+
+    fn internOcc(b: *Builder, parent: u32, slot: u32, via: Inst.OptionalIndex, kind: @FieldType(Occ, "kind")) !u32 {
         for (b.occs.items, 0..) |o, i| {
-            if (o.parent == parent and o.slot == slot) return @intCast(i);
+            if (o.parent == parent and o.slot == slot and o.kind == kind) return @intCast(i);
         }
         const index: u32 = @intCast(b.occs.items.len);
-        try b.occs.append(b.arena, .{ .root = b.occs.items[parent].root, .parent = parent, .slot = slot, .via = via });
+        try b.occs.append(b.arena, .{ .root = b.occs.items[parent].root, .parent = parent, .slot = slot, .via = via, .kind = kind });
         return index;
     }
 
@@ -377,7 +386,16 @@ const Builder = struct {
             .pat_char => .{ .literal = .{ .pat = pat, .kind = .char } },
             .pat_string => .{ .literal = .{ .pat = pat, .kind = .string } },
             .pat_cons => .{ .list = true },
-            .pat_list => .{ .list = cell.from < Bir.inlineRange(d).len() },
+            .pat_list => blk: {
+                const len = Bir.inlineRange(d).len();
+                // `[ a, b, ...rest ]` is `a :: b :: rest` (§7's table): a
+                // cons while items before the spread remain, then the
+                // spread's operand, which binds and tests nothing. Items
+                // AFTER a spread make the column a length split (`compile`),
+                // whatever this answers — only that it is not a wildcard.
+                if (spreadIndex(bir, pat)) |s| break :blk if (cell.from < s or s + 1 < len) .{ .list = true } else .wild;
+                break :blk .{ .list = cell.from < len };
+            },
             .pat_ctor => blk: {
                 const arity = bir.subRange(@enumFromInt(d.rhs)).len();
                 break :blk if (b.ctorInfo(@enumFromInt(d.lhs), arity)) |c| .{ .ctor = c } else .wild;
@@ -440,6 +458,7 @@ const Builder = struct {
         if (b.allWild(m.rows[0])) return b.leafNode(m.rows[0].branch);
 
         const col = try b.chooseColumn(m);
+        if (try b.needsLengthSplit(m, col)) return b.lengthSplit(m, col);
 
         const g = try b.group(m, col);
         const has_default = g.wild.len != 0;
@@ -507,6 +526,160 @@ const Builder = struct {
         b.fans.items[fan_index].edges_end = @intCast(b.edges.items.len);
         b.fans.items[fan_index].default = default;
         return node_index;
+    }
+
+    // ---- A list column split by length (backend.md §7, *List patterns
+    // with elements after the spread*) ------------------------------------
+
+    /// A list pattern as the length split reads it: its items before the
+    /// spread, then its items after it, as cells, and whether it has one.
+    const Shape = struct {
+        items: []const Cell,
+        prefix: u32,
+        suffix: u32,
+        spread: bool,
+    };
+
+    /// `cell` as a `Shape`, or null when it is no list pattern — a wildcard,
+    /// or a pattern this tree cannot read. A `pat_cons` chain's heads lead,
+    /// and it ends in the list it names, or in a name or `_` (a spread).
+    fn listShape(b: *Builder, cell: Cell) Allocator.Error!?Shape {
+        const bir = b.cx.bir;
+        var pat = unwrapAs(bir, cell.pat.unwrap() orelse return null);
+        var from = cell.from;
+        var items: std.ArrayList(Cell) = .empty;
+        var prefix: u32 = 0;
+        while (pat.int() < bir.insts.len) {
+            const d = bir.instData(pat);
+            switch (bir.instTag(pat)) {
+                .pat_cons => {
+                    try items.append(b.arena, .{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() });
+                    prefix += 1;
+                    pat = unwrapAs(bir, @enumFromInt(d.rhs));
+                    from = 0;
+                },
+                .pat_list => {
+                    var spread = false;
+                    var suffix: u32 = 0;
+                    const elements = bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                    for (elements[@min(from, elements.len)..]) |el| {
+                        if (bir.instTag(el) == .pat_spread) {
+                            spread = true;
+                            continue;
+                        }
+                        try items.append(b.arena, .{ .pat = el.toOptional() });
+                        if (spread) suffix += 1 else prefix += 1;
+                    }
+                    return .{ .items = items.items, .prefix = prefix, .suffix = suffix, .spread = spread };
+                },
+                .pat_var, .pat_wild => {
+                    if (items.items.len == 0) return null;
+                    return .{ .items = items.items, .prefix = prefix, .suffix = 0, .spread = true };
+                },
+                else => return null,
+            }
+        }
+        return null;
+    }
+
+    /// Whether a row of column `col` names elements after a spread: only
+    /// then is the column split by length rather than into `[]`/`::`, so a
+    /// column without one compiles exactly as it always did.
+    fn needsLengthSplit(b: *Builder, m: Matrix, col: u32) Allocator.Error!bool {
+        for (m.rows) |row| {
+            const shape = (try b.listShape(row.cells[col])) orelse continue;
+            if (shape.suffix != 0) return true;
+        }
+        return false;
+    }
+
+    /// `checker.md` §6.6's split of a list column: `exact ℓ` for ℓ below
+    /// `len`, and `at least len`, whose cells are the first `prefix` and
+    /// the last `suffix` elements.
+    const Lens = struct { prefix: u32, suffix: u32, len: u32 };
+
+    fn lengthSplit(b: *Builder, m: Matrix, col: u32) Allocator.Error!u32 {
+        const shapes = try b.arena.alloc(?Shape, m.rows.len);
+        var fixed: ?u32 = null;
+        var lens: Lens = .{ .prefix = 0, .suffix = 0, .len = 0 };
+        for (m.rows, shapes) |row, *shape| {
+            shape.* = try b.listShape(row.cells[col]);
+            const s = shape.* orelse continue;
+            if (s.spread) {
+                lens.prefix = @max(lens.prefix, s.prefix);
+                lens.suffix = @max(lens.suffix, s.suffix);
+            } else fixed = @max(fixed orelse 0, s.prefix);
+        }
+        lens.len = lens.prefix + lens.suffix;
+        if (fixed) |f| if (f + 1 > lens.len) {
+            lens.prefix = f + 1 - lens.suffix;
+            lens.len = f + 1;
+        };
+        return b.lengthNode(m, col, shapes, lens, 0, m.cols[col]);
+    }
+
+    /// The spine of the split: at depth ℓ, a list node on the ℓ-th tail —
+    /// its `[]` edge is `exact ℓ`, its `::` edge the next depth — and at
+    /// depth `len`, `at least len` itself. Each node is the two-way test a
+    /// cons column writes, so the emitter needs nothing new for it.
+    fn lengthNode(b: *Builder, m: Matrix, col: u32, shapes: []const ?Shape, lens: Lens, depth: u32, spine: u32) Allocator.Error!u32 {
+        if (depth == lens.len) return b.compile(try b.lengthMatrix(m, col, shapes, lens, depth));
+        const fan_index: u32 = @intCast(b.fans.items.len);
+        const node_index: u32 = @intCast(b.nodes.items.len);
+        try b.nodes.append(b.arena, .{ .fan = fan_index });
+        try b.fans.append(b.arena, .{ .occ = spine, .kind = .list, .edges_start = 0, .edges_end = 0 });
+        const exact = try b.compile(try b.lengthMatrix(m, col, shapes, lens, depth));
+        const longer = try b.lengthNode(m, col, shapes, lens, depth + 1, try b.subOcc(spine, 1, .none));
+        const start: u32 = @intCast(b.edges.items.len);
+        if (exact != no_node) try b.edges.append(b.arena, .{ .order = 0, .child = exact });
+        if (longer != no_node) try b.edges.append(b.arena, .{ .order = 1, .child = longer });
+        b.fans.items[fan_index].edges_start = start;
+        b.fans.items[fan_index].edges_end = @intCast(b.edges.items.len);
+        return node_index;
+    }
+
+    /// The specialisation by alternative `alt` (`exact alt` below
+    /// `lens.len`, `at least` at it): the column becomes one column per
+    /// element the alternative names, read down the spine for leading
+    /// elements and from the `.last` occurrence for trailing ones.
+    fn lengthMatrix(b: *Builder, m: Matrix, col: u32, shapes: []const ?Shape, lens: Lens, alt: u32) Allocator.Error!Matrix {
+        const at_least = alt == lens.len;
+        const arity = if (at_least) lens.prefix + lens.suffix else alt;
+        const lead = if (at_least) lens.prefix else alt;
+        const cols = try b.arena.alloc(u32, m.cols.len - 1 + arity);
+        @memcpy(cols[0..col], m.cols[0..col]);
+        @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
+        var spine = m.cols[col];
+        for (0..lead) |i| {
+            cols[col + i] = try b.subOcc(spine, 0, .none);
+            spine = try b.subOcc(spine, 1, .none);
+        }
+        if (at_least and lens.suffix != 0) {
+            var last = try b.internOcc(m.cols[col], lens.suffix, .none, .last);
+            for (0..lens.suffix) |j| {
+                cols[col + lead + j] = try b.subOcc(last, 0, .none);
+                last = try b.subOcc(last, 1, .none);
+            }
+        }
+
+        const rows = try b.arena.alloc(MRow, m.rows.len);
+        var len: usize = 0;
+        for (m.rows, shapes) |row, shape| {
+            const cells = try b.arena.alloc(Cell, cols.len);
+            @memcpy(cells[0..col], row.cells[0..col]);
+            @memcpy(cells[col + arity ..], row.cells[col + 1 ..]);
+            const out = cells[col..][0..arity];
+            @memset(out, .{});
+            if (shape) |s| {
+                if (!s.spread and (at_least or s.prefix != alt)) continue;
+                if (s.spread and !at_least and s.prefix + s.suffix > alt) continue;
+                @memcpy(out[0..s.prefix], s.items[0..s.prefix]);
+                @memcpy(out[arity - s.suffix ..], s.items[s.prefix..]);
+            }
+            rows[len] = .{ .branch = row.branch, .cells = cells };
+            len += 1;
+        }
+        return .{ .cols = cols, .rows = rows[0..len] };
     }
 
     fn allWild(b: *Builder, row: MRow) bool {
@@ -735,6 +908,14 @@ fn sameLiteral(bir: *const Bir, x: Inst.Index, y: Inst.Index) bool {
         .pat_int, .pat_string => std.mem.eql(u8, bir.bytes(x), bir.bytes(y)),
         else => false,
     };
+}
+
+/// The index of a `pat_list`'s spread item, or null when it has none.
+fn spreadIndex(bir: *const Bir, pat: Inst.Index) ?u32 {
+    for (bir.extraSlice(Bir.inlineRange(bir.instData(pat)), Inst.Index), 0..) |el, i| {
+        if (bir.instTag(el) == .pat_spread) return @intCast(i);
+    }
+    return null;
 }
 
 fn unwrapAs(bir: *const Bir, pat: Inst.Index) Inst.Index {

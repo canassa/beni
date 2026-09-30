@@ -1,0 +1,108 @@
+-- run: the list syntax (language.md §6.8) on today's cons cells. Every row
+-- of §6.8's pattern table at its edges — the empty list, one element,
+-- exactly as many as the pattern names, one more — through `describe`,
+-- whose column is split by length because two of its patterns name items
+-- after their spread (backend.md §7, *List patterns with elements after the
+-- spread*); trailing items that test (`ends`, a literal and a constructor
+-- after the spread); a spread bound (`init`, `middle`) and ignored (`..._`);
+-- a list pattern nested in a list and in a tuple; and the expression forms,
+-- whose items and spread operands run left to right before the list is
+-- built (the `Debug.log` lines, in source order).
+import Node exposing (Program)
+
+
+describe : List Int -> String
+describe xs =
+    case xs of
+        [] ->
+            "empty"
+
+        [ x ] ->
+            "one ${x}"
+
+        [ first, ...middle, last ] ->
+            "first ${first}, last ${last}, ${Debug.toString middle} between"
+
+
+ends : List (Maybe Int) -> String
+ends xs =
+    case xs of
+        [ ..._, Just 0 ] ->
+            "ends in zero"
+
+        [ Just a, ..._, Nothing ] ->
+            "from ${a} to nothing"
+
+        [ ...init, Just z ] ->
+            "${Debug.toString init} then ${z}"
+
+        [ x, ...rest ] ->
+            "other"
+
+        [] ->
+            "empty"
+
+
+heads : List (List Int) -> String
+heads xss =
+    case xss of
+        [ [ a, ..._ ], ...rest ] ->
+            "a ${a}, ${Debug.toString rest}"
+
+        [ ...init, [] ] ->
+            "last empty after ${Debug.toString init}"
+
+        _ ->
+            "other"
+
+
+pairUp : ( List Int, List Int ) -> String
+pairUp pair =
+    case pair of
+        ( [ ...a, x ], [ y, ...b ] ) ->
+            "${x} meets ${y}"
+
+        _ ->
+            "no pair"
+
+
+note : String, a -> a
+note tag x =
+    Debug.log x tag
+
+
+main : Program
+main =
+    let
+        xs =
+            [ 1, 2, 3 ]
+
+        built =
+            [ note "a" 0, ...note "b" xs, note "c" 4, ...note "d" [ 5 ] ]
+    in
+    Node.printLines
+        [ describe []
+        , describe [ 7 ]
+        , describe [ 7, 8 ]
+        , describe [ 7, 8, 9 ]
+        , describe [ 7, 8, 9, 10 ]
+        , ends []
+        , ends [ Just 0 ]
+        , ends [ Just 1 ]
+        , ends [ Nothing ]
+        , ends [ Just 1, Nothing ]
+        , ends [ Nothing, Nothing ]
+        , ends [ Nothing, Just 3, Just 0 ]
+        , heads []
+        , heads [ [ 1, 2 ], [ 3 ] ]
+        , heads [ [], [ 3 ], [] ]
+        , heads [ [], [ 3 ] ]
+        , pairUp ( [ 1, 2 ], [ 3, 4 ] )
+        , pairUp ( [], [ 3 ] )
+        , Debug.toString built
+        , Debug.toString [ 0, ...xs ]
+        , Debug.toString [ ...xs, 4 ]
+        , Debug.toString [ ...xs, ...xs ]
+        , Debug.toString [ ...[], 1, ...[] ]
+        , Debug.toString [ ...xs ]
+        ]

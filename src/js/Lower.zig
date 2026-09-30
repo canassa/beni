@@ -3746,6 +3746,28 @@ const Lowerer = struct {
         return l.coreValue(.String, .compare, p);
     }
 
+    /// `List$drop(list, List$length(list) - count)`: the list made of the
+    /// last `count` cells of `list`, shared rather than copied, which is
+    /// where a pattern's items after its spread are read (§7, *List
+    /// patterns with elements after the spread*). O(n), and the caller has
+    /// already proved `list` at least `count` long.
+    fn listLast(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
+        return l.call(try l.coreValue(.List, .drop, p), &.{ list, try l.lengthMinus(list, count, p) }, p);
+    }
+
+    /// `List$take(list, List$length(list) - count)`: every cell but the last
+    /// `count`, a copy — what a spread with items after it binds.
+    fn listInit(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
+        return l.call(try l.coreValue(.List, .take, p), &.{ list, try l.lengthMinus(list, count, p) }, p);
+    }
+
+    fn lengthMinus(l: *Lowerer, list: Node.Index, count: u32, p: u32) !Node.Index {
+        var buf: [10]u8 = undefined;
+        const digits = std.fmt.bufPrint(&buf, "{d}", .{count}) catch unreachable;
+        const length = try l.call(try l.coreValue(.List, .length, p), &.{list}, p);
+        return l.binary(.sub, length, try l.numberNode(digits, p), p);
+    }
+
     // ---- Derived functions (static-dispatch-spike.md §9) ------------------
     //
     // A well-known method the checker resolved to a SHAPE rather than to a
@@ -6456,14 +6478,12 @@ const Lowerer = struct {
         const scrutinee: Inst.Index = @enumFromInt(d.lhs);
         const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
         if (branches.len == 0) return null;
+        // A pattern with items after its spread reads the scrutinee's end
+        // through `List.length` and `List.drop` (§7, *List patterns with
+        // elements after the spread*): more than once, so it is bound.
+        var list_end = false;
         for (branches) |branch| {
-            if (l.hasSpread(@enumFromInt(l.bir.instData(branch).lhs))) {
-                try l.report(.not_implemented, @enumFromInt(l.bir.instData(branch).lhs),
-                    \\A list pattern with a spread, `[ x, ...rest ]`, is not compiled yet
-                    \\(`docs/design/backend.md` §7, *List patterns with elements after the spread*).
-                , .{});
-                return null;
-            }
+            if (l.hasListEnd(@enumFromInt(l.bir.instData(branch).lhs))) list_end = true;
         }
 
         // §7's tuple-literal rule: a `case` on a tuple LITERAL every row
@@ -6518,6 +6538,7 @@ const Lowerer = struct {
                 if (tree.uses[i] == 0) continue;
                 reads += l.bindCount(pats[i * roots + r]);
             }
+            if (list_end) reads += 2;
             root.* = if (reads == 0) blk: {
                 // Nothing reads it — one constructor, or `_` — and it is
                 // still evaluated, once and here (§7, dated note
@@ -6554,17 +6575,19 @@ const Lowerer = struct {
         };
     }
 
-    fn hasSpread(l: *Lowerer, pattern: Inst.Index) bool {
+    /// Whether `pattern` holds a list pattern with an item after its spread.
+    fn hasListEnd(l: *Lowerer, pattern: Inst.Index) bool {
         const d = l.bir.instData(pattern);
         return switch (l.bir.instTag(pattern)) {
-            .pat_spread => true,
-            .pat_as => l.hasSpread(@enumFromInt(d.lhs)),
-            .pat_cons => l.hasSpread(@enumFromInt(d.lhs)) or l.hasSpread(@enumFromInt(d.rhs)),
-            .pat_tuple, .pat_list => for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |el| {
-                if (l.hasSpread(el)) break true;
+            .pat_as => l.hasListEnd(@enumFromInt(d.lhs)),
+            .pat_cons => l.hasListEnd(@enumFromInt(d.lhs)) or l.hasListEnd(@enumFromInt(d.rhs)),
+            .pat_tuple, .pat_list => for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |el, i| {
+                if (l.bir.instTag(pattern) == .pat_list and l.bir.instTag(el) == .pat_spread and
+                    i + 1 < Bir.inlineRange(d).len()) break true;
+                if (l.hasListEnd(el)) break true;
             } else false,
             .pat_ctor => for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |el| {
-                if (l.hasSpread(el)) break true;
+                if (l.hasListEnd(el)) break true;
             } else false,
             else => false,
         };
@@ -6611,6 +6634,7 @@ const Lowerer = struct {
             },
             .pat_cons => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()) +
                 l.bindCount(@as(Inst.Index, @enumFromInt(d.rhs)).toOptional()),
+            .pat_spread => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()),
             else => 0,
         };
     }
@@ -6997,6 +7021,8 @@ const Lowerer = struct {
         const o = c.tree.occs[occ];
         const node = if (o.parent == Decision.Occ.no_parent)
             c.roots[o.root]
+        else if (o.kind == .last)
+            try l.listLast(try l.occNode(c, o.parent), o.slot, c.p)
         else
             try l.member(try l.occNode(c, o.parent), try l.argName(o.via.unwrap(), o.slot), c.p);
         c.occ_nodes[occ] = node.toOptional();
@@ -7119,7 +7145,24 @@ const Lowerer = struct {
             },
             .pat_list => {
                 var walk = subject;
-                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |element| {
+                const elements = l.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                for (elements, 0..) |element, i| {
+                    if (l.bir.instTag(element) == .pat_spread) {
+                        // `...rest`: with nothing after it, the tail the walk
+                        // has reached, shared, as `x :: rest` bound it; with
+                        // items after it, a copy of all but the last of
+                        // them, which are read from the end (§7).
+                        const operand: Inst.Index = @enumFromInt(l.bir.instData(element).lhs);
+                        const after: u32 = @intCast(elements.len - i - 1);
+                        if (after == 0) return l.bindings(out, operand, walk);
+                        if (l.bir.instTag(operand) != .pat_wild) try l.bindings(out, operand, try l.listInit(walk, after, p));
+                        var last = try l.listLast(walk, after, p);
+                        for (elements[i + 1 ..]) |trailing| {
+                            try l.bindings(out, trailing, try l.member(last, try l.slotName(0), p));
+                            last = try l.member(last, try l.slotName(1), p);
+                        }
+                        return;
+                    }
                     try l.bindings(out, element, try l.member(walk, try l.slotName(0), p));
                     walk = try l.member(walk, try l.slotName(1), p);
                 }

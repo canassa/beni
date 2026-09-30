@@ -1,0 +1,59 @@
+-- emit: the SHAPE of a list pattern with items after its spread on cons
+-- cells (`backend.md` §7, *List patterns with elements after the spread*),
+-- which running cannot tell from any other correct compilation.
+--
+-- The golden pins, in `lastOr`: the scrutinee bound once; the column split
+-- by length as a chain of the two-way cell tests a cons column writes,
+-- `xs.$ === 0` then down the spine; and the trailing item read through
+-- `List$drop(xs, List$length(xs) - 1)`. `middle` binds its spread as the
+-- `List$take` of the tail after `first`, and its last item from that tail's
+-- end. `endsInZero` tests a trailing literal through the same last-cells
+-- occurrence. `headOr` is the control: `[ x, ...rest ]` is `x :: rest`, a
+-- column with nothing after its spread compiles exactly as `::` did, with
+-- no call at all.
+import Node exposing (Program)
+
+
+pub lastOr : List Int -> Int
+lastOr xs =
+    case xs of
+        [] ->
+            0
+
+        [ ...init, last ] ->
+            last
+
+
+pub middle : List Int -> List Int
+middle xs =
+    case xs of
+        [ first, ...between, last ] ->
+            between
+
+        _ ->
+            []
+
+
+pub endsInZero : List Int -> Bool
+endsInZero xs =
+    case xs of
+        [ ..._, 0 ] ->
+            True
+
+        _ ->
+            False
+
+
+pub headOr : List Int -> Int
+headOr xs =
+    case xs of
+        [ x, ...rest ] ->
+            x
+
+        [] ->
+            0
+
+
+main : Program
+main =
+    Node.printLines []

@@ -599,6 +599,10 @@ pub const Builder = struct {
     /// header).
     string_compare: ?Node = null,
     basics_eq: ?Node = null,
+    /// `List.length`, `List.drop` and `List.take`, which `Lower` calls to
+    /// read the end of a list for a pattern with elements after its spread
+    /// (`backend.md` §7): an edge of every declaration that writes one.
+    list_ends: [3]?Node = .{ null, null, null },
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -615,6 +619,7 @@ pub const Builder = struct {
             .scratch = scratch,
             .string_compare = in.coreDecl(.String, .compare),
             .basics_eq = in.coreDecl(.Basics, .eq),
+            .list_ends = .{ in.coreDecl(.List, .length), in.coreDecl(.List, .drop), in.coreDecl(.List, .take) },
         };
     }
 
@@ -679,6 +684,7 @@ pub const Builder = struct {
             }
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
+            if (hasListEnd(bir, d)) for (b.list_ends) |node| if (node) |n| try decl_targets.append(b.scratch, .{ .node = n, .chain = 0 });
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
@@ -739,6 +745,22 @@ pub const Builder = struct {
             else => {},
         };
         return marks;
+    }
+
+    /// Whether declaration `d` holds a list pattern with an item after its
+    /// spread, `[ ...init, last ]`: its `pat_spread` is not its list's last
+    /// item.
+    fn hasListEnd(bir: *const Bir, d: Bir.Decl) bool {
+        var inst = d.inst_start.int();
+        while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
+            const at: Bir.Inst.Index = @enumFromInt(inst);
+            if (bir.instTag(at) != .pat_list) continue;
+            const items = bir.extraSlice(Bir.inlineRange(bir.instData(at)), Bir.Inst.Index);
+            for (items, 0..) |item, k| {
+                if (bir.instTag(item) == .pat_spread and k + 1 < items.len) return true;
+            }
+        }
+        return false;
     }
 
     /// An edge only a declaration's suspendable body has.
