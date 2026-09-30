@@ -1436,7 +1436,8 @@ reads it does not exist yet.
 
 ### 15.2 Where a demand comes from
 
-Six places, each a boundary where a beni function is called by something that cannot wait for it:
+Six places, each a boundary where a beni function is called by something that cannot wait for it
+(and a seventh, added 2026-09-30, where a value is computed by something that cannot):
 
 1. **A `sync` parameter of a `foreign`.** A platform writes `sync` before a function type the
    sibling may call synchronously — W8 of [`plans/browser-decisions.md`](../../plans/browser-decisions.md):
@@ -1479,6 +1480,17 @@ Six places, each a boundary where a beni function is called by something that ca
    `==` and `<` never suspend. A `where a.eq` of an ordinary declaration needs nothing: whatever
    answers it is a type's `eq` (checked here), a derived one (pure, over answers checked here) or a
    primitive.
+7. **Every other top-level value** (*added 2026-09-30*, a manager's decision on the owner's
+   delegation, reversible; it answers §15.6's open question): a top-level declaration with no
+   parameters is evaluated once, when its module is loaded, outside any fiber — exactly as `main`
+   is — so its evaluation class is `sync` too, in every package. A value whose body is a lambda
+   (`f = \x -> …`) builds a closure and performs nothing, so it is never refused; what its lambda
+   calls is checked where the lambda is called. The error is `must_not_suspend` at the value's
+   name. *Why:* the alternative, a top-level constant that may perform, needs either a lazy,
+   fiber-run initialiser per value (and an order for them) or a program whose `main` is a thunk,
+   which decision 5a declined for `main`; neither has a use case today that `\() -> …` does not
+   serve. *Reversal:* drop the demand and give such values a runtime initialiser; nothing that
+   checks today stops checking.
 
 ### 15.3 How a demand travels
 
@@ -1511,7 +1523,7 @@ that `eq`'s error, said once at `eq`. Two codes (§8's table):
 | Code | Demands | Region |
 |---|---|---|
 | `sync_boundary` | §15.2 items 1–4, and every demand a use instantiated (§15.3) | the argument that must not suspend — for a record literal, the field's value — when the use is the callee of a call and the demand is at a parameter of its arrow; otherwise the use itself. Markup: the handler, row function or key function |
-| `must_not_suspend` | §15.2 items 5 and 6 | the declaration's name |
+| `must_not_suspend` | §15.2 items 5, 6 and 7 | the declaration's name |
 
 **The message names the boundary, then the chain.** The chain is decision 7a's: **one hop per
 module**, read off this module's own graph and never an artifact. From the class that must not
@@ -1555,6 +1567,7 @@ a dependency whose rung flips re-checks the importer that hands its value to a `
 - **No lowering and no runtime**: a program that passes the check emits what it emitted before.
 - **Top-level values other than `main`** are evaluated at import, as `main` is, and are not yet
   demanded: whether a top-level constant may perform is the owner's question, open.
+  *Answered 2026-09-30: they are demanded, §15.2 item 7.*
 - **The chain across modules** stops at the first import (decision 7a); a full chain needs the
   side artifact decision 7 declined.
 - **§3.2's `sync f = …`**, a user-written root, and **`flag_monomorphised`** (§4.3) are not built.

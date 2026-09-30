@@ -501,6 +501,10 @@ instructions (+0.67 %); the harness's `check` line read 69.5 → 71.4 ms, one ru
    *top level* should be allowed to perform, and that is a language decision, not a platform one.
    **Decided 2026-09-30 by the owner: (a).** `main : Program` stays and its body is `sync`;
    [`browser-decisions.md`](browser-decisions.md) W9 is the same decision for the browser.
+   **Extended 2026-09-30 by the manager, on the owner's delegation, and reversible:** every other
+   top-level value is evaluated at module load exactly as `main` is, so it must not suspend either
+   (P2 §15.2 item 7, `check/bad/core/TopLevelValueSuspends`). A value whose body is a lambda is a
+   function and is never refused.
 
 6. **May a well-known `eq`/`compare` suspend?** (§2.1) *Options:* (a) no — a `must_not_suspend`
    obligation on well-known evidence; (b) move `List.eq`/`compare` into beni over a new uncons

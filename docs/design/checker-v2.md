@@ -5369,3 +5369,7 @@ section says only where it sits in this checker.
   `check/EffectsView.zig`, to keep `Effects.zig` under §19.1's 1 500 lines.
 - **Versions** (§15.5): `iface_bytes.format_version` 9 → 10, `entry_bytes.format_version` 7 → 8,
   the frontend artifact 9 → 10.
+- *Amended 2026-09-30 (§15.2 item 7):* the generator demands every top-level value's evaluation
+  class, `DemandKind.value`, in every package. `Effects.run` places those demands after the
+  summaries and only where the class reached `suspends`, because an evaluation class is on no path
+  a summary reads and a demand placed before would cost every summary a walk.
