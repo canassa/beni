@@ -428,6 +428,25 @@ a types-dump black-box test, and a cache test whose dependency flips a bit acros
 bench -- --generate=100000` on a loaded machine: check median 69.7 → 77.1 ms over ten ABBA-ordered
 runs each, measured on an earlier build of the slice about 5 M instructions heavier (wall time, noisy; the instruction count is the figure to trust).
 
+**As built, the second slice (2026-09-30).** Built to P2 §15 and `checker-v2.md` §27, not to the
+table's `Touches` column: there is no `Solve` obligation and no `Term.Tag`. A demand is a mark on
+a node of §14's graph; a summary class is `sync` when its declaration's graph carries it to one,
+and every use of the summary demands its copy (class word bit 8, interface format 10, cache entry
+8, frontend artifact 10). The platform writes `sync (A -> B)` in a `foreign` signature — the BIR
+keeps the mark as the `type_fn`'s `main_token`, so no column — and `misplaced_sync` refuses one
+that marks no function the platform receives. The language's own boundaries need nothing written:
+a `foreign`'s evidence, a markup primitive's function parameters, a handler, row or key function,
+`main`'s evaluation in the root package, and a type's `pub eq`/`compare`. `Sync.zig` reports
+`sync_boundary` and `must_not_suspend` with the chain read backwards off the module's own graph,
+one hop per module, and only on the error path. `Browser.program` and the `page` test platform
+mark their callbacks; `Tea.sandbox` inherits them. No emitted byte and no run hash moved.
+Fixtures: `check/bad/core/{SyncBoundaryArgument,SyncThroughParameter,SyncEvidence,SuspendingEqEvidence,MisplacedSync}`,
+`check/good/core/SyncPermitted`, `build/bad/{MainSuspends,SyncPageBoundaries}`,
+`parse/good/ForeignSync`, `fmt/ForeignSync`, and a cache test in which a dependency's flipped bit
+makes the importer's error appear warm and go again. **Measurement**: `beni check --jobs=1
+--no-cache` over the 100 159-line generated corpus, pinned, six runs each ABBA: 807.35 M → 812.75 M
+instructions (+0.67 %); the harness's `check` line read 69.5 → 71.4 ms, one run each (wall time).
+
 ---
 
 ## 5. Decisions only the owner can take
