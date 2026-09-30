@@ -1355,3 +1355,10 @@ of them except W7, whose answer needs a value to push (W47). **All ten answered 
 | **W53** — **answered 2026-10-01: as recommended**, the owner | The dispatch ordering contract | arrival order, exactly once, `update` synchronous at `send`; a send during a dispatch queued, never re-entrant; a send from a cancelled fiber or a stopped program dropped; written into `boundary.md` | **Yes** — research 30 §8.3 asks for it in writing (R45 §3.2) | medium |
 | **W54** — **answered 2026-10-01: as recommended**, the owner | Should the platform demand that `update` and `view` be *pure*, not only `sync`? | a second demand kind / none / a warning | **No demand**; it would refuse `Debug.log` in `update` and buys only replay of a program that mutates a `Ref` there (R45 §3.8) | high |
 | **W55** — **answered 2026-10-01: as recommended**, the owner | How do tests fake HTTP? | (a) service records only (A7 as decided); (b) a fourth per-fiber slot, a transport | **(a)** for now; revisit when W16's driver meets a real program (R45 §3.7) | high |
+
+## The runtime in beni — 2026-10-02
+
+| # | Decision |
+|---|---|
+| **R47-1** | **The DOM runtime is rewritten in beni now**, not after the compiler work (the owner, 2026-10-02: "the sooner we rewrite the core the better"). The compiler work research 47 lists (a runtime module the lowering calls, mutable locals, inlining single-use top-level functions, whole-program specialisation) is built alongside the port, not before it. |
+| **R47-2** | **Mutable locals for platform code are `Js.Ref`** (the owner, 2026-10-02): a privileged cell (`Js.ref`, `Js.read`, `Js.write`) behind the `Js` wall, lowered to a plain `let` where it does not escape. No `let mut` syntax. |
