@@ -1326,3 +1326,27 @@ Recorded so nobody reads silence as agreement.
 
 Each is ranked with the cheapest experiment that would retire it in
 [`plans/browser-platform.md`](browser-platform.md) §5.
+
+---
+
+## Effects in a browser program — open, 2026-09-30
+
+[Research 45](../docs/design/research/45-effects-in-a-browser-program.md) (**R45**) designs how a
+page performs effects now that the fiber runtime has landed (`transparent-effects-proposal.md` §16):
+`update` stays pure and `sync` and returns a work order whose bodies are direct-style beni run in
+fibers of the program's root scope; subscriptions are keyed long-lived fibers diffed once per flush;
+after-render work is a command with a `sync` body. It builds on W6–W9, W25 and W28 and reopens none
+of them except W7, whose answer needs a value to push (W47). **All ten rows are open.**
+
+| # | Question | Options | Recommendation | Reversibility |
+|---|---|---|---|---|
+| **W46** | How does `update` start work? | (A) return `( model, Cmd msg )`, a `Cmd` being inert data naming bodies `Send msg -> ()`, keys and policies; (B) `update` gets an `Fx msg` capability and spawns itself, becoming `impure`; (C) no `Cmd`: work is a keyed set derived from the model, like `subscriptions` | **(A)**, with (C)'s half served by subscriptions whose bodies are general fibers. A keeps `update`'s output data — tests assert keys by value, replay drops commands, a computed update can be discarded — for one tuple per message; C re-issues a one-shot whose key leaves and returns (R45 §2) | low |
+| **W47** | *Amends W7.* `Cmd.map` cannot push the tagger as the key segment — it is a new closure every `update`, so a `Restart` would never match. What is the segment? | (a) written: `Cmd.map : Cmd a, k, (a -> msg) -> Cmd msg`, no unkeyed `map`; (b) an unkeyed `map` beside it; (c) no namespacing | **(a)**, `()` for a singleton child; an unkeyed `map` would reintroduce W7's bug the day a second instance appears (R45 §3.3) | low |
+| **W48** | Subscription semantics | the key is the resource's whole identity; every declaration of a live key receives each event through its own, latest tagger (Elm's `Browser.Events`); the set is recomputed once per flush when the model changed; `Sub.listen : k, (Send a -> ()), (a -> msg) -> Sub msg` is public so any author can add a subscription | **As stated.** Rule 7: Elm let only effect modules add a subscription (R45 §3.4) | low |
+| **W49** | How does a program ask for after-render work and DOM capabilities? | (a) `Cmd.afterRender` with a `sync` body run in `backend.md` §15.11's phase (2); DOM capabilities `impure`, by id, returning `Result`; `Dom.rendered : () -> ()` suspending for fibers; (b) research 17 §4.7's `suspends` capabilities that wait for a frame; (c) a `Rendered` token required by every DOM read | **(a)**; (b) colours callers for a wait the runtime now supplies, (c) buys speed not correctness and escapes like a `Scope` (R45 §3.6) | medium |
+| **W50** | `Browser.flush` | `impure`, renders now; latched (does nothing extra) when called during a dispatch or a flush | **As stated** (R45 §3.6) | high |
+| **W51** | Does a program get an unmount capability? | now / only W2's defect teardown | **Not now**; the program's root scope is specified so unmount is cheap to add (R45 §3.5) | high |
+| **W52** | May a model hold a handle — a `Queue` outbox for a socket — as an `equatable foreign type`, if every operation on a closed one is a `Result`? | (a) yes, amending `boundary.md` §4.1's "never hold a reference across an effect boundary" for total handles; (b) no: URL-keyed registries inside each platform module (Elm 0.18's WebSocket) | **(a)**: typed, no registry, and no silent loss (R45 §4.3) | medium |
+| **W53** | The dispatch ordering contract | arrival order, exactly once, `update` synchronous at `send`; a send during a dispatch queued, never re-entrant; a send from a cancelled fiber or a stopped program dropped; written into `boundary.md` | **Yes** — research 30 §8.3 asks for it in writing (R45 §3.2) | medium |
+| **W54** | Should the platform demand that `update` and `view` be *pure*, not only `sync`? | a second demand kind / none / a warning | **No demand**; it would refuse `Debug.log` in `update` and buys only replay of a program that mutates a `Ref` there (R45 §3.8) | high |
+| **W55** | How do tests fake HTTP? | (a) service records only (A7 as decided); (b) a fourth per-fiber slot, a transport | **(a)** for now; revisit when W16's driver meets a real program (R45 §3.7) | high |
