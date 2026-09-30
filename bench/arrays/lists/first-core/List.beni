@@ -1,0 +1,518 @@
+--! An array-first `core/List` for research/38 §17: the ONE sequence type of a
+--! beni that has no cons list. `List a` is §15's adaptive array (a plain JS
+--! array until the first single-element write to one longer than 256
+--! elements, the §1 trie after it) plus §16's O(1) view, which is what an
+--! `x :: rest` pattern makes. `[]`, literals and `::` patterns keep their
+--! syntax; `x :: xs` as an expression is a copy, O(n).
+--!
+--! It is written the way report 38 §12.2 says core must be: the sibling is
+--! first-order, and every higher-order function is beni, a tail loop over
+--! `unsafeGet`, so a callback that suspends can park the loop. Results are
+--! built in a core-private `Builder`: a fresh JS array that only the loop that
+--! made it can see, which `add` writes in place and `done` hands over as a
+--! plain `List`. Each builder is used linearly by the loop that owns it, and
+--! nothing outside this module can name one, so the in-place write is never
+--! observable. Programs build with `push` instead, which is persistent.
+--!
+--! The sibling in this directory only has to pass the build's four checks;
+--! `lists.mjs` swaps in `ports/first.js` when it bundles.
+
+
+pub equatable foreign type List a
+
+
+foreign type Builder a
+
+
+pub foreign cons : a, List a -> List a
+
+
+pub foreign eq : List a, List a -> Bool
+    where a.eq : a, a -> Bool
+
+
+pub foreign compare : List a, List a -> Order
+    where a.compare : a, a -> Order
+
+
+pub foreign length : List a -> Int
+
+
+foreign unsafeGet : List a, Int -> a
+
+
+--| Replace one element. Out of range: unchanged.
+pub foreign set : List a, Int, a -> List a
+
+
+--| Add one element at the end. O(1) amortised above 256 elements, a copy
+--| below.
+pub foreign push : List a, a -> List a
+
+
+--| Remove the last element.
+pub foreign pop : List a -> List a
+
+
+--| Elements `from` up to, not including, `to`; negative counts from the end.
+pub foreign slice : List a, Int, Int -> List a
+
+
+pub foreign append : List a, List a -> List a
+
+
+foreign builder : Int -> Builder a
+
+
+foreign add : Builder a, a -> Builder a
+
+
+foreign done : Builder a -> List a
+
+
+pub singleton : a -> List a
+singleton value =
+    [ value ]
+
+
+pub isEmpty : List a -> Bool
+isEmpty xs =
+    length xs == 0
+
+
+pub get : List a, Int -> Maybe a
+get xs i =
+    if 0 <= i && i < length xs then
+        Just (unsafeGet xs i)
+    else
+        Nothing
+
+
+pub head : List a -> Maybe a
+head xs =
+    get xs 0
+
+
+pub last : List a -> Maybe a
+last xs =
+    get xs (length xs - 1)
+
+
+--| Everything but the first element: a view, O(1).
+pub tail : List a -> Maybe (List a)
+tail xs =
+    case xs of
+        _ :: rest ->
+            Just rest
+
+        [] ->
+            Nothing
+
+
+pub update : List a, Int, (a -> a) -> List a
+update xs i func =
+    if 0 <= i && i < length xs then
+        set xs i (func (unsafeGet xs i))
+    else
+        xs
+
+
+pub foldl : List a, b, (a, b -> b) -> b
+foldl xs acc func =
+    foldlHelp xs 0 (length xs) acc func
+
+
+foldlHelp : List a, Int, Int, b, (a, b -> b) -> b
+foldlHelp xs i n acc func =
+    if i >= n then
+        acc
+    else
+        foldlHelp xs (i + 1) n (func (unsafeGet xs i) acc) func
+
+
+pub foldr : List a, b, (a, b -> b) -> b
+foldr xs acc func =
+    foldrHelp xs (length xs - 1) acc func
+
+
+foldrHelp : List a, Int, b, (a, b -> b) -> b
+foldrHelp xs i acc func =
+    if i < 0 then
+        acc
+    else
+        foldrHelp xs (i - 1) (func (unsafeGet xs i) acc) func
+
+
+pub initialize : Int, (Int -> a) -> List a
+initialize n func =
+    initializeHelp 0 n func (builder n)
+
+
+initializeHelp : Int, Int, (Int -> a), Builder a -> List a
+initializeHelp i n func b =
+    if i >= n then
+        done b
+    else
+        initializeHelp (i + 1) n func (add b (func i))
+
+
+pub repeat : a, Int -> List a
+repeat value n =
+    repeatHelp value n (builder n)
+
+
+repeatHelp : a, Int, Builder a -> List a
+repeatHelp value n b =
+    if n <= 0 then
+        done b
+    else
+        repeatHelp value (n - 1) (add b value)
+
+
+pub range : Int, Int -> List Int
+range lo hi =
+    rangeHelp lo hi (builder (hi - lo + 1))
+
+
+rangeHelp : Int, Int, Builder Int -> List Int
+rangeHelp lo hi b =
+    if lo > hi then
+        done b
+    else
+        rangeHelp (lo + 1) hi (add b lo)
+
+
+pub map : List a, (a -> b) -> List b
+map xs func =
+    mapHelp xs 0 (length xs) func (builder (length xs))
+
+
+mapHelp : List a, Int, Int, (a -> b), Builder b -> List b
+mapHelp xs i n func b =
+    if i >= n then
+        done b
+    else
+        mapHelp xs (i + 1) n func (add b (func (unsafeGet xs i)))
+
+
+pub indexedMap : List a, (Int, a -> b) -> List b
+indexedMap xs func =
+    indexedMapHelp xs 0 (length xs) func (builder (length xs))
+
+
+indexedMapHelp : List a, Int, Int, (Int, a -> b), Builder b -> List b
+indexedMapHelp xs i n func b =
+    if i >= n then
+        done b
+    else
+        indexedMapHelp xs (i + 1) n func (add b (func i (unsafeGet xs i)))
+
+
+--| Keeps the input's identity when every element is kept (report 38 §7).
+pub filter : List a, (a -> Bool) -> List a
+filter xs isGood =
+    let
+        kept =
+            filterHelp xs 0 (length xs) isGood (builder 0)
+    in
+    if length kept == length xs then
+        xs
+    else
+        kept
+
+
+filterHelp : List a, Int, Int, (a -> Bool), Builder a -> List a
+filterHelp xs i n isGood b =
+    if i >= n then
+        done b
+    else
+        let
+            x =
+                unsafeGet xs i
+        in
+        if isGood x then
+            filterHelp xs (i + 1) n isGood (add b x)
+        else
+            filterHelp xs (i + 1) n isGood b
+
+
+pub filterMap : List a, (a -> Maybe b) -> List b
+filterMap xs func =
+    filterMapHelp xs 0 (length xs) func (builder 0)
+
+
+filterMapHelp : List a, Int, Int, (a -> Maybe b), Builder b -> List b
+filterMapHelp xs i n func b =
+    if i >= n then
+        done b
+    else
+        case func (unsafeGet xs i) of
+            Just y ->
+                filterMapHelp xs (i + 1) n func (add b y)
+
+            Nothing ->
+                filterMapHelp xs (i + 1) n func b
+
+
+pub reverse : List a -> List a
+reverse xs =
+    reverseHelp xs (length xs - 1) (builder (length xs))
+
+
+reverseHelp : List a, Int, Builder a -> List a
+reverseHelp xs i b =
+    if i < 0 then
+        done b
+    else
+        reverseHelp xs (i - 1) (add b (unsafeGet xs i))
+
+
+pub member : List a, a -> Bool
+    where a.eq : a, a -> Bool
+member xs value =
+    any xs (\x -> x == value)
+
+
+pub all : List a, (a -> Bool) -> Bool
+all xs isOkay =
+    not (any xs (\x -> not (isOkay x)))
+
+
+pub any : List a, (a -> Bool) -> Bool
+any xs isOkay =
+    anyHelp xs 0 (length xs) isOkay
+
+
+anyHelp : List a, Int, Int, (a -> Bool) -> Bool
+anyHelp xs i n isOkay =
+    if i >= n then
+        False
+    else if isOkay (unsafeGet xs i) then
+        True
+    else
+        anyHelp xs (i + 1) n isOkay
+
+
+pub maximum : List number -> Maybe number
+maximum xs =
+    case xs of
+        x :: rest ->
+            Just (foldl rest x max)
+
+        [] ->
+            Nothing
+
+
+pub minimum : List number -> Maybe number
+minimum xs =
+    case xs of
+        x :: rest ->
+            Just (foldl rest x min)
+
+        [] ->
+            Nothing
+
+
+pub sum : List number -> number
+sum xs =
+    foldl xs 0 (+)
+
+
+pub product : List number -> number
+product xs =
+    foldl xs 1 (*)
+
+
+addAll : Builder a, List a, Int, Int -> Builder a
+addAll b xs i n =
+    if i >= n then
+        b
+    else
+        addAll (add b (unsafeGet xs i)) xs (i + 1) n
+
+
+pub concat : List (List a) -> List a
+concat lists =
+    done (foldl lists (builder 0) (\xs b -> addAll b xs 0 (length xs)))
+
+
+pub concatMap : List a, (a -> List b) -> List b
+concatMap xs func =
+    done
+        (foldl xs
+            (builder 0)
+            (\x b ->
+                let
+                    ys =
+                        func x
+                in
+                addAll b ys 0 (length ys)
+            )
+        )
+
+
+pub intersperse : List a, a -> List a
+intersperse xs sep =
+    case xs of
+        [] ->
+            xs
+
+        hd :: tl ->
+            done (foldl tl (add (builder 0) hd) (\x b -> add (add b sep) x))
+
+
+pub map2 : List a, List b, (a, b -> result) -> List result
+map2 xs ys func =
+    let
+        n =
+            min (length xs) (length ys)
+    in
+    map2Help xs ys 0 n func (builder n)
+
+
+map2Help : List a, List b, Int, Int, (a, b -> result), Builder result -> List result
+map2Help xs ys i n func b =
+    if i >= n then
+        done b
+    else
+        map2Help xs ys (i + 1) n func (add b (func (unsafeGet xs i) (unsafeGet ys i)))
+
+
+pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
+map3 xs ys zs func =
+    initialize (min (length xs) (min (length ys) (length zs)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i))
+
+
+pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
+map4 xs ys zs ws func =
+    initialize (min (min (length xs) (length ys)) (min (length zs) (length ws)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i))
+
+
+pub map5 :
+    List a
+    , List b
+    , List c
+    , List d
+    , List e
+    , (a, b, c, d, e -> result)
+    -> List result
+map5 xs ys zs ws vs func =
+    initialize (min (min (length xs) (length ys)) (min (min (length zs) (length ws)) (length vs)))
+        (\i -> func (unsafeGet xs i) (unsafeGet ys i) (unsafeGet zs i) (unsafeGet ws i) (unsafeGet vs i))
+
+
+pub sort : List a -> List a
+    where a.compare : a, a -> Order
+sort xs =
+    sortWith xs (\x y -> x.compare y)
+
+
+pub sortBy : List a, (a -> b) -> List a
+    where b.compare : b, b -> Order
+sortBy xs toKey =
+    let
+        decorated =
+            map xs (\x -> ( toKey x, x ))
+
+        sorted =
+            sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
+    in
+    map sorted (\( _, x ) -> x)
+
+
+--| A stable merge sort over slices.
+pub sortWith : List a, (a, a -> Order) -> List a
+sortWith xs cmp =
+    let
+        n =
+            length xs
+    in
+    if n <= 1 then
+        xs
+    else
+        let
+            half =
+                n // 2
+
+            left =
+                sortWith (slice xs 0 half) cmp
+
+            right =
+                sortWith (slice xs half n) cmp
+        in
+        mergeHelp left 0 (length left) right 0 (length right) cmp (builder n)
+
+
+mergeHelp : List a, Int, Int, List a, Int, Int, (a, a -> Order), Builder a -> List a
+mergeHelp xs i n ys j m cmp b =
+    if i >= n then
+        done (addAll b ys j m)
+    else if j >= m then
+        done (addAll b xs i n)
+    else
+        let
+            x =
+                unsafeGet xs i
+
+            y =
+                unsafeGet ys j
+        in
+        case cmp x y of
+            GT ->
+                mergeHelp xs i n ys (j + 1) m cmp (add b y)
+
+            _ ->
+                mergeHelp xs (i + 1) n ys j m cmp (add b x)
+
+
+pub take : List a, Int -> List a
+take xs n =
+    if n <= 0 then
+        []
+    else
+        slice xs 0 n
+
+
+pub drop : List a, Int -> List a
+drop xs n =
+    if n <= 0 then
+        xs
+    else
+        slice xs n (length xs)
+
+
+pub partition : List a, (a -> Bool) -> ( List a, List a )
+partition xs pred =
+    partitionHelp xs 0 (length xs) pred (builder 0) (builder 0)
+
+
+partitionHelp : List a, Int, Int, (a -> Bool), Builder a, Builder a -> ( List a, List a )
+partitionHelp xs i n pred yes no =
+    if i >= n then
+        ( done yes, done no )
+    else
+        let
+            x =
+                unsafeGet xs i
+        in
+        if pred x then
+            partitionHelp xs (i + 1) n pred (add yes x) no
+        else
+            partitionHelp xs (i + 1) n pred yes (add no x)
+
+
+pub unzip : List ( a, b ) -> ( List a, List b )
+unzip pairs =
+    unzipHelp pairs 0 (length pairs) (builder 0) (builder 0)
+
+
+unzipHelp : List ( a, b ), Int, Int, Builder a, Builder b -> ( List a, List b )
+unzipHelp pairs i n xs ys =
+    if i >= n then
+        ( done xs, done ys )
+    else
+        case unsafeGet pairs i of
+            ( x, y ) ->
+                unzipHelp pairs (i + 1) n (add xs x) (add ys y)

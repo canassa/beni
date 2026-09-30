@@ -62,6 +62,9 @@ const SIB = {
   // its iterator (§3.1)
   single256: { port: 'single', T: 256, fromJs: `export const fromJs = (arr) => arr;` },
   funkia: { port: 'funkia', fromJs: `import { fromArray } from '../ports/funkia.js';\nexport const fromJs = (arr) => fromArray(arr);`, chunks: `export const chunks = (a) => [toArray(a)];` },
+  // research/38 §17's E1t: the single type with a claimable trie tail and a push threshold of 32
+  // (E1 itself is single256 here: its port differs only in a `$tl` cache these scenarios never reach)
+  firsttail: { port: 'first-tail-array', T: 256, fromJs: `export const fromJs = (arr) => arr;`, chunks: `export { chunks } from '../ports/first-tail-array.js';` },
 };
 const CANDIDATES = Object.keys(SIB);
 // the proven-plain build only differs in scenarios 2 and 3's life step; the rest would repeat adaptive1024
@@ -147,7 +150,7 @@ if (mode === 'build') {
 } else if (mode === 'test') {
   fs.mkdirSync('dist', { recursive: true });
   const outs = {};
-  for (const name of CANDIDATES) {
+  for (const name of process.env.CANDS ? process.env.CANDS.split(',') : CANDIDATES) { // CANDS=cow,… limits the test
     const file = path.join(here, 'dist', `test-${name}.js`);
     await bundle(name, `import { test } from './scenarios/harness.js'; console.log(test());`, { format: 'iife', outfile: file });
     const r = spawnSync(process.execPath, ['--stack-size=4000', file], { encoding: 'utf8', maxBuffer: 1 << 28 });

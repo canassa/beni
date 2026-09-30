@@ -25,3 +25,24 @@ chainPaths n =
 pub checksum : List (List Int) -> Int
 checksum paths =
     List.foldl paths 0 (\p acc -> List.foldl p acc (\x s -> modBy (s * 31 + x) 1000003))
+
+
+--| An editing session of `n` steps (added for research/38 §17): every fourth
+--| step undoes the last edit, the others push the current state on the undo
+--| stack and replace it.
+pub undoSession : Int -> ( Int, List Int )
+undoSession n =
+    List.foldl (List.range 1 n)
+        ( 0, [] )
+        (\i ( current, history ) ->
+            if modBy i 4 == 0 then
+                case history of
+                    previous :: older ->
+                        ( previous, older )
+
+                    [] ->
+                        ( current, history )
+
+            else
+                ( i, current :: history )
+        )

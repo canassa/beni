@@ -1,0 +1,92 @@
+-- research/38 §17's size measurement: every public function of today's two
+-- sequence types, `List` (core) and §15's `Array` (scenarios/Array.beni),
+-- reached from one module so that nothing is eliminated.
+import List
+import Array exposing (Array)
+
+
+pub list =
+    { cons = List.cons
+    , foldl = List.foldl
+    , foldr = List.foldr
+    , singleton = List.singleton
+    , repeat = List.repeat
+    , range = List.range
+    , map = List.map
+    , indexedMap = List.indexedMap
+    , filter = List.filter
+    , filterMap = List.filterMap
+    , length = List.length
+    , reverse = List.reverse
+    , all = List.all
+    , any = List.any
+    , maximum = List.maximum
+    , minimum = List.minimum
+    , sum = List.sum
+    , product = List.product
+    , append = List.append
+    , concat = List.concat
+    , concatMap = List.concatMap
+    , intersperse = List.intersperse
+    , map2 = List.map2
+    , map3 = List.map3
+    , map4 = List.map4
+    , map5 = List.map5
+    , sortWith = List.sortWith
+    , isEmpty = List.isEmpty
+    , head = List.head
+    , tail = List.tail
+    , take = List.take
+    , drop = List.drop
+    , partition = List.partition
+    , unzip = List.unzip
+    }
+
+
+pub array =
+    { length = Array.length
+    , set = Array.set
+    , push = Array.push
+    , pop = Array.pop
+    , slice = Array.slice
+    , append = Array.append
+    , fromList = Array.fromList
+    , toList = Array.toList
+    , sortWith = Array.sortWith
+    , empty = Array.empty
+    , isEmpty = Array.isEmpty
+    , get = Array.get
+    , update = Array.update
+    , foldl = Array.foldl
+    , foldr = Array.foldr
+    , initialize = Array.initialize
+    , repeat = Array.repeat
+    , map = Array.map
+    , indexedMap = Array.indexedMap
+    , filter = Array.filter
+    }
+
+
+pub member : List Int, Int -> Bool
+member xs x =
+    List.member xs x
+
+
+pub sort : List Int -> List Int
+sort xs =
+    List.sort xs
+
+
+pub sortBy : List Int, (Int -> Int) -> List Int
+sortBy xs f =
+    List.sortBy xs f
+
+
+pub eq : List Int, List Int -> Bool
+eq xs ys =
+    xs == ys
+
+
+pub lt : List Int, List Int -> Bool
+lt xs ys =
+    xs < ys

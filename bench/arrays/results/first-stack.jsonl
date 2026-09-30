@@ -1,0 +1,90 @@
+{"impl":"A","sc":"1 by hand","op":"map, recursive","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"1 by hand","op":"filter, recursive","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"A","sc":"1 by hand","op":"filter, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"A","sc":"2 x :: rest","op":"sum","n":100000,"stack":"ok"}
+{"impl":"A","sc":"2 x :: rest","op":"sum, List.foldl","n":100000,"stack":"ok"}
+{"impl":"A","sc":"2 x :: rest","op":"takeWhile (90 %)","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"2 x :: rest","op":"pairwise","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"2 x :: rest","op":"merge sort","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"2 x :: rest","op":"merge sort, sorted input","n":100000,"stack":"stack overflow"}
+{"impl":"A","sc":"3 library","op":"foldr building a list","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"foldr sum","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"range + sum","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"map2 (zip)","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"concatMap","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"append in a loop, acc ++ [x]","n":100000,"stack":"not run"}
+{"impl":"A","sc":"3 library","op":"append two","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"reverse","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"List.map","n":100000,"stack":"ok"}
+{"impl":"A","sc":"3 library","op":"List.filter","n":100000,"stack":"ok"}
+{"impl":"A","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"stack":"ok"}
+{"impl":"A","sc":"4 prepend in a fold","op":"into a record field","n":100000,"stack":"ok"}
+{"impl":"A","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"stack":"ok"}
+{"impl":"A","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":100000,"stack":"ok"}
+{"impl":"A","sc":"4 prepend in a fold","op":"undo stack (3 edits, 1 undo)","n":100000,"stack":"ok"}
+{"impl":"A","sc":"5 TEA list","op":"add to front, first","n":100000,"stack":"ok"}
+{"impl":"A","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"stack":"ok"}
+{"impl":"A","sc":"5 TEA list","op":"toggle one, steady","n":100000,"stack":"ok"}
+{"impl":"A","sc":"5 TEA list","op":"remove one, first","n":100000,"stack":"ok"}
+{"impl":"A","sc":"5 TEA list","op":"render only","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"1 by hand","op":"map, recursive","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"1 by hand","op":"filter, recursive","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"1 by hand","op":"filter, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"sum","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"sum, List.foldl","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"takeWhile (90 %)","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"pairwise","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"merge sort","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"2 x :: rest","op":"merge sort, sorted input","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"foldr building a list","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"foldr sum","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"range + sum","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"map2 (zip)","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"concatMap","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"append in a loop, acc ++ [x]","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"append two","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"reverse","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"List.map","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"3 library","op":"List.filter","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"4 prepend in a fold","op":"into a record field","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"4 prepend in a fold","op":"undo stack (3 edits, 1 undo)","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"5 TEA list","op":"add to front, first","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"5 TEA list","op":"toggle one, steady","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"5 TEA list","op":"remove one, first","n":100000,"stack":"ok"}
+{"impl":"E1","sc":"5 TEA list","op":"render only","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"1 by hand","op":"map, recursive","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"1 by hand","op":"filter, recursive","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"1 by hand","op":"map, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"1 by hand","op":"filter, accumulator + reverse","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"sum","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"sum, List.foldl","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"takeWhile (90 %)","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"pairwise","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"merge sort","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"2 x :: rest","op":"merge sort, sorted input","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"foldr building a list","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"foldr sum","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"range + sum","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"map2 (zip)","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"concatMap","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"append in a loop, acc ++ [x]","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"append two","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"reverse","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"List.map","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"3 library","op":"List.filter","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"4 prepend in a fold","op":"x :: acc, then reverse","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"4 prepend in a fold","op":"into a record field","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"4 prepend in a fold","op":"into a tuple (partition)","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"4 prepend in a fold","op":"paths sharing tails, all kept","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"4 prepend in a fold","op":"undo stack (3 edits, 1 undo)","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"5 TEA list","op":"add to front, first","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"5 TEA list","op":"add + remove oldest, steady","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"5 TEA list","op":"toggle one, steady","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"5 TEA list","op":"remove one, first","n":100000,"stack":"ok"}
+{"impl":"E1t","sc":"5 TEA list","op":"render only","n":100000,"stack":"ok"}

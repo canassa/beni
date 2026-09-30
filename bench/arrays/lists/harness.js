@@ -3,7 +3,10 @@
 // candidate's runtime module (lists/core-*.js), which also supplies the harness's hooks: `fromJs`
 // (a JS array in as a list, outside the timing), `toJs` (a list out, for the differential test) and
 // `walk` (the DOM runtime's way through a list, for the TEA render). The timing loop is §15's.
-import { fromJs, toJs, walk } from 'list-rt';
+import * as RT from 'list-rt';
+const { fromJs, toJs, walk } = RT;
+// the array-first sources of §17 keep a stack's top at the END
+const topFirst = (s) => (RT.stackTopLast ? toJs(s).reverse() : toJs(s));
 import * as Recur from 'beni-out/Recur.mjs';
 import * as Lib from 'beni-out/Lib.mjs';
 import * as Todo from 'beni-out/Todo.mjs';
@@ -11,7 +14,8 @@ import * as Paths from 'beni-out/Paths.mjs';
 
 const now = () => performance.now();
 let sink = null;
-const CFG = { minMs: 10, warmMs: 25, samples: 7, maxCallMs: 400, hugeMs: 1500 };
+// WARM_MS lengthens the warm-up: §17's one-op-per-process runs start with cold core functions
+const CFG = { minMs: 10, warmMs: +(globalThis.process?.env?.WARM_MS ?? 25), samples: 7, maxCallMs: 400, hugeMs: 1500 };
 function measure(fn) {
   let t0 = now(), calls = 0;
   do { sink = fn(); calls++; } while ((calls < 3 && now() - t0 < CFG.maxCallMs) || now() - t0 < CFG.warmMs);
@@ -62,9 +66,11 @@ export function cells(n) {
     ['1 by hand', 'map, accumulator + reverse', n, () => Recur.Recur$mapAcc(xs, triple)],
     ['1 by hand', 'filter, accumulator + reverse', n, () => Recur.Recur$filterAcc(xs, odd)],
     ['2 x :: rest', 'sum', n, () => Recur.Recur$sum(xs)],
+    ['2 x :: rest', 'sum, List.foldl', n, () => Recur.Recur$sumFold(xs)],
     ['2 x :: rest', 'takeWhile (90 %)', n, () => Recur.Recur$takeWhile(sortedPrefix, (x) => x < lim)],
     ['2 x :: rest', 'pairwise', n, () => Recur.Recur$pairwise(xs)],
     ['2 x :: rest', 'merge sort', n, () => Recur.Recur$mergeSort(xs)],
+    ['2 x :: rest', 'merge sort, sorted input', n, () => Recur.Recur$mergeSort(sortedPrefix)],
     ['3 library', 'foldr building a list', n, () => Lib.Lib$foldrBuild(xs)],
     ['3 library', 'foldr sum', n, () => Lib.Lib$foldrSum(xs)],
     ['3 library', 'range + sum', n, () => Lib.Lib$rangeSum(n)],
@@ -79,6 +85,7 @@ export function cells(n) {
     ['4 prepend in a fold', 'into a record field', n, () => Lib.Lib$recordFold(xs)],
     ['4 prepend in a fold', 'into a tuple (partition)', n, () => Lib.Lib$partitionFold(xs)],
     ['4 prepend in a fold', 'paths sharing tails, all kept', n, () => Paths.Paths$chainPaths(n)],
+    ['4 prepend in a fold', 'undo stack (3 edits, 1 undo)', n, () => Paths.Paths$undoSession(n)],
   ];
   // 5: the TEA model. `first` starts from the same fresh model every call; `steady` threads it.
   const m0 = Todo.Todo$create(n), U = Todo.Todo$update;
@@ -114,6 +121,16 @@ export function run(name, n, skip) {
   }
 }
 
+// ---- stack safety (§17): every cell once at n, on whatever stack the process was given ----------------
+export function stack(name, n, skip) {
+  for (const [sc, op, , fn] of cells(n)) {
+    if (skip.includes(op)) { console.log(JSON.stringify({ impl: name, sc, op, n, stack: 'not run' })); continue; }
+    let r;
+    try { sink = fn(); r = 'ok'; } catch (e) { r = e instanceof RangeError ? 'stack overflow' : String(e); }
+    console.log(JSON.stringify({ impl: name, sc, op, n, stack: r }));
+  }
+}
+
 // ---- memory: one call in this process, at one size ------------------------------------------------
 // peak = the process's resident high-water mark across the call, reset just before it through
 // /proc/self/clear_refs (Linux), minus the resident size then; retained = heap still used after two
@@ -140,16 +157,21 @@ export function mem(name, op, n) {
 const fnv = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
 function dig(v) {
   if (typeof v === 'number') return String(v);
-  if (v && typeof v === 'object' && 'items' in v) return `model ${v.nextId} ${fnv(JSON.stringify(toJs(v.items)))}`;
+  // a TEA model's rows are compared by id: the array-first `Add` (§17) appends where the cons one prepends
+  if (v && typeof v === 'object' && 'items' in v) return `model ${v.nextId} ${fnv(JSON.stringify(byId(toJs(v.items))))}`;
   if (v && typeof v === 'object' && 'a' in v && 'b' in v && !('$' in v) && !('n' in v) && v.constructor === Object) return `(${dig(v.a)}, ${dig(v.b)})`;
   return fnv(JSON.stringify(toJs(v)));
 }
+const byId = (items) => items.slice().sort((x, y) => x.id - y.id);
+const pathSet = (ps) => fnv(JSON.stringify(toJs(ps).map((p) => toJs(p).sort((a, b) => a - b)).sort((p, q) => p.length - q.length)));
 export function test() {
   const out = [];
   for (const n of [0, 1, 2, 3, 10, 257, 1000]) {
     for (const [sc, op, nn, fn] of cells(n)) {
       // a TEA cell returns the render's row state: its rows' ids and `done`s
-      const d = op.startsWith('paths') ? (ps) => String(Paths.Paths$checksum(ps)) : sc.startsWith('5') ? (rows) => fnv(JSON.stringify(rows.map((r) => [r.x.id, r.x.done]))) : dig;
+      // (both compared as sets, because the array-first versions of §17 keep a different order: a
+      // path root first, the paths oldest first, a new TEA row last)
+      const d = op.startsWith('paths') ? pathSet : op.startsWith('undo') ? (t) => `(${t.a}, ${fnv(JSON.stringify(topFirst(t.b)))})` : sc.startsWith('5') ? (rows) => fnv(JSON.stringify(byId(rows.map((r) => r.x)).map((x) => [x.id, x.done]))) : dig;
       out.push(`${sc} | ${op} | ${nn} | ${d(fn())} | ${d(fn())}`);
     }
   }
