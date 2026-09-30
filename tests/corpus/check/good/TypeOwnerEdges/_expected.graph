@@ -26,3 +26,4 @@ core:String -> core:Basics
 core:String -> core:Char
 core:String -> core:List
 core:String -> core:Maybe
+core:Task -> core:Basics

@@ -1,0 +1,57 @@
+--! Waiting, on Node (`transparent-effects-proposal.md` §16.5): a program
+--! whose work runs in a fiber, and the primitives such work waits on.
+--!
+--! `main` is evaluated once, when the program starts, and must not wait
+--! (§15.2 item 5). `Io.run` is how a program that waits is written: `main`
+--! starts a fiber and the fiber does the waiting. Nothing else about `main`
+--! changes — it is still a `Node.Program`.
+--!
+--!     main : Program
+--!     main =
+--!         Io.run (\() ->
+--!             let
+--!                 _ = Io.sleep 10
+--!             in
+--!             Node.print "later")
+--!
+--! A primitive here is written in beni over `Task.callback` and one `impure`
+--! `foreign` that starts the host's operation and returns what cancels it,
+--! so that cancelling a fiber cancels what it was waiting on.
+
+import Node exposing (Program)
+import Task exposing (Exit, Resume)
+
+
+--| A program that runs `body` in a new fiber, and does what the `Program` it
+--| returns says when it ends. If the fiber is cancelled, the program exits
+--| 130.
+pub run : (() -> Program) -> Program
+run body =
+    after (Task.start body finish) Node.done
+
+
+after : (), a -> a
+after _ value =
+    value
+
+
+foreign impure finish : Exit Program -> ()
+
+
+--| Wait `ms` milliseconds. Only the fiber that sleeps waits; the others run.
+pub sleep : Int -> ()
+sleep ms =
+    Task.callback (\resume -> startTimer ms resume)
+
+
+foreign impure startTimer : Int, Resume () -> (() -> ())
+
+
+--| Read a UTF-8 text file without blocking other fibers: `Ok` with its
+--| text, or `Err` with the reason it could not be read.
+pub readFile : String -> Result String String
+readFile path =
+    Task.callback (\resume -> startRead path resume)
+
+
+foreign impure startRead : String, Resume (Result String String) -> (() -> ())
