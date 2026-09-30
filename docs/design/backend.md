@@ -2834,6 +2834,62 @@ hand-written file to the top-level statements its imported exports reach, keepin
 it cannot prove inert and declining any file it cannot delimit exactly (*Hand-written JavaScript
 under `--release`*, the end of this section). A development build still copies the whole file.*
 
+#### A `case` arm on a constructor nothing builds
+
+*Added 2026-10-02.* Declaration granularity keeps everything a surviving body names, including
+what it names only inside a `case` arm that can never run because no value of the arm's
+constructor is ever built. That is the shape of every interpreter over a closed set of requests:
+`Tea.element`'s command table names the fiber runtime in its arm for `Cmd.Perform`, and a program
+whose every command is `Cmd.none` builds no `Perform` — yet it shipped the interpreter, the fiber
+runtime and `Dict` whole (5 496 brotli against the sandbox's 1 551, `boundary.md` §9.8.9's
+measurement). So **a constructor is a node of the graph**, and an edge that occurs inside an arm
+is **guarded** by the constructors the arm's pattern names: it is followed once every one of them
+is reached, and not before.
+
+- **Building one.** A `ctor` or `ext_ctor` instruction anywhere but at the head of a `pat_ctor` —
+  applied, bare, or passed as a function — is an edge to that constructor, guarded like any other
+  edge by where it occurs. So a `Cmd.map` that rebuilds a `Perform` inside its `Perform` arm builds
+  one only if something else did first.
+- **Where an arm's body is.** `Bir` is post-order and `bir/Lower.lowerBranch` lowers a branch's
+  pattern, then its body, then appends the `branch`: the body is exactly the instructions after the
+  pattern's root up to and including the body's root. Every constructor the pattern names, at any
+  depth, guards every edge whose instruction is in that range, and an enclosing arm's guards add to
+  an inner one's — an arm is taken only on a value that matches its whole pattern, inside arms that
+  were taken. A position keeps the guards of its four innermost guarded arms, which drops
+  conditions and never adds one. Leg 3's edges sit at their site's instruction, the markup leg's at
+  its root, the effect legs' at theirs. Leg 1's `refs` rows have no position; each is made together
+  with a `.top` instruction that leg 2 reads (`Lower.resolveValue`), so a row adds an unguarded
+  edge only when no instruction of the declaration names its target — a net under an invariant, not
+  a source of edges.
+- **Exempt constructors are roots**, reached before the walk: every constructor of a type declared
+  in `core` — the compiler writes `Bool`, `List`, `Order`, `Maybe` and `Result` values no
+  instruction spells (an `if`, a list literal, a derived `compare`, `?`), and core's siblings build
+  them; every constructor of a type that a `foreign`, `foreign type` or vocabulary declaration of
+  the build names, and of every type that such a type's constructors or an alias name,
+  transitively; and every constructor at all in a `--library` build, whose callers are not in the
+  build, or in a build with a `schema` declaration, whose parse will build values no instruction
+  spells. None of these is ever a guard.
+- **Why that is sound.** A value is built by beni code that spells one of its constructors, by the
+  compiler for a core type, or by hand-written JavaScript — a sibling, a runtime — which receives
+  and returns values only through signatures: it can build a value of a type its signatures name,
+  and of a type variable only what it was handed, since it cannot know the type. The first is the
+  graph and the other two are the exemptions. An arm is taken only on a value whose tag is its
+  constructor's, so an arm on a constructor nothing reached builds is never taken, and neither is
+  anything only it names. `==`, `compare`, `Debug.toString` and the derived functions only read.
+- **Lowering.** `Lower` asks the same question: an arm whose pattern names a constructor the walk
+  did not reach is lowered with `undefined` for its body — its test and its bindings stay, and it is
+  never taken — so the emitted code names nothing elimination dropped. Every edge the walk left
+  unfollowed is inside such an arm, its own or an enclosing one, so the wall (`Lower.requireLive`)
+  still holds and still checks it.
+- **Cost.** One bitset per module over its constructors, a chain of guards per guarded position,
+  and a waiting list per constructor that some edge is blocked on: linear in the edges, times the
+  four-deep cap.
+- **Tests.** `run/DeadConstructorArm` (a module's value named only in the arm of a constructor no
+  code builds is not emitted, the arm's constructor built elsewhere under a guard is, and the
+  program prints the same in both builds); `build_test`'s *an element whose commands are all
+  `Cmd.none` ships no fiber runtime*; `Reach.zig`'s unit tests for a chain, the cap and a
+  constructor waited on.
+
 #### When it runs, and what pins the corpus
 
 **Always on, for every `beni build`.** Not release-only: `--release` is about chunking, renaming and

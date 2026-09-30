@@ -241,6 +241,7 @@ pub fn lower(
     defer l.diagnostics.deinit(gpa);
     errdefer for (l.diagnostics.items) |d| gpa.free(d.message);
     try l.readTable();
+    try l.findDeadArms();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -506,6 +507,11 @@ const Lowerer = struct {
     /// set — which is what keeps the names structural rather than a counter
     /// (CLAUDE.md rule 5).
     case_depth: u32 = 0,
+    /// The body roots of the `case` arms no value can take: each names a
+    /// constructor elimination did not reach (`backend.md` §9, *A `case`
+    /// arm on a constructor nothing builds*). Lowered as `undefined`.
+    /// Empty when there is none, which is every module of most builds.
+    dead_arms: std.DynamicBitSetUnmanaged = .{},
     /// The instruction being lowered, for a diagnostic raised by something
     /// that has no instruction of its own — the synthesised references of
     /// §9.1, and `partEq`'s `err` arm. It is the INNERMOST instruction
@@ -847,6 +853,62 @@ const Lowerer = struct {
     fn liveDecl(l: *Lowerer, index: u32) bool {
         const r = l.in.live orelse return true;
         return r.decl(l.in.module, index);
+    }
+
+    /// Every `case` arm of the module whose pattern names a constructor
+    /// elimination did not reach, by its body's root (`backend.md` §9, *A
+    /// `case` arm on a constructor nothing builds*). `Reach` follows an
+    /// edge inside an arm only when every constructor of the arm's pattern
+    /// was reached, so the arms left out here are exactly the ones whose
+    /// names may be gone — and ones whose names are all there too, which
+    /// no value takes either.
+    fn findDeadArms(l: *Lowerer) !void {
+        const r = l.in.live orelse return;
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        for (tags, data) |tag, d| {
+            if (tag != .branch) continue;
+            if (!l.patternDead(r, @enumFromInt(d.lhs), 0)) continue;
+            if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
+            if (d.rhs < l.dead_arms.bit_length) l.dead_arms.set(d.rhs);
+        }
+    }
+
+    /// Whether `pattern` names, at any depth, a constructor this build
+    /// never builds. `core`'s are always reached.
+    fn patternDead(l: *Lowerer, r: *const Reach.Result, pattern: Inst.Index, depth: u32) bool {
+        if (depth > 64 or @intFromEnum(pattern) >= l.bir.insts.len) return false;
+        const d = l.bir.instData(pattern);
+        switch (l.bir.instTag(pattern)) {
+            .pat_ctor => {
+                const ref: Inst.Index = @enumFromInt(d.lhs);
+                if (@intFromEnum(ref) < l.bir.insts.len) {
+                    const rd = l.bir.instData(ref);
+                    switch (l.bir.instTag(ref)) {
+                        .ctor => if (!r.ctor(l.in.module, rd.lhs)) return true,
+                        .ext_ctor => if (!r.extCtor(@enumFromInt(rd.lhs), rd.rhs)) return true,
+                        else => {},
+                    }
+                }
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |arg| {
+                    if (l.patternDead(r, arg, depth + 1)) return true;
+                }
+                return false;
+            },
+            .pat_tuple, .pat_list => {
+                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |e| if (l.patternDead(r, e, depth + 1)) return true;
+                return false;
+            },
+            .pat_cons => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1) or l.patternDead(r, @enumFromInt(d.rhs), depth + 1),
+            .pat_as => return l.patternDead(r, @enumFromInt(d.lhs), depth + 1),
+            else => return false,
+        }
+    }
+
+    /// Whether `inst` is the body of an arm no value takes.
+    fn deadArm(l: *const Lowerer, inst: Inst.Index) bool {
+        const i = @intFromEnum(inst);
+        return i < l.dead_arms.bit_length and l.dead_arms.isSet(i);
     }
 
     /// Whether a declaration's suspendable body survived (§16.2).
@@ -2176,6 +2238,10 @@ const Lowerer = struct {
         l.evidence_out = out;
         defer l.evidence_out = saved;
         const d = l.bir.instData(inst);
+        if (l.deadArm(inst)) {
+            const nothing = try l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
+            return l.tailReturn(out, nothing, loop, l.pos(inst));
+        }
         switch (l.bir.instTag(inst)) {
             .let => {
                 try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
@@ -2751,6 +2817,7 @@ const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         l.region = inst;
+        if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -6490,6 +6557,7 @@ const Lowerer = struct {
     /// shared leaves exactly as its own block would have. The inner `case`
     /// is chained in turn, so the chain is flat at any length.
     fn chainedLeaf(l: *Lowerer, out: *StmtList, body: Inst.Index, sink: Sink) Allocator.Error!bool {
+        if (l.deadArm(body)) return false;
         var inst = body;
         while (l.bir.instTag(inst) == .let) inst = @enumFromInt(l.bir.instData(inst).rhs);
         if (l.bir.instTag(inst) != .case) return false;

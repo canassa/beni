@@ -1,0 +1,96 @@
+-- A `case` arm on a constructor nothing builds keeps nothing alive
+-- (`docs/design/backend.md` §9, *A `case` arm on a constructor nothing
+-- builds*).
+--
+-- `run` interprets a closed set of requests, and this program only ever
+-- builds `Greet`. The arm for `Shout` names `loud`, a top-level constant
+-- whose initialiser logs, so keeping it is visible: a constant runs when
+-- its module is evaluated, before `main`. Nothing builds a `Shout` — the
+-- one `Shout` below is rebuilt inside the `Shout` arm of `louder`, which
+-- only a `Shout` could reach — so neither `loud` nor `quiet`, named only
+-- in the arm for `Hushed` that a `Shout` arm builds, may log.
+--
+-- `Wipe` is built, inside the `Greet` arm, which a `Greet` reaches: its
+-- arm's `wiped` logs once, when the module is evaluated.
+--
+-- Declaration granularity kept all three and logged three lines.
+import Node exposing (Program)
+import String
+
+
+type Request
+    = Greet String
+    | Shout String
+    | Wipe
+
+
+type Mood
+    = Calm
+    | Hushed
+
+
+loud : String
+loud =
+    Debug.log "!" "loud"
+
+
+quiet : String
+quiet =
+    Debug.log "..." "quiet"
+
+
+wiped : String
+wiped =
+    Debug.log "" "wiped"
+
+
+louder : Request -> Request
+louder r =
+    case r of
+        Shout name ->
+            Shout (name ++ "!")
+
+        other ->
+            other
+
+
+mood : Request -> Mood
+mood r =
+    case r of
+        Shout _ ->
+            Hushed
+
+        _ ->
+            Calm
+
+
+tone : Mood -> String
+tone m =
+    case m of
+        Calm ->
+            ""
+
+        Hushed ->
+            quiet
+
+
+run : Request -> ( String, Request )
+run r =
+    case louder r of
+        Greet name ->
+            ( "hello " ++ name ++ tone (mood r), Wipe )
+
+        Shout name ->
+            ( String.toUpper name ++ loud, Wipe )
+
+        Wipe ->
+            ( wiped, Wipe )
+
+
+main : Program
+main =
+    let
+        ( first, next ) = run (Greet "world")
+        ( second, _ ) = run next
+    in
+    Node.printLines [ first, "[" ++ second ++ "]" ]

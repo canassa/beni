@@ -8,13 +8,16 @@
 //! **two** bitsets and not three; §9's "one bitset per module over each of
 //! the three node kinds" counts kinds and not sets.
 //!
-//! Four things are deliberately NOT nodes, each because it has no separate
-//! existence in the output: a `type`, a `type alias` and a `foreign type`
-//! emit nothing; a **constructor** is an object literal at its use site, so
-//! a constructor named only in a pattern needs no edge — and a padded
-//! nullary one is a constant of the module that USES it, written when a
-//! surviving body names it (`backend.md` §4, *A nullary constructor is one
-//! object*), so it needs none either; a **`$$order`
+//! Four things are deliberately NOT nodes that emit anything, each because
+//! it has no separate existence in the output: a `type`, a `type alias` and
+//! a `foreign type` emit nothing; a **constructor** is an object literal at
+//! its use site, and a padded nullary one is a constant of the module that
+//! USES it, written when a surviving body names it (`backend.md` §4, *A
+//! nullary constructor is one object*) — *amended 2026-10-02*: a
+//! constructor IS a node now, of kind `ctor`, but one that emits nothing:
+//! it is reached when a surviving body builds one, and an edge inside a
+//! `case` arm waits on the constructors of the arm's pattern (`Guards`,
+//! `backend.md` §9, *A `case` arm on a constructor nothing builds*); a **`$$order`
 //! table** lives and dies with the `compare` whose row it hangs off
 //! (`Lower.orderTable` is reached only from a row whose arrow was built);
 //! and the three **primitive comparators** are discovered by
@@ -104,7 +107,11 @@ const Reach = @This();
 /// Which of the per-module tables a node lives in. `twin` is a
 /// declaration's second, suspendable body (transparent-effects-proposal.md
 /// §16.2): a node of its own, so a program that never suspends writes none.
-pub const Kind = enum(u8) { decl, derived, twin };
+/// `ctor` is a constructor, by its index in the module's `Bir.ctors`:
+/// reached when a surviving body builds one, and what a guarded edge waits
+/// on (`backend.md` §9, *A `case` arm on a constructor nothing builds*). It
+/// emits nothing and has no edges of its own.
+pub const Kind = enum(u8) { decl, derived, twin, ctor };
 
 /// One node of the graph: a declaration of a module, or one of its derived
 /// rows. Flat and comparable; nothing here is a pointer.
@@ -119,8 +126,19 @@ pub const Live = struct {
     decls: std.DynamicBitSetUnmanaged,
     derived: std.DynamicBitSetUnmanaged,
     twins: std.DynamicBitSetUnmanaged = .{},
+    /// The constructors something that survived builds, and the exempt
+    /// ones (`exempt`). `Lower` lowers an arm on any other as `undefined`.
+    ctors: std.DynamicBitSetUnmanaged = .{},
 
     pub const empty: Live = .{ .decls = .{}, .derived = .{} };
+
+    /// Whether constructor `index` of the module was reached. The one
+    /// predicate both halves of the rule use: the walk follows a guarded
+    /// edge only when this holds for every guard, and `Lower` keeps an arm
+    /// only when it holds for every constructor of its pattern.
+    pub fn ctor(l: *const Live, index: usize) bool {
+        return index < l.ctors.bit_length and l.ctors.isSet(index);
+    }
 
     pub fn decl(l: *const Live, index: usize) bool {
         return index < l.decls.bit_length and l.decls.isSet(index);
@@ -169,6 +187,20 @@ pub const Result = struct {
 
     pub fn twin(r: *const Result, m: Graph.Index, index: usize) bool {
         return r.of(m).twin(index);
+    }
+
+    /// Whether constructor `index` of `m`'s `Bir.ctors` was reached.
+    pub fn ctor(r: *const Result, m: Graph.Index, index: usize) bool {
+        return r.of(m).ctor(index);
+    }
+
+    /// The same for another module's constructor, by its interface index,
+    /// as an `ext_ctor` instruction names it. One whose provenance is
+    /// missing answers `false`, as the walk does: it cannot be a node, so
+    /// an edge guarded by it was never followed.
+    pub fn extCtor(r: *const Result, m: Graph.Index, iface_ctor: u32) bool {
+        const index = ctorOfExt(r.provenance, m, iface_ctor) orelse return false;
+        return r.ctor(m, index);
     }
 
     /// Whether the suspendable body behind another module's interface value
@@ -310,6 +342,13 @@ pub const Input = struct {
     }
 };
 
+/// Another module's constructor, from its interface index to its index in
+/// that module's `Bir.ctors`.
+fn ctorOfExt(provenance: []const Interface.Provenance, m: Graph.Index, iface_ctor: u32) ?u32 {
+    if (m.int() >= provenance.len) return null;
+    return provenance[m.int()].ctorIndex(iface_ctor);
+}
+
 /// The module's `main`, if it declares one with a body: the entry
 /// declaration `Lower.exports` exports whether or not it is `pub`.
 pub fn mainOf(bir: *const Bir) ?u32 {
@@ -345,23 +384,129 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
             .twins = try .initEmpty(scratch, in.birOf(m).decls.len),
+            .ctors = try .initEmpty(scratch, in.birOf(m).ctors.len),
         };
     }
+    try exempt(in, scratch, modules);
 
     var stack: std.ArrayList(Node) = .empty;
     var roots: std.ArrayList(Node) = .empty;
+    // Edges blocked on a constructor not reached yet, by that constructor.
+    var waiting: std.AutoHashMapUnmanaged(Node, std.ArrayList(Pending)) = .empty;
     try in.collectRoots(scratch, &roots);
     for (roots.items) |root| {
         if (mark(modules, root)) try stack.append(scratch, root);
     }
     while (stack.pop()) |node| {
-        const list = edges[node.module.int()].targets(node);
-        for (list) |next| {
-            if (mark(modules, next)) try stack.append(scratch, next);
+        const module = node.module;
+        for (edges[module.int()].targets(node)) |next| {
+            try follow(scratch, modules, edges, &waiting, &stack, module, next);
         }
+        if (node.kind != .ctor) continue;
+        // A constructor just reached: every edge that waited on it is
+        // looked at again, and waits on the next guard it lacks, if any.
+        var blocked = (waiting.fetchRemove(node) orelse continue).value;
+        defer blocked.deinit(scratch);
+        for (blocked.items) |p| try follow(scratch, modules, edges, &waiting, &stack, p.module, p.target);
     }
 
     return .{ .modules = modules, .provenance = in.provenance, .dispatch = in.dispatch };
+}
+
+/// An edge waiting on a constructor, with the module whose chains its
+/// guard indexes.
+const Pending = struct { module: Graph.Index, target: Target };
+
+/// Follow `target`, an edge out of a node of `module`: mark and push it
+/// when every guard of its chain is reached, else wait on the first that
+/// is not.
+fn follow(
+    scratch: Allocator,
+    modules: []Live,
+    edges: []const ModuleEdges,
+    waiting: *std.AutoHashMapUnmanaged(Node, std.ArrayList(Pending)),
+    stack: *std.ArrayList(Node),
+    module: Graph.Index,
+    target: Target,
+) Allocator.Error!void {
+    if (edges[module.int()].blocker(modules, target.chain)) |guard| {
+        const slot = try waiting.getOrPut(scratch, guard);
+        if (!slot.found_existing) slot.value_ptr.* = .empty;
+        try slot.value_ptr.append(scratch, .{ .module = module, .target = target });
+        return;
+    }
+    if (mark(modules, target.node)) try stack.append(scratch, target.node);
+}
+
+/// Mark the constructors no instruction's reach decides (`backend.md` §9,
+/// *A `case` arm on a constructor nothing builds*): every one in a
+/// `--library` build or a build with a `schema`; every one of `core`; and
+/// every one of a type a `foreign`, `foreign type` or vocabulary
+/// declaration names, and of every type those types' constructors and
+/// aliases name, transitively — what hand-written JavaScript can build.
+fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
+    const count = in.graph.count();
+    var all = in.library;
+    if (!all) for (0..count) |i| {
+        for (in.birOf(@enumFromInt(@as(u32, @intCast(i)))).decls) |d| {
+            if (d.kind == .schema) all = true;
+        }
+    };
+    for (modules, 0..) |*live, i| {
+        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
+    }
+    if (all) return;
+
+    // Type declarations whose constructors hand-written code may build: a
+    // worklist over `(module, declaration)`, each looked at once.
+    const seen = try scratch.alloc(std.DynamicBitSetUnmanaged, count);
+    for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@enumFromInt(@as(u32, @intCast(i)))).decls.len);
+    var work: std.ArrayList(TypeDecl) = .empty;
+    for (0..count) |i| {
+        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
+            .foreign_value, .foreign_type, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try typesNamed(in, scratch, m, @intCast(index), &work),
+            else => {},
+        };
+    }
+    while (work.pop()) |t| {
+        const bir = in.birOf(t.module);
+        if (t.decl >= bir.decls.len) continue;
+        const s = &seen[t.module.int()];
+        if (s.isSet(t.decl)) continue;
+        s.set(t.decl);
+        const d = bir.decls[t.decl];
+        if (d.kind == .type) {
+            const ctors = &modules[t.module.int()].ctors;
+            for (d.ctors_start..d.ctors_end) |c| if (c < ctors.bit_length) ctors.set(c);
+        }
+        try typesNamed(in, scratch, t.module, t.decl, &work);
+    }
+}
+
+const TypeDecl = struct { module: Graph.Index, decl: u32 };
+
+/// Every type declaration a type reference in declaration `decl`'s
+/// instructions names — its annotation, a type's constructor arguments, an
+/// alias's body — onto `work`.
+fn typesNamed(in: Input, scratch: Allocator, m: Graph.Index, decl: u32, work: *std.ArrayList(TypeDecl)) Allocator.Error!void {
+    const bir = in.birOf(m);
+    const d = bir.decls[decl];
+    const tags = bir.insts.items(.tag);
+    const data = bir.insts.items(.data);
+    const start = @min(d.inst_start.int(), bir.insts.len);
+    const end = @min(d.inst_end.int(), bir.insts.len);
+    for (tags[start..end], data[start..end]) |tag, payload| switch (tag) {
+        .type_top => try work.append(scratch, .{ .module = m, .decl = payload.lhs }),
+        .ext_type => {
+            const owner: Graph.Index = @enumFromInt(payload.lhs);
+            if (owner.int() >= in.provenance.len) continue;
+            const t = in.provenance[owner.int()].typeDecl(payload.rhs) orelse continue;
+            try work.append(scratch, .{ .module = owner, .decl = t.int() });
+        },
+        else => {},
+    };
 }
 
 /// Set a node's bit, and say whether this call is the one that set it. A
@@ -375,6 +520,7 @@ fn mark(modules: []Live, node: Node) bool {
         .decl => &live.decls,
         .derived => &live.derived,
         .twin => &live.twins,
+        .ctor => &live.ctors,
     };
     if (node.index >= set.bit_length) return false;
     if (set.isSet(node.index)) return false;
@@ -382,24 +528,63 @@ fn mark(modules: []Live, node: Node) bool {
     return true;
 }
 
-/// One module's edge lists: two flat target arrays with a start offset per
-/// node, the same shape every other sidecar table here has.
+/// One edge: the node it reaches, and the chain of `case`-arm guards it
+/// occurs under (0: none), in its module's `ModuleEdges.chains`.
+pub const Target = struct {
+    node: Node,
+    chain: u32 = 0,
+};
+
+/// One guarded arm a position is inside: the constructors its pattern
+/// names (`chain_ctors[start..end]`), and the chain of the arm around it.
+pub const Chain = struct {
+    parent: u32,
+    start: u32,
+    end: u32,
+};
+
+/// How many enclosing guarded arms an edge waits on: the innermost ones.
+/// Dropping the outer conditions keeps more and never less.
+pub const chain_depth = 4;
+
+/// One module's edge lists: flat target arrays with a start offset per
+/// node, the same shape every other sidecar table here has, and the guard
+/// chains their targets name.
 pub const ModuleEdges = struct {
     decl_at: []const u32 = &.{},
-    decl_targets: []const Node = &.{},
+    decl_targets: []const Target = &.{},
     derived_at: []const u32 = &.{},
-    derived_targets: []const Node = &.{},
+    derived_targets: []const Target = &.{},
     twin_at: []const u32 = &.{},
-    twin_targets: []const Node = &.{},
+    twin_targets: []const Target = &.{},
+    /// Index 0 is no chain.
+    chains: []const Chain = &.{},
+    chain_ctors: []const Node = &.{},
 
-    fn targets(e: ModuleEdges, node: Node) []const Node {
+    fn targets(e: ModuleEdges, node: Node) []const Target {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },
             .twin => .{ e.twin_at, e.twin_targets },
+            .ctor => return &.{},
         };
         if (node.index + 1 >= at.len) return &.{};
         return list[at[node.index]..at[node.index + 1]];
+    }
+
+    /// The first guard of `chain`, innermost arm first, that is not
+    /// reached; null when every one is (or there is none).
+    fn blocker(e: ModuleEdges, modules: []const Live, chain: u32) ?Node {
+        var c = chain;
+        var depth: u32 = 0;
+        while (c != 0 and c < e.chains.len and depth < chain_depth) : (depth += 1) {
+            const link = e.chains[c];
+            for (e.chain_ctors[link.start..link.end]) |guard| {
+                if (guard.module.int() >= modules.len or !modules[guard.module.int()].ctor(guard.index)) return guard;
+            }
+            c = link.parent;
+        }
+        return null;
     }
 };
 
@@ -417,6 +602,8 @@ pub const Builder = struct {
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
     stream: std.ArrayList(Edges.Edge) = .empty,
+    /// The instruction each edge of `stream` occurs at.
+    at: std.ArrayList(u32) = .empty,
 
     /// The two corrected `primitive`/`err` legs name one declaration each,
     /// the same one for every module, so they are resolved once here rather
@@ -450,8 +637,10 @@ pub const Builder = struct {
         const filter: ?Edges.SiteFilter = if (ctor_eq) |*context| .{ .context = context, .skip = skipInPlace } else null;
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
-        var decl_targets: std.ArrayList(Node) = .empty;
+        var decl_targets: std.ArrayList(Target) = .empty;
         var twin_extra: std.ArrayList(TwinEdge) = .empty;
+        var guards: Guards = .{ .b = b, .m = m };
+        var nodes: std.ArrayList(Node) = .empty;
         for (bir.decls, 0..) |d, i| {
             decl_at[i] = @intCast(decl_targets.items.len);
             switch (d.kind) {
@@ -460,37 +649,55 @@ pub const Builder = struct {
                 .value => {},
                 .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .schema, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
             }
+            try guards.declaration(d);
             b.stream.clearRetainingCapacity();
-            try Edges.declEdgesExcept(&b.stream, b.scratch, bir, dispatch, @intCast(i), filter);
-            if (b.in.vocabulary) |vocabulary| try Edges.markupEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i), vocabulary);
+            b.at.clearRetainingCapacity();
+            try Edges.declEdgesAt(&b.stream, &b.at, b.scratch, bir, dispatch, @intCast(i), filter);
+            if (b.in.vocabulary) |vocabulary| try Edges.markupEdgesAt(&b.stream, &b.at, b.scratch, bir, dispatch, @intCast(i), vocabulary);
             // Most edges become exactly one node, so one reservation per
             // declaration is the growth the resolve loop would otherwise do
             // a word at a time.
             try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
-            for (b.stream.items) |edge| try b.resolve(m, edge, &decl_targets);
-            try b.effectEdges(m, @intCast(i), decl_at[i], &decl_targets, &twin_extra);
+            for (b.stream.items, b.at.items) |edge, position| {
+                // A leg-1 row has no position. The `.top` instruction made
+                // with it is guarded where it stands, so the row adds an
+                // edge only when no instruction names its target.
+                const chain = if (position == Edges.no_position) blk: {
+                    if (edge == .top and guards.namesTop(edge.top)) continue;
+                    break :blk 0;
+                } else guards.at(position);
+                nodes.clearRetainingCapacity();
+                try b.resolve(m, edge, &nodes);
+                for (nodes.items) |node| try decl_targets.append(b.scratch, .{ .node = node, .chain = chain });
+            }
+            try guards.constructions(&decl_targets);
+            try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
         // A declaration's suspendable body (§16.2) reaches what its direct
         // one does, and the suspendable bodies its `poly` answers choose.
         const twin_at = try b.scratch.alloc(u32, bir.decls.len + 1);
-        var twin_targets: std.ArrayList(Node) = .empty;
+        var twin_targets: std.ArrayList(Target) = .empty;
         for (0..bir.decls.len) |i| {
             twin_at[i] = @intCast(twin_targets.items.len);
             if (!dispatch.effectDecl(@intCast(i)).twin) continue;
             try twin_targets.appendSlice(b.scratch, decl_targets.items[decl_at[i]..decl_at[i + 1]]);
-            for (twin_extra.items) |x| if (x.decl == i) try twin_targets.append(b.scratch, x.node);
+            for (twin_extra.items) |x| if (x.decl == i) try twin_targets.append(b.scratch, x.target);
         }
         twin_at[bir.decls.len] = @intCast(twin_targets.items.len);
 
         const derived_at = try b.scratch.alloc(u32, dispatch.derived.len + 1);
-        var derived_targets: std.ArrayList(Node) = .empty;
+        var derived_targets: std.ArrayList(Target) = .empty;
         for (0..dispatch.derived.len) |i| {
             derived_at[i] = @intCast(derived_targets.items.len);
             b.stream.clearRetainingCapacity();
             try Edges.derivedEdges(&b.stream, b.scratch, dispatch, @intCast(i));
-            for (b.stream.items) |edge| try b.resolve(m, edge, &derived_targets);
+            for (b.stream.items) |edge| {
+                nodes.clearRetainingCapacity();
+                try b.resolve(m, edge, &nodes);
+                for (nodes.items) |node| try derived_targets.append(b.scratch, .{ .node = node });
+            }
         }
         derived_at[dispatch.derived.len] = @intCast(derived_targets.items.len);
 
@@ -501,11 +708,173 @@ pub const Builder = struct {
             .derived_targets = derived_targets.items,
             .twin_at = twin_at,
             .twin_targets = twin_targets.items,
+            .chains = guards.chains.items,
+            .chain_ctors = guards.chain_ctors.items,
         };
     }
 
     /// An edge only a declaration's suspendable body has.
-    const TwinEdge = struct { decl: u32, node: Node };
+    const TwinEdge = struct { decl: u32, target: Target };
+
+    /// The `case`-arm guards of one module's declarations (`backend.md` §9,
+    /// *A `case` arm on a constructor nothing builds*): for the declaration
+    /// being walked, the chain every one of its instructions is under, and
+    /// the constructors it builds.
+    const Guards = struct {
+        b: *Builder,
+        m: Graph.Index,
+        /// Index 0 is no chain; the rest are the module's, all its
+        /// declarations', in the order they were made.
+        chains: std.ArrayList(Chain) = .empty,
+        chain_ctors: std.ArrayList(Node) = .empty,
+        /// The declaration being walked: its first instruction, and the
+        /// chain of each of its instructions.
+        start: u32 = 0,
+        chain_of: std.ArrayList(u32) = .empty,
+        /// Its `.top` targets, for the leg-1 net.
+        tops: std.ArrayList(u32) = .empty,
+        /// Its instructions that are a `pat_ctor`'s head, which build
+        /// nothing.
+        heads: std.DynamicBitSetUnmanaged = .{},
+        arms: std.ArrayList(Arm) = .empty,
+        stack: std.ArrayList(Open) = .empty,
+
+        const Arm = struct { from: u32, to: u32, start: u32, end: u32 };
+        const Open = struct { to: u32, chain: u32 };
+
+        fn declaration(g: *Guards, d: Bir.Decl) Allocator.Error!void {
+            const scratch = g.b.scratch;
+            const bir = g.b.in.birOf(g.m);
+            if (g.chains.items.len == 0) try g.chains.append(scratch, .{ .parent = 0, .start = 0, .end = 0 });
+            const tags = bir.insts.items(.tag);
+            const data = bir.insts.items(.data);
+            const start: u32 = @intCast(@min(d.inst_start.int(), bir.insts.len));
+            const end: u32 = @intCast(@min(d.inst_end.int(), bir.insts.len));
+            g.start = start;
+            g.chain_of.clearRetainingCapacity();
+            try g.chain_of.appendNTimes(scratch, 0, end - start);
+            g.tops.clearRetainingCapacity();
+            g.arms.clearRetainingCapacity();
+            try g.heads.resize(scratch, end - start, false);
+            g.heads.unsetAll();
+
+            // Every arm whose pattern names a constructor that can be a
+            // guard: its body is `(pattern root, body root]` (`Bir` is
+            // post-order; `bir/Lower.lowerBranch`).
+            for (tags[start..end], data[start..end], start..) |tag, payload, p| switch (tag) {
+                .top => try g.tops.append(scratch, payload.lhs),
+                .pat_ctor => if (payload.lhs >= start and payload.lhs < end) g.heads.set(payload.lhs - start),
+                .branch => {
+                    const pattern = payload.lhs;
+                    const body = payload.rhs;
+                    if (!(pattern >= start and pattern < body and body < p)) continue;
+                    const first: u32 = @intCast(g.chain_ctors.items.len);
+                    try g.patternCtors(@enumFromInt(pattern), 0);
+                    if (g.chain_ctors.items.len == first) continue;
+                    try g.arms.append(scratch, .{ .from = pattern + 1, .to = body, .start = first, .end = @intCast(g.chain_ctors.items.len) });
+                },
+                else => {},
+            };
+            std.mem.sort(u32, g.tops.items, {}, std.sort.asc(u32));
+            if (g.arms.items.len == 0) return;
+
+            // Outer arms first where two begin together; then one sweep,
+            // the open arms a stack. Arms of one tree nest, and a pair that
+            // did not would leave every position of the declaration
+            // unguarded — more kept, never less.
+            std.mem.sort(Arm, g.arms.items, {}, struct {
+                fn lessThan(_: void, a: Arm, x: Arm) bool {
+                    return a.from < x.from or (a.from == x.from and a.to > x.to);
+                }
+            }.lessThan);
+            g.stack.clearRetainingCapacity();
+            var next: usize = 0;
+            for (start..end) |p| {
+                while (g.stack.items.len != 0 and g.stack.items[g.stack.items.len - 1].to < p) _ = g.stack.pop();
+                while (next < g.arms.items.len and g.arms.items[next].from <= p) : (next += 1) {
+                    const arm = g.arms.items[next];
+                    const parent: u32 = if (g.stack.items.len == 0) 0 else g.stack.items[g.stack.items.len - 1].chain;
+                    if (g.stack.items.len != 0 and g.stack.items[g.stack.items.len - 1].to < arm.to) {
+                        @memset(g.chain_of.items, 0);
+                        return;
+                    }
+                    const chain: u32 = @intCast(g.chains.items.len);
+                    try g.chains.append(scratch, .{ .parent = parent, .start = arm.start, .end = arm.end });
+                    try g.stack.append(scratch, .{ .to = arm.to, .chain = chain });
+                }
+                if (g.stack.items.len != 0) g.chain_of.items[p - start] = g.stack.items[g.stack.items.len - 1].chain;
+            }
+        }
+
+        /// The chain the instruction at `position` is under.
+        fn at(g: *const Guards, position: u32) u32 {
+            if (position < g.start or position - g.start >= g.chain_of.items.len) return 0;
+            return g.chain_of.items[position - g.start];
+        }
+
+        /// Whether an instruction of the declaration is a `.top` of `decl`.
+        fn namesTop(g: *const Guards, decl: u32) bool {
+            return std.sort.binarySearch(u32, g.tops.items, decl, struct {
+                fn order(key: u32, item: u32) std.math.Order {
+                    return std.math.order(key, item);
+                }
+            }.order) != null;
+        }
+
+        /// The constructors a pattern names, at any depth, that can guard:
+        /// not `core`'s, which are always reached.
+        fn patternCtors(g: *Guards, pattern: Bir.Inst.Index, depth: u32) Allocator.Error!void {
+            if (depth > 64) return;
+            const bir = g.b.in.birOf(g.m);
+            if (pattern.int() >= bir.insts.len) return;
+            const d = bir.instData(pattern);
+            switch (bir.instTag(pattern)) {
+                .pat_ctor => {
+                    if (g.ctorNode(@enumFromInt(d.lhs))) |node| try g.chain_ctors.append(g.b.scratch, node);
+                    for (bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)) |arg| try g.patternCtors(arg, depth + 1);
+                },
+                .pat_tuple, .pat_list => for (bir.extraSlice(Bir.inlineRange(d), Bir.Inst.Index)) |e| try g.patternCtors(e, depth + 1),
+                .pat_cons => {
+                    try g.patternCtors(@enumFromInt(d.lhs), depth + 1);
+                    try g.patternCtors(@enumFromInt(d.rhs), depth + 1);
+                },
+                .pat_as => try g.patternCtors(@enumFromInt(d.lhs), depth + 1),
+                else => {},
+            }
+        }
+
+        /// The node of the constructor a `ctor`/`ext_ctor` instruction
+        /// names, or null for `core`'s and for anything else.
+        fn ctorNode(g: *const Guards, ref: Bir.Inst.Index) ?Node {
+            const in = g.b.in;
+            const bir = in.birOf(g.m);
+            if (ref.int() >= bir.insts.len) return null;
+            const d = bir.instData(ref);
+            const owner: Graph.Index, const index: u32 = switch (bir.instTag(ref)) {
+                .ctor => .{ g.m, d.lhs },
+                .ext_ctor => .{ @enumFromInt(d.lhs), ctorOfExt(in.provenance, @enumFromInt(d.lhs), d.rhs) orelse return null },
+                else => return null,
+            };
+            if (owner.int() >= in.graph.count()) return null;
+            if (in.store.package(in.graph.moduleFile(owner)) == .core) return null;
+            return .{ .module = owner, .kind = .ctor, .index = index };
+        }
+
+        /// Every constructor the declaration builds — a `ctor`/`ext_ctor`
+        /// that is not a pattern's head — as an edge where it stands.
+        fn constructions(g: *Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
+            const bir = g.b.in.birOf(g.m);
+            const tags = bir.insts.items(.tag);
+            const start = g.start;
+            const end: u32 = start + @as(u32, @intCast(g.chain_of.items.len));
+            for (tags[start..end], start..) |tag, p| {
+                if (tag != .ctor and tag != .ext_ctor) continue;
+                if (g.heads.isSet(p - start)) continue;
+                const node = g.ctorNode(@enumFromInt(p)) orelse continue;
+                try out.append(g.b.scratch, .{ .node = node, .chain = g.chain_of.items[p - start] });
+            }
+        }
+    };
 
     /// The edges the effect answers add (transparent-effects-proposal.md
     /// §16.2): a reference or a method call that takes a target's
@@ -514,7 +883,7 @@ pub const Builder = struct {
     /// naming a declaration with two bodies, which takes the suspendable one
     /// wherever it is passed; and core's `Task.andThen` and `Task.isWaiting`,
     /// which the code of a body that may suspend calls.
-    fn effectEdges(b: *Builder, m: Graph.Index, decl: u32, first: u32, direct: *std.ArrayList(Node), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
+    fn effectEdges(b: *Builder, m: Graph.Index, decl: u32, guards: *const Guards, direct: *std.ArrayList(Target), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
         const bir = b.in.birOf(m);
         const dispatch = b.in.dispatchOf(m);
         const d = bir.decls[decl];
@@ -525,15 +894,15 @@ pub const Builder = struct {
         for (sites) |s| {
             if (s.own == .yes) protocol = .yes else if (s.own == .poly and protocol == .no) protocol = .poly;
             if (s.body == .no) continue;
-            const target = b.bodyTarget(m, s.inst) orelse continue;
-            if (s.body == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .node = target });
+            const node = b.bodyTarget(m, s.inst) orelse continue;
+            const target: Target = .{ .node = node, .chain = guards.at(s.inst.int()) };
+            if (s.body == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });
         }
-        _ = first;
         // Evidence a site passes takes the body the site's callee takes.
         for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
             const choice = dispatch.evidenceChoice(bir, site.inst);
             if (choice == .no) continue;
-            try b.evidenceTwins(m, dispatch.argsAt(site.evidence), decl, choice, direct, twin);
+            try b.evidenceTwins(m, dispatch.argsAt(site.evidence), decl, choice, guards.at(site.inst.int()), direct, twin);
         }
         if (protocol == .no) return;
         const task = b.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) orelse return;
@@ -542,8 +911,8 @@ pub const Builder = struct {
             if (td.kind != .foreign_value) continue;
             const name = task_bir.symbol(td.name);
             if (name != InternPool.WellKnown.andThen.symbol() and name != InternPool.WellKnown.isWaiting.symbol()) continue;
-            const node: Node = .{ .module = task, .kind = .decl, .index = @intCast(i) };
-            if (protocol == .yes) try direct.append(b.scratch, node) else try twin.append(b.scratch, .{ .decl = decl, .node = node });
+            const target: Target = .{ .node = .{ .module = task, .kind = .decl, .index = @intCast(i) } };
+            if (protocol == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });
         }
     }
 
@@ -577,7 +946,7 @@ pub const Builder = struct {
     /// Every declaration with two bodies that `roots` name, as evidence a
     /// site passes whose callee takes its suspendable body (`choice`): the
     /// evidence takes its suspendable body too (§16.2).
-    fn evidenceTwins(b: *Builder, m: Graph.Index, roots: []const Dispatch.TermIndex, decl: u32, choice: Dispatch.Suspend, direct: *std.ArrayList(Node), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
+    fn evidenceTwins(b: *Builder, m: Graph.Index, roots: []const Dispatch.TermIndex, decl: u32, choice: Dispatch.Suspend, chain: u32, direct: *std.ArrayList(Target), twin: *std.ArrayList(TwinEdge)) Allocator.Error!void {
         if (roots.len == 0) return;
         const dispatch = b.in.dispatchOf(m);
         var edges: std.ArrayList(Edges.Edge) = .empty;
@@ -590,7 +959,8 @@ pub const Builder = struct {
                 else => continue,
             };
             if (!b.in.dispatchOf(node.module).effectDecl(node.index).twin) continue;
-            if (choice == .yes) try direct.append(b.scratch, node) else try twin.append(b.scratch, .{ .decl = decl, .node = node });
+            const target: Target = .{ .node = node, .chain = chain };
+            if (choice == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });
         }
     }
 
@@ -719,4 +1089,78 @@ test "a module with no survivor answers `any` false, and an absent one answers n
     // out of a missing record.
     try testing.expect(r.extValue(@enumFromInt(0), 0));
     try testing.expect(r.extDerived(@enumFromInt(0), .none, .eq));
+}
+
+test "a guarded edge waits on the first guard it lacks and is followed when the last arrives" {
+    const gpa = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const scratch = arena.allocator();
+
+    const m: Graph.Index = @enumFromInt(0);
+    var live = [_]Live{.{
+        .decls = try .initEmpty(scratch, 2),
+        .derived = try .initEmpty(scratch, 0),
+        .ctors = try .initEmpty(scratch, 2),
+    }};
+    const c0: Node = .{ .module = m, .kind = .ctor, .index = 0 };
+    const c1: Node = .{ .module = m, .kind = .ctor, .index = 1 };
+    // Chain 2 is an arm on `c1` inside an arm on `c0` (chain 1).
+    const edges = [_]ModuleEdges{.{
+        .chains = &.{ .{ .parent = 0, .start = 0, .end = 0 }, .{ .parent = 0, .start = 0, .end = 1 }, .{ .parent = 1, .start = 1, .end = 2 } },
+        .chain_ctors = &.{ c0, c1 },
+    }};
+    var waiting: std.AutoHashMapUnmanaged(Node, std.ArrayList(Pending)) = .empty;
+    var stack: std.ArrayList(Node) = .empty;
+    const target: Target = .{ .node = .{ .module = m, .kind = .decl, .index = 1 }, .chain = 2 };
+
+    // Neither arm's constructor is built: the innermost one is waited on.
+    try follow(scratch, &live, &edges, &waiting, &stack, m, target);
+    try testing.expect(!live[0].decl(1));
+    try testing.expect(waiting.contains(c1));
+
+    // `c1` arrives, `c0` has not: the edge moves to wait on `c0`.
+    _ = mark(&live, c1);
+    const on_c1 = waiting.fetchRemove(c1).?.value;
+    for (on_c1.items) |p| try follow(scratch, &live, &edges, &waiting, &stack, p.module, p.target);
+    try testing.expect(!live[0].decl(1));
+    try testing.expect(waiting.contains(c0));
+
+    // Both built: followed.
+    _ = mark(&live, c0);
+    const on_c0 = waiting.fetchRemove(c0).?.value;
+    for (on_c0.items) |p| try follow(scratch, &live, &edges, &waiting, &stack, p.module, p.target);
+    try testing.expect(live[0].decl(1));
+    try testing.expectEqual(@as(usize, 1), stack.items.len);
+}
+
+test "an edge waits on the innermost four guarded arms around it, and no more" {
+    const gpa = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const scratch = arena.allocator();
+
+    const m: Graph.Index = @enumFromInt(0);
+    var live = [_]Live{.{
+        .decls = try .initEmpty(scratch, 1),
+        .derived = try .initEmpty(scratch, 0),
+        .ctors = try .initEmpty(scratch, 5),
+    }};
+    // Five arms nested, chain k on constructor k-1; only the outermost
+    // constructor (0) is unbuilt.
+    var ctors: [5]Node = undefined;
+    var chains: [6]Chain = undefined;
+    chains[0] = .{ .parent = 0, .start = 0, .end = 0 };
+    for (0..5) |k| {
+        ctors[k] = .{ .module = m, .kind = .ctor, .index = @intCast(k) };
+        chains[k + 1] = .{ .parent = @intCast(k), .start = @intCast(k), .end = @intCast(k + 1) };
+        if (k != 0) _ = mark(&live, ctors[k]);
+    }
+    const edges: ModuleEdges = .{ .chains = &chains, .chain_ctors = &ctors };
+    // From the innermost arm the outermost is the fifth: past the cap, so
+    // nothing blocks — a condition dropped, which keeps more and never less.
+    try testing.expectEqual(@as(?Node, null), edges.blocker(&live, 5));
+    // From the fourth arm in, it is within the cap and blocks.
+    try testing.expectEqual(@as(?Node, ctors[0]), edges.blocker(&live, 4));
+    try testing.expectEqual(@as(?Node, null), edges.blocker(&live, 0));
 }

@@ -149,6 +149,41 @@ pub fn declEdgesExcept(
     index: u32,
     filter: ?SiteFilter,
 ) Error!void {
+    return walkDecl(out, null, scratch, bir, dispatch, index, filter);
+}
+
+/// The position of an edge that no instruction carries: a leg-1 `refs`
+/// row (`declEdgesAt`).
+pub const no_position: u32 = std.math.maxInt(u32);
+
+/// `declEdgesExcept`, and beside every edge the instruction it occurs at,
+/// in `at`: leg 2's instruction, leg 3's site, `no_position` for a leg-1
+/// row. What `js/Reach.zig` guards an edge by (`backend.md` §9, *A `case`
+/// arm on a constructor nothing builds*). Leg 3 walks each site's terms on
+/// their own, so a term two sites share is yielded at both: one walk over
+/// every site would yield it once, at the first, and lose the second's
+/// position.
+pub fn declEdgesAt(
+    out: *std.ArrayList(Edge),
+    at: *std.ArrayList(u32),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    filter: ?SiteFilter,
+) Error!void {
+    return walkDecl(out, at, scratch, bir, dispatch, index, filter);
+}
+
+fn walkDecl(
+    out: *std.ArrayList(Edge),
+    at: ?*std.ArrayList(u32),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    filter: ?SiteFilter,
+) Error!void {
     const d = bir.decls[index];
 
     // Leg 1: the reference table, already deduplicated per declaration and in
@@ -156,6 +191,7 @@ pub fn declEdgesExcept(
     for (bir.refs[d.refs_start..d.refs_end]) |ref| {
         if (ref.kind != .top_value) continue;
         try out.append(scratch, .{ .top = ref.a });
+        if (at) |list| try list.append(scratch, no_position);
     }
 
     // Leg 2: the references `Resolve` rewrote into the instructions. A
@@ -165,15 +201,16 @@ pub fn declEdgesExcept(
     const data = bir.insts.items(.data);
     const start = @min(d.inst_start.int(), bir.insts.len);
     const end = @min(d.inst_end.int(), bir.insts.len);
-    for (tags[start..end], data[start..end]) |tag, payload| {
+    for (tags[start..end], data[start..end], start..) |tag, payload, position| {
         switch (tag) {
             .top => try out.append(scratch, .{ .top = payload.lhs }),
             .ext_value => try out.append(scratch, .{ .ext = .{
                 .module = @enumFromInt(payload.lhs),
                 .value = payload.rhs,
             } }),
-            else => {},
+            else => continue,
         }
+        if (at) |list| try list.append(scratch, @intCast(position));
     }
 
     // Leg 3: the dispatch sites — the callee, then the roots — and every
@@ -184,6 +221,11 @@ pub fn declEdgesExcept(
         if (filter) |f| if (f.skip(f.context, site)) continue;
         if (site.callee.unwrap()) |callee| try roots.append(scratch, callee);
         try roots.appendSlice(scratch, dispatch.argsAt(site.evidence));
+        if (at) |list| {
+            try termsEdges(out, scratch, dispatch, roots.items, true);
+            try list.appendNTimes(scratch, site.inst.int(), out.items.len - list.items.len);
+            roots.clearRetainingCapacity();
+        }
     }
     // Through the rows this module derives: a derived function RUNS the
     // values its body names when it is called, so a constant that calls one
@@ -206,6 +248,31 @@ pub fn markupEdges(
     index: u32,
     vocabulary: Graph.Index,
 ) Error!void {
+    return markupWalk(out, null, scratch, bir, dispatch, index, vocabulary);
+}
+
+/// `markupEdges`, each edge's position — its markup root — in `at`.
+pub fn markupEdgesAt(
+    out: *std.ArrayList(Edge),
+    at: *std.ArrayList(u32),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    vocabulary: Graph.Index,
+) Error!void {
+    return markupWalk(out, at, scratch, bir, dispatch, index, vocabulary);
+}
+
+fn markupWalk(
+    out: *std.ArrayList(Edge),
+    positions: ?*std.ArrayList(u32),
+    scratch: Allocator,
+    bir: *const Bir,
+    dispatch: *const Dispatch,
+    index: u32,
+    vocabulary: Graph.Index,
+) Error!void {
     const d = bir.decls[index];
     const start = d.inst_start.int();
     const end = d.inst_end.int();
@@ -214,6 +281,7 @@ pub fn markupEdges(
         const at = row.root.int();
         if (at < start or at >= end) continue;
         try out.append(scratch, .{ .ext = .{ .module = vocabulary, .value = row.extractor } });
+        if (positions) |list| try list.append(scratch, at);
     }
 }
 
