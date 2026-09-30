@@ -5,6 +5,12 @@ description: Hand-minify JavaScript for size AFTER compression (brotli 11 first,
 
 # Hand-minifying JavaScript for compressed size
 
+**Purpose: find the absolute limit of how small the JavaScript can get, as the
+guiding light for beni's minifier and emitter. Anything goes — any transformation,
+any amount of analysis, by hand — as long as behaviour is unchanged and runtime
+performance is not degraded (§1.4).** What the compiler cannot do yet is not a
+reason to stop; it is the finding.
+
 The target is **brotli-11 bytes of the exact bytes that ship**, gzip-9 second, raw
 bytes a diagnostic only (`backend.md` §13). Raw bytes do not predict compressed
 bytes: in beni's own measurements four edits that *saved* raw bytes *cost* brotli
@@ -144,7 +150,8 @@ unique sequences of characters".
 
 Ranked by what they bought in beni's measurements, then by the literature. Every
 figure is brotli-11 unless it says otherwise. "Compactor" means `Minify.zig`
-already does it under `--release`: do not do it by hand in a shipped source file.
+already does it under `--release`; apply it anyway when exploring the limit, but
+it is not a new finding.
 
 ### Tier 1 — structure (tens to hundreds of bytes each)
 
@@ -288,8 +295,10 @@ because a two-byte saving inside a phrase that repeats is a zero-byte saving
   `mangle.properties` rename properties consistently only inside what they see;
   one `o["name"]`, one `defineProperty`, one other module or one runtime reading
   the field breaks it. In beni it is unsound for siblings: they share field names
-  (`$`, `a`, `b`, `n`, `s`, `r`, `t`) with the emitter and runtime. Type-directed
-  field renaming belongs to the compiler (`backend.md` §9 item 4), not to hand work.
+  (`$`, `a`, `b`, `n`, `s`, `r`, `t`) with the emitter and runtime. In an
+  exploration it is fair game when every reader and writer of the field is in view
+  and renamed together: measure it, and report it as input to the compiler's
+  type-directed renaming (`backend.md` §9 item 4).
 - **Globals.** A renamed local that shadows `document`, `parent`, `name` breaks the
   free read elsewhere; `Sibling.isStandardGlobal` plus the host list is what keeps
   beni's renamer sound.
@@ -310,8 +319,8 @@ because a two-byte saving inside a phrase that repeats is a zero-byte saving
 
 ## 5. Feeding `Minify.zig` and the emitter
 
-Hand work is research; the compiler is where bytes stay won. After a pass, sort
-every kept technique into one of three bins and say which in the report:
+The pass explores the limit; the compiler is where bytes stay won. After a pass,
+sort every kept technique into one of these bins and say which in the report:
 
 1. **Already automatic** — don't do by hand in source: comments/whitespace,
    elimination by mention, A2 renaming, A3 (`const`→`let`, `(x)=>`, `;}`), one
@@ -324,31 +333,21 @@ every kept technique into one of three bins and say which in the report:
    a text rewrite of the built tree (`bench/ui/anatomy.mjs`'s *hand-applied
    candidates*), then specify its soundness condition, then build it with a unit
    test per hazard. Research 40 §7 is the template (A2, A3, A5 order search).
-3. **A source rule** for whoever writes `core/` and platform JavaScript — the
+3. **A compiler pass that needs more than tokens** — a parser, scopes, types or
+   the whole program (`Opt.zig`, `Spec.zig`, the emitter): say what analysis it
+   needs and what it would buy.
+4. **A source rule** for whoever writes `core/` and platform JavaScript — the
    ones the compiler cannot infer: write each walk once, readers never name
    writers, parameter names by role, capitalised top-level names, inert top-level
    initialisers, one statement per droppable unit. Research 40 §8 is the list; add
    to it rather than restating it.
 
-**Closure-style optimisation of beni code is the compiler's, not a hand pass.**
-For code beni emits (and a runtime written in beni), Closure ADVANCED's work is
-built in under `--release` (`backend.md` §9): single-use inlining, local and
-top-level (`Opt.zig`, only where it cannot grow output); constant `let`s and
-literals replacing names where the literal cannot grow output; whole-program
-specialisation — constant arguments substituted and their parameters dropped,
-folded branches, `case` arms on constructors nothing builds removed, never-read
-object keys dropped, then reachability rerun (`Spec.zig`). Missing: property
-renaming (type-directed, `backend.md` §9 item 4 — never by hand). Inlining a
-function called more than once duplicates distinct text and V8 inlines small hot
-functions anyway: do not. *Introducing* a name for a repeated literal hurts (§3
-table); *inlining* a named constant into its uses is the compiler's job and
-usually helps. A hand pass over emitted code therefore measures what the compiler
-missed and turns it into a compiler rule (bin 2 or an `Opt`/`Spec` rule), never a
-hand-kept patch.
-
-Anything that needs a JavaScript parser (terser's `compress`: inlining, dead
-branches, `if`→`&&`) is out for siblings: `boundary.md` §4's wall exists to avoid
-one, and on a file written to the source rules it buys 7–12 bytes (research 40 A6/A7).
+**Nothing is out of bounds for the exploration.** Techniques that need a real
+JavaScript parser, scope analysis, whole-program knowledge or type information
+(terser/Closure-style inlining of functions and constants, constant folding, dead
+branches, property renaming, cross-function code motion) are all in play: find the
+limit first, and let the compiler catch up afterwards. The report says what each
+would need from beni to be automatic.
 
 ## 6. Harnesses in the repo
 
