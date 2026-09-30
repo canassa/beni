@@ -2980,8 +2980,10 @@ What is **not** a cons step, spelled out because the new syntax makes it easy to
 *Added 2026-10-01; specified, not built* (`plans/list-arrays.md`'s third slice). *Built
 2026-10-02, with these departures, each reversible:* the rule is not applied in a suspendable body
 (its re-entry passes the slots as lists), nor to a slot some `case` matches with an item after the
-spread; §7's re-consing is not part of it (a re-cons is an argument the rule does not recognise, so
-its slot stays a list); the entry test when the parameter itself is built is `$s.length - o ===
+spread; §7's re-consing rule is built for a scalar slot only — a re-cons of what a pattern on
+one matched is the offset it matched at, passed back or built there (and so the very list the
+walk was given at the entry offset), while outside a scalar view the runtime's re-cons of
+§4's table still stands for it; the entry test when the parameter itself is built is `$s.length - o ===
 $v.length ? $v : List$view($s, o)` — a suffix of the base is at the entry offset exactly when it is
 as long as the entry list — so no entry offset is kept; and `Reach` keeps `base` and `offset` for
 every declaration with a list pattern, as it keeps `unsafeGet` and `view`. This is the rule

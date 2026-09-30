@@ -10,7 +10,9 @@
 -- `mapRec` a building walk, `merge` two list slots. A list read as a value
 -- is built there and only there: `dropWhile` returns its parameter, which
 -- is the list it was given when no step was taken (`$v`), and `capture`
--- hands `rest` to a closure. `notAWalk` is the control: its slot takes a
+-- hands `rest` to a closure. `pairwise` passes back a re-cons of what its
+-- pattern matched (§7's re-consing rule), which is the offset `rest - 1`
+-- and prepends nothing. `notAWalk` is the control: its slot takes a
 -- list the rule cannot see is a suffix of its parameter — the result of a
 -- call — so it is left unchanged.
 import Node exposing (Program)
@@ -77,6 +79,16 @@ capture xs acc =
 
         [ _, ...rest ] ->
             capture rest (List.push acc (\() -> List.length rest))
+
+
+pub pairwise : List Int -> List ( Int, Int )
+pairwise xs =
+    case xs of
+        [ a, b, ...rest ] ->
+            [ ( a, b ), ...pairwise [ b, ...rest ] ]
+
+        _ ->
+            []
 
 
 pub notAWalk : List Int, Int -> Int

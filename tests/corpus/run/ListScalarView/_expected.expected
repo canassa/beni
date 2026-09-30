@@ -14,6 +14,10 @@ plain nested 11060
 plain dropWhile none same
 plain dropTwo 0 same
 plain whole at the start same
+plain pairwise 1-2,2-3,3-4
+plain mergeRe 1,2,2,3,3,4,4,5,5,6,6,7
+plain upToBig 31,32,33,34,35,36,37,38,39,40
+plain upToBig re-consed at the start same
 view sum 820
 view pairs 3,7,11,15,19,23,27,31,35,39,43,47,51,55,59,63,67,71,75,79
 view map 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80
@@ -27,6 +31,10 @@ view nested 11060
 view dropWhile none same
 view dropTwo 0 same
 view whole at the start same
+view pairwise 1-2,2-3,3-4
+view mergeRe 1,2,2,3,3,4,4,5,5,6,6,7
+view upToBig 31,32,33,34,35,36,37,38,39,40
+view upToBig re-consed at the start same
 pushed sum 820
 pushed pairs 3,7,11,15,19,23,27,31,35,39,43,47,51,55,59,63,67,71,75,79
 pushed map 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80
@@ -40,6 +48,10 @@ pushed nested 11060
 pushed dropWhile none same
 pushed dropTwo 0 same
 pushed whole at the start same
+pushed pairwise 1-2,2-3,3-4
+pushed mergeRe 1,2,2,3,3,4,4,5,5,6,6,7
+pushed upToBig 31,32,33,34,35,36,37,38,39,40
+pushed upToBig re-consed at the start same
 prepended sum 820
 prepended pairs 3,7,11,15,19,23,27,31,35,39,43,47,51,55,59,63,67,71,75,79
 prepended map 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80
@@ -53,6 +65,10 @@ prepended nested 11060
 prepended dropWhile none same
 prepended dropTwo 0 same
 prepended whole at the start same
+prepended pairwise 1-2,2-3,3-4
+prepended mergeRe 1,2,2,3,3,4,4,5,5,6,6,7
+prepended upToBig 31,32,33,34,35,36,37,38,39,40
+prepended upToBig re-consed at the start same
 merge 1,2,3,4,4,5,6,9,12
 merge view 1,3,4,5
 logged 6

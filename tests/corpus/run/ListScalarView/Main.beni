@@ -16,7 +16,12 @@
 --     pattern (`whole`), and walked by a nested `case` on `rest`;
 --   * the list a walk was given, returned by a walk that took no step, is
 --     the very same list (`refEq`), whichever form it was;
---   * `Debug.log` in a step logs in the walk's order.
+--   * `Debug.log` in a step logs in the walk's order;
+--   * a re-cons of what a pattern matched (§7's rule), passed back to the
+--     loop (`pairwise`, `mergeRe`) or returned (`upToBig`), is the list it
+--     matched: the very list the walk was given when it was matched at the
+--     start, on every form — the trie ones included, which the runtime's
+--     own re-cons gives back only as an equal header.
 import Identity
 import List
 import Node
@@ -164,6 +169,51 @@ nested xs acc =
                     nested more (acc + x * y)
 
 
+pairwise : List Int -> List ( Int, Int )
+pairwise xs =
+    case xs of
+        [ a, b, ...rest ] ->
+            [ ( a, b ), ...pairwise [ b, ...rest ] ]
+
+        _ ->
+            []
+
+
+mergeRe : List Int, List Int -> List Int
+mergeRe xs ys =
+    case ( xs, ys ) of
+        ( [ x, ...restX ], [ y, ...restY ] ) ->
+            if x <= y then
+                [ x, ...mergeRe restX [ y, ...restY ] ]
+
+            else
+                [ y, ...mergeRe [ x, ...restX ] restY ]
+
+        ( [], _ ) ->
+            ys
+
+        ( _, [] ) ->
+            xs
+
+
+upToBig : List Int, Int -> List Int
+upToBig xs n =
+    if n == 0 then
+        []
+
+    else
+        case xs of
+            [ x, ...rest ] ->
+                if x > 30 then
+                    [ x, ...rest ]
+
+                else
+                    upToBig rest (n - 1)
+
+            [] ->
+                []
+
+
 logged : List Int, Int -> Int
 logged xs acc =
     case xs of
@@ -202,6 +252,9 @@ report ( name, xs ) =
     let
         fromThree =
             List.drop xs 2
+
+        fromBig =
+            List.drop xs 30
     in
     [ name ++ " sum " ++ String.fromInt (sumFrom xs 0)
     , name ++ " pairs " ++ ints (pairSums xs [])
@@ -216,6 +269,10 @@ report ( name, xs ) =
     , same (name ++ " dropWhile none") (Identity.refEq (dropWhile xs (\x -> x > 100)) xs)
     , same (name ++ " dropTwo 0") (Identity.refEq (dropTwo xs 0) xs)
     , same (name ++ " whole at the start") (Identity.refEq (whole fromThree []) fromThree)
+    , name ++ " pairwise " ++ String.join (List.map (List.take (pairwise xs) 3) (\( a, b ) -> String.fromInt a ++ "-" ++ String.fromInt b)) ","
+    , name ++ " mergeRe " ++ ints (List.take (mergeRe xs (List.range 2 6)) 12)
+    , name ++ " upToBig " ++ ints (upToBig xs 100)
+    , same (name ++ " upToBig re-consed at the start") (Identity.refEq (upToBig fromBig 5) fromBig)
     ]
 
 

@@ -94,6 +94,30 @@ const ListScalarView$capture = ($in$0, $in$1) => {
     }
   }
 };
+const ListScalarView$pairwise = (xs$1) => {
+  const $t$13 = List$base(xs$1);
+  xs$1 = List$offset(xs$1);
+  const $root = [];
+  for (;;) {
+    $j$0$1: {
+      if ($t$13.length > xs$1) {
+        if ($t$13.length > xs$1 + 1) {
+          const a$2 = $t$13[xs$1];
+          const b$3 = $t$13[xs$1 + 1];
+          const rest$4 = xs$1 + 2;
+          $root.push({ a: a$2, b: b$3 });
+          xs$1 = rest$4 - 1;
+          continue;
+        } else {
+          break $j$0$1;
+        }
+      } else {
+        break $j$0$1;
+      }
+    }
+    return $root;
+  }
+};
 const ListScalarView$notAWalk = (xs$1, n$2) => {
   for (;;) {
     if (xs$1.length === 0) {
@@ -106,4 +130,4 @@ const ListScalarView$notAWalk = (xs$1, n$2) => {
   }
 };
 const ListScalarView$main = Node$printLines([]);
-export { ListScalarView$main, ListScalarView$sum, ListScalarView$mapRec, ListScalarView$merge, ListScalarView$dropWhile, ListScalarView$capture, ListScalarView$notAWalk };
+export { ListScalarView$main, ListScalarView$sum, ListScalarView$mapRec, ListScalarView$merge, ListScalarView$dropWhile, ListScalarView$capture, ListScalarView$pairwise, ListScalarView$notAWalk };

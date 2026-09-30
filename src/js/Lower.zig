@@ -674,6 +674,11 @@ const Lowerer = struct {
     /// built into a list: a tail self-call's argument to its own slot, and
     /// the scrutinee of a `case` on one.
     scalar_raw: std.ArrayList(Inst.Index) = .empty,
+    /// Per local of `list_binds_decl`: where a list pattern binds it — the
+    /// pattern, the item's index, and whether it is the spread — for §7's
+    /// re-consing rule (`reconsOf`), made the first time a call asks.
+    list_binds: []?ListBind = &.{},
+    list_binds_decl: u32 = std.math.maxInt(u32),
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
@@ -2368,7 +2373,7 @@ const Lowerer = struct {
             tails.clearRetainingCapacity();
             try tails.append(l.scratch, slot.local);
             if (!try l.walkedSlot(@enumFromInt(start), body, &tails)) continue;
-            if (!l.selfArgsIn(body, loop, i - loop.evidence, tails.items)) continue;
+            if (!try l.selfArgsIn(body, loop, i - loop.evidence, tails.items)) continue;
             const base = try l.fresh(l.well.temp);
             at[i] = l.scalars.items.len;
             for (tails.items, 0..) |local, j| {
@@ -2440,23 +2445,29 @@ const Lowerer = struct {
     }
 
     /// Whether every tail self-call under `inst` — cons steps included —
-    /// passes argument `arg` a local of `tails`.
-    fn selfArgsIn(l: *Lowerer, inst: Inst.Index, loop: *const Loop, arg: usize, tails: []const u32) bool {
+    /// passes argument `arg` a local of `tails`, or a re-cons of one
+    /// (`reconsOf`).
+    fn selfArgsIn(l: *Lowerer, inst: Inst.Index, loop: *const Loop, arg: usize, tails: []const u32) Allocator.Error!bool {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .let => return l.selfArgsIn(@enumFromInt(d.rhs), loop, arg, tails),
             .case => {
                 for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
                     if (l.bir.instTag(branch) != .branch) continue;
-                    if (!l.selfArgsIn(@enumFromInt(l.bir.instData(branch).rhs), loop, arg, tails)) return false;
+                    if (!try l.selfArgsIn(@enumFromInt(l.bir.instData(branch).rhs), loop, arg, tails)) return false;
                 }
                 return true;
             },
             .call => {
                 if (l.isSelfCall(inst, loop)) {
                     const value = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)[arg];
-                    if (l.bir.instTag(value) != .local) return false;
-                    return std.mem.indexOfScalar(u32, tails, l.bir.instData(value).lhs) != null;
+                    const local = if (l.bir.instTag(value) == .local)
+                        l.bir.instData(value).lhs
+                    else if (try l.reconsOf(value)) |recons|
+                        recons.tail
+                    else
+                        return false;
+                    return std.mem.indexOfScalar(u32, tails, local) != null;
                 }
                 const tail = l.consTail(inst) orelse return true;
                 return l.selfArgsIn(tail, loop, arg, tails);
@@ -2476,6 +2487,59 @@ const Lowerer = struct {
             if (s.local == index and s.decl == decl) return k;
         }
         return null;
+    }
+
+    const ListBind = struct { pattern: Inst.Index, index: u32, spread: bool };
+
+    /// §7's re-consing rule over a scalar view: `[ h1, …, hm, ...t ]`
+    /// whose `t` is a spread's local and whose heads are the locals bound
+    /// by the `m` items just before that spread in the same pattern is
+    /// the list that pattern matched from item `s - m`: at a scalar view,
+    /// the offset `t - m`. Answers `t` and `m`, or null.
+    fn reconsOf(l: *Lowerer, inst: Inst.Index) Allocator.Error!?struct { tail: u32, back: u32 } {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        if (!l.isListCons(@enumFromInt(d.lhs)) or l.rootsOf(inst).len != 0) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 2 or l.bir.instTag(args[0]) != .local) return null;
+        const binds = try l.listBinds();
+        var tail: u32 = undefined;
+        var back: u32 = undefined;
+        if (l.bir.instTag(args[1]) == .local) {
+            tail = l.bir.instData(args[1]).lhs;
+            back = 0;
+        } else {
+            const inner = try l.reconsOf(args[1]) orelse return null;
+            tail = inner.tail;
+            back = inner.back;
+        }
+        const t = (if (tail < binds.len) binds[tail] else null) orelse return null;
+        const head = l.bir.instData(args[0]).lhs;
+        const h = (if (head < binds.len) binds[head] else null) orelse return null;
+        if (!t.spread or h.spread or h.pattern != t.pattern or h.index + back + 1 != t.index) return null;
+        return .{ .tail = tail, .back = back + 1 };
+    }
+
+    fn listBinds(l: *Lowerer) Allocator.Error![]const ?ListBind {
+        const decl = l.decl_index orelse return &.{};
+        if (l.list_binds_decl == decl) return l.list_binds;
+        l.list_binds_decl = decl;
+        l.list_binds = try l.scratch.alloc(?ListBind, l.locals.len);
+        @memset(l.list_binds, null);
+        const range = l.bir.decls[decl];
+        var inst = range.inst_start.int();
+        while (inst < range.inst_end.int() and inst < l.bir.insts.len) : (inst += 1) {
+            const at: Inst.Index = @enumFromInt(inst);
+            if (l.bir.instTag(at) != .pat_list) continue;
+            for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(at)), Inst.Index), 0..) |item, i| {
+                const spread = l.bir.instTag(item) == .pat_spread;
+                const bound: Inst.Index = if (spread) @enumFromInt(l.bir.instData(item).lhs) else item;
+                if (l.bir.instTag(bound) != .pat_var) continue;
+                const local = l.bir.instData(bound).lhs;
+                if (local < l.list_binds.len) l.list_binds[local] = .{ .pattern = at, .index = @intCast(i), .spread = spread };
+            }
+        }
+        return l.list_binds;
     }
 
     /// Whether the `local` instruction `inst` is written as the offset it
@@ -2838,8 +2902,13 @@ const Lowerer = struct {
         const raw_mark = l.scalar_raw.items.len;
         defer l.scalar_raw.shrinkRetainingCapacity(raw_mark);
         for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, j| {
-            if (l.bir.instTag(arg) != .local) continue;
-            const k = l.scalarOf(l.bir.instData(arg).lhs) orelse continue;
+            const local = if (l.bir.instTag(arg) == .local)
+                l.bir.instData(arg).lhs
+            else if (try l.reconsOf(arg)) |recons|
+                recons.tail
+            else
+                continue;
+            const k = l.scalarOf(local) orelse continue;
             const scalar = l.scalars.items[k];
             if (scalar.label == loop.label and scalar.slot == loop.evidence + j) try l.scalar_raw.append(l.scratch, arg);
         }
@@ -6571,6 +6640,22 @@ const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+
+        // A re-cons of a list a loop holds as an offset (§7's re-consing
+        // rule, §8's *Scalar views*): the offset it was matched at, or the
+        // list there, and nothing is prepended.
+        if (try l.reconsOf(inst)) |recons| if (l.scalarOf(recons.tail)) |k| {
+            const tail = try l.ident(try l.localName(recons.tail), p);
+            const offset = try l.binary(.sub, tail, try l.intNode(recons.back, p), p);
+            if (l.isScalarRaw(inst)) return offset;
+            // Built, it may be the list the call was entered with: the
+            // parameter's entry answers for it.
+            const s = l.scalars.items[k];
+            for (l.scalars.items, 0..) |other, j| {
+                if (other.label == s.label and other.slot == s.slot and other.entry != .none) return l.materialise(j, offset, p);
+            }
+            return l.materialise(k, offset, p);
+        };
 
         // `&&` and `||` before anything else, because they are the one place
         // where lowering an operator to a CALL would change the answer.
