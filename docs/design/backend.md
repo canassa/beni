@@ -4758,6 +4758,33 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   brotli**. *Amended 2026-09-29: whole in a development build; under `--release`, like a sibling, it
   is compacted and cut to the exports the build imports (§9, *Hand-written JavaScript under
   `--release`*), and the empty page is 1 393 bytes brotli.*
+- **The runtime module** (*added 2026-10-02*; `boundary.md` §9.2's `"module"`). An export the
+  module supplies is a declaration of an emitted module: `cx.runtime(name)` answers the name of
+  that declaration, imported from the module's file as any other module's value is (`Rt$template`,
+  a short name under `--release`), and the build records it as used. The entry file imports `run`
+  and `start` from the module when the module supplies them. The file's `import … from
+  "beni:<Module>"` is written three ways: in a development build and a multi-file release build it
+  is rewritten, as the file is copied, to import the declarations' emitted names from the module's
+  file — `import { Rt$first as first } from "./Rt.mjs";`, the specifier relative to where the file
+  is written, the names as the build spells them — listing only the names the kept part of the file
+  mentions (all of them in a development build, which keeps the whole file); in a scope-hoisted
+  build the statement goes, and every occurrence of a name it imports is spelled as the
+  declaration's name in the one scope (§9, *One scope-hoisted file under `--release`*), which is
+  the rule a hand-written binding an emitted module imports already follows, run the other way. In
+  the one file the module is evaluated before the file. **Reachability** (§9's *Roots*): a build
+  roots, besides its own roots, every value the module supplies and every value the
+  file imports from it — coarse, before lowering — and then, once every module is lowered and
+  under `--release` the file is cut, the module's values the lowerings imported, `run` and `start`
+  where the entry file calls them, and the ones the kept part of the file imports; when that set
+  reaches less than the first, the build walks again from it and lowers again, so no function of
+  the module is written that nothing calls. A development build keeps the whole file, so every name
+  it imports from the module is a root there. *Measured* on 2026-10-02, research 47's empty page
+  with `tests/platforms/beni-runtime` (the port as its runtime module, the rest of the runtime as
+  its file): **1 107 → 1 058** brotli against the same port spliced in ahead of the program, which
+  kept every function of the module; the hand-written runtime's page is 980. The rest of the gap is
+  research 47 §6's items 6 and 8 (inlining a function called once, and specialisation), which is
+  where `emit/release/split/EmptyPage` shows it: `put`/`putRun`, `drop`/`dropRun`, `run`/`runFrom`
+  pairs, and `template`'s flag branches for flags the page never passes.
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.

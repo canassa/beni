@@ -906,6 +906,40 @@ program's `send`, which the program runtime owns, and a sibling may not import a
 nothing crosses between two files at run time (`backend.md` §15.11). `node` needs no such sharing — a
 string renderer sends nothing — and keeps `markup.js` beside `runtime.js`.
 
+**A runtime module: the markup runtime written in beni** (*added 2026-10-02*, `plans/browser-
+decisions.md` R47-1; research 47 §6 item 1). A fifth field, `"module"`, names a module of the
+package that declares `"runtime"`:
+
+```json
+"markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" }
+```
+
+| Field | Is | Checked |
+|---|---|---|
+| `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have |
+
+- **Which exports it supplies.** Every name of §9.4.5's union — a lowering's declared export, and
+  `run` when the markup runtime is also the program runtime — that the module declares as a `pub`
+  value with a body is supplied by the module, and the file supplies the rest. Check 2 holds the
+  file to exactly the rest; a markup primitive is always the file's. A supplied value must take the
+  declared count of parameters and no evidence (`Convention`'s arity, a trailing `()` run counted as
+  written or not, as check 4 counts a sibling's), or it is `foreign_arity_mismatch` at the
+  declaration. `run` takes one. The module is ordinary platform code: it may import `Js` (§4.2)
+  and every module its package sees, and it may not import the file.
+- **The file may import the module.** `import { first, slot } from "beni:Rt";` — the one
+  specifier a hand-written file may name that is not a package, and only in the markup runtime,
+  only for its own `module`. Each name must be a `pub` value of the module, or it is
+  `foreign_unbound_reference` at the name; check 3 counts the import as covering them like any
+  other. What the build writes for it is `backend.md` §15.1's.
+- **What ships** is what is reached (`backend.md` §9's *Roots*, amended the same day): the
+  module's values that the lowering imported in some module of the build, that the entry file
+  calls (`run`, `start`), and that a part of the file the build keeps imports — and whatever those
+  reach. Nothing else of the module is written, so a runtime can move to beni one function at a
+  time without the empty page paying for the functions it does not use.
+
+A lowering does not change: `cx.runtime(name)` answers the name emitted code reads either way, and
+the lowering's `Lowering.runtime` list is its contract with both halves together.
+
 ### 9.3 The vocabulary, and why it is not `foreign`
 
 A platform package declares its markup vocabulary with `language.md` §11.14's four forms. The first
