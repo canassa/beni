@@ -497,6 +497,8 @@ testing discipline above. `commit` for the repo's commit format. `roc-zulip` for
 primary-source evidence on how Roc's compiler works and why, and `hackernews`
 for what practitioners reported about shipping a technology — the users talking
 back, where `references/talks/` is one person's prepared argument.
+`hand-minify` whenever JavaScript is to be made smaller by hand: size is measured
+after brotli, one change at a time.
 
 ### References
 
