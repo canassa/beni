@@ -268,7 +268,9 @@ const reconcile = (parent, a, b, start, aLength, bLength, after) => {
   let bEnd = bLength;
   let aStart = start;
   let bStart = start;
-  let map = null;
+  // Not `map`: a `--release` build keeps an export whose name is mentioned
+  // anywhere in the file, and `map` is `Html.map`'s (research 41 §5.4).
+  let indices = null;
   while (aStart < aEnd || bStart < bEnd) {
     if (a[aStart] === b[bStart]) {
       aStart++;
@@ -284,7 +286,7 @@ const reconcile = (parent, a, b, start, aLength, bLength, after) => {
       while (bStart < bEnd) put(parent, b[bStart++], node);
     } else if (bEnd === bStart) {
       while (aStart < aEnd) {
-        if (map === null || !map.has(a[aStart])) drop(a[aStart]);
+        if (indices === null || !indices.has(a[aStart])) drop(a[aStart]);
         aStart++;
       }
     } else if (a[aStart] === b[bEnd - 1] && b[bStart] === a[aEnd - 1]) {
@@ -293,17 +295,17 @@ const reconcile = (parent, a, b, start, aLength, bLength, after) => {
       put(parent, b[--bEnd], node);
       a[aEnd] = b[bEnd];
     } else {
-      if (map === null) {
-        map = new Map();
-        for (let i = bStart; i < bEnd; i++) map.set(b[i], i);
+      if (indices === null) {
+        indices = new Map();
+        for (let i = bStart; i < bEnd; i++) indices.set(b[i], i);
       }
-      const index = map.get(a[aStart]);
+      const index = indices.get(a[aStart]);
       if (index !== undefined) {
         if (bStart < index && index < bEnd) {
           let i = aStart;
           let sequence = 1;
           while (++i < aEnd && i < bEnd) {
-            const t = map.get(a[i]);
+            const t = indices.get(a[i]);
             if (t === undefined || t !== index + sequence) break;
             sequence++;
           }

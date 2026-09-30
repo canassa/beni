@@ -3046,6 +3046,67 @@ test "a release build compacts hand-written JavaScript and cuts it to what the p
     try w.expectProgram(world.entry_file, .{ .stdout = "[A B C] (8)\n" });
 }
 
+test "a release page ships the browser runtime's map only when it maps" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Html.map`'s runtime export is cut from a program that never maps
+    // (backend.md §9; research 41 §5.4): no other binding of the runtime
+    // may share its name, since a lexical pass counts every mention of a
+    // name as a use. The page has a keyed list, so the reconciler that
+    // once declared a local `map` is kept.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const page =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : List Int -> Html msg
+        \\view xs =
+        \\    <ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\
+    ;
+    try w.write("plain/Main.beni", page);
+    try w.write("mapped/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : List Int -> Html msg
+        \\view xs =
+        \\    Html.map (<ul><For each={xs}>{\x -> <li>{x}</li>}</For></ul>) (\msg -> msg)
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = [ 1, 2 ], update = \msg model -> model, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=plain-out", "plain/Main.beni" }, .{ .raw_diagnostics = true });
+    const mapped = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=mapped-out", "mapped/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(plain);
+    try expectBuilt(mapped);
+    const plain_runtime = try w.read("plain-out/_platform/runtime.foreign.mjs");
+    const mapped_runtime = try w.read("mapped-out/_platform/runtime.foreign.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_runtime, "export const forKeyed=") != null);
+    try testing.expect(std.mem.indexOf(u8, plain_runtime, "export const map=") == null);
+    try testing.expect(std.mem.indexOf(u8, mapped_runtime, "export const map=") != null);
+}
+
 test "a development build copies hand-written JavaScript byte for byte" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
