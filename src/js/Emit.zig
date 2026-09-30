@@ -2343,7 +2343,7 @@ const Emitter = struct {
     /// cannot read exactly is copied as written in either mode.
     fn produceHandWritten(e: *Emitter, out: []const u8, bytes: []const u8, origin: []const u8, keep: []const []const u8) !void {
         if (e.options.release) {
-            if (try Minify.minify(e.scratch, bytes, keep)) |compact| return e.produce(out, compact, origin);
+            if (try Minify.minify(e.scratch, bytes, keep, Minify.release)) |compact| return e.produce(out, compact, origin);
         }
         try e.produce(out, bytes, origin);
     }

@@ -3023,15 +3023,20 @@ test "a release build compacts hand-written JavaScript and cuts it to what the p
     try expectBuilt(r);
     // The regular expression and both template literals are as written;
     // `upper` survives because a substitution names it; `shout`, `exclaim`
-    // and every comment are gone.
+    // and every comment are gone. Every name the file binds and does not
+    // export is renamed, the most used first — `line`, then `spaces`,
+    // `upper` and `s` — and `text`, an object key, is not a binding
+    // (research 40's A2). `const` is `let`, and a lone parameter has no
+    // brackets (A3).
     try testing.expectEqualStrings(
-        \\const spaces=/ +/g;const upper=(s)=>s.toUpperCase();export const say=(line)=>({text:`[${upper(line.replace(spaces," "))}] ${`(${line.length})`}`,});
+        \\let b=/ +/g;let c=d=>d.toUpperCase();export let say=a=>({text:`[${c(a.replace(b," "))}] ${`(${a.length})`}`,});
         \\
     , try w.read("out/_platform/Hand.foreign.mjs"));
     // `run` is what the entry file imports; `unused` is nobody's, and the
-    // `import` stays because it evaluates a module.
+    // `import` stays because it evaluates a module. `process` is bound by
+    // the `import` and keeps its name; the block loses its last `;` (A3).
     try testing.expectEqualStrings(
-        \\import process from"node:process";export const run=(program)=>{process.stdout.write(program.text+"\n");};
+        \\import process from"node:process";export let run=a=>{process.stdout.write(a.text+"\n")};
         \\
     , try w.read("out/_platform/run.foreign.mjs"));
 

@@ -3,7 +3,7 @@
 //! platform's runtime, its markup runtime and every `foreign` sibling, which
 //! a development build copies byte for byte.
 //!
-//! Two passes, both over one token list and neither a parser:
+//! Four passes, all over one token list and none a parser:
 //!
 //!  1. **Elimination** (`shake`): the file's top-level statements are cut
 //!     into units — an `import`, a declaration, a function, an `export`
@@ -14,7 +14,17 @@
 //!     that is not a property name, with no scope analysis: a local that
 //!     shadows a top-level name keeps that name alive, which is the safe
 //!     direction.
-//!  2. **Compaction** (`print`): the surviving tokens, verbatim, with the
+//!  2. **Rewriting** (`rewrite`, research 40's A3): three token rewrites,
+//!     each exact — `const` is `let` in a file that never assigns a `const`
+//!     binding, `(x) =>` is `x =>`, and a `;` in front of a `}` goes unless
+//!     it is an empty statement.
+//!  3. **Renaming** (`rename`, research 40's A2): every name the file binds
+//!     is renamed, everywhere at once, to a short name no other identifier
+//!     of the file spells — unless it is exported or imported, a global, or
+//!     ever stands where a property name can. It needs no scopes because it
+//!     is an injective renaming of all of a name's occurrences together:
+//!     what each use referred to, it still refers to.
+//!  4. **Compaction** (`print`): the surviving tokens, as spelled, with the
 //!     gaps between them rewritten to nothing, one space or one newline.
 //!     A gap keeps a newline wherever it held a line terminator (a comment
 //!     that spans lines included) unless the tokens on either side prove it
@@ -31,10 +41,29 @@
 //! top-level statement it cannot delimit, for a declaration a newline might
 //! end, and for a file that mentions `eval`. A refusal costs bytes and
 //! nothing else: the caller copies the file as a development build does.
-//! None of the files in `core/` or `platforms/` is refused.
+//! None of the files in `core/` or `platforms/` is refused. The two passes
+//! research 40 added refuse the same way, one name or one file at a time:
+//! `rename` renames nothing in a file with `eval`, `with` or `class`, and
+//! `rewrite` keeps every `const` in a file where it cannot show that no
+//! `const` binding is assigned.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Print = @import("Print.zig");
+const Rename = @import("Rename.zig");
+const Sibling = @import("Sibling.zig");
+
+/// Which of research 40's passes run. `minify` always eliminates and
+/// compacts; the two below are what a release build adds.
+pub const Options = struct {
+    /// A3: `const` → `let`, `(x) =>` → `x =>`, `;}` → `}`.
+    rewrite: bool = false,
+    /// A2: every name the file binds, renamed short.
+    rename: bool = false,
+};
+
+/// What `--release` runs.
+pub const release: Options = .{ .rewrite = true, .rename = true };
 
 pub const Kind = enum {
     ident,
@@ -72,16 +101,39 @@ pub const Error = Allocator.Error || error{Unsupported};
 /// The whole pipeline: `source` compacted, with only the top-level units
 /// that `keep`'s exports reach when `keep` is given. Null when the file is
 /// refused and must be copied as it is.
-pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8) Allocator.Error!?[]const u8 {
+pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, options: Options) Allocator.Error!?[]const u8 {
     const tokens = tokenize(arena, source) catch |err| switch (err) {
         error.Unsupported => return null,
         error.OutOfMemory => return error.OutOfMemory,
     };
     const mask = if (keep) |names| try shake(arena, source, tokens, names) else null;
-    const out = try print(arena, source, tokens, mask);
-    if (std.debug.runtime_safety) try verify(arena, source, tokens, mask, out);
+    const shown = try arena.alloc(bool, tokens.len);
+    if (mask) |m| @memcpy(shown, m) else @memset(shown, true);
+    const spell = try arena.alloc(?[]const u8, tokens.len);
+    @memset(spell, null);
+    if (options.rewrite or options.rename) {
+        const s: Structure = try .init(arena, source, tokens);
+        // Renaming first: it reads which tokens elimination kept, before
+        // the rewrites hide a `;` or a parameter's brackets.
+        if (options.rename) try rename(arena, &s, shown, spell);
+        if (options.rewrite) try rewrite(arena, &s, shown, spell);
+    }
+    const plan: Plan = .{ .shown = shown, .spell = spell };
+    const out = try print(arena, source, tokens, plan);
+    if (std.debug.runtime_safety) try verify(arena, source, tokens, plan, out);
     return out;
 }
+
+/// What `print` writes: which tokens, and each one's spelling when a pass
+/// changed it.
+const Plan = struct {
+    shown: []const bool,
+    spell: []const ?[]const u8,
+
+    fn text(p: Plan, source: []const u8, tokens: []const Token, i: usize) []const u8 {
+        return p.spell[i] orelse tokens[i].text(source);
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tokens
@@ -377,11 +429,9 @@ fn newlineIsInert(source: []const u8, a: Token, b: Token) bool {
     }
 }
 
-/// Whether `a` and `b` written with nothing between them would lex as
-/// something other than `a` then `b`.
-fn needsSpace(source: []const u8, a: Token, b: Token) bool {
-    const at = a.text(source);
-    const bt = b.text(source);
+/// Whether `a` and `b`, spelled `at` and `bt`, written with nothing between
+/// them would lex as something other than `a` then `b`.
+fn needsSpace(a: Token, at: []const u8, b: Token, bt: []const u8) bool {
     const last = at[at.len - 1];
     const first = bt[0];
     if (isIdentPart(last) and (isIdentPart(first) or first == '#')) return true;
@@ -405,49 +455,51 @@ fn needsSpace(source: []const u8, a: Token, b: Token) bool {
     return false;
 }
 
-fn print(arena: Allocator, source: []const u8, tokens: []const Token, mask: ?[]const bool) Allocator.Error![]const u8 {
+fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan) Allocator.Error![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.ensureTotalCapacity(arena, source.len / 2);
-    var prev: ?Token = null;
+    var prev: ?usize = null;
     var pending_nl = false;
     for (tokens, 0..) |t, i| {
-        if (mask) |m| if (!m[i]) {
+        if (!plan.shown[i]) {
             pending_nl = pending_nl or t.nl;
             continue;
-        };
+        }
         const nl = pending_nl or t.nl;
         pending_nl = false;
+        const text = plan.text(source, tokens, i);
         if (prev) |a| {
-            if (nl and !newlineIsInert(source, a, t)) {
+            if (nl and !newlineIsInert(source, tokens[a], t)) {
                 try out.append(arena, '\n');
-            } else if (needsSpace(source, a, t)) {
+            } else if (needsSpace(tokens[a], plan.text(source, tokens, a), t, text)) {
                 try out.append(arena, ' ');
             }
         }
-        try out.appendSlice(arena, t.text(source));
-        prev = t;
+        try out.appendSlice(arena, text);
+        prev = i;
     }
     if (out.items.len != 0) try out.append(arena, '\n');
     return out.items;
 }
 
-/// The safety build's proof of `print`: the output lexes to the kept
-/// tokens, each spelled as before, with a line terminator before every one
-/// that `print` could not show to be inert.
-fn verify(arena: Allocator, source: []const u8, tokens: []const Token, mask: ?[]const bool, out: []const u8) Allocator.Error!void {
+/// The safety build's proof of `print`: the output lexes to the shown
+/// tokens, each spelled as the plan says, with a line terminator before
+/// every one that `print` could not show to be inert.
+fn verify(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan, out: []const u8) Allocator.Error!void {
     const again = tokenize(arena, out) catch std.debug.panic("Minify: the compacted file does not lex", .{});
     var at: usize = 0;
     var prev: ?Token = null;
     var pending_nl = false;
     for (tokens, 0..) |t, i| {
-        if (mask) |m| if (!m[i]) {
+        if (!plan.shown[i]) {
             pending_nl = pending_nl or t.nl;
             continue;
-        };
+        }
         if (at >= again.len) std.debug.panic("Minify: the compacted file lost a token", .{});
         const got = again[at];
-        if (got.kind != t.kind or !std.mem.eql(u8, got.text(out), t.text(source))) {
-            std.debug.panic("Minify: `{s}` became `{s}`", .{ t.text(source), got.text(out) });
+        const want = plan.text(source, tokens, i);
+        if (got.kind != t.kind or !std.mem.eql(u8, got.text(out), want)) {
+            std.debug.panic("Minify: `{s}` became `{s}`", .{ want, got.text(out) });
         }
         if (prev) |a| if ((pending_nl or t.nl) and !newlineIsInert(source, a, t) and !got.nl) {
             std.debug.panic("Minify: the line break before `{s}` was lost", .{t.text(source)});
@@ -778,6 +830,408 @@ pub fn shake(arena: Allocator, source: []const u8, tokens: []const Token, keep: 
 }
 
 // ---------------------------------------------------------------------------
+// Research 40's passes: rewriting (A3) and renaming (A2)
+// ---------------------------------------------------------------------------
+
+/// What both passes read of the token list besides the tokens.
+const Structure = struct {
+    source: []const u8,
+    tokens: []const Token,
+    /// For an opening token — `(`, `[`, `{`, a template head — the index of
+    /// the token that closes it; for a closing one, the index of its
+    /// opener; for every other token, its own index.
+    close: []u32,
+    /// The innermost opening token around each token, or `none`.
+    outer: []u32,
+    /// For a `{`: whether it provably opens a statement list — after `)`,
+    /// `=>`, `;`, `}`, `else`, `try`, `finally`, `do`, at the start of the
+    /// file, or directly inside another block. Anything else — an object
+    /// literal, a pattern, a class body, a `case x: {` — is treated as a
+    /// place where a name may be a property key.
+    block: []bool,
+
+    const none = std.math.maxInt(u32);
+
+    fn init(arena: Allocator, source: []const u8, tokens: []const Token) Allocator.Error!Structure {
+        const close = try arena.alloc(u32, tokens.len);
+        const outer = try arena.alloc(u32, tokens.len);
+        const block = try arena.alloc(bool, tokens.len);
+        @memset(block, false);
+        var stack: std.ArrayList(u32) = .empty;
+        for (tokens, 0..) |t, i| {
+            close[i] = @intCast(i);
+            const is_open = t.kind == .template_head or (t.kind == .punct and (isPunct(t, source, "(") or isPunct(t, source, "[") or isPunct(t, source, "{")));
+            const is_close = t.kind == .template_tail or (t.kind == .punct and (isPunct(t, source, ")") or isPunct(t, source, "]") or isPunct(t, source, "}")));
+            if (is_close) {
+                // `tokenize` balanced every one of them already.
+                const open = stack.pop().?;
+                close[open] = @intCast(i);
+                close[i] = open;
+            }
+            outer[i] = if (stack.items.len == 0) none else stack.items[stack.items.len - 1];
+            if (is_open) {
+                if (isPunct(t, source, "{")) block[i] = opensBlock(source, tokens, block, outer[i], i);
+                try stack.append(arena, @intCast(i));
+            }
+        }
+        return .{ .source = source, .tokens = tokens, .close = close, .outer = outer, .block = block };
+    }
+
+    fn opensBlock(source: []const u8, tokens: []const Token, block: []const bool, outer: u32, i: usize) bool {
+        if (i == 0) return true;
+        const p = tokens[i - 1];
+        if (p.kind == .punct) {
+            for ([_][]const u8{ ")", "=>", ";", "}" }) |w| if (isPunct(p, source, w)) return true;
+            return isPunct(p, source, "{") and outer != none and block[outer];
+        }
+        if (p.kind != .ident or isProperty(tokens, source, i - 1)) return false;
+        for ([_][]const u8{ "else", "try", "finally", "do" }) |w| if (isWord(p, source, w)) return true;
+        return false;
+    }
+
+    fn text(s: *const Structure, i: usize) []const u8 {
+        return s.tokens[i].text(s.source);
+    }
+
+    fn word(s: *const Structure, i: usize, w: []const u8) bool {
+        return i < s.tokens.len and isWord(s.tokens[i], s.source, w) and !isProperty(s.tokens, s.source, i);
+    }
+
+    fn punct(s: *const Structure, i: usize, p: []const u8) bool {
+        return i < s.tokens.len and isPunct(s.tokens[i], s.source, p);
+    }
+
+    /// An identifier that names something rather than a property.
+    fn name(s: *const Structure, i: usize) bool {
+        return s.tokens[i].kind == .ident and !isProperty(s.tokens, s.source, i);
+    }
+
+    fn opens(s: *const Structure, i: usize) bool {
+        return s.close[i] > i;
+    }
+
+    fn next(s: *const Structure, i: usize) usize {
+        return if (s.opens(i)) s.close[i] + 1 else i + 1;
+    }
+
+    /// The declarators of the `let`, `const` or `var` at `k`: each simple
+    /// one's identifier and each pattern's opening token, appended to
+    /// `out`. Null when a line terminator at the declaration's own level
+    /// might end it by automatic semicolon insertion, or when an `in` or
+    /// `of` there is not a `for` head's — either makes the list a guess.
+    fn declarators(s: *const Structure, arena: Allocator, k: usize, out: *std.ArrayList(u32)) Allocator.Error!?void {
+        const in_head = s.outer[k] != none and s.tokens[s.close[s.outer[k]]].head;
+        const end: usize = if (s.outer[k] != none) s.close[s.outer[k]] else s.tokens.len;
+        var j = k + 1;
+        var prev = k;
+        var at_declarator = true;
+        while (j < end) {
+            const t = s.tokens[j];
+            if (t.nl and !newlineIsInert(s.source, s.tokens[prev], t)) return null;
+            if (s.punct(j, ";")) break;
+            if (s.word(j, "of") or s.word(j, "in")) {
+                if (in_head and !at_declarator) break;
+                return null;
+            }
+            if (at_declarator) {
+                if (!(s.name(j) or s.punct(j, "[") or s.punct(j, "{"))) return null;
+                try out.append(arena, @intCast(j));
+                at_declarator = false;
+            } else if (s.punct(j, ",")) at_declarator = true;
+            prev = if (s.opens(j)) s.close[j] else j;
+            j = s.next(j);
+        }
+        return {};
+    }
+};
+
+/// Assignment operators: a `const` binding written before one of these, or
+/// beside `++`/`--`, is being assigned.
+const assigners = [_][]const u8{ "=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^=", "&&=", "||=", "??=", "++", "--" };
+
+fn assigns(s: *const Structure, i: usize) bool {
+    for (assigners) |a| if (s.punct(i, a)) return true;
+    return false;
+}
+
+/// A3: three rewrites, each exact at the token level.
+fn rewrite(arena: Allocator, s: *const Structure, shown: []bool, spell: []?[]const u8) Allocator.Error!void {
+    const tokens = s.tokens;
+    for (tokens, 0..) |t, i| {
+        if (!shown[i]) continue;
+        // `;` before `}`: the brace ends the statement anyway, unless the
+        // `;` IS the statement — an empty one after a statement head, `else`,
+        // `do` or a label (or a `case`), or one alone in a block.
+        if (isPunct(t, s.source, ";") and i > 0 and i + 1 < tokens.len and shown[i + 1] and s.punct(i + 1, "}")) {
+            const p = tokens[i - 1];
+            const empty = (isPunct(p, s.source, ")") and p.head) or s.punct(i - 1, ":") or s.punct(i - 1, "{") or
+                s.punct(i - 1, ";") or s.word(i - 1, "else") or s.word(i - 1, "do");
+            if (!empty) shown[i] = false;
+            continue;
+        }
+        // `(x) =>` is `x =>` when the list is one plain identifier.
+        if (isPunct(t, s.source, "(") and s.close[i] == i + 2 and s.name(i + 1) and s.punct(i + 3, "=>") and shown[i + 2] and !Print.isReservedWord(s.text(i + 1))) {
+            shown[i] = false;
+            shown[i + 2] = false;
+        }
+    }
+    try constToLet(arena, s, shown, spell);
+}
+
+/// `const` is `let` throughout a file none of whose `const` declarations
+/// names anything the file assigns: the one difference, the `TypeError` an
+/// assignment to the binding would throw, cannot happen, because an
+/// assignment to the binding is an assignment to its name and there is none.
+/// Names, not scopes: a `let i` assigned in one function keeps a
+/// `const i` in another, and with it every `const` of the file.
+fn constToLet(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
+    const tokens = s.tokens;
+    // A string `eval` runs, or a `with` object, can assign a name no
+    // token spells.
+    for (tokens, 0..) |_, i| if (s.word(i, "eval") or s.word(i, "with")) return;
+
+    // Where a declaration names its bindings, so that `let x = 1` is not
+    // read as an assignment to `x`: each simple declarator, and a
+    // pattern's closing bracket, which may stand before `=`. A pattern's
+    // own names are not marked, so `const { a = 1 } = o` reads as an
+    // assignment to `a` — too many assignments only keeps a `const`.
+    const declarator = try arena.alloc(bool, tokens.len);
+    @memset(declarator, false);
+    var list: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, k| {
+        if (!(s.word(k, "const") or s.word(k, "let") or s.word(k, "var"))) continue;
+        list.clearRetainingCapacity();
+        (try s.declarators(arena, k, &list)) orelse continue;
+        for (list.items) |d| declarator[s.close[d]] = true;
+    }
+
+    // Every name something assigns.
+    var assigned: std.StringHashMapUnmanaged(void) = .empty;
+    for (tokens, 0..) |t, i| {
+        if (s.name(i) and !declarator[i]) {
+            const written = assigns(s, i + 1) or (i > 0 and (s.punct(i - 1, "++") or s.punct(i - 1, "--"))) or
+                (i >= 2 and s.punct(i - 1, "(") and s.word(i - 2, "for")); // `for (x of …)`
+            if (written) try assigned.put(arena, s.text(i), {});
+        }
+        // A destructuring assignment — `[a, b] = …`, `({ a } = …)`,
+        // `for ([a, b] of …)` — assigns every name inside it.
+        const pattern_end: ?usize = if (!declarator[i] and s.punct(i + 1, "=") and (isPunct(t, s.source, "]") or isPunct(t, s.source, "}")) and !isMember(s, s.close[i]))
+            i
+        else if (i >= 1 and s.word(i - 1, "for") and s.punct(i, "(") and (s.punct(i + 1, "[") or s.punct(i + 1, "{")))
+            s.close[i + 1]
+        else
+            null;
+        if (pattern_end) |e| for (s.close[e]..e) |at| if (s.name(at)) try assigned.put(arena, s.text(at), {});
+    }
+
+    // All of the file's `const`s or none: a file that mixes the two
+    // keywords compresses worse than one that keeps `const` throughout
+    // (research 41 measured +9 brotli bytes on the browser runtime, where
+    // a partial rewrite was possible), so a partial rewrite is not made.
+    var consts: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, k| {
+        if (!shown[k] or !s.word(k, "const")) continue;
+        list.clearRetainingCapacity();
+        (try s.declarators(arena, k, &list)) orelse return;
+        for (list.items) |d| {
+            // A pattern's every name, keys included: more than it binds.
+            for (d..s.close[d] + 1) |at| if (s.name(at) and assigned.contains(s.text(at))) return;
+        }
+        try consts.append(arena, @intCast(k));
+    }
+    for (consts.items) |k| spell[k] = "let";
+}
+
+/// Whether the `[` at `open` reads a member (`a[i]`) rather than opening
+/// an array literal or pattern.
+fn isMember(s: *const Structure, open: usize) bool {
+    if (!s.punct(open, "[") or open == 0) return false;
+    const p = s.tokens[open - 1];
+    return (p.kind == .ident and !Print.isReservedWord(p.text(s.source))) or
+        p.kind == .string or p.kind == .template or p.kind == .template_tail or
+        isPunct(p, s.source, ")") or isPunct(p, s.source, "]");
+}
+
+/// Words a renaming never takes and never gives: every reserved and
+/// contextual word, the literals a name can spell, and every global a file
+/// may read without binding it — `Sibling.isStandardGlobal`'s, and the hosts'
+/// (`boundary.md` §5.1), which check 3 cannot see when the same name is also
+/// bound somewhere in the file.
+fn fixedName(text: []const u8) bool {
+    if (text.len == 0 or text[0] == '#') return true;
+    if (Print.isReservedWord(text) or Sibling.isStandardGlobal(text)) return true;
+    const words = [_][]const u8{
+        "of",                  "as",               "from",             "get",                   "set",
+        "async",               "target",           "meta",             "undefined",             "NaN",
+        "Infinity",            "window",           "self",             "document",              "navigator",
+        "location",            "history",          "name",             "top",                   "parent",
+        "frames",              "opener",           "origin",           "event",                 "process",
+        "require",             "module",           "exports",          "global",                "__dirname",
+        "__filename",          "Buffer",           "Deno",             "Bun",                   "Node",
+        "Element",             "HTMLElement",      "Text",             "Comment",               "DocumentFragment",
+        "Event",               "CustomEvent",      "MutationObserver", "requestAnimationFrame", "cancelAnimationFrame",
+        "requestIdleCallback", "localStorage",     "sessionStorage",   "alert",                 "confirm",
+        "prompt",              "getComputedStyle", "matchMedia",       "WebSocket",             "Worker",
+        "Blob",                "File",             "FormData",         "Headers",               "Request",
+        "Response",            "ReadableStream",   "WritableStream",   "MessageChannel",        "BroadcastChannel",
+        "setImmediate",        "clearImmediate",
+    };
+    for (words) |w| if (std.mem.eql(u8, w, text)) return true;
+    return false;
+}
+
+/// A2: every name the file binds, renamed at once to a short name that no
+/// other identifier of the file spells — the most used first, ties by first
+/// occurrence (rule 5). A name keeps its spelling when it is exported or
+/// imported (the boundary with emitted code, which `boundary.md` §4 fixes),
+/// when it is a global, and when it ever stands where a property name can:
+/// before `:` (a key or a label), or in an object literal, pattern or class
+/// body where a shorthand, a method or a field would put it. Research 40
+/// §7 is the argument: the renaming is injective onto names nothing else
+/// uses, so every use still refers to what it referred to.
+fn rename(arena: Allocator, s: *const Structure, shown: []const bool, spell: []?[]const u8) Allocator.Error!void {
+    const tokens = s.tokens;
+    for (tokens, 0..) |_, i| {
+        if (s.word(i, "eval") or s.word(i, "with") or s.word(i, "class")) return;
+    }
+
+    var bound: std.StringHashMapUnmanaged(void) = .empty;
+    var refused: std.StringHashMapUnmanaged(void) = .empty;
+    var list: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, i| {
+        // An `import`'s every name, and an `export { … }` list's.
+        if (s.word(i, "import") and !s.punct(i + 1, "(") and !s.punct(i + 1, ".")) {
+            var j = i + 1;
+            while (j < tokens.len and tokens[j].kind != .string and !s.punct(j, ";")) : (j += 1) {
+                if (tokens[j].kind == .ident) try refused.put(arena, s.text(j), {});
+            }
+            continue;
+        }
+        if (s.word(i, "export") and s.punct(i + 1, "{")) {
+            for (i + 2..s.close[i + 1]) |j| if (tokens[j].kind == .ident) try refused.put(arena, s.text(j), {});
+            continue;
+        }
+        if (!shown[i]) continue;
+        const exported = i > 0 and s.word(i - 1, "export");
+        if (s.word(i, "const") or s.word(i, "let") or s.word(i, "var")) {
+            list.clearRetainingCapacity();
+            const certain = (try s.declarators(arena, i, &list)) != null;
+            // An exported declaration whose names this cannot list keeps
+            // every name in the file.
+            if (exported and !certain) return;
+            for (list.items) |d| {
+                if (!s.name(d)) continue;
+                try (if (exported) &refused else &bound).put(arena, s.text(d), {});
+            }
+            continue;
+        }
+        if (s.word(i, "function")) {
+            var j = i + 1;
+            if (s.punct(j, "*")) j += 1;
+            if (j < tokens.len and s.name(j)) {
+                const fn_exported = exported or (i > 1 and s.word(i - 1, "async") and s.word(i - 2, "export"));
+                try (if (fn_exported) &refused else &bound).put(arena, s.text(j), {});
+                j += 1;
+            }
+            if (s.punct(j, "(")) try bindParams(arena, s, j, &bound);
+            continue;
+        }
+        if (s.word(i, "catch") and s.punct(i + 1, "(")) {
+            try bindParams(arena, s, i + 1, &bound);
+            continue;
+        }
+        if (s.punct(i, "(") and s.punct(s.close[i] + 1, "=>")) {
+            try bindParams(arena, s, i, &bound);
+            continue;
+        }
+        if (s.name(i) and s.punct(i + 1, "=>")) try bound.put(arena, s.text(i), {});
+    }
+
+    // Where a name may be a property key, over every token, shown or not.
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const t = s.text(i);
+        if (s.punct(i + 1, ":")) {
+            // `c ? x : y` and `case x:` read `x`; anything else may be a key
+            // or a label.
+            if (!(i > 0 and (s.punct(i - 1, "?") or s.word(i - 1, "case")))) try refused.put(arena, t, {});
+            continue;
+        }
+        const o = s.outer[i];
+        if (o == Structure.none or !s.punct(o, "{") or s.block[o] or i == 0) continue;
+        const before = s.punct(i - 1, "{") or s.punct(i - 1, ",") or s.punct(i - 1, ";") or s.punct(i - 1, "}") or s.punct(i - 1, "*") or
+            s.word(i - 1, "get") or s.word(i - 1, "set") or s.word(i - 1, "static") or s.word(i - 1, "async");
+        const after = s.punct(i + 1, ",") or s.punct(i + 1, "}") or s.punct(i + 1, "=") or s.punct(i + 1, "(") or s.punct(i + 1, ";");
+        if (before and after) try refused.put(arena, t, {});
+    }
+
+    // The candidates, with how often the shown tokens use each.
+    const Candidate = struct { text: []const u8, count: u32, first: u32 };
+    var index: std.StringHashMapUnmanaged(u32) = .empty;
+    var candidates: std.ArrayList(Candidate) = .empty;
+    var taken: std.StringHashMapUnmanaged(void) = .empty;
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const t = s.text(i);
+        const renamable = bound.contains(t) and !refused.contains(t) and !fixedName(t);
+        if (!renamable) {
+            try taken.put(arena, t, {});
+            continue;
+        }
+        const slot = try index.getOrPut(arena, t);
+        if (!slot.found_existing) {
+            slot.value_ptr.* = @intCast(candidates.items.len);
+            try candidates.append(arena, .{ .text = t, .count = 0, .first = @intCast(i) });
+        }
+        if (shown[i]) candidates.items[slot.value_ptr.*].count += 1;
+    }
+    std.mem.sort(Candidate, candidates.items, {}, struct {
+        fn lessThan(_: void, a: Candidate, b: Candidate) bool {
+            if (a.count != b.count) return a.count > b.count;
+            return a.first < b.first;
+        }
+    }.lessThan);
+
+    var fresh: std.StringHashMapUnmanaged([]const u8) = .empty;
+    var ordinal: u32 = 0;
+    for (candidates.items) |c| {
+        const new = while (true) {
+            var buf: [8]u8 = undefined;
+            const spelled = Rename.spell(ordinal, &buf);
+            ordinal += 1;
+            if (taken.contains(spelled) or fixedName(spelled)) continue;
+            break try arena.dupe(u8, spelled);
+        };
+        try fresh.put(arena, c.text, new);
+    }
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        if (fresh.get(s.text(i))) |new| spell[i] = new;
+    }
+}
+
+/// The names a parameter list at `open` binds: each element's identifier,
+/// after an optional `...`, and an array pattern's own, one level down. An
+/// object pattern's names are keys as well as bindings, and a default is an
+/// expression; neither is listed.
+fn bindParams(arena: Allocator, s: *const Structure, open: usize, bound: *std.StringHashMapUnmanaged(void)) Allocator.Error!void {
+    var j = open + 1;
+    var at_element = true;
+    const end = s.close[open];
+    while (j < end) {
+        if (at_element) {
+            var e = j;
+            if (s.punct(e, "...")) e += 1;
+            if (e < end and s.name(e)) try bound.put(arena, s.text(e), {});
+            if (e < end and s.punct(e, "[")) try bindParams(arena, s, e, bound);
+            at_element = false;
+        }
+        if (s.punct(j, ",")) at_element = true;
+        j = s.next(j);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -785,13 +1239,79 @@ const testing = std.testing;
 const fuzzing = @import("../fuzzing.zig");
 
 fn expectMinified(source: []const u8, keep: ?[]const []const u8, want: ?[]const u8) !void {
+    try expectWith(.{}, source, keep, want);
+}
+
+/// With research 40's two passes, as `--release` runs them.
+fn expectReleased(source: []const u8, keep: ?[]const []const u8, want: ?[]const u8) !void {
+    try expectWith(release, source, keep, want);
+}
+
+fn expectWith(options: Options, source: []const u8, keep: ?[]const []const u8, want: ?[]const u8) !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    const got = try minify(arena_state.allocator(), source, keep);
+    const got = try minify(arena_state.allocator(), source, keep, options);
     if (want) |w| {
         if (got == null) return error.Refused;
         try testing.expectEqualStrings(w, got.?);
     } else try testing.expect(got == null);
+}
+
+test "A3: a semicolon before a closing brace goes unless it is an empty statement" {
+    try expectReleased("function f() { g(); return 1; }\n", null, "function a(){g();return 1}\n");
+    // After a statement head, `else`, `do` and a label the `;` is the
+    // statement, and after `{` it is the block's only one.
+    try expectReleased("function f(x) { if (x) ; }\n", null, "function b(a){if(a);}\n");
+    try expectReleased("function f(x) { if (x) g(); else ; }\n", null, "function b(a){if(a)g();else;}\n");
+    try expectReleased("function f() { L: ; }\n", null, "function a(){L:;}\n");
+    try expectReleased("function f() { ; }\n", null, "function a(){;}\n");
+    // A do-while's `while (…)` is a head too, so its `;` stays.
+    try expectReleased("function f() { do g(); while (h()); }\n", null, "function a(){do g();while(h());}\n");
+}
+
+test "A3: a lone parameter loses its brackets, and const is let when nothing assigns one" {
+    try expectReleased("export const f = (x) => x + 1;\n", null, "export let f=a=>a+1;\n");
+    // Two parameters, a default or a pattern keep theirs.
+    try expectReleased("export const g = (x, y) => x;\nexport const h = (x = 1) => x;\n", null, "export let g=(a,b)=>a;export let h=(a=1)=>a;\n");
+    // An assigned `const`, however it is assigned, keeps every `const` of
+    // the file: the `TypeError` is the program's behaviour.
+    try expectReleased("const a = 1;\nexport const f = () => { a = 2; };\n", null, "const a=1;export const f=()=>{a=2};\n");
+    try expectReleased("const a = 1;\nexport const f = () => a++;\n", null, "const a=1;export const f=()=>a++;\n");
+    try expectReleased("const a = [1];\nexport const f = (b) => { [a] = b; };\n", null, "const a=[1];export const f=b=>{[a]=b};\n");
+    try expectReleased("const a = 1;\nexport const f = (o) => { for (a of o); };\n", null, "const a=1;export const f=b=>{for(a of b);};\n");
+    // An element assignment is not one, and a `let` may be assigned. A name
+    // is all this reads, so a `let` assigned anywhere keeps a `const` of the
+    // same name elsewhere — and then every `const`.
+    try expectReleased("export const f = () => { const i = 1; return i; };\nexport const g = () => { let i = 0; i = 1; return i; };\n", null, "export const f=()=>{const a=1;return a};export const g=()=>{let a=0;a=1;return a};\n");
+    try expectReleased("const a = [1];\nlet n = 0;\nexport const f = () => { a[0] = 2; n += 1; };\n", null, "let a=[1];let b=0;export let f=()=>{a[0]=2;b+=1};\n");
+}
+
+test "A2: bound names are renamed most-used first; exports, imports, keys and globals keep theirs" {
+    try expectReleased(
+        \\import process from "node:process";
+        \\const helper = (value) => value + value;
+        \\export const run = (program) => {
+        \\  const document = helper(program.size);
+        \\  return { helper: document, program, [program.key]: Math.max(document, 1) };
+        \\};
+    ,
+        null,
+        // `value` is `a`. `program` is also a shorthand property and
+        // `helper` a key, so both keep their names; `document` is a host
+        // global, which a local may not take from the reads of the real one.
+        "import process from\"node:process\";let helper=a=>a+a;export let run=program=>{let document=helper(program.size);return{helper:document,program,[program.key]:Math.max(document,1)}};\n",
+    );
+    try expectReleased("const long = 1;\nexport const f = (x) => long + x + long;\n", null, "let a=1;export let f=b=>a+b+a;\n");
+    // A name the file spells anywhere as a non-binding is never handed out:
+    // `a` and `b` are keys here.
+    try expectReleased("const k = 1;\nexport const f = () => ({ a: k, b: k });\n", null, "let c=1;export let f=()=>({a:c,b:c});\n");
+    // A ternary's consequent and a `case` read the name; a label keeps it.
+    try expectReleased("export const f = (x, y) => x ? y : x;\n", null, "export let f=(a,b)=>a?b:a;\n");
+}
+
+test "A2: a file with eval, with or a class keeps every name, and with eval every const" {
+    try expectReleased("const long = 1;\nexport const f = () => eval(\"long\");\n", null, "const long=1;export const f=()=>eval(\"long\");\n");
+    try expectReleased("const long = 1;\nexport class A { m(long) { return long; } }\n", null, "let long=1;export class A{m(long){return long}}\n");
 }
 
 test "comments and whitespace go, and a string or template keeps what looks like them" {
@@ -930,7 +1450,7 @@ fn expectCompacted(path: []const u8, source: []const u8) !void {
         std.debug.print("{s} cannot be cut to its imported exports\n", .{path});
         return error.Refused;
     }
-    const got = (try minify(arena, source, null)).?;
+    const got = (try minify(arena, source, null, release)).?;
     try testing.expect(got.len < source.len);
 }
 
@@ -979,7 +1499,12 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
         for (0..count) |_| try buf.appendSlice(testing.allocator, pieces[random.uintLessThan(usize, pieces.len)]);
         var a: std.heap.ArenaAllocator = .init(testing.allocator);
         defer a.deinit();
-        _ = try minify(a.allocator(), buf.items, null);
-        _ = try minify(a.allocator(), buf.items, &.{"a"});
+        _ = try minify(a.allocator(), buf.items, null, .{});
+        _ = try minify(a.allocator(), buf.items, &.{"a"}, .{});
+        // Research 40's passes: `verify` holds the output to the plan's
+        // spellings, so a rename that broke a token, or a dropped `;` or
+        // bracket that changed how the rest lexes, panics here.
+        _ = try minify(a.allocator(), buf.items, null, release);
+        _ = try minify(a.allocator(), buf.items, &.{"a"}, release);
     }
 }
